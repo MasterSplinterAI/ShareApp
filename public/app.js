@@ -52,14 +52,40 @@ let isCameraOn = false; // Default to camera off for new users
 let isMicOn = true;
 let activeMediaBtn = 'none'; // 'camera', 'screen', or 'none'
 
-// Enhanced configuration with multiple STUN servers for better connectivity
+// Enhanced configuration with STUN and TURN servers for international connectivity
 const configuration = {
   iceServers: [
+    // Google STUN servers
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' }
-  ]
+    { urls: 'stun:stun3.l.google.com:19302' },
+    
+    // Additional STUN servers
+    { urls: 'stun:stun.services.mozilla.com' },
+    { urls: 'stun:stun.ekiga.net' },
+    
+    // Free TURN servers for international users (when direct connection fails)
+    {
+      urls: 'turn:openrelay.metered.ca:80',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443',
+      username: 'openrelayproject', 
+      credential: 'openrelayproject'
+    },
+    {
+      urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+      username: 'openrelayproject',
+      credential: 'openrelayproject'
+    }
+  ],
+  // Enhanced configuration for better connectivity
+  iceCandidatePoolSize: 10,
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require'
 };
 
 // Function to update the UI with connection status

@@ -2,13 +2,35 @@
 import { sendOffer, sendAnswer, sendIceCandidate, getSocketId } from '../services/socket.js';
 import { showError } from '../ui/notifications.js';
 
-// ICE server configuration
+// ICE server configuration with TURN servers for international connectivity
 const iceServers = [
+  // Google STUN servers
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
   { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' }
+  { urls: 'stun:stun4.l.google.com:19302' },
+  
+  // Additional STUN servers for better connectivity
+  { urls: 'stun:stun.services.mozilla.com' },
+  { urls: 'stun:stun.ekiga.net' },
+  
+  // Free TURN servers for international users (when direct connection fails)
+  {
+    urls: 'turn:openrelay.metered.ca:80',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443',
+    username: 'openrelayproject', 
+    credential: 'openrelayproject'
+  },
+  {
+    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
 ];
 
 // Create a new peer connection with a remote peer
@@ -178,22 +200,55 @@ export function createPeerConnection(peerId) {
       }
     }
     
-    // Handle ICE candidates
+    // Handle ICE candidates with detailed logging for debugging
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        console.log(`Sending ICE candidate to ${peerId}`, event.candidate);
+        // Log candidate type for debugging international connectivity
+        const candidate = event.candidate;
+        const candidateType = candidate.type || 'unknown';
+        const protocol = candidate.protocol || 'unknown';
+        const address = candidate.address || candidate.ip || 'unknown';
+        
+        console.log(`🔄 Sending ICE candidate to ${peerId}: type=${candidateType}, protocol=${protocol}, address=${address.substring(0, 10)}...`);
+        
+        // Special logging for TURN candidates (important for international users)
+        if (candidate.candidate && candidate.candidate.includes('relay')) {
+          console.log(`🌐 TURN relay candidate generated for ${peerId} - this helps with restrictive firewalls`);
+        }
+        
         sendIceCandidate(peerId, event.candidate);
+      } else {
+        console.log(`✅ ICE gathering complete for ${peerId}`);
       }
     };
     
-    // Log ICE connection state changes
+    // Log ICE connection state changes with detailed debugging
     pc.oniceconnectionstatechange = () => {
       console.log(`ICE connection state with ${peerId}: ${pc.iceConnectionState}`);
       
-      // Handle connection failures
-      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-        console.warn(`Connection with ${peerId} is ${pc.iceConnectionState}, attempting restart`);
+      // Log detailed connection info for debugging international issues
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        pc.getStats().then(stats => {
+          stats.forEach(report => {
+            if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+              console.log(`✅ Connection established via ${report.localCandidateId} -> ${report.remoteCandidateId}`);
+            }
+          });
+        });
+      }
+      
+      // Handle connection failures with more aggressive retry
+      if (pc.iceConnectionState === 'failed') {
+        console.warn(`❌ ICE connection failed with ${peerId}, attempting restart`);
         pc.restartIce();
+      } else if (pc.iceConnectionState === 'disconnected') {
+        console.warn(`⚠️ ICE connection disconnected with ${peerId}, will retry in 3 seconds`);
+        setTimeout(() => {
+          if (pc.iceConnectionState === 'disconnected') {
+            console.log(`Restarting ICE for ${peerId} after disconnect`);
+            pc.restartIce();
+          }
+        }, 3000);
       }
     };
     
