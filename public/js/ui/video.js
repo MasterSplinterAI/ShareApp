@@ -752,52 +752,145 @@ export function setupFullscreenButton() {
   
   // Function to restore video state after exiting fullscreen
   function restoreVideoAfterFullscreen() {
+    console.log('Restoring video after fullscreen exit');
+    
     setTimeout(() => {
       // Remove controls that were added for fullscreen
       mainVideo.removeAttribute('controls');
       
-      // Ensure video is set to autoplay and muted appropriately
-      mainVideo.autoplay = true;
-      mainVideo.playsInline = true;
+      // CRITICAL: Force remove any poster attribute that might be showing
+      mainVideo.removeAttribute('poster');
       
-      // For local video, always mute to prevent feedback
-      if (window.appState.pinnedParticipant === 'local') {
-        mainVideo.muted = true;
-      } else {
-        // For remote participants, unmute
-        mainVideo.muted = false;
-      }
+      // Store current stream reference before restoration
+      const currentStream = mainVideo.srcObject;
+      console.log('Current stream after fullscreen:', currentStream);
       
-      // CRITICAL: Force the video to play again
-      const playPromise = mainVideo.play();
-      if (playPromise !== undefined) {
-        playPromise.then(() => {
-          console.log('Video resumed playing after fullscreen exit');
-        }).catch(err => {
-          console.warn('Could not resume video after fullscreen:', err);
+      // MOBILE FIX: Force reset the video element to clear any stuck states
+      const originalStream = currentStream;
+      
+      // Temporarily clear and restore the stream to force refresh
+      mainVideo.srcObject = null;
+      
+      setTimeout(() => {
+        // If we lost the stream, restore it
+        if (!originalStream) {
+          console.log('Stream was lost during fullscreen, restoring...');
           
-          // If autoplay fails, try with muted first
-          if (!mainVideo.muted) {
-            mainVideo.muted = true;
-            mainVideo.play().then(() => {
-              console.log('Video playing muted after fullscreen exit');
-              // Try to unmute after a short delay if it's a remote participant
-              if (window.appState.pinnedParticipant !== 'local') {
-                setTimeout(() => {
-                  mainVideo.muted = false;
-                }, 1000);
+          // Restore the appropriate stream based on pinned participant
+          if (window.appState.pinnedParticipant === 'local') {
+            if (window.appState.screenStream && window.appState.isScreenSharing) {
+              // Restore screen share stream
+              const combinedStream = new MediaStream();
+              const screenVideoTrack = window.appState.screenStream.getVideoTracks()[0];
+              if (screenVideoTrack && screenVideoTrack.readyState === 'live') {
+                combinedStream.addTrack(screenVideoTrack);
               }
-            }).catch(e => {
-              console.warn('Still cannot play video after fullscreen:', e);
+              if (window.appState.localStream) {
+                window.appState.localStream.getAudioTracks().forEach(track => {
+                  if (track.readyState === 'live') {
+                    combinedStream.addTrack(track);
+                  }
+                });
+              }
+              mainVideo.srcObject = combinedStream;
+            } else if (window.appState.localStream) {
+              // Restore local camera stream
+              mainVideo.srcObject = window.appState.localStream;
+            }
+          } else if (window.appState.pinnedParticipant && window.appState.peerConnections[window.appState.pinnedParticipant]) {
+            // Restore remote participant stream
+            const peerConnection = window.appState.peerConnections[window.appState.pinnedParticipant];
+            if (peerConnection.remoteStream) {
+              mainVideo.srcObject = peerConnection.remoteStream;
+            }
+          }
+        } else {
+          // Restore the original stream
+          mainVideo.srcObject = originalStream;
+        }
+        
+        // Ensure video is set to autoplay and muted appropriately
+        mainVideo.autoplay = true;
+        mainVideo.playsInline = true;
+        mainVideo.controls = false;
+        
+        // MOBILE FIX: Force remove any visual artifacts
+        mainVideo.style.objectFit = 'contain';
+        mainVideo.style.background = 'transparent';
+        
+        // For local video, always mute to prevent feedback
+        if (window.appState.pinnedParticipant === 'local') {
+          mainVideo.muted = true;
+        } else {
+          // For remote participants, unmute
+          mainVideo.muted = false;
+        }
+        
+        // CRITICAL: Force the video to play again with multiple attempts
+        console.log('Attempting to play video after fullscreen exit');
+        
+        const forcePlay = () => {
+          const playPromise = mainVideo.play();
+          if (playPromise !== undefined) {
+            playPromise.then(() => {
+              console.log('✅ Video resumed playing after fullscreen exit');
+              
+              // MOBILE FIX: Force trigger a resize/redraw to clear any stuck UI
+              setTimeout(() => {
+                mainVideo.style.transform = 'scale(1.0001)';
+                setTimeout(() => {
+                  mainVideo.style.transform = 'scale(1)';
+                }, 50);
+              }, 100);
+              
+            }).catch(err => {
+              console.warn('❌ Could not resume video after fullscreen:', err);
+              
+              // If autoplay fails, try with muted first
+              if (!mainVideo.muted) {
+                console.log('Trying muted playback as fallback');
+                mainVideo.muted = true;
+                mainVideo.play().then(() => {
+                  console.log('✅ Video playing muted after fullscreen exit');
+                  // Try to unmute after a short delay if it's a remote participant
+                  if (window.appState.pinnedParticipant !== 'local') {
+                    setTimeout(() => {
+                      console.log('Attempting to unmute remote participant');
+                      mainVideo.muted = false;
+                    }, 1000);
+                  }
+                }).catch(e => {
+                  console.warn('❌ Still cannot play video after fullscreen:', e);
+                  
+                  // Last resort: trigger a complete video update
+                  console.log('Triggering complete video update as last resort');
+                  setTimeout(() => {
+                    updateMainVideo();
+                  }, 500);
+                });
+              } else {
+                // Already muted and still can't play - trigger video update
+                console.log('Video already muted but still cannot play, triggering update');
+                setTimeout(() => {
+                  updateMainVideo();
+                }, 500);
+              }
             });
           }
-        });
-      }
+        };
+        
+        // Try playing immediately and with a small delay
+        forcePlay();
+        setTimeout(forcePlay, 100);
+        
+        // Also trigger a debounced video update to ensure proper state
+        setTimeout(() => {
+          console.log('Triggering debounced video update after fullscreen');
+          debouncedUpdateMainVideo();
+        }, 1000);
+        
+      }, 50); // Small delay to ensure the srcObject reset takes effect
       
-      // Also trigger a video update to ensure proper state
-      setTimeout(() => {
-        debouncedUpdateMainVideo();
-      }, 500);
-    }, 100); // Small delay to ensure fullscreen transition is complete
+    }, 200); // Increased delay to ensure fullscreen transition is complete
   }
 }
