@@ -588,32 +588,67 @@ export function setupFullscreenButton() {
   mobileCloseBtn.setAttribute('aria-label', 'Exit Fullscreen');
   mainVideoContainer.appendChild(mobileCloseBtn);
   
-  // Function to check if we should use native video fullscreen
+  // Function to check if we should use native video fullscreen (iOS and some mobile browsers)
   const shouldUseNativeVideoFullscreen = () => {
+    // Check if we're on mobile
     const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    return isMobile && isIOS && mainVideo.webkitEnterFullscreen;
+    
+    // iOS devices always need native video fullscreen
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.MSStream;
+    
+    // Also use native video fullscreen on Android
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    
+    return isMobile && (isIOS || isAndroid);
   };
   
+  // Function to enter fullscreen safely
   const enterFullscreen = () => {
     try {
       if (shouldUseNativeVideoFullscreen()) {
-        // Use native video fullscreen on iOS
-        mainVideo.webkitEnterFullscreen();
-      } else if (mainVideoContainer.requestFullscreen) {
-        mainVideoContainer.requestFullscreen();
-      } else if (mainVideoContainer.webkitRequestFullscreen) {
-        mainVideoContainer.webkitRequestFullscreen();
-      } else if (mainVideoContainer.msRequestFullscreen) {
-        mainVideoContainer.msRequestFullscreen();
+        // On iOS/mobile, use the video element's native fullscreen
+        console.log('Using native video fullscreen');
+        
+        // Make sure video has proper attributes for fullscreen
+        mainVideo.setAttribute('playsinline', 'true');
+        mainVideo.setAttribute('controls', 'true');
+        
+        // iOS Safari and some Android browsers need the webkitEnterFullscreen method
+        if (mainVideo.webkitEnterFullscreen) {
+          mainVideo.webkitEnterFullscreen();
+        } else if (mainVideo.requestFullscreen) {
+          mainVideo.requestFullscreen();
+        } else if (mainVideo.webkitRequestFullscreen) {
+          mainVideo.webkitRequestFullscreen();
+        } else {
+          // Fallback to container fullscreen
+          mainVideoContainer.requestFullscreen();
+        }
+      } else {
+        // On desktop, use the container element's fullscreen
+        if (mainVideoContainer.requestFullscreen) {
+          mainVideoContainer.requestFullscreen();
+        } else if (mainVideoContainer.webkitRequestFullscreen) {
+          mainVideoContainer.webkitRequestFullscreen();
+        } else if (mainVideoContainer.msRequestFullscreen) {
+          mainVideoContainer.msRequestFullscreen();
+        }
       }
-    } catch (error) {
-      console.error('Error entering fullscreen:', error);
+      
+      mainFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+    } catch (err) {
+      console.error('Fullscreen error:', err);
     }
   };
   
+  // Function to exit fullscreen safely
   const exitFullscreen = () => {
     try {
+      // Hide video controls when exiting fullscreen
+      if (shouldUseNativeVideoFullscreen()) {
+        mainVideo.removeAttribute('controls');
+      }
+      
       if (document.exitFullscreen) {
         document.exitFullscreen();
       } else if (document.webkitExitFullscreen) {
@@ -621,33 +656,88 @@ export function setupFullscreenButton() {
       } else if (document.msExitFullscreen) {
         document.msExitFullscreen();
       }
-    } catch (error) {
-      console.error('Error exiting fullscreen:', error);
+      
+      mainFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+    } catch (err) {
+      console.error('Exit fullscreen error:', err);
     }
   };
   
-  // Main fullscreen button click handler
-  mainFullscreenBtn.addEventListener('click', enterFullscreen);
-  
-  // Mobile close button click handler
-  mobileCloseBtn.addEventListener('click', exitFullscreen);
-  
-  // Listen for fullscreen changes
-  const fullscreenChangeHandler = () => {
-    const isFullscreen = document.fullscreenElement || 
-                        document.webkitFullscreenElement || 
-                        document.msFullscreenElement;
+  // Handle regular fullscreen button
+  mainFullscreenBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     
-    if (isFullscreen) {
-      mainVideoContainer.classList.add('fullscreen-active');
-      mobileCloseBtn.style.display = 'block';
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      enterFullscreen();
     } else {
-      mainVideoContainer.classList.remove('fullscreen-active');
-      mobileCloseBtn.style.display = 'none';
+      exitFullscreen();
     }
-  };
+  });
   
-  document.addEventListener('fullscreenchange', fullscreenChangeHandler);
-  document.addEventListener('webkitfullscreenchange', fullscreenChangeHandler);
-  document.addEventListener('msfullscreenchange', fullscreenChangeHandler);
+  // Also make the video container clickable to enter fullscreen (for mobile)
+  mainVideoContainer.addEventListener('click', (e) => {
+    // Don't trigger if clicking on a button or control
+    if (e.target.tagName === 'BUTTON' || 
+        e.target.closest('button') || 
+        e.target.tagName === 'I' ||
+        e.target.closest('.video-label')) {
+      return;
+    }
+    
+    // Only on mobile
+    if (window.innerWidth <= 768) {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        enterFullscreen();
+      }
+    }
+  });
+  
+  // IMPORTANT: Also add touch events for mobile video container
+  mainVideoContainer.addEventListener('touchend', (e) => {
+    // Don't trigger if touching on a button or control
+    if (e.target.tagName === 'BUTTON' || 
+        e.target.closest('button') || 
+        e.target.tagName === 'I' ||
+        e.target.closest('.video-label')) {
+      return;
+    }
+    
+    // Prevent default to avoid any zoom behavior
+    e.preventDefault();
+    
+    // Only on mobile
+    if (window.innerWidth <= 768) {
+      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        enterFullscreen();
+      }
+    }
+  }, { passive: false });
+  
+  // Handle mobile fullscreen close button
+  mobileCloseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    exitFullscreen();
+  });
+  
+  // Update button when fullscreen changes
+  document.addEventListener('fullscreenchange', () => {
+    if (document.fullscreenElement) {
+      mainFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+    } else {
+      mainFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+      // Make sure controls are removed when exiting fullscreen
+      mainVideo.removeAttribute('controls');
+    }
+  });
+  
+  // Also handle webkit prefixed event for Safari
+  document.addEventListener('webkitfullscreenchange', () => {
+    if (document.webkitFullscreenElement) {
+      mainFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+    } else {
+      mainFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+      // Make sure controls are removed when exiting fullscreen
+      mainVideo.removeAttribute('controls');
+    }
+  });
 }
