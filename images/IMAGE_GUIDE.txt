@@ -1,0 +1,54 @@
+# AxisAlgo EA Landing Page - Image Guide
+
+This file provides guidance on adding the necessary images for your AxisAlgo EA landing page.
+
+## Required Images
+
+1. hero-bg.jpg - Background image for the hero section
+2. discord-mockup.png - Image of your Discord community for the community section
+
+## Image Specifications
+
+### Hero Background (hero-bg.jpg)
+- Should be a dark-colored background image related to trading or finance
+- Recommended resolution: at least 1920x1080px
+- Ideal content: trading charts, candlestick patterns, or abstract financial visuals
+- Dark blue/navy color scheme works best with the site design
+
+### Discord Community Image (discord-mockup.png)
+- Screenshot of your active Discord community
+- Recommended resolution: around 800x600px
+- Should showcase active channels, member count, and community engagement
+
+## Where to Find Appropriate Images
+
+### For hero-bg.jpg:
+1. Stock photo websites:
+   - Shutterstock: Search for "forex trading background" or "trading chart dark"
+   - Adobe Stock: Search for "trading charts blue" or "financial data visualization"
+   - Unsplash: Search for "trading chart" (free option)
+   - Pexels: Search for "stock market" (free option)
+
+2. Create your own:
+   - Take a screenshot of MetaTrader 5 showing multiple charts with a dark theme
+   - Apply a dark blue overlay/filter to enhance the visual appeal
+   - Blur slightly to ensure text readability when placed on top
+
+### For discord-mockup.png:
+1. Take a screenshot of your AxisAlgo Discord server
+2. Make sure to:
+   - Capture active channels and member count
+   - Blur out any personal information or usernames if needed
+   - Show the server name and channel structure
+   - Capture some example conversations if possible
+
+## Important Notes
+
+1. Please ensure you have the rights to use any images you select. If using stock photos, purchase the appropriate license.
+2. Free alternatives like Unsplash and Pexels offer high-quality images that can be used commercially without attribution.
+3. For the best visual appearance, maintain the recommended aspect ratios and resolutions.
+4. The hero background will have a dark overlay applied to it via CSS, so lighter images can still work.
+
+---
+
+Once you have selected appropriate images, rename them exactly as specified and place them in this directory to ensure the website displays correctly. 

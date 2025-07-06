@@ -1,0 +1,32 @@
+#!/bin/bash
+echo "=== Starting deployment $(date) ==="
+TARGET="/var/www/html"
+GIT_DIR="/home/ubuntu/git/axisalgo.git"
+BRANCH="master"
+
+# Create a temp directory for the checkout
+TEMP_GIT_CLONE=$(mktemp -d)
+echo "Using temporary directory: $TEMP_GIT_CLONE"
+
+# Checkout the latest code
+echo "Checking out latest code..."
+git --work-tree="$TEMP_GIT_CLONE" --git-dir="$GIT_DIR" checkout -f "$BRANCH"
+
+# Copy files to the web directory
+echo "Copying files to web directory..."
+sudo rm -rf "$TARGET"/*
+sudo cp -R "$TEMP_GIT_CLONE"/* "$TARGET"/
+
+# Set proper permissions
+echo "Setting permissions..."
+sudo chown -R www-data:www-data "$TARGET"
+
+# Restart the Node.js server
+echo "Restarting Node.js server..."
+sudo pkill -f "node $TARGET/server.js" || true
+cd "$TARGET" && sudo nohup node server.js > /dev/null 2>&1 &
+
+# Clean up
+echo "Cleaning up..."
+rm -rf "$TEMP_GIT_CLONE"
+echo "=== Deployment completed successfully! $(date) ===" 

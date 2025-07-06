@@ -1,0 +1,23 @@
+server {
+    server_name share.jarmetals.com;
+    listen 443 ssl;
+
+    ssl_certificate /etc/letsencrypt/live/share.jarmetals.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/share.jarmetals.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    location / {
+        return 200 'SSL is working!';
+        add_header Content-Type text/plain;
+    }
+}
+
+server {
+    listen 80;
+    server_name share.jarmetals.com;
+    
+    location / {
+        return 301 https://$host$request_uri;
+    }
+} 
