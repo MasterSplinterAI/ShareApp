@@ -581,6 +581,8 @@ export function setupFullscreenButton() {
     return;
   }
   
+  console.log('Setting up fullscreen button, mobile detected:', window.innerWidth <= 768);
+  
   // Add a special close button that's only visible in fullscreen mode
   const mobileCloseBtn = document.createElement('button');
   mobileCloseBtn.className = 'mobile-fullscreen-close';
@@ -588,13 +590,19 @@ export function setupFullscreenButton() {
   mobileCloseBtn.setAttribute('aria-label', 'Exit Fullscreen');
   mainVideoContainer.appendChild(mobileCloseBtn);
   
-  // Make fullscreen button more prominent on mobile
+  // Ensure fullscreen button is properly touchable on mobile
   if (window.innerWidth <= 768) {
-    mainFullscreenBtn.style.fontSize = '1.2rem';
-    mainFullscreenBtn.style.padding = '0.75rem';
-    mainFullscreenBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    mainFullscreenBtn.style.borderRadius = '50%';
+    mainFullscreenBtn.style.minWidth = '44px';
+    mainFullscreenBtn.style.minHeight = '44px';
+    mainFullscreenBtn.style.fontSize = '1.1rem';
+    mainFullscreenBtn.style.touchAction = 'manipulation';
+    mainFullscreenBtn.style.webkitTouchCallout = 'none';
+    mainFullscreenBtn.style.webkitUserSelect = 'none';
+    mainFullscreenBtn.style.userSelect = 'none';
+    mainFullscreenBtn.style.pointerEvents = 'auto';
+    mainFullscreenBtn.style.position = 'absolute';
     mainFullscreenBtn.style.zIndex = '1000';
+    console.log('Applied mobile touch styles to fullscreen button');
   }
   
   // Function to check if we should use native video fullscreen (iOS and some mobile browsers)
@@ -674,7 +682,9 @@ export function setupFullscreenButton() {
   
   // Handle regular fullscreen button
   mainFullscreenBtn.addEventListener('click', (e) => {
+    e.preventDefault();
     e.stopPropagation();
+    console.log('Fullscreen button clicked');
     
     if (!document.fullscreenElement && !document.webkitFullscreenElement) {
       enterFullscreen();
@@ -682,6 +692,33 @@ export function setupFullscreenButton() {
       exitFullscreen();
     }
   });
+  
+  // Also add touch event for mobile reliability
+  mainFullscreenBtn.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Fullscreen button touched');
+    
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      enterFullscreen();
+    } else {
+      exitFullscreen();
+    }
+  }, { passive: false });
+  
+  // Add touchstart for immediate feedback
+  mainFullscreenBtn.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    console.log('Fullscreen button touch started');
+    mainFullscreenBtn.style.backgroundColor = 'rgba(52, 152, 219, 0.7)';
+  }, { passive: false });
+  
+  // Reset style on touchend
+  mainFullscreenBtn.addEventListener('touchend', (e) => {
+    setTimeout(() => {
+      mainFullscreenBtn.style.backgroundColor = '';
+    }, 150);
+  }, { passive: false });
   
   // REMOVED: Video container click/touch handlers to allow play/pause interaction
   // Now only the fullscreen button can trigger fullscreen, leaving video area free for play/pause
