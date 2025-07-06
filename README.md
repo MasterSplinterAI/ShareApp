@@ -117,4 +117,8 @@ This project is licensed under the MIT License.
 
 - WebRTC standards and documentation
 - Socket.io project
-- Tailwind CSS for styling 
+- Tailwind CSS for styling
+
+## Auto-Deployment Test
+
+This line was added to test the auto-deployment system on July 6, 2025. 
