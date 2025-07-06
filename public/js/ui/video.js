@@ -588,6 +588,15 @@ export function setupFullscreenButton() {
   mobileCloseBtn.setAttribute('aria-label', 'Exit Fullscreen');
   mainVideoContainer.appendChild(mobileCloseBtn);
   
+  // Make fullscreen button more prominent on mobile
+  if (window.innerWidth <= 768) {
+    mainFullscreenBtn.style.fontSize = '1.2rem';
+    mainFullscreenBtn.style.padding = '0.75rem';
+    mainFullscreenBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    mainFullscreenBtn.style.borderRadius = '50%';
+    mainFullscreenBtn.style.zIndex = '1000';
+  }
+  
   // Function to check if we should use native video fullscreen (iOS and some mobile browsers)
   const shouldUseNativeVideoFullscreen = () => {
     // Check if we're on mobile
@@ -674,44 +683,8 @@ export function setupFullscreenButton() {
     }
   });
   
-  // Also make the video container clickable to enter fullscreen (for mobile)
-  mainVideoContainer.addEventListener('click', (e) => {
-    // Don't trigger if clicking on a button or control
-    if (e.target.tagName === 'BUTTON' || 
-        e.target.closest('button') || 
-        e.target.tagName === 'I' ||
-        e.target.closest('.video-label')) {
-      return;
-    }
-    
-    // Only on mobile
-    if (window.innerWidth <= 768) {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-        enterFullscreen();
-      }
-    }
-  });
-  
-  // IMPORTANT: Also add touch events for mobile video container
-  mainVideoContainer.addEventListener('touchend', (e) => {
-    // Don't trigger if touching on a button or control
-    if (e.target.tagName === 'BUTTON' || 
-        e.target.closest('button') || 
-        e.target.tagName === 'I' ||
-        e.target.closest('.video-label')) {
-      return;
-    }
-    
-    // Prevent default to avoid any zoom behavior
-    e.preventDefault();
-    
-    // Only on mobile
-    if (window.innerWidth <= 768) {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-        enterFullscreen();
-      }
-    }
-  }, { passive: false });
+  // REMOVED: Video container click/touch handlers to allow play/pause interaction
+  // Now only the fullscreen button can trigger fullscreen, leaving video area free for play/pause
   
   // Handle mobile fullscreen close button
   mobileCloseBtn.addEventListener('click', (e) => {
@@ -770,6 +743,34 @@ export function setupFullscreenButton() {
       
       // Temporarily clear and restore the stream to force refresh
       mainVideo.srcObject = null;
+      
+      // Add a temporary play hint overlay for mobile users
+      if (window.innerWidth <= 768) {
+        const playHint = document.createElement('div');
+        playHint.className = 'play-hint-overlay';
+        playHint.innerHTML = '<i class="fas fa-play"></i><br><small>Tap to resume</small>';
+        playHint.style.cssText = `
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: rgba(0, 0, 0, 0.8);
+          color: white;
+          padding: 1rem;
+          border-radius: 0.5rem;
+          text-align: center;
+          z-index: 999;
+          pointer-events: none;
+        `;
+        mainVideoContainer.appendChild(playHint);
+        
+        // Remove the hint after 3 seconds
+        setTimeout(() => {
+          if (playHint.parentNode) {
+            playHint.remove();
+          }
+        }, 3000);
+      }
       
       setTimeout(() => {
         // If we lost the stream, restore it
