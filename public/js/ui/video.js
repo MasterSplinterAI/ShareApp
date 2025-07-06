@@ -2,6 +2,10 @@
 
 import { debounce } from '../utils/helpers.js';
 
+// Global flags to prevent concurrent operations
+let mainVideoUpdateInProgress = false;
+let refreshInProgress = false;
+
 // Update video interface based on app state
 export function updateVideoUI() {
   // Update camera button
@@ -95,10 +99,10 @@ function ensurePlaceholderExists() {
 }
 
 // Create debounced versions of key functions
-export const debouncedUpdateMainVideo = debounce(updateMainVideo, 500);
-export const debouncedRefreshMediaDisplays = debounce(refreshMediaDisplays, 1000);
+export const debouncedUpdateMainVideo = debounce(updateMainVideo, 150);
+export const debouncedRefreshMediaDisplays = debounce(refreshMediaDisplays, 300);
 
-// Update main video based on pinned participant
+// Update main video based on pinned participant - OPTIMIZED VERSION
 export function updateMainVideo() {
   const mainVideo = document.getElementById('mainVideo');
   const mainParticipantName = document.getElementById('mainVideoLabel');
@@ -110,23 +114,22 @@ export function updateMainVideo() {
   
   console.log(`Updating main video with pinned participant: ${pinnedParticipant}`);
   
-  // IMPORTANT: Create an active flag to prevent multiple concurrent operations
-  if (window.mainVideoUpdateInProgress) {
+  // CRITICAL: Prevent multiple concurrent operations
+  if (mainVideoUpdateInProgress) {
     console.log('Main video update already in progress, skipping this update');
     return;
   }
   
-  window.mainVideoUpdateInProgress = true;
+  mainVideoUpdateInProgress = true;
   
   try {
-    // CRITICAL: Completely remove the placeholder element if we're in view-only mode,
-    // audio-only mode, or if screen sharing is active or if a remote participant is pinned
+    // CRITICAL: Remove placeholder only when necessary
     if (mainVideoPlaceholder && (window.appState.viewOnlyMode || 
         window.appState.audioOnlyMode ||
         window.appState.isScreenSharing || 
         (pinnedParticipant && pinnedParticipant !== 'local'))) {
       console.log('*** REMOVING PLACEHOLDER ELEMENT FROM DOM ***');
-      mainVideoPlaceholder.remove(); // Completely remove it from DOM
+      mainVideoPlaceholder.remove();
     }
     
     if (mainVideo) {
@@ -189,7 +192,7 @@ export function updateMainVideo() {
           console.log('Screen share video track is active, displaying it');
           
           try {
-            // Don't reset srcObject if it's already the right stream to avoid flashing
+            // ANTI-FLASHING: Check if we already have the right stream
             const currentStream = mainVideo.srcObject;
             const hasScreenTrack = currentStream && 
                                   currentStream.getVideoTracks().some(t => 
@@ -219,17 +222,15 @@ export function updateMainVideo() {
               // Make sure the video element is visible
               mainVideo.style.display = '';
               mainVideo.style.visibility = 'visible';
-              
-              // Make sure the video element has proper dimensions
               mainVideo.style.width = '100%';
               mainVideo.style.height = '100%';
               
-              // Set the combined stream as the source
+              // ANTI-FLASHING: Set stream without resetting
               mainVideo.srcObject = combinedStream;
               console.log('Set screen share stream to main video element');
             }
             
-            // Special handling for video element in Firefox and Safari
+            // Special handling for video element
             mainVideo.controls = false;
             
             // Now try to play safely
@@ -237,20 +238,17 @@ export function updateMainVideo() {
             if (playPromise !== undefined) {
               playPromise.then(() => {
                 console.log('Screen share playing successfully in main view');
-                
-                // Check if video dimensions are available
                 if (mainVideo.videoWidth > 0) {
                   console.log(`Video dimensions: ${mainVideo.videoWidth}x${mainVideo.videoHeight}`);
                 }
               }).catch(err => {
                 console.warn('Could not autoplay video:', err);
-                
-                // Add a click handler to try playing when the user interacts
                 if (!window.hasPlayHandler) {
                   window.hasPlayHandler = true;
                   document.addEventListener('click', function tryPlay() {
-                    // ... existing code ...
-                  });
+                    mainVideo.play().catch(e => console.warn('Still cannot play:', e));
+                    document.removeEventListener('click', tryPlay);
+                  }, { once: true });
                 }
               });
             }
@@ -264,32 +262,31 @@ export function updateMainVideo() {
         console.log('Using local camera stream for main video');
         
         try {
-          // First clear any existing stream
-          mainVideo.srcObject = null;
-          mainVideo.load(); // This resets the video element
+          // ANTI-FLASHING: Only reset if we need to
+          const currentStream = mainVideo.srcObject;
+          const needsUpdate = !currentStream || 
+                             currentStream !== window.appState.localStream ||
+                             !currentStream.getVideoTracks().some(t => t.readyState === 'live');
           
-          // Set required attributes before setting srcObject
-          mainVideo.autoplay = true;
-          mainVideo.playsInline = true;
-          mainVideo.muted = true; // To prevent feedback
-          mainVideo.controls = false;
-          
-          // Special styling for audio-only
-          const hasActiveVideo = window.appState.localStream.getVideoTracks().some(track => 
-            track.enabled && track.readyState === 'live'
-          );
-          
-          // Set the stream
-          mainVideo.srcObject = window.appState.localStream;
-          
-          // Set video properties
-          mainVideo.style.display = ''; // Show the video element
-          mainVideo.style.visibility = 'visible';
+          if (needsUpdate) {
+            // Set required attributes before setting srcObject
+            mainVideo.autoplay = true;
+            mainVideo.playsInline = true;
+            mainVideo.muted = true; // To prevent feedback
+            mainVideo.controls = false;
             
-          // Try to play the video
-          mainVideo.play().catch(err => {
-            console.warn('Could not autoplay local video:', err);
-          });
+            // Set video properties
+            mainVideo.style.display = '';
+            mainVideo.style.visibility = 'visible';
+            
+            // ANTI-FLASHING: Set stream directly without reset
+            mainVideo.srcObject = window.appState.localStream;
+            
+            // Try to play the video
+            mainVideo.play().catch(err => {
+              console.warn('Could not autoplay local video:', err);
+            });
+          }
         } catch (err) {
           console.error('Error setting local stream to main video:', err);
         }
@@ -323,67 +320,61 @@ export function updateMainVideo() {
         console.log(`Found video for participant ${pinnedParticipant}`);
         
         try {
-          // First clear any existing stream
-          mainVideo.srcObject = null;
-          mainVideo.load(); // This resets the video element
+          // ANTI-FLASHING: Only update if stream is different
+          const currentStream = mainVideo.srcObject;
+          const newStream = participantVideo.srcObject;
           
-          // Set required attributes before setting srcObject
-          mainVideo.autoplay = true;
-          mainVideo.playsInline = true;
-          mainVideo.controls = false;
-          
-          // This is a remote participant, so unmute to hear them
-          mainVideo.muted = false;
-          
-          // Ensure video is visible
-          mainVideo.style.display = '';
-          mainVideo.style.visibility = 'visible';
-          
-          // Set main video to participant's stream
-          mainVideo.srcObject = participantVideo.srcObject;
-          
-          // Use setTimeout to ensure the srcObject is fully processed
-          setTimeout(() => {
-            // Ensure it's playing
-            const playPromise = mainVideo.play();
-            if (playPromise !== undefined) {
-              playPromise.catch(err => {
-                console.warn('Could not autoplay main video:', err);
-                
-                // Only set up the retry if it's not an abort error
-                if (err.name !== 'AbortError') {
-                  // Try again with a user interaction
-                  mainVideo.muted = true;
-                  document.addEventListener('click', function tryPlayRemote() {
-                    mainVideo.play().then(() => {
-                      if (!mainVideo.srcObject || mainVideo.srcObject.getAudioTracks().length === 0) {
-                        // Keep muted if no audio tracks
-                        mainVideo.muted = true;
-                      } else {
-                        mainVideo.muted = false;
-                      }
-                    }).catch(e => console.warn('Still cannot play main video:', e));
-                    document.removeEventListener('click', tryPlayRemote);
-                  }, { once: true });
+          if (currentStream !== newStream) {
+            // Set required attributes before setting srcObject
+            mainVideo.autoplay = true;
+            mainVideo.playsInline = true;
+            mainVideo.controls = false;
+            mainVideo.muted = false; // Unmute for remote participants
+            
+            // Ensure video is visible
+            mainVideo.style.display = '';
+            mainVideo.style.visibility = 'visible';
+            
+            // ANTI-FLASHING: Set stream directly
+            mainVideo.srcObject = newStream;
+            
+            // Use setTimeout to ensure the srcObject is fully processed
+            setTimeout(() => {
+              const playPromise = mainVideo.play();
+              if (playPromise !== undefined) {
+                playPromise.catch(err => {
+                  console.warn('Could not autoplay main video:', err);
+                  if (err.name !== 'AbortError') {
+                    mainVideo.muted = true;
+                    document.addEventListener('click', function tryPlayRemote() {
+                      mainVideo.play().then(() => {
+                        if (!mainVideo.srcObject || mainVideo.srcObject.getAudioTracks().length === 0) {
+                          mainVideo.muted = true;
+                        } else {
+                          mainVideo.muted = false;
+                        }
+                      }).catch(e => console.warn('Still cannot play main video:', e));
+                      document.removeEventListener('click', tryPlayRemote);
+                    }, { once: true });
+                  }
+                });
+              }
+              
+              console.log('Remote stream details:', {
+                hasVideo: mainVideo.srcObject.getVideoTracks().length > 0,
+                hasAudio: mainVideo.srcObject.getAudioTracks().length > 0,
+                videoState: mainVideo.srcObject.getVideoTracks().length > 0 ? 
+                  mainVideo.srcObject.getVideoTracks()[0].readyState : 'N/A',
+                element: {
+                  display: mainVideo.style.display,
+                  visibility: mainVideo.style.visibility,
+                  paused: mainVideo.paused,
+                  videoWidth: mainVideo.videoWidth,
+                  videoHeight: mainVideo.videoHeight
                 }
               });
-            }
-            
-            // Log details about the remote stream
-            console.log('Remote stream details:', {
-              hasVideo: mainVideo.srcObject.getVideoTracks().length > 0,
-              hasAudio: mainVideo.srcObject.getAudioTracks().length > 0,
-              videoState: mainVideo.srcObject.getVideoTracks().length > 0 ? 
-                mainVideo.srcObject.getVideoTracks()[0].readyState : 'N/A',
-              element: {
-                display: mainVideo.style.display,
-                visibility: mainVideo.style.visibility,
-                paused: mainVideo.paused,
-                videoWidth: mainVideo.videoWidth,
-                videoHeight: mainVideo.videoHeight
-              }
-            });
-          }, 100);
+            }, 50); // Reduced timeout for faster response
+          }
         } catch (err) {
           console.error('Error setting participant stream to main video:', err);
         }
@@ -394,29 +385,25 @@ export function updateMainVideo() {
         const audioEl = document.getElementById(`audio-${pinnedParticipant}`);
         if (audioEl && audioEl.srcObject) {
           console.log(`Found audio-only stream for participant ${pinnedParticipant}`);
-          
-          // For audio-only participants, show a placeholder
           mainVideo.srcObject = null;
         } else {
-          // If no media found, reset to local
           console.warn(`No media found for participant ${pinnedParticipant}, resetting to local`);
           window.appState.pinnedParticipant = 'local';
           
           // Release the lock before recursion
-          window.mainVideoUpdateInProgress = false;
-          
+          mainVideoUpdateInProgress = false;
           updateMainVideo();
-          return; // Exit to avoid releasing the lock twice
+          return;
         }
       }
     }
   } catch (error) {
     console.error('Error updating main video:', error);
   } finally {
-    // Always clear the flag when done
+    // Always clear the flag when done - reduced timeout for responsiveness
     setTimeout(() => {
-      window.mainVideoUpdateInProgress = false;
-    }, 200);
+      mainVideoUpdateInProgress = false;
+    }, 100);
   }
 }
 
@@ -431,7 +418,6 @@ export function setupLocalVideoPinButton() {
   // Check if controls exist
   let controls = localVideoContainer.querySelector('.local-controls');
   if (!controls) {
-    // Create controls if they don't exist
     controls = document.createElement('div');
     controls.className = 'local-controls absolute top-2 right-2 flex gap-1 z-10';
     localVideoContainer.appendChild(controls);
@@ -440,7 +426,6 @@ export function setupLocalVideoPinButton() {
   // Check if pin button already exists
   let pinBtn = controls.querySelector('.pin-btn');
   if (!pinBtn) {
-    // Create pin button
     pinBtn = document.createElement('button');
     pinBtn.className = 'participant-control pin-btn bg-black bg-opacity-50 text-white p-2 rounded hover:bg-opacity-75';
     pinBtn.title = 'Pin to main view';
@@ -450,7 +435,6 @@ export function setupLocalVideoPinButton() {
     controls.appendChild(pinBtn);
   }
   
-  // Update initial state
   updateLocalPinButtonState();
 }
 
@@ -470,110 +454,120 @@ export function updateLocalPinButtonState() {
   }
 }
 
-// Refresh all media displays
+// OPTIMIZED: Refresh all media displays with anti-flashing protection
 export function refreshMediaDisplays() {
-  // This function is called during initialization and when returning to the meeting view
   console.log('Refreshing all media displays');
   
-  // First, check if we're in audio-only or view-only mode and remove all placeholders
-  if (window.appState.audioOnlyMode || window.appState.viewOnlyMode) {
-    console.log('In special mode, removing all video placeholders');
-    
-    // Remove static placeholder
-    const staticPlaceholder = document.getElementById('noVideoPlaceholder');
-    if (staticPlaceholder) {
-      staticPlaceholder.remove();
-    }
-    
-    // Remove all dynamic placeholders
-    document.querySelectorAll('.no-video-placeholder').forEach(placeholder => {
-      placeholder.remove();
-    });
+  // CRITICAL: Prevent concurrent refresh operations
+  if (refreshInProgress) {
+    console.log('Refresh already in progress, skipping');
+    return;
   }
   
-  // Update main video first - using direct call to avoid recursive debounce
-  if (!window.mainVideoUpdateInProgress) {
-    updateMainVideo();
-  }
+  refreshInProgress = true;
   
-  // Don't reset srcObject on all videos - this causes flashing
-  // Instead, only update videos that need it (no source or stale source)
-  const participantVideos = document.querySelectorAll('.video-container video');
-  participantVideos.forEach(video => {
-    // Check if this video needs its srcObject refreshed
-    const participantId = video.getAttribute('data-participant-id');
-    if (!participantId) return;
-    
-    // Only refresh if the video isn't playing or is stalled
-    if (!video.srcObject || 
-        video.paused || 
-        video.readyState < 2 || 
-        video.networkState > 2) {
+  try {
+    // First, check if we're in audio-only or view-only mode and remove all placeholders
+    if (window.appState.audioOnlyMode || window.appState.viewOnlyMode) {
+      console.log('In special mode, removing all video placeholders');
       
-      // For remote participants, get their stream from peerConnections
-      if (participantId !== 'local' && window.appState.peerConnections[participantId]) {
-        const peerConnection = window.appState.peerConnections[participantId];
-        const stream = peerConnection.remoteStream;
-        
-        if (stream) {
-          video.srcObject = stream;
-          video.play().catch(err => {
-            console.warn(`Could not autoplay video for ${participantId}: ${err.message}`);
-          });
-        }
-      } 
-      // For local participant, use localStream
-      else if (participantId === 'local' && window.appState.localStream) {
-        video.srcObject = window.appState.localStream;
-        video.play().catch(err => {
-          console.warn(`Could not autoplay local video: ${err.message}`);
-        });
+      const staticPlaceholder = document.getElementById('noVideoPlaceholder');
+      if (staticPlaceholder) {
+        staticPlaceholder.remove();
       }
-    }
-  });
-  
-  // Similarly for audio elements, only refresh those that need it
-  const audioElements = document.querySelectorAll('audio');
-  audioElements.forEach(audio => {
-    const participantId = audio.getAttribute('data-participant-id');
-    if (!participantId) return;
-    
-    // Only refresh if the audio isn't playing or is stalled
-    if (!audio.srcObject || 
-        audio.paused || 
-        audio.readyState < 2 || 
-        audio.networkState > 2) {
       
-      if (participantId !== 'local' && window.appState.peerConnections[participantId]) {
+      document.querySelectorAll('.no-video-placeholder').forEach(placeholder => {
+        placeholder.remove();
+      });
+    }
+    
+    // Update main video using debounced version to prevent rapid updates
+    if (!mainVideoUpdateInProgress) {
+      debouncedUpdateMainVideo();
+    }
+    
+    // OPTIMIZED: Only update videos that actually need updating
+    const participantVideos = document.querySelectorAll('.video-container video');
+    participantVideos.forEach(video => {
+      const participantId = video.getAttribute('data-participant-id');
+      if (!participantId) return;
+      
+      // ANTI-FLASHING: Only refresh if the video has issues
+      const needsRefresh = !video.srcObject || 
+                          video.paused || 
+                          video.readyState < 2 || 
+                          video.networkState > 2;
+      
+      if (needsRefresh) {
+        if (participantId !== 'local' && window.appState.peerConnections[participantId]) {
+          const peerConnection = window.appState.peerConnections[participantId];
+          const stream = peerConnection.remoteStream;
+          
+          if (stream && stream !== video.srcObject) {
+            video.srcObject = stream;
+            video.play().catch(err => {
+              console.warn(`Could not autoplay video for ${participantId}: ${err.message}`);
+            });
+          }
+        } else if (participantId === 'local' && window.appState.localStream) {
+          if (window.appState.localStream !== video.srcObject) {
+            video.srcObject = window.appState.localStream;
+            video.play().catch(err => {
+              console.warn(`Could not autoplay local video: ${err.message}`);
+            });
+          }
+        }
+      }
+    });
+    
+    // OPTIMIZED: Similarly for audio elements
+    const audioElements = document.querySelectorAll('audio');
+    audioElements.forEach(audio => {
+      const participantId = audio.getAttribute('data-participant-id');
+      if (!participantId) return;
+      
+      const needsRefresh = !audio.srcObject || 
+                          audio.paused || 
+                          audio.readyState < 2 || 
+                          audio.networkState > 2;
+      
+      if (needsRefresh && participantId !== 'local' && window.appState.peerConnections[participantId]) {
         const peerConnection = window.appState.peerConnections[participantId];
         const stream = peerConnection.remoteStream;
         
-        if (stream) {
+        if (stream && stream !== audio.srcObject) {
           audio.srcObject = stream;
           audio.play().catch(err => {
             console.warn(`Could not autoplay audio for ${participantId}: ${err.message}`);
           });
         }
       }
-    }
-  });
-  
-  // Update pin button states
-  updateLocalPinButtonState();
-  
-  // Update all participant pin buttons
-  import('../ui/events.js').then(({ updatePinButtonStates, setupMobileButtonHandlers }) => {
-    if (typeof updatePinButtonStates === 'function') {
-      updatePinButtonStates();
-    }
+    });
     
-    // Set up mobile button handlers after UI refresh
-    if (typeof setupMobileButtonHandlers === 'function') {
-      setupMobileButtonHandlers();
-    }
-  }).catch(err => {
-    console.warn('Could not update buttons after refresh:', err);
-  });
+    // Update pin button states
+    updateLocalPinButtonState();
+    
+    // Update all participant pin buttons with debouncing
+    setTimeout(() => {
+      import('../ui/events.js').then(({ updatePinButtonStates, setupMobileButtonHandlers }) => {
+        if (typeof updatePinButtonStates === 'function') {
+          updatePinButtonStates();
+        }
+        
+        if (typeof setupMobileButtonHandlers === 'function') {
+          setupMobileButtonHandlers();
+        }
+      }).catch(err => {
+        console.warn('Could not update buttons after refresh:', err);
+      });
+    }, 100);
+    
+  } finally {
+    // Release the refresh lock after a short delay
+    setTimeout(() => {
+      refreshInProgress = false;
+    }, 200);
+  }
 }
 
 // Setup fullscreen button
@@ -594,67 +588,32 @@ export function setupFullscreenButton() {
   mobileCloseBtn.setAttribute('aria-label', 'Exit Fullscreen');
   mainVideoContainer.appendChild(mobileCloseBtn);
   
-  // Function to check if we should use native video fullscreen (iOS and some mobile browsers)
+  // Function to check if we should use native video fullscreen
   const shouldUseNativeVideoFullscreen = () => {
-    // Check if we're on mobile
-    const isMobile = window.innerWidth <= 768 || navigator.userAgent.match(/Mobi/);
-    
-    // iOS devices always need native video fullscreen
-    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) && !window.MSStream;
-    
-    // Also use native video fullscreen on Android
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    
-    return isMobile && (isIOS || isAndroid);
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    return isMobile && isIOS && mainVideo.webkitEnterFullscreen;
   };
   
-  // Function to enter fullscreen safely
   const enterFullscreen = () => {
     try {
       if (shouldUseNativeVideoFullscreen()) {
-        // On iOS/mobile, use the video element's native fullscreen
-        console.log('Using native video fullscreen');
-        
-        // Make sure video has proper attributes for fullscreen
-        mainVideo.setAttribute('playsinline', 'true');
-        mainVideo.setAttribute('controls', 'true');
-        
-        // iOS Safari and some Android browsers need the webkitEnterFullscreen method
-        if (mainVideo.webkitEnterFullscreen) {
-          mainVideo.webkitEnterFullscreen();
-        } else if (mainVideo.requestFullscreen) {
-          mainVideo.requestFullscreen();
-        } else if (mainVideo.webkitRequestFullscreen) {
-          mainVideo.webkitRequestFullscreen();
-        } else {
-          // Fallback to container fullscreen
-          mainVideoContainer.requestFullscreen();
-        }
-      } else {
-        // On desktop, use the container element's fullscreen
-        if (mainVideoContainer.requestFullscreen) {
-          mainVideoContainer.requestFullscreen();
-        } else if (mainVideoContainer.webkitRequestFullscreen) {
-          mainVideoContainer.webkitRequestFullscreen();
-        } else if (mainVideoContainer.msRequestFullscreen) {
-          mainVideoContainer.msRequestFullscreen();
-        }
+        // Use native video fullscreen on iOS
+        mainVideo.webkitEnterFullscreen();
+      } else if (mainVideoContainer.requestFullscreen) {
+        mainVideoContainer.requestFullscreen();
+      } else if (mainVideoContainer.webkitRequestFullscreen) {
+        mainVideoContainer.webkitRequestFullscreen();
+      } else if (mainVideoContainer.msRequestFullscreen) {
+        mainVideoContainer.msRequestFullscreen();
       }
-      
-      mainFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
-    } catch (err) {
-      console.error('Fullscreen error:', err);
+    } catch (error) {
+      console.error('Error entering fullscreen:', error);
     }
   };
   
-  // Function to exit fullscreen safely
   const exitFullscreen = () => {
     try {
-      // Hide video controls when exiting fullscreen
-      if (shouldUseNativeVideoFullscreen()) {
-        mainVideo.removeAttribute('controls');
-      }
-      
       if (document.exitFullscreen) {
         document.exitFullscreen();
       } else if (document.webkitExitFullscreen) {
@@ -662,67 +621,33 @@ export function setupFullscreenButton() {
       } else if (document.msExitFullscreen) {
         document.msExitFullscreen();
       }
-      
-      mainFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
-    } catch (err) {
-      console.error('Exit fullscreen error:', err);
+    } catch (error) {
+      console.error('Error exiting fullscreen:', error);
     }
   };
   
-  // Handle regular fullscreen button
-  mainFullscreenBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
+  // Main fullscreen button click handler
+  mainFullscreenBtn.addEventListener('click', enterFullscreen);
+  
+  // Mobile close button click handler
+  mobileCloseBtn.addEventListener('click', exitFullscreen);
+  
+  // Listen for fullscreen changes
+  const fullscreenChangeHandler = () => {
+    const isFullscreen = document.fullscreenElement || 
+                        document.webkitFullscreenElement || 
+                        document.msFullscreenElement;
     
-    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-      enterFullscreen();
+    if (isFullscreen) {
+      mainVideoContainer.classList.add('fullscreen-active');
+      mobileCloseBtn.style.display = 'block';
     } else {
-      exitFullscreen();
+      mainVideoContainer.classList.remove('fullscreen-active');
+      mobileCloseBtn.style.display = 'none';
     }
-  });
+  };
   
-  // Also make the video container clickable to enter fullscreen (for mobile)
-  mainVideoContainer.addEventListener('click', (e) => {
-    // Don't trigger if clicking on a button or control
-    if (e.target.tagName === 'BUTTON' || 
-        e.target.closest('button') || 
-        e.target.tagName === 'I' ||
-        e.target.closest('.video-label')) {
-      return;
-    }
-    
-    // Only on mobile
-    if (window.innerWidth <= 768) {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) {
-        enterFullscreen();
-      }
-    }
-  });
-  
-  // Handle mobile fullscreen close button
-  mobileCloseBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    exitFullscreen();
-  });
-  
-  // Update button when fullscreen changes
-  document.addEventListener('fullscreenchange', () => {
-    if (document.fullscreenElement) {
-      mainFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
-    } else {
-      mainFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
-      // Make sure controls are removed when exiting fullscreen
-      mainVideo.removeAttribute('controls');
-    }
-  });
-  
-  // Also handle webkit prefixed event for Safari
-  document.addEventListener('webkitfullscreenchange', () => {
-    if (document.webkitFullscreenElement) {
-      mainFullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
-    } else {
-      mainFullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
-      // Make sure controls are removed when exiting fullscreen
-      mainVideo.removeAttribute('controls');
-    }
-  });
+  document.addEventListener('fullscreenchange', fullscreenChangeHandler);
+  document.addEventListener('webkitfullscreenchange', fullscreenChangeHandler);
+  document.addEventListener('msfullscreenchange', fullscreenChangeHandler);
 }

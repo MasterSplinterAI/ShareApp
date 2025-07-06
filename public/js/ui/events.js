@@ -684,26 +684,13 @@ function setupPinListener() {
   document.addEventListener('pinned-participant-changed', async () => {
     console.log('Pinned participant changed to:', window.appState.pinnedParticipant);
     
-    // First update the main video using debounced version
+    // OPTIMIZED: Only update main video, don't double-refresh
     const { debouncedUpdateMainVideo } = await import('./video.js');
     if (typeof debouncedUpdateMainVideo === 'function') {
       debouncedUpdateMainVideo();
     }
     
-    // Then force a refresh of all media displays after a short delay
-    // This helps with participants who may have video issues
-    setTimeout(async () => {
-      try {
-        const { debouncedRefreshMediaDisplays } = await import('./video.js');
-        if (typeof debouncedRefreshMediaDisplays === 'function') {
-          debouncedRefreshMediaDisplays();
-        }
-      } catch (err) {
-        console.warn('Could not refresh media after pinning:', err);
-      }
-    }, 500);
-    
-    // Update all pin buttons to show current state
+    // Update pin buttons immediately
     updatePinButtonStates();
   });
   

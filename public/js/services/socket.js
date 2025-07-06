@@ -10,9 +10,9 @@ let socket;
 // Create debounced version of media refresh function
 const debouncedRefreshMedia = debounce(async () => {
   try {
-    const { refreshMediaDisplays } = await import('../ui/video.js');
-    if (typeof refreshMediaDisplays === 'function') {
-      refreshMediaDisplays();
+    const { debouncedRefreshMediaDisplays } = await import('../ui/video.js');
+    if (typeof debouncedRefreshMediaDisplays === 'function') {
+      debouncedRefreshMediaDisplays();
     }
   } catch (err) {
     console.warn('Error in debounced media refresh:', err);
