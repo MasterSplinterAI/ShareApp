@@ -101,7 +101,8 @@ app.get('/api/ice-servers', async (req, res) => {
                         res.on('data', (chunk) => { data += chunk; });
                         res.on('end', () => {
                             try {
-                                if (res.statusCode !== 200) {
+                                // Cloudflare returns 201 (Created) for successful credential generation
+                                if (res.statusCode !== 200 && res.statusCode !== 201) {
                                     reject(new Error(`Cloudflare API returned ${res.statusCode}: ${data}`));
                                     return;
                                 }
