@@ -239,8 +239,35 @@ function setupLayoutSwitcher() {
       controlsDiv.appendChild(layoutBtn);
     }
     
+    // Add mobile touch handlers for layout button
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      // Add touch handlers for mobile
+      layoutBtn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        this.style.transform = 'scale(0.95)';
+      }, { passive: false });
+      
+      layoutBtn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.transform = '';
+        // Manually trigger click
+        const clickEvent = new MouseEvent('click', {
+          bubbles: true,
+          cancelable: true,
+          view: window
+        });
+        this.dispatchEvent(clickEvent);
+      }, { passive: false });
+      
+      // Ensure button is clickable
+      layoutBtn.style.cssText += 'position: relative !important; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: transparent !important;';
+    }
+    
     // Toggle menu
     layoutBtn.addEventListener('click', (event) => {
+      event.stopPropagation();
       if (event.target.closest('#layoutMenu')) return;
       layoutMenu.classList.toggle('hidden');
     });

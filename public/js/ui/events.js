@@ -836,8 +836,35 @@ function setupSettingsButton() {
   // Insert settings button before leave button
   controlsDiv.insertBefore(settingsBtn, controlsDiv.lastElementChild);
   
+  // Add mobile touch handlers for settings button
+  const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isMobile) {
+    // Add touch handlers for mobile
+    settingsBtn.addEventListener('touchstart', function(e) {
+      e.stopPropagation();
+      this.style.transform = 'scale(0.95)';
+    }, { passive: false });
+    
+    settingsBtn.addEventListener('touchend', function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      this.style.transform = '';
+      // Manually trigger click
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      this.dispatchEvent(clickEvent);
+    }, { passive: false });
+    
+    // Ensure button is clickable
+    settingsBtn.style.cssText += 'position: relative !important; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: transparent !important;';
+  }
+  
   // Toggle settings menu
   settingsBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
     // Don't toggle if clicking on a menu item
     if (event.target.closest('#settingsMenu')) {
       return;

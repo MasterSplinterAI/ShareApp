@@ -384,6 +384,109 @@
     
     /* Mobile button fixes - ensure all buttons are clickable */
     @media (max-width: 768px) {
+      /* Portrait mode specific button fixes */
+      @media (orientation: portrait) {
+        /* Force all buttons in controls to be clickable */
+        #controls button,
+        #controls .btn-circle,
+        #controls .btn {
+          position: relative !important;
+          z-index: 10001 !important;
+          pointer-events: auto !important;
+          touch-action: manipulation !important;
+          -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+          cursor: pointer !important;
+          min-width: 44px !important;
+          min-height: 44px !important;
+        }
+        
+        /* Settings button (created dynamically) */
+        #settingsBtn {
+          position: relative !important;
+          z-index: 10001 !important;
+          pointer-events: auto !important;
+          touch-action: manipulation !important;
+          -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+          cursor: pointer !important;
+          min-width: 44px !important;
+          min-height: 44px !important;
+        }
+        
+        /* Layout switcher button (created dynamically) */
+        #layoutSwitcherBtn {
+          position: relative !important;
+          z-index: 10001 !important;
+          pointer-events: auto !important;
+          touch-action: manipulation !important;
+          -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+          cursor: pointer !important;
+          min-width: 44px !important;
+          min-height: 44px !important;
+        }
+        
+        /* Chat button */
+        #chatBtn {
+          position: relative !important;
+          z-index: 10001 !important;
+          pointer-events: auto !important;
+          touch-action: manipulation !important;
+          -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+          cursor: pointer !important;
+          min-width: 44px !important;
+          min-height: 44px !important;
+        }
+        
+        /* Participants button */
+        #participantsBtn {
+          position: relative !important;
+          z-index: 10001 !important;
+          pointer-events: auto !important;
+          touch-action: manipulation !important;
+          -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important;
+          cursor: pointer !important;
+          min-width: 44px !important;
+          min-height: 44px !important;
+        }
+        
+        /* Ensure controls container doesn't block clicks */
+        #controls {
+          position: sticky !important;
+          bottom: 0 !important;
+          z-index: 10000 !important;
+          pointer-events: auto !important;
+          background: white !important;
+        }
+        
+        /* Ensure flex containers don't block */
+        #controls > div.flex {
+          pointer-events: none !important;
+        }
+        
+        #controls > div.flex > button {
+          pointer-events: auto !important;
+        }
+        
+        /* Ensure dropdowns/menus are above everything */
+        #settingsMenu,
+        #layoutMenu {
+          z-index: 10002 !important;
+          pointer-events: auto !important;
+        }
+        
+        /* Ensure nothing overlays controls */
+        #videoGrid,
+        #mainVideoContainer,
+        #participantsGrid {
+          z-index: 1 !important;
+        }
+        
+        /* Video elements should not block */
+        video {
+          pointer-events: none !important;
+        }
+      }
+      
+      /* General mobile fixes (both portrait and landscape) */
       #controls .btn-circle,
       #controls .btn {
         position: relative !important;
