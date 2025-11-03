@@ -798,6 +798,8 @@ function setupSettingsButton() {
   settingsBtn.title = 'Settings';
   settingsBtn.setAttribute('aria-label', 'Settings');
   settingsBtn.innerHTML = '<i class="fas fa-cog"></i>';
+  // Ensure mobile clickability
+  settingsBtn.style.cssText = 'position: relative; z-index: 1000; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer;';
   
   // Create settings menu
   const settingsMenu = document.createElement('div');

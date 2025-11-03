@@ -323,38 +323,70 @@
       background: #000;
     }
     
-    /* Mobile portrait videos - allow taller aspect ratio */
-    @media (max-width: 640px) {
-      #participantsGrid .video-container {
-        aspect-ratio: 9/16; /* Portrait for mobile */
+    /* Mobile button fixes - ensure all buttons are clickable */
+    @media (max-width: 768px) {
+      #controls .btn-circle,
+      #controls .btn {
+        position: relative !important;
+        z-index: 1000 !important;
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+        -webkit-tap-highlight-color: transparent !important;
+        cursor: pointer !important;
       }
       
-      .main-video-container {
-        aspect-ratio: 9/16;
-        min-height: 50vh;
+      /* Settings button (created dynamically) */
+      #settingsBtn {
+        position: relative !important;
+        z-index: 1000 !important;
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+        -webkit-tap-highlight-color: transparent !important;
+        cursor: pointer !important;
       }
       
-      /* Mobile layout optimizations */
-      .main-video-container {
-        min-height: 250px !important;
-        max-height: 50vh !important;
+      /* Layout switcher button (created dynamically) */
+      #layoutSwitcherBtn {
+        position: relative !important;
+        z-index: 1000 !important;
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+        -webkit-tap-highlight-color: transparent !important;
+        cursor: pointer !important;
       }
       
-      #participantsGrid {
-        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      /* Chat button */
+      #chatBtn {
+        position: relative !important;
+        z-index: 1000 !important;
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+        -webkit-tap-highlight-color: transparent !important;
+        cursor: pointer !important;
       }
       
-      /* Side-by-side becomes vertical on mobile */
-      .layout-side-by-side {
-        flex-direction: column !important;
+      /* Participants button */
+      #participantsBtn {
+        position: relative !important;
+        z-index: 1000 !important;
+        pointer-events: auto !important;
+        touch-action: manipulation !important;
+        -webkit-tap-highlight-color: transparent !important;
+        cursor: pointer !important;
       }
       
-      .layout-side-by-side .main-video-container {
-        width: 100% !important;
+      /* Ensure controls container doesn't block clicks */
+      #controls {
+        position: relative !important;
+        z-index: 999 !important;
+        pointer-events: auto !important;
       }
       
-      .layout-side-by-side #participantsGrid {
-        width: 100% !important;
+      /* Ensure dropdowns/menus are above everything */
+      #settingsMenu,
+      #layoutMenu {
+        z-index: 1001 !important;
+        pointer-events: auto !important;
       }
     }
     

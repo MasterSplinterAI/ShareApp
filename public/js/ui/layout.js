@@ -194,6 +194,8 @@ function setupLayoutSwitcher() {
     layoutBtn.title = 'Switch Layout';
     layoutBtn.setAttribute('aria-label', 'Switch Video Layout');
     layoutBtn.innerHTML = '<i class="fas fa-th"></i>';
+    // Ensure mobile clickability
+    layoutBtn.style.cssText = 'position: relative; z-index: 1000; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: transparent; cursor: pointer;';
     
     // Create layout menu
     const layoutMenu = document.createElement('div');
