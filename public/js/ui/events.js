@@ -900,7 +900,42 @@ function setupSettingsButton() {
       console.error('Error forcing mesh connections:', err);
     });
   });
-}
+  
+  // Add mobile touch handlers for menu items
+  const devicesBtn = document.getElementById('devicesBtn');
+  const networkSettingsBtn = document.getElementById('networkSettingsBtn');
+  const reconnectBtn = document.getElementById('reconnectBtn');
+  
+  const addMobileTouchHandlers = (btn) => {
+    if (!btn) return;
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      btn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        this.style.backgroundColor = 'rgba(55, 65, 81, 0.5)';
+      }, { passive: false });
+      
+      btn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.backgroundColor = '';
+        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+        this.dispatchEvent(clickEvent);
+      }, { passive: false });
+      
+      btn.style.cssText += 'position: relative !important; z-index: 10003 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important;';
+    }
+  };
+  
+  if (devicesBtn) addMobileTouchHandlers(devicesBtn);
+  if (networkSettingsBtn) addMobileTouchHandlers(networkSettingsBtn);
+  if (reconnectBtn) addMobileTouchHandlers(reconnectBtn);
+  
+  // Ensure menu itself is clickable on mobile
+  const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  if (isMobile) {
+    settingsMenu.style.cssText += 'position: absolute !important; z-index: 10002 !important; pointer-events: auto !important; touch-action: auto !important;';
+  }
 
 // Setup media restart listener
 function setupMediaRestartListener() {
