@@ -1044,24 +1044,44 @@ function removeVideoTrackFromPeerConnections() {
 function renegotiateConnection(peerConnection, peerId) {
   console.log(`Renegotiating connection with peer ${peerId}`);
   
+  // Check if connection is in a valid state for renegotiation
+  if (peerConnection.signalingState === 'have-local-offer') {
+    console.warn(`Cannot renegotiate ${peerId}: already have pending offer. Waiting for answer.`);
+    return;
+  }
+  
+  // Wait a bit if we just set remote description
+  if (peerConnection.signalingState === 'have-remote-offer') {
+    console.warn(`Cannot renegotiate ${peerId}: waiting for answer to remote offer.`);
+    return;
+  }
+  
+  // Check if connection is healthy
+  if (peerConnection.connectionState === 'closed' || 
+      peerConnection.connectionState === 'failed') {
+    console.warn(`Cannot renegotiate ${peerId}: connection is ${peerConnection.connectionState}`);
+    return;
+  }
+  
   peerConnection.createOffer({
     offerToReceiveAudio: true, 
     offerToReceiveVideo: true
   })
   .then(offer => {
-    peerConnection.setLocalDescription(offer).then(() => {
-      // Import dynamically to avoid circular dependencies
-      import('./socket.js').then(({ sendScreenSharingOffer, sendRenegotiationOffer }) => {
-        if (typeof sendScreenSharingOffer === 'function' && window.appState.isScreenSharing) {
-          // Use specialized function for screen sharing
-          sendScreenSharingOffer(peerId, peerConnection.localDescription);
-        } else if (typeof sendRenegotiationOffer === 'function') {
-          // Use regular renegotiation for other cases
-          sendRenegotiationOffer(peerId, peerConnection.localDescription);
-        }
-      }).catch(err => {
-        console.error('Error importing socket functions:', err);
-      });
+    return peerConnection.setLocalDescription(offer);
+  })
+  .then(() => {
+    // Import dynamically to avoid circular dependencies
+    import('./socket.js').then(({ sendScreenSharingOffer, sendRenegotiationOffer }) => {
+      if (typeof sendScreenSharingOffer === 'function' && window.appState.isScreenSharing) {
+        // Use specialized function for screen sharing
+        sendScreenSharingOffer(peerId, peerConnection.localDescription);
+      } else if (typeof sendRenegotiationOffer === 'function') {
+        // Use regular renegotiation for other cases
+        sendRenegotiationOffer(peerId, peerConnection.localDescription);
+      }
+    }).catch(err => {
+      console.error('Error importing socket functions:', err);
     });
   })
   .catch(err => {

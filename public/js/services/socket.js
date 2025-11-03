@@ -258,11 +258,24 @@ export function setupSocketListeners() {
     // Remove from participants list
     delete window.appState.participants[data.userId];
     
-    // Clean up peer connection
-    if (window.appState.peerConnections[data.userId]) {
-      window.appState.peerConnections[data.userId].close();
-      delete window.appState.peerConnections[data.userId];
-    }
+    // Clean up peer connection using the cleanup function
+    import('../webrtc/peerConnection.js').then(({ cleanupPeerConnection }) => {
+      if (typeof cleanupPeerConnection === 'function') {
+        cleanupPeerConnection(data.userId);
+      } else {
+        // Fallback to manual cleanup
+        if (window.appState.peerConnections[data.userId]) {
+          window.appState.peerConnections[data.userId].close();
+          delete window.appState.peerConnections[data.userId];
+        }
+      }
+    }).catch(() => {
+      // Fallback if import fails
+      if (window.appState.peerConnections[data.userId]) {
+        window.appState.peerConnections[data.userId].close();
+        delete window.appState.peerConnections[data.userId];
+      }
+    });
     
     // Remove all elements related to this participant
     const elementsToRemove = [

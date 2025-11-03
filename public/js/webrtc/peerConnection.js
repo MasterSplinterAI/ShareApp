@@ -8,9 +8,33 @@ const connectionRetries = new Map();
 const MAX_RETRIES = 3;
 const RETRY_DELAY_BASE = 2000; // Base delay in ms
 
+// Queue for ICE candidates that arrive before remote description is set
+const iceCandidateQueues = new Map();
+
+// Track pending offers to prevent duplicates
+const pendingOffers = new Map();
+const pendingAnswers = new Map();
+
 // Create a new peer connection with a remote peer
 export async function createPeerConnection(peerId) {
   try {
+    // Prevent duplicate connections
+    if (window.appState.peerConnections[peerId]) {
+      const existing = window.appState.peerConnections[peerId];
+      // Only recreate if connection is failed/disconnected
+      if (existing.connectionState !== 'failed' && 
+          existing.connectionState !== 'disconnected' &&
+          existing.iceConnectionState !== 'failed' &&
+          existing.iceConnectionState !== 'disconnected') {
+        console.log(`Peer connection for ${peerId} already exists and is healthy, reusing it`);
+        return existing;
+      }
+      // Close the bad connection before creating a new one
+      console.log(`Closing unhealthy connection for ${peerId} before recreating`);
+      existing.close();
+      delete window.appState.peerConnections[peerId];
+    }
+    
     console.log(`Creating peer connection for ${peerId}`);
     
     // Get ICE servers (try async first, fallback to sync)
@@ -673,36 +697,66 @@ export async function createPeerConnection(peerId) {
 // Create and send an offer to a peer
 async function createAndSendOffer(peerConnection, peerId) {
   try {
+    // Prevent duplicate offers
+    if (pendingOffers.has(peerId)) {
+      console.log(`Already have a pending offer for ${peerId}, skipping`);
+      return;
+    }
+    
     // Check if the connection already has local description
     if (peerConnection.signalingState === 'have-local-offer') {
       console.log(`Connection already has a pending offer for ${peerId}, skipping offer creation`);
       return;
     }
     
-    // Create offer with explicit options to receive video even in audio-only mode
-    const offerOptions = {
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true,  // Always receive video even if we don't have a camera
-      iceRestart: true  // Force ICE restart to improve connection reliability
-    };
+    // Check if we have a remote offer (would cause conflict)
+    if (peerConnection.signalingState === 'have-remote-offer') {
+      console.warn(`Cannot create offer for ${peerId}: already have remote offer. Waiting for answer.`);
+      return;
+    }
     
-    console.log(`Creating offer for ${peerId} with options:`, offerOptions);
+    // Mark that we're sending an offer
+    pendingOffers.set(peerId, true);
     
-    // Create offer with these options
-    const offer = await peerConnection.createOffer(offerOptions);
-    
-    // Add explicit video codecs preference
-    let sdpWithCodecs = offer.sdp;
-    
-    // Set local description
-    await peerConnection.setLocalDescription(offer);
-    
-    // Wait a bit to collect ICE candidates
-    await new Promise(resolve => setTimeout(resolve, 300));
-    
-    // Send offer to peer
-    console.log(`Sending offer to ${peerId}, signaling state: ${peerConnection.signalingState}`);
-    sendOffer(peerId, peerConnection.localDescription);
+    try {
+      // Create offer with explicit options to receive video even in audio-only mode
+      const offerOptions = {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true,  // Always receive video even if we don't have a camera
+        iceRestart: false  // Don't force ICE restart unless connection is broken
+      };
+      
+      // Only restart ICE if connection is in a bad state
+      if (peerConnection.iceConnectionState === 'failed' || 
+          peerConnection.iceConnectionState === 'disconnected') {
+        offerOptions.iceRestart = true;
+      }
+      
+      console.log(`Creating offer for ${peerId} with options:`, offerOptions);
+      
+      // Create offer with these options
+      const offer = await peerConnection.createOffer(offerOptions);
+      
+      // Set local description
+      await peerConnection.setLocalDescription(offer);
+      
+      // Wait a bit to collect ICE candidates
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Send offer to peer
+      console.log(`Sending offer to ${peerId}, signaling state: ${peerConnection.signalingState}`);
+      sendOffer(peerId, peerConnection.localDescription);
+      
+      // Clear pending flag after a delay (in case answer doesn't arrive)
+      setTimeout(() => {
+        if (peerConnection.signalingState !== 'have-local-offer') {
+          pendingOffers.delete(peerId);
+        }
+      }, 5000);
+    } catch (error) {
+      pendingOffers.delete(peerId);
+      throw error;
+    }
   } catch (error) {
     console.error(`Error creating and sending offer to ${peerId}:`, error);
   }
@@ -711,34 +765,60 @@ async function createAndSendOffer(peerConnection, peerId) {
 // Handle a remote offer
 export async function handleRemoteOffer(peerId, sdp) {
   try {
-    // Create peer connection if it doesn't exist
-    let peerConnection = window.appState.peerConnections[peerId];
-    
-    if (!peerConnection) {
-      peerConnection = await createPeerConnection(peerId);
+    // Prevent duplicate offers
+    if (pendingAnswers.has(peerId)) {
+      console.log(`Already processing answer for ${peerId}, ignoring duplicate offer`);
+      return;
     }
     
-    // Set remote description
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+    // Check if we already have a local offer (would cause conflict)
+    const peerConnection = window.appState.peerConnections[peerId];
+    if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
+      console.warn(`Received offer from ${peerId} but we already have a local offer. Ignoring to prevent SDP conflict.`);
+      return;
+    }
     
-    // Create answer with explicit options to receive video even in audio-only mode
-    const answerOptions = {
-      offerToReceiveAudio: true,
-      offerToReceiveVideo: true  // Always receive video even if we don't have a camera
-    };
+    // Create peer connection if it doesn't exist
+    let pc = peerConnection;
+    if (!pc) {
+      pc = await createPeerConnection(peerId);
+    }
     
-    console.log(`Creating answer for ${peerId} with options:`, answerOptions);
+    // Mark that we're processing an answer
+    pendingAnswers.set(peerId, true);
     
-    // Create answer with these options
-    const answer = await peerConnection.createAnswer(answerOptions);
-    
-    // Set local description
-    await peerConnection.setLocalDescription(answer);
-    
-    // Send answer to peer
-    console.log(`Sending answer to ${peerId}`);
-    sendAnswer(peerId, peerConnection.localDescription);
+    try {
+      // Set remote description
+      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      
+      // Process any queued ICE candidates now that remote description is set
+      await processQueuedIceCandidates(peerId);
+      
+      // Create answer with explicit options to receive video even in audio-only mode
+      const answerOptions = {
+        offerToReceiveAudio: true,
+        offerToReceiveVideo: true  // Always receive video even if we don't have a camera
+      };
+      
+      console.log(`Creating answer for ${peerId} with options:`, answerOptions);
+      
+      // Create answer with these options
+      const answer = await pc.createAnswer(answerOptions);
+      
+      // Set local description
+      await pc.setLocalDescription(answer);
+      
+      // Send answer to peer
+      console.log(`Sending answer to ${peerId}`);
+      sendAnswer(peerId, pc.localDescription);
+    } finally {
+      // Clear pending flag after a delay
+      setTimeout(() => {
+        pendingAnswers.delete(peerId);
+      }, 1000);
+    }
   } catch (error) {
+    pendingAnswers.delete(peerId);
     console.error(`Error handling offer from ${peerId}:`, error);
     showError('Failed to process connection request from a participant.');
   }
@@ -755,13 +835,29 @@ export async function handleRemoteAnswer(peerId, sdp) {
       return;
     }
     
+    // Check signaling state - can only set answer if we have a local offer
+    if (peerConnection.signalingState !== 'have-local-offer') {
+      console.warn(`Cannot set answer for ${peerId}: signaling state is ${peerConnection.signalingState}, expected 'have-local-offer'`);
+      return;
+    }
+    
     // Set remote description
     await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
     
+    // Process any queued ICE candidates now that remote description is set
+    await processQueuedIceCandidates(peerId);
+    
+    // Clear pending offer flag
+    pendingOffers.delete(peerId);
+    
     console.log(`Successfully set remote description for ${peerId}`);
   } catch (error) {
+    pendingOffers.delete(peerId);
     console.error(`Error handling answer from ${peerId}:`, error);
-    showError('Failed to complete connection with a participant.');
+    // Don't show error for state conflicts (they're expected during renegotiation)
+    if (!error.message || !error.message.includes('state')) {
+      showError('Failed to complete connection with a participant.');
+    }
   }
 }
 
@@ -772,7 +868,22 @@ export async function handleRemoteIceCandidate(peerId, candidate) {
     const peerConnection = window.appState.peerConnections[peerId];
     
     if (!peerConnection) {
-      console.error(`No peer connection found for ${peerId}`);
+      console.log(`No peer connection found for ${peerId}, queueing ICE candidate`);
+      // Queue the candidate for later
+      if (!iceCandidateQueues.has(peerId)) {
+        iceCandidateQueues.set(peerId, []);
+      }
+      iceCandidateQueues.get(peerId).push(candidate);
+      return;
+    }
+    
+    // If remote description isn't set yet, queue the candidate
+    if (!peerConnection.remoteDescription) {
+      console.log(`Remote description not set for ${peerId}, queueing ICE candidate`);
+      if (!iceCandidateQueues.has(peerId)) {
+        iceCandidateQueues.set(peerId, []);
+      }
+      iceCandidateQueues.get(peerId).push(candidate);
       return;
     }
     
@@ -781,8 +892,64 @@ export async function handleRemoteIceCandidate(peerId, candidate) {
     
     console.log(`Successfully added ICE candidate for ${peerId}`);
   } catch (error) {
-    console.error(`Error handling ICE candidate from ${peerId}:`, error);
+    // If error is about remote description not being set, queue it
+    if (error.message && error.message.includes('remote description')) {
+      console.log(`Queueing ICE candidate for ${peerId} (remote description not ready)`);
+      if (!iceCandidateQueues.has(peerId)) {
+        iceCandidateQueues.set(peerId, []);
+      }
+      iceCandidateQueues.get(peerId).push(candidate);
+    } else {
+      console.error(`Error handling ICE candidate from ${peerId}:`, error);
+    }
   }
+}
+
+// Process queued ICE candidates for a peer
+async function processQueuedIceCandidates(peerId) {
+  const queue = iceCandidateQueues.get(peerId);
+  if (!queue || queue.length === 0) {
+    return;
+  }
+  
+  const peerConnection = window.appState.peerConnections[peerId];
+  if (!peerConnection || !peerConnection.remoteDescription) {
+    return;
+  }
+  
+  console.log(`Processing ${queue.length} queued ICE candidates for ${peerId}`);
+  
+  // Process all queued candidates
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    try {
+      await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log(`Successfully added queued ICE candidate for ${peerId}`);
+    } catch (err) {
+      console.warn(`Failed to add queued ICE candidate for ${peerId}:`, err);
+      // Don't re-queue, just log the warning
+    }
+  }
+  
+  // Clear the queue
+  iceCandidateQueues.delete(peerId);
+}
+
+// Clean up all state for a specific peer
+export function cleanupPeerConnection(peerId) {
+  // Close and remove peer connection
+  if (window.appState.peerConnections[peerId]) {
+    window.appState.peerConnections[peerId].close();
+    delete window.appState.peerConnections[peerId];
+  }
+  
+  // Clear pending operations
+  pendingOffers.delete(peerId);
+  pendingAnswers.delete(peerId);
+  iceCandidateQueues.delete(peerId);
+  connectionRetries.delete(peerId);
+  
+  console.log(`Cleaned up all state for peer ${peerId}`);
 }
 
 // Close all peer connections
@@ -793,6 +960,12 @@ export function closeAllPeerConnections() {
   });
   
   window.appState.peerConnections = {};
+  
+  // Clear all queues and pending operations
+  iceCandidateQueues.clear();
+  pendingOffers.clear();
+  pendingAnswers.clear();
+  connectionRetries.clear();
 }
 
 // Force establishment of full mesh connections between all participants
