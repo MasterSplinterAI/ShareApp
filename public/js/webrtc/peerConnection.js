@@ -369,10 +369,17 @@ export async function createPeerConnection(peerId) {
       }
     };
     
-    // Handle remote tracks
+    // Handle remote tracks with better logging for debugging
     pc.ontrack = (event) => {
-      console.log(`Received track from ${peerId}: ${event.track.kind}, enabled: ${event.track.enabled}, readyState: ${event.track.readyState}`);
-      console.log(`Peer connection state: ${pc.connectionState}, ICE state: ${pc.iceConnectionState}, signaling state: ${pc.signalingState}`);
+      console.log(`🎥 Received track from ${peerId}: ${event.track.kind}, enabled: ${event.track.enabled}, readyState: ${event.track.readyState}, id: ${event.track.id}`);
+      console.log(`📊 Peer connection state: ${pc.connectionState}, ICE state: ${pc.iceConnectionState}, signaling state: ${pc.signalingState}`);
+      
+      // Log all streams in the event
+      if (event.streams && event.streams.length > 0) {
+        event.streams.forEach((stream, idx) => {
+          console.log(`📺 Stream ${idx} has ${stream.getVideoTracks().length} video tracks, ${stream.getAudioTracks().length} audio tracks`);
+        });
+      }
       
       // IMPORTANT: Prevent local echo by not playing our own audio back to us
       const currentUserId = getSocketId();
@@ -833,11 +840,24 @@ export async function handleRemoteOffer(peerId, sdp) {
       return;
     }
     
-    // Check if we already have a local offer (would cause conflict)
+    // Handle simultaneous offers - if we have a local offer, we need to resolve the conflict
     const peerConnection = window.appState.peerConnections[peerId];
     if (peerConnection && peerConnection.signalingState === 'have-local-offer') {
-      console.warn(`Received offer from ${peerId} but we already have a local offer. Ignoring to prevent SDP conflict.`);
-      return;
+      console.warn(`Received offer from ${peerId} but we already have a local offer. Resolving conflict by accepting remote offer.`);
+      
+      // Cancel our local offer and accept the remote one instead
+      // This happens when both sides try to create offers simultaneously
+      // We'll use the remote offer (rollback our local one)
+      try {
+        // Clear our pending offer flag
+        pendingOffers.delete(peerId);
+        
+        // The remote description will be set below, which will transition us to 'have-remote-offer'
+        // Then we'll create an answer
+      } catch (err) {
+        console.warn('Error resolving SDP conflict:', err);
+        // Continue with normal offer handling
+      }
     }
     
     // Create peer connection if it doesn't exist
@@ -1093,18 +1113,12 @@ export function establishFullMeshConnections() {
           }
         }, index * 300 + 100);
       } 
-      // Even for stable connections, create a new offer to ensure proper media exchange
-      else if (!window.appState.isHost || (window.appState.isHost && participant.isHost === false)) {
-        console.log(`Connection with ${peerId} exists but forcing renegotiation to ensure media exchange`);
-        
-        // Wait a bit before attempting renegotiation
-        setTimeout(() => {
-          try {
-            createAndSendOffer(existingConnection, peerId);
-          } catch (err) {
-            console.error(`Error renegotiating with ${peerId}:`, err);
-          }
-        }, index * 300 + 500); 
+      // Only renegotiate if connection is actually stable and not already negotiating
+      else if (existingConnection.signalingState === 'stable' && 
+               existingConnection.iceConnectionState === 'connected' &&
+               !pendingOffers.has(peerId)) {
+        // Connection is good, no need to force renegotiation
+        console.log(`Connection with ${peerId} is stable and connected, no renegotiation needed`);
       }
     }
   });
