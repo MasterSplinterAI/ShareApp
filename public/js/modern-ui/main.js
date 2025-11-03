@@ -3,11 +3,12 @@
 
 import { setupSocketListeners } from '../services/socket.js';
 import { initializeMedia } from '../services/media.js';
-import { initRoomFromUrl } from '../utils/url.js';
+import { initRoomFromUrl, generateRoomId, setRoomInUrl, getShareableLink } from '../utils/url.js';
 import { showError } from '../ui/notifications.js';
 import { setupDeviceSelectors } from '../ui/devices.js';
 import { initMobileDetection } from '../utils/mobileDetect.js';
 import { initializeIceServers } from '../utils/iceServers.js';
+import { joinRoom } from '../services/socket.js';
 import './ui/controls.js';
 import './ui/video.js';
 import './ui/panels.js';
