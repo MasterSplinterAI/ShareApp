@@ -450,13 +450,16 @@ export async function createPeerConnection(peerId) {
         remoteVideo.style.objectFit = 'contain';
         
         // Adjust container aspect ratio based on video dimensions when loaded
-        event.track.onloadedmetadata = () => {
+        remoteVideo.onloadedmetadata = () => {
           if (remoteVideo.videoWidth > 0 && remoteVideo.videoHeight > 0) {
             const aspectRatio = remoteVideo.videoWidth / remoteVideo.videoHeight;
             // If portrait video (height > width), adjust container
             if (aspectRatio < 1) {
               videoContainer.style.aspectRatio = `${remoteVideo.videoHeight} / ${remoteVideo.videoWidth}`;
               console.log(`Adjusted container to portrait aspect ratio: ${aspectRatio} for ${peerId}`);
+            } else {
+              // Landscape - use standard 16:9
+              videoContainer.style.aspectRatio = '16/9';
             }
           }
         };
