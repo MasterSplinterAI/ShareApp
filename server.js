@@ -1,3 +1,11 @@
+// Load environment variables from .env file if it exists
+try {
+    require('dotenv').config();
+} catch (e) {
+    // dotenv not installed, continue without it (environment variables can be set directly)
+    console.log('dotenv not found, using system environment variables');
+}
+
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
@@ -36,6 +44,162 @@ app.get('/status', (req, res) => {
         activeRooms: Object.keys(rooms).length,
         totalParticipants: Object.values(rooms).reduce((sum, room) => sum + Object.keys(room.participants).length, 0)
     });
+});
+
+// Cache for Cloudflare TURN credentials (with expiration)
+let cloudflareCredentialsCache = null;
+let cloudflareCredentialsExpiry = null;
+
+// ICE servers endpoint - provides TURN/STUN configuration
+// Supports Cloudflare TURN API (generates short-lived credentials) and other TURN servers
+app.get('/api/ice-servers', async (req, res) => {
+    const iceServers = [];
+    
+    // Add STUN servers (always include these)
+    iceServers.push(
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' },
+        { urls: 'stun:stun.ekiga.net' }
+    );
+    
+    // Check for Cloudflare TURN configuration (priority - uses API to generate credentials)
+    const cloudflareApiToken = process.env.CLOUDFLARE_API_TOKEN;
+    const cloudflareTurnTokenId = process.env.CLOUDFLARE_TURN_TOKEN_ID;
+    
+    if (cloudflareApiToken && cloudflareTurnTokenId) {
+        try {
+            // Check if we have cached credentials that are still valid
+            const now = Date.now();
+            if (cloudflareCredentialsCache && cloudflareCredentialsExpiry && now < cloudflareCredentialsExpiry) {
+                console.log('✅ Using cached Cloudflare TURN credentials');
+                iceServers.push(...cloudflareCredentialsCache);
+            } else {
+                // Generate new credentials from Cloudflare API
+                console.log('🔄 Generating new Cloudflare TURN credentials...');
+                
+                const https = require('https');
+                const turnCredentials = await new Promise((resolve, reject) => {
+                    const postData = JSON.stringify({ ttl: 86400 }); // 24 hour TTL
+                    
+                    const options = {
+                        hostname: 'rtc.live.cloudflare.com',
+                        path: `/v1/turn/keys/${cloudflareTurnTokenId}/credentials/generate-ice-servers`,
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${cloudflareApiToken}`,
+                            'Content-Type': 'application/json',
+                            'Content-Length': Buffer.byteLength(postData)
+                        }
+                    };
+                    
+                    const req = https.request(options, (res) => {
+                        let data = '';
+                        res.on('data', (chunk) => { data += chunk; });
+                        res.on('end', () => {
+                            try {
+                                if (res.statusCode !== 200) {
+                                    reject(new Error(`Cloudflare API returned ${res.statusCode}: ${data}`));
+                                    return;
+                                }
+                                
+                                const json = JSON.parse(data);
+                                if (json.iceServers && json.iceServers.length > 0) {
+                                    resolve(json);
+                                } else {
+                                    reject(new Error('Invalid response from Cloudflare API'));
+                                }
+                            } catch (e) {
+                                reject(new Error(`Failed to parse Cloudflare response: ${e.message}`));
+                            }
+                        });
+                    });
+                    
+                    req.on('error', (error) => {
+                        reject(new Error(`Cloudflare API request failed: ${error.message}`));
+                    });
+                    
+                    req.write(postData);
+                    req.end();
+                });
+                
+                // Extract and format Cloudflare ICE servers
+                if (turnCredentials.iceServers && turnCredentials.iceServers.length > 0) {
+                    const cloudflareIceServers = turnCredentials.iceServers.map(server => ({
+                        urls: server.urls,
+                        username: server.username,
+                        credential: server.credential
+                    }));
+                    
+                    iceServers.push(...cloudflareIceServers);
+                    
+                    // Cache credentials (expire 1 hour before actual expiry to be safe)
+                    cloudflareCredentialsCache = cloudflareIceServers;
+                    cloudflareCredentialsExpiry = now + (23 * 60 * 60 * 1000); // 23 hours cache
+                    
+                    console.log('✅ Added Cloudflare TURN servers (generated via API)');
+                }
+            }
+        } catch (error) {
+            console.warn('⚠️ Failed to fetch Cloudflare TURN credentials:', error.message);
+            console.warn('Falling back to alternative TURN servers...');
+            // Fall through to alternative TURN servers below
+        }
+    }
+    
+    // Check for generic TURN servers from environment variables if Cloudflare failed
+    if (iceServers.length <= 7) { // Only STUN servers added
+        const turnUrls = process.env.TURN_URLS;
+        const turnUsername = process.env.TURN_USERNAME;
+        const turnCredential = process.env.TURN_CREDENTIAL;
+        
+        if (turnUrls) {
+            // Parse multiple TURN URLs
+            const urls = turnUrls.split(',');
+            urls.forEach(url => {
+                const urlParts = url.trim().split('|');
+                const urlStr = urlParts[0];
+                const username = urlParts[1] || turnUsername;
+                const credential = urlParts[2] || turnCredential;
+                
+                if (username && credential) {
+                    iceServers.push({
+                        urls: urlStr,
+                        username: username,
+                        credential: credential
+                    });
+                    console.log(`Added TURN server: ${urlStr.substring(0, 30)}...`);
+                } else {
+                    // If no credentials, add as STUN-only
+                    iceServers.push({ urls: urlStr });
+                }
+            });
+        } else {
+            // Fallback to free TURN servers if no custom ones configured
+            iceServers.push(
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            );
+        }
+    }
+    
+    res.json({ iceServers });
 });
 
 // Room status endpoint

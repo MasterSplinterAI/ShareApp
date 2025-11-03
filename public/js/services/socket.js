@@ -118,11 +118,15 @@ export function setupSocketListeners() {
       import('../webrtc/peerConnection.js').then(({ createPeerConnection }) => {
         if (typeof createPeerConnection === 'function') {
           // Connect to each participant with a small delay between connections
-          otherParticipants.forEach((participant, index) => {
+          otherParticipants.forEach(async (participant, index) => {
             // Add a small delay for each connection to prevent race conditions
-            setTimeout(() => {
+            setTimeout(async () => {
               console.log(`Creating direct connection to participant ${participant.id}`);
-              createPeerConnection(participant.id);
+              try {
+                await createPeerConnection(participant.id);
+              } catch (err) {
+                console.error(`Failed to create connection to ${participant.id}:`, err);
+              }
             }, index * 500); // Stagger connections by 500ms each
           });
         }
@@ -209,8 +213,12 @@ export function setupSocketListeners() {
         // This ensures a full mesh network
         if (data.userId !== socket.id && !window.appState.peerConnections[data.userId]) {
           console.log(`Creating direct connection to new participant ${data.userId}`);
-          setTimeout(() => {
-            createPeerConnection(data.userId);
+          setTimeout(async () => {
+            try {
+              await createPeerConnection(data.userId);
+            } catch (err) {
+              console.error(`Failed to create connection to ${data.userId}:`, err);
+            }
             
             // If we're sharing our screen, make sure the new participant receives it
             if (isLocalScreenSharing) {
@@ -563,24 +571,28 @@ export function checkAndEstablishMissingConnections() {
     if (typeof createPeerConnection === 'function') {
       let connectionsCreated = false;
       
-      // Check each participant and create missing connections
-      otherParticipants.forEach((participant, index) => {
-        // Check if we already have a connection with this participant
-        const hasConnection = window.appState.peerConnections[participant.id] !== undefined;
-        
-        if (!hasConnection) {
-          console.log(`Missing connection with participant ${participant.id}, establishing now`);
-          
-          // Add a small delay for each connection to prevent race conditions
-          setTimeout(() => {
-            createPeerConnection(participant.id);
-          }, index * 300);
-          
-          connectionsCreated = true;
-        } else {
-          console.log(`Connection with ${participant.id} already exists`);
-        }
-      });
+          // Check each participant and create missing connections
+          otherParticipants.forEach(async (participant, index) => {
+            // Check if we already have a connection with this participant
+            const hasConnection = window.appState.peerConnections[participant.id] !== undefined;
+            
+            if (!hasConnection) {
+              console.log(`Missing connection with participant ${participant.id}, establishing now`);
+              
+              // Add a small delay for each connection to prevent race conditions
+              setTimeout(async () => {
+                try {
+                  await createPeerConnection(participant.id);
+                } catch (err) {
+                  console.error(`Failed to create connection to ${participant.id}:`, err);
+                }
+              }, index * 300);
+              
+              connectionsCreated = true;
+            } else {
+              console.log(`Connection with ${participant.id} already exists`);
+            }
+          });
       
       return connectionsCreated;
     }

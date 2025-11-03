@@ -6,6 +6,7 @@ import { initRoomFromUrl } from './utils/url.js';
 import { showError } from './ui/notifications.js';
 import { setupDeviceSelectors } from './ui/devices.js';
 import { initMobileDetection } from './utils/mobileDetect.js';
+import { initializeIceServers } from './utils/iceServers.js';
 
 // Global state object
 window.appState = {
@@ -35,6 +36,9 @@ initMobileDetection();
 // Initialize application
 async function initializeApp() {
   try {
+    // Initialize ICE servers early (important for international connectivity)
+    await initializeIceServers();
+    
     // Setup UI event listeners first
     setupUIEventListeners();
     

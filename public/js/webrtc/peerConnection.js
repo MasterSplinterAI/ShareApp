@@ -1,50 +1,36 @@
 // WebRTC peer connection module for managing peer-to-peer connections
 import { sendOffer, sendAnswer, sendIceCandidate, getSocketId } from '../services/socket.js';
 import { showError } from '../ui/notifications.js';
+import { getIceServersSync, getIceServers } from '../utils/iceServers.js';
 
-// ICE server configuration with TURN servers for international connectivity
-const iceServers = [
-  // Google STUN servers
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-  { urls: 'stun:stun3.l.google.com:19302' },
-  { urls: 'stun:stun4.l.google.com:19302' },
-  
-  // Additional STUN servers for better connectivity
-  { urls: 'stun:stun.services.mozilla.com' },
-  { urls: 'stun:stun.ekiga.net' },
-  
-  // Free TURN servers for international users (when direct connection fails)
-  {
-    urls: 'turn:openrelay.metered.ca:80',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443',
-    username: 'openrelayproject', 
-    credential: 'openrelayproject'
-  },
-  {
-    urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  }
-];
+// Track connection retry attempts per peer
+const connectionRetries = new Map();
+const MAX_RETRIES = 3;
+const RETRY_DELAY_BASE = 2000; // Base delay in ms
 
 // Create a new peer connection with a remote peer
-export function createPeerConnection(peerId) {
+export async function createPeerConnection(peerId) {
   try {
     console.log(`Creating peer connection for ${peerId}`);
     
-    // Create a new RTCPeerConnection with enhanced options for echo cancelation
+    // Get ICE servers (try async first, fallback to sync)
+    let iceServers = getIceServersSync();
+    try {
+      // Try to get fresh servers if not cached
+      iceServers = await getIceServers();
+    } catch (e) {
+      console.warn('Using cached/default ICE servers');
+    }
+    
+    // Create a new RTCPeerConnection with enhanced options for better connectivity
     const pc = new RTCPeerConnection({ 
       iceServers,
-      // Enable built-in echo cancellation and noise suppression
+      // Enhanced configuration for better international connectivity
+      iceCandidatePoolSize: 10, // Pre-gather more candidates
+      bundlePolicy: 'max-bundle', // Bundle for efficiency
+      rtcpMuxPolicy: 'require', // Require RTCP muxing
       sdpSemantics: 'unified-plan',
       // Enable all audio processing options
-      // These help prevent echo/feedback
       rtcAudioJitterBufferMaxPackets: 50,
       rtcAudioJitterBufferFastAccelerate: true
     });
@@ -200,7 +186,7 @@ export function createPeerConnection(peerId) {
       }
     }
     
-    // Handle ICE candidates with detailed logging for debugging
+    // Handle ICE candidates with detailed logging for debugging international connectivity
     pc.onicecandidate = (event) => {
       if (event.candidate) {
         // Log candidate type for debugging international connectivity
@@ -209,46 +195,152 @@ export function createPeerConnection(peerId) {
         const protocol = candidate.protocol || 'unknown';
         const address = candidate.address || candidate.ip || 'unknown';
         
-        console.log(`🔄 Sending ICE candidate to ${peerId}: type=${candidateType}, protocol=${protocol}, address=${address.substring(0, 10)}...`);
+        // Only log every 5th candidate to reduce noise
+        const candidateCount = (pc.onicecandidateCount || 0) + 1;
+        pc.onicecandidateCount = candidateCount;
+        
+        if (candidateCount % 5 === 1 || candidateType === 'relay') {
+          console.log(`🔄 ICE candidate ${candidateCount} for ${peerId}: type=${candidateType}, protocol=${protocol}, address=${address.substring(0, 15)}...`);
+        }
         
         // Special logging for TURN candidates (important for international users)
         if (candidate.candidate && candidate.candidate.includes('relay')) {
-          console.log(`🌐 TURN relay candidate generated for ${peerId} - this helps with restrictive firewalls`);
+          console.log(`🌐 TURN relay candidate generated for ${peerId} - this helps with restrictive firewalls/NATs`);
         }
         
         sendIceCandidate(peerId, event.candidate);
       } else {
-        console.log(`✅ ICE gathering complete for ${peerId}`);
+        console.log(`✅ ICE gathering complete for ${peerId} (${pc.onicecandidateCount || 0} candidates collected)`);
+        pc.onicecandidateCount = 0;
       }
     };
     
-    // Log ICE connection state changes with detailed debugging
-    pc.oniceconnectionstatechange = () => {
-      console.log(`ICE connection state with ${peerId}: ${pc.iceConnectionState}`);
+    // Track ICE gathering state
+    pc.onicegatheringstatechange = () => {
+      console.log(`ICE gathering state for ${peerId}: ${pc.iceGatheringState}`);
       
-      // Log detailed connection info for debugging international issues
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      if (pc.iceGatheringState === 'complete') {
+        // Check if we have relay candidates (important for international connectivity)
         pc.getStats().then(stats => {
+          let hasRelay = false;
+          stats.forEach(report => {
+            if (report.type === 'local-candidate' && report.candidateType === 'relay') {
+              hasRelay = true;
+            }
+          });
+          
+          if (!hasRelay) {
+            console.warn(`⚠️ No TURN relay candidates found for ${peerId}. International users may have connectivity issues.`);
+          }
+        }).catch(err => {
+          console.warn('Could not check for relay candidates:', err);
+        });
+      }
+    };
+    
+    // Log ICE connection state changes with detailed debugging and better retry logic
+    pc.oniceconnectionstatechange = () => {
+      const state = pc.iceConnectionState;
+      console.log(`ICE connection state with ${peerId}: ${state}`);
+      
+      // Reset retry count on successful connection
+      if (state === 'connected' || state === 'completed') {
+        connectionRetries.delete(peerId);
+        
+        // Log detailed connection info for debugging international issues
+        pc.getStats().then(stats => {
+          let relayCount = 0;
+          let hostCount = 0;
+          let srflxCount = 0;
+          
           stats.forEach(report => {
             if (report.type === 'candidate-pair' && report.state === 'succeeded') {
               console.log(`✅ Connection established via ${report.localCandidateId} -> ${report.remoteCandidateId}`);
+              
+              // Check what type of connection was used
+              stats.forEach(candidateReport => {
+                if (candidateReport.type === 'local-candidate' && candidateReport.id === report.localCandidateId) {
+                  if (candidateReport.candidateType === 'relay') relayCount++;
+                  else if (candidateReport.candidateType === 'host') hostCount++;
+                  else if (candidateReport.candidateType === 'srflx') srflxCount++;
+                }
+              });
             }
           });
+          
+          // Log connection type summary
+          if (relayCount > 0) {
+            console.log(`🌐 Using TURN relay (important for international users)`);
+          } else if (srflxCount > 0) {
+            console.log(`🔗 Using STUN (NAT traversal)`);
+          } else if (hostCount > 0) {
+            console.log(`🏠 Direct connection (same network)`);
+          }
+        }).catch(err => {
+          console.warn('Error getting connection stats:', err);
+        });
+        
+        // Update connection status UI
+        import('../ui/notifications.js').then(({ updateConnectionStatus }) => {
+          if (typeof updateConnectionStatus === 'function') {
+            updateConnectionStatus('active');
+          }
         });
       }
       
-      // Handle connection failures with more aggressive retry
-      if (pc.iceConnectionState === 'failed') {
-        console.warn(`❌ ICE connection failed with ${peerId}, attempting restart`);
-        pc.restartIce();
-      } else if (pc.iceConnectionState === 'disconnected') {
+      // Handle connection failures with exponential backoff retry
+      if (state === 'failed') {
+        const retryCount = connectionRetries.get(peerId) || 0;
+        
+        if (retryCount < MAX_RETRIES) {
+          const delay = RETRY_DELAY_BASE * Math.pow(2, retryCount); // Exponential backoff
+          connectionRetries.set(peerId, retryCount + 1);
+          
+          console.warn(`❌ ICE connection failed with ${peerId} (attempt ${retryCount + 1}/${MAX_RETRIES}), retrying in ${delay}ms`);
+          
+          // Show user-friendly error message
+          if (retryCount === 0) {
+            showError(`Connection issue detected. Retrying connection...`, 5000);
+          }
+          
+          setTimeout(() => {
+            if (pc.iceConnectionState === 'failed' && window.appState.peerConnections[peerId] === pc) {
+              console.log(`Restarting ICE for ${peerId} after failure`);
+              pc.restartIce();
+            }
+          }, delay);
+        } else {
+          console.error(`❌ ICE connection failed with ${peerId} after ${MAX_RETRIES} retries`);
+          connectionRetries.delete(peerId);
+          
+          // Show persistent error message
+          showError(`Could not connect to participant. This may be due to network restrictions. Please check your firewall settings.`, 10000);
+          
+          // Emit event for UI to handle
+          document.dispatchEvent(new CustomEvent('peer-connection-failed', {
+            detail: { peerId, retryCount: MAX_RETRIES }
+          }));
+        }
+      } else if (state === 'disconnected') {
         console.warn(`⚠️ ICE connection disconnected with ${peerId}, will retry in 3 seconds`);
+        
         setTimeout(() => {
-          if (pc.iceConnectionState === 'disconnected') {
+          if (pc.iceConnectionState === 'disconnected' && window.appState.peerConnections[peerId] === pc) {
             console.log(`Restarting ICE for ${peerId} after disconnect`);
             pc.restartIce();
           }
         }, 3000);
+      } else if (state === 'checking') {
+        // Connection is attempting to establish
+        const retryCount = connectionRetries.get(peerId) || 0;
+        if (retryCount === 0) {
+          // First attempt - show connecting status
+          import('../ui/notifications.js').then(({ updateConnectionStatus }) => {
+            if (typeof updateConnectionStatus === 'function') {
+              updateConnectionStatus('connecting');
+            }
+          });
+        }
       }
     };
     
@@ -623,7 +715,7 @@ export async function handleRemoteOffer(peerId, sdp) {
     let peerConnection = window.appState.peerConnections[peerId];
     
     if (!peerConnection) {
-      peerConnection = createPeerConnection(peerId);
+      peerConnection = await createPeerConnection(peerId);
     }
     
     // Set remote description
@@ -723,7 +815,7 @@ export function establishFullMeshConnections() {
   console.log(`Currently have ${existingConnections.length} active peer connections`);
   
   // Create new connections for anyone we're not connected to
-  otherParticipants.forEach((participant, index) => {
+  otherParticipants.forEach(async (participant, index) => {
     const peerId = participant.id;
     
     // Check if we already have a connection
@@ -731,9 +823,13 @@ export function establishFullMeshConnections() {
     
     if (!existingConnection) {
       // Create a new connection with a delay to stagger connections
-      setTimeout(() => {
+      setTimeout(async () => {
         console.log(`Creating missing connection to participant ${peerId}`);
-        createPeerConnection(peerId);
+        try {
+          await createPeerConnection(peerId);
+        } catch (err) {
+          console.error(`Failed to create connection to ${peerId}:`, err);
+        }
       }, index * 300);
     } else {
       console.log(`Checking connection with ${peerId}, state: ${existingConnection.connectionState}`);
@@ -751,8 +847,12 @@ export function establishFullMeshConnections() {
         delete window.appState.peerConnections[peerId];
         
         // Create a new connection with a small delay
-        setTimeout(() => {
-          createPeerConnection(peerId);
+        setTimeout(async () => {
+          try {
+            await createPeerConnection(peerId);
+          } catch (err) {
+            console.error(`Failed to recreate connection to ${peerId}:`, err);
+          }
         }, index * 300 + 100);
       } 
       // Even for stable connections, create a new offer to ensure proper media exchange
