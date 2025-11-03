@@ -165,6 +165,7 @@ function setupJoinButton() {
   }
   
   // Add mobile touch handlers for join button
+  const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
   if (isMobile) {
     joinBtn.addEventListener('touchstart', function(e) {
       e.stopPropagation();
