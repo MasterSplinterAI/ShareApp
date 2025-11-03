@@ -140,6 +140,29 @@ function setupJoinButton() {
     return;
   }
   
+  // Add mobile touch handlers for join button
+  if (isMobile) {
+    joinBtn.addEventListener('touchstart', function(e) {
+      e.stopPropagation();
+      this.style.transform = 'scale(0.98)';
+    }, { passive: false });
+    
+    joinBtn.addEventListener('touchend', function(e) {
+      e.stopPropagation();
+      e.preventDefault();
+      this.style.transform = '';
+      // Manually trigger click
+      const clickEvent = new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      });
+      this.dispatchEvent(clickEvent);
+    }, { passive: false });
+    
+    joinBtn.style.cssText += 'position: relative; z-index: 100; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,0.1); cursor: pointer;';
+  }
+  
   joinBtn.addEventListener('click', async () => {
     try {
       // Check for room ID in URL first
