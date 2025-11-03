@@ -472,21 +472,68 @@ export async function promptJoinAsHost() {
     const hostBtn = document.createElement('button');
     hostBtn.className = 'btn btn-primary w-full';
     hostBtn.innerHTML = '<i class="fas fa-crown mr-2"></i>Join as Host';
-    hostBtn.addEventListener('click', () => {
-      document.body.removeChild(modalOverlay);
-      resolve(true);
+    hostBtn.style.cssText = 'position: relative; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important; min-width: 44px !important; min-height: 44px !important;';
+    
+    // Add mobile touch handlers
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      hostBtn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '0.8';
+      }, { passive: false });
+      
+      hostBtn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '';
+        document.body.removeChild(modalOverlay);
+        resolve(true);
+      }, { passive: false });
+    }
+    
+    hostBtn.addEventListener('click', (e) => {
+      if (!isMobile) {
+        e.preventDefault();
+        document.body.removeChild(modalOverlay);
+        resolve(true);
+      }
     });
     
     const participantBtn = document.createElement('button');
     participantBtn.className = 'btn btn-secondary w-full';
     participantBtn.innerHTML = '<i class="fas fa-user mr-2"></i>Join as Participant';
-    participantBtn.addEventListener('click', () => {
-      document.body.removeChild(modalOverlay);
-      resolve(false);
+    participantBtn.style.cssText = 'position: relative; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important; min-width: 44px !important; min-height: 44px !important;';
+    
+    if (isMobile) {
+      participantBtn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '0.8';
+      }, { passive: false });
+      
+      participantBtn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '';
+        document.body.removeChild(modalOverlay);
+        resolve(false);
+      }, { passive: false });
+    }
+    
+    participantBtn.addEventListener('click', (e) => {
+      if (!isMobile) {
+        e.preventDefault();
+        document.body.removeChild(modalOverlay);
+        resolve(false);
+      }
     });
     
     buttonContainer.appendChild(hostBtn);
     buttonContainer.appendChild(participantBtn);
+    
+    // Ensure modal content has proper z-index
+    modalContent.style.cssText = 'position: relative; z-index: 10000 !important; pointer-events: auto !important;';
     
     // Assemble modal
     modalContent.appendChild(header);
@@ -509,6 +556,7 @@ export async function promptForAccessCode(mode = 'participant') {
     // Create modal content
     const modalContent = document.createElement('div');
     modalContent.className = 'bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-lg modal-content';
+    modalContent.style.cssText = 'position: relative; z-index: 10000 !important; pointer-events: auto !important;';
     
     // Header
     const header = document.createElement('div');
@@ -556,27 +604,75 @@ export async function promptForAccessCode(mode = 'participant') {
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'flex justify-end gap-2 mt-6';
     
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'btn btn-secondary';
     cancelBtn.textContent = 'Cancel';
-    cancelBtn.addEventListener('click', () => {
-      document.body.removeChild(modalOverlay);
-      resolve(null);
+    cancelBtn.style.cssText = 'position: relative; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important; min-width: 44px !important; min-height: 44px !important;';
+    
+    if (isMobile) {
+      cancelBtn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '0.8';
+      }, { passive: false });
+      
+      cancelBtn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '';
+        document.body.removeChild(modalOverlay);
+        resolve(null);
+      }, { passive: false });
+    }
+    
+    cancelBtn.addEventListener('click', (e) => {
+      if (!isMobile) {
+        e.preventDefault();
+        document.body.removeChild(modalOverlay);
+        resolve(null);
+      }
     });
     
     const continueBtn = document.createElement('button');
     continueBtn.className = 'btn btn-primary';
     continueBtn.textContent = 'Join';
-    continueBtn.addEventListener('click', () => {
+    continueBtn.style.cssText = 'position: relative; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important; min-width: 44px !important; min-height: 44px !important;';
+    
+    const handleJoin = () => {
       const code = input.value.trim() || null;
       document.body.removeChild(modalOverlay);
       resolve(code);
+    };
+    
+    if (isMobile) {
+      continueBtn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '0.8';
+      }, { passive: false });
+      
+      continueBtn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '';
+        handleJoin();
+      }, { passive: false });
+    }
+    
+    continueBtn.addEventListener('click', (e) => {
+      if (!isMobile) {
+        e.preventDefault();
+        handleJoin();
+      }
     });
     
     // Allow Enter key to submit
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
-        continueBtn.click();
+        e.preventDefault();
+        handleJoin();
       }
     });
     
