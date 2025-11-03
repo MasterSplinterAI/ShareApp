@@ -623,7 +623,7 @@ export async function promptForAccessCode(mode = 'auto') {
     
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'btn btn-secondary';
-    cancelBtn.textContent = 'Cancel';
+    cancelBtn.textContent = mode === 'auto' ? 'Skip' : 'Cancel';
     cancelBtn.style.cssText = 'position: relative; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important; min-width: 44px !important; min-height: 44px !important;';
     
     if (isMobile) {
