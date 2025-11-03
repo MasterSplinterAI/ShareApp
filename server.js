@@ -19,6 +19,73 @@ app.use(express.static('public'));
 // Track rooms and users globally
 const rooms = {};
 
+// Periodic cleanup task - runs every 5 minutes
+setInterval(() => {
+    const now = Date.now();
+    const roomIds = Object.keys(rooms);
+    let cleanedRooms = 0;
+    let activeRooms = 0;
+    let totalParticipants = 0;
+    
+    roomIds.forEach(roomId => {
+        const room = rooms[roomId];
+        if (!room) return;
+        
+        // Check if room has participants
+        const participantCount = Object.keys(room.participants).length;
+        
+        if (participantCount === 0) {
+            // Room is empty - check if it's stale (older than 30 minutes)
+            // Since we clean up empty rooms immediately, this is a safety net
+            console.log(`Cleaning up empty room ${roomId} (safety cleanup)`);
+            delete rooms[roomId];
+            cleanedRooms++;
+        } else {
+            activeRooms++;
+            totalParticipants += participantCount;
+        }
+    });
+    
+    // Log cleanup statistics (only if there's activity)
+    if (cleanedRooms > 0 || activeRooms > 0) {
+        console.log(`🧹 Cleanup: ${cleanedRooms} rooms cleaned, ${activeRooms} active rooms, ${totalParticipants} total participants`);
+    }
+    
+    // Warn if too many rooms (potential memory issue)
+    if (activeRooms > 1000) {
+        console.warn(`⚠️ Warning: High number of active rooms (${activeRooms}). Consider investigating memory usage.`);
+    }
+}, 5 * 60 * 1000); // Every 5 minutes
+
+// Graceful shutdown handler
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received, shutting down gracefully...');
+    const roomCount = Object.keys(rooms).length;
+    console.log(`Cleaning up ${roomCount} rooms before shutdown...`);
+    
+    // Clear all rooms
+    Object.keys(rooms).forEach(roomId => {
+        delete rooms[roomId];
+    });
+    
+    console.log('Server shutdown complete');
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received, shutting down gracefully...');
+    const roomCount = Object.keys(rooms).length;
+    console.log(`Cleaning up ${roomCount} rooms before shutdown...`);
+    
+    // Clear all rooms
+    Object.keys(rooms).forEach(roomId => {
+        delete rooms[roomId];
+    });
+    
+    console.log('Server shutdown complete');
+    process.exit(0);
+});
+
 // Main route
 app.get('/', (req, res) => {
     // Get protocol from headers if behind a proxy
