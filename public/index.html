@@ -488,6 +488,39 @@
       }
     }
     
+    /* Portrait mode specific fixes (separate media query) */
+    @media (max-width: 768px) and (orientation: portrait) {
+      /* Ensure video containers don't overlap controls */
+      #videoGrid {
+        margin-bottom: 100px !important; /* Extra space for controls */
+        padding-bottom: 20px !important;
+      }
+      
+      /* Controls must be above everything in portrait */
+      #controls {
+        position: sticky !important;
+        bottom: 0 !important;
+        z-index: 10000 !important;
+        pointer-events: auto !important;
+        background: white !important;
+        box-shadow: 0 -2px 10px rgba(0,0,0,0.1) !important;
+        margin-top: auto !important;
+      }
+      
+      /* Meeting container should use flex layout */
+      #meeting {
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 100vh !important;
+      }
+      
+      /* Video grid should flex grow */
+      #videoGrid {
+        flex: 1 1 auto !important;
+        overflow-y: auto !important;
+      }
+    }
+    
     /* Layout mode styles */
     .layout-grid-only .main-video-container {
       display: none;
