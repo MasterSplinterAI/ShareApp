@@ -50,24 +50,26 @@
       </div>
       
       <div id="videoGrid" class="flex flex-col gap-4 mb-6">
-        <!-- Main video container for host/focused participant -->
-        <div id="mainVideoContainer" class="video-container main-video-container h-video-main-mobile md:h-video-main w-full">
-          <video id="mainVideo" class="w-full h-full object-cover" autoplay playsinline webkit-playsinline x5-playsinline></video>
-          <div id="mainVideoLabel" class="video-label">Main Speaker</div>
-          <button id="mainFullscreenBtn" class="video-control" title="Full Screen" aria-label="Toggle Full Screen">
+        <!-- Main video container for host/focused participant - Standard meeting app style -->
+        <div id="mainVideoContainer" class="video-container main-video-container w-full bg-black rounded-lg overflow-hidden" style="aspect-ratio: 16/9; min-height: 400px; max-height: 70vh;">
+          <video id="mainVideo" class="w-full h-full object-contain" autoplay playsinline webkit-playsinline x5-playsinline></video>
+          <div id="mainVideoLabel" class="video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-4 py-3 text-sm z-10">
+            Main Speaker
+          </div>
+          <button id="mainFullscreenBtn" class="video-control absolute top-4 right-4" title="Full Screen" aria-label="Toggle Full Screen">
             <i class="fas fa-expand"></i>
           </button>
           <!-- Placeholder will be removed programmatically in audio-only and view-only modes -->
-          <div id="noVideoPlaceholder" class="hidden absolute inset-0 flex items-center justify-center bg-gray-800 placeholder-element">
+          <div id="noVideoPlaceholder" class="hidden absolute inset-0 flex items-center justify-center bg-gray-900 placeholder-element">
             <i class="fas fa-user-circle text-gray-400 text-6xl"></i>
           </div>
         </div>
         
-        <!-- Grid of participant videos -->
-        <div id="participantsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 md:gap-4 w-full video-grid">
+        <!-- Grid of participant videos - Standard grid layout -->
+        <div id="participantsGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 w-full video-grid">
           <!-- Local video always shown -->
-          <div class="video-container h-video-thumb-mobile md:h-video-thumb" id="localVideoContainer">
-            <video id="localVideo" class="w-full h-full object-cover" autoplay playsinline webkit-playsinline x5-playsinline muted></video>
+          <div class="video-container bg-black rounded-lg overflow-hidden relative" id="localVideoContainer" style="aspect-ratio: 16/9;">
+            <video id="localVideo" class="w-full h-full object-contain" autoplay playsinline webkit-playsinline x5-playsinline muted></video>
             <div class="video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10 flex items-center justify-between">
               <span class="font-medium">You</span>
               <span class="flex items-center gap-2">
@@ -283,9 +285,40 @@
     .video-container {
       border-radius: 8px;
       overflow: hidden;
-      background: #1a1a1a;
+      background: #000;
       transition: all 0.3s ease;
       position: relative;
+    }
+    
+    /* Ensure videos maintain aspect ratio - no cropping */
+    video {
+      object-fit: contain !important;
+    }
+    
+    /* Main video container - larger, prominent */
+    .main-video-container {
+      background: #000;
+      min-height: 400px;
+      max-height: 70vh;
+      aspect-ratio: 16/9;
+    }
+    
+    /* Grid video containers - maintain aspect ratio */
+    #participantsGrid .video-container {
+      aspect-ratio: 16/9;
+      background: #000;
+    }
+    
+    /* Mobile portrait videos - allow taller aspect ratio */
+    @media (max-width: 640px) {
+      #participantsGrid .video-container {
+        aspect-ratio: 9/16; /* Portrait for mobile */
+      }
+      
+      .main-video-container {
+        aspect-ratio: 9/16;
+        min-height: 50vh;
+      }
     }
     
     .video-container.speaking {
@@ -365,11 +398,7 @@
       }
     }
     
-    /* Main video container styling */
-    .main-video-container {
-      border-radius: 12px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-    }
+    /* Main video container styling - already defined above */
     
     /* Controls styling improvements */
     .controls {

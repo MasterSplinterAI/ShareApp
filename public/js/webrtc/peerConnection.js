@@ -414,7 +414,7 @@ export async function createPeerConnection(peerId) {
             console.log(`Creating new video element for peer ${peerId}`);
             remoteVideo = document.createElement('video');
             remoteVideo.id = `video-${peerId}`;
-            remoteVideo.className = 'w-full h-full object-cover';
+            remoteVideo.className = 'w-full h-full object-contain';
             remoteVideo.autoplay = true;
             remoteVideo.playsInline = true;
             videoContainer.appendChild(remoteVideo);
@@ -445,6 +445,21 @@ export async function createPeerConnection(peerId) {
         // Add the new video track
         console.log(`Adding video track to stream for peer ${peerId}`);
         stream.addTrack(event.track);
+        
+        // Ensure object-contain is set (no cropping)
+        remoteVideo.style.objectFit = 'contain';
+        
+        // Adjust container aspect ratio based on video dimensions when loaded
+        event.track.onloadedmetadata = () => {
+          if (remoteVideo.videoWidth > 0 && remoteVideo.videoHeight > 0) {
+            const aspectRatio = remoteVideo.videoWidth / remoteVideo.videoHeight;
+            // If portrait video (height > width), adjust container
+            if (aspectRatio < 1) {
+              videoContainer.style.aspectRatio = `${remoteVideo.videoHeight} / ${remoteVideo.videoWidth}`;
+              console.log(`Adjusted container to portrait aspect ratio: ${aspectRatio} for ${peerId}`);
+            }
+          }
+        };
         
         // Hide the placeholder since we now have video
         const placeholder = videoContainer.querySelector('.no-video-placeholder');
@@ -583,12 +598,13 @@ export async function createPeerConnection(peerId) {
       // Create container
       const videoContainer = document.createElement('div');
       videoContainer.id = `video-container-${peerId}`;
-      videoContainer.className = 'video-container h-video-thumb-mobile md:h-video-thumb relative';
+      videoContainer.className = 'video-container bg-black rounded-lg overflow-hidden relative';
+      videoContainer.style.aspectRatio = '16/9';
       
       // Create video element
       const remoteVideo = document.createElement('video');
       remoteVideo.id = `video-${peerId}`;
-      remoteVideo.className = 'w-full h-full object-cover';
+      remoteVideo.className = 'w-full h-full object-contain';
       remoteVideo.autoplay = true;
       remoteVideo.playsInline = true;
       

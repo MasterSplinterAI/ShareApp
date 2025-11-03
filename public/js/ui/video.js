@@ -304,10 +304,27 @@ export function updateMainVideo() {
             mainVideo.muted = true; // To prevent feedback
             mainVideo.controls = false;
             
+            // Ensure object-contain for proper aspect ratio (no cropping)
+            mainVideo.style.objectFit = 'contain';
+            
             // Set video properties
             mainVideo.style.display = '';
             mainVideo.style.visibility = 'visible';
             mainVideo.style.opacity = '1';
+            
+            // Adjust main video container aspect ratio if portrait video
+            mainVideo.onloadedmetadata = () => {
+              if (mainVideo.videoWidth > 0 && mainVideo.videoHeight > 0) {
+                const aspectRatio = mainVideo.videoWidth / mainVideo.videoHeight;
+                if (aspectRatio < 1 && mainVideoContainer) {
+                  // Portrait video - adjust container
+                  mainVideoContainer.style.aspectRatio = `${mainVideo.videoHeight} / ${mainVideo.videoWidth}`;
+                } else if (mainVideoContainer) {
+                  // Landscape video - use standard 16:9
+                  mainVideoContainer.style.aspectRatio = '16/9';
+                }
+              }
+            };
             
             // Force update the stream
             mainVideo.srcObject = null; // Clear first
@@ -379,9 +396,26 @@ export function updateMainVideo() {
             mainVideo.controls = false;
             mainVideo.muted = false; // Unmute for remote participants
             
+            // Ensure object-contain for proper aspect ratio (no cropping)
+            mainVideo.style.objectFit = 'contain';
+            
             // Ensure video is visible
             mainVideo.style.display = '';
             mainVideo.style.visibility = 'visible';
+            
+            // Adjust container aspect ratio if portrait video
+            participantVideo.onloadedmetadata = () => {
+              if (participantVideo.videoWidth > 0 && participantVideo.videoHeight > 0) {
+                const aspectRatio = participantVideo.videoWidth / participantVideo.videoHeight;
+                if (aspectRatio < 1 && mainVideoContainer) {
+                  // Portrait video - adjust main container
+                  mainVideoContainer.style.aspectRatio = `${participantVideo.videoHeight} / ${participantVideo.videoWidth}`;
+                } else if (mainVideoContainer) {
+                  // Landscape video - use standard 16:9
+                  mainVideoContainer.style.aspectRatio = '16/9';
+                }
+              }
+            };
             
             // ANTI-FLASHING: Set stream directly
             mainVideo.srcObject = newStream;
