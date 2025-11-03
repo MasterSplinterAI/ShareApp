@@ -3,6 +3,9 @@
 
 import { getSocketId } from '../../services/socket.js';
 
+// Track all participants (including local) for grid display
+let allParticipants = new Map();
+
 export function setupVideoUI() {
   // Listen for track events from peer connections
   setupTrackListeners();
@@ -12,32 +15,41 @@ export function setupVideoUI() {
   
   // Add local video to grid when media is initialized
   setupLocalVideo();
+  
+  // Refresh grid layout when participants change
+  setupGridRefresh();
 }
 
 function setupTrackListeners() {
   // Listen for when peer connections receive tracks
-  // This is triggered by peerConnection.js ontrack event
   document.addEventListener('peer-track-received', (event) => {
     const { peerId, track, stream } = event.detail;
     handlePeerTrack(peerId, track, stream);
   });
-  
-  // Also listen for when streams are added to peer connections
-  // This happens when the connection is established
-  // Note: We don't need to monitor peerConnections directly here as the events will handle it
 }
 
 function setupParticipantListeners() {
-  // Listen for participant joined event
+  // Listen for participant joined - create container immediately
   document.addEventListener('participant-joined', (event) => {
-    const { peerId, name, isHost } = event.detail;
-    // Video will be added when track is received
+    const { participantId, participantName } = event.detail;
+    const participant = window.appState?.participants?.[participantId];
+    if (participant) {
+      createParticipantContainer(participantId, participant.name, participant.isHost);
+    }
   });
   
   // Listen for participant left event
   document.addEventListener('participant-left', (event) => {
     const { peerId } = event.detail;
     removeParticipantVideo(peerId);
+  });
+  
+  // Listen for user-joined from socket
+  document.addEventListener('user-joined-event', (event) => {
+    const { userId, name, isHost } = event.detail;
+    if (userId && userId !== getSocketId()) {
+      createParticipantContainer(userId, name, isHost);
+    }
   });
 }
 
@@ -58,6 +70,48 @@ function setupLocalVideo() {
   });
 }
 
+function setupGridRefresh() {
+  // Refresh grid layout when participants change
+  const refreshGrid = () => {
+    updateGridLayout();
+  };
+  
+  document.addEventListener('participant-joined', refreshGrid);
+  document.addEventListener('participant-left', refreshGrid);
+  document.addEventListener('local-stream-ready', refreshGrid);
+}
+
+function updateGridLayout() {
+  const grid = document.getElementById('participantsGrid');
+  if (!grid) return;
+  
+  const participantCount = grid.children.length;
+  
+  // Dynamic grid columns based on participant count
+  if (participantCount === 1) {
+    grid.style.gridTemplateColumns = '1fr';
+  } else if (participantCount === 2) {
+    grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+  } else if (participantCount <= 4) {
+    grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+  } else if (participantCount <= 6) {
+    grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+  } else if (participantCount <= 9) {
+    grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+  } else {
+    grid.style.gridTemplateColumns = 'repeat(4, 1fr)';
+  }
+  
+  // Mobile adjustments
+  if (window.innerWidth <= 640) {
+    if (participantCount <= 2) {
+      grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    } else {
+      grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    }
+  }
+}
+
 function addLocalVideoToGrid() {
   if (!window.appState || !window.appState.localStream) return;
   
@@ -66,7 +120,11 @@ function addLocalVideoToGrid() {
   
   // Check if local video already exists
   const existing = document.getElementById(`video-wrapper-local`);
-  if (existing) return;
+  if (existing) {
+    // Update existing
+    updateVideoStream('local', window.appState.localStream);
+    return;
+  }
   
   // Add local video to grid
   const grid = document.getElementById('participantsGrid');
@@ -81,6 +139,25 @@ function addLocalVideoToGrid() {
   }
   
   grid.appendChild(wrapper);
+  updateGridLayout();
+}
+
+function createParticipantContainer(peerId, name, isHost = false) {
+  // Check if already exists
+  const existing = document.getElementById(`video-wrapper-${peerId}`);
+  if (existing) return existing;
+  
+  const grid = document.getElementById('participantsGrid');
+  if (!grid) return null;
+  
+  // Create container with placeholder (will show video when track arrives)
+  const wrapper = createVideoContainer(peerId, null, name, isHost);
+  
+  // Add to grid
+  grid.appendChild(wrapper);
+  updateGridLayout();
+  
+  return wrapper;
 }
 
 function handlePeerTrack(peerId, track, stream) {
@@ -92,7 +169,7 @@ function handlePeerTrack(peerId, track, stream) {
     return;
   }
   
-  // Check if video container exists
+  // Ensure container exists
   let wrapper = document.getElementById(`video-wrapper-${peerId}`);
   
   if (!wrapper) {
@@ -107,14 +184,38 @@ function handlePeerTrack(peerId, track, stream) {
     const grid = document.getElementById('participantsGrid');
     if (grid) {
       grid.appendChild(wrapper);
+      updateGridLayout();
     } else {
       console.warn('Participants grid not found');
       return;
     }
+  } else {
+    // Update existing container with stream
+    updateVideoStream(peerId, stream);
   }
   
-  // Update video element with stream
+  // Update status indicators
+  if (track.kind === 'audio') {
+    updateMicStatus(peerId, track.enabled);
+  }
+  
+  if (track.kind === 'video') {
+    updateVideoStatus(peerId, track.enabled);
+  }
+  
+  // Update main video if this is pinned
+  if (window.appState.pinnedParticipant === peerId) {
+    updateMainVideoDisplay();
+  }
+}
+
+function updateVideoStream(peerId, stream) {
+  const wrapper = document.getElementById(`video-wrapper-${peerId}`);
+  if (!wrapper) return;
+  
   const video = wrapper.querySelector(`#video-${peerId}`) || wrapper.querySelector('video');
+  const placeholder = wrapper.querySelector('.video-placeholder');
+  
   if (video && stream) {
     // Check if stream already set
     if (video.srcObject !== stream) {
@@ -126,39 +227,57 @@ function handlePeerTrack(peerId, track, stream) {
       });
     }
     
-    // Update visibility based on track type and state
-    if (track.kind === 'video') {
-      const hasEnabledVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-      const placeholder = wrapper.querySelector('.video-placeholder');
-      
-      if (hasEnabledVideo) {
-        video.style.display = 'block';
-        if (placeholder) placeholder.style.display = 'none';
-      } else {
-        video.style.display = 'none';
-        if (placeholder) placeholder.style.display = 'flex';
-      }
+    // Update visibility based on video tracks
+    const hasEnabledVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+    
+    if (hasEnabledVideo) {
+      video.style.display = 'block';
+      if (placeholder) placeholder.style.display = 'none';
+    } else {
+      video.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'flex';
     }
+  } else if (!stream || !stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live')) {
+    // No video - show placeholder
+    if (video) video.style.display = 'none';
+    if (placeholder) placeholder.style.display = 'flex';
+  }
+}
+
+function updateMicStatus(peerId, enabled) {
+  const wrapper = document.getElementById(`video-wrapper-${peerId}`);
+  if (!wrapper) return;
+  
+  const micStatus = wrapper.querySelector('.mic-status i');
+  if (micStatus) {
+    micStatus.className = enabled ? 'fas fa-microphone' : 'fas fa-microphone-slash';
+  }
+}
+
+function updateVideoStatus(peerId, enabled) {
+  const wrapper = document.getElementById(`video-wrapper-${peerId}`);
+  if (!wrapper) return;
+  
+  const videoStatus = wrapper.querySelector('.video-status i');
+  if (videoStatus) {
+    videoStatus.className = enabled ? 'fas fa-video' : 'fas fa-video-slash';
   }
   
-  // Update status indicators
-  if (track.kind === 'audio') {
-    const micStatus = wrapper.querySelector('.mic-status i');
-    if (micStatus) {
-      micStatus.className = track.enabled ? 'fas fa-microphone' : 'fas fa-microphone-slash';
-    }
-  }
+  // Update video visibility
+  const video = wrapper.querySelector('video');
+  const placeholder = wrapper.querySelector('.video-placeholder');
   
-  if (track.kind === 'video') {
-    const videoStatus = wrapper.querySelector('.video-status i');
-    if (videoStatus) {
-      videoStatus.className = track.enabled ? 'fas fa-video' : 'fas fa-video-slash';
+  if (video && video.srcObject) {
+    const stream = video.srcObject;
+    const hasVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+    
+    if (hasVideo && enabled) {
+      video.style.display = 'block';
+      if (placeholder) placeholder.style.display = 'none';
+    } else {
+      video.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'flex';
     }
-  }
-  
-  // Update main video if this is pinned
-  if (window.appState.pinnedParticipant === peerId) {
-    updateMainVideoDisplay();
   }
 }
 
@@ -166,42 +285,88 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
   const wrapper = document.createElement('div');
   wrapper.className = 'video-wrapper';
   wrapper.id = `video-wrapper-${peerId}`;
+  wrapper.style.cssText = `
+    position: relative;
+    background: #000;
+    border-radius: 4px;
+    overflow: hidden;
+    aspect-ratio: 16/9;
+    min-height: 0;
+    z-index: 1;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  `;
   
   // Create video element
   const video = document.createElement('video');
   video.id = `video-${peerId}`;
   video.autoplay = true;
   video.playsInline = true;
+  video.style.cssText = `
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: none;
+    pointer-events: auto;
+  `;
+  
   if (stream) {
     video.srcObject = stream;
-  }
-  if (peerId === 'local') {
-    video.muted = true; // Mute local video to prevent echo
+    if (peerId === 'local') {
+      video.muted = true; // Mute local video to prevent echo
+    }
   }
   
   // Create placeholder
   const placeholder = document.createElement('div');
   placeholder.className = 'video-placeholder';
+  placeholder.style.cssText = `
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #1a1a1a;
+    z-index: 2;
+    pointer-events: none;
+  `;
   
   // Get initials
   const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
   
   placeholder.innerHTML = `
-    <div class="avatar">${initials}</div>
-    <div class="name">${name}${isHost ? ' (Host)' : ''}</div>
+    <div class="avatar" style="width: 64px; height: 64px; border-radius: 50%; background: #3b82f6; display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: bold; margin-bottom: 8px;">${initials}</div>
+    <div class="name" style="color: white; font-size: 14px; font-weight: 500;">${name}${isHost ? ' (Host)' : ''}</div>
   `;
   
   // Create label
   const label = document.createElement('div');
   label.className = 'video-label';
+  label.style.cssText = `
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
+    padding: 8px 12px;
+    color: white;
+    font-size: 12px;
+    z-index: 10;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  `;
+  
   label.innerHTML = `
-    <span class="name">${name}${isHost ? ' (Host)' : ''}</span>
-    <span class="status">
+    <span class="name" style="font-weight: 500;">${name}${isHost ? ' (Host)' : ''}</span>
+    <span class="status" style="display: flex; gap: 8px;">
       <span class="status-icon mic-status" data-peer-id="${peerId}">
-        <i class="fas fa-microphone"></i>
+        <i class="fas fa-microphone" style="font-size: 12px;"></i>
       </span>
       <span class="status-icon video-status" data-peer-id="${peerId}">
-        <i class="fas fa-video-slash"></i>
+        <i class="fas fa-video-slash" style="font-size: 12px;"></i>
       </span>
     </span>
   `;
@@ -231,19 +396,19 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
       track.addEventListener('ended', () => {
         video.style.display = 'none';
         placeholder.style.display = 'flex';
-        updateVideoStatus(peerId, audioTracks[0]?.enabled || false, false);
+        updateVideoStatus(peerId, false);
       });
       
       track.addEventListener('mute', () => {
         video.style.display = 'none';
         placeholder.style.display = 'flex';
-        updateVideoStatus(peerId, audioTracks[0]?.enabled || false, false);
+        updateVideoStatus(peerId, false);
       });
       
       track.addEventListener('unmute', () => {
         video.style.display = 'block';
         placeholder.style.display = 'none';
-        updateVideoStatus(peerId, audioTracks[0]?.enabled || false, true);
+        updateVideoStatus(peerId, true);
       });
     });
     
@@ -258,11 +423,31 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
   
   // Pin button
   const pinBtn = document.createElement('button');
-  pinBtn.className = 'control-btn';
-  pinBtn.style.cssText = 'position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; z-index: 10;';
+  pinBtn.className = 'control-btn pin-btn';
+  pinBtn.style.cssText = `
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 32px;
+    height: 32px;
+    z-index: 20;
+    background: rgba(0, 0, 0, 0.6);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  `;
   pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
   pinBtn.title = 'Pin to main view';
-  pinBtn.addEventListener('click', () => {
+  pinBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
     if (window.appState) {
       window.appState.pinnedParticipant = peerId === 'local' ? 'local' : peerId;
       updateMainVideoDisplay();
@@ -270,7 +455,49 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
     }
   });
   
+  // Fullscreen button
+  const fullscreenBtn = document.createElement('button');
+  fullscreenBtn.className = 'control-btn fullscreen-btn';
+  fullscreenBtn.style.cssText = `
+    position: absolute;
+    top: 8px;
+    right: 44px;
+    width: 32px;
+    height: 32px;
+    z-index: 20;
+    background: rgba(0, 0, 0, 0.6);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    pointer-events: auto;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  `;
+  fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+  fullscreenBtn.title = 'Fullscreen';
+  fullscreenBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const videoEl = wrapper.querySelector('video');
+    if (videoEl && videoEl.srcObject) {
+      if (videoEl.requestFullscreen) {
+        videoEl.requestFullscreen();
+      } else if (videoEl.webkitRequestFullscreen) {
+        videoEl.webkitRequestFullscreen();
+      } else if (videoEl.mozRequestFullScreen) {
+        videoEl.mozRequestFullScreen();
+      } else if (videoEl.msRequestFullscreen) {
+        videoEl.msRequestFullscreen();
+      }
+    }
+  });
+  
   wrapper.appendChild(pinBtn);
+  wrapper.appendChild(fullscreenBtn);
   
   return wrapper;
 }
@@ -356,22 +583,7 @@ export function addParticipantVideo(peerId, stream, name, isHost = false) {
   const existing = document.getElementById(`video-wrapper-${peerId}`);
   if (existing) {
     // Update existing
-    const video = existing.querySelector('video');
-    if (video && stream) {
-      video.srcObject = stream;
-      
-      // Check if video should be visible
-      const hasVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-      const placeholder = existing.querySelector('.video-placeholder');
-      
-      if (hasVideo) {
-        video.style.display = 'block';
-        if (placeholder) placeholder.style.display = 'none';
-      } else {
-        video.style.display = 'none';
-        if (placeholder) placeholder.style.display = 'flex';
-      }
-    }
+    updateVideoStream(peerId, stream);
     return;
   }
   
@@ -379,6 +591,7 @@ export function addParticipantVideo(peerId, stream, name, isHost = false) {
   
   // Add to grid
   grid.appendChild(wrapper);
+  updateGridLayout();
   
   // Update main video if this is the pinned participant
   if (window.appState && window.appState.pinnedParticipant === peerId) {
@@ -390,6 +603,7 @@ export function removeParticipantVideo(peerId) {
   const wrapper = document.getElementById(`video-wrapper-${peerId}`);
   if (wrapper) {
     wrapper.remove();
+    updateGridLayout();
   }
   
   // If this was the pinned participant, reset to local
@@ -399,41 +613,13 @@ export function removeParticipantVideo(peerId) {
   }
 }
 
-export function updateVideoStatus(peerId, micOn, cameraOn) {
-  const wrapper = document.getElementById(`video-wrapper-${peerId}`);
-  if (!wrapper) return;
-  
-  const micStatus = wrapper.querySelector('.mic-status i');
-  const videoStatus = wrapper.querySelector('.video-status i');
-  const video = wrapper.querySelector('video');
-  const placeholder = wrapper.querySelector('.video-placeholder');
-  
-  if (micStatus) {
-    micStatus.className = micOn ? 'fas fa-microphone' : 'fas fa-microphone-slash';
-  }
-  
-  if (videoStatus) {
-    videoStatus.className = cameraOn ? 'fas fa-video' : 'fas fa-video-slash';
-  }
-  
-  if (video && video.srcObject) {
-    const stream = video.srcObject;
-    const hasVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-    
-    if (hasVideo && cameraOn) {
-      video.style.display = 'block';
-      if (placeholder) placeholder.style.display = 'none';
-    } else {
-      video.style.display = 'none';
-      if (placeholder) placeholder.style.display = 'flex';
-    }
-  }
-}
-
 // Listen for participant changes
 document.addEventListener('participant-joined', (e) => {
-  const { peerId, name, isHost } = e.detail;
-  // Video will be added when track is received via handlePeerTrack
+  const { participantId, participantName } = e.detail;
+  const participant = window.appState?.participants?.[participantId];
+  if (participant) {
+    createParticipantContainer(participantId, participant.name, participant.isHost);
+  }
 });
 
 document.addEventListener('participant-left', (e) => {
@@ -445,48 +631,25 @@ document.addEventListener('pinned-participant-changed', () => {
   updateMainVideoDisplay();
 });
 
-// Hook into peerConnection.js ontrack event
-// We'll modify peerConnection.js to dispatch events that this module can listen to
-// For now, let's also check periodically for new streams
-let trackCheckInterval = null;
-
-function startTrackMonitoring() {
-  if (trackCheckInterval) return;
-  
-  trackCheckInterval = setInterval(() => {
-    // Ensure appState is initialized
-    if (!window.appState || !window.appState.peerConnections) {
-      return; // Skip if not initialized yet
-    }
-    
-    // Check all peer connections for tracks
-    Object.entries(window.appState.peerConnections).forEach(([peerId, pc]) => {
-      if (pc && pc.getReceivers) {
-        const receivers = pc.getReceivers();
-        receivers.forEach(receiver => {
-          if (receiver.track) {
-            const stream = receiver.track ? new MediaStream([receiver.track]) : null;
-            if (stream && !document.getElementById(`video-wrapper-${peerId}`)) {
-              // Track exists but no video container - create one
-              const participant = window.appState.participants && window.appState.participants[peerId];
-              if (participant) {
-                handlePeerTrack(peerId, receiver.track, stream);
-              }
-            }
-          }
-        });
+// Hook into socket events
+const originalSocketOn = window.socket?.on;
+if (originalSocketOn) {
+  window.socket.on('user-joined', (data) => {
+    document.dispatchEvent(new CustomEvent('user-joined-event', {
+      detail: {
+        userId: data.userId,
+        name: data.name,
+        isHost: data.isHost
       }
-    });
-  }, 2000); // Check every 2 seconds
+    }));
+  });
 }
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
     setupVideoUI();
-    setTimeout(startTrackMonitoring, 3000); // Start monitoring after 3 seconds
   });
 } else {
   setupVideoUI();
-  setTimeout(startTrackMonitoring, 3000);
 }
