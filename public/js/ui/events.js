@@ -802,23 +802,23 @@ function setupSettingsButton() {
   // Create settings menu
   const settingsMenu = document.createElement('div');
   settingsMenu.id = 'settingsMenu';
-  settingsMenu.className = 'absolute bottom-full right-0 mb-2 bg-white rounded-lg shadow-lg z-10 hidden';
+  settingsMenu.className = 'absolute bottom-full right-0 mb-2 bg-gray-800 rounded-lg shadow-xl z-50 hidden border border-gray-700';
   
   // Add menu items
   settingsMenu.innerHTML = `
     <ul class="py-2">
       <li>
-        <button id="devicesBtn" class="w-full text-left px-4 py-2 hover:bg-gray-100">
+        <button id="devicesBtn" class="w-full text-left px-4 py-2 hover:bg-gray-700 text-white transition-colors">
           <i class="fas fa-headset mr-2"></i> Audio & Video Devices
         </button>
       </li>
       <li>
-        <button id="networkSettingsBtn" class="w-full text-left px-4 py-2 hover:bg-gray-100">
+        <button id="networkSettingsBtn" class="w-full text-left px-4 py-2 hover:bg-gray-700 text-white transition-colors">
           <i class="fas fa-network-wired mr-2"></i> Network Settings
         </button>
       </li>
       <li>
-        <button id="reconnectBtn" class="w-full text-left px-4 py-2 hover:bg-gray-100">
+        <button id="reconnectBtn" class="w-full text-left px-4 py-2 hover:bg-gray-700 text-white transition-colors">
           <i class="fas fa-sync mr-2"></i> Reconnect All Peers
         </button>
       </li>

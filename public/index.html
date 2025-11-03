@@ -56,8 +56,8 @@
           <div id="mainVideoLabel" class="video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-4 py-3 text-sm z-10">
             Main Speaker
           </div>
-          <button id="mainFullscreenBtn" class="video-control absolute top-2 right-2 z-20 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-2 rounded" title="Full Screen" aria-label="Toggle Full Screen">
-            <i class="fas fa-expand"></i>
+          <button id="mainFullscreenBtn" class="video-control absolute top-2 right-2 z-20 bg-black bg-opacity-50 hover:bg-opacity-75 text-white p-1.5 rounded text-sm" title="Full Screen" aria-label="Toggle Full Screen" style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;">
+            <i class="fas fa-expand text-xs"></i>
           </button>
           <!-- Placeholder will be removed programmatically in audio-only and view-only modes -->
           <div id="noVideoPlaceholder" class="hidden absolute inset-0 flex items-center justify-center bg-gray-900 placeholder-element">
@@ -433,10 +433,17 @@
     /* Fullscreen button styling */
     .video-control {
       transition: all 0.2s ease;
+      min-width: 32px;
+      min-height: 32px;
+      font-size: 0.875rem;
     }
     
     .video-control:hover {
       background-color: rgba(0, 0, 0, 0.75) !important;
+    }
+    
+    .video-control i {
+      font-size: 0.875rem;
     }
   </style>
   
