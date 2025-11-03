@@ -870,7 +870,7 @@ export async function handleRemoteOffer(peerId, sdp) {
     pendingAnswers.set(peerId, true);
     
     try {
-      // Set remote description
+      // Set remote description (this will transition from 'have-local-offer' to 'have-remote-offer' if we had a local offer)
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
       
       // Process any queued ICE candidates now that remote description is set
@@ -883,6 +883,31 @@ export async function handleRemoteOffer(peerId, sdp) {
       };
       
       console.log(`Creating answer for ${peerId} with options:`, answerOptions);
+      
+      // IMPORTANT: Make sure we have video tracks in our local stream before creating answer
+      // This ensures video is included in the SDP even if camera was off initially
+      if (window.appState.localStream) {
+        const hasVideoTracks = window.appState.localStream.getVideoTracks().length > 0;
+        const hasAudioTracks = window.appState.localStream.getAudioTracks().length > 0;
+        
+        console.log(`Local stream before answer: ${hasVideoTracks ? 'has' : 'no'} video, ${hasAudioTracks ? 'has' : 'no'} audio`);
+        
+        // If we don't have video tracks but camera is enabled, try to get them
+        if (!hasVideoTracks && window.appState.isCameraOn) {
+          console.log('Camera is on but no video tracks in stream, attempting to get video');
+          try {
+            const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const videoTrack = videoStream.getVideoTracks()[0];
+            if (videoTrack) {
+              window.appState.localStream.addTrack(videoTrack);
+              pc.addTrack(videoTrack, window.appState.localStream);
+              console.log('Added video track to peer connection before creating answer');
+            }
+          } catch (err) {
+            console.warn('Could not get video track for answer:', err);
+          }
+        }
+      }
       
       // Create answer with these options
       const answer = await pc.createAnswer(answerOptions);
