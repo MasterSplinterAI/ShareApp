@@ -248,18 +248,9 @@ function setupJoinButton() {
         return;
       }
       
-      // Ask if user wants to join as host or participant
-      const joinAsHost = await promptJoinAsHost();
-      
-      // If joining as host, prompt for host code first
+      // Prompt for access code (if needed - server will determine if it's host or participant code)
       let accessCode = null;
-      if (joinAsHost) {
-        accessCode = await promptForAccessCode('host');
-        if (accessCode === null) {
-          // User cancelled host code prompt
-          return;
-        }
-      }
+      // Note: We'll prompt for access code after attempting join if server requires it
       
       document.getElementById('connectionStatus').classList.remove('hidden');
       document.getElementById('connectionStatusText').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Initializing media...';
@@ -277,11 +268,12 @@ function setupJoinButton() {
         return;
       }
       
-      // Join room with provided name and access code
+      // Join room with provided name - server will prompt for access code if needed
+      // Server will automatically determine if code is host or participant code
       joinRoom(roomId, { 
         userName: userName, 
         accessCode: accessCode,
-        isHost: joinAsHost
+        isHost: false // Start as participant, server will elevate if host code matches
       });
       
       // Update URL with room ID
@@ -566,9 +558,35 @@ export async function promptForAccessCode(mode = 'participant') {
     icon.className = 'text-primary mr-3 text-2xl';
     icon.innerHTML = '<i class="fas fa-key"></i>';
     
+// Function to prompt for access code when joining
+export async function promptForAccessCode(mode = 'auto') {
+  return new Promise((resolve) => {
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] modal-overlay';
+    
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.className = 'bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-lg modal-content';
+    modalContent.style.cssText = 'position: relative; z-index: 10000 !important; pointer-events: auto !important;';
+    
+    // Header
+    const header = document.createElement('div');
+    header.className = 'flex items-center mb-4 pb-3 border-b border-gray-200';
+    
+    const icon = document.createElement('div');
+    icon.className = 'text-primary mr-3 text-2xl';
+    icon.innerHTML = '<i class="fas fa-key"></i>';
+    
     const title = document.createElement('h3');
     title.className = 'text-xl font-bold';
-    title.textContent = mode === 'host' ? 'Enter Host Code' : 'Enter Access Code';
+    if (mode === 'host') {
+      title.textContent = 'Enter Host Code';
+    } else if (mode === 'participant') {
+      title.textContent = 'Enter Access Code';
+    } else {
+      title.textContent = 'Enter Access Code';
+    }
     
     header.appendChild(icon);
     header.appendChild(title);
@@ -576,9 +594,13 @@ export async function promptForAccessCode(mode = 'participant') {
     // Description
     const description = document.createElement('p');
     description.className = 'text-gray-600 mb-4 text-sm';
-    description.textContent = mode === 'host' 
-      ? 'This meeting requires a host code to join as host. Please enter the host code.' 
-      : 'This meeting requires an access code to join.';
+    if (mode === 'host') {
+      description.textContent = 'This meeting requires a host code to join as host. Please enter the host code.';
+    } else if (mode === 'participant') {
+      description.textContent = 'This meeting requires an access code to join.';
+    } else {
+      description.textContent = 'This meeting requires an access code. Enter your participant code or host code.';
+    }
     
     // Access code input
     const inputContainer = document.createElement('div');
@@ -586,11 +608,23 @@ export async function promptForAccessCode(mode = 'participant') {
     
     const label = document.createElement('label');
     label.className = 'block text-sm font-medium text-gray-700 mb-1';
-    label.textContent = mode === 'host' ? 'Host Code' : 'Access Code';
+    if (mode === 'host') {
+      label.textContent = 'Host Code';
+    } else if (mode === 'participant') {
+      label.textContent = 'Access Code';
+    } else {
+      label.textContent = 'Access Code';
+    }
     
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = `Enter ${mode === 'host' ? 'host' : 'access'} code`;
+    if (mode === 'host') {
+      input.placeholder = 'Enter host code';
+    } else if (mode === 'participant') {
+      input.placeholder = 'Enter access code';
+    } else {
+      input.placeholder = 'Enter participant or host code';
+    }
     input.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
     input.maxLength = 6;
     input.pattern = '[0-9]*';
