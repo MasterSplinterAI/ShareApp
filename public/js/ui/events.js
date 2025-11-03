@@ -539,22 +539,6 @@ export async function promptJoinAsHost() {
 }
 
 // Function to prompt for access code when joining
-export async function promptForAccessCode(mode = 'participant') {
-  return new Promise((resolve) => {
-    // Create modal overlay
-    const modalOverlay = document.createElement('div');
-    modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] modal-overlay';
-    
-    // Create modal content
-    const modalContent = document.createElement('div');
-    modalContent.className = 'bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-lg modal-content';
-    modalContent.style.cssText = 'position: relative; z-index: 10000 !important; pointer-events: auto !important;';
-    
-    // Header
-    const header = document.createElement('div');
-    header.className = 'flex items-center mb-4 pb-3 border-b border-gray-200';
-    
-// Function to prompt for access code when joining
 export async function promptForAccessCode(mode = 'auto') {
   return new Promise((resolve) => {
     // Create modal overlay
