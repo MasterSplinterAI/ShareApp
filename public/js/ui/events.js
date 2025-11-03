@@ -248,9 +248,10 @@ function setupJoinButton() {
         return;
       }
       
-      // Prompt for access code (if needed - server will determine if it's host or participant code)
-      let accessCode = null;
-      // Note: We'll prompt for access code after attempting join if server requires it
+      // Prompt for access code immediately - user might have host or participant code
+      // Server will determine which one it is when we attempt to join
+      const accessCode = await promptForAccessCode('auto');
+      // Note: User can cancel/skip if they don't have a code yet - server will prompt if required
       
       document.getElementById('connectionStatus').classList.remove('hidden');
       document.getElementById('connectionStatusText').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Initializing media...';
@@ -268,11 +269,11 @@ function setupJoinButton() {
         return;
       }
       
-      // Join room with provided name - server will prompt for access code if needed
+      // Join room with provided name and access code
       // Server will automatically determine if code is host or participant code
       joinRoom(roomId, { 
         userName: userName, 
-        accessCode: accessCode,
+        accessCode: accessCode || null,
         isHost: false // Start as participant, server will elevate if host code matches
       });
       
