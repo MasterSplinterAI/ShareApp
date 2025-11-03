@@ -1,6 +1,6 @@
 // Modern UI Controls Handler
 import { toggleCamera, toggleMicrophone, startScreenSharing, stopScreenSharing } from '../../services/media.js';
-import { leaveMeeting } from '../../services/socket.js';
+import { leaveRoom, sendChatMessage } from '../../services/socket.js';
 
 export function setupControls() {
   // Microphone toggle
@@ -54,7 +54,7 @@ export function setupControls() {
   const leaveBtn = document.getElementById('leaveBtn');
   leaveBtn.addEventListener('click', () => {
     if (confirm('Are you sure you want to leave the meeting?')) {
-      leaveMeeting();
+      leaveRoom();
       document.getElementById('meetingScreen').style.display = 'none';
       document.getElementById('homeScreen').style.display = 'flex';
     }
@@ -79,10 +79,9 @@ export function setupControls() {
     document.getElementById('chatPanel').classList.remove('active');
   });
   
-  // Settings button
-  document.getElementById('settingsBtn').addEventListener('click', () => {
-    // Show device modal
-    document.getElementById('deviceModal').classList.add('active');
+      sendChatMessage(message);
+      input.value = '';
+    }
   });
 }
 
