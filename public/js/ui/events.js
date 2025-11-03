@@ -982,6 +982,7 @@ function setupSettingsButton() {
   if (isMobile) {
     settingsMenu.style.cssText += 'position: absolute !important; z-index: 10002 !important; pointer-events: auto !important; touch-action: auto !important;';
   }
+}
 
 // Setup media restart listener
 function setupMediaRestartListener() {
