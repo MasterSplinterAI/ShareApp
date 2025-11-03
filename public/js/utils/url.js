@@ -46,7 +46,7 @@ export function removeRoomFromUrl() {
   window.history.pushState({}, '', url);
 }
 
-// Get shareable link for a room
+// Get shareable link for a room (includes room code in URL)
 export function getShareableLink(roomId) {
   if (!roomId) {
     return null;
@@ -56,6 +56,18 @@ export function getShareableLink(roomId) {
   url.searchParams.set('room', roomId);
   
   return url.toString();
+}
+
+// Get shareable link with access code hint (for display purposes)
+export function getShareableLinkWithCode(roomId, accessCode) {
+  const link = getShareableLink(roomId);
+  if (!link || !accessCode) {
+    return link;
+  }
+  
+  // Note: We don't put the access code in the URL for security
+  // Users will need to enter it when joining
+  return link;
 }
 
 // Initialize room from URL if present

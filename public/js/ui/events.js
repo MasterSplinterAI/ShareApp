@@ -209,6 +209,9 @@ function setupJoinButton() {
         return;
       }
       
+      // Prompt for access code (if needed)
+      const accessCode = await promptForAccessCode();
+      
       document.getElementById('connectionStatus').classList.remove('hidden');
       document.getElementById('connectionStatusText').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Initializing media...';
       
@@ -225,8 +228,8 @@ function setupJoinButton() {
         return;
       }
       
-      // Join room with provided name
-      joinRoom(roomId, { userName: userName });
+      // Join room with provided name and access code
+      joinRoom(roomId, { userName: userName, accessCode: accessCode });
       
       // Update URL with room ID
       setRoomInUrl(roomId);
@@ -250,6 +253,228 @@ function setupJoinButton() {
         showError('Could not join meeting. Please check your device connections.');
       }
     }
+  });
+}
+
+// Function to prompt for access codes when hosting
+export async function promptForAccessCodes() {
+  return new Promise((resolve) => {
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] modal-overlay';
+    
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.className = 'bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-lg modal-content';
+    
+    // Header
+    const header = document.createElement('div');
+    header.className = 'flex items-center mb-4 pb-3 border-b border-gray-200';
+    
+    const icon = document.createElement('div');
+    icon.className = 'text-primary mr-3 text-2xl';
+    icon.innerHTML = '<i class="fas fa-lock"></i>';
+    
+    const title = document.createElement('h3');
+    title.className = 'text-xl font-bold';
+    title.textContent = 'Meeting Security';
+    
+    header.appendChild(icon);
+    header.appendChild(title);
+    
+    // Description
+    const description = document.createElement('p');
+    description.className = 'text-gray-600 mb-4 text-sm';
+    description.textContent = 'Optionally set access codes to control who can join your meeting.';
+    
+    // Access code input (for participants)
+    const accessCodeContainer = document.createElement('div');
+    accessCodeContainer.className = 'mb-4';
+    
+    const accessCodeLabel = document.createElement('label');
+    accessCodeLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+    accessCodeLabel.innerHTML = '<i class="fas fa-users mr-1"></i> Participant Access Code (optional)';
+    
+    const accessCodeInput = document.createElement('input');
+    accessCodeInput.type = 'text';
+    accessCodeInput.placeholder = 'Enter 4-6 digit code';
+    accessCodeInput.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
+    accessCodeInput.maxLength = 6;
+    accessCodeInput.pattern = '[0-9]*';
+    accessCodeInput.inputMode = 'numeric';
+    
+    accessCodeContainer.appendChild(accessCodeLabel);
+    accessCodeContainer.appendChild(accessCodeInput);
+    
+    // Host code input
+    const hostCodeContainer = document.createElement('div');
+    hostCodeContainer.className = 'mb-4';
+    
+    const hostCodeLabel = document.createElement('label');
+    hostCodeLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
+    hostCodeLabel.innerHTML = '<i class="fas fa-crown mr-1"></i> Host Code (optional)';
+    
+    const hostCodeInput = document.createElement('input');
+    hostCodeInput.type = 'text';
+    hostCodeInput.placeholder = 'Enter 4-6 digit code';
+    hostCodeInput.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
+    hostCodeInput.maxLength = 6;
+    hostCodeInput.pattern = '[0-9]*';
+    hostCodeInput.inputMode = 'numeric';
+    
+    const hostCodeHint = document.createElement('p');
+    hostCodeHint.className = 'text-xs text-gray-500 mt-1';
+    hostCodeHint.textContent = 'Use this code to rejoin as host if you leave';
+    
+    hostCodeContainer.appendChild(hostCodeLabel);
+    hostCodeContainer.appendChild(hostCodeInput);
+    hostCodeContainer.appendChild(hostCodeHint);
+    
+    // Buttons
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'flex justify-end gap-2 mt-6';
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Skip';
+    cancelBtn.addEventListener('click', () => {
+      document.body.removeChild(modalOverlay);
+      resolve({ accessCode: null, hostCode: null });
+    });
+    
+    const continueBtn = document.createElement('button');
+    continueBtn.className = 'btn btn-primary';
+    continueBtn.textContent = 'Continue';
+    continueBtn.addEventListener('click', () => {
+      const accessCode = accessCodeInput.value.trim() || null;
+      const hostCode = hostCodeInput.value.trim() || null;
+      
+      document.body.removeChild(modalOverlay);
+      resolve({ accessCode, hostCode });
+    });
+    
+    // Allow Enter key to submit
+    const handleEnter = (e) => {
+      if (e.key === 'Enter') {
+        continueBtn.click();
+      }
+    };
+    accessCodeInput.addEventListener('keydown', handleEnter);
+    hostCodeInput.addEventListener('keydown', handleEnter);
+    
+    buttonContainer.appendChild(cancelBtn);
+    buttonContainer.appendChild(continueBtn);
+    
+    // Assemble modal
+    modalContent.appendChild(header);
+    modalContent.appendChild(description);
+    modalContent.appendChild(accessCodeContainer);
+    modalContent.appendChild(hostCodeContainer);
+    modalContent.appendChild(buttonContainer);
+    modalOverlay.appendChild(modalContent);
+    
+    // Add to DOM
+    document.body.appendChild(modalOverlay);
+    
+    // Focus first input
+    setTimeout(() => accessCodeInput.focus(), 100);
+  });
+}
+
+// Function to prompt for access code when joining
+export async function promptForAccessCode() {
+  return new Promise((resolve) => {
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] modal-overlay';
+    
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.className = 'bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-lg modal-content';
+    
+    // Header
+    const header = document.createElement('div');
+    header.className = 'flex items-center mb-4 pb-3 border-b border-gray-200';
+    
+    const icon = document.createElement('div');
+    icon.className = 'text-primary mr-3 text-2xl';
+    icon.innerHTML = '<i class="fas fa-key"></i>';
+    
+    const title = document.createElement('h3');
+    title.className = 'text-xl font-bold';
+    title.textContent = 'Enter Access Code';
+    
+    header.appendChild(icon);
+    header.appendChild(title);
+    
+    // Description
+    const description = document.createElement('p');
+    description.className = 'text-gray-600 mb-4 text-sm';
+    description.textContent = 'This meeting requires an access code to join.';
+    
+    // Access code input
+    const inputContainer = document.createElement('div');
+    inputContainer.className = 'mb-4';
+    
+    const label = document.createElement('label');
+    label.className = 'block text-sm font-medium text-gray-700 mb-1';
+    label.textContent = 'Access Code';
+    
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Enter access code';
+    input.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
+    input.maxLength = 6;
+    input.pattern = '[0-9]*';
+    input.inputMode = 'numeric';
+    input.autofocus = true;
+    
+    inputContainer.appendChild(label);
+    inputContainer.appendChild(input);
+    
+    // Buttons
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'flex justify-end gap-2 mt-6';
+    
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', () => {
+      document.body.removeChild(modalOverlay);
+      resolve(null);
+    });
+    
+    const continueBtn = document.createElement('button');
+    continueBtn.className = 'btn btn-primary';
+    continueBtn.textContent = 'Join';
+    continueBtn.addEventListener('click', () => {
+      const code = input.value.trim() || null;
+      document.body.removeChild(modalOverlay);
+      resolve(code);
+    });
+    
+    // Allow Enter key to submit
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        continueBtn.click();
+      }
+    });
+    
+    buttonContainer.appendChild(cancelBtn);
+    buttonContainer.appendChild(continueBtn);
+    
+    // Assemble modal
+    modalContent.appendChild(header);
+    modalContent.appendChild(description);
+    modalContent.appendChild(inputContainer);
+    modalContent.appendChild(buttonContainer);
+    modalOverlay.appendChild(modalContent);
+    
+    // Add to DOM
+    document.body.appendChild(modalOverlay);
+    
+    // Focus input
+    setTimeout(() => input.focus(), 100);
   });
 }
 

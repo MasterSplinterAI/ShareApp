@@ -252,15 +252,50 @@ io.on('connection', (socket) => {
         currentRoom = roomId;
         isHost = joinAsHost;
         
+        // Extract access code from join data
+        const providedAccessCode = typeof data === 'object' ? data.accessCode : null;
+        const roomAccessCode = typeof data === 'object' ? data.roomAccessCode : null;
+        const roomHostCode = typeof data === 'object' ? data.roomHostCode : null;
+        
         // Create or update room data
         if (!rooms[roomId]) {
             rooms[roomId] = {
                 hostId: joinAsHost ? socket.id : null,
-                participants: {}
+                participants: {},
+                accessCode: roomAccessCode || null, // Store access code if provided when creating room
+                hostCode: roomHostCode || null, // Store host code if provided when creating room
+                locked: false
             };
-        } else if (joinAsHost && !rooms[roomId].hostId) {
-            // If there's no host and this user is joining as host
-            rooms[roomId].hostId = socket.id;
+        } else {
+            // Room exists - check access code if required
+            if (rooms[roomId].accessCode && rooms[roomId].accessCode !== providedAccessCode) {
+                // If joining as host, check host code instead
+                if (joinAsHost && rooms[roomId].hostCode && rooms[roomId].hostCode === providedAccessCode) {
+                    // Valid host code - allow join
+                    rooms[roomId].hostId = socket.id;
+                } else if (!joinAsHost || !rooms[roomId].hostCode || rooms[roomId].hostCode !== providedAccessCode) {
+                    // Invalid access code for participant, or invalid host code for host
+                    socket.emit('join-error', {
+                        error: 'INVALID_ACCESS_CODE',
+                        message: joinAsHost ? 'Invalid host code. Please check and try again.' : 'Invalid access code. Please check and try again.'
+                    });
+                    return;
+                }
+            } else if (joinAsHost && rooms[roomId].hostCode && rooms[roomId].hostCode !== providedAccessCode) {
+                // Host code required but not provided or invalid
+                socket.emit('join-error', {
+                    error: 'INVALID_HOST_CODE',
+                    message: 'Invalid host code. Please check and try again.'
+                });
+                return;
+            }
+            
+            // If there's no host and this user is joining as host with valid host code
+            if (joinAsHost && !rooms[roomId].hostId) {
+                if (!rooms[roomId].hostCode || rooms[roomId].hostCode === providedAccessCode) {
+                    rooms[roomId].hostId = socket.id;
+                }
+            }
         }
         
         // Add participant data

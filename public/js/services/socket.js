@@ -80,6 +80,17 @@ export function setupSocketListeners() {
   });
   
   // Room event handlers
+  // Handle join errors (e.g., invalid access code)
+  socket.on('join-error', (data) => {
+    console.error('Join error:', data);
+    showError(data.message || 'Failed to join meeting. Please try again.');
+    // Reset connection status
+    updateConnectionStatus('idle');
+    // Return to home screen
+    document.getElementById('home').classList.remove('hidden');
+    document.getElementById('meeting').classList.add('hidden');
+  });
+  
   socket.on('room-joined', (data) => {
     console.log('Joined room:', data);
     window.appState.roomId = data.roomId;
@@ -424,7 +435,10 @@ export function joinRoom(roomId, options = {}) {
   const joinData = {
     roomId: roomId,
     isHost: options.isHost || false,
-    userName: options.userName || 'Guest'
+    userName: options.userName || 'Guest',
+    accessCode: options.accessCode || null,
+    roomAccessCode: options.roomAccessCode || null,
+    roomHostCode: options.roomHostCode || null
   };
   
   console.log('Joining room with data:', joinData);
