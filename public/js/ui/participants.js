@@ -1,5 +1,6 @@
 // Participants UI module for managing the participants list
 import { getSocketId } from '../services/socket.js';
+import { updateLayoutForParticipantCount } from './layout.js';
 
 // Update the participants list in the UI
 export function updateParticipantList() {
@@ -43,6 +44,9 @@ export function updateParticipantList() {
     const count = Object.keys(window.appState.participants).length;
     participantsBtn.setAttribute('title', `Participants (${count})`);
   }
+  
+  // Update layout if in grid-only mode
+  updateLayoutForParticipantCount();
 }
 
 // Function to check for and clean up duplicate participant containers
