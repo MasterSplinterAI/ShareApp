@@ -2,7 +2,7 @@
 import { createPeerConnection, handleRemoteOffer, handleRemoteAnswer, handleRemoteIceCandidate } from '../webrtc/peerConnection.js';
 import { updateParticipantList } from '../ui/participants.js';
 import { addChatMessage } from '../ui/chat.js';
-import { updateConnectionStatus } from '../ui/notifications.js';
+import { updateConnectionStatus, showError } from '../ui/notifications.js';
 import { debounce } from '../utils/helpers.js';
 
 let socket;
