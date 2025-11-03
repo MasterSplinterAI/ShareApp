@@ -279,7 +279,38 @@ function setupLayoutSwitcher() {
         setLayoutMode(layout);
         layoutMenu.classList.add('hidden');
       });
+      
+      // Add mobile touch handlers for menu items
+      const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      if (isMobile) {
+        option.addEventListener('touchstart', function(e) {
+          e.stopPropagation();
+          this.style.backgroundColor = 'rgba(55, 65, 81, 0.5)'; // gray-700 with opacity
+        }, { passive: false });
+        
+        option.addEventListener('touchend', function(e) {
+          e.stopPropagation();
+          e.preventDefault();
+          this.style.backgroundColor = '';
+          // Manually trigger click
+          const clickEvent = new MouseEvent('click', {
+            bubbles: true,
+            cancelable: true,
+            view: window
+          });
+          this.dispatchEvent(clickEvent);
+        }, { passive: false });
+        
+        // Ensure menu item is clickable
+        option.style.cssText += 'position: relative !important; z-index: 10003 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important;';
+      }
     });
+    
+    // Ensure menu itself is clickable on mobile
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      layoutMenu.style.cssText += 'position: absolute !important; z-index: 10002 !important; pointer-events: auto !important; touch-action: auto !important;';
+    }
     
     // Close menu when clicking outside
     document.addEventListener('click', (event) => {
