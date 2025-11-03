@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="HandheldFriendly" content="true">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <title>ScreenShare App</title>
   <link rel="stylesheet" href="styles.css">
@@ -637,6 +638,18 @@
     </div>
   </div>
 
+  <!-- Error Toast -->
+  <div id="errorToast" style="position: fixed; bottom: 100px; left: 50%; transform: translateX(-50%); background: #dc3545; color: white; padding: 16px 24px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 4000; display: none; max-width: 90%;">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <i class="fas fa-exclamation-circle"></i>
+      <span id="errorMessage"></span>
+      <button onclick="document.getElementById('errorToast').style.display='none'; document.getElementById('errorToast').classList.add('hidden');" style="background: none; border: none; color: white; font-size: 20px; cursor: pointer; margin-left: 12px;">&times;</button>
+    </div>
+  </div>
+
+  <!-- Socket.io - MUST be loaded before module scripts -->
+  <script src="/socket.io/socket.io.js"></script>
+  
   <!-- Load the new UI JavaScript -->
   <script type="module" src="js/modern-ui/main.js"></script>
 </body>

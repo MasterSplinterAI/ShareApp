@@ -15,7 +15,8 @@ export function showError(message, duration = 8000) {
   // Set message
   errorMessage.textContent = message;
   
-  // Show toast
+  // Show toast - handle both classic and modern UI styles
+  errorToast.style.display = 'flex';
   errorToast.classList.remove('hidden');
   errorToast.classList.remove('translate-y-full', 'opacity-0');
   
