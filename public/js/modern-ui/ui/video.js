@@ -24,15 +24,7 @@ function setupTrackListeners() {
   
   // Also listen for when streams are added to peer connections
   // This happens when the connection is established
-  const originalSetPeerConnection = window.appState.peerConnections;
-  Object.defineProperty(window.appState, 'peerConnections', {
-    get() {
-      return originalSetPeerConnection;
-    },
-    set(value) {
-      // This won't work, let's use a different approach
-    }
-  });
+  // Note: We don't need to monitor peerConnections directly here as the events will handle it
 }
 
 function setupParticipantListeners() {
@@ -52,7 +44,7 @@ function setupParticipantListeners() {
 function setupLocalVideo() {
   // Watch for local stream initialization
   const checkLocalStream = setInterval(() => {
-    if (window.appState.localStream) {
+    if (window.appState && window.appState.localStream) {
       clearInterval(checkLocalStream);
       addLocalVideoToGrid();
     }
@@ -60,12 +52,14 @@ function setupLocalVideo() {
   
   // Also listen for media initialization event
   document.addEventListener('local-stream-ready', () => {
-    addLocalVideoToGrid();
+    if (window.appState && window.appState.localStream) {
+      addLocalVideoToGrid();
+    }
   });
 }
 
 function addLocalVideoToGrid() {
-  if (!window.appState.localStream) return;
+  if (!window.appState || !window.appState.localStream) return;
   
   const socketId = getSocketId();
   if (!socketId) return;
@@ -92,12 +86,18 @@ function addLocalVideoToGrid() {
 function handlePeerTrack(peerId, track, stream) {
   console.log(`Modern UI: Handling track for ${peerId}, kind: ${track.kind}`);
   
+  // Ensure appState is initialized
+  if (!window.appState) {
+    console.warn('appState not initialized yet, skipping track handling');
+    return;
+  }
+  
   // Check if video container exists
   let wrapper = document.getElementById(`video-wrapper-${peerId}`);
   
   if (!wrapper) {
     // Create new container
-    const participant = window.appState.participants[peerId];
+    const participant = window.appState.participants && window.appState.participants[peerId];
     const name = participant?.name || `Participant ${peerId.substring(0, 5)}`;
     const isHost = participant?.isHost || false;
     
@@ -263,9 +263,11 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
   pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
   pinBtn.title = 'Pin to main view';
   pinBtn.addEventListener('click', () => {
-    window.appState.pinnedParticipant = peerId === 'local' ? 'local' : peerId;
-    updateMainVideoDisplay();
-    document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
+    if (window.appState) {
+      window.appState.pinnedParticipant = peerId === 'local' ? 'local' : peerId;
+      updateMainVideoDisplay();
+      document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
+    }
   });
   
   wrapper.appendChild(pinBtn);
@@ -276,9 +278,10 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
 export function updateMainVideoDisplay() {
   const mainVideo = document.getElementById('mainVideo');
   const mainVideoWrapper = document.getElementById('mainVideoWrapper');
-  const pinnedParticipant = window.appState.pinnedParticipant || 'local';
   
-  if (!mainVideo || !mainVideoWrapper) return;
+  if (!mainVideo || !mainVideoWrapper || !window.appState) return;
+  
+  const pinnedParticipant = window.appState.pinnedParticipant || 'local';
   
   if (pinnedParticipant === 'local') {
     // Show local video
@@ -315,7 +318,7 @@ export function updateMainVideoDisplay() {
       mainVideo.srcObject = peerVideo.srcObject;
       mainVideo.muted = false;
       
-      const participant = window.appState.participants[pinnedParticipant];
+      const participant = window.appState.participants && window.appState.participants[pinnedParticipant];
       const label = mainVideoWrapper.querySelector('.video-label .name');
       if (label) label.textContent = participant?.name || 'Participant';
       
@@ -331,7 +334,7 @@ export function updateMainVideoDisplay() {
         mainVideo.style.display = 'none';
         if (placeholder) {
           placeholder.style.display = 'flex';
-          const participant = window.appState.participants[pinnedParticipant] || { name: 'Participant' };
+          const participant = (window.appState.participants && window.appState.participants[pinnedParticipant]) || { name: 'Participant' };
           const initials = participant.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
           placeholder.querySelector('.avatar').textContent = initials;
           placeholder.querySelector('.name').textContent = participant.name;
@@ -378,7 +381,7 @@ export function addParticipantVideo(peerId, stream, name, isHost = false) {
   grid.appendChild(wrapper);
   
   // Update main video if this is the pinned participant
-  if (window.appState.pinnedParticipant === peerId) {
+  if (window.appState && window.appState.pinnedParticipant === peerId) {
     updateMainVideoDisplay();
   }
 }
@@ -390,7 +393,7 @@ export function removeParticipantVideo(peerId) {
   }
   
   // If this was the pinned participant, reset to local
-  if (window.appState.pinnedParticipant === peerId) {
+  if (window.appState && window.appState.pinnedParticipant === peerId) {
     window.appState.pinnedParticipant = 'local';
     updateMainVideoDisplay();
   }
@@ -451,8 +454,13 @@ function startTrackMonitoring() {
   if (trackCheckInterval) return;
   
   trackCheckInterval = setInterval(() => {
+    // Ensure appState is initialized
+    if (!window.appState || !window.appState.peerConnections) {
+      return; // Skip if not initialized yet
+    }
+    
     // Check all peer connections for tracks
-    Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
+    Object.entries(window.appState.peerConnections).forEach(([peerId, pc]) => {
       if (pc && pc.getReceivers) {
         const receivers = pc.getReceivers();
         receivers.forEach(receiver => {
@@ -460,7 +468,7 @@ function startTrackMonitoring() {
             const stream = receiver.track ? new MediaStream([receiver.track]) : null;
             if (stream && !document.getElementById(`video-wrapper-${peerId}`)) {
               // Track exists but no video container - create one
-              const participant = window.appState.participants[peerId];
+              const participant = window.appState.participants && window.appState.participants[peerId];
               if (participant) {
                 handlePeerTrack(peerId, receiver.track, stream);
               }
