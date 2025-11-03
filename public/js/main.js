@@ -7,6 +7,7 @@ import { showError } from './ui/notifications.js';
 import { setupDeviceSelectors } from './ui/devices.js';
 import { initMobileDetection } from './utils/mobileDetect.js';
 import { initializeIceServers } from './utils/iceServers.js';
+import './ui/audioLevelUI.js'; // Initialize audio level UI handlers
 
 // Global state object
 window.appState = {
@@ -17,7 +18,7 @@ window.appState = {
   isHost: false,
   pinnedParticipant: 'local',
   participants: {},
-  isCameraOn: true,
+  isCameraOn: false,  // Start with camera off by default
   isMicOn: true,
   isScreenSharing: false,
   deviceSettings: {

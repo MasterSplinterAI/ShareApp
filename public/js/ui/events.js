@@ -462,8 +462,8 @@ function setupToggleCameraButton() {
     return;
   }
   
-  toggleCameraBtn.addEventListener('click', () => {
-    toggleCamera();
+  toggleCameraBtn.addEventListener('click', async () => {
+    await toggleCamera();
   });
 }
 
@@ -1068,17 +1068,16 @@ export function setupMobileButtonHandlers() {
   };
   
   // Handler for camera toggle
-  function handleCameraToggle(e) {
+  async function handleCameraToggle(e) {
     e.preventDefault();
     e.stopPropagation();
     console.log('Camera toggle button clicked/tapped');
     
     // Import dynamically to avoid circular dependencies
-    import('../services/media.js').then(({ toggleCamera }) => {
-      if (typeof toggleCamera === 'function') {
-        toggleCamera();
-      }
-    });
+    const { toggleCamera } = await import('../services/media.js');
+    if (typeof toggleCamera === 'function') {
+      await toggleCamera();
+    }
   }
   
   // Handler for mic toggle

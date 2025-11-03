@@ -1,6 +1,7 @@
 // Video UI module for handling video display elements
 
 import { debounce } from '../utils/helpers.js';
+import { getSocketId } from '../services/socket.js';
 
 // Global flags to prevent concurrent operations
 let mainVideoUpdateInProgress = false;
@@ -71,10 +72,24 @@ export function updateVideoUI() {
       const placeholder = localVideoContainer.querySelector('.no-video-placeholder');
       
       if (!placeholder) {
-        // Create placeholder if it doesn't exist
+        // Create placeholder if it doesn't exist with avatar
         const newPlaceholder = document.createElement('div');
-        newPlaceholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800';
-        newPlaceholder.innerHTML = '<i class="fas fa-user-circle text-gray-400 text-4xl"></i>';
+        newPlaceholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+        
+        // Get user's name for initials
+        const userName = window.appState.participants['local']?.name || 
+                        window.appState.participants[getSocketId()]?.name || 
+                        'You';
+        const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+        
+        newPlaceholder.innerHTML = `
+          <div class="avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full">
+            ${initials}
+          </div>
+          <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
+            <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+          </div>
+        `;
         localVideoContainer.appendChild(newPlaceholder);
       } else {
         placeholder.classList.remove('hidden');

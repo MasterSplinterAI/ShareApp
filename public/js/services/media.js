@@ -1,6 +1,8 @@
 // Media service for handling local and remote media streams
 import { showError } from '../ui/notifications.js';
 import { updateVideoUI } from '../ui/video.js';
+import { startAudioLevelMonitoring, stopAudioLevelMonitoring } from '../utils/audioLevel.js';
+import { updateLocalStatusIndicators } from '../utils/statusIndicators.js';
 
 // Track state to prevent redundant operations
 let mediaUpdateInProgress = false;
@@ -23,7 +25,7 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     console.log('Initializing media with constraints:', constraints);
     let stream;
     
-    // If no constraints provided, use default
+    // If no constraints provided, use default - START WITH VIDEO OFF (audio only by default)
     if (!constraints) {
       constraints = {
         audio: {
@@ -31,14 +33,35 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
           noiseSuppression: true,
           autoGainControl: true
         },
-        video: true
+        video: false  // Start with video off - users can enable it if they want
       };
+      
+      // Set camera state to off by default
+      window.appState.isCameraOn = false;
+      console.log('Starting with video off by default - users can enable camera if desired');
     }
     
     try {
-      // First try with both audio and video
+      // Try to get media with provided constraints
       stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('Got media stream with both audio and video');
+      
+      // If constraints requested video but we got it, disable the video track by default
+      if (constraints.video && stream.getVideoTracks().length > 0) {
+        const videoTracks = stream.getVideoTracks();
+        videoTracks.forEach(track => {
+          // Disable video track but keep it available for later
+          track.enabled = false;
+          console.log('Video track obtained but disabled by default');
+        });
+        // Ensure state reflects video is off
+        window.appState.isCameraOn = false;
+      }
+      
+      console.log('Got media stream:', {
+        audio: stream.getAudioTracks().length > 0,
+        video: stream.getVideoTracks().length > 0,
+        videoEnabled: stream.getVideoTracks().some(t => t.enabled)
+      });
     } catch (error) {
       console.warn('Failed to get both audio and video:', error);
       
@@ -167,6 +190,13 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     // Store the stream in the app state
     window.appState.localStream = stream;
     
+    // Start audio level monitoring for local user (for speaking indicator)
+    try {
+      startAudioLevelMonitoring('local', stream);
+    } catch (err) {
+      console.warn('Could not start local audio level monitoring:', err);
+    }
+    
     // Configure tracks based on app state - don't replace tracks unnecessarily
     const updateTrackState = (track, enabled) => {
       if (track.enabled !== enabled) {
@@ -239,10 +269,24 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
         if (localVideoContainer) {
           let placeholder = localVideoContainer.querySelector('.no-video-placeholder');
           if (!placeholder) {
-            // Create placeholder if it doesn't exist
+            // Create placeholder if it doesn't exist with avatar
             placeholder = document.createElement('div');
-            placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800';
-            placeholder.innerHTML = '<i class="fas fa-user-circle text-gray-400 text-4xl"></i>';
+            placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+            
+            // Get user's name for initials
+            const userName = window.appState.participants['local']?.name || 
+                            window.appState.participants[window.appState.socketId]?.name || 
+                            'You';
+            const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+            
+            placeholder.innerHTML = `
+              <div class="avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full">
+                ${initials}
+              </div>
+              <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
+                <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              </div>
+            `;
             localVideoContainer.appendChild(placeholder);
           }
           placeholder.classList.remove('hidden');
@@ -254,10 +298,23 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
           if (mainVideoContainer) {
             let placeholder = mainVideoContainer.querySelector('.no-video-placeholder');
             if (!placeholder) {
-              // Create placeholder if it doesn't exist
+              // Create placeholder if it doesn't exist with avatar
               placeholder = document.createElement('div');
-              placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800';
-              placeholder.innerHTML = '<i class="fas fa-user-circle text-gray-600 text-6xl"></i>';
+              placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+              
+              const userName = window.appState.participants['local']?.name || 
+                              window.appState.participants[window.appState.socketId]?.name || 
+                              'You';
+              const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+              
+              placeholder.innerHTML = `
+                <div class="avatar-circle bg-blue-600 text-white text-4xl font-bold flex items-center justify-center w-32 h-32 rounded-full">
+                  ${initials}
+                </div>
+                <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
+                  <div class="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                </div>
+              `;
               mainVideoContainer.appendChild(placeholder);
             }
             placeholder.classList.remove('hidden');
@@ -270,6 +327,9 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     
     // Update UI to reflect media state
     updateVideoUI();
+    
+    // Update status indicators
+    updateLocalStatusIndicators();
     
     // Now that we have attempted to get permissions, update device lists
     try {
@@ -364,24 +424,98 @@ export function muteLocalAudioElements() {
 }
 
 // Toggle camera on/off
-export function toggleCamera() {
-  if (!window.appState.localStream) return;
-  
-  window.appState.isCameraOn = !window.appState.isCameraOn;
-  
-  // Reset audio-only and view-only modes when turning camera on
-  if (window.appState.isCameraOn) {
-    window.appState.audioOnlyMode = false;
-    window.appState.viewOnlyMode = false;
-    document.body.removeAttribute('data-audio-only');
-    document.body.removeAttribute('data-view-only');
+export async function toggleCamera() {
+  if (!window.appState.localStream) {
+    console.warn('No local stream available, cannot toggle camera');
+    return;
   }
   
-  window.appState.localStream.getVideoTracks().forEach(track => {
-    track.enabled = window.appState.isCameraOn;
-  });
+  const videoTracks = window.appState.localStream.getVideoTracks();
   
-  updateVideoUI();
+  // If user wants to turn camera on but we don't have a video track yet, request it
+  if (window.appState.isCameraOn === false && videoTracks.length === 0) {
+    console.log('Camera is off and no video track exists, requesting camera access...');
+    
+    try {
+      // Request camera access
+      const videoStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        }
+      });
+      
+      const newVideoTrack = videoStream.getVideoTracks()[0];
+      if (newVideoTrack) {
+        // Add video track to existing stream
+        window.appState.localStream.addTrack(newVideoTrack);
+        
+        // Update local video element
+        const localVideo = document.getElementById('localVideo');
+        if (localVideo) {
+          localVideo.srcObject = window.appState.localStream;
+        }
+        
+        // Enable the track
+        newVideoTrack.enabled = true;
+        window.appState.isCameraOn = true;
+        
+        // Reset audio-only mode
+        window.appState.audioOnlyMode = false;
+        document.body.removeAttribute('data-audio-only');
+        
+        console.log('Camera track added and enabled');
+        
+        // Broadcast updated stream to all peers
+        try {
+          const { broadcastMediaToAllConnections } = await import('../utils/mediaHelpers.js');
+          if (typeof broadcastMediaToAllConnections === 'function') {
+            broadcastMediaToAllConnections();
+          }
+        } catch (err) {
+          console.warn('Could not broadcast updated stream:', err);
+        }
+        
+        updateVideoUI();
+        return;
+      }
+    } catch (error) {
+      console.error('Failed to get camera access:', error);
+      showError('Could not access camera. Please check permissions and try again.');
+      return;
+    }
+  }
+  
+  // If we have video tracks, just toggle them
+  if (videoTracks.length > 0) {
+    window.appState.isCameraOn = !window.appState.isCameraOn;
+    
+    // Reset audio-only and view-only modes when turning camera on
+    if (window.appState.isCameraOn) {
+      window.appState.audioOnlyMode = false;
+      window.appState.viewOnlyMode = false;
+      document.body.removeAttribute('data-audio-only');
+      document.body.removeAttribute('data-view-only');
+    }
+    
+    videoTracks.forEach(track => {
+      track.enabled = window.appState.isCameraOn;
+    });
+    
+    // Broadcast updated stream to all peers
+    try {
+      const { broadcastMediaToAllConnections } = await import('../utils/mediaHelpers.js');
+      if (typeof broadcastMediaToAllConnections === 'function') {
+        broadcastMediaToAllConnections();
+      }
+    } catch (err) {
+      console.warn('Could not broadcast updated stream:', err);
+    }
+    
+    updateVideoUI();
+    updateLocalStatusIndicators();
+  }
 }
 
 // Toggle microphone on/off
@@ -399,6 +533,7 @@ export function toggleMicrophone() {
   
   // Update UI
   updateVideoUI();
+  updateLocalStatusIndicators();
   
   return window.appState.isMicOn;
 }

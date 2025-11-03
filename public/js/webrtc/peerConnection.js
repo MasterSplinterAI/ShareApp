@@ -2,6 +2,7 @@
 import { sendOffer, sendAnswer, sendIceCandidate, getSocketId } from '../services/socket.js';
 import { showError } from '../ui/notifications.js';
 import { getIceServersSync, getIceServers } from '../utils/iceServers.js';
+import { startAudioLevelMonitoring, stopAudioLevelMonitoring } from '../utils/audioLevel.js';
 
 // Track connection retry attempts per peer
 const connectionRetries = new Map();
@@ -515,6 +516,14 @@ export async function createPeerConnection(peerId) {
       else if (event.track.kind === 'audio') {
         handleAudioTrack(event.track, peerId);
         
+        // Start audio level monitoring for speaking indicators
+        try {
+          const audioStream = new MediaStream([event.track]);
+          startAudioLevelMonitoring(peerId, audioStream);
+        } catch (err) {
+          console.warn(`Could not start audio level monitoring for ${peerId}:`, err);
+        }
+        
         // If we only have audio so far, make sure placeholder is visible
         let hasExistingVideo = false;
         
@@ -532,8 +541,21 @@ export async function createPeerConnection(peerId) {
           if (!placeholder) {
             console.log(`Creating placeholder for audio-only peer ${peerId}`);
             const newPlaceholder = document.createElement('div');
-            newPlaceholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800';
-            newPlaceholder.innerHTML = '<i class="fas fa-user-circle text-gray-400 text-4xl"></i>';
+            newPlaceholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800 zoom-like-avatar';
+            
+            // Create avatar with initials
+            const participantInfo = window.appState.participants[peerId];
+            const participantName = participantInfo?.name || peerId.substring(0, 5);
+            const initials = participantName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+            
+            newPlaceholder.innerHTML = `
+              <div class="avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full">
+                ${initials}
+              </div>
+              <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
+                <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+              </div>
+            `;
             videoContainer.appendChild(newPlaceholder);
           } else {
             placeholder.classList.remove('hidden');
@@ -570,9 +592,9 @@ export async function createPeerConnection(peerId) {
       remoteVideo.autoplay = true;
       remoteVideo.playsInline = true;
       
-      // Create label
+      // Create label with status indicators
       const label = document.createElement('div');
-      label.className = 'video-label absolute bottom-2 left-2 bg-black bg-opacity-50 text-white px-2 py-1 rounded text-sm z-10';
+      label.className = 'video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10 flex items-center justify-between';
       
       // Try to get participant name from app state
       const participantInfo = window.appState.participants[peerId];
@@ -584,7 +606,28 @@ export async function createPeerConnection(peerId) {
         isParticipantHost = participantInfo.isHost || false;
       }
       
-      label.textContent = isParticipantHost ? `${participantName} (Host)` : participantName;
+      // Name section
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = isParticipantHost ? `${participantName} (Host)` : participantName;
+      nameSpan.className = 'font-medium';
+      
+      // Status indicators section
+      const statusSpan = document.createElement('span');
+      statusSpan.className = 'flex items-center gap-2';
+      statusSpan.innerHTML = `
+        <span class="mic-status" data-peer-id="${peerId}">
+          <i class="fas fa-microphone text-xs"></i>
+        </span>
+        <span class="video-status" data-peer-id="${peerId}">
+          <i class="fas fa-video text-xs"></i>
+        </span>
+        <span class="speaking-indicator-wrapper hidden" data-peer-id="${peerId}">
+          <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+        </span>
+      `;
+      
+      label.appendChild(nameSpan);
+      label.appendChild(statusSpan);
       
       // Create controls
       const controls = document.createElement('div');
@@ -937,6 +980,9 @@ async function processQueuedIceCandidates(peerId) {
 
 // Clean up all state for a specific peer
 export function cleanupPeerConnection(peerId) {
+  // Stop audio level monitoring
+  stopAudioLevelMonitoring(peerId);
+  
   // Close and remove peer connection
   if (window.appState.peerConnections[peerId]) {
     window.appState.peerConnections[peerId].close();
