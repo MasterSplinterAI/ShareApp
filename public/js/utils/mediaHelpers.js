@@ -22,13 +22,19 @@ export async function broadcastMediaToAllConnections() {
     console.log(`Track to broadcast: ${track.kind}, label: ${track.label}, enabled: ${track.enabled}`);
   });
 
-  // Process each peer connection
+  // Process each peer connection - include connections that are still establishing
   Object.entries(window.appState.peerConnections).forEach(([peerId, peerConnection]) => {
-    if (peerConnection.connectionState === 'connected' || 
-        peerConnection.iceConnectionState === 'connected' ||
-        peerConnection.iceConnectionState === 'completed') {
-      
-      console.log(`Broadcasting media to peer: ${peerId}`);
+    // Include connections that are established OR still establishing (new, checking)
+    // This ensures video tracks are added even if connection was created before camera was enabled
+    const isEstablished = peerConnection.connectionState === 'connected' || 
+                          peerConnection.iceConnectionState === 'connected' ||
+                          peerConnection.iceConnectionState === 'completed';
+    
+    const isEstablishing = peerConnection.iceConnectionState === 'new' ||
+                           peerConnection.iceConnectionState === 'checking';
+    
+    if (isEstablished || isEstablishing) {
+      console.log(`Broadcasting media to peer: ${peerId} (state: ${peerConnection.connectionState}, ICE: ${peerConnection.iceConnectionState})`);
       
       // Get existing senders
       const senders = peerConnection.getSenders();
@@ -55,14 +61,25 @@ export async function broadcastMediaToAllConnections() {
             renegotiateConnection(peerId);
           }
         } else {
-          // Add new track
+          // Add new track - this is critical for when camera is enabled after connection is created
           try {
             console.log(`Adding new ${track.kind} track to peer ${peerId}`);
             peerConnection.addTrack(track, window.appState.localStream);
-            // Need to renegotiate after adding track
-            renegotiateConnection(peerId);
+            
+            // If connection is already established, we need to renegotiate
+            // If connection is still establishing, the tracks will be included in the initial offer/answer
+            if (isEstablished) {
+              console.log(`Connection with ${peerId} is established, triggering renegotiation for new ${track.kind} track`);
+              renegotiateConnection(peerId);
+            } else {
+              console.log(`Connection with ${peerId} is still establishing, ${track.kind} track will be included in next offer/answer`);
+            }
           } catch (err) {
             console.error(`Error adding ${track.kind} track to peer ${peerId}:`, err);
+            // Try to renegotiate even on error
+            if (isEstablished) {
+              renegotiateConnection(peerId);
+            }
           }
         }
       });
@@ -75,7 +92,9 @@ export async function broadcastMediaToAllConnections() {
             console.log(`Removing ${sender.track.kind} sender from peer ${peerId} as we no longer have that track`);
             peerConnection.removeTrack(sender);
             // Need to renegotiate after removing track
-            renegotiateConnection(peerId);
+            if (isEstablished) {
+              renegotiateConnection(peerId);
+            }
           } catch (err) {
             console.error(`Error removing track from peer ${peerId}:`, err);
           }

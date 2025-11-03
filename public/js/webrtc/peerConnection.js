@@ -788,9 +788,28 @@ async function createAndSendOffer(peerConnection, peerId) {
     pendingOffers.set(peerId, true);
     
     // IMPORTANT: Before creating offer, ensure video tracks are added if camera is enabled
-    if (window.appState.localStream && window.appState.isCameraOn) {
+    // Also check if tracks were added AFTER connection was created (e.g., camera enabled mid-call)
+    if (window.appState.localStream) {
       const hasVideoTracks = window.appState.localStream.getVideoTracks().length > 0;
-      if (!hasVideoTracks) {
+      const senders = peerConnection.getSenders();
+      const hasVideoSender = senders.some(s => s.track && s.track.kind === 'video');
+      
+      // If we have video tracks but no video sender, add them now
+      if (hasVideoTracks && !hasVideoSender && window.appState.isCameraOn) {
+        console.log(`Video tracks exist but no video sender found for ${peerId}, adding video tracks now`);
+        const videoTracks = window.appState.localStream.getVideoTracks();
+        videoTracks.forEach(track => {
+          try {
+            peerConnection.addTrack(track, window.appState.localStream);
+            console.log(`Added video track to peer connection for ${peerId}`);
+          } catch (err) {
+            console.warn(`Could not add video track to ${peerId}:`, err);
+          }
+        });
+      }
+      
+      // If camera is enabled but no video tracks, try to get them
+      if (window.appState.isCameraOn && !hasVideoTracks) {
         console.log('Camera is on but no video tracks in stream, attempting to get video before creating offer');
         try {
           const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
