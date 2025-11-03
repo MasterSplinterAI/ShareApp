@@ -260,7 +260,8 @@ io.on('connection', (socket) => {
         if (!rooms[roomId]) {
             // Room doesn't exist - check if user is providing codes to recreate the room
             // Priority: roomHostCode from join data > providedAccessCode if joinAsHost is true
-            const finalHostCode = roomHostCode || null;
+            // If roomHostCode is provided, use it; otherwise, if joinAsHost is true and providedAccessCode exists, use it as hostCode
+            const finalHostCode = roomHostCode || (joinAsHost && providedAccessCode ? providedAccessCode : null);
             const finalAccessCode = roomAccessCode || null;
             
             rooms[roomId] = {
@@ -292,6 +293,10 @@ io.on('connection', (socket) => {
             }
             // If no hostCode is set, first participant becomes host (unless they're joining as participant)
             if (!finalHostCode && joinAsHost) {
+                rooms[roomId].hostId = socket.id;
+            } else if (finalHostCode && !providedAccessCode && joinAsHost) {
+                // Host code exists but wasn't provided, but user is trying to join as host
+                // This shouldn't happen if they're the original host, but handle it gracefully
                 rooms[roomId].hostId = socket.id;
             }
         } else {
