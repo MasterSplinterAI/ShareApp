@@ -50,13 +50,10 @@ export function hideError() {
     clearTimeout(parseInt(errorToast.dataset.timerId));
   }
   
-  // Hide with animation
+  // Hide toast - handle both classic and modern UI styles
+  errorToast.style.display = 'none';
+  errorToast.classList.add('hidden');
   errorToast.classList.add('translate-y-full', 'opacity-0');
-  
-  // Remove from DOM after animation completes
-  setTimeout(() => {
-    errorToast.classList.add('hidden');
-  }, 300);
 }
 
 // Update connection status indicator
