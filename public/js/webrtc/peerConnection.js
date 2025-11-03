@@ -787,6 +787,25 @@ async function createAndSendOffer(peerConnection, peerId) {
     // Mark that we're sending an offer
     pendingOffers.set(peerId, true);
     
+    // IMPORTANT: Before creating offer, ensure video tracks are added if camera is enabled
+    if (window.appState.localStream && window.appState.isCameraOn) {
+      const hasVideoTracks = window.appState.localStream.getVideoTracks().length > 0;
+      if (!hasVideoTracks) {
+        console.log('Camera is on but no video tracks in stream, attempting to get video before creating offer');
+        try {
+          const videoStream = await navigator.mediaDevices.getUserMedia({ video: true });
+          const videoTrack = videoStream.getVideoTracks()[0];
+          if (videoTrack) {
+            window.appState.localStream.addTrack(videoTrack);
+            peerConnection.addTrack(videoTrack, window.appState.localStream);
+            console.log('Added video track to peer connection before creating offer');
+          }
+        } catch (err) {
+          console.warn('Could not get video track for offer:', err);
+        }
+      }
+    }
+    
     try {
       // Create offer with explicit options to receive video even in audio-only mode
       const offerOptions = {
@@ -803,8 +822,21 @@ async function createAndSendOffer(peerConnection, peerId) {
       
       console.log(`Creating offer for ${peerId} with options:`, offerOptions);
       
+      // Log what tracks we're sending
+      const senders = peerConnection.getSenders();
+      console.log(`📤 Sending offer with ${senders.length} senders:`, senders.map(s => ({
+        kind: s.track?.kind,
+        enabled: s.track?.enabled,
+        readyState: s.track?.readyState
+      })));
+      
       // Create offer with these options
       const offer = await peerConnection.createOffer(offerOptions);
+      
+      // Log SDP to check for video m-lines
+      const sdpLines = offer.sdp.split('\n');
+      const videoMLines = sdpLines.filter(line => line.startsWith('m=video'));
+      console.log(`📹 SDP contains ${videoMLines.length} video m-line(s):`, videoMLines.length > 0 ? 'YES' : 'NO');
       
       // Set local description
       await peerConnection.setLocalDescription(offer);
