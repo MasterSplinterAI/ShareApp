@@ -248,9 +248,18 @@ function setupJoinButton() {
         return;
       }
       
-      // Note: Access code will be prompted by server if needed via join-error event
-      // We'll attempt join without code first, server will tell us if code is needed
+      // Ask if user wants to join as host or participant
+      const joinAsHost = await promptJoinAsHost();
+      
+      // If joining as host, prompt for host code first
       let accessCode = null;
+      if (joinAsHost) {
+        accessCode = await promptForAccessCode('host');
+        if (accessCode === null) {
+          // User cancelled host code prompt
+          return;
+        }
+      }
       
       document.getElementById('connectionStatus').classList.remove('hidden');
       document.getElementById('connectionStatusText').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Initializing media...';
@@ -269,7 +278,11 @@ function setupJoinButton() {
       }
       
       // Join room with provided name and access code
-      joinRoom(roomId, { userName: userName, accessCode: accessCode });
+      joinRoom(roomId, { 
+        userName: userName, 
+        accessCode: accessCode,
+        isHost: joinAsHost
+      });
       
       // Update URL with room ID
       setRoomInUrl(roomId);

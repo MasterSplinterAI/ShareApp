@@ -89,7 +89,8 @@ export function setupSocketListeners() {
       // Import the prompt function
       try {
         const { promptForAccessCode } = await import('../ui/events.js');
-        const accessCode = await promptForAccessCode();
+        const mode = data.error === 'INVALID_HOST_CODE' ? 'host' : 'participant';
+        const accessCode = await promptForAccessCode(mode);
         
         if (accessCode) {
           // Retry join with access code
@@ -104,7 +105,10 @@ export function setupSocketListeners() {
               userName = localStorage.getItem('username') || 'Guest';
             }
             
-            joinRoom(roomId, { userName: userName, accessCode: accessCode });
+            // Determine if joining as host based on error type
+            const isHost = data.error === 'INVALID_HOST_CODE';
+            
+            joinRoom(roomId, { userName: userName, accessCode: accessCode, isHost: isHost });
             return; // Don't show error, retrying
           }
         }
