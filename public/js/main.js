@@ -9,6 +9,7 @@ import { initMobileDetection } from './utils/mobileDetect.js';
 import { initializeIceServers } from './utils/iceServers.js';
 import './ui/audioLevelUI.js'; // Initialize audio level UI handlers
 import { initializeLayoutManager } from './ui/layout.js';
+import { initializeUIManager } from './ui/uiManager.js';
 
 // Global state object
 window.appState = {
@@ -46,6 +47,9 @@ async function initializeApp() {
     
     // Initialize layout manager
     initializeLayoutManager();
+    
+    // Initialize UI manager (handles UI mode switching)
+    initializeUIManager();
     
     // Setup socket event listeners
     setupSocketListeners();

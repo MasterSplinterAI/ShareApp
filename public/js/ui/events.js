@@ -822,6 +822,9 @@ function setupSettingsButton() {
           <i class="fas fa-sync mr-2"></i> Reconnect All Peers
         </button>
       </li>
+      <li id="uiToggleMenuItem">
+        <!-- UI toggle will be added here by uiManager -->
+      </li>
     </ul>
   `;
   
