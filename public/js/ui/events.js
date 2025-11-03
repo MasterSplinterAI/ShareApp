@@ -271,9 +271,12 @@ function setupJoinButton() {
       
       // Join room with provided name and access code
       // Server will automatically determine if code is host or participant code
+      // Include stored roomHostCode and roomAccessCode if available (for rejoining)
       joinRoom(roomId, { 
         userName: userName, 
         accessCode: accessCode || null,
+        roomHostCode: window.appState.roomHostCode || null,
+        roomAccessCode: window.appState.roomAccessCode || null,
         isHost: false // Start as participant, server will elevate if host code matches
       });
       
