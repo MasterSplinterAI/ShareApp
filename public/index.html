@@ -8,6 +8,17 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-touch-fullscreen" content="yes">
   <title>ScreenShare App</title>
+  <!-- Toggle between Classic and Modern UI -->
+  <script>
+    // Check URL parameter or localStorage for UI preference
+    const urlParams = new URLSearchParams(window.location.search);
+    const uiMode = urlParams.get('ui') || localStorage.getItem('uiMode') || 'classic';
+    
+    if (uiMode === 'modern') {
+      // Redirect to modern UI
+      window.location.href = 'modern-ui.html' + window.location.search;
+    }
+  </script>
   <!-- Remove old zoom prevention script -->
   <link rel="stylesheet" href="styles.css">
   <!-- Add Font Awesome for icons -->
