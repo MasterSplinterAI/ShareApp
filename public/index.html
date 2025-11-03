@@ -319,6 +319,45 @@
         aspect-ratio: 9/16;
         min-height: 50vh;
       }
+      
+      /* Mobile layout optimizations */
+      .main-video-container {
+        min-height: 250px !important;
+        max-height: 50vh !important;
+      }
+      
+      #participantsGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      }
+      
+      /* Side-by-side becomes vertical on mobile */
+      .layout-side-by-side {
+        flex-direction: column !important;
+      }
+      
+      .layout-side-by-side .main-video-container {
+        width: 100% !important;
+      }
+      
+      .layout-side-by-side #participantsGrid {
+        width: 100% !important;
+      }
+    }
+    
+    /* Layout mode styles */
+    .layout-grid-only .main-video-container {
+      display: none;
+    }
+    
+    .layout-side-by-side {
+      display: flex;
+      flex-direction: row;
+    }
+    
+    @media (max-width: 768px) {
+      .layout-side-by-side {
+        flex-direction: column;
+      }
     }
     
     .video-container.speaking {
