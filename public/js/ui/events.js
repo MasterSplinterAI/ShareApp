@@ -955,8 +955,8 @@ function setupSettingsButton() {
   
   const addMobileTouchHandlers = (btn) => {
     if (!btn) return;
-    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isMobile) {
+    const isMobileCheck = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobileCheck) {
       btn.addEventListener('touchstart', function(e) {
         e.stopPropagation();
         this.style.backgroundColor = 'rgba(55, 65, 81, 0.5)';
@@ -978,8 +978,7 @@ function setupSettingsButton() {
   if (networkSettingsBtn) addMobileTouchHandlers(networkSettingsBtn);
   if (reconnectBtn) addMobileTouchHandlers(reconnectBtn);
   
-  // Ensure menu itself is clickable on mobile
-  const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  // Ensure menu itself is clickable on mobile (reuse isMobile from line 887)
   if (isMobile) {
     settingsMenu.style.cssText += 'position: absolute !important; z-index: 10002 !important; pointer-events: auto !important; touch-action: auto !important;';
   }
