@@ -434,8 +434,75 @@ export async function promptForAccessCodes() {
   });
 }
 
+}
+
+// Function to prompt if user wants to join as host
+export async function promptJoinAsHost() {
+  return new Promise((resolve) => {
+    // Create modal overlay
+    const modalOverlay = document.createElement('div');
+    modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] modal-overlay';
+    
+    // Create modal content
+    const modalContent = document.createElement('div');
+    modalContent.className = 'bg-white rounded-lg p-6 w-full max-w-md mx-4 shadow-lg modal-content';
+    
+    // Header
+    const header = document.createElement('div');
+    header.className = 'flex items-center mb-4 pb-3 border-b border-gray-200';
+    
+    const icon = document.createElement('div');
+    icon.className = 'text-primary mr-3 text-2xl';
+    icon.innerHTML = '<i class="fas fa-user-friends"></i>';
+    
+    const title = document.createElement('h3');
+    title.className = 'text-xl font-bold';
+    title.textContent = 'Join as Host or Participant?';
+    
+    header.appendChild(icon);
+    header.appendChild(title);
+    
+    // Description
+    const description = document.createElement('p');
+    description.className = 'text-gray-600 mb-4 text-sm';
+    description.textContent = 'Would you like to join as a host (if you have the host code) or as a participant?';
+    
+    // Buttons
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'flex flex-col gap-2 mt-6';
+    
+    const hostBtn = document.createElement('button');
+    hostBtn.className = 'btn btn-primary w-full';
+    hostBtn.innerHTML = '<i class="fas fa-crown mr-2"></i>Join as Host';
+    hostBtn.addEventListener('click', () => {
+      document.body.removeChild(modalOverlay);
+      resolve(true);
+    });
+    
+    const participantBtn = document.createElement('button');
+    participantBtn.className = 'btn btn-secondary w-full';
+    participantBtn.innerHTML = '<i class="fas fa-user mr-2"></i>Join as Participant';
+    participantBtn.addEventListener('click', () => {
+      document.body.removeChild(modalOverlay);
+      resolve(false);
+    });
+    
+    buttonContainer.appendChild(hostBtn);
+    buttonContainer.appendChild(participantBtn);
+    
+    // Assemble modal
+    modalContent.appendChild(header);
+    modalContent.appendChild(description);
+    modalContent.appendChild(buttonContainer);
+    modalOverlay.appendChild(modalContent);
+    
+    // Add to DOM
+    document.body.appendChild(modalOverlay);
+  });
+}
+
 // Function to prompt for access code when joining
-export async function promptForAccessCode() {
+export async function promptForAccessCode(mode = 'participant') {
   return new Promise((resolve) => {
     // Create modal overlay
     const modalOverlay = document.createElement('div');
@@ -455,7 +522,7 @@ export async function promptForAccessCode() {
     
     const title = document.createElement('h3');
     title.className = 'text-xl font-bold';
-    title.textContent = 'Enter Access Code';
+    title.textContent = mode === 'host' ? 'Enter Host Code' : 'Enter Access Code';
     
     header.appendChild(icon);
     header.appendChild(title);
@@ -463,7 +530,9 @@ export async function promptForAccessCode() {
     // Description
     const description = document.createElement('p');
     description.className = 'text-gray-600 mb-4 text-sm';
-    description.textContent = 'This meeting requires an access code to join.';
+    description.textContent = mode === 'host' 
+      ? 'This meeting requires a host code to join as host. Please enter the host code.' 
+      : 'This meeting requires an access code to join.';
     
     // Access code input
     const inputContainer = document.createElement('div');
@@ -471,11 +540,11 @@ export async function promptForAccessCode() {
     
     const label = document.createElement('label');
     label.className = 'block text-sm font-medium text-gray-700 mb-1';
-    label.textContent = 'Access Code';
+    label.textContent = mode === 'host' ? 'Host Code' : 'Access Code';
     
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = 'Enter access code';
+    input.placeholder = `Enter ${mode === 'host' ? 'host' : 'access'} code`;
     input.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
     input.maxLength = 6;
     input.pattern = '[0-9]*';
