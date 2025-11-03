@@ -434,8 +434,6 @@ export async function promptForAccessCodes() {
   });
 }
 
-}
-
 // Function to prompt if user wants to join as host
 export async function promptJoinAsHost() {
   return new Promise((resolve) => {
