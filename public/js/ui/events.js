@@ -248,8 +248,9 @@ function setupJoinButton() {
         return;
       }
       
-      // Prompt for access code (if needed)
-      const accessCode = await promptForAccessCode();
+      // Note: Access code will be prompted by server if needed via join-error event
+      // We'll attempt join without code first, server will tell us if code is needed
+      let accessCode = null;
       
       document.getElementById('connectionStatus').classList.remove('hidden');
       document.getElementById('connectionStatusText').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Initializing media...';
