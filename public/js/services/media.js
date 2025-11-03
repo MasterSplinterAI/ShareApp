@@ -467,6 +467,26 @@ export async function toggleCamera() {
         
         console.log('Camera track added and enabled');
         
+        // Remove placeholders
+        const localVideoContainer = document.getElementById('localVideoContainer');
+        if (localVideoContainer) {
+          const placeholder = localVideoContainer.querySelector('.no-video-placeholder');
+          if (placeholder) {
+            placeholder.remove();
+          }
+        }
+        
+        // Remove placeholder from main video if showing local
+        if (window.appState.pinnedParticipant === 'local') {
+          const mainVideoContainer = document.getElementById('mainVideoContainer');
+          if (mainVideoContainer) {
+            const placeholder = mainVideoContainer.querySelector('.no-video-placeholder');
+            if (placeholder) {
+              placeholder.remove();
+            }
+          }
+        }
+        
         // Broadcast updated stream to all peers
         try {
           const { broadcastMediaToAllConnections } = await import('../utils/mediaHelpers.js');
@@ -478,6 +498,19 @@ export async function toggleCamera() {
         }
         
         updateVideoUI();
+        updateLocalStatusIndicators();
+        
+        // Force update main video if local is pinned
+        if (window.appState.pinnedParticipant === 'local') {
+          setTimeout(() => {
+            import('../ui/video.js').then(({ updateMainVideo }) => {
+              if (typeof updateMainVideo === 'function') {
+                updateMainVideo();
+              }
+            }).catch(err => console.warn('Could not update main video:', err));
+          }, 100);
+        }
+        
         return;
       }
     } catch (error) {
