@@ -108,12 +108,11 @@ function setupHostButton() {
         roomCodeEl.textContent = roomId;
       }
       
-      // Inform user about limitations if missing device
-      if (!hasVideo) {
-        showError('No camera detected. You\'ll join with audio only.', 5000);
-      } else if (!hasAudio) {
+      // Only show error if microphone is missing (camera off is intentional)
+      if (!hasAudio) {
         showError('No microphone detected. You\'ll join with video only.', 5000);
       }
+      // Note: We don't show error for missing camera since we intentionally start with camera off
       
       // Hide home screen, show meeting screen
       document.getElementById('home').classList.add('hidden');
@@ -184,12 +183,11 @@ function setupJoinButton() {
       // Update URL with room ID
       setRoomInUrl(roomId);
       
-      // Inform user about limitations if missing device
-      if (!hasVideo) {
-        showError('No camera detected. You\'ll join with audio only.', 5000);
-      } else if (!hasAudio) {
+      // Only show error if microphone is missing (camera off is intentional)
+      if (!hasAudio) {
         showError('No microphone detected. You\'ll join with video only.', 5000);
       }
+      // Note: We don't show error for missing camera since we intentionally start with camera off
       
       // Hide home screen, show meeting screen
       document.getElementById('home').classList.add('hidden');
