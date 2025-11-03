@@ -458,11 +458,27 @@ function toggleGridView() {
   if (isGridView) {
     body.classList.remove('grid-view');
     body.classList.add('speaker-view');
-    document.getElementById('gridViewToggle').innerHTML = '<i class="fas fa-th"></i> <span>Grid</span>';
+    const toggleBtn = document.getElementById('gridViewToggle');
+    if (toggleBtn) {
+      toggleBtn.innerHTML = '<i class="fas fa-th"></i> <span>Grid</span>';
+    }
   } else {
     body.classList.remove('speaker-view');
     body.classList.add('grid-view');
-    document.getElementById('gridViewToggle').innerHTML = '<i class="fas fa-user"></i> <span>Speaker</span>';
+    const toggleBtn = document.getElementById('gridViewToggle');
+    if (toggleBtn) {
+      toggleBtn.innerHTML = '<i class="fas fa-user"></i> <span>Speaker</span>';
+    }
+  }
+  
+  // Also update layout manager if in modern UI
+  if (currentUIMode === UI_MODES.MODERN) {
+    import('./layout.js').then(({ setLayoutMode, LAYOUT_MODES }) => {
+      // Import layout modes - map grid view to grid-only, speaker to standard
+      const newLayout = isGridView ? LAYOUT_MODES.GRID_ONLY : LAYOUT_MODES.STANDARD;
+      // Note: We're handling this in modern UI differently, so we won't change layout mode
+      // The modern UI handles its own grid/speaker toggle
+    }).catch(err => console.warn('Could not import layout manager:', err));
   }
 }
 
