@@ -272,8 +272,13 @@ io.on('connection', (socket) => {
                 locked: false
             };
             
-            // If hostCode was set and user provided matching code, validate and set as host
-            if (finalHostCode && providedAccessCode && finalHostCode === providedAccessCode) {
+            // When creating a room as host, if joinAsHost is true and roomHostCode is provided, 
+            // automatically set as host without requiring providedAccessCode validation
+            if (joinAsHost && roomHostCode) {
+                // User is creating the room as host with a host code - automatically set as host
+                rooms[roomId].hostId = socket.id;
+            } else if (finalHostCode && providedAccessCode && finalHostCode === providedAccessCode) {
+                // Host code matches provided code - validate and set as host
                 joinAsHost = true;
                 rooms[roomId].hostId = socket.id;
             } else if (finalHostCode && providedAccessCode && finalHostCode !== providedAccessCode) {
@@ -283,8 +288,8 @@ io.on('connection', (socket) => {
                     message: 'The host code you entered is incorrect. Please enter the correct host code.'
                 });
                 return;
-            } else if (finalHostCode && !providedAccessCode) {
-                // Host code exists but no code provided - require it
+            } else if (finalHostCode && !providedAccessCode && !joinAsHost) {
+                // Host code exists but no code provided and user is not joining as host - require it
                 socket.emit('join-error', {
                     error: 'INVALID_HOST_CODE',
                     message: 'This meeting requires a host code. Please enter the host code to join.'
@@ -293,10 +298,6 @@ io.on('connection', (socket) => {
             }
             // If no hostCode is set, first participant becomes host (unless they're joining as participant)
             if (!finalHostCode && joinAsHost) {
-                rooms[roomId].hostId = socket.id;
-            } else if (finalHostCode && !providedAccessCode && joinAsHost) {
-                // Host code exists but wasn't provided, but user is trying to join as host
-                // This shouldn't happen if they're the original host, but handle it gracefully
                 rooms[roomId].hostId = socket.id;
             }
         } else {
