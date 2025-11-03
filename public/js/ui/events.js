@@ -96,6 +96,13 @@ function setupHostButton() {
         return;
       }
       
+      // Prompt for access code and host code
+      const accessCodeInfo = await promptForAccessCodes();
+      if (accessCodeInfo === null) {
+        console.log('User cancelled access code prompt, aborting host action');
+        return;
+      }
+      
       document.getElementById('connectionStatus').classList.remove('hidden');
       document.getElementById('connectionStatusText').innerHTML = '<i class="fas fa-circle-notch fa-spin mr-2"></i> Initializing media...';
       
@@ -115,8 +122,13 @@ function setupHostButton() {
       // Generate a random room ID
       const roomId = generateRoomId();
       
-      // Join as host with the provided name
-      joinRoom(roomId, { isHost: true, userName: userName });
+      // Join as host with the provided name and access codes
+      joinRoom(roomId, { 
+        isHost: true, 
+        userName: userName,
+        roomAccessCode: accessCodeInfo.accessCode || null,
+        roomHostCode: accessCodeInfo.hostCode || null
+      });
       
       // Update URL with room ID
       setRoomInUrl(roomId);
@@ -124,13 +136,40 @@ function setupHostButton() {
       // Update shareable link
       const shareLinkEl = document.getElementById('shareLink');
       if (shareLinkEl) {
-        shareLinkEl.textContent = getShareableLink(roomId);
+        const shareLink = getShareableLink(roomId);
+        shareLinkEl.textContent = shareLink;
+        // Store link in window for easy access
+        window.appState.shareLink = shareLink;
       }
       
       const roomCodeEl = document.getElementById('roomCode');
       if (roomCodeEl) {
         roomCodeEl.textContent = roomId;
       }
+      
+      // Display access codes if set
+      if (accessCodeInfo.accessCode || accessCodeInfo.hostCode) {
+        const shareInfo = document.getElementById('shareInfo');
+        if (shareInfo) {
+          // Remove any existing access code display
+          const existingDisplay = shareInfo.querySelector('.access-code-display');
+          if (existingDisplay) {
+            existingDisplay.remove();
+          }
+          
+          const accessCodeDisplay = document.createElement('div');
+          accessCodeDisplay.className = 'access-code-display mt-2 p-2 bg-blue-50 rounded text-sm';
+          accessCodeDisplay.innerHTML = `
+            ${accessCodeInfo.accessCode ? `<p><strong>Participant Code:</strong> <span class="font-mono">${accessCodeInfo.accessCode}</span></p>` : ''}
+            ${accessCodeInfo.hostCode ? `<p><strong>Host Code:</strong> <span class="font-mono">${accessCodeInfo.hostCode}</span> <span class="text-xs text-gray-600">(save this to rejoin as host)</span></p>` : ''}
+          `;
+          shareInfo.appendChild(accessCodeDisplay);
+        }
+      }
+      
+      // Store access codes for later use
+      window.appState.roomAccessCode = accessCodeInfo.accessCode;
+      window.appState.roomHostCode = accessCodeInfo.hostCode;
       
       // Only show error if microphone is missing (camera off is intentional)
       if (!hasAudio) {
