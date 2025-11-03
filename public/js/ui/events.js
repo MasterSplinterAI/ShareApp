@@ -579,7 +579,7 @@ export async function promptForAccessCode(mode = 'auto') {
     } else if (mode === 'participant') {
       description.textContent = 'This meeting requires an access code to join.';
     } else {
-      description.textContent = 'This meeting requires an access code. Enter your participant code or host code.';
+      description.textContent = 'This meeting may require an access code. Enter your participant code or host code (if you have one).';
     }
     
     // Access code input
