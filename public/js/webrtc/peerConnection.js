@@ -947,11 +947,32 @@ export async function handleRemoteOffer(peerId, sdp) {
       
       // IMPORTANT: Make sure we have video tracks in our local stream before creating answer
       // This ensures video is included in the SDP even if camera was off initially
+      // Also ensure existing video tracks from remote peer are properly handled
       if (window.appState.localStream) {
         const hasVideoTracks = window.appState.localStream.getVideoTracks().length > 0;
         const hasAudioTracks = window.appState.localStream.getAudioTracks().length > 0;
+        const senders = pc.getSenders();
+        const hasVideoSender = senders.some(s => s.track && s.track.kind === 'video');
         
         console.log(`Local stream before answer: ${hasVideoTracks ? 'has' : 'no'} video, ${hasAudioTracks ? 'has' : 'no'} audio`);
+        console.log(`Peer connection has ${senders.length} senders, video sender: ${hasVideoSender}`);
+        
+        // IMPORTANT: Always ensure we have at least audio tracks in the connection
+        // Even if we don't have video, we should still be able to receive video from remote peer
+        if (!hasAudioTracks && !hasVideoSender) {
+          // Try to get at least audio if we don't have any tracks
+          try {
+            const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const audioTrack = audioStream.getAudioTracks()[0];
+            if (audioTrack) {
+              window.appState.localStream.addTrack(audioTrack);
+              pc.addTrack(audioTrack, window.appState.localStream);
+              console.log('Added audio track to peer connection before creating answer');
+            }
+          } catch (err) {
+            console.warn('Could not get audio track for answer:', err);
+          }
+        }
         
         // If we don't have video tracks but camera is enabled, try to get them
         if (!hasVideoTracks && window.appState.isCameraOn) {
