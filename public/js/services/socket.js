@@ -217,6 +217,15 @@ export function setupSocketListeners() {
       }
     }));
     
+    // Also dispatch user-joined-event for modern UI
+    document.dispatchEvent(new CustomEvent('user-joined-event', {
+      detail: {
+        userId: data.userId,
+        name: data.name,
+        isHost: data.isHost
+      }
+    }));
+    
     // Track if we need to update media for screen sharing
     const isLocalScreenSharing = window.appState.isScreenSharing && window.appState.screenStream;
     
