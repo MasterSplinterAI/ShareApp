@@ -288,7 +288,7 @@ io.on('connection', (socket) => {
                     // Valid participant code - join as participant
                     joinAsHost = false;
                 } else if (rooms[roomId].hostCode) {
-                    // Only host code exists, but provided code doesn't match
+                    // Only host code exists - must provide host code
                     if (!providedAccessCode || rooms[roomId].hostCode !== providedAccessCode) {
                         socket.emit('join-error', {
                             error: 'INVALID_HOST_CODE',
