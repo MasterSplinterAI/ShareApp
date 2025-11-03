@@ -29,10 +29,16 @@ const Z_INDEX = {
 };
 
 export function initializeUIManager() {
-  // Set initial UI mode from localStorage
-  const savedUIMode = localStorage.getItem('uiMode');
-  if (savedUIMode && Object.values(UI_MODES).includes(savedUIMode)) {
-    currentUIMode = savedUIMode;
+  // Default to classic UI (don't read from localStorage for default)
+  // Only check URL parameter if needed
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlUIMode = urlParams.get('ui');
+  
+  // Use URL parameter if present, otherwise default to classic
+  if (urlUIMode && Object.values(UI_MODES).includes(urlUIMode)) {
+    currentUIMode = urlUIMode;
+  } else {
+    currentUIMode = UI_MODES.CLASSIC; // Default to classic
   }
   
   // Apply initial UI mode
