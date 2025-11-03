@@ -10,14 +10,17 @@
   <title>ScreenShare App</title>
   <!-- Toggle between Classic and Modern UI -->
   <script>
-    // Check URL parameter or localStorage for UI preference
+    // Check URL parameter for UI preference (defaults to classic)
+    // Only use modern UI if explicitly requested via URL parameter
     const urlParams = new URLSearchParams(window.location.search);
-    const uiMode = urlParams.get('ui') || localStorage.getItem('uiMode') || 'classic';
+    const uiMode = urlParams.get('ui'); // Only check URL parameter, not localStorage
     
+    // Default to classic UI (only redirect if explicitly requested via ?ui=modern)
     if (uiMode === 'modern') {
       // Redirect to modern UI
       window.location.href = 'modern-ui.html' + window.location.search;
     }
+    // Otherwise, stay on classic UI (default)
   </script>
   <!-- Remove old zoom prevention script -->
   <link rel="stylesheet" href="styles.css">
