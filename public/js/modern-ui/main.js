@@ -143,6 +143,15 @@ function setupUI() {
       viewToggle.innerHTML = '<i class="fas fa-user"></i> <span>Speaker</span>';
     }
   });
+  
+  // UI toggle (switch back to classic)
+  const uiToggle = document.getElementById('uiToggle');
+  if (uiToggle) {
+    uiToggle.addEventListener('click', () => {
+      localStorage.setItem('uiMode', 'classic');
+      window.location.href = 'index.html' + window.location.search;
+    });
+  }
 }
 
 function showMeetingScreen() {
