@@ -24,6 +24,20 @@ export const debouncedForceFullMeshConnections = debounce(forceFullMeshConnectio
 
 export function setupSocketListeners() {
   // Initialize Socket.io connection
+  // Check if io is available (loaded from socket.io.js script)
+  if (typeof io === 'undefined') {
+    console.error('Socket.io library not loaded. Make sure /socket.io/socket.io.js is included before this script.');
+    // Try to wait a bit and retry
+    setTimeout(() => {
+      if (typeof io !== 'undefined') {
+        setupSocketListeners();
+      } else {
+        console.error('Socket.io still not available after retry');
+      }
+    }, 1000);
+    return;
+  }
+  
   socket = io();
   
   // Connection status handlers
