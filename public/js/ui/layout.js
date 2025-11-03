@@ -239,8 +239,10 @@ function setupLayoutSwitcher() {
       controlsDiv.appendChild(layoutBtn);
     }
     
-    // Add mobile touch handlers for layout button
+    // Check if mobile once at the top of the function
     const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    
+    // Add mobile touch handlers for layout button
     if (isMobile) {
       // Add touch handlers for mobile
       layoutBtn.addEventListener('touchstart', function(e) {
@@ -281,7 +283,6 @@ function setupLayoutSwitcher() {
       });
       
       // Add mobile touch handlers for menu items
-      const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
       if (isMobile) {
         option.addEventListener('touchstart', function(e) {
           e.stopPropagation();
@@ -307,7 +308,6 @@ function setupLayoutSwitcher() {
     });
     
     // Ensure menu itself is clickable on mobile
-    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
     if (isMobile) {
       layoutMenu.style.cssText += 'position: absolute !important; z-index: 10002 !important; pointer-events: auto !important; touch-action: auto !important;';
     }
