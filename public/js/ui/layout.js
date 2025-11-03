@@ -167,7 +167,26 @@ function setupLayoutSwitcher() {
   let layoutBtn = document.getElementById('layoutSwitcherBtn');
   if (!layoutBtn) {
     const controlsDiv = document.querySelector('#controls .flex:nth-child(2)');
-    if (!controlsDiv) return;
+    if (!controlsDiv) {
+      // Try alternative selector - find the controls and create flex container
+      const controls = document.getElementById('controls');
+      if (!controls) {
+        console.warn('Controls element not found, cannot add layout switcher');
+        return;
+      }
+      
+      // Look for existing flex containers
+      const existingFlex = controls.querySelector('.flex');
+      if (existingFlex && existingFlex.classList.contains('gap-3')) {
+        controlsDiv = existingFlex;
+      } else {
+        // Create a new flex container if needed
+        const flexContainer = document.createElement('div');
+        flexContainer.className = 'flex gap-3';
+        controls.appendChild(flexContainer);
+        controlsDiv = flexContainer;
+      }
+    }
     
     layoutBtn = document.createElement('button');
     layoutBtn.id = 'layoutSwitcherBtn';
@@ -206,8 +225,17 @@ function setupLayoutSwitcher() {
       </ul>
     `;
     
+    // Make button relative for menu positioning
+    layoutBtn.style.position = 'relative';
     layoutBtn.appendChild(layoutMenu);
-    controlsDiv.insertBefore(layoutBtn, controlsDiv.lastElementChild);
+    
+    // Insert before the leave button (last element) or at the end
+    const leaveBtn = controlsDiv.querySelector('#leaveBtn');
+    if (leaveBtn) {
+      controlsDiv.insertBefore(layoutBtn, leaveBtn);
+    } else {
+      controlsDiv.appendChild(layoutBtn);
+    }
     
     // Toggle menu
     layoutBtn.addEventListener('click', (event) => {
