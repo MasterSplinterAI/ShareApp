@@ -276,14 +276,28 @@ export function updateMainVideo() {
       } else if (window.appState.localStream) {
         console.log('Using local camera stream for main video');
         
+        // Remove placeholder if it exists
+        const placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+        if (placeholder) {
+          placeholder.remove();
+        }
+        
         try {
+          // Check if we have enabled video tracks
+          const hasEnabledVideoTracks = window.appState.localStream.getVideoTracks().some(
+            t => t.enabled && t.readyState === 'live'
+          );
+          
           // ANTI-FLASHING: Only reset if we need to
           const currentStream = mainVideo.srcObject;
           const needsUpdate = !currentStream || 
                              currentStream !== window.appState.localStream ||
-                             !currentStream.getVideoTracks().some(t => t.readyState === 'live');
+                             !hasEnabledVideoTracks ||
+                             !currentStream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
           
-          if (needsUpdate) {
+          if (needsUpdate || hasEnabledVideoTracks) {
+            console.log('Updating main video with local stream, hasEnabledVideoTracks:', hasEnabledVideoTracks);
+            
             // Set required attributes before setting srcObject
             mainVideo.autoplay = true;
             mainVideo.playsInline = true;
@@ -293,14 +307,33 @@ export function updateMainVideo() {
             // Set video properties
             mainVideo.style.display = '';
             mainVideo.style.visibility = 'visible';
+            mainVideo.style.opacity = '1';
             
-            // ANTI-FLASHING: Set stream directly without reset
-            mainVideo.srcObject = window.appState.localStream;
-            
-            // Try to play the video
-            mainVideo.play().catch(err => {
-              console.warn('Could not autoplay local video:', err);
-            });
+            // Force update the stream
+            mainVideo.srcObject = null; // Clear first
+            setTimeout(() => {
+              mainVideo.srcObject = window.appState.localStream;
+              
+              // Try to play the video
+              mainVideo.play().then(() => {
+                console.log('Local video playing successfully in main view');
+                if (mainVideo.videoWidth > 0) {
+                  console.log(`Video dimensions: ${mainVideo.videoWidth}x${mainVideo.videoHeight}`);
+                }
+              }).catch(err => {
+                console.warn('Could not autoplay local video:', err);
+                // Try again on user interaction
+                if (!window.hasLocalPlayHandler) {
+                  window.hasLocalPlayHandler = true;
+                  document.addEventListener('click', function tryPlayLocal() {
+                    mainVideo.play().catch(e => console.warn('Still cannot play:', e));
+                    document.removeEventListener('click', tryPlayLocal);
+                  }, { once: true });
+                }
+              });
+            }, 50);
+          } else {
+            console.log('No update needed for main video');
           }
         } catch (err) {
           console.error('Error setting local stream to main video:', err);
