@@ -578,14 +578,22 @@
       display: none !important;
     }
     
-    /* Ensure home screen is visible by default */
+    /* Ensure home screen is visible by default, but hidden when it has the hidden class */
     #home {
-      display: flex !important;
+      display: flex;
+    }
+    
+    #home.hidden {
+      display: none !important;
     }
     
     /* Ensure meeting screen is hidden by default */
     #meeting.hidden {
       display: none !important;
+    }
+    
+    #meeting:not(.hidden) {
+      display: block;
     }
     
     /* Portrait mode specific fixes (separate media query) */
