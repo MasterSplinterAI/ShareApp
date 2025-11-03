@@ -130,13 +130,38 @@
       border-radius: 8px;
       overflow: hidden;
       aspect-ratio: 16/9;
+      min-height: 0;
+      z-index: 1;
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
     }
     
     .video-wrapper video {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
+      pointer-events: auto;
+    }
+    
+    /* Ensure buttons are clickable on mobile */
+    .video-wrapper .control-btn {
+      pointer-events: auto !important;
+      z-index: 20 !important;
+      position: absolute !important;
+      touch-action: manipulation !important;
+      -webkit-tap-highlight-color: transparent !important;
+      cursor: pointer !important;
+    }
+    
+    .video-wrapper .video-label {
+      pointer-events: none;
+      z-index: 10;
+    }
+    
+    .video-wrapper .video-placeholder {
+      pointer-events: none;
+      z-index: 2;
     }
     
     #mainVideoWrapper {
@@ -150,20 +175,40 @@
     
     /* Participant Grid */
     #participantsGrid {
-      display: none;
-    }
-    
-    #videoContainer.grid-view #participantsGrid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      grid-template-columns: repeat(2, 1fr);
       gap: 4px;
       width: 100%;
       height: 100%;
       overflow-y: auto;
+      padding: 4px;
+      -webkit-overflow-scrolling: touch;
+      position: relative;
+      z-index: 1;
+    }
+    
+    #videoContainer.grid-view #participantsGrid {
+      display: grid;
+    }
+    
+    #videoContainer.speaker-view #participantsGrid {
+      display: flex;
     }
     
     #videoContainer.grid-view #mainVideoWrapper {
       display: none;
+    }
+    
+    @media (max-width: 640px) {
+      #participantsGrid {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+    
+    @media (min-width: 641px) {
+      #participantsGrid {
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      }
     }
     
     /* Video Label */
