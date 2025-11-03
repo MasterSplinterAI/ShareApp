@@ -81,8 +81,39 @@ export function setupSocketListeners() {
   
   // Room event handlers
   // Handle join errors (e.g., invalid access code)
-  socket.on('join-error', (data) => {
+  socket.on('join-error', async (data) => {
     console.error('Join error:', data);
+    
+    // If it's an access code error, prompt for access code and retry
+    if (data.error === 'INVALID_ACCESS_CODE' || data.error === 'INVALID_HOST_CODE') {
+      // Import the prompt function
+      try {
+        const { promptForAccessCode } = await import('../ui/events.js');
+        const accessCode = await promptForAccessCode();
+        
+        if (accessCode) {
+          // Retry join with access code
+          const roomId = window.appState.roomId;
+          if (roomId) {
+            // Get current user name from participants or prompt
+            let userName = 'Guest';
+            if (window.appState.participants && window.appState.participants[socket.id]) {
+              userName = window.appState.participants[socket.id].name;
+            } else {
+              // Try to get from localStorage
+              userName = localStorage.getItem('username') || 'Guest';
+            }
+            
+            joinRoom(roomId, { userName: userName, accessCode: accessCode });
+            return; // Don't show error, retrying
+          }
+        }
+      } catch (err) {
+        console.error('Error importing promptForAccessCode:', err);
+      }
+    }
+    
+    // Show error for other cases or if user cancelled
     showError(data.message || 'Failed to join meeting. Please try again.');
     // Reset connection status
     updateConnectionStatus('idle');
