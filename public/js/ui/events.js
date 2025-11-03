@@ -554,10 +554,6 @@ export async function promptForAccessCode(mode = 'participant') {
     const header = document.createElement('div');
     header.className = 'flex items-center mb-4 pb-3 border-b border-gray-200';
     
-    const icon = document.createElement('div');
-    icon.className = 'text-primary mr-3 text-2xl';
-    icon.innerHTML = '<i class="fas fa-key"></i>';
-    
 // Function to prompt for access code when joining
 export async function promptForAccessCode(mode = 'auto') {
   return new Promise((resolve) => {
