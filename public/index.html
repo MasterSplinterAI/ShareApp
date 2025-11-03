@@ -470,6 +470,21 @@
       }
     }
     
+    /* Ensure hidden class works properly */
+    .hidden {
+      display: none !important;
+    }
+    
+    /* Ensure home screen is visible by default */
+    #home {
+      display: flex !important;
+    }
+    
+    /* Ensure meeting screen is hidden by default */
+    #meeting.hidden {
+      display: none !important;
+    }
+    
     /* Portrait mode specific fixes (separate media query) */
     @media (max-width: 768px) and (orientation: portrait) {
       /* Ensure video containers don't overlap controls */
@@ -489,15 +504,15 @@
         margin-top: auto !important;
       }
       
-      /* Meeting container should use flex layout */
-      #meeting {
+      /* Meeting container should use flex layout (only when visible, not hidden) */
+      #meeting:not(.hidden) {
         display: flex !important;
         flex-direction: column !important;
         min-height: 100vh !important;
       }
       
-      /* Video grid should flex grow */
-      #videoGrid {
+      /* Video grid should flex grow (only when meeting is visible) */
+      #meeting:not(.hidden) #videoGrid {
         flex: 1 1 auto !important;
         overflow-y: auto !important;
       }
