@@ -138,15 +138,7 @@ export function updateMainVideo() {
   mainVideoUpdateInProgress = true;
   
   try {
-    // CRITICAL: Remove placeholder only when necessary
-    if (mainVideoPlaceholder && (window.appState.viewOnlyMode || 
-        window.appState.audioOnlyMode ||
-        window.appState.isScreenSharing || 
-        (pinnedParticipant && pinnedParticipant !== 'local'))) {
-      console.log('*** REMOVING PLACEHOLDER ELEMENT FROM DOM ***');
-      mainVideoPlaceholder.remove();
-    }
-    
+    // Don't remove placeholder here - let the individual sections handle it based on video state
     if (mainVideo) {
       mainVideo.style.display = '';
       mainVideo.style.visibility = 'visible';
@@ -276,17 +268,66 @@ export function updateMainVideo() {
       } else if (window.appState.localStream) {
         console.log('Using local camera stream for main video');
         
-        // Remove placeholder if it exists
-        const placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
-        if (placeholder) {
-          placeholder.remove();
-        }
-        
         try {
           // Check if we have enabled video tracks
           const hasEnabledVideoTracks = window.appState.localStream.getVideoTracks().some(
             t => t.enabled && t.readyState === 'live'
           );
+          
+          // If no enabled video tracks, show placeholder
+          if (!hasEnabledVideoTracks || !window.appState.isCameraOn) {
+            console.log('Local video is off, showing placeholder in main video');
+            
+            // Clear video stream
+            mainVideo.srcObject = null;
+            
+            // Show placeholder with avatar
+            let placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+            if (!placeholder) {
+              placeholder = document.createElement('div');
+              placeholder.id = 'noVideoPlaceholder';
+              placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+              
+              // Get user's name for initials
+              const userName = window.appState.participants['local']?.name || 
+                              window.appState.participants[getSocketId()]?.name || 
+                              'You';
+              const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+              
+              placeholder.innerHTML = `
+                <div class="flex flex-col items-center justify-center">
+                  <div class="avatar-circle bg-blue-600 text-white text-5xl font-bold flex items-center justify-center w-32 h-32 rounded-full mb-4">
+                    ${initials}
+                  </div>
+                  <div class="text-white text-lg font-medium">${userName}</div>
+                  <div class="text-gray-400 text-sm mt-2">Camera is off</div>
+                  <div class="speaking-indicator absolute bottom-4 left-1/2 transform -translate-x-1/2 hidden">
+                    <div class="w-4 h-4 bg-green-500 rounded-full animate-pulse"></div>
+                  </div>
+                </div>
+              `;
+              
+              if (mainVideoContainer) {
+                mainVideoContainer.appendChild(placeholder);
+              }
+            } else {
+              // Update placeholder if it exists
+              placeholder.classList.remove('hidden');
+            }
+            
+            // Reset container aspect ratio
+            if (mainVideoContainer) {
+              mainVideoContainer.style.aspectRatio = '16/9';
+            }
+            
+            return;
+          }
+          
+          // Remove placeholder if video is enabled
+          const placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+          if (placeholder) {
+            placeholder.classList.add('hidden');
+          }
           
           // ANTI-FLASHING: Only reset if we need to
           const currentStream = mainVideo.srcObject;
@@ -355,6 +396,38 @@ export function updateMainVideo() {
         } catch (err) {
           console.error('Error setting local stream to main video:', err);
         }
+      } else {
+        // No local stream at all - show placeholder
+        console.log('No local stream, showing placeholder');
+        let placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+        if (!placeholder) {
+          placeholder = document.createElement('div');
+          placeholder.id = 'noVideoPlaceholder';
+          placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+          
+          const userName = window.appState.participants['local']?.name || 
+                          window.appState.participants[getSocketId()]?.name || 
+                          'You';
+          const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+          
+          placeholder.innerHTML = `
+            <div class="flex flex-col items-center justify-center">
+              <div class="avatar-circle bg-blue-600 text-white text-5xl font-bold flex items-center justify-center w-32 h-32 rounded-full mb-4">
+                ${initials}
+              </div>
+              <div class="text-white text-lg font-medium">${userName}</div>
+              <div class="text-gray-400 text-sm mt-2">Camera is off</div>
+            </div>
+          `;
+          
+          if (mainVideoContainer) {
+            mainVideoContainer.appendChild(placeholder);
+          }
+        } else {
+          placeholder.classList.remove('hidden');
+        }
+        
+        mainVideo.srcObject = null;
       }
       
       // IMPORTANT: Always mute when showing local content to prevent echo
@@ -382,6 +455,57 @@ export function updateMainVideo() {
       let participantVideo = document.getElementById(`video-${pinnedParticipant}`);
       
       if (participantVideo && participantVideo.srcObject) {
+        // Check if participant has enabled video tracks
+        const stream = participantVideo.srcObject;
+        const hasEnabledVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+        
+        if (!hasEnabledVideo) {
+          // Participant has no video - show placeholder
+          console.log(`Participant ${pinnedParticipant} has no video, showing placeholder`);
+          mainVideo.srcObject = null;
+          
+          // Show placeholder with avatar
+          let placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+          if (!placeholder) {
+            placeholder = document.createElement('div');
+            placeholder.id = 'noVideoPlaceholder';
+            placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+            
+            const participant = window.appState.participants[pinnedParticipant];
+            const userName = participant?.name || `Participant ${pinnedParticipant.substring(0, 5)}`;
+            const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+            
+            placeholder.innerHTML = `
+              <div class="flex flex-col items-center justify-center">
+                <div class="avatar-circle bg-blue-600 text-white text-5xl font-bold flex items-center justify-center w-32 h-32 rounded-full mb-4">
+                  ${initials}
+                </div>
+                <div class="text-white text-lg font-medium">${userName}${participant?.isHost ? ' (Host)' : ''}</div>
+                <div class="text-gray-400 text-sm mt-2">Camera is off</div>
+              </div>
+            `;
+            
+            if (mainVideoContainer) {
+              mainVideoContainer.appendChild(placeholder);
+            }
+          } else {
+            placeholder.classList.remove('hidden');
+          }
+          
+          // Reset container aspect ratio
+          if (mainVideoContainer) {
+            mainVideoContainer.style.aspectRatio = '16/9';
+          }
+          
+          return;
+        }
+        
+        // Remove placeholder if video is enabled
+        const placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+        if (placeholder) {
+          placeholder.classList.add('hidden');
+        }
+        
         console.log(`Found video for participant ${pinnedParticipant}`);
         
         try {
@@ -463,11 +587,39 @@ export function updateMainVideo() {
       } else {
         console.warn(`No video found for participant ${pinnedParticipant}`);
         
-        // Try to find audio for this participant
+        // Show placeholder for audio-only participant
         const audioEl = document.getElementById(`audio-${pinnedParticipant}`);
         if (audioEl && audioEl.srcObject) {
-          console.log(`Found audio-only stream for participant ${pinnedParticipant}`);
+          console.log(`Found audio-only stream for participant ${pinnedParticipant}, showing placeholder`);
           mainVideo.srcObject = null;
+          
+          // Show placeholder
+          let placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
+          if (!placeholder) {
+            placeholder = document.createElement('div');
+            placeholder.id = 'noVideoPlaceholder';
+            placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
+            
+            const participant = window.appState.participants[pinnedParticipant];
+            const userName = participant?.name || `Participant ${pinnedParticipant.substring(0, 5)}`;
+            const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+            
+            placeholder.innerHTML = `
+              <div class="flex flex-col items-center justify-center">
+                <div class="avatar-circle bg-blue-600 text-white text-5xl font-bold flex items-center justify-center w-32 h-32 rounded-full mb-4">
+                  ${initials}
+                </div>
+                <div class="text-white text-lg font-medium">${userName}${participant?.isHost ? ' (Host)' : ''}</div>
+                <div class="text-gray-400 text-sm mt-2">Camera is off</div>
+              </div>
+            `;
+            
+            if (mainVideoContainer) {
+              mainVideoContainer.appendChild(placeholder);
+            }
+          } else {
+            placeholder.classList.remove('hidden');
+          }
         } else {
           console.warn(`No media found for participant ${pinnedParticipant}, resetting to local`);
           window.appState.pinnedParticipant = 'local';
