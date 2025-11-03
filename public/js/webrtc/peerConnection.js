@@ -388,6 +388,16 @@ export async function createPeerConnection(peerId) {
         return; // Don't process our own audio to prevent echo
       }
       
+      // Dispatch event for modern UI to handle
+      const stream = event.streams && event.streams.length > 0 ? event.streams[0] : new MediaStream([event.track]);
+      document.dispatchEvent(new CustomEvent('peer-track-received', {
+        detail: {
+          peerId: peerId,
+          track: event.track,
+          stream: stream
+        }
+      }));
+      
       // For debugging purposes, log all current peer connections
       console.log('Current peer connections:');
       Object.entries(window.appState.peerConnections).forEach(([id, conn]) => {

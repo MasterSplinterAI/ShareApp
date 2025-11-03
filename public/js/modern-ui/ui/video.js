@@ -2,11 +2,164 @@
 // Handles video display, grid view, speaker view, and participant video containers
 
 import { getSocketId } from '../../services/socket.js';
-import { updateMainVideo } from '../../ui/video.js';
 
 export function setupVideoUI() {
-  // This will be called when participants join/leave
-  // It manages the video container display
+  // Listen for track events from peer connections
+  setupTrackListeners();
+  
+  // Listen for participant events
+  setupParticipantListeners();
+  
+  // Add local video to grid when media is initialized
+  setupLocalVideo();
+}
+
+function setupTrackListeners() {
+  // Listen for when peer connections receive tracks
+  // This is triggered by peerConnection.js ontrack event
+  document.addEventListener('peer-track-received', (event) => {
+    const { peerId, track, stream } = event.detail;
+    handlePeerTrack(peerId, track, stream);
+  });
+  
+  // Also listen for when streams are added to peer connections
+  // This happens when the connection is established
+  const originalSetPeerConnection = window.appState.peerConnections;
+  Object.defineProperty(window.appState, 'peerConnections', {
+    get() {
+      return originalSetPeerConnection;
+    },
+    set(value) {
+      // This won't work, let's use a different approach
+    }
+  });
+}
+
+function setupParticipantListeners() {
+  // Listen for participant joined event
+  document.addEventListener('participant-joined', (event) => {
+    const { peerId, name, isHost } = event.detail;
+    // Video will be added when track is received
+  });
+  
+  // Listen for participant left event
+  document.addEventListener('participant-left', (event) => {
+    const { peerId } = event.detail;
+    removeParticipantVideo(peerId);
+  });
+}
+
+function setupLocalVideo() {
+  // Watch for local stream initialization
+  const checkLocalStream = setInterval(() => {
+    if (window.appState.localStream) {
+      clearInterval(checkLocalStream);
+      addLocalVideoToGrid();
+    }
+  }, 500);
+  
+  // Also listen for media initialization event
+  document.addEventListener('local-stream-ready', () => {
+    addLocalVideoToGrid();
+  });
+}
+
+function addLocalVideoToGrid() {
+  if (!window.appState.localStream) return;
+  
+  const socketId = getSocketId();
+  if (!socketId) return;
+  
+  // Check if local video already exists
+  const existing = document.getElementById(`video-wrapper-local`);
+  if (existing) return;
+  
+  // Add local video to grid
+  const grid = document.getElementById('participantsGrid');
+  if (!grid) return;
+  
+  const wrapper = createVideoContainer('local', window.appState.localStream, 'You', window.appState.isHost);
+  
+  // Set video to muted to prevent echo
+  const video = wrapper.querySelector('video');
+  if (video) {
+    video.muted = true;
+  }
+  
+  grid.appendChild(wrapper);
+}
+
+function handlePeerTrack(peerId, track, stream) {
+  console.log(`Modern UI: Handling track for ${peerId}, kind: ${track.kind}`);
+  
+  // Check if video container exists
+  let wrapper = document.getElementById(`video-wrapper-${peerId}`);
+  
+  if (!wrapper) {
+    // Create new container
+    const participant = window.appState.participants[peerId];
+    const name = participant?.name || `Participant ${peerId.substring(0, 5)}`;
+    const isHost = participant?.isHost || false;
+    
+    wrapper = createVideoContainer(peerId, stream, name, isHost);
+    
+    // Add to grid
+    const grid = document.getElementById('participantsGrid');
+    if (grid) {
+      grid.appendChild(wrapper);
+    } else {
+      console.warn('Participants grid not found');
+      return;
+    }
+  }
+  
+  // Update video element with stream
+  const video = wrapper.querySelector(`#video-${peerId}`) || wrapper.querySelector('video');
+  if (video && stream) {
+    // Check if stream already set
+    if (video.srcObject !== stream) {
+      video.srcObject = stream;
+      
+      // Try to play
+      video.play().catch(err => {
+        console.warn(`Could not autoplay video for ${peerId}:`, err);
+      });
+    }
+    
+    // Update visibility based on track type and state
+    if (track.kind === 'video') {
+      const hasEnabledVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+      const placeholder = wrapper.querySelector('.video-placeholder');
+      
+      if (hasEnabledVideo) {
+        video.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+      } else {
+        video.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'flex';
+      }
+    }
+  }
+  
+  // Update status indicators
+  if (track.kind === 'audio') {
+    const micStatus = wrapper.querySelector('.mic-status i');
+    if (micStatus) {
+      micStatus.className = track.enabled ? 'fas fa-microphone' : 'fas fa-microphone-slash';
+    }
+  }
+  
+  if (track.kind === 'video') {
+    const videoStatus = wrapper.querySelector('.video-status i');
+    if (videoStatus) {
+      videoStatus.className = track.enabled ? 'fas fa-video' : 'fas fa-video-slash';
+    }
+  }
+  
+  // Update main video if this is pinned
+  if (window.appState.pinnedParticipant === peerId) {
+    updateMainVideoDisplay();
+  }
 }
 
 export function createVideoContainer(peerId, stream, name, isHost = false) {
@@ -19,7 +172,12 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
   video.id = `video-${peerId}`;
   video.autoplay = true;
   video.playsInline = true;
-  video.srcObject = stream;
+  if (stream) {
+    video.srcObject = stream;
+  }
+  if (peerId === 'local') {
+    video.muted = true; // Mute local video to prevent echo
+  }
   
   // Create placeholder
   const placeholder = document.createElement('div');
@@ -57,10 +215,15 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
     const videoTracks = stream.getVideoTracks();
     const audioTracks = stream.getAudioTracks();
     
-    if (videoTracks.length > 0 && videoTracks[0].enabled) {
+    // Check initial state
+    const hasEnabledVideo = videoTracks.length > 0 && videoTracks[0].enabled && videoTracks[0].readyState === 'live';
+    
+    if (hasEnabledVideo) {
       placeholder.style.display = 'none';
+      video.style.display = 'block';
     } else {
       video.style.display = 'none';
+      placeholder.style.display = 'flex';
     }
     
     // Listen for track changes
@@ -68,26 +231,27 @@ export function createVideoContainer(peerId, stream, name, isHost = false) {
       track.addEventListener('ended', () => {
         video.style.display = 'none';
         placeholder.style.display = 'flex';
+        updateVideoStatus(peerId, audioTracks[0]?.enabled || false, false);
       });
       
       track.addEventListener('mute', () => {
         video.style.display = 'none';
         placeholder.style.display = 'flex';
+        updateVideoStatus(peerId, audioTracks[0]?.enabled || false, false);
       });
       
       track.addEventListener('unmute', () => {
         video.style.display = 'block';
         placeholder.style.display = 'none';
+        updateVideoStatus(peerId, audioTracks[0]?.enabled || false, true);
       });
     });
     
     // Update mic status
     if (audioTracks.length > 0) {
       const micStatus = label.querySelector('.mic-status i');
-      if (audioTracks[0].enabled) {
-        micStatus.className = 'fas fa-microphone';
-      } else {
-        micStatus.className = 'fas fa-microphone-slash';
+      if (micStatus) {
+        micStatus.className = audioTracks[0].enabled ? 'fas fa-microphone' : 'fas fa-microphone-slash';
       }
     }
   }
@@ -114,6 +278,8 @@ export function updateMainVideoDisplay() {
   const mainVideoWrapper = document.getElementById('mainVideoWrapper');
   const pinnedParticipant = window.appState.pinnedParticipant || 'local';
   
+  if (!mainVideo || !mainVideoWrapper) return;
+  
   if (pinnedParticipant === 'local') {
     // Show local video
     if (window.appState.localStream) {
@@ -122,6 +288,25 @@ export function updateMainVideoDisplay() {
       
       const label = mainVideoWrapper.querySelector('.video-label .name');
       if (label) label.textContent = 'You';
+      
+      // Update placeholder
+      const hasVideo = window.appState.localStream.getVideoTracks().some(
+        t => t.enabled && t.readyState === 'live'
+      );
+      
+      const placeholder = mainVideoWrapper.querySelector('.video-placeholder');
+      if (hasVideo) {
+        mainVideo.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+      } else {
+        mainVideo.style.display = 'none';
+        if (placeholder) {
+          placeholder.style.display = 'flex';
+          const initials = 'You'.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+          placeholder.querySelector('.avatar').textContent = initials;
+          placeholder.querySelector('.name').textContent = 'You';
+        }
+      }
     }
   } else {
     // Show pinned participant video
@@ -133,25 +318,29 @@ export function updateMainVideoDisplay() {
       const participant = window.appState.participants[pinnedParticipant];
       const label = mainVideoWrapper.querySelector('.video-label .name');
       if (label) label.textContent = participant?.name || 'Participant';
-    }
-  }
-  
-  // Show/hide placeholder
-  const hasVideo = mainVideo.srcObject && 
-    mainVideo.srcObject.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-  
-  const placeholder = mainVideoWrapper.querySelector('.video-placeholder');
-  if (hasVideo) {
-    mainVideo.style.display = 'block';
-    if (placeholder) placeholder.style.display = 'none';
-  } else {
-    mainVideo.style.display = 'none';
-    if (placeholder) {
-      placeholder.style.display = 'flex';
-      const participant = window.appState.participants[pinnedParticipant] || { name: 'You' };
-      const initials = participant.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
-      placeholder.querySelector('.avatar').textContent = initials;
-      placeholder.querySelector('.name').textContent = participant.name;
+      
+      // Update placeholder
+      const stream = peerVideo.srcObject;
+      const hasVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+      
+      const placeholder = mainVideoWrapper.querySelector('.video-placeholder');
+      if (hasVideo) {
+        mainVideo.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+      } else {
+        mainVideo.style.display = 'none';
+        if (placeholder) {
+          placeholder.style.display = 'flex';
+          const participant = window.appState.participants[pinnedParticipant] || { name: 'Participant' };
+          const initials = participant.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+          placeholder.querySelector('.avatar').textContent = initials;
+          placeholder.querySelector('.name').textContent = participant.name;
+        }
+      }
+      
+      mainVideo.play().catch(err => {
+        console.warn('Could not play main video:', err);
+      });
     }
   }
 }
@@ -167,6 +356,18 @@ export function addParticipantVideo(peerId, stream, name, isHost = false) {
     const video = existing.querySelector('video');
     if (video && stream) {
       video.srcObject = stream;
+      
+      // Check if video should be visible
+      const hasVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+      const placeholder = existing.querySelector('.video-placeholder');
+      
+      if (hasVideo) {
+        video.style.display = 'block';
+        if (placeholder) placeholder.style.display = 'none';
+      } else {
+        video.style.display = 'none';
+        if (placeholder) placeholder.style.display = 'flex';
+      }
     }
     return;
   }
@@ -213,7 +414,9 @@ export function updateVideoStatus(peerId, micOn, cameraOn) {
   }
   
   if (video && video.srcObject) {
-    const hasVideo = video.srcObject.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+    const stream = video.srcObject;
+    const hasVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+    
     if (hasVideo && cameraOn) {
       video.style.display = 'block';
       if (placeholder) placeholder.style.display = 'none';
@@ -226,8 +429,8 @@ export function updateVideoStatus(peerId, micOn, cameraOn) {
 
 // Listen for participant changes
 document.addEventListener('participant-joined', (e) => {
-  const { peerId, stream, name, isHost } = e.detail;
-  addParticipantVideo(peerId, stream, name, isHost);
+  const { peerId, name, isHost } = e.detail;
+  // Video will be added when track is received via handlePeerTrack
 });
 
 document.addEventListener('participant-left', (e) => {
@@ -239,10 +442,43 @@ document.addEventListener('pinned-participant-changed', () => {
   updateMainVideoDisplay();
 });
 
-// Initialize
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', setupVideoUI);
-} else {
-  setupVideoUI();
+// Hook into peerConnection.js ontrack event
+// We'll modify peerConnection.js to dispatch events that this module can listen to
+// For now, let's also check periodically for new streams
+let trackCheckInterval = null;
+
+function startTrackMonitoring() {
+  if (trackCheckInterval) return;
+  
+  trackCheckInterval = setInterval(() => {
+    // Check all peer connections for tracks
+    Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
+      if (pc && pc.getReceivers) {
+        const receivers = pc.getReceivers();
+        receivers.forEach(receiver => {
+          if (receiver.track) {
+            const stream = receiver.track ? new MediaStream([receiver.track]) : null;
+            if (stream && !document.getElementById(`video-wrapper-${peerId}`)) {
+              // Track exists but no video container - create one
+              const participant = window.appState.participants[peerId];
+              if (participant) {
+                handlePeerTrack(peerId, receiver.track, stream);
+              }
+            }
+          }
+        });
+      }
+    });
+  }, 2000); // Check every 2 seconds
 }
 
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setupVideoUI();
+    setTimeout(startTrackMonitoring, 3000); // Start monitoring after 3 seconds
+  });
+} else {
+  setupVideoUI();
+  setTimeout(startTrackMonitoring, 3000);
+}

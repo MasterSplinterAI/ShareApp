@@ -58,6 +58,15 @@ async function initializeApp() {
     // Setup UI
     setupUI();
     
+    // Setup video UI after a delay to ensure DOM is ready
+    setTimeout(() => {
+      import('./ui/video.js').then(({ setupVideoUI }) => {
+        if (typeof setupVideoUI === 'function') {
+          setupVideoUI();
+        }
+      });
+    }, 500);
+    
     // Check if we should join a room from URL
     const roomFromUrl = initRoomFromUrl();
     if (roomFromUrl) {
@@ -82,6 +91,9 @@ function setupUI() {
       
       // Get media permissions
       await initializeMedia();
+      
+      // Dispatch event that local stream is ready
+      document.dispatchEvent(new CustomEvent('local-stream-ready'));
       
       // Generate room ID and join as host
       const roomId = generateRoomId();
@@ -115,6 +127,9 @@ function setupUI() {
       
       // Get media permissions
       await initializeMedia();
+      
+      // Dispatch event that local stream is ready
+      document.dispatchEvent(new CustomEvent('local-stream-ready'));
       
       // Join room
       joinRoom(roomId, { isHost: false, userName: userName });
