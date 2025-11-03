@@ -235,7 +235,7 @@ io.on('connection', (socket) => {
     socket.on('join', (data) => {
         // Handle both string and object formats for backward compatibility
         const roomId = typeof data === 'string' ? data : data.roomId;
-        const joinAsHost = typeof data === 'object' && data.isHost;
+        let joinAsHost = typeof data === 'object' && data.isHost;
         const name = typeof data === 'object' && data.userName ? data.userName : userName;
         
         userName = name;
@@ -250,7 +250,6 @@ io.on('connection', (socket) => {
         // Join the new room
         socket.join(roomId);
         currentRoom = roomId;
-        isHost = joinAsHost;
         
         // Extract access code from join data
         const providedAccessCode = typeof data === 'object' ? data.accessCode : null;
@@ -315,6 +314,9 @@ io.on('connection', (socket) => {
                 rooms[roomId].hostId = socket.id;
             }
         }
+        
+        // Update isHost based on joinAsHost (after validation)
+        isHost = joinAsHost;
         
         // Add participant data
         rooms[roomId].participants[socket.id] = {
