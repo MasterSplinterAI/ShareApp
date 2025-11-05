@@ -18,7 +18,17 @@ export function useSocket() {
       return
     }
 
-    socket = io()
+    // Configure socket.io with proper options for production
+    socket = io({
+      transports: ['polling', 'websocket'],
+      upgrade: true,
+      rememberUpgrade: true,
+      // For production with Apache proxy
+      path: '/socket.io/',
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5
+    })
 
     socket.on('connect', () => {
       console.log('Connected to server with ID:', socket.id)
@@ -118,8 +128,25 @@ export function useSocket() {
   }
 
   const joinRoom = (roomId, userName, accessCode = null, roomHostCode = null, roomAccessCode = null) => {
-    if (!socket || !socket.connected) {
-      console.error('Socket not connected')
+    if (!socket) {
+      console.error('Socket not initialized')
+      return
+    }
+
+    // Wait for socket to connect if not already connected
+    if (!socket.connected) {
+      socket.once('connect', () => {
+        appState.userName = userName
+        appState.roomId = roomId
+        
+        socket.emit('join', {
+          roomId,
+          userName,
+          providedAccessCode: accessCode,
+          roomHostCode,
+          roomAccessCode,
+        })
+      })
       return
     }
 

@@ -47,12 +47,14 @@ if (typeof window !== 'undefined') {
   watch(() => appState.networkSettings, (val) => { window.appState.networkSettings = val }, { deep: true })
   
   // Sync window.appState to Vue appState (in case external code updates it)
+  // But don't sync roomId automatically - let Vue control that
   const syncInterval = setInterval(() => {
     if (window.appState) {
       if (window.appState.localStream !== appState.localStream) appState.localStream = window.appState.localStream
       if (window.appState.screenStream !== appState.screenStream) appState.screenStream = window.appState.screenStream
       if (window.appState.peerConnections !== appState.peerConnections) appState.peerConnections = window.appState.peerConnections
-      if (window.appState.roomId !== appState.roomId) appState.roomId = window.appState.roomId
+      // Don't auto-sync roomId - Vue controls joining
+      // if (window.appState.roomId !== appState.roomId) appState.roomId = window.appState.roomId
       if (window.appState.isHost !== appState.isHost) appState.isHost = window.appState.isHost
       if (window.appState.pinnedParticipant !== appState.pinnedParticipant) appState.pinnedParticipant = window.appState.pinnedParticipant
       if (window.appState.participants !== appState.participants) appState.participants = window.appState.participants
