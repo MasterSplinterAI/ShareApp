@@ -90,10 +90,17 @@ const hasAudio = computed(() => {
 })
 
 watch(() => props.stream, (newStream) => {
-  if (videoElement.value && newStream) {
-    videoElement.value.srcObject = newStream
-    // Force video to play
-    videoElement.value.play().catch(e => console.log('Video play error:', e))
+  if (videoElement.value) {
+    if (newStream) {
+      videoElement.value.srcObject = newStream
+      // Force video to play
+      const playPromise = videoElement.value.play()
+      if (playPromise !== undefined) {
+        playPromise.catch(e => console.log('Video play error:', e))
+      }
+    } else {
+      videoElement.value.srcObject = null
+    }
   }
 }, { immediate: true })
 
@@ -101,14 +108,51 @@ watch(() => hasVideo.value, (hasVid) => {
   // When video becomes available, ensure it's displayed
   if (hasVid && videoElement.value && props.stream) {
     videoElement.value.srcObject = props.stream
-    videoElement.value.play().catch(e => console.log('Video play error:', e))
+    const playPromise = videoElement.value.play()
+    if (playPromise !== undefined) {
+      playPromise.catch(e => console.log('Video play error:', e))
+    }
   }
-})
+}, { immediate: true })
+
+watch(() => props.stream?.getVideoTracks(), (tracks) => {
+  // React to video track changes
+  if (tracks && tracks.length > 0 && videoElement.value && props.stream) {
+    // Small delay to ensure track is fully initialized
+    setTimeout(() => {
+      if (videoElement.value && props.stream) {
+        videoElement.value.srcObject = props.stream
+        const playPromise = videoElement.value.play()
+        if (playPromise !== undefined) {
+          playPromise.catch(e => console.log('Video play error:', e))
+        }
+      }
+    }, 100)
+  }
+}, { deep: true })
 
 onMounted(() => {
   if (videoElement.value && props.stream) {
     videoElement.value.srcObject = props.stream
-    videoElement.value.play().catch(e => console.log('Video play error:', e))
+    const playPromise = videoElement.value.play()
+    if (playPromise !== undefined) {
+      playPromise.catch(e => console.log('Video play error:', e))
+    }
+  }
+  
+  // Also listen for track enabled/disabled events
+  if (props.stream) {
+    props.stream.getVideoTracks().forEach(track => {
+      track.addEventListener('enabled', () => {
+        if (videoElement.value && props.stream) {
+          videoElement.value.srcObject = props.stream
+          const playPromise = videoElement.value.play()
+          if (playPromise !== undefined) {
+            playPromise.catch(e => console.log('Video play error:', e))
+          }
+        }
+      })
+    })
   }
 })
 </script>

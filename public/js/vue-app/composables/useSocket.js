@@ -65,24 +65,48 @@ export function useSocket() {
       appState.roomId = data.roomId
       appState.isHost = data.isHost || false
       
+      // IMPORTANT: Sync roomId to window.appState immediately for WebRTC functions
+      if (typeof window !== 'undefined' && window.appState) {
+        window.appState.roomId = data.roomId
+        window.appState.isHost = data.isHost || false
+      }
+      
       // Store participants - ensure participants is an object
       if (!appState.participants || typeof appState.participants !== 'object') {
         appState.participants = {}
       }
-      if (data.participants && typeof data.participants === 'object') {
-        Object.assign(appState.participants, data.participants)
+      if (typeof window !== 'undefined' && window.appState) {
+        if (!window.appState.participants || typeof window.appState.participants !== 'object') {
+          window.appState.participants = {}
+        }
+      }
+      
+      if (data.participants && Array.isArray(data.participants)) {
+        // Convert array to object format
+        const participantsObj = {}
+        data.participants.forEach(p => {
+          if (p && p.id) {
+            participantsObj[p.id] = p
+          }
+        })
+        Object.assign(appState.participants, participantsObj)
+        if (typeof window !== 'undefined' && window.appState) {
+          Object.assign(window.appState.participants, participantsObj)
+        }
       }
 
       // Create peer connections for existing participants
-      // Don't create connection to ourselves or the host if we're the host
+      // Don't create connection to ourselves
       if (data.participants && Array.isArray(data.participants)) {
         const currentSocketId = socket.id
         const otherParticipants = data.participants.filter(p => {
           if (!p || !p.id) return false
           // Don't create peer connection to ourselves
           if (p.id === currentSocketId) return false
-          // Don't create peer connection if it's already in appState.participants
-          if (appState.participants[p.id]) return false
+          // Check if peer connection already exists
+          if (appState.peerConnections && appState.peerConnections[p.id]) {
+            return false
+          }
           return true
         })
         
@@ -98,14 +122,39 @@ export function useSocket() {
 
     socket.on('user-joined', async (data) => {
       console.log('User joined:', data)
+      
+      // Don't add ourselves to participants
+      if (data.userId === socket.id) {
+        return
+      }
+      
+      // Ensure participants object exists
+      if (!appState.participants || typeof appState.participants !== 'object') {
+        appState.participants = {}
+      }
+      
       appState.participants[data.userId] = {
         id: data.userId,
         name: data.userName,
         isHost: data.isHost,
       }
       
-      // Create peer connection for new user
-      await createPeerConnection(data.userId)
+      // Sync to window.appState
+      if (typeof window !== 'undefined' && window.appState) {
+        if (!window.appState.participants || typeof window.appState.participants !== 'object') {
+          window.appState.participants = {}
+        }
+        window.appState.participants[data.userId] = appState.participants[data.userId]
+      }
+      
+      // Create peer connection for new user (if not ourselves)
+      if (data.userId !== socket.id) {
+        try {
+          await createPeerConnection(data.userId)
+        } catch (error) {
+          console.error(`Error creating peer connection for ${data.userId}:`, error)
+        }
+      }
     })
 
     socket.on('user-left', (data) => {
@@ -172,6 +221,12 @@ export function useSocket() {
 
     appState.userName = userName
     appState.roomId = roomId
+    
+    // IMPORTANT: Sync to window.appState immediately for WebRTC functions
+    if (typeof window !== 'undefined' && window.appState) {
+      window.appState.userName = userName
+      window.appState.roomId = roomId
+    }
 
     socket.emit('join', {
       roomId,

@@ -209,7 +209,13 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     });
     
     stream.getAudioTracks().forEach(track => {
-      updateTrackState(track, window.appState.isMicOn);
+      // Ensure mic is enabled by default (isMicOn defaults to true)
+      const shouldBeEnabled = window.appState.isMicOn !== false
+      updateTrackState(track, shouldBeEnabled)
+      // Ensure isMicOn is set correctly
+      if (window.appState.isMicOn === undefined || window.appState.isMicOn === null) {
+        window.appState.isMicOn = true
+      }
       
       // Ensure echo cancellation is enabled
       try {
