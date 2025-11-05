@@ -248,14 +248,38 @@ export async function createPeerConnection(peerId) {
         // Check if we have relay candidates (important for international connectivity)
         pc.getStats().then(stats => {
           let hasRelay = false;
+          let relayCandidates = [];
+          let candidateSummary = { relay: 0, srflx: 0, host: 0 };
+          
           stats.forEach(report => {
-            if (report.type === 'local-candidate' && report.candidateType === 'relay') {
-              hasRelay = true;
+            if (report.type === 'local-candidate') {
+              if (report.candidateType === 'relay') {
+                hasRelay = true;
+                candidateSummary.relay++;
+                relayCandidates.push({
+                  ip: report.ip || report.address,
+                  port: report.port,
+                  protocol: report.protocol,
+                  url: report.url
+                });
+              } else if (report.candidateType === 'srflx') {
+                candidateSummary.srflx++;
+              } else if (report.candidateType === 'host') {
+                candidateSummary.host++;
+              }
             }
           });
           
-          if (!hasRelay) {
-            console.warn(`⚠️ No TURN relay candidates found for ${peerId}. International users may have connectivity issues.`);
+          console.log(`📊 ICE Gathering Complete for ${peerId}:`);
+          console.log(`   Relay candidates: ${candidateSummary.relay}`);
+          console.log(`   STUN (srflx) candidates: ${candidateSummary.srflx}`);
+          console.log(`   Host candidates: ${candidateSummary.host}`);
+          
+          if (relayCandidates.length > 0) {
+            console.log(`✅ TURN relay candidates available for ${peerId}:`, relayCandidates.map(c => `${c.protocol}://${c.ip}:${c.port}`).join(', '));
+          } else {
+            console.warn(`⚠️ CRITICAL: No TURN relay candidates found for ${peerId}. Users with restrictive NATs (Caribbean, Colombia, etc.) may not be able to connect.`);
+            console.warn(`   This is likely a TURN server configuration issue. Check Cloudflare TURN credentials.`);
           }
         }).catch(err => {
           console.warn('Could not check for relay candidates:', err);
@@ -277,29 +301,64 @@ export async function createPeerConnection(peerId) {
           let relayCount = 0;
           let hostCount = 0;
           let srflxCount = 0;
+          let localRelayCandidates = 0;
+          let remoteRelayCandidates = 0;
+          let connectionType = 'unknown';
           
+          // Count all candidate types
           stats.forEach(report => {
+            if (report.type === 'local-candidate') {
+              if (report.candidateType === 'relay') localRelayCandidates++;
+            }
+            if (report.type === 'remote-candidate') {
+              if (report.candidateType === 'relay') remoteRelayCandidates++;
+            }
             if (report.type === 'candidate-pair' && report.state === 'succeeded') {
-              console.log(`✅ Connection established via ${report.localCandidateId} -> ${report.remoteCandidateId}`);
+              // Find the actual candidate pair details
+              const localCandidate = stats.get(report.localCandidateId);
+              const remoteCandidate = stats.get(report.remoteCandidateId);
               
-              // Check what type of connection was used
-              stats.forEach(candidateReport => {
-                if (candidateReport.type === 'local-candidate' && candidateReport.id === report.localCandidateId) {
-                  if (candidateReport.candidateType === 'relay') relayCount++;
-                  else if (candidateReport.candidateType === 'host') hostCount++;
-                  else if (candidateReport.candidateType === 'srflx') srflxCount++;
+              if (localCandidate && localCandidate.type === 'local-candidate') {
+                if (localCandidate.candidateType === 'relay') {
+                  relayCount++;
+                  connectionType = 'TURN relay';
+                } else if (localCandidate.candidateType === 'srflx') {
+                  srflxCount++;
+                  if (connectionType === 'unknown') connectionType = 'STUN';
+                } else if (localCandidate.candidateType === 'host') {
+                  hostCount++;
+                  if (connectionType === 'unknown') connectionType = 'Direct';
                 }
-              });
+              }
+              
+              console.log(`✅ Connection established to ${peerId} via ${connectionType || 'unknown'}`);
+              console.log(`   Local candidate: ${localCandidate?.candidateType || 'unknown'} (${localCandidate?.ip || 'N/A'})`);
+              console.log(`   Remote candidate: ${remoteCandidate?.candidateType || 'unknown'} (${remoteCandidate?.ip || 'N/A'})`);
             }
           });
           
+          // Log TURN relay availability
+          console.log(`📊 TURN Relay Status for ${peerId}:`);
+          console.log(`   Local relay candidates: ${localRelayCandidates}`);
+          console.log(`   Remote relay candidates: ${remoteRelayCandidates}`);
+          
+          // Warn if connection succeeded but no relay was used (potential issue for restrictive NATs)
+          if (connectionType !== 'TURN relay' && (localRelayCandidates > 0 || remoteRelayCandidates > 0)) {
+            console.warn(`⚠️ Connection to ${peerId} succeeded without TURN relay, but relay candidates were available. This may cause issues with restrictive NATs.`);
+          }
+          
           // Log connection type summary
           if (relayCount > 0) {
-            console.log(`🌐 Using TURN relay (important for international users)`);
+            console.log(`🌐 Using TURN relay for ${peerId} (important for international users)`);
           } else if (srflxCount > 0) {
-            console.log(`🔗 Using STUN (NAT traversal)`);
+            console.log(`🔗 Using STUN for ${peerId} (NAT traversal)`);
           } else if (hostCount > 0) {
-            console.log(`🏠 Direct connection (same network)`);
+            console.log(`🏠 Direct connection to ${peerId} (same network)`);
+          }
+          
+          // Critical warning if no relay candidates available and connection is struggling
+          if (localRelayCandidates === 0 && remoteRelayCandidates === 0) {
+            console.warn(`⚠️ CRITICAL: No TURN relay candidates available for ${peerId}. Users with restrictive NATs may not be able to connect.`);
           }
         }).catch(err => {
           console.warn('Error getting connection stats:', err);
