@@ -896,6 +896,7 @@ async function createAndSendOffer(peerConnection, peerId) {
     
     try {
       // Create offer with explicit options to receive video even in audio-only mode
+      // IMPORTANT: Force ICE restart if we need TURN relay (for restrictive NATs)
       const offerOptions = {
         offerToReceiveAudio: true,
         offerToReceiveVideo: true,  // Always receive video even if we don't have a camera
@@ -906,6 +907,14 @@ async function createAndSendOffer(peerConnection, peerId) {
       if (peerConnection.iceConnectionState === 'failed' || 
           peerConnection.iceConnectionState === 'disconnected') {
         offerOptions.iceRestart = true;
+        console.log(`🔄 Forcing ICE restart for ${peerId} due to connection failure`);
+      }
+      
+      // Force ICE restart if we've retried multiple times (likely needs TURN relay)
+      const retryCount = connectionRetries.get(peerId) || 0;
+      if (retryCount >= 2) {
+        offerOptions.iceRestart = true;
+        console.log(`🔄 Forcing ICE restart for ${peerId} (retry ${retryCount}) - attempting TURN relay`);
       }
       
       console.log(`Creating offer for ${peerId} with options:`, offerOptions);
