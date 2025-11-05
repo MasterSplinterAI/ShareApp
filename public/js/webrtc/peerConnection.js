@@ -373,6 +373,7 @@ export async function createPeerConnection(peerId) {
       }
       
       // Handle connection failures with exponential backoff retry
+      // For international users with restrictive NATs, force TURN relay usage
       if (state === 'failed') {
         const retryCount = connectionRetries.get(peerId) || 0;
         
@@ -382,23 +383,78 @@ export async function createPeerConnection(peerId) {
           
           console.warn(`❌ ICE connection failed with ${peerId} (attempt ${retryCount + 1}/${MAX_RETRIES}), retrying in ${delay}ms`);
           
+          // Check if TURN relay candidates are available (critical for restrictive NATs)
+          pc.getStats().then(stats => {
+            let hasRelayCandidates = false;
+            let relayCandidateCount = 0;
+            stats.forEach(report => {
+              if (report.type === 'local-candidate' && report.candidateType === 'relay') {
+                hasRelayCandidates = true;
+                relayCandidateCount++;
+              }
+            });
+            
+            if (!hasRelayCandidates) {
+              console.error(`⚠️ CRITICAL: Connection failed to ${peerId} and NO TURN relay candidates available!`);
+              console.error(`   This user likely has a restrictive NAT (common in Caribbean, Colombia, etc.)`);
+              console.error(`   Both users need TURN relay to connect. Check Cloudflare TURN server configuration.`);
+            } else {
+              console.log(`🔄 TURN relay candidates available (${relayCandidateCount}) but connection failed. Forcing ICE restart to use relay.`);
+            }
+          }).catch(err => {
+            console.warn('Could not check for relay candidates:', err);
+          });
+          
           // Show user-friendly error message
           if (retryCount === 0) {
-            showError(`Connection issue detected. Retrying connection...`, 5000);
+            showError(`Connection issue detected. Retrying with TURN relay...`, 5000);
           }
           
           setTimeout(() => {
             if (pc.iceConnectionState === 'failed' && window.appState.peerConnections[peerId] === pc) {
-              console.log(`Restarting ICE for ${peerId} after failure`);
+              console.log(`🔄 Restarting ICE for ${peerId} after failure - forcing TURN relay usage`);
+              // Force ICE restart to regenerate candidates and prefer TURN relay
               pc.restartIce();
+              
+              // After ICE restart, create a new offer to force renegotiation
+              setTimeout(async () => {
+                if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
+                  try {
+                    await createAndSendOffer(pc, peerId);
+                  } catch (err) {
+                    console.error(`Failed to create offer after ICE restart for ${peerId}:`, err);
+                  }
+                }
+              }, 1000);
             }
           }, delay);
         } else {
           console.error(`❌ ICE connection failed with ${peerId} after ${MAX_RETRIES} retries`);
           connectionRetries.delete(peerId);
           
-          // Show persistent error message
-          showError(`Could not connect to participant. This may be due to network restrictions. Please check your firewall settings.`, 10000);
+          // Check one more time if TURN relay was available
+          pc.getStats().then(stats => {
+            let hasRelayCandidates = false;
+            let relayCandidateCount = 0;
+            stats.forEach(report => {
+              if (report.type === 'local-candidate' && report.candidateType === 'relay') {
+                hasRelayCandidates = true;
+                relayCandidateCount++;
+              }
+            });
+            
+            if (!hasRelayCandidates) {
+              console.error(`❌ FINAL DIAGNOSIS: No TURN relay candidates available for ${peerId}.`);
+              console.error(`   This is a TURN server configuration issue. Both users need TURN relay to connect.`);
+              showError(`Could not connect to participant. TURN relay server not available. Please check server configuration.`, 15000);
+            } else {
+              console.error(`❌ FINAL DIAGNOSIS: TURN relay candidates available (${relayCandidateCount}) but connection still failed.`);
+              console.error(`   This may indicate a regional TURN server issue or network restrictions.`);
+              showError(`Could not connect to participant. Network restrictions detected. TURN relay available but connection failed.`, 15000);
+            }
+          }).catch(() => {
+            showError(`Could not connect to participant. This may be due to network restrictions. Please check your firewall settings.`, 10000);
+          });
           
           // Emit event for UI to handle
           document.dispatchEvent(new CustomEvent('peer-connection-failed', {
