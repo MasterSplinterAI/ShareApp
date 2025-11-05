@@ -19,6 +19,8 @@
 </template>
 
 <script setup>
+import { onMounted } from 'vue'
+
 const emit = defineEmits(['host', 'join'])
 
 const handleHost = () => {
@@ -51,6 +53,37 @@ const handleJoin = () => {
     accessCode,
   })
 }
+
+// Add mobile touch handlers for buttons
+onMounted(() => {
+  const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+  
+  if (isMobile) {
+    const hostBtn = document.querySelector('.btn-primary')
+    const joinBtn = document.querySelector('.btn-secondary')
+    
+    const addTouchHandler = (btn) => {
+      if (!btn) return
+      
+      btn.addEventListener('touchstart', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }, { passive: false })
+      
+      btn.addEventListener('touchend', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        btn.click()
+      }, { passive: false })
+      
+      // Ensure mobile clickability
+      btn.style.cssText += 'position: relative; z-index: 100; pointer-events: auto; touch-action: manipulation; -webkit-tap-highlight-color: rgba(0,0,0,0.1); cursor: pointer; min-width: 44px; min-height: 44px;'
+    }
+    
+    addTouchHandler(hostBtn)
+    addTouchHandler(joinBtn)
+  }
+})
 </script>
 
 <style scoped>
@@ -100,6 +133,13 @@ const handleJoin = () => {
   justify-content: center;
   gap: 0.5rem;
   font-weight: 500;
+  position: relative;
+  z-index: 100;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .btn-primary {

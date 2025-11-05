@@ -63,10 +63,13 @@ export function useSocket() {
     socket.on('room-joined', async (data) => {
       console.log('Room joined:', data)
       appState.roomId = data.roomId
-      appState.isHost = data.isHost
+      appState.isHost = data.isHost || false
       
-      // Store participants
-      if (data.participants) {
+      // Store participants - ensure participants is an object
+      if (!appState.participants || typeof appState.participants !== 'object') {
+        appState.participants = {}
+      }
+      if (data.participants && typeof data.participants === 'object') {
         Object.assign(appState.participants, data.participants)
       }
 

@@ -23,6 +23,12 @@ export async function broadcastMediaToAllConnections() {
   });
 
   // Process each peer connection - include connections that are still establishing
+  // Ensure peerConnections exists and is an object
+  if (!window.appState || !window.appState.peerConnections || typeof window.appState.peerConnections !== 'object') {
+    console.log('No peer connections available to broadcast to');
+    return;
+  }
+  
   Object.entries(window.appState.peerConnections).forEach(([peerId, peerConnection]) => {
     // Include connections that are established OR still establishing (new, checking)
     // This ensures video tracks are added even if connection was created before camera was enabled
