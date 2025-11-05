@@ -17,6 +17,8 @@ export default defineConfig({
     assetsDir: 'assets',
     // For production, use relative paths
     base: './',
+    // Target modern browsers that support top-level await
+    target: 'esnext',
   },
   server: {
     port: 5173,
