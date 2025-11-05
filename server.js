@@ -12,9 +12,29 @@ const http = require('http').createServer(app);
 const io = require('socket.io')(http);
 
 const PORT = process.env.PORT || 3000;
+const path = require('path');
 
 // Serve static files
 app.use(express.static('public'));
+
+// Serve built Vue app assets from dist if they exist
+const fs = require('fs');
+if (fs.existsSync(path.join(__dirname, 'dist', 'assets'))) {
+    app.use('/assets', express.static(path.join(__dirname, 'dist', 'assets')));
+}
+
+// Serve Vue app at /vue route
+app.get('/vue', (req, res) => {
+    // Try to serve built version first, fallback to source
+    const builtPath = path.join(__dirname, 'dist', 'vue-app.html');
+    const sourcePath = path.join(__dirname, 'public', 'vue-app.html');
+    
+    if (require('fs').existsSync(builtPath)) {
+        res.sendFile(builtPath);
+    } else {
+        res.sendFile(sourcePath);
+    }
+});
 
 // Track rooms and users globally
 const rooms = {};
