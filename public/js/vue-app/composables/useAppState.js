@@ -74,7 +74,12 @@ if (typeof window !== 'undefined') {
 // Computed properties
 export function useAppState() {
   const isInMeeting = computed(() => appState.roomId !== null)
-  const participantCount = computed(() => Object.keys(appState.participants).length)
+  const participantCount = computed(() => {
+    if (!appState.participants || typeof appState.participants !== 'object') {
+      return 0
+    }
+    return Object.keys(appState.participants).length
+  })
   const hasLocalVideo = computed(() => {
     return appState.localStream && appState.localStream.getVideoTracks().length > 0
   })

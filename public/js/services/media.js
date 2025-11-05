@@ -332,12 +332,21 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     updateLocalStatusIndicators();
     
     // Now that we have attempted to get permissions, update device lists
+    // Only setup device selectors if we're in classic UI (Vue UI handles this differently)
     try {
-      // Import the required function to avoid circular dependencies
-      const { setupDeviceSelectors } = await import('../ui/devices.js');
-      await setupDeviceSelectors();
+      // Check if we're in Vue UI (no device selectors in Vue HTML)
+      const hasDeviceSelectors = document.getElementById('cameraSelect') || 
+                                 document.getElementById('micSelect') ||
+                                 document.getElementById('speakerSelect');
+      
+      if (hasDeviceSelectors) {
+        // Import the required function to avoid circular dependencies
+        const { setupDeviceSelectors } = await import('../ui/devices.js');
+        await setupDeviceSelectors();
+      }
     } catch (error) {
-      console.log('Error refreshing device selectors:', error);
+      // Silently ignore - Vue UI doesn't have device selectors
+      console.log('Device selectors not available (likely Vue UI):', error.message);
     }
     
     // Reconnect to any existing peer connections with the new stream

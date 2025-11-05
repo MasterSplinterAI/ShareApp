@@ -37,7 +37,10 @@ import VideoTile from './VideoTile.vue'
 const { appState, participantCount } = useAppState()
 
 const remoteParticipants = computed(() => {
-  return Object.values(appState.participants).filter(p => p.id !== 'local')
+  if (!appState.participants || typeof appState.participants !== 'object') {
+    return []
+  }
+  return Object.values(appState.participants).filter(p => p && p.id !== 'local')
 })
 
 const gridClass = computed(() => {
