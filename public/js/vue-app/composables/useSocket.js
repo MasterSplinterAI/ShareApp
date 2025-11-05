@@ -127,7 +127,7 @@ export function useSocket() {
     })
   }
 
-  const joinRoom = (roomId, userName, accessCode = null, roomHostCode = null, roomAccessCode = null) => {
+  const joinRoom = (roomId, userName, accessCode = null, roomHostCode = null, roomAccessCode = null, isHost = false) => {
     if (!socket) {
       console.error('Socket not initialized')
       return
@@ -145,6 +145,7 @@ export function useSocket() {
           providedAccessCode: accessCode,
           roomHostCode,
           roomAccessCode,
+          isHost: isHost || (roomHostCode !== null), // If roomHostCode is provided, likely hosting
         })
       })
       return
@@ -159,6 +160,7 @@ export function useSocket() {
       providedAccessCode: accessCode,
       roomHostCode,
       roomAccessCode,
+      isHost: isHost || (roomHostCode !== null), // If roomHostCode is provided, likely hosting
     })
   }
 

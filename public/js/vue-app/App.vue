@@ -41,12 +41,16 @@ const handleHost = async (data) => {
     await initMedia()
     
     // Join as host
+    // When hosting, pass hostCode as providedAccessCode so server validates it
+    // Also pass roomHostCode and roomAccessCode for room creation
+    // Set isHost to true to indicate we're hosting
     joinRoom(
       roomId,
       data.userName,
-      null, // accessCode
-      data.hostCode, // roomHostCode
-      data.participantCode // roomAccessCode
+      data.hostCode || null, // providedAccessCode - pass host code for validation
+      data.hostCode || null, // roomHostCode - for room creation
+      data.participantCode || null, // roomAccessCode - for room creation
+      true // isHost - we're hosting this meeting
     )
   } catch (error) {
     console.error('Failed to host:', error)
