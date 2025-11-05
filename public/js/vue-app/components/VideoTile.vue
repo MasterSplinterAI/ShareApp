@@ -92,12 +92,23 @@ const hasAudio = computed(() => {
 watch(() => props.stream, (newStream) => {
   if (videoElement.value && newStream) {
     videoElement.value.srcObject = newStream
+    // Force video to play
+    videoElement.value.play().catch(e => console.log('Video play error:', e))
   }
 }, { immediate: true })
+
+watch(() => hasVideo.value, (hasVid) => {
+  // When video becomes available, ensure it's displayed
+  if (hasVid && videoElement.value && props.stream) {
+    videoElement.value.srcObject = props.stream
+    videoElement.value.play().catch(e => console.log('Video play error:', e))
+  }
+})
 
 onMounted(() => {
   if (videoElement.value && props.stream) {
     videoElement.value.srcObject = props.stream
+    videoElement.value.play().catch(e => console.log('Video play error:', e))
   }
 })
 </script>
