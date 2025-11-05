@@ -222,10 +222,21 @@ export function useSocket() {
     appState.userName = userName
     appState.roomId = roomId
     
-    // IMPORTANT: Sync to window.appState immediately for WebRTC functions
-    if (typeof window !== 'undefined' && window.appState) {
+    // CRITICAL: Sync to window.appState IMMEDIATELY before emitting join
+    // This ensures WebRTC functions can access roomId
+    if (typeof window !== 'undefined') {
+      if (!window.appState) {
+        window.appState = {}
+      }
       window.appState.userName = userName
       window.appState.roomId = roomId
+      // Also ensure other critical properties exist
+      if (!window.appState.peerConnections) {
+        window.appState.peerConnections = {}
+      }
+      if (!window.appState.participants) {
+        window.appState.participants = {}
+      }
     }
 
     socket.emit('join', {

@@ -19,6 +19,13 @@ const pendingAnswers = new Map();
 // Create a new peer connection with a remote peer
 export async function createPeerConnection(peerId) {
   try {
+    // CRITICAL: Prevent creating peer connection to ourselves
+    const currentSocketId = getSocketId();
+    if (peerId === currentSocketId) {
+      console.warn(`Attempted to create peer connection to self (${peerId}), skipping`);
+      return null;
+    }
+    
     // Ensure peerConnections exists
     if (!window.appState.peerConnections || typeof window.appState.peerConnections !== 'object') {
       window.appState.peerConnections = {}

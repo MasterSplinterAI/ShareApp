@@ -522,8 +522,13 @@ export function leaveRoom() {
 
 // Send WebRTC offer to peer
 export function sendOffer(targetUserId, sdp, isRenegotiation = false) {
-  if (!socket || !window.appState.roomId) {
-    console.error('Cannot send offer - not connected to room');
+  if (!socket) {
+    console.error('Cannot send offer - socket not initialized');
+    return;
+  }
+  // Check both window.appState and ensure roomId exists
+  if (!window.appState || !window.appState.roomId) {
+    // Silently skip if roomId not set yet (may be setting up)
     return;
   }
   
@@ -592,8 +597,13 @@ export function sendAnswer(targetUserId, sdp) {
 
 // Send ICE candidate to peer
 export function sendIceCandidate(targetUserId, candidate) {
-  if (!socket || !window.appState.roomId) {
-    console.error('Cannot send ICE candidate - not connected to room');
+  if (!socket) {
+    console.error('Cannot send ICE candidate - socket not initialized');
+    return;
+  }
+  // Check both window.appState and ensure roomId exists
+  if (!window.appState || !window.appState.roomId) {
+    // Silently skip if roomId not set yet (may be setting up)
     return;
   }
   
