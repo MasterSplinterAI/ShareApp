@@ -74,9 +74,11 @@ export function useSocket() {
       }
 
       // Create peer connections for existing participants
-      const otherParticipants = data.participants.filter(p => p.id !== socket.id)
-      for (const participant of otherParticipants) {
-        await createPeerConnection(participant.id)
+      if (data.participants && Array.isArray(data.participants)) {
+        const otherParticipants = data.participants.filter(p => p && p.id !== socket.id)
+        for (const participant of otherParticipants) {
+          await createPeerConnection(participant.id)
+        }
       }
     })
 
