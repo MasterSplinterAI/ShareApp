@@ -19,6 +19,11 @@ const pendingAnswers = new Map();
 // Create a new peer connection with a remote peer
 export async function createPeerConnection(peerId) {
   try {
+    // Ensure peerConnections exists
+    if (!window.appState.peerConnections || typeof window.appState.peerConnections !== 'object') {
+      window.appState.peerConnections = {}
+    }
+    
     // Prevent duplicate connections
     if (window.appState.peerConnections[peerId]) {
       const existing = window.appState.peerConnections[peerId];

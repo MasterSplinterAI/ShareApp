@@ -74,10 +74,24 @@ export function useSocket() {
       }
 
       // Create peer connections for existing participants
+      // Don't create connection to ourselves or the host if we're the host
       if (data.participants && Array.isArray(data.participants)) {
-        const otherParticipants = data.participants.filter(p => p && p.id !== socket.id)
+        const currentSocketId = socket.id
+        const otherParticipants = data.participants.filter(p => {
+          if (!p || !p.id) return false
+          // Don't create peer connection to ourselves
+          if (p.id === currentSocketId) return false
+          // Don't create peer connection if it's already in appState.participants
+          if (appState.participants[p.id]) return false
+          return true
+        })
+        
         for (const participant of otherParticipants) {
-          await createPeerConnection(participant.id)
+          try {
+            await createPeerConnection(participant.id)
+          } catch (error) {
+            console.error(`Error creating peer connection for ${participant.id}:`, error)
+          }
         }
       }
     })

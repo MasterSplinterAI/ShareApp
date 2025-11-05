@@ -350,7 +350,7 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     }
     
     // Reconnect to any existing peer connections with the new stream
-    if (Object.keys(window.appState.peerConnections).length > 0) {
+    if (window.appState.peerConnections && typeof window.appState.peerConnections === 'object' && Object.keys(window.appState.peerConnections).length > 0) {
       console.log('Reconnecting existing peer connections with updated media stream');
       // We need to import these functions dynamically to avoid circular deps
       try {
@@ -362,6 +362,15 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
         }
       } catch (error) {
         console.error('Error broadcasting updated media to connections:', error);
+      }
+    }
+    
+    // Ensure deviceSettings exists
+    if (!window.appState.deviceSettings || typeof window.appState.deviceSettings !== 'object') {
+      window.appState.deviceSettings = {
+        selectedCamera: null,
+        selectedMic: null,
+        selectedSpeaker: null
       }
     }
     
