@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { getApiUrl } from '@/lib/utils/api';
 
 export default function HostPage() {
   const router = useRouter();
@@ -13,7 +14,7 @@ export default function HostPage() {
     setError('');
 
     try {
-      const response = await fetch('/api/rooms', {
+      const response = await fetch(getApiUrl('/api/rooms'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

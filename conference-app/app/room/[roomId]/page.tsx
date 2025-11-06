@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useConferenceStore } from '@/lib/store/conference';
 import VideoGrid from '@/components/VideoGrid';
 import Controls from '@/components/Controls';
+import { getApiUrl } from '@/lib/utils/api';
 
 export default function RoomPage() {
   const params = useParams();
@@ -59,7 +60,7 @@ export default function RoomPage() {
     }
 
     try {
-      const response = await fetch(`/api/rooms/${roomId}/validate`, {
+      const response = await fetch(getApiUrl(`/api/rooms/${roomId}/validate`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
