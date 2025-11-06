@@ -324,7 +324,8 @@ export function useSocket() {
         const joinData = {
           roomId,
           userName,
-          providedAccessCode: accessCode,
+          accessCode: accessCode, // Server expects 'accessCode', not 'providedAccessCode'
+          providedAccessCode: accessCode, // Keep for backward compatibility
           roomHostCode,
           roomAccessCode,
           isHost: isHost || (roomHostCode !== null), // If roomHostCode is provided, likely hosting
@@ -368,7 +369,8 @@ export function useSocket() {
     const joinData = {
       roomId,
       userName,
-      providedAccessCode: accessCode,
+      accessCode: accessCode, // Server expects 'accessCode', not 'providedAccessCode'
+      providedAccessCode: accessCode, // Keep for backward compatibility
       roomHostCode,
       roomAccessCode,
       isHost: isHost || (roomHostCode !== null), // If roomHostCode is provided, likely hosting
