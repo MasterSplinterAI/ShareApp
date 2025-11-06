@@ -81,7 +81,20 @@ const hasVideo = computed(() => {
   if (!props.stream) return false
   try {
     const videoTracks = props.stream.getVideoTracks()
-    const hasEnabledTrack = videoTracks.length > 0 && videoTracks.some(t => t && t.enabled && t.readyState === 'live')
+    // Check for enabled tracks - accept 'live' or 'ready' states (ready happens before live)
+    const hasEnabledTrack = videoTracks.length > 0 && videoTracks.some(t => {
+      if (!t || !t.enabled) return false
+      // Accept both 'live' and 'ready' states (tracks can be enabled but not yet live)
+      return t.readyState === 'live' || t.readyState === 'ready'
+    })
+    
+    // Also check if video element has dimensions (indicates video is actually playing)
+    if (hasEnabledTrack && videoElement.value) {
+      if (videoElement.value.videoWidth > 0 && videoElement.value.videoHeight > 0) {
+        return true
+      }
+    }
+    
     return hasEnabledTrack
   } catch (e) {
     console.error('Error checking video tracks:', e)
@@ -124,18 +137,16 @@ watch(() => hasVideo.value, (hasVid) => {
 watch(() => props.stream?.getVideoTracks(), (tracks) => {
   // React to video track changes - check both tracks array and enabled state
   if (tracks && tracks.length > 0 && videoElement.value && props.stream) {
-    const hasEnabledTrack = tracks.some(t => t && t.enabled && t.readyState === 'live')
+    const hasEnabledTrack = tracks.some(t => t && t.enabled && (t.readyState === 'live' || t.readyState === 'ready'))
     if (hasEnabledTrack) {
-      // Small delay to ensure track is fully initialized
-      setTimeout(() => {
-        if (videoElement.value && props.stream) {
-          videoElement.value.srcObject = props.stream
-          const playPromise = videoElement.value.play()
-          if (playPromise !== undefined) {
-            playPromise.catch(e => console.log('Video play error:', e))
-          }
+      // Force update video element
+      if (videoElement.value) {
+        videoElement.value.srcObject = props.stream
+        const playPromise = videoElement.value.play()
+        if (playPromise !== undefined) {
+          playPromise.catch(e => console.log('Video play error:', e))
         }
-      }, 100)
+      }
     }
   }
 }, { deep: true, immediate: true })
@@ -167,21 +178,30 @@ const setupTrackListeners = () => {
   if (!props.stream) return
   
   const handleTrackChange = () => {
+    // Force Vue to re-evaluate hasVideo computed by triggering reactivity
+    // This is a workaround - Vue doesn't automatically detect MediaStreamTrack.enabled changes
     if (videoElement.value && props.stream) {
       // Re-assign stream to force video element update
-      const currentSrc = videoElement.value.srcObject
-      videoElement.value.srcObject = null
+      videoElement.value.srcObject = props.stream
+      // Force play attempt
+      const playPromise = videoElement.value.play()
+      if (playPromise !== undefined) {
+        playPromise.catch(e => console.log('Video play error:', e))
+      }
+      
+      // Also check if video has dimensions after a short delay
       setTimeout(() => {
-        if (videoElement.value && props.stream) {
-          videoElement.value.srcObject = props.stream
-          videoElement.value.play().catch(e => console.log('Video play error:', e))
+        if (videoElement.value && videoElement.value.videoWidth > 0) {
+          console.log(`Video track enabled - video dimensions: ${videoElement.value.videoWidth}x${videoElement.value.videoHeight}`)
         }
-      }, 50)
+      }, 200)
     }
   }
   
   props.stream.getVideoTracks().forEach(track => {
     track.addEventListener('enabled', handleTrackChange)
+    track.addEventListener('mute', handleTrackChange)
+    track.addEventListener('unmute', handleTrackChange)
     track.addEventListener('ended', handleTrackChange)
     trackListeners.push({ track, handler: handleTrackChange })
   })
@@ -206,6 +226,8 @@ onMounted(() => {
 onUnmounted(() => {
   trackListeners.forEach(({ track, handler }) => {
     track.removeEventListener('enabled', handler)
+    track.removeEventListener('mute', handler)
+    track.removeEventListener('unmute', handler)
     track.removeEventListener('ended', handler)
   })
   trackListeners.length = 0
@@ -235,7 +257,8 @@ video {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 2;
+  z-index: 10; /* Higher than placeholder to ensure video is on top */
+  pointer-events: none; /* Allow clicks to pass through to controls */
 }
 
 .placeholder {
@@ -250,7 +273,8 @@ video {
   position: absolute;
   top: 0;
   left: 0;
-  z-index: 1;
+  z-index: 1; /* Below video */
+  pointer-events: none; /* Allow clicks to pass through to controls */
 }
 
 .avatar {
@@ -343,6 +367,8 @@ video {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  z-index: 20; /* Above video and placeholder */
+  pointer-events: auto; /* Allow interactions */
 }
 
 .indicator {
