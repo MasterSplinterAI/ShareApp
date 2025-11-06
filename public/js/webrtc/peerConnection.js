@@ -555,16 +555,26 @@ export async function createPeerConnection(peerId) {
         // Vue handles video display via components - just ensure the stream is stored
         // The stream is already in the event, and Vue's useSocket composable listens to peer-track-received
         // Store the stream on the peer connection for Vue components to access
-        if (!pc.remoteStream) {
-          const stream = event.streams && event.streams.length > 0 ? event.streams[0] : new MediaStream([event.track]);
-          pc.remoteStream = stream;
-          console.log(`Stored remote stream on peer connection for Vue components`);
+        
+        // Use the stream from the event if available, otherwise create from track
+        let streamToStore = null;
+        if (event.streams && event.streams.length > 0) {
+          streamToStore = event.streams[0];
         } else {
-          // Add track to existing stream
-          const stream = event.streams && event.streams.length > 0 ? event.streams[0] : pc.remoteStream;
-          if (!stream.getTracks().find(t => t.id === event.track.id)) {
-            stream.addTrack(event.track);
-            console.log(`Added track to existing stream for Vue components`);
+          streamToStore = new MediaStream([event.track]);
+        }
+        
+        if (!pc.remoteStream) {
+          pc.remoteStream = streamToStore;
+          console.log(`Stored remote stream on peer connection for Vue components (${streamToStore.getVideoTracks().length} video, ${streamToStore.getAudioTracks().length} audio tracks)`);
+        } else {
+          // Add track to existing stream if not already present
+          const existingTrack = pc.remoteStream.getTracks().find(t => t.id === event.track.id);
+          if (!existingTrack) {
+            pc.remoteStream.addTrack(event.track);
+            console.log(`Added ${event.track.kind} track to existing stream for Vue components (now ${pc.remoteStream.getVideoTracks().length} video, ${pc.remoteStream.getAudioTracks().length} audio tracks)`);
+          } else {
+            console.log(`Track ${event.track.id} already exists in stream for ${peerId}`);
           }
         }
       }
