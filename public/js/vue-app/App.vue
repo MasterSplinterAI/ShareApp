@@ -23,8 +23,9 @@ const handleJoin = async (data) => {
     // Initialize media first
     await initMedia()
     
-    // Join room
-    joinRoom(data.roomId, data.userName, data.accessCode)
+    // Join room - ensure accessCode is null if empty string
+    const accessCode = data.accessCode && data.accessCode.trim() !== '' ? data.accessCode.trim() : null
+    joinRoom(data.roomId, data.userName, accessCode)
   } catch (error) {
     console.error('Failed to join:', error)
     alert('Failed to join meeting: ' + error.message)

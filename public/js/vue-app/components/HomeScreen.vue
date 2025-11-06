@@ -40,16 +40,18 @@ const handleHost = () => {
 
 const handleJoin = () => {
   const userName = prompt('Enter your name:')
-  if (!userName) return
+  if (!userName || userName.trim() === '') return
 
   const roomId = prompt('Enter room ID:')
-  if (!roomId) return
+  if (!roomId || roomId.trim() === '') return
 
-  const accessCode = prompt('Enter access code (or leave blank):') || null
+  const accessCodeInput = prompt('Enter access code (or leave blank):')
+  // Convert empty string to null, trim whitespace
+  const accessCode = accessCodeInput && accessCodeInput.trim() !== '' ? accessCodeInput.trim() : null
 
   emit('join', {
-    userName,
-    roomId,
+    userName: userName.trim(),
+    roomId: roomId.trim(),
     accessCode,
   })
 }

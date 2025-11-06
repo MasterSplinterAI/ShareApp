@@ -219,7 +219,29 @@ export function useSocket() {
 
     socket.on('join-error', (data) => {
       console.error('Join error:', data)
-      alert(`Join failed: ${data.message || data.error}`)
+      const errorMessage = data.message || data.error || 'Failed to join room'
+      
+      // Handle specific error cases
+      if (errorMessage.includes('INVALID_ACCESS_CODE') || errorMessage.includes('INVALID_HOST_CODE')) {
+        alert(`Access denied: ${errorMessage}. Please check your access code and try again.`)
+      } else {
+        alert(`Join failed: ${errorMessage}`)
+      }
+      
+      // Reset room state on error
+      appState.roomId = null
+      appState.isHost = false
+      if (typeof window !== 'undefined' && window.appState) {
+        window.appState.roomId = null
+        window.appState.isHost = false
+      }
+      
+      // Clear room from URL
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('room')
+        window.history.replaceState({}, '', url.pathname + url.search)
+      }
     })
 
     // WebRTC signaling handlers
