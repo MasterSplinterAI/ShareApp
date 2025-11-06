@@ -339,9 +339,13 @@ io.on('connection', (socket) => {
         currentRoom = roomId;
         
         // Extract access code from join data
-        const providedAccessCode = typeof data === 'object' ? data.accessCode : null;
+        // Support both 'accessCode' and 'providedAccessCode' for compatibility
+        const providedAccessCode = typeof data === 'object' ? (data.accessCode || data.providedAccessCode) : null;
         const roomAccessCode = typeof data === 'object' ? data.roomAccessCode : null;
         const roomHostCode = typeof data === 'object' ? data.roomHostCode : null;
+        
+        // Debug logging
+        console.log(`Join request - Room: ${roomId}, AccessCode: ${providedAccessCode ? '***' : 'none'}, RoomHostCode: ${roomHostCode ? '***' : 'none'}, RoomAccessCode: ${roomAccessCode ? '***' : 'none'}, JoinAsHost: ${joinAsHost}`);
         
         // Create or update room data
         if (!rooms[roomId]) {
