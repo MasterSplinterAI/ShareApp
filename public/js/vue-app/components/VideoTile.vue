@@ -154,6 +154,43 @@ watch(() => hasVideo.value, (hasVid, oldHasVid) => {
   }
 }, { immediate: true })
 
+const trackListeners = []
+
+const setupTrackListeners = () => {
+  // Clean up existing listeners
+  trackListeners.forEach(({ track, handler }) => {
+    track.removeEventListener('enabled', handler)
+    track.removeEventListener('ended', handler)
+  })
+  trackListeners.length = 0
+  
+  if (!props.stream) return
+  
+  const handleTrackChange = () => {
+    if (videoElement.value && props.stream) {
+      // Re-assign stream to force video element update
+      const currentSrc = videoElement.value.srcObject
+      videoElement.value.srcObject = null
+      setTimeout(() => {
+        if (videoElement.value && props.stream) {
+          videoElement.value.srcObject = props.stream
+          videoElement.value.play().catch(e => console.log('Video play error:', e))
+        }
+      }, 50)
+    }
+  }
+  
+  props.stream.getVideoTracks().forEach(track => {
+    track.addEventListener('enabled', handleTrackChange)
+    track.addEventListener('ended', handleTrackChange)
+    trackListeners.push({ track, handler: handleTrackChange })
+  })
+}
+
+watch(() => props.stream, () => {
+  setupTrackListeners()
+}, { immediate: true })
+
 onMounted(() => {
   if (videoElement.value && props.stream) {
     videoElement.value.srcObject = props.stream
@@ -163,20 +200,15 @@ onMounted(() => {
     }
   }
   
-  // Also listen for track enabled/disabled events
-  if (props.stream) {
-    props.stream.getVideoTracks().forEach(track => {
-      track.addEventListener('enabled', () => {
-        if (videoElement.value && props.stream) {
-          videoElement.value.srcObject = props.stream
-          const playPromise = videoElement.value.play()
-          if (playPromise !== undefined) {
-            playPromise.catch(e => console.log('Video play error:', e))
-          }
-        }
-      })
-    })
-  }
+  setupTrackListeners()
+})
+
+onUnmounted(() => {
+  trackListeners.forEach(({ track, handler }) => {
+    track.removeEventListener('enabled', handler)
+    track.removeEventListener('ended', handler)
+  })
+  trackListeners.length = 0
 })
 </script>
 
