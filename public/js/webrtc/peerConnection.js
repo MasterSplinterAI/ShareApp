@@ -717,42 +717,47 @@ export async function createPeerConnection(peerId) {
           console.warn(`Could not start audio level monitoring for ${peerId}:`, err);
         }
         
-        // If we only have audio so far, make sure placeholder is visible
-        let hasExistingVideo = false;
-        
-        // Get the video element if it exists
-        const remoteVideo = document.getElementById(`video-${peerId}`);
-        if (remoteVideo && remoteVideo.srcObject) {
-          // Check if the stream has active video tracks
-          hasExistingVideo = remoteVideo.srcObject.getVideoTracks().some(track => 
-            track.readyState === 'live' && track.enabled
-          );
-        }
-        
-        if (!hasExistingVideo) {
-          const placeholder = videoContainer.querySelector('.no-video-placeholder');
-          if (!placeholder) {
-            console.log(`Creating placeholder for audio-only peer ${peerId}`);
-            const newPlaceholder = document.createElement('div');
-            newPlaceholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800 zoom-like-avatar';
-            
-            // Create avatar with initials
-            const participantInfo = window.appState.participants[peerId];
-            const participantName = participantInfo?.name || peerId.substring(0, 5);
-            const initials = participantName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
-            
-            newPlaceholder.innerHTML = `
-              <div class="avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full">
-                ${initials}
-              </div>
-              <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
-                <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
-              </div>
-            `;
-            videoContainer.appendChild(newPlaceholder);
-          } else {
-            placeholder.classList.remove('hidden');
+        // Only handle placeholder logic for classic UI
+        if (!isVueUI && videoContainer) {
+          // If we only have audio so far, make sure placeholder is visible
+          let hasExistingVideo = false;
+          
+          // Get the video element if it exists
+          const remoteVideo = document.getElementById(`video-${peerId}`);
+          if (remoteVideo && remoteVideo.srcObject) {
+            // Check if the stream has active video tracks
+            hasExistingVideo = remoteVideo.srcObject.getVideoTracks().some(track => 
+              track.readyState === 'live' && track.enabled
+            );
           }
+          
+          if (!hasExistingVideo) {
+            const placeholder = videoContainer.querySelector('.no-video-placeholder');
+            if (!placeholder) {
+              console.log(`Creating placeholder for audio-only peer ${peerId}`);
+              const newPlaceholder = document.createElement('div');
+              newPlaceholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800 zoom-like-avatar';
+              
+              // Create avatar with initials
+              const participantInfo = window.appState.participants[peerId];
+              const participantName = participantInfo?.name || peerId.substring(0, 5);
+              const initials = participantName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+              
+              newPlaceholder.innerHTML = `
+                <div class="avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full">
+                  ${initials}
+                </div>
+                <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
+                  <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+                </div>
+              `;
+              videoContainer.appendChild(newPlaceholder);
+            } else {
+              placeholder.classList.remove('hidden');
+            }
+          }
+        } else if (isVueUI) {
+          console.log(`Vue UI: Audio track received for ${peerId}, Vue components will handle display`);
         }
       }
     };
