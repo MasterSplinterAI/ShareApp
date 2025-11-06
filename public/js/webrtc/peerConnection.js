@@ -531,12 +531,9 @@ export async function createPeerConnection(peerId) {
         console.log(`- Peer ${id}: connection state ${conn.connectionState}, ICE state ${conn.iceConnectionState}`);
       });
       
-      // Check if we're in Vue UI (Vue manages its own DOM)
-      const isVueUI = document.getElementById('app') && document.querySelector('.video-grid-container');
-      
-      // Create or get the video container for this peer (only for classic UI)
+      // Create or get the video container for this peer
       let videoContainer = null;
-      if (!isVueUI) {
+      {
         videoContainer = document.getElementById(`video-container-${peerId}`);
         if (!videoContainer) {
           console.log(`Creating new video container for peer ${peerId}`);
@@ -545,50 +542,16 @@ export async function createPeerConnection(peerId) {
           console.log(`Using existing video container for peer ${peerId}`);
         }
         
-        // If we couldn't create a container in classic UI, exit early
+        // If we couldn't create a container, exit early
         if (!videoContainer) {
           console.error(`Failed to create or find video container for peer ${peerId}`);
           return;
-        }
-      } else {
-        console.log(`Vue UI: Track received for ${peerId}, Vue components will handle display`);
-        // Vue handles video display via components - just ensure the stream is stored
-        // The stream is already in the event, and Vue's useSocket composable listens to peer-track-received
-        // Store the stream on the peer connection for Vue components to access
-        
-        // Use the stream from the event if available, otherwise create from track
-        let streamToStore = null;
-        if (event.streams && event.streams.length > 0) {
-          streamToStore = event.streams[0];
-        } else {
-          streamToStore = new MediaStream([event.track]);
-        }
-        
-        if (!pc.remoteStream) {
-          pc.remoteStream = streamToStore;
-          console.log(`Stored remote stream on peer connection for Vue components (${streamToStore.getVideoTracks().length} video, ${streamToStore.getAudioTracks().length} audio tracks)`);
-        } else {
-          // Add track to existing stream if not already present
-          const existingTrack = pc.remoteStream.getTracks().find(t => t.id === event.track.id);
-          if (!existingTrack) {
-            pc.remoteStream.addTrack(event.track);
-            console.log(`Added ${event.track.kind} track to existing stream for Vue components (now ${pc.remoteStream.getVideoTracks().length} video, ${pc.remoteStream.getAudioTracks().length} audio tracks)`);
-          } else {
-            console.log(`Track ${event.track.id} already exists in stream for ${peerId}`);
-          }
         }
       }
       
       // If this is a video track
       if (event.track.kind === 'video') {
         console.log(`Processing video track from peer ${peerId}`);
-        
-        // For Vue UI, just ensure stream is stored - components will handle display
-        if (isVueUI) {
-          // Stream is already stored above, Vue components will react to peer-track-received event
-          console.log(`Vue UI: Video track received for ${peerId}, components will display`);
-          return; // Vue handles everything via components
-        }
         
         // Classic UI: Create DOM elements
         // Get or create the video element
@@ -727,8 +690,8 @@ export async function createPeerConnection(peerId) {
           console.warn(`Could not start audio level monitoring for ${peerId}:`, err);
         }
         
-        // Only handle placeholder logic for classic UI
-        if (!isVueUI && videoContainer) {
+        // Handle placeholder logic
+        if (videoContainer) {
           // If we only have audio so far, make sure placeholder is visible
           let hasExistingVideo = false;
           
@@ -766,25 +729,16 @@ export async function createPeerConnection(peerId) {
               placeholder.classList.remove('hidden');
             }
           }
-        } else if (isVueUI) {
-          console.log(`Vue UI: Audio track received for ${peerId}, Vue components will handle display`);
         }
       }
     };
     
     // Helper function to create a video container for a peer
     function createVideoContainerForPeer(peerId) {
-      // Check if we're in Vue UI (Vue manages its own DOM via components)
-      const isVueUI = document.getElementById('app') && document.querySelector('.video-grid-container');
-      if (isVueUI) {
-        // Vue UI handles video containers via components, don't create DOM elements here
-        console.log(`Vue UI detected - skipping DOM manipulation for ${peerId} (handled by Vue components)`);
-        return null;
-      }
       
       const videoGrid = document.getElementById('participantsGrid');
       if (!videoGrid) {
-        console.warn('Participants grid not found (may be Vue UI)');
+        console.warn('Participants grid not found');
         return null;
       }
       

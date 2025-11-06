@@ -520,13 +520,8 @@ export function leaveRoom() {
   updateConnectionStatus('idle');
 }
 
-// Helper to get socket (supports both classic and Vue)
+// Helper to get socket
 function getSocket() {
-  // First check for Vue socket
-  if (typeof window !== 'undefined' && window.__vueSocket) {
-    return window.__vueSocket
-  }
-  // Fallback to classic socket
   return socket
 }
 
@@ -538,20 +533,10 @@ export function sendOffer(targetUserId, sdp, isRenegotiation = false) {
     return;
   }
   
-  // Check both window.appState and Vue appState for roomId
-  let roomId = window.appState?.roomId
-  if (!roomId && typeof window !== 'undefined' && window.__vueAppState) {
-    roomId = window.__vueAppState?.roomId
-    if (roomId) {
-      // Sync to window.appState for consistency
-      if (!window.appState) window.appState = {}
-      window.appState.roomId = roomId
-      console.log('Using Vue appState roomId for offer:', roomId)
-    }
-  }
-  
+  // Check window.appState for roomId
+  const roomId = window.appState?.roomId
   if (!roomId) {
-    console.error('Cannot send offer - not connected to room (roomId:', window.appState?.roomId, ', Vue roomId:', window.__vueAppState?.roomId, ')');
+    console.error('Cannot send offer - not connected to room (roomId:', window.appState?.roomId, ')');
     return;
   }
   
@@ -572,20 +557,10 @@ export function sendRenegotiationOffer(targetUserId, sdp) {
     return;
   }
   
-  // Check both window.appState and Vue appState for roomId
-  let roomId = window.appState?.roomId
-  if (!roomId && typeof window !== 'undefined' && window.__vueAppState) {
-    roomId = window.__vueAppState?.roomId
-    if (roomId) {
-      // Sync to window.appState for consistency
-      if (!window.appState) window.appState = {}
-      window.appState.roomId = roomId
-      console.log('Using Vue appState roomId for renegotiation offer:', roomId)
-    }
-  }
-  
+  // Check window.appState for roomId
+  const roomId = window.appState?.roomId
   if (!roomId) {
-    console.error('Cannot send renegotiation offer - not connected to room (roomId:', window.appState?.roomId, ', Vue roomId:', window.__vueAppState?.roomId, ')');
+    console.error('Cannot send renegotiation offer - not connected to room (roomId:', window.appState?.roomId, ')');
     return;
   }
   
@@ -607,20 +582,10 @@ export function sendScreenSharingOffer(targetUserId, sdp) {
     return;
   }
   
-  // Check both window.appState and Vue appState for roomId
-  let roomId = window.appState?.roomId
-  if (!roomId && typeof window !== 'undefined' && window.__vueAppState) {
-    roomId = window.__vueAppState?.roomId
-    if (roomId) {
-      // Sync to window.appState for consistency
-      if (!window.appState) window.appState = {}
-      window.appState.roomId = roomId
-      console.log('Using Vue appState roomId for screen sharing offer:', roomId)
-    }
-  }
-  
+  // Check window.appState for roomId
+  const roomId = window.appState?.roomId
   if (!roomId) {
-    console.error('Cannot send screen sharing offer - not connected to room (roomId:', window.appState?.roomId, ', Vue roomId:', window.__vueAppState?.roomId, ')');
+    console.error('Cannot send screen sharing offer - not connected to room (roomId:', window.appState?.roomId, ')');
     return;
   }
   
@@ -648,22 +613,10 @@ export function sendAnswer(targetUserId, sdp) {
     console.error('Cannot send answer - socket not initialized');
     return;
   }
-  // Check both window.appState and ensure roomId exists
+  // Check window.appState and ensure roomId exists
   if (!window.appState || !window.appState.roomId) {
     console.error('Cannot send answer - not connected to room (roomId:', window.appState?.roomId, ')');
-    // Try to get roomId from Vue appState if available
-    if (typeof window !== 'undefined' && window.__vueAppState) {
-      const vueRoomId = window.__vueAppState?.roomId
-      if (vueRoomId) {
-        console.log('Using Vue appState roomId:', vueRoomId)
-        if (!window.appState) window.appState = {}
-        window.appState.roomId = vueRoomId
-      } else {
-        return
-      }
-    } else {
-      return
-    }
+    return;
   }
   
   currentSocket.emit('answer', {
