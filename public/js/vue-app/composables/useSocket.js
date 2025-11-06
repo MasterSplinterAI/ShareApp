@@ -6,6 +6,12 @@ import { createPeerConnection, handleRemoteOffer, handleRemoteAnswer, handleRemo
 let socket = null
 let connectionCheckInterval = null
 
+// CRITICAL: Export socket so socket.js functions can access it
+// We'll set this globally so the classic socket.js module can use it
+if (typeof window !== 'undefined') {
+  window.__vueSocket = null
+}
+
 export function useSocket() {
   const connect = () => {
     if (typeof io === 'undefined') {
@@ -29,6 +35,29 @@ export function useSocket() {
       reconnectionDelay: 1000,
       reconnectionAttempts: 5
     })
+
+    // CRITICAL: Set socket globally so socket.js functions can access it
+    if (typeof window !== 'undefined') {
+      window.__vueSocket = socket
+      // Also try to set it on the socket.js module's socket variable
+      // Import socket.js and set its socket variable
+      import('../../services/socket.js').then(socketModule => {
+        // Set socket via a setter if available, or directly if exported
+        if (socketModule.setSocket) {
+          socketModule.setSocket(socket)
+        } else {
+          // Try to access the internal socket variable
+          try {
+            socketModule._setSocket(socket)
+          } catch (e) {
+            // Fallback: use window global
+            console.log('Using window.__vueSocket for socket.js compatibility')
+          }
+        }
+      }).catch(e => {
+        console.log('Could not import socket.js module, using window global')
+      })
+    }
 
     socket.on('connect', () => {
       console.log('Connected to server with ID:', socket.id)

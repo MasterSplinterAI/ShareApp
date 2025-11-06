@@ -40,15 +40,24 @@ const remoteParticipants = computed(() => {
   if (!appState.participants || typeof appState.participants !== 'object') {
     return []
   }
-  return Object.values(appState.participants).filter(p => p && p.id !== 'local')
+  // Filter out 'local' and ensure we only get actual remote participants
+  return Object.values(appState.participants).filter(p => {
+    if (!p || !p.id) return false
+    // Exclude 'local' ID
+    if (p.id === 'local') return false
+    // Ensure it's a string ID (not the word 'local')
+    return typeof p.id === 'string' && p.id !== 'local'
+  })
 })
 
 const gridClass = computed(() => {
-  const count = participantCount.value + 1 // +1 for local
-  if (count === 1) return 'grid-1'
-  if (count === 2) return 'grid-2'
-  if (count <= 4) return 'grid-4'
-  if (count <= 9) return 'grid-9'
+  // Count = local (1) + remote participants
+  const remoteCount = remoteParticipants.value.length
+  const totalCount = 1 + remoteCount // Always show local + remotes
+  if (totalCount === 1) return 'grid-1'
+  if (totalCount === 2) return 'grid-2'
+  if (totalCount <= 4) return 'grid-4'
+  if (totalCount <= 9) return 'grid-9'
   return 'grid-many'
 })
 

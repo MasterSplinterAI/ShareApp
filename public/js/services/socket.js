@@ -520,9 +520,20 @@ export function leaveRoom() {
   updateConnectionStatus('idle');
 }
 
+// Helper to get socket (supports both classic and Vue)
+function getSocket() {
+  // First check for Vue socket
+  if (typeof window !== 'undefined' && window.__vueSocket) {
+    return window.__vueSocket
+  }
+  // Fallback to classic socket
+  return socket
+}
+
 // Send WebRTC offer to peer
 export function sendOffer(targetUserId, sdp, isRenegotiation = false) {
-  if (!socket) {
+  const currentSocket = getSocket()
+  if (!currentSocket) {
     console.error('Cannot send offer - socket not initialized');
     return;
   }
@@ -597,7 +608,8 @@ export function sendAnswer(targetUserId, sdp) {
 
 // Send ICE candidate to peer
 export function sendIceCandidate(targetUserId, candidate) {
-  if (!socket) {
+  const currentSocket = getSocket()
+  if (!currentSocket) {
     console.error('Cannot send ICE candidate - socket not initialized');
     return;
   }
@@ -607,7 +619,7 @@ export function sendIceCandidate(targetUserId, candidate) {
     return;
   }
   
-  socket.emit('ice-candidate', {
+  currentSocket.emit('ice-candidate', {
     roomId: window.appState.roomId,
     targetUserId: targetUserId,
     candidate: candidate
