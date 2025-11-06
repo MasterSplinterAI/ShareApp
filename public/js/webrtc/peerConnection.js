@@ -531,30 +531,61 @@ export async function createPeerConnection(peerId) {
         console.log(`- Peer ${id}: connection state ${conn.connectionState}, ICE state ${conn.iceConnectionState}`);
       });
       
-      // Create or get the video container for this peer
-      let videoContainer = document.getElementById(`video-container-${peerId}`);
-      if (!videoContainer) {
-        console.log(`Creating new video container for peer ${peerId}`);
-        videoContainer = createVideoContainerForPeer(peerId);
-      } else {
-        console.log(`Using existing video container for peer ${peerId}`);
-      }
+      // Check if we're in Vue UI (Vue manages its own DOM)
+      const isVueUI = document.getElementById('app') && document.querySelector('.video-grid-container');
       
-      // If we couldn't create a container, exit early
-      if (!videoContainer) {
-        console.error(`Failed to create or find video container for peer ${peerId}`);
-        return;
+      // Create or get the video container for this peer (only for classic UI)
+      let videoContainer = null;
+      if (!isVueUI) {
+        videoContainer = document.getElementById(`video-container-${peerId}`);
+        if (!videoContainer) {
+          console.log(`Creating new video container for peer ${peerId}`);
+          videoContainer = createVideoContainerForPeer(peerId);
+        } else {
+          console.log(`Using existing video container for peer ${peerId}`);
+        }
+        
+        // If we couldn't create a container in classic UI, exit early
+        if (!videoContainer) {
+          console.error(`Failed to create or find video container for peer ${peerId}`);
+          return;
+        }
+      } else {
+        console.log(`Vue UI: Track received for ${peerId}, Vue components will handle display`);
+        // Vue handles video display via components - just ensure the stream is stored
+        // The stream is already in the event, and Vue's useSocket composable listens to peer-track-received
+        // Store the stream on the peer connection for Vue components to access
+        if (!pc.remoteStream) {
+          const stream = event.streams && event.streams.length > 0 ? event.streams[0] : new MediaStream([event.track]);
+          pc.remoteStream = stream;
+          console.log(`Stored remote stream on peer connection for Vue components`);
+        } else {
+          // Add track to existing stream
+          const stream = event.streams && event.streams.length > 0 ? event.streams[0] : pc.remoteStream;
+          if (!stream.getTracks().find(t => t.id === event.track.id)) {
+            stream.addTrack(event.track);
+            console.log(`Added track to existing stream for Vue components`);
+          }
+        }
       }
       
       // If this is a video track
       if (event.track.kind === 'video') {
         console.log(`Processing video track from peer ${peerId}`);
         
+        // For Vue UI, just ensure stream is stored - components will handle display
+        if (isVueUI) {
+          // Stream is already stored above, Vue components will react to peer-track-received event
+          console.log(`Vue UI: Video track received for ${peerId}, components will display`);
+          return; // Vue handles everything via components
+        }
+        
+        // Classic UI: Create DOM elements
         // Get or create the video element
         let remoteVideo = document.getElementById(`video-${peerId}`);
         if (!remoteVideo) {
           remoteVideo = videoContainer.querySelector('video');
-          if (!remoteVideo) {
+          if (!remoteVideo && videoContainer) {
             console.log(`Creating new video element for peer ${peerId}`);
             remoteVideo = document.createElement('video');
             remoteVideo.id = `video-${peerId}`;
