@@ -81,18 +81,28 @@ const hasVideo = computed(() => {
   if (!props.stream) return false
   try {
     const videoTracks = props.stream.getVideoTracks()
+    if (videoTracks.length === 0) return false
+    
     // Check for enabled tracks - accept 'live' or 'ready' states (ready happens before live)
-    const hasEnabledTrack = videoTracks.length > 0 && videoTracks.some(t => {
-      if (!t || !t.enabled) return false
-      // Accept both 'live' and 'ready' states (tracks can be enabled but not yet live)
-      return t.readyState === 'live' || t.readyState === 'ready'
+    // Also accept tracks that are just enabled (may not have readyState set yet)
+    const hasEnabledTrack = videoTracks.some(t => {
+      if (!t) return false
+      // Track must be enabled
+      if (!t.enabled) return false
+      // Accept 'live', 'ready', or tracks without readyState set yet
+      // When a track is first enabled, readyState might be 'live' immediately
+      return !t.readyState || t.readyState === 'live' || t.readyState === 'ready'
     })
     
-    // Also check if video element has dimensions (indicates video is actually playing)
+    // If we have an enabled track, check video element dimensions as fallback
     if (hasEnabledTrack && videoElement.value) {
+      // If video element has dimensions, definitely has video
       if (videoElement.value.videoWidth > 0 && videoElement.value.videoHeight > 0) {
         return true
       }
+      // Even without dimensions yet, if track is enabled, return true
+      // Video might still be loading
+      return true
     }
     
     return hasEnabledTrack
