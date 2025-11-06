@@ -543,7 +543,8 @@ export function sendOffer(targetUserId, sdp, isRenegotiation = false) {
     return;
   }
   
-  socket.emit('offer', {
+  const emitSocket = getSocket()
+  emitSocket.emit('offer', {
     roomId: window.appState.roomId,
     targetUserId: targetUserId,
     sdp: sdp,
