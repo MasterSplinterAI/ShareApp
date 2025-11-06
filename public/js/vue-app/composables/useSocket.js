@@ -198,15 +198,42 @@ export function useSocket() {
 
     // WebRTC signaling handlers
     socket.on('offer', async (data) => {
-      await handleRemoteOffer(data.from, data.offer)
+      if (!data.senderId) {
+        console.error('Received offer without senderId:', data)
+        return
+      }
+      if (!data.sdp) {
+        console.error('Received offer without sdp:', data)
+        return
+      }
+      console.log(`Received offer from ${data.senderId}`)
+      await handleRemoteOffer(data.senderId, data.sdp)
     })
 
     socket.on('answer', async (data) => {
-      await handleRemoteAnswer(data.from, data.answer)
+      if (!data.senderId) {
+        console.error('Received answer without senderId:', data)
+        return
+      }
+      if (!data.sdp) {
+        console.error('Received answer without sdp:', data)
+        return
+      }
+      console.log(`Received answer from ${data.senderId}`)
+      await handleRemoteAnswer(data.senderId, data.sdp)
     })
 
     socket.on('ice-candidate', async (data) => {
-      await handleRemoteIceCandidate(data.from, data.candidate)
+      if (!data.senderId) {
+        console.error('Received ice-candidate without senderId:', data)
+        return
+      }
+      if (!data.candidate) {
+        console.error('Received ice-candidate without candidate:', data)
+        return
+      }
+      console.log(`Received ICE candidate from ${data.senderId}`)
+      await handleRemoteIceCandidate(data.senderId, data.candidate)
     })
 
     // Listen for peer track events (from peerConnection.js)
