@@ -641,7 +641,8 @@ export function sendChatMessage(message) {
 
 // Get the socket ID
 export function getSocketId() {
-  return socket ? socket.id : null;
+  const currentSocket = getSocket()
+  return currentSocket ? currentSocket.id : null;
 }
 
 // Refresh all media displays
