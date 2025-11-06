@@ -128,19 +128,38 @@ export function useSocket() {
       // Don't create connection to ourselves
       if (data.participants && Array.isArray(data.participants)) {
         const currentSocketId = socket.id
+        if (!currentSocketId) {
+          console.warn('Socket ID not available, cannot filter self peer connections')
+          return
+        }
+        
         const otherParticipants = data.participants.filter(p => {
-          if (!p || !p.id) return false
-          // Don't create peer connection to ourselves
-          if (p.id === currentSocketId) return false
+          if (!p || !p.id) {
+            console.log('Filtering out invalid participant:', p)
+            return false
+          }
+          // CRITICAL: Don't create peer connection to ourselves
+          if (p.id === currentSocketId) {
+            console.log(`🔴 Skipping self peer connection for ${p.id} (current socket: ${currentSocketId})`)
+            return false
+          }
           // Check if peer connection already exists
           if (appState.peerConnections && appState.peerConnections[p.id]) {
+            console.log(`Peer connection already exists for ${p.id}`)
+            return false
+          }
+          // Also check window.appState.peerConnections
+          if (window.appState && window.appState.peerConnections && window.appState.peerConnections[p.id]) {
+            console.log(`Peer connection already exists in window.appState for ${p.id}`)
             return false
           }
           return true
         })
         
+        console.log(`Creating peer connections for ${otherParticipants.length} remote participants (total participants: ${data.participants.length})`)
         for (const participant of otherParticipants) {
           try {
+            console.log(`Attempting to create peer connection for ${participant.id}`)
             await createPeerConnection(participant.id)
           } catch (error) {
             console.error(`Error creating peer connection for ${participant.id}:`, error)
