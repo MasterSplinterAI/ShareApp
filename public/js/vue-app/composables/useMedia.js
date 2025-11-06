@@ -23,7 +23,15 @@ export function useMedia() {
 
   const toggleCam = async () => {
     try {
+      // Always use window.appState.localStream as source of truth
+      const sourceStream = window.appState?.localStream || appState.localStream
+      if (!sourceStream) {
+        console.error('No local stream available, cannot toggle camera')
+        return
+      }
+      
       await toggleCamera()
+      
       // Force Vue reactivity - window.appState.localStream reference might not change,
       // but tracks within it do, so we need to trigger reactivity manually
       if (window.appState && window.appState.localStream) {
@@ -34,23 +42,18 @@ export function useMedia() {
         
         // Update appState - if it's the same stream object, we still need to trigger reactivity
         const currentStream = appState.localStream
-        appState.localStream = window.appState.localStream
+        const streamReference = window.appState.localStream
         
-        // Force reactivity: if same object, temporarily set to null then back
-        if (currentStream === window.appState.localStream) {
-          appState.localStream = null
-          // Use nextTick to ensure Vue processes the null assignment
-          import('vue').then(({ nextTick }) => {
-            nextTick(() => {
-              appState.localStream = window.appState.localStream
-              appState.isCameraOn = window.appState.isCameraOn || false
-              console.log(`Camera toggled (forced reactivity): ${videoTracks.length} video tracks, enabled: ${hasVideo}`)
-            })
-          })
-        } else {
+        // Force reactivity: temporarily set to null then back (using setTimeout instead of nextTick for immediate effect)
+        appState.localStream = null
+        appState.isCameraOn = false
+        
+        // Immediately restore on next tick
+        setTimeout(() => {
+          appState.localStream = streamReference
           appState.isCameraOn = window.appState.isCameraOn || false
-          console.log(`Camera toggled: ${videoTracks.length} video tracks, enabled: ${hasVideo}`)
-        }
+          console.log(`Camera toggled (forced reactivity): ${videoTracks.length} video tracks, enabled: ${hasVideo}`)
+        }, 0)
       }
     } catch (error) {
       console.error('Failed to toggle camera:', error)
@@ -59,7 +62,19 @@ export function useMedia() {
 
   const toggleMic = async () => {
     try {
+      // Always use window.appState.localStream as source of truth
+      const sourceStream = window.appState?.localStream || appState.localStream
+      if (!sourceStream) {
+        console.error('No local stream available, cannot toggle microphone')
+        return
+      }
+      
       await toggleMicrophone()
+      
+      // Update Vue appState
+      if (window.appState) {
+        appState.isMicOn = window.appState.isMicOn || false
+      }
     } catch (error) {
       console.error('Failed to toggle microphone:', error)
     }
