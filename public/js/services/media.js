@@ -340,7 +340,6 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     // Now that we have attempted to get permissions, update device lists
     // Setup device selectors
     try {
-      // Check if we're in Vue UI (no device selectors in Vue HTML)
       const hasDeviceSelectors = document.getElementById('cameraSelect') || 
                                  document.getElementById('micSelect') ||
                                  document.getElementById('speakerSelect');
@@ -351,8 +350,8 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
         await setupDeviceSelectors();
       }
     } catch (error) {
-      // Silently ignore - Vue UI doesn't have device selectors
-      console.log('Device selectors not available (likely Vue UI):', error.message);
+      // Silently ignore if device selectors not available
+      console.log('Device selectors not available:', error.message);
     }
     
     // Reconnect to any existing peer connections with the new stream
