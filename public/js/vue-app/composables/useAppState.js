@@ -61,7 +61,12 @@ if (typeof window !== 'undefined') {
         }
       }
       if (window.appState.screenStream !== appState.screenStream) appState.screenStream = window.appState.screenStream
-      if (window.appState.peerConnections !== appState.peerConnections) appState.peerConnections = window.appState.peerConnections
+      // Sync peerConnections - ensure reactivity when remote streams are added
+      if (window.appState.peerConnections !== appState.peerConnections) {
+        // Create a new object reference to trigger Vue reactivity
+        // This ensures Vue detects when remoteStream is added to peer connections
+        appState.peerConnections = { ...window.appState.peerConnections }
+      }
       // Don't auto-sync roomId - Vue controls joining
       // if (window.appState.roomId !== appState.roomId) appState.roomId = window.appState.roomId
       if (window.appState.isHost !== appState.isHost) appState.isHost = window.appState.isHost
