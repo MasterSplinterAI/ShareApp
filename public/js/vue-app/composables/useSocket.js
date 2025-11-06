@@ -175,9 +175,11 @@ export function useSocket() {
 
     socket.on('user-joined', async (data) => {
       console.log('User joined:', data)
+      const currentSocketId = socket.id || (appState.roomId && data.you) || null
       
       // Don't add ourselves to participants
-      if (data.userId === socket.id) {
+      if (data.userId === currentSocketId || data.userId === 'local') {
+        console.log(`Skipping self in user-joined (userId: ${data.userId}, currentSocketId: ${currentSocketId})`)
         return
       }
       
@@ -201,7 +203,7 @@ export function useSocket() {
       }
       
       // Create peer connection for new user (if not ourselves)
-      if (data.userId !== socket.id) {
+      if (data.userId !== currentSocketId) {
         try {
           await createPeerConnection(data.userId)
         } catch (error) {
