@@ -25,16 +25,33 @@
         :is-local="false"
         @pin="handlePin(participant.id)"
       />
+      
+      <!-- Debug: Show participant info -->
+      <!-- <div v-if="remoteParticipants.length > 0" style="position: fixed; top: 0; left: 0; background: rgba(0,0,0,0.8); color: white; padding: 10px; z-index: 9999; font-size: 12px;">
+        Participants: {{ remoteParticipants.map(p => p.id).join(', ') }}<br>
+        Peer Connections: {{ Object.keys(appState.peerConnections || {}).join(', ') }}<br>
+        Streams: {{ remoteParticipants.map(p => getStreamForParticipant(p.id) ? 'has stream' : 'no stream').join(', ') }}
+      </div> -->
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { useAppState } from '../composables/useAppState.js'
 import VideoTile from './VideoTile.vue'
 
 const { appState, participantCount } = useAppState()
+
+// Watch for peerConnections changes to trigger reactivity
+watch(() => appState.peerConnections, () => {
+  // Force reactivity when peer connections change or remoteStream is added
+}, { deep: true })
+
+// Watch for participants changes
+watch(() => appState.participants, () => {
+  // Force reactivity
+}, { deep: true })
 
 const remoteParticipants = computed(() => {
   if (!appState.participants || typeof appState.participants !== 'object') {
@@ -61,9 +78,18 @@ const gridClass = computed(() => {
   return 'grid-many'
 })
 
+// Make this a computed property for reactivity
 const getStreamForParticipant = (participantId) => {
+  // This is called from template, so ensure it's reactive
+  // Access appState properties to ensure Vue tracks dependencies
+  if (!appState.peerConnections || typeof appState.peerConnections !== 'object') {
+    // Try window.appState as fallback
+    const windowPc = window.appState?.peerConnections?.[participantId]
+    return windowPc?.remoteStream || null
+  }
+  
   // Get stream from peer connection - check both Vue appState and window.appState
-  const pc = appState.peerConnections?.[participantId] || window.appState?.peerConnections?.[participantId]
+  const pc = appState.peerConnections[participantId] || window.appState?.peerConnections?.[participantId]
   if (!pc) return null
   
   // Try to get remote stream from peer connection
@@ -71,7 +97,12 @@ const getStreamForParticipant = (participantId) => {
   if (typeof pc.getRemoteStreams === 'function') {
     const remoteStreams = pc.getRemoteStreams()
     if (remoteStreams && remoteStreams.length > 0) {
-      return remoteStreams[0]
+      const stream = remoteStreams[0]
+      // Ensure remoteStream property is also set for consistency
+      if (!pc.remoteStream || pc.remoteStream !== stream) {
+        pc.remoteStream = stream
+      }
+      return stream
     }
   }
   
@@ -83,6 +114,13 @@ const getStreamForParticipant = (participantId) => {
   // Also check window.appState in case Vue appState isn't synced yet
   const windowPc = window.appState?.peerConnections?.[participantId]
   if (windowPc?.remoteStream) {
+    // Sync it to Vue appState
+    if (!appState.peerConnections[participantId]) {
+      appState.peerConnections = { ...appState.peerConnections, [participantId]: windowPc }
+    }
+    if (appState.peerConnections[participantId] && !appState.peerConnections[participantId].remoteStream) {
+      appState.peerConnections[participantId].remoteStream = windowPc.remoteStream
+    }
     return windowPc.remoteStream
   }
   
