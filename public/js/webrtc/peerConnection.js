@@ -728,9 +728,17 @@ export async function createPeerConnection(peerId) {
     
     // Helper function to create a video container for a peer
     function createVideoContainerForPeer(peerId) {
+      // Check if we're in Vue UI (Vue manages its own DOM via components)
+      const isVueUI = document.getElementById('app') && document.querySelector('.video-grid-container');
+      if (isVueUI) {
+        // Vue UI handles video containers via components, don't create DOM elements here
+        console.log(`Vue UI detected - skipping DOM manipulation for ${peerId} (handled by Vue components)`);
+        return null;
+      }
+      
       const videoGrid = document.getElementById('participantsGrid');
       if (!videoGrid) {
-        console.error('Participants grid not found');
+        console.warn('Participants grid not found (may be Vue UI)');
         return null;
       }
       
