@@ -19,17 +19,13 @@ export default defineConfig({
     base: './',
     // Target modern browsers that support top-level await
     target: 'esnext',
-    // Optimize build for smaller server
-    minify: 'terser', // Use terser for better minification
-    terserOptions: {
-      compress: {
-        drop_console: false, // Keep console.log for debugging
-        passes: 1, // Reduce passes to speed up build
-      },
-    },
+    // Optimize build for smaller server - use esbuild (faster than terser, built-in)
+    minify: 'esbuild', // esbuild is much faster than terser
     chunkSizeWarningLimit: 1000, // Increase warning limit
-    // Reduce sourcemap generation (can be slow)
+    // Reduce sourcemap generation (can be slow and CPU-intensive)
     sourcemap: false,
+    // Disable CSS code splitting for faster builds
+    cssCodeSplit: false,
   },
   server: {
     port: 5173,
