@@ -5,9 +5,19 @@
       :srcObject="stream"
       autoplay
       playsinline
-      muted
-      v-show="stream && hasVideo"
+      :muted="isLocal"
+      v-show="stream && (hasVideo || hasAudio)"
     ></video>
+    
+    <!-- Hidden audio element for remote participants (to ensure audio plays) -->
+    <audio
+      v-if="!isLocal && stream && hasAudio && !hasVideo"
+      ref="audioElement"
+      :srcObject="stream"
+      autoplay
+      muted="false"
+      style="display: none;"
+    ></audio>
     
     <div v-show="!hasVideo || !stream" class="placeholder">
       <div class="avatar">
@@ -266,8 +276,21 @@ const setupTrackListeners = () => {
   })
 }
 
-watch(() => props.stream, () => {
+watch(() => props.stream, (newStream) => {
   setupTrackListeners()
+  
+  // Update audio element for remote participants
+  if (!props.isLocal && audioElement.value && newStream) {
+    const audioTracks = newStream.getAudioTracks()
+    if (audioTracks.length > 0 && audioTracks.some(t => t.enabled)) {
+      audioElement.value.srcObject = newStream
+      audioElement.value.play().catch(e => {
+        if (!e.message || !e.message.includes('interrupted')) {
+          console.log('Audio play error:', e)
+        }
+      })
+    }
+  }
 }, { immediate: true })
 
 onMounted(() => {
@@ -275,7 +298,24 @@ onMounted(() => {
     videoElement.value.srcObject = props.stream
     const playPromise = videoElement.value.play()
     if (playPromise !== undefined) {
-      playPromise.catch(e => console.log('Video play error:', e))
+      playPromise.catch(e => {
+        if (!e.message || !e.message.includes('interrupted')) {
+          console.log('Video play error:', e)
+        }
+      })
+    }
+  }
+  
+  // For remote participants, ensure audio plays
+  if (!props.isLocal && audioElement.value && props.stream) {
+    const audioTracks = props.stream.getAudioTracks()
+    if (audioTracks.length > 0) {
+      audioElement.value.srcObject = props.stream
+      audioElement.value.play().catch(e => {
+        if (!e.message || !e.message.includes('interrupted')) {
+          console.log('Audio play error:', e)
+        }
+      })
     }
   }
   
