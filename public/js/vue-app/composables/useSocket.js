@@ -111,17 +111,22 @@ export function useSocket() {
       }
       
       if (data.participants && Array.isArray(data.participants)) {
-        // Convert array to object format
+        // Convert array to object format, excluding self
+        const currentSocketId = data.you || socket.id || null
         const participantsObj = {}
         data.participants.forEach(p => {
           if (p && p.id) {
-            participantsObj[p.id] = p
+            // Don't add self to participants (local video is handled separately)
+            if (p.id !== currentSocketId && p.id !== 'local') {
+              participantsObj[p.id] = p
+            }
           }
         })
-        Object.assign(appState.participants, participantsObj)
+        appState.participants = participantsObj // Replace, don't merge
         if (typeof window !== 'undefined' && window.appState) {
-          Object.assign(window.appState.participants, participantsObj)
+          window.appState.participants = participantsObj
         }
+        console.log(`Stored ${Object.keys(participantsObj).length} remote participants (excluded self: ${currentSocketId})`)
       }
 
       // Create peer connections for existing participants
