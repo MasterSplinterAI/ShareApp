@@ -94,10 +94,16 @@ export function useSocket() {
       appState.roomId = data.roomId
       appState.isHost = data.isHost || false
       
-      // IMPORTANT: Sync roomId to window.appState immediately for WebRTC functions
-      if (typeof window !== 'undefined' && window.appState) {
+      // CRITICAL: Sync roomId to window.appState IMMEDIATELY for WebRTC functions
+      // This must happen before any WebRTC signaling occurs
+      if (typeof window !== 'undefined') {
+        if (!window.appState) {
+          window.appState = {}
+        }
         window.appState.roomId = data.roomId
         window.appState.isHost = data.isHost || false
+        window.appState.userName = data.userName || appState.userName || 'Guest'
+        console.log('Synced roomId to window.appState:', data.roomId)
       }
       
       // Store participants - ensure participants is an object

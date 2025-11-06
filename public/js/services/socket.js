@@ -595,12 +595,30 @@ export function sendScreenSharingOffer(targetUserId, sdp) {
 
 // Send WebRTC answer to peer
 export function sendAnswer(targetUserId, sdp) {
-  if (!socket || !window.appState.roomId) {
-    console.error('Cannot send answer - not connected to room');
+  const currentSocket = getSocket()
+  if (!currentSocket) {
+    console.error('Cannot send answer - socket not initialized');
     return;
   }
+  // Check both window.appState and ensure roomId exists
+  if (!window.appState || !window.appState.roomId) {
+    console.error('Cannot send answer - not connected to room (roomId:', window.appState?.roomId, ')');
+    // Try to get roomId from Vue appState if available
+    if (typeof window !== 'undefined' && window.__vueAppState) {
+      const vueRoomId = window.__vueAppState?.roomId
+      if (vueRoomId) {
+        console.log('Using Vue appState roomId:', vueRoomId)
+        if (!window.appState) window.appState = {}
+        window.appState.roomId = vueRoomId
+      } else {
+        return
+      }
+    } else {
+      return
+    }
+  }
   
-  socket.emit('answer', {
+  currentSocket.emit('answer', {
     roomId: window.appState.roomId,
     targetUserId: targetUserId,
     sdp: sdp

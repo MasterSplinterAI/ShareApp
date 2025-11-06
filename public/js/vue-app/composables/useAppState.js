@@ -82,16 +82,28 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Expose appState globally for compatibility with WebRTC functions
+if (typeof window !== 'undefined') {
+  // Create a reactive reference that WebRTC functions can access
+  Object.defineProperty(window, '__vueAppState', {
+    get() { return appState },
+    enumerable: true,
+    configurable: true
+  })
+}
+
 // Computed properties
 export function useAppState() {
   const isInMeeting = computed(() => appState.roomId !== null)
   const participantCount = computed(() => {
-    if (!appState.participants || typeof appState.participants !== 'object') {
-      return 0
+    // Always count local (1) + remote participants
+    let remoteCount = 0
+    if (appState.participants && typeof appState.participants === 'object') {
+      const participants = Object.keys(appState.participants)
+      remoteCount = participants.filter(id => id !== 'local' && id !== appState.roomId).length
     }
-    // Count only remote participants (exclude local if it exists)
-    const participants = Object.keys(appState.participants)
-    return participants.filter(id => id !== 'local').length
+    // Always show at least 1 (local user) even if no remote participants yet
+    return Math.max(1, 1 + remoteCount)
   })
   const hasLocalVideo = computed(() => {
     return appState.localStream && appState.localStream.getVideoTracks().length > 0
