@@ -1205,13 +1205,30 @@ export async function handleRemoteAnswer(peerId, sdp) {
     }
     
     // Check signaling state - can only set answer if we have a local offer
-    if (peerConnection.signalingState !== 'have-local-offer') {
-      console.warn(`Cannot set answer for ${peerId}: signaling state is ${peerConnection.signalingState}, expected 'have-local-offer'`);
+    const currentState = peerConnection.signalingState;
+    
+    if (currentState === 'have-local-offer') {
+      // Normal case - set the answer
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+    } else if (currentState === 'stable') {
+      // State is already stable - this means both peers sent offers simultaneously
+      // and we already resolved it. The answer is late, so we can safely ignore it
+      console.log(`Answer from ${peerId} arrived after state became stable (already handled), ignoring gracefully`);
+      return;
+    } else if (currentState === 'have-remote-offer') {
+      // We're in the middle of handling their offer - wait and retry
+      console.log(`Answer from ${peerId} arrived while handling their offer (state: ${currentState}), will retry after answer is created`);
+      // Wait a bit for our answer to be created, then try again
+      setTimeout(async () => {
+        if (peerConnection.signalingState === 'stable') {
+          console.log(`Connection with ${peerId} is now stable, answer was redundant`);
+        }
+      }, 500);
+      return;
+    } else {
+      console.warn(`Cannot set answer for ${peerId}: signaling state is ${currentState}, expected 'have-local-offer'`);
       return;
     }
-    
-    // Set remote description
-    await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
     
     // Process any queued ICE candidates now that remote description is set
     await processQueuedIceCandidates(peerId);
@@ -1224,7 +1241,7 @@ export async function handleRemoteAnswer(peerId, sdp) {
     pendingOffers.delete(peerId);
     console.error(`Error handling answer from ${peerId}:`, error);
     // Don't show error for state conflicts (they're expected during renegotiation)
-    if (!error.message || !error.message.includes('state')) {
+    if (!error.message || (!error.message.includes('state') && !error.message.includes('signaling'))) {
       showError('Failed to complete connection with a participant.');
     }
   }

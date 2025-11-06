@@ -62,19 +62,28 @@ const gridClass = computed(() => {
 })
 
 const getStreamForParticipant = (participantId) => {
-  // Get stream from peer connection
-  const pc = appState.peerConnections[participantId]
+  // Get stream from peer connection - check both Vue appState and window.appState
+  const pc = appState.peerConnections?.[participantId] || window.appState?.peerConnections?.[participantId]
   if (!pc) return null
   
   // Try to get remote stream from peer connection
-  // Check if it's an RTCPeerConnection with remote stream
-  if (pc.getRemoteStreams && pc.getRemoteStreams().length > 0) {
-    return pc.getRemoteStreams()[0]
+  // Check if it's an RTCPeerConnection with remote stream (getRemoteStreams() method)
+  if (typeof pc.getRemoteStreams === 'function') {
+    const remoteStreams = pc.getRemoteStreams()
+    if (remoteStreams && remoteStreams.length > 0) {
+      return remoteStreams[0]
+    }
   }
   
-  // Fallback: check if remoteStream property exists
+  // Fallback: check if remoteStream property exists (stored by peer-track-received handler)
   if (pc.remoteStream) {
     return pc.remoteStream
+  }
+  
+  // Also check window.appState in case Vue appState isn't synced yet
+  const windowPc = window.appState?.peerConnections?.[participantId]
+  if (windowPc?.remoteStream) {
+    return windowPc.remoteStream
   }
   
   return null

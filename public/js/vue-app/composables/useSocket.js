@@ -302,15 +302,42 @@ export function useSocket() {
 
     // Listen for peer track events (from peerConnection.js)
     document.addEventListener('peer-track-received', (event) => {
-      const { peerId, stream } = event.detail
-      const pc = appState.peerConnections[peerId]
+      const { peerId, stream, track } = event.detail
+      
+      // Ensure peerConnections is synced
+      if (!appState.peerConnections || typeof appState.peerConnections !== 'object') {
+        appState.peerConnections = window.appState?.peerConnections || {}
+      }
+      
+      const pc = appState.peerConnections[peerId] || window.appState?.peerConnections?.[peerId]
+      
       if (pc) {
         // Store remote stream on peer connection for Vue components
-        pc.remoteStream = stream
-        // Trigger reactivity by updating participants
-        if (appState.participants[peerId]) {
-          appState.participants[peerId] = { ...appState.participants[peerId] }
+        // Merge tracks into existing stream or create new one
+        if (!pc.remoteStream) {
+          pc.remoteStream = stream
+        } else {
+          // Add track to existing stream if not already present
+          const existingTrack = pc.remoteStream.getTracks().find(t => t.id === track.id)
+          if (!existingTrack && track) {
+            pc.remoteStream.addTrack(track)
+          }
         }
+        
+        // Also ensure window.appState has the stream (for classic UI compatibility)
+        if (window.appState?.peerConnections?.[peerId]) {
+          window.appState.peerConnections[peerId].remoteStream = pc.remoteStream
+        }
+        
+        // Force Vue reactivity by updating the peerConnections object
+        appState.peerConnections = { ...appState.peerConnections }
+        
+        // Trigger reactivity by updating participants
+        if (appState.participants && appState.participants[peerId]) {
+          appState.participants = { ...appState.participants }
+        }
+        
+        console.log(`Vue: Stored remote stream for ${peerId}, has ${pc.remoteStream.getVideoTracks().length} video and ${pc.remoteStream.getAudioTracks().length} audio tracks`)
       }
     })
   }

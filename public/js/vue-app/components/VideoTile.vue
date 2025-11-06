@@ -118,29 +118,64 @@ const hasAudio = computed(() => {
   return audioTracks.length > 0 && audioTracks.some(t => t.enabled)
 })
 
-watch(() => props.stream, (newStream) => {
+watch(() => props.stream, (newStream, oldStream) => {
   if (videoElement.value) {
-    if (newStream) {
-      videoElement.value.srcObject = newStream
-      // Force video to play
-      const playPromise = videoElement.value.play()
-      if (playPromise !== undefined) {
-        playPromise.catch(e => console.log('Video play error:', e))
+    // Only update if stream actually changed (by reference or by tracks)
+    const streamChanged = newStream !== oldStream
+    
+    if (newStream && streamChanged) {
+      // Clear first to prevent play() interruption errors
+      if (videoElement.value.srcObject) {
+        videoElement.value.srcObject = null
       }
-    } else {
+      
+      // Small delay to ensure previous stream is cleared
+      setTimeout(() => {
+        if (videoElement.value && newStream === props.stream) {
+          videoElement.value.srcObject = newStream
+          // Force video to play
+          const playPromise = videoElement.value.play()
+          if (playPromise !== undefined) {
+            playPromise.catch(e => {
+              // Ignore AbortError - it just means a new load started
+              if (!e.message || !e.message.includes('interrupted')) {
+                console.log('Video play error:', e)
+              }
+            })
+          }
+        }
+      }, 50)
+    } else if (!newStream && videoElement.value.srcObject) {
       videoElement.value.srcObject = null
     }
   }
 }, { immediate: true })
 
-watch(() => hasVideo.value, (hasVid) => {
-  // When video becomes available, ensure it's displayed
-  if (hasVid && videoElement.value && props.stream) {
-    videoElement.value.srcObject = props.stream
-    const playPromise = videoElement.value.play()
-    if (playPromise !== undefined) {
-      playPromise.catch(e => console.log('Video play error:', e))
-    }
+watch(() => hasVideo.value, (hasVid, oldHasVid) => {
+  // Only update if video state actually changed
+  if (hasVid !== oldHasVid && hasVid && videoElement.value && props.stream) {
+    // Debounce to prevent rapid changes
+    if (videoElement.value._updatingVideo) return
+    videoElement.value._updatingVideo = true
+    
+    setTimeout(() => {
+      if (videoElement.value && props.stream && hasVideo.value) {
+        if (videoElement.value.srcObject !== props.stream) {
+          videoElement.value.srcObject = props.stream
+          const playPromise = videoElement.value.play()
+          if (playPromise !== undefined) {
+            playPromise.catch(e => {
+              if (!e.message || !e.message.includes('interrupted')) {
+                console.log('Video play error:', e)
+              }
+            })
+          }
+        }
+      }
+      if (videoElement.value) {
+        videoElement.value._updatingVideo = false
+      }
+    }, 100)
   }
 }, { immediate: true })
 
@@ -149,14 +184,28 @@ watch(() => props.stream?.getVideoTracks(), (tracks) => {
   if (tracks && tracks.length > 0 && videoElement.value && props.stream) {
     const hasEnabledTrack = tracks.some(t => t && t.enabled && (t.readyState === 'live' || t.readyState === 'ready'))
     if (hasEnabledTrack) {
-      // Force update video element
-      if (videoElement.value) {
-        videoElement.value.srcObject = props.stream
-        const playPromise = videoElement.value.play()
-        if (playPromise !== undefined) {
-          playPromise.catch(e => console.log('Video play error:', e))
+      // Debounce to prevent rapid updates
+      if (videoElement.value._updatingVideo) return
+      videoElement.value._updatingVideo = true
+      
+      setTimeout(() => {
+        if (videoElement.value && props.stream && hasVideo.value) {
+          if (videoElement.value.srcObject !== props.stream) {
+            videoElement.value.srcObject = props.stream
+            const playPromise = videoElement.value.play()
+            if (playPromise !== undefined) {
+              playPromise.catch(e => {
+                if (!e.message || !e.message.includes('interrupted')) {
+                  console.log('Video play error:', e)
+                }
+              })
+            }
+          }
         }
-      }
+        if (videoElement.value) {
+          videoElement.value._updatingVideo = false
+        }
+      }, 150)
     }
   }
 }, { deep: true, immediate: true })
