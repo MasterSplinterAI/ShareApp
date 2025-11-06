@@ -19,6 +19,17 @@ export default defineConfig({
     base: './',
     // Target modern browsers that support top-level await
     target: 'esnext',
+    // Optimize build for smaller server
+    minify: 'terser', // Use terser for better minification
+    terserOptions: {
+      compress: {
+        drop_console: false, // Keep console.log for debugging
+        passes: 1, // Reduce passes to speed up build
+      },
+    },
+    chunkSizeWarningLimit: 1000, // Increase warning limit
+    // Reduce sourcemap generation (can be slow)
+    sourcemap: false,
   },
   server: {
     port: 5173,
