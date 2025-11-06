@@ -311,6 +311,8 @@ video {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  z-index: 20; /* Above video and placeholder */
+  pointer-events: auto; /* Allow clicking controls */
 }
 
 .info {
