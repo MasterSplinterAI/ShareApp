@@ -30,9 +30,10 @@ export class SignalingClient {
     return new Promise((resolve, reject) => {
       this.roomId = roomId;
       
-      console.log('SignalingClient: Connecting to', config.websocket.url);
+      console.log('SignalingClient: Connecting to', config.websocket.url, 'path:', config.websocket.path);
       
       this.socket = io(config.websocket.url, {
+        path: config.websocket.path,
         transports: ['websocket', 'polling'], // Add polling as fallback
         reconnection: true,
         reconnectionAttempts: 5,

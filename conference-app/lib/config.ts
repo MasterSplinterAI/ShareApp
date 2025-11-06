@@ -13,6 +13,9 @@ export const config = {
     url: typeof window !== 'undefined' 
          ? window.location.origin // Always use the current origin
          : (process.env.NEXT_PUBLIC_WS_URL || 'http://localhost:3001'),
+    path: typeof window !== 'undefined' && window.location.pathname.startsWith('/meet')
+         ? '/meet/socket.io/' // Production path with basePath
+         : '/socket.io/', // Development path (or fallback)
   },
 
   // Redis Configuration (optional)
