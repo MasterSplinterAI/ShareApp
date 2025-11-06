@@ -232,6 +232,10 @@ video {
   height: 100%;
   object-fit: contain;
   background: #000;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 2;
 }
 
 .placeholder {
@@ -243,6 +247,10 @@ video {
   justify-content: center;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 
 .avatar {
