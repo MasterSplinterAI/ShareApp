@@ -24,8 +24,18 @@ export function useMedia() {
   const toggleCam = async () => {
     try {
       await toggleCamera()
-      // State is updated in media.js via window.appState
-      // Vue reactivity will pick it up automatically
+      // Force Vue reactivity - window.appState.localStream reference might not change,
+      // but tracks within it do, so we need to trigger reactivity manually
+      if (window.appState && window.appState.localStream) {
+        // Update Vue appState to trigger reactivity
+        appState.localStream = window.appState.localStream
+        // Also update camera state
+        appState.isCameraOn = window.appState.isCameraOn || false
+        
+        // Force a reactive update by accessing tracks (triggers watchers)
+        const videoTracks = window.appState.localStream.getVideoTracks()
+        console.log(`Camera toggled: ${videoTracks.length} video tracks, enabled: ${videoTracks.some(t => t.enabled)}`)
+      }
     } catch (error) {
       console.error('Failed to toggle camera:', error)
     }

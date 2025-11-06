@@ -50,7 +50,16 @@ if (typeof window !== 'undefined') {
   // But don't sync roomId automatically - let Vue control that
   const syncInterval = setInterval(() => {
     if (window.appState) {
-      if (window.appState.localStream !== appState.localStream) appState.localStream = window.appState.localStream
+      // Force reactivity for localStream changes (especially when tracks are toggled)
+      const localStreamChanged = window.appState.localStream !== appState.localStream
+      if (localStreamChanged) {
+        appState.localStream = window.appState.localStream
+        // Force Vue to recognize the change even if it's the same object reference
+        if (window.appState.localStream && window.appState.localStream.getVideoTracks) {
+          // Trigger reactivity by accessing tracks
+          window.appState.localStream.getVideoTracks()
+        }
+      }
       if (window.appState.screenStream !== appState.screenStream) appState.screenStream = window.appState.screenStream
       if (window.appState.peerConnections !== appState.peerConnections) appState.peerConnections = window.appState.peerConnections
       // Don't auto-sync roomId - Vue controls joining

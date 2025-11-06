@@ -127,9 +127,21 @@ export function useSocket() {
       // Create peer connections for existing participants
       // Don't create connection to ourselves
       if (data.participants && Array.isArray(data.participants)) {
-        const currentSocketId = socket.id
+        // Use socket.id, fallback to data.you if socket.id isn't ready yet
+        const currentSocketId = socket.id || data.you || null
         if (!currentSocketId) {
-          console.warn('Socket ID not available, cannot filter self peer connections')
+          console.warn('Socket ID not available, waiting for socket connection...')
+          // Wait a bit for socket.id to be set
+          socket.once('connect', () => {
+            // Retry after connection is established
+            const retrySocketId = socket.id
+            if (retrySocketId && data.participants) {
+              const otherParticipants = data.participants.filter(p => p && p.id && p.id !== retrySocketId)
+              otherParticipants.forEach(participant => {
+                createPeerConnection(participant.id).catch(err => console.error(`Error creating peer connection for ${participant.id}:`, err))
+              })
+            }
+          })
           return
         }
         

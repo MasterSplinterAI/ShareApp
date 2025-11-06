@@ -79,8 +79,14 @@ const initials = computed(() => {
 
 const hasVideo = computed(() => {
   if (!props.stream) return false
-  const videoTracks = props.stream.getVideoTracks()
-  return videoTracks.length > 0 && videoTracks.some(t => t.enabled)
+  try {
+    const videoTracks = props.stream.getVideoTracks()
+    const hasEnabledTrack = videoTracks.length > 0 && videoTracks.some(t => t && t.enabled && t.readyState === 'live')
+    return hasEnabledTrack
+  } catch (e) {
+    console.error('Error checking video tracks:', e)
+    return false
+  }
 })
 
 const hasAudio = computed(() => {
@@ -116,20 +122,37 @@ watch(() => hasVideo.value, (hasVid) => {
 }, { immediate: true })
 
 watch(() => props.stream?.getVideoTracks(), (tracks) => {
-  // React to video track changes
+  // React to video track changes - check both tracks array and enabled state
   if (tracks && tracks.length > 0 && videoElement.value && props.stream) {
-    // Small delay to ensure track is fully initialized
-    setTimeout(() => {
-      if (videoElement.value && props.stream) {
-        videoElement.value.srcObject = props.stream
-        const playPromise = videoElement.value.play()
-        if (playPromise !== undefined) {
-          playPromise.catch(e => console.log('Video play error:', e))
+    const hasEnabledTrack = tracks.some(t => t && t.enabled && t.readyState === 'live')
+    if (hasEnabledTrack) {
+      // Small delay to ensure track is fully initialized
+      setTimeout(() => {
+        if (videoElement.value && props.stream) {
+          videoElement.value.srcObject = props.stream
+          const playPromise = videoElement.value.play()
+          if (playPromise !== undefined) {
+            playPromise.catch(e => console.log('Video play error:', e))
+          }
         }
-      }
-    }, 100)
+      }, 100)
+    }
   }
-}, { deep: true })
+}, { deep: true, immediate: true })
+
+// Watch for track enabled/disabled events more directly
+watch(() => hasVideo.value, (hasVid, oldHasVid) => {
+  if (hasVid !== oldHasVid && videoElement.value && props.stream) {
+    // Video state changed - force update
+    if (hasVid) {
+      videoElement.value.srcObject = props.stream
+      videoElement.value.play().catch(e => console.log('Video play error:', e))
+    } else {
+      // Video disabled - clear but keep element
+      videoElement.value.srcObject = null
+    }
+  }
+}, { immediate: true })
 
 onMounted(() => {
   if (videoElement.value && props.stream) {
