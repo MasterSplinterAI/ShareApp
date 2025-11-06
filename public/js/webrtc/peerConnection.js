@@ -532,16 +532,14 @@ export async function createPeerConnection(peerId) {
       });
       
       // Create or get the video container for this peer
-      let videoContainer = null;
-      {
-        videoContainer = document.getElementById(`video-container-${peerId}`);
-        if (!videoContainer) {
-          console.log(`Creating new video container for peer ${peerId}`);
-          videoContainer = createVideoContainerForPeer(peerId);
-        } else {
-          console.log(`Using existing video container for peer ${peerId}`);
-        }
-        
+      let videoContainer = document.getElementById(`video-container-${peerId}`);
+      if (!videoContainer) {
+        console.log(`Creating new video container for peer ${peerId}`);
+        videoContainer = createVideoContainerForPeer(peerId);
+      } else {
+        console.log(`Using existing video container for peer ${peerId}`);
+      }
+      
       // If we couldn't create a container, exit early
       if (!videoContainer) {
         console.error(`Failed to create or find video container for peer ${peerId}`);
