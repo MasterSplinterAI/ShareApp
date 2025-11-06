@@ -80,7 +80,9 @@ export function useAppState() {
     if (!appState.participants || typeof appState.participants !== 'object') {
       return 0
     }
-    return Object.keys(appState.participants).length
+    // Count only remote participants (exclude local if it exists)
+    const participants = Object.keys(appState.participants)
+    return participants.filter(id => id !== 'local').length
   })
   const hasLocalVideo = computed(() => {
     return appState.localStream && appState.localStream.getVideoTracks().length > 0
