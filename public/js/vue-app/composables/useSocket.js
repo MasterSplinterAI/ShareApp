@@ -218,11 +218,21 @@ export function useSocket() {
     })
 
     socket.on('join-error', (data) => {
-      console.error('Join error:', data)
-      const errorMessage = data.message || data.error || 'Failed to join room'
+      console.error('Join error data:', JSON.stringify(data, null, 2))
+      console.error('Join error details:', data)
+      
+      // Extract error message - handle both string and object formats
+      let errorMessage = 'Failed to join room'
+      if (typeof data === 'string') {
+        errorMessage = data
+      } else if (data && typeof data === 'object') {
+        errorMessage = data.message || data.error || data.reason || JSON.stringify(data)
+      }
+      
+      console.error('Join error message:', errorMessage)
       
       // Handle specific error cases
-      if (errorMessage.includes('INVALID_ACCESS_CODE') || errorMessage.includes('INVALID_HOST_CODE')) {
+      if (errorMessage.includes('INVALID_ACCESS_CODE') || errorMessage.includes('INVALID_HOST_CODE') || errorMessage.includes('access code')) {
         alert(`Access denied: ${errorMessage}. Please check your access code and try again.`)
       } else {
         alert(`Join failed: ${errorMessage}`)
@@ -311,14 +321,26 @@ export function useSocket() {
         appState.userName = userName
         appState.roomId = roomId
         
-        socket.emit('join', {
+        const joinData = {
           roomId,
           userName,
           providedAccessCode: accessCode,
           roomHostCode,
           roomAccessCode,
           isHost: isHost || (roomHostCode !== null), // If roomHostCode is provided, likely hosting
+        }
+        
+        console.log('Emitting join (after connect) with data:', {
+          roomId,
+          userName,
+          hasProvidedAccessCode: accessCode !== null && accessCode !== '',
+          providedAccessCode: accessCode ? '***' : null,
+          hasRoomHostCode: roomHostCode !== null && roomHostCode !== '',
+          hasRoomAccessCode: roomAccessCode !== null && roomAccessCode !== '',
+          isHost: joinData.isHost
         })
+        
+        socket.emit('join', joinData)
       })
       return
     }
@@ -343,14 +365,26 @@ export function useSocket() {
       }
     }
 
-    socket.emit('join', {
+    const joinData = {
       roomId,
       userName,
       providedAccessCode: accessCode,
       roomHostCode,
       roomAccessCode,
       isHost: isHost || (roomHostCode !== null), // If roomHostCode is provided, likely hosting
+    }
+    
+    console.log('Emitting join with data:', {
+      roomId,
+      userName,
+      hasProvidedAccessCode: accessCode !== null && accessCode !== '',
+      providedAccessCode: accessCode ? '***' : null, // Don't log actual code
+      hasRoomHostCode: roomHostCode !== null && roomHostCode !== '',
+      hasRoomAccessCode: roomAccessCode !== null && roomAccessCode !== '',
+      isHost: joinData.isHost
     })
+    
+    socket.emit('join', joinData)
   }
 
   const leaveRoom = () => {
