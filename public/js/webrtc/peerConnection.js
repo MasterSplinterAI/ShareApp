@@ -542,11 +542,10 @@ export async function createPeerConnection(peerId) {
           console.log(`Using existing video container for peer ${peerId}`);
         }
         
-        // If we couldn't create a container, exit early
-        if (!videoContainer) {
-          console.error(`Failed to create or find video container for peer ${peerId}`);
-          return;
-        }
+      // If we couldn't create a container, exit early
+      if (!videoContainer) {
+        console.error(`Failed to create or find video container for peer ${peerId}`);
+        return;
       }
       
       // If this is a video track

@@ -338,7 +338,7 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
     updateLocalStatusIndicators();
     
     // Now that we have attempted to get permissions, update device lists
-    // Only setup device selectors if we're in classic UI (Vue UI handles this differently)
+    // Setup device selectors
     try {
       // Check if we're in Vue UI (no device selectors in Vue HTML)
       const hasDeviceSelectors = document.getElementById('cameraSelect') || 
