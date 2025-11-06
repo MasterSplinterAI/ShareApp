@@ -6,10 +6,10 @@
       autoplay
       playsinline
       muted
-      v-if="stream && hasVideo"
+      v-show="stream && hasVideo"
     ></video>
     
-    <div v-else class="placeholder">
+    <div v-show="!hasVideo || !stream" class="placeholder">
       <div class="avatar">
         {{ initials }}
       </div>
