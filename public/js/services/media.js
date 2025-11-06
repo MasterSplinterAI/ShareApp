@@ -298,8 +298,9 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
           placeholder.classList.remove('hidden');
         }
         
-        // Also update main video if it's showing local
-        if (window.appState.pinnedParticipant === 'local') {
+        // Also update main video if it's showing local (only for classic UI, not Vue)
+        const isVueUI = document.getElementById('app') && document.querySelector('.video-grid-container');
+        if (!isVueUI && window.appState.pinnedParticipant === 'local') {
           const mainVideoContainer = document.getElementById('mainVideoContainer');
           if (mainVideoContainer) {
             let placeholder = mainVideoContainer.querySelector('.no-video-placeholder');
@@ -331,8 +332,11 @@ export async function initializeMedia(constraints = null, allowViewOnly = true) 
       }
     }
     
-    // Update UI to reflect media state
-    updateVideoUI();
+    // Update UI to reflect media state (only for classic UI, not Vue)
+    const isVueUI = document.getElementById('app') && document.querySelector('.video-grid-container');
+    if (!isVueUI) {
+      updateVideoUI();
+    }
     
     // Update status indicators
     updateLocalStatusIndicators();

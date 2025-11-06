@@ -127,51 +127,39 @@ export function useSocket() {
       // Create peer connections for existing participants
       // Don't create connection to ourselves
       if (data.participants && Array.isArray(data.participants)) {
-        // Use socket.id, fallback to data.you if socket.id isn't ready yet
-        const currentSocketId = socket.id || data.you || null
+        // Use data.you first (most reliable), then socket.id as fallback
+        const currentSocketId = data.you || socket.id || null
         if (!currentSocketId) {
-          console.warn('Socket ID not available, waiting for socket connection...')
-          // Wait a bit for socket.id to be set
-          socket.once('connect', () => {
-            // Retry after connection is established
-            const retrySocketId = socket.id
-            if (retrySocketId && data.participants) {
-              const otherParticipants = data.participants.filter(p => p && p.id && p.id !== retrySocketId)
-              otherParticipants.forEach(participant => {
-                createPeerConnection(participant.id).catch(err => console.error(`Error creating peer connection for ${participant.id}:`, err))
-              })
-            }
-          })
+          console.warn('Socket ID not available, skipping peer connection creation for now')
+          console.log('data.you:', data.you, 'socket.id:', socket.id, 'participants:', data.participants)
           return
         }
         
+        console.log(`Using socket ID: ${currentSocketId} (from data.you: ${data.you || 'none'}, socket.id: ${socket.id || 'none'})`)
+        
         const otherParticipants = data.participants.filter(p => {
           if (!p || !p.id) {
-            console.log('Filtering out invalid participant:', p)
             return false
           }
           // CRITICAL: Don't create peer connection to ourselves
           if (p.id === currentSocketId) {
-            console.log(`🔴 Skipping self peer connection for ${p.id} (current socket: ${currentSocketId})`)
+            console.log(`🔴 Skipping self peer connection for ${p.id}`)
             return false
           }
           // Check if peer connection already exists
           if (appState.peerConnections && appState.peerConnections[p.id]) {
-            console.log(`Peer connection already exists for ${p.id}`)
             return false
           }
           // Also check window.appState.peerConnections
           if (window.appState && window.appState.peerConnections && window.appState.peerConnections[p.id]) {
-            console.log(`Peer connection already exists in window.appState for ${p.id}`)
             return false
           }
           return true
         })
         
-        console.log(`Creating peer connections for ${otherParticipants.length} remote participants (total participants: ${data.participants.length})`)
+        console.log(`Creating peer connections for ${otherParticipants.length} remote participants (total: ${data.participants.length}, current: ${currentSocketId})`)
         for (const participant of otherParticipants) {
           try {
-            console.log(`Attempting to create peer connection for ${participant.id}`)
             await createPeerConnection(participant.id)
           } catch (error) {
             console.error(`Error creating peer connection for ${participant.id}:`, error)
