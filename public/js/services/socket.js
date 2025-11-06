@@ -537,15 +537,27 @@ export function sendOffer(targetUserId, sdp, isRenegotiation = false) {
     console.error('Cannot send offer - socket not initialized');
     return;
   }
-  // Check both window.appState and ensure roomId exists
-  if (!window.appState || !window.appState.roomId) {
-    // Silently skip if roomId not set yet (may be setting up)
+  
+  // Check both window.appState and Vue appState for roomId
+  let roomId = window.appState?.roomId
+  if (!roomId && typeof window !== 'undefined' && window.__vueAppState) {
+    roomId = window.__vueAppState?.roomId
+    if (roomId) {
+      // Sync to window.appState for consistency
+      if (!window.appState) window.appState = {}
+      window.appState.roomId = roomId
+      console.log('Using Vue appState roomId for offer:', roomId)
+    }
+  }
+  
+  if (!roomId) {
+    console.error('Cannot send offer - not connected to room (roomId:', window.appState?.roomId, ', Vue roomId:', window.__vueAppState?.roomId, ')');
     return;
   }
   
   const emitSocket = getSocket()
   emitSocket.emit('offer', {
-    roomId: window.appState.roomId,
+    roomId: roomId,
     targetUserId: targetUserId,
     sdp: sdp,
     renegotiation: isRenegotiation
@@ -554,15 +566,33 @@ export function sendOffer(targetUserId, sdp, isRenegotiation = false) {
 
 // Send renegotiation offer specifically (for media changes)
 export function sendRenegotiationOffer(targetUserId, sdp) {
-  if (!socket || !window.appState.roomId) {
-    console.error('Cannot send renegotiation offer - not connected to room');
+  const currentSocket = getSocket()
+  if (!currentSocket) {
+    console.error('Cannot send renegotiation offer - socket not initialized');
+    return;
+  }
+  
+  // Check both window.appState and Vue appState for roomId
+  let roomId = window.appState?.roomId
+  if (!roomId && typeof window !== 'undefined' && window.__vueAppState) {
+    roomId = window.__vueAppState?.roomId
+    if (roomId) {
+      // Sync to window.appState for consistency
+      if (!window.appState) window.appState = {}
+      window.appState.roomId = roomId
+      console.log('Using Vue appState roomId for renegotiation offer:', roomId)
+    }
+  }
+  
+  if (!roomId) {
+    console.error('Cannot send renegotiation offer - not connected to room (roomId:', window.appState?.roomId, ', Vue roomId:', window.__vueAppState?.roomId, ')');
     return;
   }
   
   console.log(`Sending renegotiation offer to ${targetUserId}`);
   
-  socket.emit('offer', {
-    roomId: window.appState.roomId,
+  currentSocket.emit('offer', {
+    roomId: roomId,
     targetUserId: targetUserId,
     sdp: sdp,
     renegotiation: true
@@ -571,16 +601,34 @@ export function sendRenegotiationOffer(targetUserId, sdp) {
 
 // Special function for screen sharing renegotiation - ensures video tracks can be received
 export function sendScreenSharingOffer(targetUserId, sdp) {
-  if (!socket || !window.appState.roomId) {
-    console.error('Cannot send screen sharing offer - not connected to room');
+  const currentSocket = getSocket()
+  if (!currentSocket) {
+    console.error('Cannot send screen sharing offer - socket not initialized');
+    return;
+  }
+  
+  // Check both window.appState and Vue appState for roomId
+  let roomId = window.appState?.roomId
+  if (!roomId && typeof window !== 'undefined' && window.__vueAppState) {
+    roomId = window.__vueAppState?.roomId
+    if (roomId) {
+      // Sync to window.appState for consistency
+      if (!window.appState) window.appState = {}
+      window.appState.roomId = roomId
+      console.log('Using Vue appState roomId for screen sharing offer:', roomId)
+    }
+  }
+  
+  if (!roomId) {
+    console.error('Cannot send screen sharing offer - not connected to room (roomId:', window.appState?.roomId, ', Vue roomId:', window.__vueAppState?.roomId, ')');
     return;
   }
   
   console.log(`Sending screen sharing offer to ${targetUserId}`);
   
   // Mark this as a special screen sharing renegotiation
-  socket.emit('offer', {
-    roomId: window.appState.roomId,
+  currentSocket.emit('offer', {
+    roomId: roomId,
     targetUserId: targetUserId,
     sdp: sdp,
     renegotiation: true,

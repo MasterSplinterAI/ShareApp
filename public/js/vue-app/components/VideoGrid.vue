@@ -18,7 +18,7 @@
       <!-- Remote participants -->
       <VideoTile
         v-for="participant in remoteParticipants"
-        :key="participant.id"
+        :key="`${participant.id}-${hasStreamForParticipant(participant.id)}`"
         :stream="getStreamForParticipant(participant.id)"
         :participant="participant"
         :is-pinned="appState.pinnedParticipant === participant.id"
@@ -78,10 +78,22 @@ const gridClass = computed(() => {
   return 'grid-many'
 })
 
-// Make this a computed property for reactivity
+// Helper to check if participant has a stream (for reactivity)
+const hasStreamForParticipant = (participantId) => {
+  const pc = appState.peerConnections?.[participantId] || window.appState?.peerConnections?.[participantId]
+  if (!pc) return false
+  
+  // Check both getRemoteStreams() and remoteStream property
+  if (typeof pc.getRemoteStreams === 'function') {
+    const streams = pc.getRemoteStreams()
+    if (streams && streams.length > 0) return true
+  }
+  return !!pc.remoteStream
+}
+
+// Make this a function that accesses reactive state
 const getStreamForParticipant = (participantId) => {
-  // This is called from template, so ensure it's reactive
-  // Access appState properties to ensure Vue tracks dependencies
+  // Access appState to ensure Vue tracks dependencies
   if (!appState.peerConnections || typeof appState.peerConnections !== 'object') {
     // Try window.appState as fallback
     const windowPc = window.appState?.peerConnections?.[participantId]
@@ -101,6 +113,10 @@ const getStreamForParticipant = (participantId) => {
       // Ensure remoteStream property is also set for consistency
       if (!pc.remoteStream || pc.remoteStream !== stream) {
         pc.remoteStream = stream
+        // Force reactivity update
+        if (appState.peerConnections[participantId]) {
+          appState.peerConnections = { ...appState.peerConnections }
+        }
       }
       return stream
     }
@@ -120,6 +136,8 @@ const getStreamForParticipant = (participantId) => {
     }
     if (appState.peerConnections[participantId] && !appState.peerConnections[participantId].remoteStream) {
       appState.peerConnections[participantId].remoteStream = windowPc.remoteStream
+      // Force reactivity
+      appState.peerConnections = { ...appState.peerConnections }
     }
     return windowPc.remoteStream
   }
