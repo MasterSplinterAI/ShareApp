@@ -26,9 +26,14 @@ if (typeof window === 'undefined' && process.env.NODE_ENV === 'production') {
         if (!process.env[key]) {
           process.env[key] = value;
         }
+        // Also set CLOUDFLARE_API_TOKEN if CLOUDFLARE_TURN_API_TOKEN is set (for compatibility)
+        if (key === 'CLOUDFLARE_TURN_API_TOKEN' && !process.env.CLOUDFLARE_API_TOKEN) {
+          process.env.CLOUDFLARE_API_TOKEN = value;
+        }
       }
     });
     console.log('✅ Loaded .env.production in TURN API route');
+    console.log(`✅ CLOUDFLARE_API_TOKEN: ${process.env.CLOUDFLARE_API_TOKEN ? 'SET (' + process.env.CLOUDFLARE_API_TOKEN.substring(0, 10) + '...)' : 'NOT SET'}`);
     console.log(`✅ CLOUDFLARE_TURN_API_TOKEN: ${process.env.CLOUDFLARE_TURN_API_TOKEN ? 'SET (' + process.env.CLOUDFLARE_TURN_API_TOKEN.substring(0, 10) + '...)' : 'NOT SET'}`);
     console.log(`✅ CLOUDFLARE_TURN_TOKEN_ID: ${process.env.CLOUDFLARE_TURN_TOKEN_ID ? 'SET (' + process.env.CLOUDFLARE_TURN_TOKEN_ID + ')' : 'NOT SET'}`);
   } catch (e: any) {
@@ -43,18 +48,26 @@ export async function GET(request: NextRequest) {
     // For now, we'll provide TURN credentials to any authenticated request
 
     // Debug: Check if environment variables are available
-    const hasApiToken = !!process.env.CLOUDFLARE_TURN_API_TOKEN;
+    const hasApiToken = !!process.env.CLOUDFLARE_API_TOKEN || !!process.env.CLOUDFLARE_TURN_API_TOKEN;
     const hasTokenId = !!process.env.CLOUDFLARE_TURN_TOKEN_ID;
-    console.log(`TURN API: Has API token: ${hasApiToken}, Has token ID: ${hasTokenId}`);
+    console.error(`[TURN API] Has API token: ${hasApiToken}, Has token ID: ${hasTokenId}`);
+    console.error(`[TURN API] CLOUDFLARE_API_TOKEN: ${process.env.CLOUDFLARE_API_TOKEN ? 'SET' : 'NOT SET'}`);
+    console.error(`[TURN API] CLOUDFLARE_TURN_TOKEN_ID: ${process.env.CLOUDFLARE_TURN_TOKEN_ID || 'NOT SET'}`);
 
     let credentials: any[] = [];
     try {
+      console.error('[TURN API] Creating TURN instance...');
       const turnInstance = getTURNInstance();
+      console.error('[TURN API] TURN instance created, generating credentials...');
       credentials = await turnInstance.generateCredentials();
-      console.log(`✅ Generated ${credentials.length} Cloudflare TURN server(s)`);
+      console.error(`[TURN API] ✅ Generated ${credentials.length} Cloudflare TURN server(s)`);
+      if (credentials.length > 0) {
+        console.error(`[TURN API] First TURN server URLs:`, JSON.stringify(credentials[0].urls));
+      }
     } catch (error: any) {
-      console.error('⚠️ Failed to generate Cloudflare TURN credentials:', error.message);
-      console.error('Error stack:', error.stack);
+      console.error('[TURN API] ⚠️ Failed to generate Cloudflare TURN credentials');
+      console.error('[TURN API] Error message:', error?.message || String(error));
+      console.error('[TURN API] Error stack:', error?.stack || 'No stack trace');
       // Continue with fallback STUN servers only
     }
 
