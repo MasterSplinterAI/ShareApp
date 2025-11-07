@@ -177,4 +177,8 @@ class RoomStorage {
 }
 
 // Singleton instance
+// Export both the class and instance
 export const roomStorage = new RoomStorage();
+
+// Also export the class for server-side usage
+export { RoomStorage };
