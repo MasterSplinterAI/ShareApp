@@ -1,1 +1,1 @@
-{"/_not-found/page":"/_not-found","/room/[roomId]/page":"/room/[roomId]","/page":"/","/api/turn/route":"/api/turn","/host/page":"/host","/api/rooms/route":"/api/rooms","/api/rooms/[roomId]/validate/route":"/api/rooms/[roomId]/validate"}
+{"/_not-found/page":"/_not-found","/room/[roomId]/page":"/room/[roomId]","/page":"/","/api/turn/route":"/api/turn","/host/page":"/host","/api/rooms/[roomId]/validate/route":"/api/rooms/[roomId]/validate","/api/rooms/route":"/api/rooms"}

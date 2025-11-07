@@ -81,23 +81,33 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
         onStreamRemoved: (streamId, userId) => {
           const { participants, localParticipant } = get();
           
+          console.log(`[Store] onStreamRemoved: streamId=${streamId}, userId=${userId}`);
+          
           // Handle local participant stream removal
           if (userId === 'local' && localParticipant) {
             if (localParticipant.screenStream?.id === streamId) {
+              console.log(`[Store] Removing local screen share stream: ${streamId}`);
               set({ 
                 localParticipant: { 
                   ...localParticipant, 
                   screenStream: undefined 
                 } 
               });
+              // Also update the store's screen sharing state
+              set({ isScreenSharing: false });
+            } else if (localParticipant.stream?.id === streamId) {
+              console.log(`[Store] WARNING: Attempted to remove local video stream, preserving it`);
+              // Don't remove the local video stream - it should always be present
             }
           } else {
             // Handle remote participant stream removal
             const participant = participants.get(userId);
             if (participant) {
               if (participant.screenStream?.id === streamId) {
+                console.log(`[Store] Removing remote screen share for ${userId}`);
                 participant.screenStream = undefined;
-              } else {
+              } else if (participant.stream?.id === streamId) {
+                console.log(`[Store] Removing remote video stream for ${userId}`);
                 participant.stream = undefined;
               }
               set({ participants: new Map(participants) });
@@ -190,8 +200,20 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
 
     try {
       if (isScreenSharing) {
+        console.log('[Store] Stopping screen share');
         connectionManager.stopScreenShare();
+        // The onStreamRemoved handler will update isScreenSharing, but set it here too for immediate feedback
         set({ isScreenSharing: false });
+        // Also explicitly clear the screenStream from localParticipant
+        const { localParticipant } = get();
+        if (localParticipant?.screenStream) {
+          set({
+            localParticipant: {
+              ...localParticipant,
+              screenStream: undefined
+            }
+          });
+        }
       } else {
         await connectionManager.startScreenShare();
         set({ isScreenSharing: true });
@@ -302,17 +324,23 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
     console.log(`[Store] Participant ${id} removed. Remaining participants: ${newParticipants.size}`);
     console.log(`[Store] Local participant exists: ${!!localParticipant}, has stream: ${!!localParticipant?.stream}`);
     
-    // Ensure local participant is preserved
+    // Ensure local participant is preserved - explicitly include it in the set call
     if (!localParticipant || !localParticipant.stream) {
       console.error(`[Store] CRITICAL: Local participant missing or has no stream before removal!`);
     }
     
-    set({ participants: newParticipants });
+    // Explicitly preserve localParticipant when updating participants
+    set({ 
+      participants: newParticipants,
+      localParticipant: localParticipant ? { ...localParticipant } : null
+    });
     
     // Verify local participant is still intact after set
     const { localParticipant: verifyLocal } = get();
     if (!verifyLocal || !verifyLocal.stream) {
       console.error(`[Store] CRITICAL: Local participant stream was lost after removal!`);
+    } else {
+      console.log(`[Store] Local participant preserved: has stream=${!!verifyLocal.stream}, has screenStream=${!!verifyLocal.screenStream}`);
     }
   },
 
