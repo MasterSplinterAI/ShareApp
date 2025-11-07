@@ -24,35 +24,112 @@ export default function VideoTile({
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
-    if (!videoRef.current || !stream) return;
+    if (!videoRef.current) return;
 
-    videoRef.current.srcObject = stream;
-    
-    // Check if stream has video
-    const videoTracks = stream.getVideoTracks();
-    setHasVideo(videoTracks.length > 0 && videoTracks[0].enabled);
+    // Always set the stream for local videos to ensure connection is maintained
+    // For remote videos, only update if the stream reference changed
+    if (stream) {
+      const currentStream = videoRef.current.srcObject as MediaStream | null;
+      
+      // For local streams, always ensure it's set (handles re-renders and connection issues)
+      // For remote streams, only update if reference changed
+      const shouldUpdate = isLocal ? (currentStream !== stream || !currentStream) : (currentStream !== stream);
+      
+      if (shouldUpdate) {
+        console.log(`[VideoTile] ${isLocal ? 'LOCAL' : 'REMOTE'} Setting stream for ${isLocal ? 'local' : participant.id}:`, stream.id, 'tracks:', stream.getTracks().length);
+        videoRef.current.srcObject = stream;
+        
+        // For local videos, ensure muted and autoplay
+        if (isLocal) {
+          videoRef.current.muted = true;
+        }
+        
+        // Try to play the video
+        videoRef.current.play().catch(err => {
+          console.warn(`[VideoTile] Could not autoplay video:`, err);
+        });
+      }
+      
+      // Always check video state, even if stream reference didn't change
+      // This handles cases where tracks are enabled/disabled
+      const videoTracks = stream.getVideoTracks();
+      const hasVideoTracks = videoTracks.length > 0 && videoTracks[0].enabled && videoTracks[0].readyState === 'live';
+      setHasVideo(hasVideoTracks);
+      
+      // If video should be showing but element shows black, force refresh
+      if (hasVideoTracks && videoRef.current && videoRef.current.readyState === 0) {
+        console.log(`[VideoTile] Video element not ready, forcing reload for ${isLocal ? 'local' : participant.id}`);
+        videoRef.current.load();
+        videoRef.current.play().catch(err => {
+          console.warn(`[VideoTile] Could not play after reload:`, err);
+        });
+      }
+    } else {
+      // Clear the stream if it's null
+      videoRef.current.srcObject = null;
+      setHasVideo(false);
+    }
 
     // Listen for track changes
-    const handleTrackChange = () => {
-      const tracks = stream.getVideoTracks();
-      setHasVideo(tracks.length > 0 && tracks[0].enabled);
-    };
+    if (stream) {
+      const handleTrackChange = () => {
+        const tracks = stream.getVideoTracks();
+        const hasVideoTracks = tracks.length > 0 && tracks[0].enabled && tracks[0].readyState === 'live';
+        setHasVideo(hasVideoTracks);
+        
+        // If tracks were added and video element exists, ensure it's playing
+        if (hasVideoTracks && videoRef.current) {
+          videoRef.current.play().catch(err => {
+            console.warn(`[VideoTile] Could not play after track change:`, err);
+          });
+        }
+      };
 
-    stream.addEventListener('addtrack', handleTrackChange);
-    stream.addEventListener('removetrack', handleTrackChange);
+      const handleTrackEnded = () => {
+        console.log(`[VideoTile] Track ended for ${isLocal ? 'local' : participant.id}`);
+        setHasVideo(false);
+      };
 
-    return () => {
-      stream.removeEventListener('addtrack', handleTrackChange);
-      stream.removeEventListener('removetrack', handleTrackChange);
-    };
-  }, [stream]);
+      stream.addEventListener('addtrack', handleTrackChange);
+      stream.addEventListener('removetrack', handleTrackChange);
+      
+      // Listen for track ended events
+      stream.getVideoTracks().forEach(track => {
+        track.addEventListener('ended', handleTrackEnded);
+      });
+
+      return () => {
+        stream.removeEventListener('addtrack', handleTrackChange);
+        stream.removeEventListener('removetrack', handleTrackChange);
+        stream.getVideoTracks().forEach(track => {
+          track.removeEventListener('ended', handleTrackEnded);
+        });
+      };
+    }
+  }, [stream, isLocal, participant.id]);
 
   // Update video state when participant media state changes
   useEffect(() => {
     if (!isScreenShare && participant.videoEnabled !== undefined) {
       setHasVideo(participant.videoEnabled);
+      
+      // If video was enabled, ensure the video element is playing
+      if (participant.videoEnabled && videoRef.current && stream) {
+        const videoTracks = stream.getVideoTracks();
+        if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
+          // Ensure stream is set
+          if (videoRef.current.srcObject !== stream) {
+            console.log(`[VideoTile] Restoring stream after video enabled for ${isLocal ? 'local' : participant.id}`);
+            videoRef.current.srcObject = stream;
+          }
+          // Try to play
+          videoRef.current.play().catch(err => {
+            console.warn(`[VideoTile] Could not play after enabling video:`, err);
+          });
+        }
+      }
     }
-  }, [participant.videoEnabled, isScreenShare]);
+  }, [participant.videoEnabled, isScreenShare, stream, isLocal, participant.id]);
 
   // Handle Picture-in-Picture
   const togglePiP = async () => {

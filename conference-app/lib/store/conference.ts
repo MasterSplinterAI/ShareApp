@@ -168,11 +168,17 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
     connectionManager.setAudioEnabled(newState);
     set({ isAudioEnabled: newState });
 
-    // Update local participant
+    // Update local participant - preserve stream reference
     const { localParticipant } = get();
     if (localParticipant) {
-      localParticipant.audioEnabled = newState;
-      set({ localParticipant: { ...localParticipant } });
+      set({ 
+        localParticipant: { 
+          ...localParticipant,
+          audioEnabled: newState,
+          stream: localParticipant.stream, // Explicitly preserve stream reference
+          screenStream: localParticipant.screenStream, // Preserve screenStream too
+        } 
+      });
     }
   },
 
@@ -185,11 +191,17 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
     connectionManager.setVideoEnabled(newState);
     set({ isVideoEnabled: newState });
 
-    // Update local participant
+    // Update local participant - preserve stream reference
     const { localParticipant } = get();
     if (localParticipant) {
-      localParticipant.videoEnabled = newState;
-      set({ localParticipant: { ...localParticipant } });
+      set({ 
+        localParticipant: { 
+          ...localParticipant,
+          videoEnabled: newState,
+          stream: localParticipant.stream, // Explicitly preserve stream reference
+          screenStream: localParticipant.screenStream, // Preserve screenStream too
+        } 
+      });
     }
   },
 
@@ -259,24 +271,37 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
 
   // Add participant
   addParticipant: (id: string, stream?: MediaStream, isScreenShare: boolean = false) => {
-    const { participants } = get();
+    const { participants, localParticipant } = get();
     
     if (id === 'local') {
-      // Handle local participant
-      const localParticipant = get().localParticipant || {
+      // Handle local participant - preserve existing stream if updating
+      const currentLocal = localParticipant || {
         id: 'local',
         audioEnabled: true,
         videoEnabled: true,
         connectionState: 'connected' as RTCPeerConnectionState,
       };
       
+      // Create new object but preserve stream references
+      const updatedLocal: Participant = {
+        ...currentLocal,
+      };
+      
       if (isScreenShare) {
-        localParticipant.screenStream = stream;
+        updatedLocal.screenStream = stream;
       } else {
-        localParticipant.stream = stream;
+        // IMPORTANT: Only update the stream if we have a new one
+        // This prevents clearing the stream on re-renders
+        if (stream) {
+          updatedLocal.stream = stream;
+          console.log(`[Store] Setting local stream:`, stream.id, 'tracks:', stream.getTracks().length);
+        } else {
+          // Preserve existing stream if no new stream provided
+          updatedLocal.stream = currentLocal.stream;
+        }
       }
       
-      set({ localParticipant });
+      set({ localParticipant: updatedLocal });
     } else {
       // Handle remote participant
       let participant = participants.get(id);
@@ -330,9 +355,15 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
     }
     
     // Explicitly preserve localParticipant when updating participants
+    // CRITICAL: Preserve the stream reference, don't create a new object that might lose it
     set({ 
       participants: newParticipants,
-      localParticipant: localParticipant ? { ...localParticipant } : null
+      // Create a new object but preserve all properties including stream references
+      localParticipant: localParticipant ? {
+        ...localParticipant,
+        stream: localParticipant.stream, // Explicitly preserve stream reference
+        screenStream: localParticipant.screenStream, // Explicitly preserve screenStream reference
+      } : null
     });
     
     // Verify local participant is still intact after set
