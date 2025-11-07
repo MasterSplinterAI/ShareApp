@@ -4,6 +4,6 @@
   "/api/rooms/route": "app/api/rooms/route.js",
   "/api/turn/route": "app/api/turn/route.js",
   "/host/page": "app/host/page.js",
-  "/room/[roomId]/page": "app/room/[roomId]/page.js",
-  "/page": "app/page.js"
+  "/page": "app/page.js",
+  "/room/[roomId]/page": "app/room/[roomId]/page.js"
 }

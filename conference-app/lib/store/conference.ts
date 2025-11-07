@@ -133,16 +133,18 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
 
       await manager.initialize(roomId, pin);
 
+      console.log('ConferenceStore: Initialization successful');
       set({
         connectionManager: manager,
         isConnecting: false,
         isConnected: true,
       });
     } catch (error: any) {
+      console.error('ConferenceStore: Initialization failed:', error);
       set({
         isConnecting: false,
         isConnected: false,
-        error: error.message || 'Failed to connect',
+        error: error.message || 'Failed to connect to conference',
       });
     }
   },

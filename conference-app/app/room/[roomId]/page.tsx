@@ -48,7 +48,12 @@ export default function RoomPage() {
   useEffect(() => {
     // Initialize conference after room validation
     if (roomInfo && !isConnected && !isConnecting) {
-      initialize(roomId, pin!, roomInfo.isHost);
+      console.log('RoomPage: Starting conference initialization');
+      initialize(roomId, pin!, roomInfo.isHost)
+        .catch((err) => {
+          console.error('Conference initialization failed:', err);
+          setError(`Failed to join conference: ${err.message}`);
+        });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomInfo, isConnected, isConnecting]);
@@ -86,7 +91,8 @@ export default function RoomPage() {
       setRoomInfo(data);
       setIsValidating(false);
     } catch (err: any) {
-      setError(err.message);
+      console.error('Room validation failed:', err);
+      setError(err.message || 'Failed to join room. Please check your PIN and try again.');
       setIsValidating(false);
     }
   };

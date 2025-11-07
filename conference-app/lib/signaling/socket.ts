@@ -80,6 +80,11 @@ export class SignalingClient {
       this.events.onUserLeft?.(userId);
     });
 
+    this.socket.on('room-error', ({ error }) => {
+      console.error('Room error:', error);
+      reject(new Error(error));
+    });
+
     this.socket.on('offer', (data) => {
       console.log('Received offer from:', data.from);
       this.events.onOffer?.(data);

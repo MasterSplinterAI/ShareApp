@@ -182,3 +182,8 @@ export const roomStorage = new RoomStorage();
 
 // Also export the class for server-side usage
 export { RoomStorage };
+
+// Export for CommonJS (server-side)
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { roomStorage, RoomStorage };
+}
