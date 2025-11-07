@@ -47,12 +47,22 @@ export class CloudflareTURN {
       const https = require('https');
       const postData = JSON.stringify({ ttl });
       
+      // Debug: Log token details (first/last chars only for security)
+      console.log(`[CloudflareTURN] API Token length: ${this.apiToken.length}`);
+      console.log(`[CloudflareTURN] API Token first 10: ${this.apiToken.substring(0, 10)}`);
+      console.log(`[CloudflareTURN] API Token last 10: ${this.apiToken.substring(this.apiToken.length - 10)}`);
+      console.log(`[CloudflareTURN] Token ID: ${this.turnTokenId}`);
+      
+      const authHeader = `Bearer ${this.apiToken}`;
+      console.log(`[CloudflareTURN] Authorization header length: ${authHeader.length}`);
+      console.log(`[CloudflareTURN] Authorization header first 20: ${authHeader.substring(0, 20)}...`);
+      
       const options = {
         hostname: 'rtc.live.cloudflare.com',
         path: `/v1/turn/keys/${this.turnTokenId}/credentials/generate-ice-servers`,
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiToken}`,
+          'Authorization': authHeader,
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(postData)
         }
@@ -67,7 +77,9 @@ export class CloudflareTURN {
           res.on('end', () => {
             try {
               // Cloudflare returns 201 (Created) for successful credential generation
+              console.log(`[CloudflareTURN] Response status: ${res.statusCode}`);
               if (res.statusCode !== 200 && res.statusCode !== 201) {
+                console.error(`[CloudflareTURN] Error response: ${responseData.substring(0, 500)}`);
                 reject(new Error(`Cloudflare API returned ${res.statusCode}: ${responseData}`));
                 return;
               }

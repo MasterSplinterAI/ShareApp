@@ -43,6 +43,10 @@ if (typeof window === 'undefined' && process.env.NODE_ENV === 'production') {
 
 // GET /api/turn - Get TURN credentials
 export async function GET(request: NextRequest) {
+  // Log immediately when GET is called
+  console.log('[TURN API] GET function called at', new Date().toISOString());
+  console.log('[TURN API] Request URL:', request.url);
+  
   try {
     // In production, you might want to verify the user has access to a room
     // For now, we'll provide TURN credentials to any authenticated request
