@@ -8,6 +8,7 @@ import { getApiUrl } from '../utils/api';
 export interface ConnectionManagerEvents {
   onStreamAdded: (stream: MediaStream, userId: string, isScreenShare: boolean) => void;
   onStreamRemoved: (streamId: string, userId: string) => void;
+  onParticipantRemoved?: (userId: string) => void;
   onPeerStateChange: (userId: string, state: RTCPeerConnectionState) => void;
   onMediaStateChange: (userId: string, audio: boolean, video: boolean) => void;
 }
@@ -235,7 +236,9 @@ export class ConnectionManager {
     if (pc) {
       pc.close();
       this.peers.delete(userId);
-      this.events.onStreamRemoved('', userId);
+      // Remove the participant from the store (this will remove their streams)
+      // Don't call onStreamRemoved with empty streamId as it causes issues
+      this.events.onParticipantRemoved?.(userId);
     }
   }
 

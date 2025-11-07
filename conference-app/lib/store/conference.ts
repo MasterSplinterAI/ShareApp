@@ -104,6 +104,11 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
             }
           }
         },
+        onParticipantRemoved: (userId) => {
+          // When a participant leaves, remove them completely from the store
+          // This is safer than trying to remove individual streams
+          get().removeParticipant(userId);
+        },
         onPeerStateChange: (userId, state) => {
           get().updateParticipantConnection(userId, state);
         },
