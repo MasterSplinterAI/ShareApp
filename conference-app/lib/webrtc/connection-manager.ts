@@ -260,9 +260,13 @@ export class ConnectionManager {
         }
       });
 
-      // Add screen share to all peer connections
+      // Add screen share to all peer connections and send offers
       this.peers.forEach(async (pc, userId) => {
-        await pc.addScreenStream(this.screenStream!);
+        const offer = await pc.addScreenStream(this.screenStream!);
+        if (offer) {
+          console.log(`Sending screen share offer to ${userId}`);
+          this.signaling.sendOffer(offer, userId);
+        }
       });
 
       // Handle screen share ending

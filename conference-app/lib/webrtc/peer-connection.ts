@@ -51,22 +51,30 @@ export class PeerConnection {
       // 3. Transceiver mid contains 'screen'
       // 4. Track contentHint is 'detail' (common for screen shares)
       // 5. Transceiver direction is recvonly and it's a video track (screen shares are typically video-only)
+      // 6. Check if this is a separate stream (screen shares often come as new streams)
       const trackLabel = event.track.label.toLowerCase();
       const streamId = stream.id.toLowerCase();
       const transceiverMid = event.transceiver.mid?.toLowerCase() || '';
       const contentHint = event.track.contentHint || '';
+      const hasAudio = stream.getAudioTracks().length > 0;
+      const hasVideo = stream.getVideoTracks().length > 0;
+      const isVideoOnly = hasVideo && !hasAudio;
+      
+      // Check if we already have a regular stream for this user
+      // If this is a new video-only stream, it's likely a screen share
+      const isNewVideoOnlyStream = event.track.kind === 'video' && isVideoOnly;
       
       const isScreenShare = 
         trackLabel.includes('screen') || 
         trackLabel.includes('display') ||
+        trackLabel.includes('desktop') ||
         streamId.includes('screen') ||
+        streamId.includes('display') ||
         transceiverMid.includes('screen') ||
         contentHint === 'detail' ||
-        (event.track.kind === 'video' && 
-         event.transceiver.direction === 'recvonly' && 
-         stream.getAudioTracks().length === 0); // Video-only stream is likely screen share
+        (isNewVideoOnlyStream && event.transceiver.direction === 'recvonly');
       
-      console.log(`Track detection for ${this.userId}: isScreenShare=${isScreenShare}, label=${event.track.label}, contentHint=${contentHint}`);
+      console.log(`Track detection for ${this.userId}: isScreenShare=${isScreenShare}, label=${event.track.label}, contentHint=${contentHint}, streamId=${stream.id}, isVideoOnly=${isVideoOnly}, direction=${event.transceiver.direction}`);
       
       this.events.onTrack(stream, this.userId, isScreenShare);
     };
@@ -124,17 +132,43 @@ export class PeerConnection {
     });
   }
 
-  async addScreenStream(stream: MediaStream): Promise<void> {
+  async addScreenStream(stream: MediaStream): Promise<RTCSessionDescriptionInit | null> {
     this.screenStream = stream;
     
     stream.getTracks().forEach(track => {
       console.log(`Adding screen ${track.kind} track to peer ${this.userId}`);
+      // Mark track with contentHint for better detection on remote side
+      try {
+        if ('contentHint' in track) {
+          (track as any).contentHint = 'detail';
+        }
+      } catch (e) {
+        // contentHint might be read-only
+      }
+      
       // Add with screen-specific transceiver settings
-      this.pc.addTransceiver(track, {
+      const transceiver = this.pc.addTransceiver(track, {
         direction: 'sendonly',
         streams: [stream],
       });
+      
+      // Set transceiver mid to include 'screen' for detection
+      if (transceiver.mid) {
+        // mid is read-only, but we can log it for debugging
+        console.log(`Screen share transceiver mid: ${transceiver.mid}`);
+      }
     });
+    
+    // Trigger renegotiation by creating an offer
+    // Return the offer so the connection manager can send it
+    try {
+      const offer = await this.createOffer();
+      console.log(`Created offer for screen share to ${this.userId}`);
+      return offer;
+    } catch (err) {
+      console.error(`Error creating offer for screen share:`, err);
+      return null;
+    }
   }
 
   removeScreenStream(): void {

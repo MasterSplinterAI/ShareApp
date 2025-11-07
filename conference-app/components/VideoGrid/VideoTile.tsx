@@ -75,31 +75,91 @@ export default function VideoTile({
   const toggleFullscreen = async () => {
     if (!videoRef.current) return;
 
+    const video = videoRef.current;
+    const container = video.parentElement;
+
+    // Check if already fullscreen
+    const isCurrentlyFullscreen = !!(
+      document.fullscreenElement ||
+      (document as any).webkitFullscreenElement ||
+      (document as any).mozFullScreenElement ||
+      (document as any).msFullscreenElement
+    );
+
     try {
-      if (document.fullscreenElement === videoRef.current) {
-        await document.exitFullscreen();
+      if (isCurrentlyFullscreen) {
+        // Exit fullscreen
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if ((document as any).webkitExitFullscreen) {
+          await (document as any).webkitExitFullscreen();
+        } else if ((document as any).mozCancelFullScreen) {
+          await (document as any).mozCancelFullScreen();
+        } else if ((document as any).msExitFullscreen) {
+          await (document as any).msExitFullscreen();
+        }
         setIsFullscreen(false);
       } else {
-        await videoRef.current.requestFullscreen();
-        setIsFullscreen(true);
+        // Enter fullscreen
+        // For iOS/mobile, use webkitEnterFullscreen on the video element itself
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) && !(window as any).MSStream;
+        const isMobile = window.innerWidth <= 768 || /Mobi|Android/i.test(navigator.userAgent);
+
+        if (isIOS && (video as any).webkitEnterFullscreen) {
+          // iOS Safari - use native video fullscreen
+          (video as any).webkitEnterFullscreen();
+          setIsFullscreen(true);
+        } else if (isMobile && container) {
+          // Mobile Android - try container fullscreen first
+          if (container.requestFullscreen) {
+            await container.requestFullscreen();
+            setIsFullscreen(true);
+          } else if ((container as any).webkitRequestFullscreen) {
+            await (container as any).webkitRequestFullscreen();
+            setIsFullscreen(true);
+          } else if ((container as any).mozRequestFullScreen) {
+            await (container as any).mozRequestFullScreen();
+            setIsFullscreen(true);
+          } else {
+            // Fallback: make video take full viewport
+            container.style.position = 'fixed';
+            container.style.top = '0';
+            container.style.left = '0';
+            container.style.width = '100vw';
+            container.style.height = '100vh';
+            container.style.zIndex = '9999';
+            container.style.backgroundColor = '#000';
+            setIsFullscreen(true);
+          }
+        } else {
+          // Desktop - use standard fullscreen
+          if (container?.requestFullscreen) {
+            await container.requestFullscreen();
+            setIsFullscreen(true);
+          } else if ((container as any)?.webkitRequestFullscreen) {
+            await (container as any).webkitRequestFullscreen();
+            setIsFullscreen(true);
+          } else if ((container as any)?.mozRequestFullScreen) {
+            await (container as any).mozRequestFullScreen();
+            setIsFullscreen(true);
+          } else if ((container as any)?.msRequestFullscreen) {
+            await (container as any).msRequestFullscreen();
+            setIsFullscreen(true);
+          }
+        }
       }
     } catch (error) {
       console.error('Fullscreen error:', error);
-      // Fallback for older browsers (webkit)
-      try {
-        const video = videoRef.current as any;
-        if (video.webkitRequestFullscreen) {
-          await video.webkitRequestFullscreen();
-          setIsFullscreen(true);
-        } else if (video.mozRequestFullScreen) {
-          await video.mozRequestFullScreen();
-          setIsFullscreen(true);
-        } else if (video.msRequestFullscreen) {
-          await video.msRequestFullscreen();
-          setIsFullscreen(true);
-        }
-      } catch (e) {
-        console.error('Fallback fullscreen error:', e);
+      // If all else fails, use CSS fallback
+      if (!isCurrentlyFullscreen && container) {
+        container.style.position = 'fixed';
+        container.style.top = '0';
+        container.style.left = '0';
+        container.style.width = '100vw';
+        container.style.height = '100vh';
+        container.style.zIndex = '9999';
+        container.style.backgroundColor = '#000';
+        setIsFullscreen(true);
       }
     }
   };
