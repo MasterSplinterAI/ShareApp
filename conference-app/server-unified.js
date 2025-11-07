@@ -159,20 +159,21 @@ app.prepare().then(() => {
 
   function handleLeaveRoom(socket) {
     const { roomId, userId } = socket.data;
-    
+
     if (roomId && userId) {
-      // Remove from room tracking
-      const roomParticipants = rooms.get(roomId);
-      if (roomParticipants) {
-        roomParticipants.delete(userId);
-        if (roomParticipants.size === 0) {
-          rooms.delete(roomId);
-        }
-      }
+      // Remove from participants using room storage
+      roomStorage.removeParticipant(roomId, userId);
+      console.log(`User ${userId} left room ${roomId}`);
 
       // Notify others
       socket.to(roomId).emit('user-left', { userId });
       socket.leave(roomId);
+
+      // Check if room is empty and should be cleaned up
+      const room = roomStorage.getRoom(roomId);
+      if (room && room.participants.size === 0) {
+        console.log(`Room ${roomId} is now empty`);
+      }
     }
   }
 
