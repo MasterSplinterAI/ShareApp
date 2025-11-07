@@ -188,13 +188,34 @@ export class ConnectionManager {
 
     // If we're the polite peer (initiator), create an offer
     if (isPolite) {
-      // Create offer explicitly after adding tracks
-      try {
-        const offer = await pc.createOffer();
+      // Wait a moment for tracks to be added and any automatic negotiation to settle
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      // Check if we already have a local description (from onnegotiationneeded)
+      let offer = pc.getLocalDescription();
+      
+      if (!offer || offer.type !== 'offer') {
+        // Create offer explicitly after adding tracks
+        try {
+          offer = await pc.createOffer();
+          console.log(`Created and sending offer to ${userId}`);
+        } catch (err: any) {
+          // If offer already exists or is pending, that's okay
+          if (err.message?.includes('already') || err.message?.includes('pending')) {
+            console.log(`Offer already pending for ${userId}, skipping`);
+            return pc;
+          }
+          console.error(`Error creating offer for ${userId}:`, err);
+          return pc;
+        }
+      } else {
+        console.log(`Using existing offer for ${userId}`);
+      }
+      
+      // Send the offer
+      if (offer) {
         this.signaling.sendOffer(offer, userId);
         console.log(`Sent offer to ${userId}`);
-      } catch (err) {
-        console.error(`Error creating offer for ${userId}:`, err);
       }
     }
 

@@ -65,17 +65,10 @@ export class PeerConnection {
     };
 
     // Handle negotiation needed
-    this.pc.onnegotiationneeded = async () => {
-      console.log(`Negotiation needed for ${this.userId}`);
-      try {
-        this.makingOffer = true;
-        await this.pc.setLocalDescription();
-        // The offer will be sent by the connection manager
-      } catch (err) {
-        console.error(`Error during negotiation with ${this.userId}:`, err);
-      } finally {
-        this.makingOffer = false;
-      }
+    // We don't automatically create offers here - the connection manager controls this
+    this.pc.onnegotiationneeded = () => {
+      console.log(`Negotiation needed for ${this.userId} (signaling state: ${this.pc.signalingState})`);
+      // Don't create offer automatically - let the connection manager handle it explicitly
     };
 
     // Handle data channel
@@ -211,7 +204,24 @@ export class PeerConnection {
   }
 
   async createOffer(): Promise<RTCSessionDescriptionInit> {
-    const offer = await this.pc.createOffer();
+    // Check signaling state to prevent conflicts
+    if (this.pc.signalingState === 'have-local-offer') {
+      console.log(`Cannot create offer for ${this.userId}: already have local offer`);
+      throw new Error('Offer already pending');
+    }
+    
+    if (this.pc.signalingState === 'have-remote-offer') {
+      console.log(`Cannot create offer for ${this.userId}: already have remote offer`);
+      throw new Error('Remote offer pending');
+    }
+    
+    // Create offer with proper options
+    const offerOptions: RTCOfferOptions = {
+      offerToReceiveAudio: true,
+      offerToReceiveVideo: true,
+    };
+    
+    const offer = await this.pc.createOffer(offerOptions);
     await this.pc.setLocalDescription(offer);
     return offer;
   }
