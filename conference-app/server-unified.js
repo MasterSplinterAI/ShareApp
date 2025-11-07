@@ -20,6 +20,9 @@ if (process.env.NODE_ENV === 'production') {
   }
 }
 
+// Import room storage
+const { roomStorage } = require('./lib/rooms/storage');
+
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = process.env.PORT || 3002; // Use 3002 for production to avoid conflict
@@ -50,34 +53,46 @@ app.prepare().then(() => {
     transports: ['websocket', 'polling'],
   });
 
-  // Track room participants
-  const rooms = new Map();
-
   io.on('connection', (socket) => {
     console.log(`Client connected: ${socket.id} from ${socket.handshake.address}`);
     console.log(`Transport: ${socket.conn.transport.name}`);
 
     // Join room
     socket.on('join-room', ({ roomId, pin, userId }) => {
-      console.log(`User ${userId} joining room ${roomId}`);
-      
+      console.log(`User ${userId} joining room ${roomId} with pin ${pin}`);
+
+      // Validate room exists and PIN is correct
+      const room = roomStorage.getRoom(roomId);
+      if (!room) {
+        console.log(`Room ${roomId} not found`);
+        socket.emit('room-error', { error: 'Room not found' });
+        return;
+      }
+
+      const validation = roomStorage.validateRoom(roomId, pin);
+      if (!validation.isValid) {
+        console.log(`Invalid PIN for room ${roomId}: ${pin}`);
+        socket.emit('room-error', { error: 'Invalid room or PIN' });
+        return;
+      }
+
       // Join the socket.io room
       socket.join(roomId);
       socket.data.roomId = roomId;
       socket.data.userId = userId;
+      socket.data.isHost = validation.isHost;
 
-      // Track participants
-      if (!rooms.has(roomId)) {
-        rooms.set(roomId, new Set());
-      }
-      rooms.get(roomId).add(userId);
+      // Add participant to room
+      roomStorage.addParticipant(roomId, userId);
 
       // Notify others in the room
       socket.to(roomId).emit('user-joined', { userId });
 
       // Send current participants to the new user
-      const participants = Array.from(rooms.get(roomId) || []).filter(id => id !== userId);
+      const participants = Array.from(room.participants).filter(id => id !== userId);
       socket.emit('current-participants', { participants });
+
+      console.log(`User ${userId} successfully joined room ${roomId}. Total participants: ${room.participants.size}`);
     });
 
     // WebRTC signaling
