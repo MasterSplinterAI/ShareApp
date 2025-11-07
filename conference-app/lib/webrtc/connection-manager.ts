@@ -246,6 +246,20 @@ export class ConnectionManager {
         audio: false,
       });
 
+      // Mark screen share tracks with contentHint for better detection
+      this.screenStream.getVideoTracks().forEach(track => {
+        // Set contentHint to 'detail' to help identify as screen share
+        // Note: This may not work in all browsers as contentHint is often read-only
+        try {
+          if ('contentHint' in track) {
+            (track as any).contentHint = 'detail';
+          }
+        } catch (e) {
+          // contentHint might be read-only, that's okay
+          console.log('Could not set contentHint (read-only):', e);
+        }
+      });
+
       // Add screen share to all peer connections
       this.peers.forEach(async (pc, userId) => {
         await pc.addScreenStream(this.screenStream!);

@@ -42,13 +42,31 @@ export class PeerConnection {
   private setupEventHandlers(): void {
     // Handle incoming tracks
     this.pc.ontrack = (event) => {
-      console.log(`Received track from ${this.userId}:`, event.track.kind);
+      console.log(`Received track from ${this.userId}:`, event.track.kind, event.track.label);
       const [stream] = event.streams;
       
-      // Determine if this is a screen share based on track settings or label
-      const isScreenShare = stream.id.includes('screen') || 
-                           event.track.label.includes('screen') ||
-                           (event.transceiver.mid?.includes('screen') ?? false);
+      // Determine if this is a screen share based on multiple indicators:
+      // 1. Track label contains 'screen' or 'display'
+      // 2. Stream ID contains 'screen'
+      // 3. Transceiver mid contains 'screen'
+      // 4. Track contentHint is 'detail' (common for screen shares)
+      // 5. Transceiver direction is recvonly and it's a video track (screen shares are typically video-only)
+      const trackLabel = event.track.label.toLowerCase();
+      const streamId = stream.id.toLowerCase();
+      const transceiverMid = event.transceiver.mid?.toLowerCase() || '';
+      const contentHint = event.track.contentHint || '';
+      
+      const isScreenShare = 
+        trackLabel.includes('screen') || 
+        trackLabel.includes('display') ||
+        streamId.includes('screen') ||
+        transceiverMid.includes('screen') ||
+        contentHint === 'detail' ||
+        (event.track.kind === 'video' && 
+         event.transceiver.direction === 'recvonly' && 
+         stream.getAudioTracks().length === 0); // Video-only stream is likely screen share
+      
+      console.log(`Track detection for ${this.userId}: isScreenShare=${isScreenShare}, label=${event.track.label}, contentHint=${contentHint}`);
       
       this.events.onTrack(stream, this.userId, isScreenShare);
     };

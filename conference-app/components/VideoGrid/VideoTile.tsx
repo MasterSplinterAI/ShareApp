@@ -21,6 +21,7 @@ export default function VideoTile({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [hasVideo, setHasVideo] = useState(false);
   const [isPiPActive, setIsPiPActive] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     if (!videoRef.current || !stream) return;
@@ -69,6 +70,61 @@ export default function VideoTile({
       console.error('PiP error:', error);
     }
   };
+
+  // Handle Fullscreen
+  const toggleFullscreen = async () => {
+    if (!videoRef.current) return;
+
+    try {
+      if (document.fullscreenElement === videoRef.current) {
+        await document.exitFullscreen();
+        setIsFullscreen(false);
+      } else {
+        await videoRef.current.requestFullscreen();
+        setIsFullscreen(true);
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+      // Fallback for older browsers (webkit)
+      try {
+        const video = videoRef.current as any;
+        if (video.webkitRequestFullscreen) {
+          await video.webkitRequestFullscreen();
+          setIsFullscreen(true);
+        } else if (video.mozRequestFullScreen) {
+          await video.mozRequestFullScreen();
+          setIsFullscreen(true);
+        } else if (video.msRequestFullscreen) {
+          await video.msRequestFullscreen();
+          setIsFullscreen(true);
+        }
+      } catch (e) {
+        console.error('Fallback fullscreen error:', e);
+      }
+    }
+  };
+
+  // Handle fullscreen events
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, []);
 
   // Handle PiP events
   useEffect(() => {
@@ -174,21 +230,49 @@ export default function VideoTile({
         </div>
       </div>
 
-      {/* PiP button (for non-local videos on supported browsers) */}
-      {!isLocal && document.pictureInPictureEnabled && hasVideo && (
-        <button
-          onClick={togglePiP}
-          className={`
-            absolute top-2 right-2 p-2 rounded-lg
-            ${isPiPActive ? 'bg-blue-600' : 'bg-black/50 hover:bg-black/70'}
-            text-white transition-colors
-          `}
-          title={isPiPActive ? 'Exit Picture-in-Picture' : 'Picture-in-Picture'}
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-        </button>
+      {/* Control buttons */}
+      {hasVideo && (
+        <div className="absolute top-2 right-2 flex gap-2">
+          {/* Fullscreen button (especially important for screen shares on mobile) */}
+          {!isLocal && (
+            <button
+              onClick={toggleFullscreen}
+              className={`
+                p-2 rounded-lg
+                ${isFullscreen ? 'bg-blue-600' : 'bg-black/50 hover:bg-black/70'}
+                text-white transition-colors
+              `}
+              title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+                </svg>
+              )}
+            </button>
+          )}
+          
+          {/* PiP button (for non-local videos on supported browsers) */}
+          {!isLocal && document.pictureInPictureEnabled && (
+            <button
+              onClick={togglePiP}
+              className={`
+                p-2 rounded-lg
+                ${isPiPActive ? 'bg-blue-600' : 'bg-black/50 hover:bg-black/70'}
+                text-white transition-colors
+              `}
+              title={isPiPActive ? 'Exit Picture-in-Picture' : 'Picture-in-Picture'}
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          )}
+        </div>
       )}
 
       {/* Pin/Focus indicator */}
