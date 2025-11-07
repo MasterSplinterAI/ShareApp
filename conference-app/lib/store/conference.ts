@@ -107,7 +107,21 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
         onParticipantRemoved: (userId) => {
           // When a participant leaves, remove them completely from the store
           // This is safer than trying to remove individual streams
+          console.log(`[Store] Removing participant ${userId} from store`);
+          const { localParticipant } = get();
+          // Ensure we're not accidentally removing the local participant
+          if (userId === 'local') {
+            console.warn(`[Store] Attempted to remove local participant, ignoring`);
+            return;
+          }
           get().removeParticipant(userId);
+          // Verify local participant is still intact after removal
+          const { localParticipant: afterLocal } = get();
+          if (!afterLocal || !afterLocal.stream) {
+            console.error(`[Store] ERROR: Local participant stream was cleared!`);
+          } else {
+            console.log(`[Store] Local participant stream intact after removal`);
+          }
         },
         onPeerStateChange: (userId, state) => {
           get().updateParticipantConnection(userId, state);
@@ -265,9 +279,39 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
 
   // Remove participant
   removeParticipant: (id: string) => {
-    const { participants } = get();
-    participants.delete(id);
-    set({ participants: new Map(participants) });
+    console.log(`[Store] removeParticipant called for ${id}`);
+    const { participants, localParticipant } = get();
+    
+    // Safety check: never remove local participant
+    if (id === 'local') {
+      console.warn(`[Store] Attempted to remove local participant, ignoring`);
+      return;
+    }
+    
+    // Create a completely new Map without the removed participant
+    // This ensures React detects the change
+    const newParticipants = new Map<string, Participant>();
+    participants.forEach((participant, participantId) => {
+      if (participantId !== id) {
+        newParticipants.set(participantId, participant);
+      }
+    });
+    
+    console.log(`[Store] Participant ${id} removed. Remaining participants: ${newParticipants.size}`);
+    console.log(`[Store] Local participant exists: ${!!localParticipant}, has stream: ${!!localParticipant?.stream}`);
+    
+    // Ensure local participant is preserved
+    if (!localParticipant || !localParticipant.stream) {
+      console.error(`[Store] CRITICAL: Local participant missing or has no stream before removal!`);
+    }
+    
+    set({ participants: newParticipants });
+    
+    // Verify local participant is still intact after set
+    const { localParticipant: verifyLocal } = get();
+    if (!verifyLocal || !verifyLocal.stream) {
+      console.error(`[Store] CRITICAL: Local participant stream was lost after removal!`);
+    }
   },
 
   // Update participant media state

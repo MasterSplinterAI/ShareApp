@@ -234,11 +234,19 @@ export class ConnectionManager {
   private removePeerConnection(userId: string): void {
     const pc = this.peers.get(userId);
     if (pc) {
+      console.log(`Removing peer connection for ${userId}`);
       pc.close();
       this.peers.delete(userId);
       // Remove the participant from the store (this will remove their streams)
       // Don't call onStreamRemoved with empty streamId as it causes issues
-      this.events.onParticipantRemoved?.(userId);
+      if (this.events.onParticipantRemoved) {
+        console.log(`Calling onParticipantRemoved for ${userId}`);
+        this.events.onParticipantRemoved(userId);
+      } else {
+        console.warn(`onParticipantRemoved callback not set`);
+      }
+    } else {
+      console.warn(`No peer connection found for ${userId}`);
     }
   }
 
