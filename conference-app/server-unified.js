@@ -21,7 +21,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Import room storage
-const { roomStorage } = require('./lib/rooms/storage');
+const { roomStorage } = require('./server-room-storage');
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
