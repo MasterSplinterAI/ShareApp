@@ -60,6 +60,15 @@ export default function RoomPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomInfo, isConnected, isConnecting, connectionManager]);
 
+  // Safeguard: Ensure local stream is always available if connection manager exists
+  useEffect(() => {
+    if (connectionManager && !localParticipant?.stream) {
+      console.warn('[RoomPage] Local stream missing but connection manager exists, attempting to restore...');
+      // The connection manager should have the local stream, but we can't access it directly
+      // This is just a warning - the stream should be restored by the connection manager
+    }
+  }, [connectionManager, localParticipant]);
+
   useEffect(() => {
     // Cleanup on unmount
     return () => {

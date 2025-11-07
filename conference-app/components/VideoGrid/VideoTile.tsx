@@ -56,13 +56,21 @@ export default function VideoTile({
       const hasVideoTracks = videoTracks.length > 0 && videoTracks[0].enabled && videoTracks[0].readyState === 'live';
       setHasVideo(hasVideoTracks);
       
-      // If video should be showing but element shows black, force refresh
-      if (hasVideoTracks && videoRef.current && videoRef.current.readyState === 0) {
-        console.log(`[VideoTile] Video element not ready, forcing reload for ${isLocal ? 'local' : participant.id}`);
-        videoRef.current.load();
-        videoRef.current.play().catch(err => {
-          console.warn(`[VideoTile] Could not play after reload:`, err);
-        });
+      // For local videos, ensure it's always playing if tracks are live
+      if (isLocal && hasVideoTracks && videoRef.current) {
+        // Don't call load() - it clears srcObject. Just ensure stream is set and try to play
+        if (videoRef.current.srcObject !== stream) {
+          videoRef.current.srcObject = stream;
+        }
+        // Try to play, but don't force reload
+        if (videoRef.current.paused) {
+          videoRef.current.play().catch(err => {
+            // Ignore autoplay errors - user interaction will trigger play
+            if (err.name !== 'NotAllowedError') {
+              console.warn(`[VideoTile] Could not play local video:`, err);
+            }
+          });
+        }
       }
     } else {
       // Clear the stream if it's null
@@ -77,11 +85,21 @@ export default function VideoTile({
         const hasVideoTracks = tracks.length > 0 && tracks[0].enabled && tracks[0].readyState === 'live';
         setHasVideo(hasVideoTracks);
         
-        // If tracks were added and video element exists, ensure it's playing
+        // If tracks were added and video element exists, ensure stream is set and playing
         if (hasVideoTracks && videoRef.current) {
-          videoRef.current.play().catch(err => {
-            console.warn(`[VideoTile] Could not play after track change:`, err);
-          });
+          // Ensure stream is still set (might have been cleared)
+          if (videoRef.current.srcObject !== stream) {
+            console.log(`[VideoTile] Restoring stream after track change for ${isLocal ? 'local' : participant.id}`);
+            videoRef.current.srcObject = stream;
+          }
+          // Try to play if paused
+          if (videoRef.current.paused) {
+            videoRef.current.play().catch(err => {
+              if (err.name !== 'NotAllowedError') {
+                console.warn(`[VideoTile] Could not play after track change:`, err);
+              }
+            });
+          }
         }
       };
 
@@ -108,28 +126,57 @@ export default function VideoTile({
     }
   }, [stream, isLocal, participant.id]);
 
-  // Update video state when participant media state changes
+  // Additional effect to ensure local video stream is always connected
+  // This handles cases where the video element might not be ready when stream is first set
   useEffect(() => {
-    if (!isScreenShare && participant.videoEnabled !== undefined) {
-      setHasVideo(participant.videoEnabled);
+    if (!isLocal || !stream || !videoRef.current) return;
+
+    // Set up a periodic check to ensure stream is connected
+    const checkInterval = setInterval(() => {
+      if (!videoRef.current) {
+        clearInterval(checkInterval);
+        return;
+      }
+
+      const currentStream = videoRef.current.srcObject as MediaStream | null;
       
-      // If video was enabled, ensure the video element is playing
-      if (participant.videoEnabled && videoRef.current && stream) {
-        const videoTracks = stream.getVideoTracks();
-        if (videoTracks.length > 0 && videoTracks[0].readyState === 'live') {
-          // Ensure stream is set
-          if (videoRef.current.srcObject !== stream) {
-            console.log(`[VideoTile] Restoring stream after video enabled for ${isLocal ? 'local' : participant.id}`);
-            videoRef.current.srcObject = stream;
-          }
-          // Try to play
-          videoRef.current.play().catch(err => {
-            console.warn(`[VideoTile] Could not play after enabling video:`, err);
+      // If stream is not set or different, set it
+      if (currentStream !== stream) {
+        console.log(`[VideoTile] Periodic check: Restoring local stream`);
+        videoRef.current.srcObject = stream;
+        videoRef.current.muted = true;
+        
+        // Try to play if paused
+        if (videoRef.current.paused) {
+          videoRef.current.play().catch(() => {
+            // Ignore autoplay errors
           });
         }
       }
-    }
-  }, [participant.videoEnabled, isScreenShare, stream, isLocal, participant.id]);
+      
+      // Check if video tracks are live but video is not showing
+      const videoTracks = stream.getVideoTracks();
+      if (videoTracks.length > 0 && videoTracks[0].readyState === 'live' && videoTracks[0].enabled) {
+        // Video should be showing
+        if (videoRef.current.readyState === 0 || videoRef.current.readyState === 1) {
+          // Video element is not ready or has no data
+          // Ensure stream is set and try to play
+          if (videoRef.current.srcObject !== stream) {
+            videoRef.current.srcObject = stream;
+          }
+          if (videoRef.current.paused) {
+            videoRef.current.play().catch(() => {
+              // Ignore autoplay errors
+            });
+          }
+        }
+      }
+    }, 1000); // Check every second
+
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [isLocal, stream]);
 
   // Handle Picture-in-Picture
   const togglePiP = async () => {
