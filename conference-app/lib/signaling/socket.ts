@@ -50,6 +50,11 @@ export class SignalingClient {
         resolve(participants);
       });
 
+      this.socket.on('room-error', ({ error }) => {
+        console.error('Room error:', error);
+        reject(new Error(error));
+      });
+
       this.socket.on('connect_error', (error: any) => {
         console.error('SignalingClient: Connection error:', error.message);
         reject(error);
@@ -78,11 +83,6 @@ export class SignalingClient {
     this.socket.on('user-left', ({ userId }) => {
       console.log('User left:', userId);
       this.events.onUserLeft?.(userId);
-    });
-
-    this.socket.on('room-error', ({ error }) => {
-      console.error('Room error:', error);
-      reject(new Error(error));
     });
 
     this.socket.on('offer', (data) => {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { roomStorage } from '@/lib/rooms/storage';
+// Use the server-side room storage for consistency with Socket.io
+const { roomStorage } = require('../../../server-room-storage');
 
 // POST /api/rooms - Create a new room
 export async function POST(request: NextRequest) {
