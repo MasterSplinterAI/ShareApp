@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-// Use the server-side room storage for consistency with Socket.io
-const { roomStorage } = require('../../../../../server-room-storage');
+
+// Use the global roomStorage instance set by server-unified.js
+// This ensures API routes and Socket.io use the same singleton
+const roomStorage = (typeof global !== 'undefined' && (global as any).roomStorage) 
+  || require('../../../../../server-room-storage').roomStorage;
 
 // POST /api/rooms/[roomId]/validate - Validate room access
 export async function POST(

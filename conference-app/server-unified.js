@@ -23,6 +23,12 @@ if (process.env.NODE_ENV === 'production') {
 // Import room storage
 const { roomStorage } = require('./server-room-storage');
 
+// Make roomStorage globally available so API routes can access the same instance
+// This ensures API routes and Socket.io use the same singleton
+if (typeof global !== 'undefined') {
+  global.roomStorage = roomStorage;
+}
+
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
 const port = process.env.PORT || 3002; // Use 3002 for production to avoid conflict
