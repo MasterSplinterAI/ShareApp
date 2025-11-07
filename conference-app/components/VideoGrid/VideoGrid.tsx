@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useMemo } from 'react';
 import { Participant } from '@/lib/store/conference';
 import VideoTile from './VideoTile';
 
@@ -35,7 +35,8 @@ export default function VideoGrid({ localParticipant, participants }: VideoGridP
   const layout = getGridLayout();
 
   // Get all video streams including screen shares
-  const getAllStreams = () => {
+  // Use useMemo to prevent unnecessary re-creation of the streams array
+  const getAllStreams = useMemo(() => {
     const streams: Array<{
       participant: Participant;
       isLocal: boolean;
@@ -84,9 +85,9 @@ export default function VideoGrid({ localParticipant, participants }: VideoGridP
     });
 
     return streams;
-  };
+  }, [localParticipant?.id, localParticipant?.stream?.id, localParticipant?.screenStream?.id, participants.size, Array.from(participants.keys()).join(',')]);
 
-  const allStreams = getAllStreams();
+  const allStreams = getAllStreams;
   const screenShares = allStreams.filter(s => s.isScreenShare);
   const videoStreams = allStreams.filter(s => !s.isScreenShare);
 
@@ -117,7 +118,7 @@ export default function VideoGrid({ localParticipant, participants }: VideoGridP
               <div className="grid grid-cols-2 lg:grid-cols-1 gap-2">
                 {videoStreams.map((stream) => (
                   <VideoTile
-                    key={stream.participant.id}
+                    key={`${stream.participant.id}-${stream.isScreenShare ? 'screen' : 'video'}`}
                     participant={stream.participant}
                     stream={stream.stream}
                     isLocal={stream.isLocal}
@@ -144,7 +145,7 @@ export default function VideoGrid({ localParticipant, participants }: VideoGridP
         >
           {videoStreams.map((stream) => (
             <VideoTile
-              key={stream.participant.id}
+              key={`${stream.participant.id}-${stream.isScreenShare ? 'screen' : 'video'}`}
               participant={stream.participant}
               stream={stream.stream}
               isLocal={stream.isLocal}

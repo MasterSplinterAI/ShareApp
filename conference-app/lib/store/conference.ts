@@ -349,21 +349,12 @@ export const useConferenceStore = create<ConferenceState>((set, get) => ({
     console.log(`[Store] Participant ${id} removed. Remaining participants: ${newParticipants.size}`);
     console.log(`[Store] Local participant exists: ${!!localParticipant}, has stream: ${!!localParticipant?.stream}`);
     
-    // Ensure local participant is preserved - explicitly include it in the set call
-    if (!localParticipant || !localParticipant.stream) {
-      console.error(`[Store] CRITICAL: Local participant missing or has no stream before removal!`);
-    }
-    
-    // Explicitly preserve localParticipant when updating participants
-    // CRITICAL: Preserve the stream reference, don't create a new object that might lose it
+    // CRITICAL: Only update participants Map, DO NOT touch localParticipant
+    // This prevents React from re-rendering the local video tile unnecessarily
+    // The localParticipant object reference stays the same, so React won't remount VideoTile
     set({ 
-      participants: newParticipants,
-      // Create a new object but preserve all properties including stream references
-      localParticipant: localParticipant ? {
-        ...localParticipant,
-        stream: localParticipant.stream, // Explicitly preserve stream reference
-        screenStream: localParticipant.screenStream, // Explicitly preserve screenStream reference
-      } : null
+      participants: newParticipants
+      // DO NOT include localParticipant here - let it remain unchanged
     });
     
     // Verify local participant is still intact after set

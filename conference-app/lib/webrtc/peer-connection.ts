@@ -340,4 +340,12 @@ export class PeerConnection {
   getConnectionState(): RTCPeerConnectionState {
     return this.pc.connectionState;
   }
+
+  getSenders(): RTCRtpSender[] {
+    return this.pc.getSenders();
+  }
+
+  addTrack(track: MediaStreamTrack, stream: MediaStream): RTCRtpSender {
+    return this.pc.addTrack(track, stream);
+  }
 }

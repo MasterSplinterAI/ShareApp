@@ -30,7 +30,58 @@ export class ConnectionManager {
 
   private setupSignalingHandlers(): void {
     this.signaling.on('onUserJoined', async (userId) => {
+      console.log(`[ConnectionManager] User joined: ${userId}, creating peer connection`);
+      console.log(`[ConnectionManager] Local stream available: ${!!this.localStream}, stream ID: ${this.localStream?.id}`);
       await this.createPeerConnection(userId, true);
+      
+      // After creating peer connection, ensure local stream is broadcast to the new participant
+      // This is critical for rejoining participants
+      if (this.localStream && this.localStream.getTracks().length > 0) {
+        setTimeout(async () => {
+          const pc = this.peers.get(userId);
+          if (pc) {
+            console.log(`[ConnectionManager] Broadcasting local stream to new participant ${userId}`);
+            const senders = pc.getSenders();
+            const tracks = this.localStream!.getTracks();
+            let needsRenegotiation = false;
+            
+            // Check and add/replace tracks
+            for (const track of tracks) {
+              const existingSender = senders.find(s => s.track && s.track.kind === track.kind);
+              if (existingSender) {
+                // Track exists, but ensure it's the current track
+                if (existingSender.track !== track) {
+                  console.log(`[ConnectionManager] Replacing ${track.kind} track for ${userId}`);
+                  existingSender.replaceTrack(track).catch(err => {
+                    console.error(`[ConnectionManager] Error replacing track:`, err);
+                  });
+                  needsRenegotiation = true;
+                }
+              } else {
+                // Track missing, add it
+                console.log(`[ConnectionManager] Adding missing ${track.kind} track for ${userId}`);
+                try {
+                  pc.addTrack(track, this.localStream!);
+                  needsRenegotiation = true;
+                } catch (err) {
+                  console.error(`[ConnectionManager] Error adding track:`, err);
+                }
+              }
+            }
+            
+            // If we added/replaced tracks and connection is established, renegotiate
+            if (needsRenegotiation && pc.getConnectionState() === 'connected') {
+              try {
+                const offer = await pc.createOffer();
+                this.signaling.sendOffer(offer, userId);
+                console.log(`[ConnectionManager] Sent renegotiation offer to ${userId} with updated tracks`);
+              } catch (err) {
+                console.error(`[ConnectionManager] Error creating renegotiation offer:`, err);
+              }
+            }
+          }
+        }, 500);
+      }
     });
 
     this.signaling.on('onUserLeft', (userId) => {
@@ -179,7 +230,14 @@ export class ConnectionManager {
 
     // Add local stream if available
     if (this.localStream) {
+      console.log(`[ConnectionManager] Adding local stream to peer ${userId}, stream ID: ${this.localStream.id}, tracks: ${this.localStream.getTracks().length}`);
+      const videoTracks = this.localStream.getVideoTracks();
+      const audioTracks = this.localStream.getAudioTracks();
+      console.log(`[ConnectionManager] Local stream has ${videoTracks.length} video tracks, ${audioTracks.length} audio tracks`);
       await pc.addLocalStream(this.localStream);
+      console.log(`[ConnectionManager] Local stream added to peer ${userId}`);
+    } else {
+      console.warn(`[ConnectionManager] WARNING: No local stream available when creating peer connection for ${userId}`);
     }
 
     // Add screen stream if sharing

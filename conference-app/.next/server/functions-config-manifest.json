@@ -1,1 +1,1 @@
-{"version":1,"functions":{"/api/rooms/[roomId]/validate":{},"/api/rooms":{}}}
+{"version":1,"functions":{"/api/rooms":{},"/api/rooms/[roomId]/validate":{}}}

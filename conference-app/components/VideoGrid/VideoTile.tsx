@@ -31,12 +31,15 @@ export default function VideoTile({
     if (stream) {
       const currentStream = videoRef.current.srcObject as MediaStream | null;
       
-      // For local streams, always ensure it's set (handles re-renders and connection issues)
-      // For remote streams, only update if reference changed
-      const shouldUpdate = isLocal ? (currentStream !== stream || !currentStream) : (currentStream !== stream);
+      // For local videos, ALWAYS ensure stream is set (even if reference matches)
+      // This handles cases where React re-renders and video element loses srcObject
+      // For remote videos, only update if reference changed
+      const shouldUpdate = isLocal 
+        ? (currentStream !== stream || !currentStream || videoRef.current.srcObject === null)
+        : (currentStream !== stream);
       
       if (shouldUpdate) {
-        console.log(`[VideoTile] ${isLocal ? 'LOCAL' : 'REMOTE'} Setting stream for ${isLocal ? 'local' : participant.id}:`, stream.id, 'tracks:', stream.getTracks().length);
+        console.log(`[VideoTile] ${isLocal ? 'LOCAL' : 'REMOTE'} Setting stream for ${isLocal ? 'local' : participant.id}:`, stream.id, 'tracks:', stream.getTracks().length, 'currentStream:', currentStream?.id || 'null');
         videoRef.current.srcObject = stream;
         
         // For local videos, ensure muted and autoplay
@@ -46,7 +49,10 @@ export default function VideoTile({
         
         // Try to play the video
         videoRef.current.play().catch(err => {
-          console.warn(`[VideoTile] Could not autoplay video:`, err);
+          // Ignore autoplay errors - user interaction will trigger play
+          if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+            console.warn(`[VideoTile] Could not autoplay video:`, err);
+          }
         });
       }
       
@@ -58,15 +64,17 @@ export default function VideoTile({
       
       // For local videos, ensure it's always playing if tracks are live
       if (isLocal && hasVideoTracks && videoRef.current) {
-        // Don't call load() - it clears srcObject. Just ensure stream is set and try to play
-        if (videoRef.current.srcObject !== stream) {
+        // Double-check stream is set (might have been cleared by React)
+        if (!videoRef.current.srcObject || videoRef.current.srcObject !== stream) {
+          console.log(`[VideoTile] LOCAL: Restoring stream (srcObject was cleared)`);
           videoRef.current.srcObject = stream;
+          videoRef.current.muted = true;
         }
         // Try to play, but don't force reload
         if (videoRef.current.paused) {
           videoRef.current.play().catch(err => {
             // Ignore autoplay errors - user interaction will trigger play
-            if (err.name !== 'NotAllowedError') {
+            if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
               console.warn(`[VideoTile] Could not play local video:`, err);
             }
           });
