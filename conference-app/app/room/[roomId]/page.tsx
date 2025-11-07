@@ -28,6 +28,7 @@ export default function RoomPage() {
     localParticipant,
     isConnecting,
     isConnected,
+    connectionManager,
     error: connectionError,
     initialize,
     disconnect,
@@ -47,7 +48,8 @@ export default function RoomPage() {
 
   useEffect(() => {
     // Initialize conference after room validation
-    if (roomInfo && !isConnected && !isConnecting) {
+    // Only initialize if we have room info, are not already connected/connecting, and don't have a connection manager
+    if (roomInfo && !isConnected && !isConnecting && !connectionManager) {
       console.log('RoomPage: Starting conference initialization');
       initialize(roomId, pin!, roomInfo.isHost)
         .catch((err) => {
@@ -56,7 +58,7 @@ export default function RoomPage() {
         });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomInfo, isConnected, isConnecting]);
+  }, [roomInfo, isConnected, isConnecting, connectionManager]);
 
   useEffect(() => {
     // Cleanup on unmount

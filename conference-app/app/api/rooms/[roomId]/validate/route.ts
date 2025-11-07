@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-// Use the global roomStorage instance set by server-unified.js
-// This ensures API routes and Socket.io use the same singleton
-const roomStorage = (typeof global !== 'undefined' && (global as any).roomStorage) 
-  || require('../../../../../server-room-storage').roomStorage;
-
 // POST /api/rooms/[roomId]/validate - Validate room access
 export async function POST(
   request: NextRequest,
   { params }: { params: { roomId: string } }
 ) {
   try {
+    // Access global roomStorage at runtime (set by server-unified.js)
+    // Fallback to require if global is not available (for development/testing)
+    const roomStorage = (typeof global !== 'undefined' && (global as any).roomStorage) 
+      || require('../../../../../server-room-storage').roomStorage;
+    
     const { pin } = await request.json();
 
     if (!pin) {
