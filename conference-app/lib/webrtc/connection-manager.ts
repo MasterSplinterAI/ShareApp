@@ -3,6 +3,7 @@
 
 import { PeerConnection, PeerConnectionEvents } from './peer-connection';
 import { SignalingClient } from '../signaling/socket';
+import { getApiUrl } from '../utils/api';
 
 export interface ConnectionManagerEvents {
   onStreamAdded: (stream: MediaStream, userId: string, isScreenShare: boolean) => void;
@@ -78,7 +79,7 @@ export class ConnectionManager {
     // Fetch ICE servers
     try {
       console.log('ConnectionManager: Fetching ICE servers...');
-      const response = await fetch('/api/turn');
+      const response = await fetch(getApiUrl('/api/turn'));
       const data = await response.json();
       this.iceServers = data.iceServers;
       console.log('ConnectionManager: Got ICE servers:', this.iceServers.length);
@@ -102,8 +103,10 @@ export class ConnectionManager {
     console.log('ConnectionManager: Connected, participants:', participants);
     
     // Create peer connections for existing participants
+    // New user should NOT be polite (wait for offers from existing users)
+    // Existing users will create offers when they see this user join
     for (const participantId of participants) {
-      await this.createPeerConnection(participantId, true);
+      await this.createPeerConnection(participantId, false);
     }
   }
 
@@ -185,9 +188,13 @@ export class ConnectionManager {
 
     // If we're the polite peer (initiator), create an offer
     if (isPolite) {
-      const offer = pc.getLocalDescription();
-      if (offer) {
+      // Create offer explicitly after adding tracks
+      try {
+        const offer = await pc.createOffer();
         this.signaling.sendOffer(offer, userId);
+        console.log(`Sent offer to ${userId}`);
+      } catch (err) {
+        console.error(`Error creating offer for ${userId}:`, err);
       }
     }
 

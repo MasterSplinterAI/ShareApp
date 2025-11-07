@@ -210,6 +210,12 @@ export class PeerConnection {
     return this.pc.localDescription;
   }
 
+  async createOffer(): Promise<RTCSessionDescriptionInit> {
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    return offer;
+  }
+
   getIceCandidates(): RTCIceCandidate[] {
     // Note: We'll send candidates as they're generated via onicecandidate
     return [];
