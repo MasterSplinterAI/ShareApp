@@ -2,6 +2,23 @@ const { createServer } = require('http');
 const { parse } = require('url');
 const next = require('next');
 const { Server } = require('socket.io');
+const path = require('path');
+const fs = require('fs');
+
+// Load environment variables from .env.production if it exists
+if (process.env.NODE_ENV === 'production') {
+  const envPath = path.join(__dirname, '.env.production');
+  if (fs.existsSync(envPath)) {
+    const envFile = fs.readFileSync(envPath, 'utf8');
+    envFile.split('\n').forEach(line => {
+      const match = line.match(/^([^=:#]+)=(.*)$/);
+      if (match && !process.env[match[1].trim()]) {
+        process.env[match[1].trim()] = match[2].trim();
+      }
+    });
+    console.log('✅ Loaded environment variables from .env.production');
+  }
+}
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
