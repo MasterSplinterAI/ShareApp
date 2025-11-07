@@ -3,7 +3,6 @@
 
 import { PeerConnection, PeerConnectionEvents } from './peer-connection';
 import { SignalingClient } from '../signaling/socket';
-import { getApiUrl } from '../utils/api';
 
 export interface ConnectionManagerEvents {
   onStreamAdded: (stream: MediaStream, userId: string, isScreenShare: boolean) => void;
@@ -79,7 +78,7 @@ export class ConnectionManager {
     // Fetch ICE servers
     try {
       console.log('ConnectionManager: Fetching ICE servers...');
-      const response = await fetch(getApiUrl('/api/turn'));
+      const response = await fetch('/api/turn');
       const data = await response.json();
       this.iceServers = data.iceServers;
       console.log('ConnectionManager: Got ICE servers:', this.iceServers.length);

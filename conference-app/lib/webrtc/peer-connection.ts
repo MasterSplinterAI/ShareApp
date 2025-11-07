@@ -18,6 +18,7 @@ export class PeerConnection {
   private isPolite: boolean;
   private events: PeerConnectionEvents;
   private dataChannel: RTCDataChannel | null = null;
+  private iceCandidateQueue: RTCIceCandidateInit[] = [];
 
   constructor(
     userId: string,
@@ -159,20 +160,48 @@ export class PeerConnection {
     await this.pc.setRemoteDescription(offer);
     await this.pc.setLocalDescription();
     
+    // Flush queued ICE candidates after setting remote description
+    await this.flushIceCandidateQueue();
+    
     return this.pc.localDescription!;
   }
 
   async handleAnswer(answer: RTCSessionDescriptionInit): Promise<void> {
     await this.pc.setRemoteDescription(answer);
+    
+    // Flush queued ICE candidates after setting remote description
+    await this.flushIceCandidateQueue();
   }
 
   async handleIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    // If remote description is not set, queue the candidate
+    if (!this.pc.remoteDescription) {
+      console.log(`Queueing ICE candidate from ${this.userId} (remote description not set yet)`);
+      this.iceCandidateQueue.push(candidate);
+      return;
+    }
+
+    // Try to add the candidate immediately
     try {
       await this.pc.addIceCandidate(candidate);
     } catch (err) {
-      // Ignore errors if the remote description isn't set yet
-      if (!this.ignoreOffer) {
-        console.error(`Error adding ICE candidate from ${this.userId}:`, err);
+      console.error(`Error adding ICE candidate from ${this.userId}:`, err);
+    }
+  }
+
+  private async flushIceCandidateQueue(): Promise<void> {
+    if (this.iceCandidateQueue.length === 0) return;
+
+    console.log(`Flushing ${this.iceCandidateQueue.length} queued ICE candidates for ${this.userId}`);
+    
+    while (this.iceCandidateQueue.length > 0) {
+      const candidate = this.iceCandidateQueue.shift();
+      if (candidate) {
+        try {
+          await this.pc.addIceCandidate(candidate);
+        } catch (err) {
+          console.error(`Error adding queued ICE candidate from ${this.userId}:`, err);
+        }
       }
     }
   }

@@ -20,6 +20,8 @@ export default function RoomPage() {
   const [isValidating, setIsValidating] = useState(true);
   const [error, setError] = useState('');
   const [roomInfo, setRoomInfo] = useState<any>(null);
+  const [copied, setCopied] = useState(false);
+  const [hostPin, setHostPin] = useState<string | null>(null);
 
   const {
     participants,
@@ -33,8 +35,15 @@ export default function RoomPage() {
 
   useEffect(() => {
     validateRoom();
+    // Get host PIN from sessionStorage if host
+    if (isHost && typeof window !== 'undefined') {
+      const storedHostPin = sessionStorage.getItem(`hostPin_${roomId}`);
+      if (storedHostPin) {
+        setHostPin(storedHostPin);
+      }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomId, pin]);
+  }, [roomId, pin, isHost]);
 
   useEffect(() => {
     // Initialize conference after room validation
@@ -85,6 +94,21 @@ export default function RoomPage() {
   const handleLeave = () => {
     disconnect();
     router.push('/');
+  };
+
+  const copyParticipantLink = async () => {
+    if (!roomInfo?.participantPin) return;
+    
+    const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+    const participantLink = `${baseUrl}/meet/room/${roomId}?pin=${roomInfo.participantPin}`;
+    
+    try {
+      await navigator.clipboard.writeText(participantLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
   if (isValidating) {
@@ -169,13 +193,37 @@ export default function RoomPage() {
         {/* Room Info (for hosts) */}
         {roomInfo?.isHost && (
           <div className="bg-gray-700 px-4 py-3 border-t border-gray-600">
-            <div className="text-center text-sm">
-              <p className="text-gray-300">
-                Share this room: <span className="font-mono text-white">{roomId}</span>
-              </p>
-              <p className="text-gray-400">
-                Participant PIN: <span className="font-mono text-white">{roomInfo.participantPin}</span>
-              </p>
+            <div className="space-y-3">
+              {/* Share Button */}
+              <button
+                onClick={copyParticipantLink}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors font-medium"
+              >
+                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                </svg>
+                {copied ? 'Link Copied!' : 'Share Room Link'}
+              </button>
+
+              {/* Room Details */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="bg-gray-600 px-3 py-2 rounded">
+                  <p className="text-gray-400 mb-1">Room ID</p>
+                  <p className="font-mono text-white font-semibold">{roomId}</p>
+                </div>
+                <div className="bg-gray-600 px-3 py-2 rounded">
+                  <p className="text-gray-400 mb-1">Participant PIN</p>
+                  <p className="font-mono text-white font-semibold">{roomInfo.participantPin}</p>
+                </div>
+              </div>
+
+              {/* Host PIN */}
+              {hostPin && (
+                <div className="bg-blue-900/30 border border-blue-700 px-3 py-2 rounded">
+                  <p className="text-blue-300 text-xs mb-1">Your Host PIN (save this to rejoin)</p>
+                  <p className="font-mono text-blue-100 font-bold text-sm">{hostPin}</p>
+                </div>
+              )}
             </div>
           </div>
         )}
