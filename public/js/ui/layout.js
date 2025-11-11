@@ -348,6 +348,7 @@ export function updateVideoTileLayout() {
   const participantsGrid = document.getElementById('participantsGrid');
   const mainVideoContainer = document.getElementById('mainVideoContainer');
   const videoGrid = document.getElementById('videoGrid');
+  const meetingContainer = document.getElementById('meeting');
   
   if (!participantsGrid) return;
   
@@ -364,23 +365,39 @@ export function updateVideoTileLayout() {
     mainVideoContainer.style.cssText = '';
   }
   
-  // Always use 2-column grid (2 wide, up to 5 rows down) with smaller gap for larger tiles
-  // This works well for both desktop and mobile
+  // Make meeting container take full viewport height
+  if (meetingContainer) {
+    meetingContainer.style.minHeight = '100vh';
+    meetingContainer.style.display = 'flex';
+    meetingContainer.style.flexDirection = 'column';
+  }
+  
+  // Always use 2-column grid (2 wide, up to 5 rows down) with minimal gap for maximum tile size
   participantsGrid.className = 'grid w-full video-grid';
   participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-  participantsGrid.style.gap = '8px'; // Smaller gap for larger tiles
-  participantsGrid.style.padding = '8px';
+  participantsGrid.style.gap = '4px'; // Minimal gap for maximum tile size
+  participantsGrid.style.padding = '4px';
+  participantsGrid.style.width = '100%';
+  participantsGrid.style.height = '100%';
+  participantsGrid.style.flex = '1 1 auto'; // Take available space
+  participantsGrid.style.overflowY = 'auto'; // Allow scrolling if needed
   
-  // Make the grid container take more vertical space
+  // Make the grid container take maximum vertical space
   if (videoGrid) {
-    videoGrid.className = 'flex flex-col mb-6';
-    videoGrid.style.minHeight = 'calc(100vh - 200px)'; // Take most of viewport height
+    videoGrid.className = 'flex flex-col';
+    videoGrid.style.marginBottom = '0';
+    videoGrid.style.padding = '0';
+    videoGrid.style.gap = '0';
+    videoGrid.style.flex = '1 1 auto'; // Take all available space
+    videoGrid.style.minHeight = 'calc(100vh - 150px)'; // Take most of viewport, leave room for controls
+    videoGrid.style.height = '100%';
+    videoGrid.style.overflow = 'hidden';
   }
   
   // Ensure all containers have equal sizing - make them larger
   allContainers.forEach(container => {
-    container.style.width = '';
-    container.style.height = '';
+    container.style.width = '100%';
+    container.style.height = '100%';
     container.style.aspectRatio = '16/9';
     container.style.minHeight = '';
     container.style.maxHeight = '';

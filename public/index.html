@@ -63,7 +63,7 @@
         </span>
       </div>
       
-      <div id="videoGrid" class="flex flex-col gap-4 mb-6">
+      <div id="videoGrid" class="flex flex-col">
         <!-- Main video container for host/focused participant - Standard meeting app style -->
         <div id="mainVideoContainer" class="video-container main-video-container w-full bg-black rounded-lg overflow-hidden hidden" style="aspect-ratio: 16/9;">
           <video id="mainVideo" class="w-full h-full object-contain" autoplay playsinline webkit-playsinline x5-playsinline></video>
@@ -316,10 +316,31 @@
       aspect-ratio: 16/9;
     }
     
-    /* Grid video containers - maintain aspect ratio */
+    /* Grid video containers - maintain aspect ratio and make larger */
+    #participantsGrid {
+      flex: 1 1 auto;
+      min-height: calc(100vh - 150px);
+    }
+    
     #participantsGrid .video-container {
       aspect-ratio: 16/9;
       background: #000;
+      width: 100%;
+      height: 100%;
+    }
+    
+    /* Make videoGrid take maximum space */
+    #videoGrid {
+      flex: 1 1 auto;
+      min-height: calc(100vh - 150px);
+      overflow: hidden;
+    }
+    
+    /* Make meeting container use flex layout */
+    #meeting:not(.hidden) {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
     }
     
     /* Mobile portrait videos - allow taller aspect ratio */
