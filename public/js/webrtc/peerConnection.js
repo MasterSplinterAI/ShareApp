@@ -550,6 +550,125 @@ export async function createPeerConnection(peerId) {
       if (event.track.kind === 'video') {
         console.log(`Processing video track from peer ${peerId}`);
         
+        // Check if this is a screen share track
+        const trackLabel = event.track.label.toLowerCase();
+        const isScreenShare = trackLabel.includes('screen') || 
+                             trackLabel.includes('desktop') || 
+                             trackLabel.includes('window') ||
+                             trackLabel.includes('display');
+        
+        // If it's a screen share, create a separate tile
+        if (isScreenShare) {
+          console.log(`Detected screen share track from peer ${peerId}`);
+          
+          const screenShareContainerId = `screen-share-${peerId}`;
+          let screenShareContainer = document.getElementById(screenShareContainerId);
+          
+          if (!screenShareContainer) {
+            // Get the participants grid
+            const participantsGrid = document.getElementById('participantsGrid');
+            if (!participantsGrid) {
+              console.error('Participants grid not found');
+              return;
+            }
+            
+            // Create screen share container
+            screenShareContainer = document.createElement('div');
+            screenShareContainer.id = screenShareContainerId;
+            screenShareContainer.className = 'video-container bg-black rounded-lg overflow-hidden relative screen-share-tile';
+            screenShareContainer.style.aspectRatio = '16/9';
+            screenShareContainer.setAttribute('data-screen-share', 'true');
+            screenShareContainer.setAttribute('data-peer-id', peerId);
+            
+            // Create video element for screen share
+            const screenShareVideo = document.createElement('video');
+            screenShareVideo.id = `screen-share-video-${peerId}`;
+            screenShareVideo.className = 'w-full h-full object-contain';
+            screenShareVideo.autoplay = true;
+            screenShareVideo.playsInline = true;
+            
+            // Create stream for screen share
+            const screenShareStream = new MediaStream([event.track]);
+            screenShareVideo.srcObject = screenShareStream;
+            
+            // Get participant name
+            const participantInfo = window.appState.participants[peerId];
+            const participantName = participantInfo?.name || `Participant ${peerId.substring(0, 5)}`;
+            
+            // Create label
+            const screenShareLabel = document.createElement('div');
+            screenShareLabel.className = 'video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10 flex items-center justify-between';
+            screenShareLabel.innerHTML = `
+              <span class="font-medium">🖥️ ${participantName}'s Screen</span>
+              <span class="flex items-center gap-2">
+                <span class="screen-share-indicator">
+                  <i class="fas fa-desktop text-xs"></i>
+                </span>
+              </span>
+            `;
+            
+            // Create pin button
+            const pinBtn = document.createElement('button');
+            pinBtn.className = 'participant-control pin-btn';
+            pinBtn.title = 'Pin screen share to main view';
+            pinBtn.setAttribute('aria-label', 'Pin screen share to main view');
+            pinBtn.setAttribute('data-participant-id', screenShareContainerId);
+            pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
+            pinBtn.style.cssText = 'position: absolute; top: 8px; right: 8px; z-index: 20; background: rgba(0,0,0,0.6); border: none; border-radius: 4px; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer;';
+            
+            // Add click handler for pin button
+            pinBtn.addEventListener('click', () => {
+              window.appState.pinnedParticipant = screenShareContainerId;
+              document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
+            });
+            
+            // Assemble container
+            const controlsDiv = document.createElement('div');
+            controlsDiv.className = 'absolute top-2 right-2 flex gap-1 z-10';
+            controlsDiv.appendChild(pinBtn);
+            
+            screenShareContainer.appendChild(screenShareVideo);
+            screenShareContainer.appendChild(screenShareLabel);
+            screenShareContainer.appendChild(controlsDiv);
+            
+            // Add to participants grid
+            participantsGrid.appendChild(screenShareContainer);
+            
+            // Try to play
+            screenShareVideo.play().catch(err => {
+              console.warn(`Could not autoplay screen share for ${peerId}:`, err);
+            });
+            
+            // Listen for track ending (when remote user stops sharing)
+            event.track.addEventListener('ended', () => {
+              console.log(`Screen share ended for peer ${peerId}`);
+              if (screenShareContainer && screenShareContainer.parentNode) {
+                screenShareContainer.remove();
+              }
+              // If this screen share was pinned, reset to local
+              if (window.appState.pinnedParticipant === screenShareContainerId) {
+                window.appState.pinnedParticipant = 'local';
+                document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
+              }
+            });
+            
+            console.log(`Created separate screen share tile for peer ${peerId}`);
+            return; // Don't process as regular video track
+          } else {
+            // Update existing screen share tile
+            const existingVideo = screenShareContainer.querySelector('video');
+            if (existingVideo) {
+              const screenShareStream = new MediaStream([event.track]);
+              existingVideo.srcObject = screenShareStream;
+              existingVideo.play().catch(err => {
+                console.warn(`Could not play screen share in existing tile:`, err);
+              });
+            }
+            return; // Don't process as regular video track
+          }
+        }
+        
+        // Regular video track processing (camera feed)
         // Classic UI: Create DOM elements
         // Get or create the video element
         let remoteVideo = document.getElementById(`video-${peerId}`);

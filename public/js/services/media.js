@@ -700,27 +700,103 @@ export async function startScreenSharing() {
     
     // Only update the UI if we actually got a screen share stream
     if (streamDetails.hasVideo && streamDetails.videoTrackEnabled) {
-      // Update local video display with the screen share
-      const localVideo = document.getElementById('localVideo');
-      if (localVideo) {
-        if (localVideo.srcObject !== screenStream) {
-          console.log('Updating local video display with screen share');
-          localVideo.srcObject = screenStream;
-          localVideo.muted = true; // Prevent feedback
-          
-          // Try to play
-          try {
-            await localVideo.play();
-          } catch (playError) {
-            console.warn('Could not autoplay screen share in local view:', playError);
-          }
-        }
-      }
-      
-      // Replace video track in all peer connections with the screen share
+      // Create a separate screen share tile instead of replacing local video
       const screenVideoTrack = screenStream.getVideoTracks()[0];
       
       if (screenVideoTrack) {
+        // Store screen share container ID for later removal
+        const screenShareContainerId = 'screen-share-local';
+        window.appState.screenShareContainerId = screenShareContainerId;
+        
+        // Check if screen share tile already exists
+        let screenShareContainer = document.getElementById(screenShareContainerId);
+        
+        if (!screenShareContainer) {
+          console.log('Creating separate screen share tile');
+          
+          // Get the participants grid
+          const participantsGrid = document.getElementById('participantsGrid');
+          if (!participantsGrid) {
+            console.error('Participants grid not found');
+            return null;
+          }
+          
+          // Create screen share container
+          screenShareContainer = document.createElement('div');
+          screenShareContainer.id = screenShareContainerId;
+          screenShareContainer.className = 'video-container bg-black rounded-lg overflow-hidden relative screen-share-tile';
+          screenShareContainer.style.aspectRatio = '16/9';
+          screenShareContainer.setAttribute('data-screen-share', 'true');
+          
+          // Create video element for screen share
+          const screenShareVideo = document.createElement('video');
+          screenShareVideo.id = 'screen-share-video-local';
+          screenShareVideo.className = 'w-full h-full object-contain';
+          screenShareVideo.autoplay = true;
+          screenShareVideo.playsInline = true;
+          screenShareVideo.muted = true; // Prevent feedback
+          screenShareVideo.srcObject = screenStream;
+          
+          // Create label
+          const screenShareLabel = document.createElement('div');
+          screenShareLabel.className = 'video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10 flex items-center justify-between';
+          screenShareLabel.innerHTML = `
+            <span class="font-medium">🖥️ Your Screen Share</span>
+            <span class="flex items-center gap-2">
+              <span class="screen-share-indicator">
+                <i class="fas fa-desktop text-xs"></i>
+              </span>
+            </span>
+          `;
+          
+          // Create pin button
+          const pinBtn = document.createElement('button');
+          pinBtn.className = 'participant-control pin-btn';
+          pinBtn.title = 'Pin screen share to main view';
+          pinBtn.setAttribute('aria-label', 'Pin screen share to main view');
+          pinBtn.setAttribute('data-participant-id', 'screen-share-local');
+          pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
+          pinBtn.style.cssText = 'position: absolute; top: 8px; right: 8px; z-index: 20; background: rgba(0,0,0,0.6); border: none; border-radius: 4px; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer;';
+          
+          // Add click handler for pin button
+          pinBtn.addEventListener('click', () => {
+            window.appState.pinnedParticipant = 'screen-share-local';
+            document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
+          });
+          
+          // Assemble container
+          const controlsDiv = document.createElement('div');
+          controlsDiv.className = 'absolute top-2 right-2 flex gap-1 z-10';
+          controlsDiv.appendChild(pinBtn);
+          
+          screenShareContainer.appendChild(screenShareVideo);
+          screenShareContainer.appendChild(screenShareLabel);
+          screenShareContainer.appendChild(controlsDiv);
+          
+          // Add to participants grid
+          participantsGrid.appendChild(screenShareContainer);
+          
+          // Try to play
+          try {
+            await screenShareVideo.play();
+            console.log('Screen share video playing in separate tile');
+          } catch (playError) {
+            console.warn('Could not autoplay screen share:', playError);
+          }
+        } else {
+          // Update existing screen share tile
+          const existingVideo = screenShareContainer.querySelector('video');
+          if (existingVideo) {
+            existingVideo.srcObject = screenStream;
+            try {
+              await existingVideo.play();
+            } catch (playError) {
+              console.warn('Could not play screen share in existing tile:', playError);
+            }
+          }
+        }
+        
+        // Replace video track in all peer connections with the screen share
         console.log('Replacing video track in peer connections with screen share');
         
         // Import the function to replace video tracks
@@ -728,6 +804,33 @@ export async function startScreenSharing() {
           await replaceVideoTrackInPeerConnections(screenVideoTrack);
         } catch (rtcError) {
           console.error('Error replacing video track in peer connections:', rtcError);
+        }
+      }
+      
+      // Restore local video to show camera feed (if available)
+      const localVideo = document.getElementById('localVideo');
+      if (localVideo && window.appState.localStream) {
+        // Check if we have a camera track
+        const cameraTrack = window.appState.localStream.getVideoTracks().find(
+          track => track.label.toLowerCase().includes('camera') || 
+                   track.label.toLowerCase().includes('webcam') ||
+                   !track.label.toLowerCase().includes('screen')
+        );
+        
+        if (cameraTrack) {
+          // Create a stream with just the camera track
+          const cameraStream = new MediaStream([cameraTrack]);
+          // Also add audio tracks
+          window.appState.localStream.getAudioTracks().forEach(track => {
+            cameraStream.addTrack(track);
+          });
+          localVideo.srcObject = cameraStream;
+          localVideo.muted = true;
+          try {
+            await localVideo.play();
+          } catch (playError) {
+            console.warn('Could not play camera feed:', playError);
+          }
         }
       }
       
@@ -766,7 +869,7 @@ export async function startScreenSharing() {
 }
 
 // Stop screen sharing
-export function stopScreenSharing() {
+export async function stopScreenSharing() {
   try {
     console.log('Stopping screen sharing');
     
@@ -783,6 +886,57 @@ export function stopScreenSharing() {
     // Clear screen stream reference
     window.appState.screenStream = null;
     window.appState.isScreenSharing = false;
+    
+    // Remove screen share tile if it exists
+    const screenShareContainerId = window.appState.screenShareContainerId || 'screen-share-local';
+    const screenShareContainer = document.getElementById(screenShareContainerId);
+    if (screenShareContainer) {
+      console.log('Removing screen share tile');
+      screenShareContainer.remove();
+      window.appState.screenShareContainerId = null;
+    }
+    
+    // If screen share was pinned, reset to local
+    if (window.appState.pinnedParticipant === 'screen-share-local') {
+      window.appState.pinnedParticipant = 'local';
+      document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
+    }
+    
+    // Restore local video to show camera feed (if available)
+    const localVideo = document.getElementById('localVideo');
+    if (localVideo && window.appState.localStream) {
+      // Check if we have a camera track
+      const cameraTrack = window.appState.localStream.getVideoTracks().find(
+        track => track.label.toLowerCase().includes('camera') || 
+                 track.label.toLowerCase().includes('webcam') ||
+                 !track.label.toLowerCase().includes('screen')
+      );
+      
+      if (cameraTrack) {
+        // Create a stream with just the camera track
+        const cameraStream = new MediaStream([cameraTrack]);
+        // Also add audio tracks
+        window.appState.localStream.getAudioTracks().forEach(track => {
+          cameraStream.addTrack(track);
+        });
+        localVideo.srcObject = cameraStream;
+        localVideo.muted = true;
+        try {
+          await localVideo.play();
+        } catch (playError) {
+          console.warn('Could not play camera feed:', playError);
+        }
+      } else {
+        // No camera track, just use the local stream as is
+        localVideo.srcObject = window.appState.localStream;
+        localVideo.muted = true;
+        try {
+          await localVideo.play();
+        } catch (playError) {
+          console.warn('Could not play local stream:', playError);
+        }
+      }
+    }
     
     // Update UI buttons
     const shareScreenBtn = document.getElementById('shareScreenBtn');
@@ -857,27 +1011,7 @@ export function stopScreenSharing() {
       }
     }
     
-    // Restore camera stream to UI
-    const localVideo = document.getElementById('localVideo');
-    if (localVideo && window.appState.localStream) {
-      localVideo.srcObject = window.appState.localStream;
-      localVideo.muted = true; // Prevent feedback
-      
-      // Force play with retries
-      const playLocalVideo = async (retries = 3) => {
-        try {
-          await localVideo.play();
-          console.log('Local video playing successfully');
-        } catch (err) {
-          console.warn(`Could not autoplay local video (${retries} retries left):`, err);
-          if (retries > 0) {
-            setTimeout(() => playLocalVideo(retries - 1), 500);
-          }
-        }
-      };
-      
-      playLocalVideo();
-    }
+    // Local video restoration is already handled above
     
     // IMPORTANT: We need to update all peer connections to send the camera feed now
     restoreVideoTracks();

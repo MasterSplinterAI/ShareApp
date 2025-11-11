@@ -172,6 +172,42 @@ export function updateMainVideo() {
       }
     }
     
+    // Check if pinned participant is a screen share tile
+    if (pinnedParticipant && pinnedParticipant.startsWith('screen-share-')) {
+      console.log(`Setting screen share as main video: ${pinnedParticipant}`);
+      
+      const screenShareContainer = document.getElementById(pinnedParticipant);
+      if (screenShareContainer) {
+        // Hide the screen share tile in the grid
+        screenShareContainer.classList.add('hidden');
+        
+        const screenShareVideo = screenShareContainer.querySelector('video');
+        if (screenShareVideo && screenShareVideo.srcObject) {
+          mainVideo.srcObject = screenShareVideo.srcObject;
+          mainVideo.muted = true;
+          
+          // Update label
+          if (mainParticipantName) {
+            const label = screenShareContainer.querySelector('.video-label span');
+            mainParticipantName.textContent = label ? label.textContent : 'Screen Share';
+          }
+          
+          // Hide placeholder
+          if (mainVideoPlaceholder) {
+            mainVideoPlaceholder.classList.add('hidden');
+          }
+          
+          // Try to play
+          mainVideo.play().catch(err => {
+            console.warn('Could not play screen share in main video:', err);
+          });
+          
+          mainVideoUpdateInProgress = false;
+          return;
+        }
+      }
+    }
+    
     // If we are showing local user in main view
     if (pinnedParticipant === 'local') {
       console.log('Setting local user as main video');
@@ -433,8 +469,8 @@ export function updateMainVideo() {
       // IMPORTANT: Always mute when showing local content to prevent echo
       mainVideo.muted = true;
     } 
-    // If we're showing another participant
-    else if (pinnedParticipant) {
+    // If we're showing another participant (not a screen share)
+    else if (pinnedParticipant && !pinnedParticipant.startsWith('screen-share-')) {
       console.log(`Setting participant ${pinnedParticipant} as main video`);
       
       // Add CSS class for remote participant

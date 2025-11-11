@@ -305,9 +305,18 @@ function setupJoinButton() {
   });
 }
 
+// Function to generate a random PIN
+function generatePin() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
 // Function to prompt for access codes when hosting
 export async function promptForAccessCodes() {
   return new Promise((resolve) => {
+    // Auto-generate PINs
+    const participantPin = generatePin();
+    const hostPin = generatePin();
+    
     // Create modal overlay
     const modalOverlay = document.createElement('div');
     modalOverlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] modal-overlay';
@@ -326,7 +335,7 @@ export async function promptForAccessCodes() {
     
     const title = document.createElement('h3');
     title.className = 'text-xl font-bold';
-    title.textContent = 'Meeting Security';
+    title.textContent = 'Meeting Security Codes';
     
     header.appendChild(icon);
     header.appendChild(title);
@@ -334,85 +343,137 @@ export async function promptForAccessCodes() {
     // Description
     const description = document.createElement('p');
     description.className = 'text-gray-600 mb-4 text-sm';
-    description.textContent = 'Optionally set access codes to control who can join your meeting.';
+    description.textContent = 'Your meeting access codes have been generated. Share the participant code with others, and save the host code to rejoin as host.';
     
-    // Access code input (for participants)
+    // Access code display (for participants)
     const accessCodeContainer = document.createElement('div');
     accessCodeContainer.className = 'mb-4';
     
     const accessCodeLabel = document.createElement('label');
-    accessCodeLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
-    accessCodeLabel.innerHTML = '<i class="fas fa-users mr-1"></i> Participant Access Code (optional)';
+    accessCodeLabel.className = 'block text-sm font-medium text-gray-700 mb-2';
+    accessCodeLabel.innerHTML = '<i class="fas fa-users mr-1"></i> Participant Access Code';
     
-    const accessCodeInput = document.createElement('input');
-    accessCodeInput.type = 'text';
-    accessCodeInput.placeholder = 'Enter 4-6 digit code';
-    accessCodeInput.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
-    accessCodeInput.maxLength = 6;
-    accessCodeInput.pattern = '[0-9]*';
-    accessCodeInput.inputMode = 'numeric';
+    const accessCodeDisplay = document.createElement('div');
+    accessCodeDisplay.className = 'flex items-center gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg';
     
+    const accessCodeValue = document.createElement('code');
+    accessCodeValue.className = 'flex-1 text-lg font-mono font-bold text-gray-800';
+    accessCodeValue.textContent = participantPin;
+    accessCodeValue.id = 'generatedParticipantPin';
+    
+    const accessCodeCopyBtn = document.createElement('button');
+    accessCodeCopyBtn.className = 'btn btn-sm btn-secondary';
+    accessCodeCopyBtn.innerHTML = '<i class="fas fa-copy mr-1"></i>Copy';
+    accessCodeCopyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(participantPin).then(() => {
+        accessCodeCopyBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+        setTimeout(() => {
+          accessCodeCopyBtn.innerHTML = '<i class="fas fa-copy mr-1"></i>Copy';
+        }, 2000);
+      });
+    });
+    
+    accessCodeDisplay.appendChild(accessCodeValue);
+    accessCodeDisplay.appendChild(accessCodeCopyBtn);
     accessCodeContainer.appendChild(accessCodeLabel);
-    accessCodeContainer.appendChild(accessCodeInput);
+    accessCodeContainer.appendChild(accessCodeDisplay);
     
-    // Host code input
+    // Host code display
     const hostCodeContainer = document.createElement('div');
     hostCodeContainer.className = 'mb-4';
     
     const hostCodeLabel = document.createElement('label');
-    hostCodeLabel.className = 'block text-sm font-medium text-gray-700 mb-1';
-    hostCodeLabel.innerHTML = '<i class="fas fa-crown mr-1"></i> Host Code (optional)';
+    hostCodeLabel.className = 'block text-sm font-medium text-gray-700 mb-2';
+    hostCodeLabel.innerHTML = '<i class="fas fa-crown mr-1"></i> Host Code';
     
-    const hostCodeInput = document.createElement('input');
-    hostCodeInput.type = 'text';
-    hostCodeInput.placeholder = 'Enter 4-6 digit code';
-    hostCodeInput.className = 'w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500';
-    hostCodeInput.maxLength = 6;
-    hostCodeInput.pattern = '[0-9]*';
-    hostCodeInput.inputMode = 'numeric';
+    const hostCodeDisplay = document.createElement('div');
+    hostCodeDisplay.className = 'flex items-center gap-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg';
+    
+    const hostCodeValue = document.createElement('code');
+    hostCodeValue.className = 'flex-1 text-lg font-mono font-bold text-gray-800';
+    hostCodeValue.textContent = hostPin;
+    hostCodeValue.id = 'generatedHostPin';
+    
+    const hostCodeCopyBtn = document.createElement('button');
+    hostCodeCopyBtn.className = 'btn btn-sm btn-secondary';
+    hostCodeCopyBtn.innerHTML = '<i class="fas fa-copy mr-1"></i>Copy';
+    hostCodeCopyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(hostPin).then(() => {
+        hostCodeCopyBtn.innerHTML = '<i class="fas fa-check mr-1"></i>Copied!';
+        setTimeout(() => {
+          hostCodeCopyBtn.innerHTML = '<i class="fas fa-copy mr-1"></i>Copy';
+        }, 2000);
+      });
+    });
+    
+    hostCodeDisplay.appendChild(hostCodeValue);
+    hostCodeDisplay.appendChild(hostCodeCopyBtn);
+    hostCodeContainer.appendChild(hostCodeLabel);
+    hostCodeContainer.appendChild(hostCodeDisplay);
     
     const hostCodeHint = document.createElement('p');
     hostCodeHint.className = 'text-xs text-gray-500 mt-1';
-    hostCodeHint.textContent = 'Use this code to rejoin as host if you leave';
-    
-    hostCodeContainer.appendChild(hostCodeLabel);
-    hostCodeContainer.appendChild(hostCodeInput);
+    hostCodeHint.textContent = 'Save this code to rejoin as host if you leave';
     hostCodeContainer.appendChild(hostCodeHint);
     
     // Buttons
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'flex justify-end gap-2 mt-6';
     
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'btn btn-secondary';
-    cancelBtn.textContent = 'Skip';
-    cancelBtn.addEventListener('click', () => {
+    const handleConfirm = () => {
       document.body.removeChild(modalOverlay);
-      resolve({ accessCode: null, hostCode: null });
-    });
+      resolve({ accessCode: participantPin, hostCode: hostPin });
+    };
     
-    const continueBtn = document.createElement('button');
-    continueBtn.className = 'btn btn-primary';
-    continueBtn.textContent = 'Continue';
-    continueBtn.addEventListener('click', () => {
-      const accessCode = accessCodeInput.value.trim() || null;
-      const hostCode = hostCodeInput.value.trim() || null;
+    const confirmBtn = document.createElement('button');
+    confirmBtn.className = 'btn btn-primary';
+    confirmBtn.textContent = 'Confirm & Continue';
+    
+    // Add mobile touch handlers
+    const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+    if (isMobile) {
+      confirmBtn.style.cssText = 'position: relative; z-index: 10001 !important; pointer-events: auto !important; touch-action: manipulation !important; -webkit-tap-highlight-color: rgba(0,0,0,0.1) !important; cursor: pointer !important; min-width: 44px !important; min-height: 44px !important;';
       
-      document.body.removeChild(modalOverlay);
-      resolve({ accessCode, hostCode });
+      confirmBtn.addEventListener('touchstart', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '0.8';
+      }, { passive: false });
+      
+      confirmBtn.addEventListener('touchend', function(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.style.opacity = '';
+        handleConfirm();
+      }, { passive: false });
+    }
+    
+    confirmBtn.addEventListener('click', (e) => {
+      if (!isMobile) {
+        e.preventDefault();
+        handleConfirm();
+      }
     });
     
     // Allow Enter key to submit
     const handleEnter = (e) => {
-      if (e.key === 'Enter') {
-        continueBtn.click();
+      if (e.key === 'Enter' && document.body.contains(modalOverlay)) {
+        e.preventDefault();
+        handleConfirm();
       }
     };
-    accessCodeInput.addEventListener('keydown', handleEnter);
-    hostCodeInput.addEventListener('keydown', handleEnter);
+    document.addEventListener('keydown', handleEnter);
     
-    buttonContainer.appendChild(cancelBtn);
-    buttonContainer.appendChild(continueBtn);
+    // Clean up listener when modal is removed
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(modalOverlay)) {
+        document.removeEventListener('keydown', handleEnter);
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { childList: true });
+    
+    buttonContainer.appendChild(confirmBtn);
     
     // Assemble modal
     modalContent.appendChild(header);
@@ -425,8 +486,8 @@ export async function promptForAccessCodes() {
     // Add to DOM
     document.body.appendChild(modalOverlay);
     
-    // Focus first input
-    setTimeout(() => accessCodeInput.focus(), 100);
+    // Focus confirm button
+    setTimeout(() => confirmBtn.focus(), 100);
   });
 }
 
