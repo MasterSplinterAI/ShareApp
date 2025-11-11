@@ -225,8 +225,16 @@ export function updateMainVideo() {
         console.log('Using local camera stream for main video');
         
         try {
-          // Check if we have enabled video tracks
-          const hasEnabledVideoTracks = window.appState.localStream.getVideoTracks().some(
+          // Check if we have enabled video tracks (camera only, not screen share)
+          const videoTracks = window.appState.localStream.getVideoTracks();
+          const cameraTracks = videoTracks.filter(track => 
+            !track.label.toLowerCase().includes('screen') &&
+            !track.label.toLowerCase().includes('desktop') &&
+            !track.label.toLowerCase().includes('window') &&
+            !track.label.toLowerCase().includes('display')
+          );
+          
+          const hasEnabledVideoTracks = cameraTracks.some(
             t => t.enabled && t.readyState === 'live'
           );
           
@@ -287,10 +295,19 @@ export function updateMainVideo() {
           
           // ANTI-FLASHING: Only reset if we need to
           const currentStream = mainVideo.srcObject;
+          // Check if current stream has camera tracks (not screen share)
+          const currentVideoTracks = currentStream ? currentStream.getVideoTracks() : [];
+          const currentCameraTracks = currentVideoTracks.filter(track => 
+            !track.label.toLowerCase().includes('screen') &&
+            !track.label.toLowerCase().includes('desktop') &&
+            !track.label.toLowerCase().includes('window') &&
+            !track.label.toLowerCase().includes('display')
+          );
+          
           const needsUpdate = !currentStream || 
-                             currentStream !== window.appState.localStream ||
+                             currentCameraTracks.length === 0 ||
                              !hasEnabledVideoTracks ||
-                             !currentStream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
+                             !currentCameraTracks.some(t => t.enabled && t.readyState === 'live');
           
           if (needsUpdate || hasEnabledVideoTracks) {
             console.log('Updating main video with local stream, hasEnabledVideoTracks:', hasEnabledVideoTracks);
@@ -323,10 +340,24 @@ export function updateMainVideo() {
               }
             };
             
+            // Create a clean stream with only camera tracks (no screen share)
+            const cameraStream = new MediaStream();
+            cameraTracks.forEach(track => {
+              if (track.enabled && track.readyState === 'live') {
+                cameraStream.addTrack(track);
+              }
+            });
+            // Add audio tracks
+            window.appState.localStream.getAudioTracks().forEach(track => {
+              if (track.readyState === 'live') {
+                cameraStream.addTrack(track);
+              }
+            });
+            
             // Force update the stream
             mainVideo.srcObject = null; // Clear first
             setTimeout(() => {
-              mainVideo.srcObject = window.appState.localStream;
+              mainVideo.srcObject = cameraStream;
               
               // Try to play the video
               mainVideo.play().then(() => {
