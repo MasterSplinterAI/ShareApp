@@ -378,31 +378,31 @@ export function updateVideoTileLayout() {
   // Always use 2-column grid (2 wide, up to 5 rows down)
   participantsGrid.className = 'grid w-full video-grid';
   participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-  participantsGrid.style.gap = isMobile ? '6px' : '8px'; // Slightly larger gap
-  participantsGrid.style.padding = isMobile ? '4px' : '8px';
+  participantsGrid.style.gap = isMobile ? '6px' : '10px';
+  participantsGrid.style.padding = isMobile ? '4px' : '12px';
   participantsGrid.style.width = '100%';
   participantsGrid.style.flex = '1 1 auto';
   participantsGrid.style.overflowY = 'auto';
+  participantsGrid.style.alignContent = 'start'; // Align to top to reduce black space
   
-  // Make the grid container take reasonable vertical space (not too big, not too small)
+  // Make the grid container take reasonable vertical space
   if (videoGrid) {
     videoGrid.className = 'flex flex-col';
     videoGrid.style.marginBottom = '0';
     videoGrid.style.padding = '0';
     videoGrid.style.gap = '0';
-    videoGrid.style.flex = '1 1 auto';
-    // Optimal size: leave room for title, controls, and some padding
-    videoGrid.style.minHeight = isMobile ? 'calc(100vh - 180px)' : 'calc(100vh - 200px)';
-    videoGrid.style.maxHeight = isMobile ? 'calc(100vh - 180px)' : 'calc(100vh - 200px)';
-    videoGrid.style.height = '100%';
-    videoGrid.style.overflow = 'hidden';
+    videoGrid.style.flex = '0 1 auto'; // Don't force expansion, let content determine size
+    videoGrid.style.minHeight = ''; // Remove forced min-height
+    videoGrid.style.maxHeight = '';
+    videoGrid.style.height = 'auto'; // Let content determine height
+    videoGrid.style.overflow = 'visible'; // Allow natural flow
   }
   
-  // Ensure all containers have equal sizing
+  // Ensure all containers have equal sizing - wider for desktop
   allContainers.forEach(container => {
     container.style.width = '100%';
-    container.style.height = '100%';
-    // Use 16:9 for desktop, but allow mobile to be less elongated
+    container.style.height = 'auto'; // Let height be determined by aspect ratio
+    // Use 16:9 for desktop (wider), 4/3 for mobile (less elongated)
     container.style.aspectRatio = isMobile ? '4/3' : '16/9';
     container.style.minHeight = '';
     container.style.maxHeight = '';

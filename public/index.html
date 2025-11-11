@@ -318,22 +318,21 @@
     
     /* Grid video containers - maintain aspect ratio and make larger */
     #participantsGrid {
-      flex: 1 1 auto;
-      min-height: calc(100vh - 150px);
+      flex: 0 1 auto; /* Don't force expansion */
+      align-content: start; /* Align tiles to top to reduce black space */
     }
     
     #participantsGrid .video-container {
-      aspect-ratio: 16/9;
+      aspect-ratio: 16/9; /* Wider for desktop */
       background: #000;
       width: 100%;
-      height: 100%;
+      height: auto; /* Let height be determined by aspect ratio */
     }
     
-    /* Make videoGrid take maximum space */
+    /* Make videoGrid take natural space */
     #videoGrid {
-      flex: 1 1 auto;
-      min-height: calc(100vh - 150px);
-      overflow: hidden;
+      flex: 0 1 auto; /* Don't force expansion */
+      overflow: visible;
     }
     
     /* Make meeting container use flex layout */
@@ -341,6 +340,13 @@
       display: flex;
       flex-direction: column;
       min-height: 100vh;
+    }
+    
+    /* Mobile: use 4/3 aspect ratio (less elongated) */
+    @media (max-width: 768px) {
+      #participantsGrid .video-container {
+        aspect-ratio: 4/3;
+      }
     }
     
     /* Mobile portrait videos - allow taller aspect ratio */
