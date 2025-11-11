@@ -1646,7 +1646,8 @@ export function refreshScreenSharing() {
   console.log(`Refreshing screen share track: ${screenVideoTrack.id}, enabled=${screenVideoTrack.enabled}, state=${screenVideoTrack.readyState}`);
   
   // Replace the track in all peer connections
-  replaceVideoTrackInPeerConnections(screenVideoTrack);
+  // IMPORTANT: Use addScreenShareTrackToPeerConnections to add as second track, not replace
+  addScreenShareTrackToPeerConnections(screenVideoTrack);
   
   // Update UI to reflect screen sharing state
   import('../ui/video.js').then(({ updateVideoUI }) => {
@@ -1685,79 +1686,65 @@ export function updateScreenShareForNewParticipant(participantId) {
   // Log track details for debugging
   console.log(`Sending screen share track to ${participantId}: ${screenVideoTrack.id}, enabled=${screenVideoTrack.enabled}, state=${screenVideoTrack.readyState}`);
   
-  // Find existing video sender or create a new one
+  // Find existing video senders
   const senders = peerConnection.getSenders();
-  const videoSender = senders.find(sender => 
+  const videoSenders = senders.filter(sender => 
     sender.track && sender.track.kind === 'video'
   );
   
+  // Check if we already have a screen share sender
+  const hasScreenShareSender = videoSenders.some(sender => {
+    const trackLabel = sender.track.label.toLowerCase();
+    return trackLabel.includes('screen') || 
+           trackLabel.includes('desktop') || 
+           trackLabel.includes('window') ||
+           trackLabel.includes('display');
+  });
+  
+  // Check if we have a camera sender (non-screen-share)
+  const cameraSender = videoSenders.find(sender => {
+    const trackLabel = sender.track.label.toLowerCase();
+    return !trackLabel.includes('screen') && 
+           !trackLabel.includes('desktop') && 
+           !trackLabel.includes('window') &&
+           !trackLabel.includes('display');
+  });
+  
   try {
-    if (videoSender) {
-      // Replace existing video track
-      console.log(`Replacing video track for peer ${participantId}`);
-      videoSender.replaceTrack(screenVideoTrack)
-        .then(() => {
-          console.log(`Track replaced successfully for peer ${participantId}`);
-          
-          // Renegotiate connection specifically for screen sharing
-          peerConnection.createOffer({
-            offerToReceiveAudio: true, 
-            offerToReceiveVideo: true
-          })
-          .then(offer => {
-            peerConnection.setLocalDescription(offer).then(() => {
-              // Send specialized screen sharing offer
-              import('./socket.js').then(({ sendScreenSharingOffer }) => {
-                if (typeof sendScreenSharingOffer === 'function') {
-                  sendScreenSharingOffer(participantId, peerConnection.localDescription);
-                }
-              }).catch(err => {
-                console.error('Error importing socket functions:', err);
-              });
-            });
+    if (hasScreenShareSender) {
+      // Update existing screen share sender
+      const screenShareSender = videoSenders.find(sender => {
+        const trackLabel = sender.track.label.toLowerCase();
+        return trackLabel.includes('screen') || 
+               trackLabel.includes('desktop') || 
+               trackLabel.includes('window') ||
+               trackLabel.includes('display');
+      });
+      
+      if (screenShareSender) {
+        console.log(`Updating existing screen share track for peer ${participantId}`);
+        screenShareSender.replaceTrack(screenVideoTrack)
+          .then(() => {
+            console.log(`Screen share track updated for peer ${participantId}`);
+            renegotiateConnection(peerConnection, participantId);
           })
           .catch(err => {
-            console.error(`Failed to create offer for ${participantId}:`, err);
+            console.error(`Failed to update screen share track for ${participantId}:`, err);
           });
-        })
-        .catch(err => {
-          console.error(`Failed to replace track for ${participantId}:`, err);
-        });
-    } else {
-      // Add new video track if we don't have one yet
-      console.log(`Adding new screen share track for peer ${participantId}`);
-      
-      // Create a stream to use
-      let streamToUse = window.appState.localStream;
-      if (!streamToUse) {
-        console.log(`Creating new stream for peer ${participantId} to add video track`);
-        streamToUse = new MediaStream([screenVideoTrack]);
       }
+    } else {
+      // Add screen share as a NEW video track (second transceiver) - don't replace camera
+      console.log(`Adding screen share as second video track for peer ${participantId}`);
       
-      // Add the track to the peer connection
-      peerConnection.addTrack(screenVideoTrack, streamToUse);
+      // Create a separate stream for screen share
+      const screenShareStream = new MediaStream([screenVideoTrack]);
+      
+      // Add the track to the peer connection as a new transceiver
+      peerConnection.addTrack(screenVideoTrack, screenShareStream);
       console.log(`Successfully added screen share track to peer ${participantId}`);
       
-      // Renegotiate connection specifically for screen sharing
-      peerConnection.createOffer({
-        offerToReceiveAudio: true, 
-        offerToReceiveVideo: true
-      })
-      .then(offer => {
-        peerConnection.setLocalDescription(offer).then(() => {
-          // Send specialized screen sharing offer
-          import('./socket.js').then(({ sendScreenSharingOffer }) => {
-            if (typeof sendScreenSharingOffer === 'function') {
-              sendScreenSharingOffer(participantId, peerConnection.localDescription);
-            }
-          }).catch(err => {
-            console.error('Error importing socket functions:', err);
-          });
-        });
-      })
-      .catch(err => {
-        console.error(`Failed to create offer for ${participantId}:`, err);
-      });
+      // Renegotiate connection
+      renegotiateConnection(peerConnection, participantId);
     }
   } catch (err) {
     console.error(`Error updating screen share for participant ${participantId}:`, err);
