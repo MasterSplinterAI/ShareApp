@@ -21,14 +21,21 @@ class RoomStorage {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  createRoom() {
+  createRoom(customRoomId, customHostPin, customParticipantPin) {
     let roomId;
-    do {
-      roomId = this.generateRoomId();
-    } while (this.rooms.has(roomId));
+    
+    // Use custom room ID if provided, otherwise generate
+    if (customRoomId && !this.rooms.has(customRoomId.toUpperCase())) {
+      roomId = customRoomId.toUpperCase();
+    } else {
+      do {
+        roomId = this.generateRoomId();
+      } while (this.rooms.has(roomId));
+    }
 
-    const hostPin = this.generatePin();
-    const participantPin = this.generatePin();
+    // Use custom PINs if provided, otherwise generate
+    const hostPin = customHostPin || this.generatePin();
+    const participantPin = customParticipantPin || this.generatePin();
 
     const room = {
       roomId,
@@ -40,7 +47,7 @@ class RoomStorage {
     };
 
     this.rooms.set(roomId, room);
-    console.log(`Room created: ${roomId}`);
+    console.log(`Room created: ${roomId} (hostPin: ${hostPin}, participantPin: ${participantPin})`);
     
     return {
       roomId,
@@ -96,7 +103,15 @@ setInterval(() => {
 // API Routes
 router.post('/api/rooms', (req, res) => {
   try {
-    const { roomId, hostPin, participantPin } = roomStorage.createRoom();
+    const { roomId: customRoomId, hostPin: customHostPin, participantPin: customParticipantPin } = req.body || {};
+    
+    // Create room with custom values if provided
+    const { roomId, hostPin, participantPin } = roomStorage.createRoom(
+      customRoomId,
+      customHostPin,
+      customParticipantPin
+    );
+    
     res.json({
       roomId,
       hostPin,

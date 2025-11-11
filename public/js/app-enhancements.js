@@ -42,6 +42,49 @@
         
         // Add drag and drop
         setupDragAndDrop();
+        
+        // Fix button styling when returning to home
+        fixButtonStyling();
+    }
+    
+    // Fix button styling when returning to home screen
+    function fixButtonStyling() {
+        // Watch for when home screen becomes visible
+        const homeObserver = new MutationObserver(() => {
+            const homeScreen = document.getElementById('home');
+            const hostBtn = document.getElementById('hostBtn');
+            const joinBtn = document.getElementById('joinBtn');
+            
+            if (homeScreen && homeScreen.style.display !== 'none' && !homeScreen.classList.contains('hidden')) {
+                // Reset button styles to ensure they're green
+                if (hostBtn) {
+                    hostBtn.className = 'btn btn-primary w-full md:w-64';
+                    hostBtn.classList.remove('btn-secondary', 'btn-danger');
+                }
+                if (joinBtn) {
+                    joinBtn.className = 'btn btn-primary w-full md:w-64';
+                    joinBtn.classList.remove('btn-secondary', 'btn-danger');
+                }
+            }
+        });
+        
+        homeObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['class', 'style']
+        });
+        
+        // Also listen for visibility changes
+        document.addEventListener('visibilitychange', () => {
+            const homeScreen = document.getElementById('home');
+            if (homeScreen && !homeScreen.classList.contains('hidden')) {
+                const hostBtn = document.getElementById('hostBtn');
+                const joinBtn = document.getElementById('joinBtn');
+                if (hostBtn) hostBtn.className = 'btn btn-primary w-full md:w-64';
+                if (joinBtn) joinBtn.className = 'btn btn-primary w-full md:w-64';
+            }
+        });
     }
     
     // Handle URL parameters for participants joining with room code and PIN
@@ -57,45 +100,23 @@
             window.autoJoinRoom = roomId;
             window.autoJoinPin = pin;
             
-            // Watch for join modals and auto-fill
-            const joinModalWatcher = new MutationObserver(() => {
-                const modalOverlay = document.querySelector('.modal-overlay');
-                if (!modalOverlay) return;
-                
-                // Handle access code prompt when joining
-                if (modalOverlay.textContent.includes('Enter Access Code') || 
-                    modalOverlay.textContent.includes('Enter access code') ||
-                    modalOverlay.textContent.includes('Access Code')) {
-                    
-                    const pinInput = modalOverlay.querySelector('input[type="text"]');
-                    if (pinInput && !pinInput.value) {
-                        console.log('[Enhancement] Auto-filling PIN from URL:', pin);
-                        pinInput.value = pin;
-                        pinInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        pinInput.dispatchEvent(new Event('change', { bubbles: true }));
-                        
-                        // Auto-click Join button
-                        setTimeout(() => {
-                            const joinBtn = Array.from(modalOverlay.querySelectorAll('button')).find(
-                                btn => btn.textContent.includes('Join') && !btn.classList.contains('btn-secondary')
-                            );
-                            if (joinBtn) {
-                                console.log('[Enhancement] Auto-clicking Join button');
-                                joinBtn.click();
-                                joinModalWatcher.disconnect();
-                            }
-                        }, 200);
-                    }
+            // Override promptForAccessCode to return PIN from URL immediately
+            import('/js/ui/events.js').then(eventsModule => {
+                if (eventsModule.promptForAccessCode) {
+                    const originalPrompt = eventsModule.promptForAccessCode;
+                    eventsModule.promptForAccessCode = function(mode) {
+                        console.log('[Enhancement] Bypassing access code modal, returning PIN from URL');
+                        // Return immediately with PIN from URL, no modal shown
+                        return Promise.resolve(pin);
+                    };
                 }
+            }).catch(err => {
+                console.warn('[Enhancement] Could not override promptForAccessCode:', err);
             });
-            
-            joinModalWatcher.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-            
-            // Stop watching after 10 seconds
-            setTimeout(() => joinModalWatcher.disconnect(), 10000);
+        } else if (roomId) {
+            // Room ID in URL but no PIN - check if room requires PIN
+            // The app will handle prompting for PIN if needed
+            window.autoJoinRoom = roomId;
         }
     }
     
@@ -175,71 +196,123 @@
     }
     
     // Show enhanced host dialog with room details
-    function showEnhancedHostDialog() {
+    async function showEnhancedHostDialog() {
         // Generate room details immediately
         const roomId = generateRoomId();
         const hostPin = generatePin();
         const participantPin = generatePin();
         
-        // Store for auto-join
-        window.createdRoomId = roomId;
-        window.createdHostPin = hostPin;
-        window.createdParticipantPin = participantPin;
-        
-        // Create modal with room details
-        const modal = document.createElement('div');
-        modal.className = 'enhancement-modal';
-        modal.innerHTML = `
-            <div class="modal-backdrop" onclick="this.parentElement.remove()"></div>
-            <div class="modal-content">
-                <h2>Room Created Successfully!</h2>
-                <div class="room-details">
-                    <div class="detail-item">
-                        <label>Room ID:</label>
-                        <div class="detail-value">
-                            <code id="modal-room-id">${roomId}</code>
-                            <button onclick="copyToClipboard('${roomId}', this)">Copy</button>
+        // Create room on server with our PINs
+        try {
+            const response = await fetch('/api/rooms', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    roomId: roomId,
+                    hostPin: hostPin,
+                    participantPin: participantPin
+                })
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to create room on server');
+            }
+            
+            const roomData = await response.json();
+            // Use server-confirmed room ID and PINs
+            const confirmedRoomId = roomData.roomId || roomId;
+            const confirmedHostPin = roomData.hostPin || hostPin;
+            const confirmedParticipantPin = roomData.participantPin || participantPin;
+            
+            // Store for auto-join
+            window.createdRoomId = confirmedRoomId;
+            window.createdHostPin = confirmedHostPin;
+            window.createdParticipantPin = confirmedParticipantPin;
+            
+            // Override promptForAccessCodes to return our PINs immediately (no modal)
+            overrideAccessCodesPrompt(confirmedHostPin, confirmedParticipantPin);
+            
+            // Create modal with room details
+            const modal = document.createElement('div');
+            modal.className = 'enhancement-modal';
+            modal.innerHTML = `
+                <div class="modal-backdrop" onclick="this.parentElement.remove()"></div>
+                <div class="modal-content">
+                    <h2>Room Created Successfully!</h2>
+                    <div class="room-details">
+                        <div class="detail-item">
+                            <label>Room ID:</label>
+                            <div class="detail-value">
+                                <code id="modal-room-id">${confirmedRoomId}</code>
+                                <button onclick="copyToClipboard('${confirmedRoomId}', this)">Copy</button>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <label>Host PIN:</label>
+                            <div class="detail-value">
+                                <code id="modal-host-pin">${confirmedHostPin}</code>
+                                <button onclick="copyToClipboard('${confirmedHostPin}', this)">Copy</button>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <label>Participant PIN:</label>
+                            <div class="detail-value">
+                                <code id="modal-participant-pin">${confirmedParticipantPin}</code>
+                                <button onclick="copyToClipboard('${confirmedParticipantPin}', this)">Copy</button>
+                            </div>
+                        </div>
+                        <div class="detail-item">
+                            <label>Share Link:</label>
+                            <div class="detail-value">
+                                <input type="text" id="share-link" readonly 
+                                       value="${window.location.origin}/?room=${confirmedRoomId}&pin=${confirmedParticipantPin}"
+                                       data-room-id="${confirmedRoomId}" data-pin="${confirmedParticipantPin}">
+                                <button onclick="copyShareLink()">Copy Link</button>
+                            </div>
                         </div>
                     </div>
-                    <div class="detail-item">
-                        <label>Host PIN:</label>
-                        <div class="detail-value">
-                            <code id="modal-host-pin">${hostPin}</code>
-                            <button onclick="copyToClipboard('${hostPin}', this)">Copy</button>
-                        </div>
-                    </div>
-                    <div class="detail-item">
-                        <label>Participant PIN:</label>
-                        <div class="detail-value">
-                            <code id="modal-participant-pin">${participantPin}</code>
-                            <button onclick="copyToClipboard('${participantPin}', this)">Copy</button>
-                        </div>
-                    </div>
-                    <div class="detail-item">
-                        <label>Share Link:</label>
-                        <div class="detail-value">
-                            <input type="text" id="share-link" readonly 
-                                   value="${window.location.origin}/?room=${roomId}&pin=${participantPin}"
-                                   data-room-id="${roomId}" data-pin="${participantPin}">
-                            <button onclick="copyShareLink()">Copy Link</button>
-                        </div>
+                    <div class="modal-actions">
+                        <button class="btn-primary" onclick="joinAsHostDirect()">
+                            Join as Host
+                        </button>
+                        <button class="btn-secondary" onclick="this.closest('.enhancement-modal').remove()">
+                            Save for Later
+                        </button>
                     </div>
                 </div>
-                <div class="modal-actions">
-                    <button class="btn-primary" onclick="joinAsHostDirect()">
-                        Join as Host
-                    </button>
-                    <button class="btn-secondary" onclick="this.closest('.enhancement-modal').remove()">
-                        Save for Later
-                    </button>
-                </div>
-            </div>
-        `;
-        
-        document.body.appendChild(modal);
-        
-        // Add styles if not already added
-        addEnhancementStyles();
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Add styles if not already added
+            addEnhancementStyles();
+        } catch (error) {
+            console.error('[Enhancement] Failed to create room on server:', error);
+            // Fallback: still show modal but warn user
+            alert('Warning: Room may not be saved on server. Please try again.');
+        }
+    }
+    
+    // Override promptForAccessCodes to bypass the old modal
+    function overrideAccessCodesPrompt(hostPin, participantPin) {
+        // Wait for events module to load, then override
+        import('/js/ui/events.js').then(eventsModule => {
+            if (eventsModule.promptForAccessCodes) {
+                const originalPrompt = eventsModule.promptForAccessCodes;
+                eventsModule.promptForAccessCodes = function() {
+                    console.log('[Enhancement] Bypassing access codes modal, returning pre-generated PINs');
+                    // Return immediately with our PINs, no modal shown
+                    return Promise.resolve({
+                        accessCode: participantPin,
+                        hostCode: hostPin
+                    });
+                };
+            }
+        }).catch(err => {
+            console.warn('[Enhancement] Could not override promptForAccessCodes:', err);
+        });
     }
     
     // Direct join as host, bypassing all intermediate screens
@@ -253,17 +326,14 @@
         if (modal) modal.remove();
         
         // Override generateRoomId BEFORE clicking host button
-        // This ensures the app uses our pre-generated room ID
         import('/js/utils/url.js').then(urlModule => {
             const originalGenerateRoomId = urlModule.generateRoomId;
             urlModule.generateRoomId = function() {
-                // Restore original after first use
                 urlModule.generateRoomId = originalGenerateRoomId;
                 console.log('[Enhancement] Using pre-generated room ID:', roomId);
                 return roomId;
             };
         }).catch(() => {
-            // Fallback if import fails
             if (window.generateRoomId) {
                 const originalGenerateRoomId = window.generateRoomId;
                 window.generateRoomId = function() {
@@ -273,48 +343,16 @@
             }
         });
         
-        // Watch for when room ID is actually set and update modal if still visible
-        const roomIdWatcher = new MutationObserver(() => {
-            // Check if room code is displayed anywhere
-            const roomCodeEl = document.getElementById('roomCode');
-            if (roomCodeEl && roomCodeEl.textContent && roomCodeEl.textContent !== roomId) {
-                // The app generated a different room ID - update our stored one
-                const actualRoomId = roomCodeEl.textContent.trim();
-                console.log('[Enhancement] Room ID changed from', roomId, 'to', actualRoomId);
-                window.createdRoomId = actualRoomId;
-                
-                // Update share link in the meeting screen if it exists
-                const shareLinkEl = document.getElementById('shareLink');
-                if (shareLinkEl) {
-                    shareLinkEl.textContent = `${window.location.origin}/?room=${actualRoomId}&pin=${participantPin}`;
-                }
-                
-                // Update share link in the modal if it still exists
-                const modalShareLink = document.getElementById('share-link');
-                if (modalShareLink) {
-                    modalShareLink.value = `${window.location.origin}/?room=${actualRoomId}&pin=${participantPin}`;
-                    modalShareLink.setAttribute('data-room-id', actualRoomId);
-                }
-                
-                // Update room ID in modal if it exists
-                const modalRoomId = document.getElementById('modal-room-id');
-                if (modalRoomId) {
-                    modalRoomId.textContent = actualRoomId;
-                }
-            }
-        });
+        // Ensure PIN override is set
+        overrideAccessCodesPrompt(hostPin, participantPin);
         
-        roomIdWatcher.observe(document.body, {
-            childList: true,
-            subtree: true,
-            characterData: true
-        });
+        // Track if username was filled
+        let usernameFilled = false;
         
-        // Stop watching after 30 seconds
-        setTimeout(() => roomIdWatcher.disconnect(), 30000);
-        
-        // Set up a MutationObserver to watch for modals
-        const modalWatcher = new MutationObserver((mutations) => {
+        // Watch for username modal only (PIN modal is bypassed)
+        const modalWatcher = new MutationObserver(() => {
+            if (usernameFilled) return;
+            
             const modalOverlay = document.querySelector('.modal-overlay');
             if (!modalOverlay) return;
             
@@ -322,6 +360,7 @@
             if (modalOverlay.textContent.includes('Host a Meeting') || modalOverlay.textContent.includes('Enter your name')) {
                 const nameInput = modalOverlay.querySelector('input[type="text"][placeholder*="name"]');
                 if (nameInput && !nameInput.value) {
+                    usernameFilled = true;
                     console.log('[Enhancement] Found username modal, auto-filling "Host"');
                     nameInput.value = 'Host';
                     nameInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -335,73 +374,21 @@
                         if (hostMeetingBtn) {
                             console.log('[Enhancement] Clicking Host Meeting button');
                             hostMeetingBtn.click();
+                            modalWatcher.disconnect();
                         }
                     }, 100);
                 }
             }
-            
-            // Handle access codes modal (Meeting Security)
-            if (modalOverlay.textContent.includes('Meeting Security')) {
-                console.log('[Enhancement] Found access codes modal, auto-filling PINs');
-                
-                // Find the input fields
-                const inputs = modalOverlay.querySelectorAll('input[type="text"]');
-                let accessCodeInput = null;
-                let hostCodeInput = null;
-                
-                inputs.forEach(input => {
-                    const label = input.closest('div')?.querySelector('label');
-                    if (label) {
-                        if (label.textContent.includes('Participant')) {
-                            accessCodeInput = input;
-                        } else if (label.textContent.includes('Host')) {
-                            hostCodeInput = input;
-                        }
-                    }
-                });
-                
-                // Fill the inputs
-                if (accessCodeInput && !accessCodeInput.value) {
-                    accessCodeInput.value = participantPin;
-                    accessCodeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    accessCodeInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                
-                if (hostCodeInput && !hostCodeInput.value) {
-                    hostCodeInput.value = hostPin;
-                    hostCodeInput.dispatchEvent(new Event('input', { bubbles: true }));
-                    hostCodeInput.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-                
-                // Find and click the Continue button
-                setTimeout(() => {
-                    const buttons = modalOverlay.querySelectorAll('button');
-                    let continueBtn = null;
-                    
-                    buttons.forEach(btn => {
-                        if (btn.textContent.includes('Continue') && !btn.classList.contains('btn-secondary')) {
-                            continueBtn = btn;
-                        }
-                    });
-                    
-                    if (continueBtn) {
-                        console.log('[Enhancement] Clicking Continue button with auto-filled PINs');
-                        continueBtn.click();
-                    }
-                }, 200);
-            }
         });
         
-        // Start watching for modal additions
         modalWatcher.observe(document.body, {
             childList: true,
             subtree: true
         });
         
-        // Stop watching after 10 seconds
         setTimeout(() => modalWatcher.disconnect(), 10000);
         
-        // Now click the host button to start the flow
+        // Click the host button to start the flow
         const hostBtn = document.getElementById('hostBtn');
         if (hostBtn) {
             hostBtn.click();
