@@ -343,7 +343,7 @@ function updateLayoutSwitcherUI() {
   }
 }
 
-// Dynamic equal-sized tile layout - 2 columns (2 wide, up to 5 rows) with larger tiles
+// Dynamic equal-sized tile layout - 2 columns (2 wide, up to 5 rows) with optimal sizing
 export function updateVideoTileLayout() {
   const participantsGrid = document.getElementById('participantsGrid');
   const mainVideoContainer = document.getElementById('mainVideoContainer');
@@ -356,7 +356,7 @@ export function updateVideoTileLayout() {
   const allContainers = Array.from(participantsGrid.querySelectorAll('.video-container'));
   const participantCount = allContainers.length;
   
-  console.log(`Updating video tile layout for ${participantCount} participants - using 2-column grid with larger tiles`);
+  console.log(`Updating video tile layout for ${participantCount} participants - using 2-column grid`);
   
   // ALWAYS hide main video container - we want all tiles equal-sized in the grid
   if (mainVideoContainer) {
@@ -365,47 +365,52 @@ export function updateVideoTileLayout() {
     mainVideoContainer.style.cssText = '';
   }
   
-  // Make meeting container take full viewport height
+  // Make meeting container use flex layout
   if (meetingContainer) {
-    meetingContainer.style.minHeight = '100vh';
     meetingContainer.style.display = 'flex';
     meetingContainer.style.flexDirection = 'column';
+    meetingContainer.style.minHeight = '100vh';
   }
   
-  // Always use 2-column grid (2 wide, up to 5 rows down) with minimal gap for maximum tile size
+  // Determine if mobile
+  const isMobile = window.innerWidth < 768;
+  
+  // Always use 2-column grid (2 wide, up to 5 rows down)
   participantsGrid.className = 'grid w-full video-grid';
   participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
-  participantsGrid.style.gap = '4px'; // Minimal gap for maximum tile size
-  participantsGrid.style.padding = '4px';
+  participantsGrid.style.gap = isMobile ? '6px' : '8px'; // Slightly larger gap
+  participantsGrid.style.padding = isMobile ? '4px' : '8px';
   participantsGrid.style.width = '100%';
-  participantsGrid.style.height = '100%';
-  participantsGrid.style.flex = '1 1 auto'; // Take available space
-  participantsGrid.style.overflowY = 'auto'; // Allow scrolling if needed
+  participantsGrid.style.flex = '1 1 auto';
+  participantsGrid.style.overflowY = 'auto';
   
-  // Make the grid container take maximum vertical space
+  // Make the grid container take reasonable vertical space (not too big, not too small)
   if (videoGrid) {
     videoGrid.className = 'flex flex-col';
     videoGrid.style.marginBottom = '0';
     videoGrid.style.padding = '0';
     videoGrid.style.gap = '0';
-    videoGrid.style.flex = '1 1 auto'; // Take all available space
-    videoGrid.style.minHeight = 'calc(100vh - 150px)'; // Take most of viewport, leave room for controls
+    videoGrid.style.flex = '1 1 auto';
+    // Optimal size: leave room for title, controls, and some padding
+    videoGrid.style.minHeight = isMobile ? 'calc(100vh - 180px)' : 'calc(100vh - 200px)';
+    videoGrid.style.maxHeight = isMobile ? 'calc(100vh - 180px)' : 'calc(100vh - 200px)';
     videoGrid.style.height = '100%';
     videoGrid.style.overflow = 'hidden';
   }
   
-  // Ensure all containers have equal sizing - make them larger
+  // Ensure all containers have equal sizing
   allContainers.forEach(container => {
     container.style.width = '100%';
     container.style.height = '100%';
-    container.style.aspectRatio = '16/9';
+    // Use 16:9 for desktop, but allow mobile to be less elongated
+    container.style.aspectRatio = isMobile ? '4/3' : '16/9';
     container.style.minHeight = '';
     container.style.maxHeight = '';
     container.style.minWidth = '';
     container.style.maxWidth = '';
   });
   
-  console.log(`Applied 2-column grid layout for ${participantCount} tiles with larger sizing`);
+  console.log(`Applied 2-column grid layout for ${participantCount} tiles`);
 }
 
 // Recalculate grid layout when participants change

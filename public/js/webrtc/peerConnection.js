@@ -716,20 +716,49 @@ export async function createPeerConnection(peerId) {
           console.log(`Using existing stream for peer ${peerId}`);
           // Log existing tracks
           stream.getTracks().forEach(track => {
-            console.log(`- Existing track in stream: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}`);
+            console.log(`- Existing track in stream: ${track.kind}, enabled: ${track.enabled}, readyState: ${track.readyState}, label: ${track.label}`);
           });
         }
         
-        // Check if we already have a video track and replace it
-        const existingVideoTrack = stream.getVideoTracks()[0];
-        if (existingVideoTrack) {
-          console.log(`Replacing existing video track for peer ${peerId}`);
-          stream.removeTrack(existingVideoTrack);
+        // IMPORTANT: Check if incoming track is a screen share BEFORE replacing
+        // If it is, we should NOT add it to the camera feed container
+        const incomingTrackLabel = event.track.label.toLowerCase();
+        const isIncomingScreenShare = incomingTrackLabel.includes('screen') || 
+                                     incomingTrackLabel.includes('desktop') || 
+                                     incomingTrackLabel.includes('window') ||
+                                     incomingTrackLabel.includes('display');
+        
+        if (isIncomingScreenShare) {
+          console.log(`⚠️ Screen share track detected in regular video processing for peer ${peerId} - should have been handled separately`);
+          // Don't add screen share tracks to camera feed - they should be in separate tiles
+          return;
         }
         
-        // Add the new video track
-        console.log(`Adding video track to stream for peer ${peerId}`);
-        stream.addTrack(event.track);
+        // Check if we already have a video track and replace it (only for camera tracks)
+        const existingVideoTrack = stream.getVideoTracks()[0];
+        if (existingVideoTrack) {
+          // Make sure we're not replacing with a screen share
+          const existingTrackLabel = existingVideoTrack.label.toLowerCase();
+          const isExistingScreenShare = existingTrackLabel.includes('screen') || 
+                                       existingTrackLabel.includes('desktop') || 
+                                       existingTrackLabel.includes('window') ||
+                                       existingTrackLabel.includes('display');
+          
+          if (isExistingScreenShare) {
+            console.log(`⚠️ Existing track is screen share for peer ${peerId} - creating separate camera container`);
+            // Don't replace screen share with camera - they should be separate
+            // Create a new stream for camera
+            const cameraStream = new MediaStream([event.track]);
+            remoteVideo.srcObject = cameraStream;
+          } else {
+            console.log(`Replacing existing camera video track for peer ${peerId}`);
+            stream.removeTrack(existingVideoTrack);
+            stream.addTrack(event.track);
+          }
+        } else {
+          // No existing track, just add the new one
+          stream.addTrack(event.track);
+        }
         
         // Ensure object-contain is set (no cropping)
         remoteVideo.style.objectFit = 'contain';
