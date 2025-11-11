@@ -688,6 +688,23 @@ export async function startScreenSharing() {
       }, 500);
     }
     
+    // Save the camera track BEFORE replacing it in peer connections
+    let cameraTrack = null;
+    if (window.appState.localStream) {
+      cameraTrack = window.appState.localStream.getVideoTracks().find(
+        track => !track.label.toLowerCase().includes('screen') &&
+                 !track.label.toLowerCase().includes('desktop') &&
+                 !track.label.toLowerCase().includes('window') &&
+                 !track.label.toLowerCase().includes('display')
+      );
+      
+      // Store camera track for later restoration
+      if (cameraTrack) {
+        window.appState.cameraTrackBeforeScreenShare = cameraTrack;
+        console.log('Saved camera track before screen sharing:', cameraTrack.id);
+      }
+    }
+    
     // Start sending the screen share to all peers by replacing the video track
     const streamDetails = {
       hasVideo: screenStream.getVideoTracks().length > 0,
@@ -808,28 +825,88 @@ export async function startScreenSharing() {
       }
       
       // Restore local video to show camera feed (if available)
+      // IMPORTANT: This must happen AFTER creating the screen share tile
+      // to ensure the local video always shows the camera, not the screen share
       const localVideo = document.getElementById('localVideo');
-      if (localVideo && window.appState.localStream) {
-        // Check if we have a camera track
-        const cameraTrack = window.appState.localStream.getVideoTracks().find(
-          track => track.label.toLowerCase().includes('camera') || 
-                   track.label.toLowerCase().includes('webcam') ||
-                   !track.label.toLowerCase().includes('screen')
-        );
+      if (localVideo) {
+        // Use saved camera track if available, otherwise try to find it
+        const cameraTrackToUse = window.appState.cameraTrackBeforeScreenShare || cameraTrack;
         
-        if (cameraTrack) {
+        if (cameraTrackToUse && cameraTrackToUse.readyState === 'live') {
+          console.log('Restoring camera feed to local video');
           // Create a stream with just the camera track
-          const cameraStream = new MediaStream([cameraTrack]);
+          const cameraStream = new MediaStream([cameraTrackToUse]);
           // Also add audio tracks
-          window.appState.localStream.getAudioTracks().forEach(track => {
-            cameraStream.addTrack(track);
-          });
+          if (window.appState.localStream) {
+            window.appState.localStream.getAudioTracks().forEach(track => {
+              if (track.readyState === 'live') {
+                cameraStream.addTrack(track);
+              }
+            });
+          }
           localVideo.srcObject = cameraStream;
           localVideo.muted = true;
           try {
             await localVideo.play();
+            console.log('Camera feed restored to local video');
           } catch (playError) {
             console.warn('Could not play camera feed:', playError);
+          }
+        } else if (window.appState.localStream) {
+          // Fallback: try to use local stream as-is (might have camera track)
+          const allVideoTracks = window.appState.localStream.getVideoTracks();
+          const nonScreenTrack = allVideoTracks.find(
+            track => !track.label.toLowerCase().includes('screen') &&
+                     !track.label.toLowerCase().includes('desktop') &&
+                     !track.label.toLowerCase().includes('window') &&
+                     !track.label.toLowerCase().includes('display')
+          );
+          
+          if (nonScreenTrack && nonScreenTrack.readyState === 'live') {
+            const fallbackStream = new MediaStream([nonScreenTrack]);
+            window.appState.localStream.getAudioTracks().forEach(track => {
+              if (track.readyState === 'live') {
+                fallbackStream.addTrack(track);
+              }
+            });
+            localVideo.srcObject = fallbackStream;
+            localVideo.muted = true;
+            try {
+              await localVideo.play();
+              console.log('Camera feed restored via fallback');
+            } catch (playError) {
+              console.warn('Could not play fallback camera feed:', playError);
+            }
+          } else {
+            // No camera track available - show placeholder or keep existing
+            console.log('No camera track available to restore');
+          }
+        }
+        
+        // Ensure local video is NOT showing screen share
+        if (localVideo.srcObject) {
+          const videoTracks = localVideo.srcObject.getVideoTracks();
+          const hasScreenTrack = videoTracks.some(track => 
+            track.label.toLowerCase().includes('screen') ||
+            track.label.toLowerCase().includes('desktop') ||
+            track.label.toLowerCase().includes('window') ||
+            track.label.toLowerCase().includes('display')
+          );
+          
+          if (hasScreenTrack) {
+            console.warn('Local video was showing screen share, fixing it...');
+            // Force restore camera feed
+            if (cameraTrackToUse && cameraTrackToUse.readyState === 'live') {
+              const fixStream = new MediaStream([cameraTrackToUse]);
+              if (window.appState.localStream) {
+                window.appState.localStream.getAudioTracks().forEach(track => {
+                  if (track.readyState === 'live') {
+                    fixStream.addTrack(track);
+                  }
+                });
+              }
+              localVideo.srcObject = fixStream;
+            }
           }
         }
       }
