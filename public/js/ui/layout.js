@@ -17,6 +17,9 @@ export function initializeLayoutManager() {
     currentLayoutMode = savedLayout;
   }
   
+  // Initialize with equal-sized tile layout
+  updateVideoTileLayout();
+  
   applyLayout(currentLayoutMode);
   setupLayoutSwitcher();
 }
@@ -354,6 +357,13 @@ export function updateVideoTileLayout() {
   
   console.log(`Updating video tile layout for ${participantCount} participants`);
   
+  // ALWAYS hide main video container - we want all tiles equal-sized in the grid
+  if (mainVideoContainer) {
+    mainVideoContainer.classList.add('hidden');
+    // Remove any fixed sizes
+    mainVideoContainer.style.cssText = '';
+  }
+  
   // Determine if mobile based on screen width
   const isMobile = window.innerWidth < 768;
   const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
@@ -361,11 +371,6 @@ export function updateVideoTileLayout() {
   // For 1-2 participants: side-by-side equal tiles
   if (participantCount <= 2) {
     console.log('Applying side-by-side layout for 2 or fewer participants');
-    
-    // Hide main video container
-    if (mainVideoContainer) {
-      mainVideoContainer.classList.add('hidden');
-    }
     
     // Make all tiles equal size
     participantsGrid.className = 'grid gap-3 w-full video-grid';
@@ -380,13 +385,15 @@ export function updateVideoTileLayout() {
       participantsGrid.style.gridTemplateRows = '1fr';
     }
     
-    // Ensure all containers have equal sizing
+    // Ensure all containers have equal sizing - remove any fixed sizes
     allContainers.forEach(container => {
       container.style.width = '';
       container.style.height = '';
       container.style.aspectRatio = '16/9';
       container.style.minHeight = '';
       container.style.maxHeight = '';
+      container.style.minWidth = '';
+      container.style.maxWidth = '';
     });
     
     if (videoGrid) {
@@ -396,11 +403,6 @@ export function updateVideoTileLayout() {
   // For 3-4 participants: 2x2 grid with equal tiles
   else if (participantCount <= 4) {
     console.log('Applying 2x2 grid layout for 3-4 participants');
-    
-    // Hide main video container
-    if (mainVideoContainer) {
-      mainVideoContainer.classList.add('hidden');
-    }
     
     participantsGrid.className = 'grid gap-3 w-full video-grid';
     
@@ -412,13 +414,15 @@ export function updateVideoTileLayout() {
       participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
     }
     
-    // Ensure all containers have equal sizing
+    // Ensure all containers have equal sizing - remove any fixed sizes
     allContainers.forEach(container => {
       container.style.width = '';
       container.style.height = '';
       container.style.aspectRatio = '16/9';
       container.style.minHeight = '';
       container.style.maxHeight = '';
+      container.style.minWidth = '';
+      container.style.maxWidth = '';
     });
     
     if (videoGrid) {
@@ -428,11 +432,6 @@ export function updateVideoTileLayout() {
   // For 5+ participants: responsive grid (3+ columns)
   else {
     console.log(`Applying responsive grid layout for ${participantCount} participants`);
-    
-    // Hide main video container
-    if (mainVideoContainer) {
-      mainVideoContainer.classList.add('hidden');
-    }
     
     participantsGrid.className = 'grid gap-3 w-full video-grid';
     
@@ -454,25 +453,20 @@ export function updateVideoTileLayout() {
     
     participantsGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
     
-    // Ensure all containers have equal sizing
+    // Ensure all containers have equal sizing - remove any fixed sizes
     allContainers.forEach(container => {
       container.style.width = '';
       container.style.height = '';
       container.style.aspectRatio = '16/9';
       container.style.minHeight = '';
       container.style.maxHeight = '';
+      container.style.minWidth = '';
+      container.style.maxWidth = '';
     });
     
     if (videoGrid) {
       videoGrid.className = 'flex flex-col gap-4 mb-6';
     }
-  }
-  
-  // Update main video container to match tile size when visible
-  if (mainVideoContainer && !mainVideoContainer.classList.contains('hidden')) {
-    mainVideoContainer.style.cssText = 'width: 100%; aspect-ratio: 16/9;';
-    mainVideoContainer.style.minHeight = '';
-    mainVideoContainer.style.maxHeight = '';
   }
 }
 

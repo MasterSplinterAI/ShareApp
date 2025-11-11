@@ -65,7 +65,7 @@
       
       <div id="videoGrid" class="flex flex-col gap-4 mb-6">
         <!-- Main video container for host/focused participant - Standard meeting app style -->
-        <div id="mainVideoContainer" class="video-container main-video-container w-full bg-black rounded-lg overflow-hidden" style="aspect-ratio: 16/9; min-height: 400px; max-height: 70vh;">
+        <div id="mainVideoContainer" class="video-container main-video-container w-full bg-black rounded-lg overflow-hidden hidden" style="aspect-ratio: 16/9;">
           <video id="mainVideo" class="w-full h-full object-contain" autoplay playsinline webkit-playsinline x5-playsinline></video>
           <div id="mainVideoLabel" class="video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-4 py-3 text-sm z-10">
             Main Speaker
@@ -309,11 +309,9 @@
       object-fit: contain !important;
     }
     
-    /* Main video container - larger, prominent */
+    /* Main video container - hidden by default, equal-sized when shown */
     .main-video-container {
       background: #000;
-      min-height: 400px;
-      max-height: 70vh;
       aspect-ratio: 16/9;
     }
     
@@ -346,13 +344,11 @@
       
       .main-video-container {
         aspect-ratio: 9/16;
-        min-height: 50vh;
       }
       
       /* Mobile layout optimizations */
-      .main-video-container {
-        min-height: 250px !important;
-        max-height: 50vh !important;
+      .main-video-container.hidden {
+        display: none !important;
       }
       
       #participantsGrid {
