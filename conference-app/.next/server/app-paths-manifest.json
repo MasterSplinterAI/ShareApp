@@ -1,9 +1,1 @@
-{
-  "/_not-found/page": "app/_not-found/page.js",
-  "/api/turn/route": "app/api/turn/route.js",
-  "/host/page": "app/host/page.js",
-  "/page": "app/page.js",
-  "/room/[roomId]/page": "app/room/[roomId]/page.js",
-  "/api/rooms/route": "app/api/rooms/route.js",
-  "/api/rooms/[roomId]/validate/route": "app/api/rooms/[roomId]/validate/route.js"
-}
+{}

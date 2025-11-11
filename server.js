@@ -14,6 +14,13 @@ const io = require('socket.io')(http);
 const PORT = process.env.PORT || 3000;
 const path = require('path');
 
+// Add JSON body parser for API routes
+app.use(express.json());
+
+// Add room API routes
+const { router: roomRouter, roomStorage } = require('./api-rooms');
+app.use(roomRouter);
+
 // Serve static files
 app.use(express.static('public'));
 
