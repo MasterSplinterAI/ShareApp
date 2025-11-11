@@ -133,10 +133,10 @@ function setupHostButton() {
       // Update URL with room ID
       setRoomInUrl(roomId);
       
-      // Update shareable link
+      // Update shareable link with participant PIN
       const shareLinkEl = document.getElementById('shareLink');
       if (shareLinkEl) {
-        const shareLink = getShareableLink(roomId);
+        const shareLink = getShareableLink(roomId, accessCodeInfo.accessCode);
         shareLinkEl.textContent = shareLink;
         // Store link in window for easy access
         window.appState.shareLink = shareLink;
@@ -605,6 +605,15 @@ export async function promptJoinAsHost() {
 
 // Function to prompt for access code when joining
 export async function promptForAccessCode(mode = 'auto') {
+  // First check if PIN is in URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const pinFromUrl = urlParams.get('pin');
+  
+  if (pinFromUrl) {
+    console.log('Using PIN from URL:', pinFromUrl);
+    return pinFromUrl;
+  }
+  
   return new Promise((resolve) => {
     // Create modal overlay
     const modalOverlay = document.createElement('div');

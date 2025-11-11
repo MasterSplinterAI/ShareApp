@@ -813,14 +813,14 @@ export async function startScreenSharing() {
           }
         }
         
-        // Replace video track in all peer connections with the screen share
-        console.log('Replacing video track in peer connections with screen share');
+        // Add screen share as a second video track (not replacing camera)
+        console.log('Adding screen share as second video track to peer connections');
         
-        // Import the function to replace video tracks
+        // Import the function to add screen share tracks
         try {
-          await replaceVideoTrackInPeerConnections(screenVideoTrack);
+          await addScreenShareTrackToPeerConnections(screenVideoTrack);
         } catch (rtcError) {
-          console.error('Error replacing video track in peer connections:', rtcError);
+          console.error('Error adding screen share track to peer connections:', rtcError);
         }
       }
       
@@ -1090,6 +1090,33 @@ export async function stopScreenSharing() {
     
     // Local video restoration is already handled above
     
+    // Remove screen share tracks from all peer connections
+    Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
+      const senders = pc.getSenders();
+      const videoSenders = senders.filter(sender => 
+        sender.track && sender.track.kind === 'video'
+      );
+      
+      // Find and remove screen share senders (keep camera senders)
+      videoSenders.forEach(sender => {
+        const trackLabel = sender.track.label.toLowerCase();
+        const isScreenShare = trackLabel.includes('screen') || 
+                             trackLabel.includes('desktop') || 
+                             trackLabel.includes('window') ||
+                             trackLabel.includes('display');
+        
+        if (isScreenShare) {
+          console.log(`Removing screen share track from peer ${peerId}`);
+          try {
+            pc.removeTrack(sender);
+            renegotiateConnection(pc, peerId);
+          } catch (err) {
+            console.error(`Error removing screen share track from ${peerId}:`, err);
+          }
+        }
+      });
+    });
+    
     // IMPORTANT: We need to update all peer connections to send the camera feed now
     restoreVideoTracks();
     
@@ -1314,6 +1341,100 @@ export async function getAvailableDevices() {
       speakers: []
     };
   }
+}
+
+// Helper function to add screen share as a second video track (not replacing camera)
+function addScreenShareTrackToPeerConnections(screenVideoTrack) {
+  console.log('Adding screen share as second video track to all peer connections');
+  
+  // Ensure the video track is enabled
+  if (!screenVideoTrack.enabled) {
+    console.log('Enabling screen share track before adding to peer connections');
+    screenVideoTrack.enabled = true;
+  }
+  
+  // If we don't have any peer connections yet, log that fact
+  if (Object.keys(window.appState.peerConnections || {}).length === 0) {
+    console.log('No peer connections available to update with screen share');
+    return;
+  }
+  
+  Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
+    const senders = pc.getSenders();
+    const videoSenders = senders.filter(sender => 
+      sender.track && sender.track.kind === 'video'
+    );
+    
+    // Check if we already have a screen share sender
+    const hasScreenShareSender = videoSenders.some(sender => {
+      const trackLabel = sender.track.label.toLowerCase();
+      return trackLabel.includes('screen') || 
+             trackLabel.includes('desktop') || 
+             trackLabel.includes('window') ||
+             trackLabel.includes('display');
+    });
+    
+    if (hasScreenShareSender) {
+      // Update existing screen share sender
+      const screenShareSender = videoSenders.find(sender => {
+        const trackLabel = sender.track.label.toLowerCase();
+        return trackLabel.includes('screen') || 
+               trackLabel.includes('desktop') || 
+               trackLabel.includes('window') ||
+               trackLabel.includes('display');
+      });
+      
+      if (screenShareSender) {
+        console.log(`Updating existing screen share track for peer ${peerId}`);
+        screenShareSender.replaceTrack(screenVideoTrack)
+          .then(() => {
+            console.log(`Screen share track updated for peer ${peerId}`);
+            renegotiateConnection(pc, peerId);
+          })
+          .catch(err => {
+            console.error(`Failed to update screen share track for ${peerId}:`, err);
+          });
+      }
+    } else {
+      // Add screen share as a new video track (second transceiver)
+      console.log(`Adding screen share as second video track for peer ${peerId}`);
+      
+      try {
+        // Create a separate stream for screen share
+        const screenShareStream = new MediaStream([screenVideoTrack]);
+        
+        // Add the track to the peer connection as a new transceiver
+        pc.addTrack(screenVideoTrack, screenShareStream);
+        console.log(`Successfully added screen share track to peer ${peerId}`);
+        
+        // Renegotiate connection
+        renegotiateConnection(pc, peerId);
+      } catch (err) {
+        console.error(`Error adding screen share track to peer ${peerId}:`, err);
+        
+        // Try with a timeout instead
+        setTimeout(() => {
+          try {
+            const screenShareStream = new MediaStream([screenVideoTrack]);
+            pc.addTrack(screenVideoTrack, screenShareStream);
+            console.log(`Added screen share track to peer ${peerId} after retry`);
+            renegotiateConnection(pc, peerId);
+          } catch (retryErr) {
+            console.error(`Still failed to add screen share track for ${peerId}:`, retryErr);
+          }
+        }, 1000);
+      }
+    }
+  });
+  
+  // Force media refresh after a short delay
+  setTimeout(() => {
+    import('../ui/video.js').then(({ debouncedRefreshMediaDisplays }) => {
+      if (typeof debouncedRefreshMediaDisplays === 'function') {
+        debouncedRefreshMediaDisplays();
+      }
+    });
+  }, 1000);
 }
 
 // Helper function to replace video tracks in all peer connections
