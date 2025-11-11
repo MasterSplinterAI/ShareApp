@@ -218,90 +218,10 @@ export function updateMainVideo() {
         localVideoContainer.classList.add('hidden');
       }
       
-      // Set main video to local stream
-      if (window.appState.screenStream && window.appState.isScreenSharing) {
-        console.log('Using screen share stream for main video');
-        
-        // Add CSS class for screen sharing
-        if (mainVideoContainer) {
-          mainVideoContainer.classList.add('screen-sharing-active');
-          console.log('Added screen-sharing-active class to force hide placeholder');
-        }
-        
-        // Get the screen share video track
-        const screenVideoTrack = window.appState.screenStream.getVideoTracks()[0];
-        
-        if (screenVideoTrack && screenVideoTrack.readyState === 'live') {
-          console.log('Screen share video track is active, displaying it');
-          
-          try {
-            // ANTI-FLASHING: Check if we already have the right stream
-            const currentStream = mainVideo.srcObject;
-            const hasScreenTrack = currentStream && 
-                                  currentStream.getVideoTracks().some(t => 
-                                    t.id === screenVideoTrack.id);
-            
-            if (!hasScreenTrack) {
-              // Create a new MediaStream with the screen share video track
-              const combinedStream = new MediaStream();
-              
-              // Add the screen video track
-              combinedStream.addTrack(screenVideoTrack);
-              
-              // Add audio tracks from local stream if any
-              if (window.appState.localStream) {
-                window.appState.localStream.getAudioTracks().forEach(track => {
-                  if (track.readyState === 'live') {
-                    combinedStream.addTrack(track);
-                  }
-                });
-              }
-              
-              // Set required attributes before setting srcObject
-              mainVideo.autoplay = true;
-              mainVideo.playsInline = true;
-              mainVideo.muted = true; // To prevent feedback
-              
-              // Make sure the video element is visible
-              mainVideo.style.display = '';
-              mainVideo.style.visibility = 'visible';
-              mainVideo.style.width = '100%';
-              mainVideo.style.height = '100%';
-              
-              // ANTI-FLASHING: Set stream without resetting
-              mainVideo.srcObject = combinedStream;
-              console.log('Set screen share stream to main video element');
-            }
-            
-            // Special handling for video element
-            mainVideo.controls = false;
-            
-            // Now try to play safely
-            const playPromise = mainVideo.play();
-            if (playPromise !== undefined) {
-              playPromise.then(() => {
-                console.log('Screen share playing successfully in main view');
-                if (mainVideo.videoWidth > 0) {
-                  console.log(`Video dimensions: ${mainVideo.videoWidth}x${mainVideo.videoHeight}`);
-                }
-              }).catch(err => {
-                console.warn('Could not autoplay video:', err);
-                if (!window.hasPlayHandler) {
-                  window.hasPlayHandler = true;
-                  document.addEventListener('click', function tryPlay() {
-                    mainVideo.play().catch(e => console.warn('Still cannot play:', e));
-                    document.removeEventListener('click', tryPlay);
-                  }, { once: true });
-                }
-              });
-            }
-          } catch (error) {
-            console.error('Error setting up screen share in main video:', error);
-          }
-        } else {
-          console.warn('Screen video track not available or not active!');
-        }
-      } else if (window.appState.localStream) {
+      // Set main video to local stream (camera feed)
+      // NOTE: Screen share should NOT appear in main video when local is pinned
+      // Screen share has its own separate tile
+      if (window.appState.localStream) {
         console.log('Using local camera stream for main video');
         
         try {
