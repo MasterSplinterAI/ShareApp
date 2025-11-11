@@ -838,6 +838,65 @@
     .video-control i {
       font-size: 0.875rem;
     }
+    
+    /* Tile fullscreen button styling */
+    .tile-fullscreen-btn {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      z-index: 20;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      min-height: 32px;
+    }
+    
+    .tile-fullscreen-btn:hover {
+      background: rgba(0, 0, 0, 0.75) !important;
+    }
+    
+    .tile-fullscreen-btn:active {
+      background: rgba(0, 0, 0, 0.9) !important;
+    }
+    
+    .tile-fullscreen-btn i {
+      font-size: 12px;
+    }
+    
+    /* Show fullscreen button on hover for desktop */
+    @media (hover: hover) {
+      .video-container:not(:hover) .tile-fullscreen-btn {
+        opacity: 0.6;
+      }
+      
+      .video-container:hover .tile-fullscreen-btn {
+        opacity: 1;
+      }
+    }
+    
+    /* Always show on mobile */
+    @media (max-width: 768px) {
+      .tile-fullscreen-btn {
+        opacity: 1 !important;
+        min-width: 44px;
+        min-height: 44px;
+        font-size: 1.1rem;
+      }
+      
+      .tile-fullscreen-btn i {
+        font-size: 1rem;
+      }
+    }
   </style>
   
   <!-- Socket.io -->

@@ -763,6 +763,15 @@ export async function startScreenSharing() {
           screenShareContainer.appendChild(screenShareVideo);
           screenShareContainer.appendChild(screenShareLabel);
           
+          // Setup fullscreen functionality for local screen share tile
+          import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
+            if (typeof setupFullscreenForTile === 'function') {
+              setupFullscreenForTile(screenShareContainer, screenShareVideo);
+            }
+          }).catch(err => {
+            console.warn('Could not import fullscreen utility for local screen share:', err);
+          });
+          
           // Add to participants grid
           participantsGrid.appendChild(screenShareContainer);
           

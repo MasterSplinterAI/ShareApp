@@ -29,6 +29,33 @@ export function setupUIEventListeners() {
   // Fullscreen button
   setupFullscreenButton();
   
+  // Setup fullscreen for all video tiles (local, remote, screen shares)
+  import('../utils/fullscreen.js').then(({ setupFullscreenForAllTiles, setupFullscreenForTile }) => {
+    if (typeof setupFullscreenForAllTiles === 'function') {
+      // Setup for existing tiles
+      setupFullscreenForAllTiles();
+      
+      // Also setup for local video container
+      const localVideoContainer = document.getElementById('localVideoContainer');
+      const localVideo = document.getElementById('localVideo');
+      if (localVideoContainer && localVideo) {
+        setupFullscreenForTile(localVideoContainer, localVideo);
+      }
+      
+      // Watch for new tiles being added
+      const observer = new MutationObserver(() => {
+        setupFullscreenForAllTiles();
+      });
+      
+      const participantsGrid = document.getElementById('participantsGrid');
+      if (participantsGrid) {
+        observer.observe(participantsGrid, { childList: true, subtree: true });
+      }
+    }
+  }).catch(err => {
+    console.warn('Could not import fullscreen utility:', err);
+  });
+  
   // Pin event listener
   setupPinListener();
   

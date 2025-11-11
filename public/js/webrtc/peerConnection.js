@@ -580,6 +580,15 @@ export async function createPeerConnection(peerId) {
           screenShareContainer.appendChild(screenShareVideo);
           screenShareContainer.appendChild(screenShareLabel);
           
+          // Setup fullscreen functionality for screen share tile
+          import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
+            if (typeof setupFullscreenForTile === 'function') {
+              setupFullscreenForTile(screenShareContainer, screenShareVideo);
+            }
+          }).catch(err => {
+            console.warn('Could not import fullscreen utility for screen share:', err);
+          });
+          
           // Add to participants grid
           participantsGrid.appendChild(screenShareContainer);
           
@@ -969,6 +978,15 @@ export async function createPeerConnection(peerId) {
       // Assemble the components (no pin button needed)
       videoContainer.appendChild(remoteVideo);
       videoContainer.appendChild(label);
+      
+      // Setup fullscreen functionality for this tile
+      import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
+        if (typeof setupFullscreenForTile === 'function') {
+          setupFullscreenForTile(videoContainer, remoteVideo);
+        }
+      }).catch(err => {
+        console.warn('Could not import fullscreen utility:', err);
+      });
       
       // Add to the grid
       videoGrid.appendChild(videoContainer);
