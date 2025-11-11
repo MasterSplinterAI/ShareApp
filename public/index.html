@@ -98,11 +98,6 @@
                 </span>
               </span>
             </div>
-            <div class="absolute top-2 right-2 flex gap-1 z-10">
-              <button class="participant-control pin-btn" title="Pin to main view" aria-label="Pin video to main view" data-participant-id="local">
-                <i class="fas fa-thumbtack"></i>
-              </button>
-            </div>
           </div>
           
           <!-- Remote videos will be added here dynamically -->
@@ -302,6 +297,12 @@
       background: #000;
       transition: all 0.3s ease;
       position: relative;
+    }
+    
+    /* Hide pin buttons - no longer needed */
+    .pin-btn,
+    .participant-control.pin-btn {
+      display: none !important;
     }
     
     /* Ensure videos maintain aspect ratio - no cropping */

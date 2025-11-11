@@ -343,7 +343,7 @@ function updateLayoutSwitcherUI() {
   }
 }
 
-// Dynamic equal-sized tile layout - 2 columns (2 wide, up to 5 rows)
+// Dynamic equal-sized tile layout - 2 columns (2 wide, up to 5 rows) with larger tiles
 export function updateVideoTileLayout() {
   const participantsGrid = document.getElementById('participantsGrid');
   const mainVideoContainer = document.getElementById('mainVideoContainer');
@@ -355,7 +355,7 @@ export function updateVideoTileLayout() {
   const allContainers = Array.from(participantsGrid.querySelectorAll('.video-container'));
   const participantCount = allContainers.length;
   
-  console.log(`Updating video tile layout for ${participantCount} participants - using 2-column grid`);
+  console.log(`Updating video tile layout for ${participantCount} participants - using 2-column grid with larger tiles`);
   
   // ALWAYS hide main video container - we want all tiles equal-sized in the grid
   if (mainVideoContainer) {
@@ -364,12 +364,20 @@ export function updateVideoTileLayout() {
     mainVideoContainer.style.cssText = '';
   }
   
-  // Always use 2-column grid (2 wide, up to 5 rows down)
+  // Always use 2-column grid (2 wide, up to 5 rows down) with smaller gap for larger tiles
   // This works well for both desktop and mobile
-  participantsGrid.className = 'grid gap-3 w-full video-grid';
+  participantsGrid.className = 'grid w-full video-grid';
   participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+  participantsGrid.style.gap = '8px'; // Smaller gap for larger tiles
+  participantsGrid.style.padding = '8px';
   
-  // Ensure all containers have equal sizing - remove any fixed sizes
+  // Make the grid container take more vertical space
+  if (videoGrid) {
+    videoGrid.className = 'flex flex-col mb-6';
+    videoGrid.style.minHeight = 'calc(100vh - 200px)'; // Take most of viewport height
+  }
+  
+  // Ensure all containers have equal sizing - make them larger
   allContainers.forEach(container => {
     container.style.width = '';
     container.style.height = '';
@@ -380,11 +388,7 @@ export function updateVideoTileLayout() {
     container.style.maxWidth = '';
   });
   
-  if (videoGrid) {
-    videoGrid.className = 'flex flex-col gap-4 mb-6';
-  }
-  
-  console.log(`Applied 2-column grid layout for ${participantCount} tiles`);
+  console.log(`Applied 2-column grid layout for ${participantCount} tiles with larger sizing`);
 }
 
 // Recalculate grid layout when participants change

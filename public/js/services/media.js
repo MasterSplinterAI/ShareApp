@@ -766,29 +766,9 @@ export async function startScreenSharing() {
             </span>
           `;
           
-          // Create pin button
-          const pinBtn = document.createElement('button');
-          pinBtn.className = 'participant-control pin-btn';
-          pinBtn.title = 'Pin screen share to main view';
-          pinBtn.setAttribute('aria-label', 'Pin screen share to main view');
-          pinBtn.setAttribute('data-participant-id', 'screen-share-local');
-          pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
-          pinBtn.style.cssText = 'position: absolute; top: 8px; right: 8px; z-index: 20; background: rgba(0,0,0,0.6); border: none; border-radius: 4px; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer;';
-          
-          // Add click handler for pin button
-          pinBtn.addEventListener('click', () => {
-            window.appState.pinnedParticipant = 'screen-share-local';
-            document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
-          });
-          
-          // Assemble container
-          const controlsDiv = document.createElement('div');
-          controlsDiv.className = 'absolute top-2 right-2 flex gap-1 z-10';
-          controlsDiv.appendChild(pinBtn);
-          
+          // Assemble container (no pin button needed)
           screenShareContainer.appendChild(screenShareVideo);
           screenShareContainer.appendChild(screenShareLabel);
-          screenShareContainer.appendChild(controlsDiv);
           
           // Add to participants grid
           participantsGrid.appendChild(screenShareContainer);

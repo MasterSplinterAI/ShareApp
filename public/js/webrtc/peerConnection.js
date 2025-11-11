@@ -576,29 +576,9 @@ export async function createPeerConnection(peerId) {
             </span>
           `;
           
-          // Create pin button
-          const pinBtn = document.createElement('button');
-          pinBtn.className = 'participant-control pin-btn';
-          pinBtn.title = 'Pin screen share to main view';
-          pinBtn.setAttribute('aria-label', 'Pin screen share to main view');
-          pinBtn.setAttribute('data-participant-id', screenShareContainerId);
-          pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
-          pinBtn.style.cssText = 'position: absolute; top: 8px; right: 8px; z-index: 20; background: rgba(0,0,0,0.6); border: none; border-radius: 4px; color: white; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer;';
-          
-          // Add click handler for pin button
-          pinBtn.addEventListener('click', () => {
-            window.appState.pinnedParticipant = screenShareContainerId;
-            document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
-          });
-          
-          // Assemble container
-          const controlsDiv = document.createElement('div');
-          controlsDiv.className = 'absolute top-2 right-2 flex gap-1 z-10';
-          controlsDiv.appendChild(pinBtn);
-          
+          // Assemble container (no pin button needed)
           screenShareContainer.appendChild(screenShareVideo);
           screenShareContainer.appendChild(screenShareLabel);
-          screenShareContainer.appendChild(controlsDiv);
           
           // Add to participants grid
           participantsGrid.appendChild(screenShareContainer);
@@ -957,32 +937,9 @@ export async function createPeerConnection(peerId) {
       label.appendChild(nameSpan);
       label.appendChild(statusSpan);
       
-      // Create controls
-      const controls = document.createElement('div');
-      controls.className = 'absolute top-2 right-2 flex gap-1 z-10';
-      
-      // Pin button
-      const pinBtn = document.createElement('button');
-      pinBtn.className = 'participant-control pin-btn bg-black bg-opacity-50 text-white p-2 rounded hover:bg-opacity-75';
-      
-      // Set initial pin button state based on current pinned participant
-      if (window.appState.pinnedParticipant === peerId) {
-        pinBtn.title = 'Unpin from main view';
-        pinBtn.setAttribute('aria-label', 'Unpin video from main view');
-        pinBtn.classList.add('active');
-      } else {
-        pinBtn.title = 'Pin to main view';
-        pinBtn.setAttribute('aria-label', 'Pin video to main view');
-      }
-      
-      pinBtn.setAttribute('data-participant-id', peerId);
-      pinBtn.innerHTML = '<i class="fas fa-thumbtack"></i>';
-      
-      // Assemble the components
-      controls.appendChild(pinBtn);
+      // Assemble the components (no pin button needed)
       videoContainer.appendChild(remoteVideo);
       videoContainer.appendChild(label);
-      videoContainer.appendChild(controls);
       
       // Add to the grid
       videoGrid.appendChild(videoContainer);
