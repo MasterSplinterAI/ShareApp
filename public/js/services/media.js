@@ -793,6 +793,13 @@ export async function startScreenSharing() {
           // Add to participants grid
           participantsGrid.appendChild(screenShareContainer);
           
+          // Trigger layout update
+          import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+            updateVideoTileLayout();
+          }).catch(err => {
+            console.warn('Could not import updateVideoTileLayout:', err);
+          });
+          
           // Try to play
           try {
             await screenShareVideo.play();
@@ -971,6 +978,13 @@ export async function stopScreenSharing() {
       console.log('Removing screen share tile');
       screenShareContainer.remove();
       window.appState.screenShareContainerId = null;
+      
+      // Trigger layout update
+      import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+        updateVideoTileLayout();
+      }).catch(err => {
+        console.warn('Could not import updateVideoTileLayout:', err);
+      });
     }
     
     // If screen share was pinned, reset to local

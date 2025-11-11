@@ -340,6 +340,142 @@ function updateLayoutSwitcherUI() {
   }
 }
 
+// Dynamic equal-sized tile layout based on participant count
+export function updateVideoTileLayout() {
+  const participantsGrid = document.getElementById('participantsGrid');
+  const mainVideoContainer = document.getElementById('mainVideoContainer');
+  const videoGrid = document.getElementById('videoGrid');
+  
+  if (!participantsGrid) return;
+  
+  // Count all video containers (including local, remote, and screen shares)
+  const allContainers = Array.from(participantsGrid.querySelectorAll('.video-container'));
+  const participantCount = allContainers.length;
+  
+  console.log(`Updating video tile layout for ${participantCount} participants`);
+  
+  // Determine if mobile based on screen width
+  const isMobile = window.innerWidth < 768;
+  const isTablet = window.innerWidth >= 768 && window.innerWidth < 1024;
+  
+  // For 1-2 participants: side-by-side equal tiles
+  if (participantCount <= 2) {
+    console.log('Applying side-by-side layout for 2 or fewer participants');
+    
+    // Hide main video container
+    if (mainVideoContainer) {
+      mainVideoContainer.classList.add('hidden');
+    }
+    
+    // Make all tiles equal size
+    participantsGrid.className = 'grid gap-3 w-full video-grid';
+    
+    if (isMobile) {
+      // Mobile: stack vertically
+      participantsGrid.style.gridTemplateColumns = '1fr';
+      participantsGrid.style.gridTemplateRows = `repeat(${participantCount}, minmax(0, 1fr))`;
+    } else {
+      // Desktop: side by side
+      participantsGrid.style.gridTemplateColumns = `repeat(${participantCount}, minmax(0, 1fr))`;
+      participantsGrid.style.gridTemplateRows = '1fr';
+    }
+    
+    // Ensure all containers have equal sizing
+    allContainers.forEach(container => {
+      container.style.width = '';
+      container.style.height = '';
+      container.style.aspectRatio = '16/9';
+      container.style.minHeight = '';
+      container.style.maxHeight = '';
+    });
+    
+    if (videoGrid) {
+      videoGrid.className = 'flex flex-col gap-4 mb-6';
+    }
+  }
+  // For 3-4 participants: 2x2 grid with equal tiles
+  else if (participantCount <= 4) {
+    console.log('Applying 2x2 grid layout for 3-4 participants');
+    
+    // Hide main video container
+    if (mainVideoContainer) {
+      mainVideoContainer.classList.add('hidden');
+    }
+    
+    participantsGrid.className = 'grid gap-3 w-full video-grid';
+    
+    if (isMobile) {
+      // Mobile: 2 columns
+      participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+    } else {
+      // Desktop: 2x2 grid
+      participantsGrid.style.gridTemplateColumns = 'repeat(2, minmax(0, 1fr))';
+    }
+    
+    // Ensure all containers have equal sizing
+    allContainers.forEach(container => {
+      container.style.width = '';
+      container.style.height = '';
+      container.style.aspectRatio = '16/9';
+      container.style.minHeight = '';
+      container.style.maxHeight = '';
+    });
+    
+    if (videoGrid) {
+      videoGrid.className = 'flex flex-col gap-4 mb-6';
+    }
+  }
+  // For 5+ participants: responsive grid (3+ columns)
+  else {
+    console.log(`Applying responsive grid layout for ${participantCount} participants`);
+    
+    // Hide main video container
+    if (mainVideoContainer) {
+      mainVideoContainer.classList.add('hidden');
+    }
+    
+    participantsGrid.className = 'grid gap-3 w-full video-grid';
+    
+    // Calculate optimal columns based on count and screen size
+    let cols = 2;
+    if (isMobile) {
+      cols = 2; // Mobile: always 2 columns
+    } else if (isTablet) {
+      if (participantCount <= 6) cols = 3;
+      else if (participantCount <= 9) cols = 3;
+      else cols = 4;
+    } else {
+      // Desktop
+      if (participantCount <= 6) cols = 3;
+      else if (participantCount <= 9) cols = 3;
+      else if (participantCount <= 12) cols = 4;
+      else cols = 5;
+    }
+    
+    participantsGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
+    
+    // Ensure all containers have equal sizing
+    allContainers.forEach(container => {
+      container.style.width = '';
+      container.style.height = '';
+      container.style.aspectRatio = '16/9';
+      container.style.minHeight = '';
+      container.style.maxHeight = '';
+    });
+    
+    if (videoGrid) {
+      videoGrid.className = 'flex flex-col gap-4 mb-6';
+    }
+  }
+  
+  // Update main video container to match tile size when visible
+  if (mainVideoContainer && !mainVideoContainer.classList.contains('hidden')) {
+    mainVideoContainer.style.cssText = 'width: 100%; aspect-ratio: 16/9;';
+    mainVideoContainer.style.minHeight = '';
+    mainVideoContainer.style.maxHeight = '';
+  }
+}
+
 // Recalculate grid layout when participants change
 export function updateLayoutForParticipantCount() {
   if (currentLayoutMode === LAYOUT_MODES.GRID_ONLY) {

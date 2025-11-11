@@ -365,6 +365,13 @@ export function setupSocketListeners() {
       }
     });
     
+    // Trigger layout update after removing elements
+    import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+      updateVideoTileLayout();
+    }).catch(err => {
+      console.warn('Could not import updateVideoTileLayout:', err);
+    });
+    
     // Check if pinned user left
     if (window.appState.pinnedParticipant === data.userId) {
       window.appState.pinnedParticipant = 'local';
