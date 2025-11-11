@@ -647,17 +647,10 @@ export async function startScreenSharing() {
       // This ensures we can still send the screen share to remote peers
       if (window.appState.localStream) {
         // First remove any existing video tracks
-        const existingVideoTracks = window.appState.localStream.getVideoTracks();
-        existingVideoTracks.forEach(track => {
-          window.appState.localStream.removeTrack(track);
-        });
-        
-        // Now add the screen share video track
-        const screenVideoTrack = screenStream.getVideoTracks()[0];
-        if (screenVideoTrack) {
-          window.appState.localStream.addTrack(screenVideoTrack);
-          console.log('Added screen share video track to local stream in view-only mode');
-        }
+        // IMPORTANT: Do NOT add screen share tracks to localStream
+        // Screen shares should be sent separately via addScreenShareTrackToPeerConnections
+        // Adding them to localStream causes broadcastMediaToAllConnections to replace camera tracks
+        console.log('View-only mode: Screen share will be handled separately, not added to localStream');
       }
       
       // Make sure the main video element is visible
@@ -1157,8 +1150,14 @@ function restoreVideoTracks() {
     return;
   }
   
-  // Get camera video track if available
-  const cameraVideoTracks = window.appState.localStream.getVideoTracks();
+  // Get camera video track if available (filter out screen share tracks)
+  const cameraVideoTracks = window.appState.localStream.getVideoTracks().filter(track => {
+    const trackLabel = track.label.toLowerCase();
+    return !trackLabel.includes('screen') && 
+           !trackLabel.includes('desktop') && 
+           !trackLabel.includes('window') &&
+           !trackLabel.includes('display');
+  });
   if (cameraVideoTracks.length === 0) {
     console.log('No camera video tracks to restore');
     
@@ -1182,14 +1181,41 @@ function restoreVideoTracks() {
   
   Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
     const senders = pc.getSenders();
-    const videoSender = senders.find(sender => 
-      sender.track && sender.track.kind === 'video'
-    );
     
-    if (videoSender) {
-      // Replace the screen share track with the camera track
-      console.log(`Replacing screen share track with camera track for peer ${peerId}`);
-      videoSender.replaceTrack(cameraVideoTrack)
+    // Find screen share senders and remove them
+    const screenShareSenders = senders.filter(sender => {
+      if (!sender.track || sender.track.kind !== 'video') return false;
+      const trackLabel = sender.track.label.toLowerCase();
+      return trackLabel.includes('screen') || 
+             trackLabel.includes('desktop') || 
+             trackLabel.includes('window') ||
+             trackLabel.includes('display');
+    });
+    
+    // Remove screen share senders
+    screenShareSenders.forEach(sender => {
+      console.log(`Removing screen share sender for peer ${peerId}`);
+      try {
+        pc.removeTrack(sender);
+      } catch (err) {
+        console.error(`Error removing screen share sender for ${peerId}:`, err);
+      }
+    });
+    
+    // Find camera sender (or create one if it doesn't exist)
+    const cameraSender = senders.find(sender => {
+      if (!sender.track || sender.track.kind !== 'video') return false;
+      const trackLabel = sender.track.label.toLowerCase();
+      return !trackLabel.includes('screen') && 
+             !trackLabel.includes('desktop') && 
+             !trackLabel.includes('window') &&
+             !trackLabel.includes('display');
+    });
+    
+    if (cameraSender) {
+      // Update existing camera sender with current camera track
+      console.log(`Updating camera sender for peer ${peerId}`);
+      cameraSender.replaceTrack(cameraVideoTrack)
         .then(() => {
           console.log(`Camera track restored successfully for peer ${peerId}`);
           

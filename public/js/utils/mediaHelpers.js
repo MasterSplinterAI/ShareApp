@@ -13,9 +13,24 @@ export async function broadcastMediaToAllConnections() {
 
   console.log('Broadcasting local media to all peer connections');
   
-  // Get all tracks from the local stream
-  const tracks = window.appState.localStream.getTracks();
-  console.log(`Local stream has ${tracks.length} tracks to broadcast`);
+  // Get all tracks from the local stream, but EXCLUDE screen share tracks
+  // Screen shares should be handled separately via addScreenShareTrackToPeerConnections
+  const allTracks = window.appState.localStream.getTracks();
+  const tracks = allTracks.filter(track => {
+    // Filter out screen share tracks - they should be sent separately
+    const trackLabel = track.label.toLowerCase();
+    const isScreenShare = trackLabel.includes('screen') || 
+                         trackLabel.includes('desktop') || 
+                         trackLabel.includes('window') ||
+                         trackLabel.includes('display');
+    if (isScreenShare) {
+      console.log(`Skipping screen share track "${track.label}" in broadcastMediaToAllConnections - handled separately`);
+      return false;
+    }
+    return true;
+  });
+  
+  console.log(`Local stream has ${tracks.length} tracks to broadcast (excluding screen shares)`);
   
   // Log each track for debugging
   tracks.forEach(track => {
@@ -45,17 +60,40 @@ export async function broadcastMediaToAllConnections() {
       // Get existing senders
       const senders = peerConnection.getSenders();
       
-      // For each track in our local stream
+      // For each track in our local stream (excluding screen shares)
       tracks.forEach(track => {
-        // Find if we already have a sender for this kind of track
-        const existingSender = senders.find(sender => 
-          sender.track && sender.track.kind === track.kind
-        );
+        // Find if we already have a sender for this kind AND label of track
+        // IMPORTANT: Don't replace camera senders with screen share senders
+        const existingSender = senders.find(sender => {
+          if (!sender.track) return false;
+          
+          // Match by kind (video/audio)
+          if (sender.track.kind !== track.kind) return false;
+          
+          // For video tracks, also check if both are camera or both are screen share
+          if (track.kind === 'video') {
+            const senderLabel = sender.track.label.toLowerCase();
+            const trackLabel = track.label.toLowerCase();
+            const senderIsScreenShare = senderLabel.includes('screen') || 
+                                       senderLabel.includes('desktop') || 
+                                       senderLabel.includes('window') ||
+                                       senderLabel.includes('display');
+            const trackIsScreenShare = trackLabel.includes('screen') || 
+                                     trackLabel.includes('desktop') || 
+                                     trackLabel.includes('window') ||
+                                     trackLabel.includes('display');
+            
+            // Only match if both are the same type (both camera or both screen share)
+            return senderIsScreenShare === trackIsScreenShare;
+          }
+          
+          return true; // For audio, just match by kind
+        });
         
         if (existingSender) {
-          // Replace existing track
+          // Replace existing track (only if same type - camera with camera, screen share with screen share)
           try {
-            console.log(`Replacing ${track.kind} track for peer ${peerId}`);
+            console.log(`Replacing ${track.kind} track for peer ${peerId} (${track.label})`);
             existingSender.replaceTrack(track).catch(err => {
               console.error(`Error replacing ${track.kind} track for peer ${peerId}:`, err);
               // Need to renegotiate on error
@@ -69,7 +107,7 @@ export async function broadcastMediaToAllConnections() {
         } else {
           // Add new track - this is critical for when camera is enabled after connection is created
           try {
-            console.log(`Adding new ${track.kind} track to peer ${peerId}`);
+            console.log(`Adding new ${track.kind} track to peer ${peerId} (${track.label})`);
             peerConnection.addTrack(track, window.appState.localStream);
             
             // If connection is already established, we need to renegotiate

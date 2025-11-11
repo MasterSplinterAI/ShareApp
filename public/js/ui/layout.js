@@ -398,12 +398,12 @@ export function updateVideoTileLayout() {
     videoGrid.style.overflow = 'visible'; // Allow natural flow
   }
   
-  // Ensure all containers have equal sizing - wider for desktop
+  // Ensure all containers have equal sizing - wider for desktop, larger for mobile
   allContainers.forEach(container => {
     container.style.width = '100%';
     container.style.height = 'auto'; // Let height be determined by aspect ratio
-    // Use 16:9 for desktop (wider), 4/3 for mobile (less elongated)
-    container.style.aspectRatio = isMobile ? '4/3' : '16/9';
+    // Use 16:9 for desktop (wider), 3/4 for mobile (larger, less elongated)
+    container.style.aspectRatio = isMobile ? '3/4' : '16/9';
     container.style.minHeight = '';
     container.style.maxHeight = '';
     container.style.minWidth = '';
