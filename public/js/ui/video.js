@@ -152,10 +152,20 @@ export function updateMainVideo() {
     // Get all video containers
     const videoContainers = document.querySelectorAll('.video-container');
     
-    // Show all containers first
+    // Show all containers EXCEPT main video container (we want all tiles equal-sized in grid)
     videoContainers.forEach(container => {
-      container.classList.remove('hidden');
+      // Always keep main video container hidden - we want all tiles in grid
+      if (container.id === 'mainVideoContainer') {
+        container.classList.add('hidden');
+      } else {
+        container.classList.remove('hidden');
+      }
     });
+    
+    // ALWAYS ensure main video container is hidden - all tiles should be equal-sized in grid
+    if (mainVideoContainer) {
+      mainVideoContainer.classList.add('hidden');
+    }
     
     // Update the participant name display in main view
     if (mainParticipantName) {
@@ -174,49 +184,56 @@ export function updateMainVideo() {
     
     // Check if pinned participant is a screen share tile
     if (pinnedParticipant && pinnedParticipant.startsWith('screen-share-')) {
-      console.log(`Setting screen share as main video: ${pinnedParticipant}`);
+      console.log(`Screen share pinned, but keeping all tiles in grid (equal-sized)`);
       
+      // Don't show main video container - keep all tiles equal-sized in grid
+      // Just ensure the screen share tile is visible in the grid
       const screenShareContainer = document.getElementById(pinnedParticipant);
       if (screenShareContainer) {
-        // Hide the screen share tile in the grid
-        screenShareContainer.classList.add('hidden');
-        
-        const screenShareVideo = screenShareContainer.querySelector('video');
-        if (screenShareVideo && screenShareVideo.srcObject) {
-          mainVideo.srcObject = screenShareVideo.srcObject;
-          mainVideo.muted = true;
-          
-          // Update label
-          if (mainParticipantName) {
-            const label = screenShareContainer.querySelector('.video-label span');
-            mainParticipantName.textContent = label ? label.textContent : 'Screen Share';
-          }
-          
-          // Hide placeholder
-          if (mainVideoPlaceholder) {
-            mainVideoPlaceholder.classList.add('hidden');
-          }
-          
-          // Try to play
-          mainVideo.play().catch(err => {
-            console.warn('Could not play screen share in main video:', err);
-          });
-          
-          mainVideoUpdateInProgress = false;
-          return;
-        }
+        screenShareContainer.classList.remove('hidden');
       }
+      
+      // Ensure main video container stays hidden
+      if (mainVideoContainer) {
+        mainVideoContainer.classList.add('hidden');
+      }
+      
+      // Trigger layout update to ensure equal sizing
+      import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+        updateVideoTileLayout();
+      }).catch(err => {
+        console.warn('Could not import updateVideoTileLayout:', err);
+      });
+      
+      mainVideoUpdateInProgress = false;
+      return;
     }
     
     // If we are showing local user in main view
     if (pinnedParticipant === 'local') {
-      console.log('Setting local user as main video');
+      console.log('Local user pinned, but keeping all tiles in grid (equal-sized)');
       
-      // Hide the local video thumbnail in participants grid
+      // Don't hide local video container - keep all tiles equal-sized in grid
       const localVideoContainer = document.getElementById('localVideoContainer');
       if (localVideoContainer) {
-        localVideoContainer.classList.add('hidden');
+        localVideoContainer.classList.remove('hidden');
       }
+      
+      // Ensure main video container stays hidden
+      if (mainVideoContainer) {
+        mainVideoContainer.classList.add('hidden');
+      }
+      
+      // Trigger layout update to ensure equal sizing
+      import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+        updateVideoTileLayout();
+      }).catch(err => {
+        console.warn('Could not import updateVideoTileLayout:', err);
+      });
+      
+      mainVideoUpdateInProgress = false;
+      return;
+    }
       
       // Set main video to local stream (camera feed)
       // NOTE: Screen share should NOT appear in main video when local is pinned
@@ -422,209 +439,50 @@ export function updateMainVideo() {
     } 
     // If we're showing another participant (not a screen share)
     else if (pinnedParticipant && !pinnedParticipant.startsWith('screen-share-')) {
-      console.log(`Setting participant ${pinnedParticipant} as main video`);
+      console.log(`Participant ${pinnedParticipant} pinned, but keeping all tiles in grid (equal-sized)`);
       
-      // Add CSS class for remote participant
-      if (mainVideoContainer) {
-        mainVideoContainer.classList.add('remote-participant-pinned');
-        console.log('Added remote-participant-pinned class to force hide placeholder');
-      }
-      
-      // Find the participant's video container
+      // Don't show main video container - keep all tiles equal-sized in grid
+      // Just ensure the participant tile is visible in the grid
       const participantContainer = document.getElementById(`video-container-${pinnedParticipant}`);
-      
-      // Hide the participant's thumbnail in grid
       if (participantContainer) {
-        participantContainer.classList.add('hidden');
+        participantContainer.classList.remove('hidden');
       }
       
-      // Get video element from participant's container
-      let participantVideo = document.getElementById(`video-${pinnedParticipant}`);
-      
-      if (participantVideo && participantVideo.srcObject) {
-        // Check if participant has enabled video tracks
-        const stream = participantVideo.srcObject;
-        const hasEnabledVideo = stream.getVideoTracks().some(t => t.enabled && t.readyState === 'live');
-        
-        if (!hasEnabledVideo) {
-          // Participant has no video - show placeholder
-          console.log(`Participant ${pinnedParticipant} has no video, showing placeholder`);
-          mainVideo.srcObject = null;
-          
-          // Show placeholder with avatar
-          let placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
-          if (!placeholder) {
-            placeholder = document.createElement('div');
-            placeholder.id = 'noVideoPlaceholder';
-            placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
-            
-            const participant = window.appState.participants[pinnedParticipant];
-            const userName = participant?.name || `Participant ${pinnedParticipant.substring(0, 5)}`;
-            const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
-            
-            placeholder.innerHTML = `
-              <div class="flex flex-col items-center justify-center">
-                <div class="avatar-circle bg-blue-600 text-white text-5xl font-bold flex items-center justify-center w-32 h-32 rounded-full mb-4">
-                  ${initials}
-                </div>
-                <div class="text-white text-lg font-medium">${userName}${participant?.isHost ? ' (Host)' : ''}</div>
-                <div class="text-gray-400 text-sm mt-2">Camera is off</div>
-              </div>
-            `;
-            
-            if (mainVideoContainer) {
-              mainVideoContainer.appendChild(placeholder);
-            }
-          } else {
-            placeholder.classList.remove('hidden');
-          }
-          
-          // Reset container aspect ratio
-          if (mainVideoContainer) {
-            mainVideoContainer.style.aspectRatio = '16/9';
-          }
-          
-          return;
-        }
-        
-        // Remove placeholder if video is enabled
-        const placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
-        if (placeholder) {
-          placeholder.classList.add('hidden');
-        }
-        
-        console.log(`Found video for participant ${pinnedParticipant}`);
-        
-        try {
-          // ANTI-FLASHING: Only update if stream is different
-          const currentStream = mainVideo.srcObject;
-          const newStream = participantVideo.srcObject;
-          
-          if (currentStream !== newStream) {
-            // Set required attributes before setting srcObject
-            mainVideo.autoplay = true;
-            mainVideo.playsInline = true;
-            mainVideo.controls = false;
-            mainVideo.muted = false; // Unmute for remote participants
-            
-            // Ensure object-contain for proper aspect ratio (no cropping)
-            mainVideo.style.objectFit = 'contain';
-            
-            // Ensure video is visible
-            mainVideo.style.display = '';
-            mainVideo.style.visibility = 'visible';
-            
-            // Adjust container aspect ratio if portrait video
-            participantVideo.onloadedmetadata = () => {
-              if (participantVideo.videoWidth > 0 && participantVideo.videoHeight > 0) {
-                const aspectRatio = participantVideo.videoWidth / participantVideo.videoHeight;
-                if (aspectRatio < 1 && mainVideoContainer) {
-                  // Portrait video - adjust main container
-                  mainVideoContainer.style.aspectRatio = `${participantVideo.videoHeight} / ${participantVideo.videoWidth}`;
-                } else if (mainVideoContainer) {
-                  // Landscape video - use standard 16:9
-                  mainVideoContainer.style.aspectRatio = '16/9';
-                }
-              }
-            };
-            
-            // ANTI-FLASHING: Set stream directly
-            mainVideo.srcObject = newStream;
-            
-            // Use setTimeout to ensure the srcObject is fully processed
-            setTimeout(() => {
-              const playPromise = mainVideo.play();
-              if (playPromise !== undefined) {
-                playPromise.catch(err => {
-                  console.warn('Could not autoplay main video:', err);
-                  if (err.name !== 'AbortError') {
-                    mainVideo.muted = true;
-                    document.addEventListener('click', function tryPlayRemote() {
-                      mainVideo.play().then(() => {
-                        if (!mainVideo.srcObject || mainVideo.srcObject.getAudioTracks().length === 0) {
-                          mainVideo.muted = true;
-                        } else {
-                          mainVideo.muted = false;
-                        }
-                      }).catch(e => console.warn('Still cannot play main video:', e));
-                      document.removeEventListener('click', tryPlayRemote);
-                    }, { once: true });
-                  }
-                });
-              }
-              
-              console.log('Remote stream details:', {
-                hasVideo: mainVideo.srcObject.getVideoTracks().length > 0,
-                hasAudio: mainVideo.srcObject.getAudioTracks().length > 0,
-                videoState: mainVideo.srcObject.getVideoTracks().length > 0 ? 
-                  mainVideo.srcObject.getVideoTracks()[0].readyState : 'N/A',
-                element: {
-                  display: mainVideo.style.display,
-                  visibility: mainVideo.style.visibility,
-                  paused: mainVideo.paused,
-                  videoWidth: mainVideo.videoWidth,
-                  videoHeight: mainVideo.videoHeight
-                }
-              });
-            }, 50); // Reduced timeout for faster response
-          }
-        } catch (err) {
-          console.error('Error setting participant stream to main video:', err);
-        }
-      } else {
-        console.warn(`No video found for participant ${pinnedParticipant}`);
-        
-        // Show placeholder for audio-only participant
-        const audioEl = document.getElementById(`audio-${pinnedParticipant}`);
-        if (audioEl && audioEl.srcObject) {
-          console.log(`Found audio-only stream for participant ${pinnedParticipant}, showing placeholder`);
-          mainVideo.srcObject = null;
-          
-          // Show placeholder
-          let placeholder = mainVideoContainer?.querySelector('.no-video-placeholder');
-          if (!placeholder) {
-            placeholder = document.createElement('div');
-            placeholder.id = 'noVideoPlaceholder';
-            placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center zoom-like-avatar';
-            
-            const participant = window.appState.participants[pinnedParticipant];
-            const userName = participant?.name || `Participant ${pinnedParticipant.substring(0, 5)}`;
-            const initials = userName.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
-            
-            placeholder.innerHTML = `
-              <div class="flex flex-col items-center justify-center">
-                <div class="avatar-circle bg-blue-600 text-white text-5xl font-bold flex items-center justify-center w-32 h-32 rounded-full mb-4">
-                  ${initials}
-                </div>
-                <div class="text-white text-lg font-medium">${userName}${participant?.isHost ? ' (Host)' : ''}</div>
-                <div class="text-gray-400 text-sm mt-2">Camera is off</div>
-              </div>
-            `;
-            
-            if (mainVideoContainer) {
-              mainVideoContainer.appendChild(placeholder);
-            }
-          } else {
-            placeholder.classList.remove('hidden');
-          }
-        } else {
-          console.warn(`No media found for participant ${pinnedParticipant}, resetting to local`);
-          window.appState.pinnedParticipant = 'local';
-          
-          // Release the lock before recursion
-          mainVideoUpdateInProgress = false;
-          updateMainVideo();
-          return;
-        }
+      // Ensure main video container stays hidden
+      if (mainVideoContainer) {
+        mainVideoContainer.classList.add('hidden');
       }
-    }
-  } catch (error) {
-    console.error('Error updating main video:', error);
-  } finally {
-    // Always clear the flag when done - reduced timeout for responsiveness
-    setTimeout(() => {
+      
+      // Trigger layout update to ensure equal sizing
+      import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+        updateVideoTileLayout();
+      }).catch(err => {
+        console.warn('Could not import updateVideoTileLayout:', err);
+      });
+      
       mainVideoUpdateInProgress = false;
-    }, 100);
+      return;
+    }
+    
+    // Default: No pinned participant or unknown - ensure all tiles visible in grid
+    console.log('No specific pinned participant, ensuring all tiles in grid');
+    
+    // Ensure main video container stays hidden
+    if (mainVideoContainer) {
+      mainVideoContainer.classList.add('hidden');
+    }
+    
+    // Trigger layout update to ensure equal sizing
+    import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
+      updateVideoTileLayout();
+    }).catch(err => {
+      console.warn('Could not import updateVideoTileLayout:', err);
+    });
+    
+    mainVideoUpdateInProgress = false;
+  } catch (error) {
+    console.error('Error in updateMainVideo:', error);
+    mainVideoUpdateInProgress = false;
   }
 }
 
