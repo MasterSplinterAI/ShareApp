@@ -1373,29 +1373,17 @@ export async function getAvailableDevices() {
 }
 
 // Helper function to add screen share as a second video track (not replacing camera)
-function addScreenShareTrackToPeerConnections(screenVideoTrack) {
-  console.log('Adding screen share as second video track to all peer connections');
-  
-  // Ensure the video track is enabled
-  if (!screenVideoTrack.enabled) {
-    console.log('Enabling screen share track before adding to peer connections');
-    screenVideoTrack.enabled = true;
-  }
-  
-  // If we don't have any peer connections yet, log that fact
-  if (Object.keys(window.appState.peerConnections || {}).length === 0) {
-    console.log('No peer connections available to update with screen share');
-    return;
-  }
+export async function addScreenShareTrackToPeerConnections(screenVideoTrack) {
+  console.log('Adding screen share as separate video track to all peer connections');
+  console.log('Screen track settings on sender:', screenVideoTrack.getSettings ? screenVideoTrack.getSettings() : 'No settings');
   
   Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
-    const senders = pc.getSenders();
-    const videoSenders = senders.filter(sender => 
-      sender.track && sender.track.kind === 'video'
-    );
+    if (!pc) return;
     
-    // Check if we already have a screen share sender
-    const hasScreenShareSender = videoSenders.some(sender => {
+    // Check if we already have a screen share sender for this peer
+    const senders = pc.getSenders();
+    const existingScreenSender = senders.find(sender => {
+      if (!sender.track || sender.track.kind !== 'video') return false;
       const trackLabel = sender.track.label.toLowerCase();
       return trackLabel.includes('screen') || 
              trackLabel.includes('desktop') || 
@@ -1403,67 +1391,41 @@ function addScreenShareTrackToPeerConnections(screenVideoTrack) {
              trackLabel.includes('display');
     });
     
-    if (hasScreenShareSender) {
-      // Update existing screen share sender
-      const screenShareSender = videoSenders.find(sender => {
-        const trackLabel = sender.track.label.toLowerCase();
-        return trackLabel.includes('screen') || 
-               trackLabel.includes('desktop') || 
-               trackLabel.includes('window') ||
-               trackLabel.includes('display');
+    if (existingScreenSender) {
+      // Update existing screen sender
+      console.log(`Updating existing screen share sender for peer ${peerId}`);
+      existingScreenSender.replaceTrack(screenVideoTrack).then(() => {
+        renegotiateConnection(pc, peerId);
+      }).catch(err => {
+        console.error(`Failed to update screen sender for ${peerId}:`, err);
       });
-      
-      if (screenShareSender) {
-        console.log(`Updating existing screen share track for peer ${peerId}`);
-        screenShareSender.replaceTrack(screenVideoTrack)
-          .then(() => {
-            console.log(`Screen share track updated for peer ${peerId}`);
-            renegotiateConnection(pc, peerId);
-          })
-          .catch(err => {
-            console.error(`Failed to update screen share track for ${peerId}:`, err);
-          });
-      }
     } else {
-      // Add screen share as a new video track (second transceiver)
-      console.log(`Adding screen share as second video track for peer ${peerId}`);
-      
+      // Add as new video track (second transceiver)
+      console.log(`Adding screen share as new video track for peer ${peerId}`);
       try {
-        // Create a separate stream for screen share
+        // Create separate stream for screen share
         const screenShareStream = new MediaStream([screenVideoTrack]);
         
-        // Add the track to the peer connection as a new transceiver
+        // Add the track - this creates a new transceiver
         pc.addTrack(screenVideoTrack, screenShareStream);
-        console.log(`Successfully added screen share track to peer ${peerId}`);
+        console.log(`Added screen share track as new transceiver for ${peerId}`);
         
-        // Renegotiate connection
         renegotiateConnection(pc, peerId);
       } catch (err) {
-        console.error(`Error adding screen share track to peer ${peerId}:`, err);
-        
-        // Try with a timeout instead
+        console.error(`Error adding screen share track to ${peerId}:`, err);
+        // Retry after delay
         setTimeout(() => {
           try {
             const screenShareStream = new MediaStream([screenVideoTrack]);
             pc.addTrack(screenVideoTrack, screenShareStream);
-            console.log(`Added screen share track to peer ${peerId} after retry`);
             renegotiateConnection(pc, peerId);
           } catch (retryErr) {
-            console.error(`Still failed to add screen share track for ${peerId}:`, retryErr);
+            console.error(`Retry failed for ${peerId}:`, retryErr);
           }
         }, 1000);
       }
     }
   });
-  
-  // Force media refresh after a short delay
-  setTimeout(() => {
-    import('../ui/video.js').then(({ debouncedRefreshMediaDisplays }) => {
-      if (typeof debouncedRefreshMediaDisplays === 'function') {
-        debouncedRefreshMediaDisplays();
-      }
-    });
-  }, 1000);
 }
 
 // Helper function to replace video tracks in all peer connections

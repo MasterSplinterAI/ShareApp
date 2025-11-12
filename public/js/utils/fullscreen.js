@@ -49,6 +49,44 @@ export function setupFullscreenForTile(container, videoElement) {
   // Add button to container
   container.appendChild(fullscreenBtn);
 
+  // Disable controls and PiP pausing for live streams
+  videoElement.setAttribute('controls', 'false');
+  videoElement.setAttribute('disablePictureInPicture', 'true');
+  videoElement.setAttribute('playsinline', 'true');
+  videoElement.disableRemotePlayback = true;
+
+  console.log('Disabled controls and PiP for live video tile');
+
+  // Handle PiP events for mobile
+  if ('pictureInPictureEnabled' in document) {
+    videoElement.addEventListener('enterpictureinpicture', () => {
+      console.log('Entered PiP - temporary controls enabled');
+      videoElement.setAttribute('controls', 'true');
+    });
+
+    videoElement.addEventListener('leavepictureinpicture', () => {
+      console.log('Exited PiP - auto-resuming and disabling controls');
+      videoElement.removeAttribute('controls');
+      videoElement.setAttribute('disablePictureInPicture', 'true');
+      if (videoElement.srcObject && videoElement.paused) {
+        videoElement.play().then(() => {
+          console.log('Auto-resumed after PiP exit');
+        }).catch(err => {
+          console.warn('Auto-resume after PiP failed:', err);
+        });
+      }
+    });
+  }
+
+  // Prevent pause on fullscreen exit
+  videoElement.addEventListener('pause', (e) => {
+    if (videoElement.srcObject) { // Live stream
+      console.log('Preventing pause on live stream');
+      e.preventDefault();
+      videoElement.play().catch(err => console.warn('Prevent pause failed:', err));
+    }
+  });
+
   // Function to check if we should use native video fullscreen (iOS and some mobile browsers)
   const shouldUseNativeVideoFullscreen = () => {
     const isMobile = window.innerWidth <= 768 || /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -113,6 +151,19 @@ export function setupFullscreenForTile(container, videoElement) {
       }
       
       fullscreenBtn.innerHTML = '<i class="fas fa-expand text-xs"></i>';
+
+      // Always disable controls and resume for live streams
+      videoElement.removeAttribute('controls');
+      videoElement.setAttribute('disablePictureInPicture', 'true');
+      if (videoElement.srcObject && videoElement.paused) {
+        console.log('Force resuming after fullscreen exit');
+        videoElement.play().then(() => {
+          console.log('Resumed after fullscreen exit');
+        }).catch(err => {
+          console.warn('Resume after fullscreen failed:', err);
+        });
+      }
+      videoElement.disableRemotePlayback = true;
     } catch (err) {
       console.error('Exit fullscreen error:', err);
     }
@@ -165,15 +216,11 @@ export function setupFullscreenForTile(container, videoElement) {
       fullscreenBtn.innerHTML = '<i class="fas fa-compress text-xs"></i>';
     } else {
       fullscreenBtn.innerHTML = '<i class="fas fa-expand text-xs"></i>';
-      // Restore video state after exiting fullscreen
-      if (shouldUseNativeVideoFullscreen()) {
-        videoElement.removeAttribute('controls');
-      }
-      // Ensure video continues playing
-      if (videoElement.paused && videoElement.srcObject) {
-        videoElement.play().catch(err => {
-          console.warn('Could not resume video after fullscreen:', err);
-        });
+      // Restore live stream state
+      videoElement.removeAttribute('controls');
+      videoElement.setAttribute('disablePictureInPicture', 'true');
+      if (videoElement.srcObject && videoElement.paused) {
+        videoElement.play().catch(err => console.warn('Resume after fullscreen change failed:', err));
       }
     }
   };
