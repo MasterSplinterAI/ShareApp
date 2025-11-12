@@ -734,6 +734,8 @@ export async function createPeerConnection(peerId) {
             remoteVideo.className = 'w-full h-full object-contain';
             remoteVideo.autoplay = true;
             remoteVideo.playsInline = true;
+            // Mute video element to satisfy autoplay policies; audio plays via dedicated audio element
+            remoteVideo.muted = true;
             videoContainer.appendChild(remoteVideo);
           }
         }
@@ -817,12 +819,13 @@ export async function createPeerConnection(peerId) {
           placeholder.classList.add('hidden');
         }
         
-        // Do NOT reset srcObject repeatedly; it causes AbortError. We update tracks in-place above
-        // Ensure playback after metadata is loaded
-        if (remoteVideo.readyState < 2) {
-          remoteVideo.onloadedmetadata = () => {
-            remoteVideo.play().catch(err => console.warn(`Could not autoplay after metadata for ${peerId}:`, err));
-          };
+        // Always ensure playback after metadata
+        remoteVideo.onloadedmetadata = () => {
+          remoteVideo.play().catch(err => console.warn(`Could not autoplay after metadata for ${peerId}:`, err));
+        };
+        // If metadata already loaded, attempt play immediately
+        if (remoteVideo.readyState >= 2) {
+          remoteVideo.play().catch(err => console.warn(`Could not autoplay immediately for ${peerId}:`, err));
         }
         
         // Mark this participant as having video available
