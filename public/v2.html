@@ -160,7 +160,11 @@
       // Host button
       const hostBtn = document.getElementById('hostBtn');
       if (hostBtn) {
-        hostBtn.addEventListener('click', async () => {
+        // Remove any existing listeners to prevent duplicates
+        const newHostBtn = hostBtn.cloneNode(true);
+        hostBtn.parentNode.replaceChild(newHostBtn, hostBtn);
+        
+        newHostBtn.addEventListener('click', async () => {
           try {
             console.log('Host button clicked');
             const userName = prompt('Enter your name:', 'Host') || 'Host';
@@ -203,7 +207,11 @@
       // Join button
       const joinBtn = document.getElementById('joinBtn');
       if (joinBtn) {
-        joinBtn.addEventListener('click', async () => {
+        // Remove any existing listeners to prevent duplicates
+        const newJoinBtn = joinBtn.cloneNode(true);
+        joinBtn.parentNode.replaceChild(newJoinBtn, joinBtn);
+        
+        newJoinBtn.addEventListener('click', async () => {
           try {
             console.log('Join button clicked');
             const roomId = prompt('Enter room ID:') || roomService.getRoomIdFromUrl();
@@ -244,20 +252,23 @@
       }
     }
     
-    // Wait for app to initialize OR set up immediately if DOM is ready
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', () => {
-        // Wait a bit for app to initialize
-        setTimeout(setupUIHandlers, 500);
-      });
-    } else {
-      // DOM already ready, wait for app:ready event
-      eventBus.on('app:ready', () => {
-        setTimeout(setupUIHandlers, 100);
-      });
-      
-      // Also try immediately in case app is already ready
-      setTimeout(setupUIHandlers, 1000);
+    let handlersSetup = false;
+    
+    // Wait for app to initialize
+    const setupOnce = () => {
+      if (handlersSetup) return;
+      handlersSetup = true;
+      setupUIHandlers();
+    };
+    
+    // Listen for app:ready event
+    eventBus.on('app:ready', () => {
+      setTimeout(setupOnce, 100);
+    });
+    
+    // Fallback if app is already ready
+    if (document.readyState !== 'loading') {
+      setTimeout(setupOnce, 1500);
     }
   </script>
 </body>

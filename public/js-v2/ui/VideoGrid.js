@@ -27,13 +27,34 @@ class VideoGrid {
    * Setup event listeners
    */
   setupEventListeners() {
-    // Listen for track events
+    // Listen for local track events
+    eventBus.on('track:camera:added', (data) => {
+      this.updateLocalVideo('local', data.track, 'camera');
+    });
+
+    eventBus.on('track:camera:stopped', () => {
+      this.updateLocalVideo('local', null, 'camera');
+    });
+
+    eventBus.on('track:screen:added', (data) => {
+      this.updateLocalVideo('local-screen', data.track, 'screen');
+    });
+
+    eventBus.on('track:screen:stopped', () => {
+      this.removeVideoTile('local-screen');
+    });
+
+    // Listen for remote track events
     eventBus.on('webrtc:track:*', (data) => {
-      this.addVideoTile(data.peerId, data.track, data.type, data.stream);
+      if (data.peerId !== 'local') {
+        this.addVideoTile(data.peerId, data.track, data.type, data.stream);
+      }
     });
 
     eventBus.on('webrtc:trackEnded:*', (data) => {
-      this.removeVideoTile(data.peerId, data.trackType);
+      if (data.peerId !== 'local') {
+        this.removeVideoTile(data.peerId, data.trackType);
+      }
     });
 
     // Listen for participant changes
@@ -48,6 +69,17 @@ class VideoGrid {
     // Listen for state changes
     stateManager.subscribe('layoutMode', (newMode) => {
       this.updateLayout();
+    });
+
+    // Listen for local stream changes
+    stateManager.subscribe('localStream', (stream) => {
+      this.updateLocalVideoFromStream(stream);
+    });
+
+    stateManager.subscribe('isCameraOn', (isOn) => {
+      if (!isOn) {
+        this.showPlaceholder('local');
+      }
     });
   }
 
@@ -248,6 +280,101 @@ class VideoGrid {
         fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
       }
     });
+  }
+
+  /**
+   * Update local video display
+   */
+  updateLocalVideo(peerId, track, trackType) {
+    // Use existing localVideoContainer from HTML
+    const localContainer = document.getElementById('localVideoContainer');
+    const localVideo = document.getElementById('localVideo');
+    
+    if (!localContainer || !localVideo) {
+      logger.warn('VideoGrid', 'Local video container not found');
+      return;
+    }
+
+    if (track && track.readyState === 'live') {
+      // Create stream from track
+      const stream = new MediaStream([track]);
+      localVideo.srcObject = stream;
+      localVideo.play().catch(error => {
+        logger.warn('VideoGrid', 'Failed to play local video', { error });
+      });
+      
+      // Hide placeholder
+      this.hidePlaceholder(localContainer);
+    } else {
+      // Show placeholder
+      this.showPlaceholder(localContainer);
+    }
+  }
+
+  /**
+   * Update local video from stream
+   */
+  updateLocalVideoFromStream(stream) {
+    const localVideo = document.getElementById('localVideo');
+    if (!localVideo) return;
+
+    if (stream && stream.getVideoTracks().length > 0) {
+      localVideo.srcObject = stream;
+      localVideo.play().catch(error => {
+        logger.warn('VideoGrid', 'Failed to play local video', { error });
+      });
+    }
+  }
+
+  /**
+   * Show placeholder
+   */
+  showPlaceholder(containerOrId) {
+    const container = typeof containerOrId === 'string' 
+      ? document.getElementById(containerOrId === 'local' ? 'localVideoContainer' : containerOrId)
+      : containerOrId;
+    
+    if (!container) return;
+
+    // Check if placeholder already exists
+    let placeholder = container.querySelector('.no-video-placeholder');
+    if (!placeholder) {
+      placeholder = document.createElement('div');
+      placeholder.className = 'no-video-placeholder';
+      placeholder.style.cssText = `
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #1f2937;
+        z-index: 5;
+      `;
+      
+      const icon = document.createElement('i');
+      icon.className = 'fas fa-user-circle';
+      icon.style.cssText = 'font-size: 64px; color: #6b7280;';
+      placeholder.appendChild(icon);
+      
+      container.appendChild(placeholder);
+    }
+    placeholder.style.display = 'flex';
+  }
+
+  /**
+   * Hide placeholder
+   */
+  hidePlaceholder(containerOrId) {
+    const container = typeof containerOrId === 'string'
+      ? document.getElementById(containerOrId === 'local' ? 'localVideoContainer' : containerOrId)
+      : containerOrId;
+    
+    if (!container) return;
+
+    const placeholder = container.querySelector('.no-video-placeholder');
+    if (placeholder) {
+      placeholder.style.display = 'none';
+    }
   }
 
   /**

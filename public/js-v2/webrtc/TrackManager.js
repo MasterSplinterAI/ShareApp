@@ -62,6 +62,9 @@ class TrackManager {
         eventBus.emit('track:camera:ended');
       };
 
+      // Update local stream
+      this.updateLocalStream();
+
       stateManager.setState({ 
         isCameraOn: true, 
         cameraTrack: this.cameraTrack 
