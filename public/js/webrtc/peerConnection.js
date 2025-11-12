@@ -532,7 +532,16 @@ export async function createPeerConnection(peerId) {
       const trackSettings = event.track.getSettings ? event.track.getSettings() : null;
       const displaySurface = trackSettings ? trackSettings.displaySurface : null;
       const allVideoTracks = (event.streams && event.streams[0] && event.streams[0].getVideoTracks) ? event.streams[0].getVideoTracks() : [];
-      const isNewScreenTrack = allVideoTracks.length > 1 && event.track === allVideoTracks[allVideoTracks.length - 1];
+      
+      // Check if we already have a camera video track for this peer
+      const existingVideoContainer = document.getElementById(`video-container-${peerId}`);
+      const existingVideo = existingVideoContainer ? existingVideoContainer.querySelector('video') : null;
+      const hasExistingCameraTrack = existingVideo && existingVideo.srcObject && existingVideo.srcObject.getVideoTracks().length > 0;
+      
+      // If we already have a camera track and this is a new video track, it's likely screen share
+      const isNewScreenTrack = hasExistingCameraTrack && event.track.kind === 'video' && 
+                               allVideoTracks.length > 1 && 
+                               event.track !== allVideoTracks[0]; // Not the first track
 
       const isScreenShare = trackLabel.includes('screen') || 
                            trackLabel.includes('desktop') || 
@@ -543,8 +552,8 @@ export async function createPeerConnection(peerId) {
                                               displaySurface === 'window' || 
                                               displaySurface === 'monitor' || 
                                               displaySurface === 'browser')) ||
-                           // Fallback: multiple video tracks in same stream => treat newest as screen share
-                           (event.track.kind === 'video' && isNewScreenTrack);
+                           // Fallback: if we already have camera and this is a new video track, treat as screen share
+                           isNewScreenTrack;
 
       console.log(`Track detection - Label: "${event.track.label}", Settings:`, trackSettings, `isScreenShare: ${isScreenShare}`);
 
@@ -830,13 +839,30 @@ export async function createPeerConnection(peerId) {
           placeholderEl.classList.add('hidden');
         }
         
+        // Ensure video element is visible
+        remoteVideo.style.display = 'block';
+        remoteVideo.style.visibility = 'visible';
+        
         // Always ensure playback after metadata
-        remoteVideo.onloadedmetadata = () => {
-          remoteVideo.play().catch(err => console.warn(`Could not autoplay after metadata for ${peerId}:`, err));
+        const playVideo = () => {
+          if (remoteVideo.srcObject && remoteVideo.srcObject.getVideoTracks().length > 0) {
+            remoteVideo.play().then(() => {
+              console.log(`Video playing for peer ${peerId}`);
+            }).catch(err => {
+              console.warn(`Could not autoplay for ${peerId}:`, err);
+              // Retry on user interaction
+              document.addEventListener('click', function playOnClick() {
+                remoteVideo.play().catch(e => console.warn('Still cannot play video:', e));
+                document.removeEventListener('click', playOnClick);
+              }, { once: true });
+            });
+          }
         };
+        
+        remoteVideo.onloadedmetadata = playVideo;
         // If metadata already loaded, attempt play immediately
         if (remoteVideo.readyState >= 2) {
-          remoteVideo.play().catch(err => console.warn(`Could not autoplay immediately for ${peerId}:`, err));
+          playVideo();
         }
         
         // Mark this participant as having video available
@@ -873,16 +899,7 @@ export async function createPeerConnection(peerId) {
           });
         }
         
-        // Ensure the video is playing
-        remoteVideo.play().catch(err => {
-          console.warn(`Could not auto-play video for peer ${peerId}:`, err);
-          
-          // Try again with user interaction
-          document.addEventListener('click', function playOnClick() {
-            remoteVideo.play().catch(e => console.warn('Still cannot play video:', e));
-            document.removeEventListener('click', playOnClick);
-          }, { once: true });
-        });
+        // Video playback is handled above in playVideo() function
         
         // Log the status after adding the track
         console.log(`Video element for peer ${peerId} updated:`, {

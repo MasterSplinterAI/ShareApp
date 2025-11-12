@@ -344,18 +344,23 @@ export function refreshMediaDisplays() {
   refreshInProgress = true;
   
   try {
-    // First, check if we're in audio-only or view-only mode and remove all placeholders
+    // First, check if we're in audio-only or view-only mode and remove ONLY LOCAL placeholders
     if (window.appState.audioOnlyMode || window.appState.viewOnlyMode) {
-      console.log('In special mode, removing all video placeholders');
+      console.log('In special mode, removing only local video placeholders');
       
       const staticPlaceholder = document.getElementById('noVideoPlaceholder');
       if (staticPlaceholder) {
         staticPlaceholder.remove();
       }
       
-      document.querySelectorAll('.no-video-placeholder').forEach(placeholder => {
-        placeholder.remove();
-      });
+      // Only remove placeholders from local video container, NOT remote participants
+      const localVideoContainer = document.getElementById('localVideoContainer');
+      if (localVideoContainer) {
+        const localPlaceholder = localVideoContainer.querySelector('.no-video-placeholder');
+        if (localPlaceholder) {
+          localPlaceholder.remove();
+        }
+      }
     }
     
     // Update main video using debounced version to prevent rapid updates
