@@ -736,6 +736,8 @@ export async function createPeerConnection(peerId) {
             remoteVideo.playsInline = true;
             // Mute to satisfy autoplay; audio handled by dedicated audio element
             remoteVideo.muted = true;
+            // Mark for refresh routines
+            remoteVideo.setAttribute('data-participant-id', peerId);
             videoContainer.appendChild(remoteVideo);
             // Setup fullscreen for this newly created tile
             import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
@@ -1063,6 +1065,7 @@ export async function createPeerConnection(peerId) {
         audioEl = document.createElement('audio');
         audioEl.id = `audio-${peerId}`;
         audioEl.autoplay = true;
+        audioEl.setAttribute('data-participant-id', peerId);
         document.body.appendChild(audioEl);
       } else {
         console.log(`Using existing audio element for peer ${peerId}`);
