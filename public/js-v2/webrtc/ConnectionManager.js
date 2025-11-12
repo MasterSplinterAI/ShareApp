@@ -51,10 +51,13 @@ class ConnectionManager {
       // Get ICE servers
       const iceServers = await iceServersManager.getIceServers();
       
-      // Create RTCPeerConnection
+      // Create RTCPeerConnection with proper configuration
       const pc = new RTCPeerConnection({
         iceServers,
-        ...config.getWebRTCConfig()
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require',
+        sdpSemantics: 'unified-plan'
       });
 
       // Create state machine
@@ -65,15 +68,12 @@ class ConnectionManager {
       // Store connection
       this.connections.set(peerId, pc);
 
-      // Create transceivers for camera and screen
-      const cameraTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
-      const screenTransceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
-      const audioTransceiver = pc.addTransceiver('audio', { direction: 'sendrecv' });
-
+      // Don't create transceivers upfront - let tracks create them naturally
+      // This prevents DTLS role conflicts in mesh topology
       this.transceivers.set(peerId, {
-        camera: cameraTransceiver,
-        screen: screenTransceiver,
-        audio: audioTransceiver
+        camera: null,
+        screen: null,
+        audio: null
       });
 
       // Set up event handlers
@@ -381,6 +381,43 @@ class ConnectionManager {
     }
 
     try {
+      // Handle glare scenario: if we have a local offer, rollback and accept remote offer
+      if (pc.signalingState === 'have-local-offer') {
+        logger.warn('ConnectionManager', 'Glare detected: both peers created offers. Rolling back local offer.', { peerId });
+        
+        // Cancel pending offer
+        this.pendingOffers.delete(peerId);
+        
+        // Rollback local description to resolve conflict
+        try {
+          await pc.setLocalDescription({ type: 'rollback' });
+        } catch (rollbackError) {
+          // Rollback may not be supported, try to continue anyway
+          logger.warn('ConnectionManager', 'Rollback not supported, continuing', { peerId, error: rollbackError });
+        }
+      }
+
+      // Wait for stable state if needed
+      if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout waiting for stable signaling state'));
+          }, 5000);
+
+          const checkStable = () => {
+            if (pc.signalingState === 'stable' || pc.signalingState === 'have-local-offer') {
+              clearTimeout(timeout);
+              pc.removeEventListener('signalingstatechange', checkStable);
+              resolve();
+            }
+          };
+
+          pc.addEventListener('signalingstatechange', checkStable);
+          // Also check immediately in case already stable
+          checkStable();
+        });
+      }
+
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
 
       // Process queued ICE candidates
@@ -462,6 +499,43 @@ class ConnectionManager {
     }
 
     try {
+      // Check if we're in the right state to set remote answer
+      if (pc.signalingState !== 'have-local-offer') {
+        logger.warn('ConnectionManager', 'Cannot set remote answer: wrong signaling state', {
+          peerId,
+          state: pc.signalingState
+        });
+        
+        // If we're stable, we might have already processed this answer
+        if (pc.signalingState === 'stable') {
+          logger.debug('ConnectionManager', 'Already stable, answer may have been processed', { peerId });
+          return;
+        }
+        
+        // Wait for correct state
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Timeout waiting for have-local-offer state'));
+          }, 5000);
+
+          const checkState = () => {
+            if (pc.signalingState === 'have-local-offer') {
+              clearTimeout(timeout);
+              pc.removeEventListener('signalingstatechange', checkState);
+              resolve();
+            } else if (pc.signalingState === 'stable') {
+              // Already stable, answer was processed
+              clearTimeout(timeout);
+              pc.removeEventListener('signalingstatechange', checkState);
+              resolve();
+            }
+          };
+
+          pc.addEventListener('signalingstatechange', checkState);
+          checkState();
+        });
+      }
+
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
 
       // Process queued ICE candidates
@@ -484,7 +558,8 @@ class ConnectionManager {
       }
     } catch (error) {
       logger.error('ConnectionManager', 'Failed to handle answer', { peerId, error });
-      throw error;
+      // Don't throw - log and continue, connection might still work
+      logger.warn('ConnectionManager', 'Continuing despite answer handling error', { peerId });
     }
   }
 

@@ -112,10 +112,13 @@ class VideoGrid {
       tile.video.autoplay = true;
       tile.video.playsInline = true;
       tile.video.muted = peerId !== 'local' && peerId !== 'local-screen';
+      tile.video.setAttribute('playsinline', 'true');
+      tile.video.setAttribute('webkit-playsinline', 'true');
       tile.video.style.cssText = `
         width: 100%;
         height: 100%;
         object-fit: contain;
+        background: #000;
       `;
       tile.container.appendChild(tile.video);
     }
@@ -128,10 +131,29 @@ class VideoGrid {
       tile.video.srcObject = newStream;
     }
 
-    // Play video
-    tile.video.play().catch(error => {
-      logger.warn('VideoGrid', 'Failed to play video', { peerId, error });
-    });
+    // Play video with retry logic
+    const playVideo = async () => {
+      try {
+        await tile.video.play();
+        logger.debug('VideoGrid', 'Video playing', { peerId });
+      } catch (error) {
+        logger.warn('VideoGrid', 'Failed to play video, will retry', { peerId, error });
+        // Retry after a short delay
+        setTimeout(() => {
+          tile.video.play().catch(err => {
+            logger.warn('VideoGrid', 'Retry play failed', { peerId, error: err });
+          });
+        }, 500);
+      }
+    };
+
+    // Try to play immediately
+    playVideo();
+
+    // Also listen for metadata loaded
+    tile.video.addEventListener('loadedmetadata', () => {
+      playVideo();
+    }, { once: true });
 
     // Update label
     this.updateTileLabel(peerId, trackType);
