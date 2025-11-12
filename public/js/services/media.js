@@ -1382,19 +1382,37 @@ export async function addScreenShareTrackToPeerConnections(screenVideoTrack) {
   Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
     if (!pc) return;
     
-    const senders = pc.getSenders();
-    const existingScreenSender = senders.find(sender => sender.track && sender.track.label.toLowerCase().includes('screen'));
-    
-    if (existingScreenSender) {
-      existingScreenSender.replaceTrack(screenVideoTrack);
-    } else {
-      // Add new video transceiver for screen share
-      const transceiver = pc.addTransceiver('video');
-      transceiver.sender.replaceTrack(screenVideoTrack);
-      console.log(`Added screen share transceiver for ${peerId}, SDP m-lines: ${pc.localDescription ? pc.localDescription.sdp.split('m=video').length - 1 : 'N/A'}`);
+    try {
+      const transceiversMap = (window.appState.peerTransceivers && window.appState.peerTransceivers[peerId]) ? window.appState.peerTransceivers[peerId] : null;
+      let screenSender = null;
+      if (transceiversMap && transceiversMap.screen) {
+        screenSender = transceiversMap.screen.sender;
+      } else {
+        // Fallback: try to find an unused video transceiver or create one
+        const transceiver = pc.addTransceiver('video', { direction: 'sendrecv' });
+        // Store for future use
+        window.appState.peerTransceivers = window.appState.peerTransceivers || {};
+        window.appState.peerTransceivers[peerId] = window.appState.peerTransceivers[peerId] || {};
+        window.appState.peerTransceivers[peerId].screen = transceiver;
+        screenSender = transceiver.sender;
+      }
+
+      // Replace or set the track on the screen sender
+      screenSender.replaceTrack(screenVideoTrack);
+    } catch (err) {
+      console.warn(`Could not attach screen share sender for ${peerId}:`, err);
     }
-    
-    renegotiateConnection(pc, peerId);
+
+    // Renegotiate when stable
+    if (pc.signalingState === 'stable') {
+      renegotiateConnection(pc, peerId);
+    } else {
+      setTimeout(() => {
+        if (pc.signalingState === 'stable') {
+          renegotiateConnection(pc, peerId);
+        }
+      }, 300);
+    }
   });
 }
 
@@ -1686,9 +1704,24 @@ export function updateScreenShareForNewParticipant(participantId) {
       // Create a separate stream for screen share
       const screenShareStream = new MediaStream([screenVideoTrack]);
       
-      // Add the track to the peer connection as a new transceiver
-      peerConnection.addTrack(screenVideoTrack, screenShareStream);
-      console.log(`Successfully added screen share track to peer ${participantId}`);
+      // Prefer dedicated screen transceiver if available
+      try {
+        const transceiversMap = (window.appState.peerTransceivers && window.appState.peerTransceivers[participantId]) ? window.appState.peerTransceivers[participantId] : null;
+        if (transceiversMap && transceiversMap.screen) {
+          await transceiversMap.screen.sender.replaceTrack(screenVideoTrack);
+          console.log(`Updated screen transceiver for ${participantId}`);
+        } else {
+          const transceiver = peerConnection.addTransceiver('video', { direction: 'sendrecv' });
+          transceiver.sender.replaceTrack(screenVideoTrack);
+          window.appState.peerTransceivers = window.appState.peerTransceivers || {};
+          window.appState.peerTransceivers[participantId] = window.appState.peerTransceivers[participantId] || {};
+          window.appState.peerTransceivers[participantId].screen = transceiver;
+          console.log(`Created screen transceiver for ${participantId}`);
+        }
+      } catch (err) {
+        console.warn('Fallback to addTrack for screen share');
+        peerConnection.addTrack(screenVideoTrack, screenShareStream);
+      }
       
       // Renegotiate connection
       renegotiateConnection(peerConnection, participantId);

@@ -531,19 +531,20 @@ export async function createPeerConnection(peerId) {
       const trackLabel = event.track.label.toLowerCase();
       const trackSettings = event.track.getSettings ? event.track.getSettings() : null;
       const displaySurface = trackSettings ? trackSettings.displaySurface : null;
+      const allVideoTracks = (event.streams && event.streams[0] && event.streams[0].getVideoTracks) ? event.streams[0].getVideoTracks() : [];
+      const isNewScreenTrack = allVideoTracks.length > 1 && event.track === allVideoTracks[allVideoTracks.length - 1];
 
       const isScreenShare = trackLabel.includes('screen') || 
                            trackLabel.includes('desktop') || 
                            trackLabel.includes('window') ||
                            trackLabel.includes('display') ||
                            trackLabel.includes('monitor') ||
-                           // More reliable browser API for screen share detection
                            (displaySurface && (displaySurface === 'screen' || 
                                               displaySurface === 'window' || 
                                               displaySurface === 'monitor' || 
                                               displaySurface === 'browser')) ||
-                           // Fallback: If in screen sharing context and video track
-                           (window.appState.isScreenSharing && event.track.kind === 'video');
+                           // Fallback: multiple video tracks in same stream => treat newest as screen share
+                           (event.track.kind === 'video' && isNewScreenTrack);
 
       console.log(`Track detection - Label: "${event.track.label}", Settings:`, trackSettings, `isScreenShare: ${isScreenShare}`);
 
@@ -672,7 +673,9 @@ export async function createPeerConnection(peerId) {
         const isRegularScreenShare = regularTrackLabel.includes('screen') || 
                                     regularTrackLabel.includes('desktop') || 
                                     regularTrackLabel.includes('window') ||
-                                    regularTrackLabel.includes('display');
+                                    regularTrackLabel.includes('display') ||
+                                    // If this track arrived as an additional video track, treat as screen share
+                                    ((event.streams && event.streams[0] && event.streams[0].getVideoTracks && event.streams[0].getVideoTracks().length > 1));
         
         if (isRegularScreenShare) {
           console.log(`⚠️ Screen share track detected in regular video processing - skipping to avoid duplicate`);
