@@ -117,7 +117,7 @@ export async function createPeerConnection(peerId) {
             
             console.log(`Adding ${track.kind} track to connection (state: ${track.readyState})`);
             if (track.kind === 'audio') {
-              pc.addTrack(track, window.appState.localStream);
+            pc.addTrack(track, window.appState.localStream);
             } else if (track.kind === 'video') {
               // Add camera to camera transceiver
               cameraTransceiver.sender.replaceTrack(track).catch(err => console.warn('Camera replaceTrack failed:', err));
@@ -734,9 +734,15 @@ export async function createPeerConnection(peerId) {
             remoteVideo.className = 'w-full h-full object-contain';
             remoteVideo.autoplay = true;
             remoteVideo.playsInline = true;
-            // Mute video element to satisfy autoplay policies; audio plays via dedicated audio element
+            // Mute to satisfy autoplay; audio handled by dedicated audio element
             remoteVideo.muted = true;
             videoContainer.appendChild(remoteVideo);
+            // Setup fullscreen for this newly created tile
+            import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
+              if (typeof setupFullscreenForTile === 'function') {
+                setupFullscreenForTile(videoContainer, remoteVideo);
+              }
+            }).catch(err => console.warn('Could not import fullscreen utility:', err));
           }
         }
         
@@ -786,12 +792,12 @@ export async function createPeerConnection(peerId) {
             remoteVideo.srcObject = cameraStream;
           } else {
             console.log(`Replacing existing camera video track for peer ${peerId}`);
-            stream.removeTrack(existingVideoTrack);
+          stream.removeTrack(existingVideoTrack);
             stream.addTrack(event.track);
-          }
+        }
         } else {
           // No existing track, just add the new one
-          stream.addTrack(event.track);
+        stream.addTrack(event.track);
         }
         
         // Ensure object-contain is set (no cropping)
@@ -813,10 +819,10 @@ export async function createPeerConnection(peerId) {
         };
         
         // Hide the placeholder since we now have video
-        const placeholder = videoContainer.querySelector('.no-video-placeholder');
-        if (placeholder) {
+        const placeholderEl = videoContainer.querySelector('.no-video-placeholder');
+        if (placeholderEl) {
           console.log(`Hiding placeholder for peer ${peerId} as video is available`);
-          placeholder.classList.add('hidden');
+          placeholderEl.classList.add('hidden');
         }
         
         // Always ensure playback after metadata
@@ -961,12 +967,7 @@ export async function createPeerConnection(peerId) {
       videoContainer.className = 'video-container bg-black rounded-lg overflow-hidden relative';
       videoContainer.style.aspectRatio = '16/9';
       
-      // Create video element
-      const remoteVideo = document.createElement('video');
-      remoteVideo.id = `video-${peerId}`;
-      remoteVideo.className = 'w-full h-full object-contain';
-      remoteVideo.autoplay = true;
-      remoteVideo.playsInline = true;
+      // Do NOT create a video element yet. We'll create it when we receive a video track
       
       // Create label with status indicators
       const label = document.createElement('div');
@@ -1005,18 +1006,28 @@ export async function createPeerConnection(peerId) {
       label.appendChild(nameSpan);
       label.appendChild(statusSpan);
       
+      // Placeholder for when there's no video yet (added by default)
+      const placeholder = document.createElement('div');
+      placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800 zoom-like-avatar';
+      
+      const participantInfo2 = window.appState.participants[peerId];
+      const participantName2 = participantInfo2?.name || peerId.substring(0, 5);
+      const initials2 = participantName2.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+      
+      placeholder.innerHTML = `
+        <div class="avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full">
+          ${initials2}
+        </div>
+        <div class="speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden">
+          <div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>
+        </div>
+      `;
+      
       // Assemble the components (no pin button needed)
-      videoContainer.appendChild(remoteVideo);
+      videoContainer.appendChild(placeholder);
       videoContainer.appendChild(label);
       
-      // Setup fullscreen functionality for this tile
-      import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
-        if (typeof setupFullscreenForTile === 'function') {
-          setupFullscreenForTile(videoContainer, remoteVideo);
-        }
-      }).catch(err => {
-        console.warn('Could not import fullscreen utility:', err);
-      });
+      // Fullscreen will be set up when the video element is created on first video track
       
       // Add to the grid
       videoGrid.appendChild(videoContainer);
