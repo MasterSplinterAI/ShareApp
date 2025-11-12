@@ -750,7 +750,13 @@ export async function createPeerConnection(peerId) {
             remoteVideo.muted = true;
             // Mark for refresh routines
             remoteVideo.setAttribute('data-participant-id', peerId);
-            videoContainer.appendChild(remoteVideo);
+            // Insert video BEFORE label so label overlay stays on top
+            const label = videoContainer.querySelector('.video-label');
+            if (label) {
+              videoContainer.insertBefore(remoteVideo, label);
+            } else {
+              videoContainer.appendChild(remoteVideo);
+            }
             // Setup fullscreen for this newly created tile
             import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
               if (typeof setupFullscreenForTile === 'function') {
@@ -832,16 +838,18 @@ export async function createPeerConnection(peerId) {
           }
         };
         
-        // Hide the placeholder since we now have video
+        // Remove the placeholder completely since we now have video (not just hide it)
         const placeholderEl = videoContainer.querySelector('.no-video-placeholder');
         if (placeholderEl) {
-          console.log(`Hiding placeholder for peer ${peerId} as video is available`);
-          placeholderEl.classList.add('hidden');
+          console.log(`Removing placeholder for peer ${peerId} as video is available`);
+          placeholderEl.remove(); // Remove completely, not just hide
         }
         
-        // Ensure video element is visible
+        // Ensure video element is visible and properly positioned
         remoteVideo.style.display = 'block';
         remoteVideo.style.visibility = 'visible';
+        remoteVideo.style.position = 'relative'; // Ensure it's in normal flow
+        remoteVideo.style.zIndex = '1'; // Above background
         
         // Always ensure playback after metadata
         const playVideo = () => {
