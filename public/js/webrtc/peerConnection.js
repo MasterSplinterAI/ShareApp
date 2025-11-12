@@ -72,6 +72,17 @@ export async function createPeerConnection(peerId) {
       rtcAudioJitterBufferFastAccelerate: true
     });
     
+    // Add dedicated transceivers for camera and screen share
+    const cameraTransceiver = pc.addTransceiver('video', {direction: 'sendrecv'});
+    const screenTransceiver = pc.addTransceiver('video', {direction: 'sendrecv'});
+    window.appState.peerTransceivers = window.appState.peerTransceivers || {};
+    window.appState.peerTransceivers[peerId] = {
+      camera: cameraTransceiver,
+      screen: screenTransceiver
+    };
+
+    console.log(`Created peer connection with dedicated camera/screen transceivers for ${peerId}`);
+    
     // Store the connection in the app state
     window.appState.peerConnections[peerId] = pc;
     
@@ -105,7 +116,12 @@ export async function createPeerConnection(peerId) {
             }
             
             console.log(`Adding ${track.kind} track to connection (state: ${track.readyState})`);
-            pc.addTrack(track, window.appState.localStream);
+            if (track.kind === 'audio') {
+              pc.addTrack(track, window.appState.localStream);
+            } else if (track.kind === 'video') {
+              // Add camera to camera transceiver
+              cameraTransceiver.sender.replaceTrack(track).catch(err => console.warn('Camera replaceTrack failed:', err));
+            }
           }
         });
         

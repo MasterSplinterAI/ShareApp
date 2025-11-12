@@ -983,39 +983,18 @@ export async function stopScreenSharing() {
       document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
     }
     
-    // Restore local video to show camera feed (if available)
-    const localVideo = document.getElementById('localVideo');
-    if (localVideo && window.appState.localStream) {
-      // Check if we have a camera track
-      const cameraTrack = window.appState.localStream.getVideoTracks().find(
-        track => track.label.toLowerCase().includes('camera') || 
-                 track.label.toLowerCase().includes('webcam') ||
-                 !track.label.toLowerCase().includes('screen')
-      );
-      
-      if (cameraTrack) {
-        // Create a stream with just the camera track
-        const cameraStream = new MediaStream([cameraTrack]);
-        // Also add audio tracks
-        window.appState.localStream.getAudioTracks().forEach(track => {
-          cameraStream.addTrack(track);
-        });
+    // Remove screen share from all peer connections
+    Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
+      removeScreenShareFromPeerConnections(peerId);
+    });
+
+    // Ensure camera is restored in localStream if needed
+    if (window.appState.cameraTrackBeforeScreenShare) {
+      const localVideo = document.getElementById('localVideo');
+      if (localVideo) {
+        const cameraStream = new MediaStream([window.appState.cameraTrackBeforeScreenShare]);
+        window.appState.localStream.getAudioTracks().forEach(track => cameraStream.addTrack(track));
         localVideo.srcObject = cameraStream;
-        localVideo.muted = true;
-        try {
-          await localVideo.play();
-        } catch (playError) {
-          console.warn('Could not play camera feed:', playError);
-        }
-      } else {
-        // No camera track, just use the local stream as is
-        localVideo.srcObject = window.appState.localStream;
-        localVideo.muted = true;
-        try {
-          await localVideo.play();
-        } catch (playError) {
-          console.warn('Could not play local stream:', playError);
-        }
       }
     }
     
