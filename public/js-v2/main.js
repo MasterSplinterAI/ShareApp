@@ -152,6 +152,13 @@ class Application {
       });
       
       if (data.userId !== socketId) {
+        // Check if connection already exists
+        const existingConnection = connectionManager.getConnection(data.userId);
+        if (existingConnection) {
+          logger.debug('Application', 'Connection already exists for user', { peerId: data.userId });
+          return;
+        }
+        
         setTimeout(async () => {
           try {
             logger.info('Application', 'Creating connection to newly joined user', { peerId: data.userId });
@@ -159,7 +166,7 @@ class Application {
           } catch (error) {
             logger.error('Application', 'Failed to create connection to new user', { error });
           }
-        }, 500);
+        }, 1000); // Increased delay to avoid race conditions
       } else {
         logger.debug('Application', 'Ignoring own user joined event');
       }

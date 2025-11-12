@@ -379,7 +379,7 @@ class ConnectionManager {
    * Handle received offer
    */
   async handleOffer(peerId, sdp) {
-    logger.info('ConnectionManager', 'Handling offer', { peerId });
+    logger.info('ConnectionManager', 'Handling offer', { peerId, currentState: this.connections.get(peerId)?.signalingState });
 
     let pc = this.connections.get(peerId);
     
@@ -399,21 +399,26 @@ class ConnectionManager {
         // Rollback local description to resolve conflict
         try {
           await pc.setLocalDescription({ type: 'rollback' });
+          logger.debug('ConnectionManager', 'Rollback successful, state is now:', { peerId, state: pc.signalingState });
         } catch (rollbackError) {
-          // Rollback may not be supported, try to continue anyway
-          logger.warn('ConnectionManager', 'Rollback not supported, continuing', { peerId, error: rollbackError });
+          // Rollback may not be supported, close and recreate connection
+          logger.warn('ConnectionManager', 'Rollback not supported, recreating connection', { peerId, error: rollbackError });
+          pc.close();
+          this.connections.delete(peerId);
+          this.transceivers.delete(peerId);
+          pc = await this.createConnection(peerId);
         }
       }
 
       // Wait for stable state if needed
-      if (pc.signalingState !== 'stable' && pc.signalingState !== 'have-local-offer') {
+      if (pc.signalingState !== 'stable') {
         await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
             reject(new Error('Timeout waiting for stable signaling state'));
           }, 5000);
 
           const checkStable = () => {
-            if (pc.signalingState === 'stable' || pc.signalingState === 'have-local-offer') {
+            if (pc.signalingState === 'stable') {
               clearTimeout(timeout);
               pc.removeEventListener('signalingstatechange', checkStable);
               resolve();
@@ -422,7 +427,10 @@ class ConnectionManager {
 
           pc.addEventListener('signalingstatechange', checkStable);
           // Also check immediately in case already stable
-          checkStable();
+          if (pc.signalingState === 'stable') {
+            clearTimeout(timeout);
+            resolve();
+          }
         });
       }
 
@@ -498,7 +506,7 @@ class ConnectionManager {
    * Handle received answer
    */
   async handleAnswer(peerId, sdp) {
-    logger.info('ConnectionManager', 'Handling answer', { peerId });
+    logger.info('ConnectionManager', 'Handling answer', { peerId, currentState: this.connections.get(peerId)?.signalingState });
 
     const pc = this.connections.get(peerId);
     if (!pc) {
@@ -508,23 +516,25 @@ class ConnectionManager {
 
     try {
       // Check if we're in the right state to set remote answer
-      if (pc.signalingState !== 'have-local-offer') {
+      const currentState = pc.signalingState;
+      
+      if (currentState === 'stable') {
+        logger.debug('ConnectionManager', 'Already stable, answer may have been processed', { peerId });
+        return;
+      }
+      
+      if (currentState !== 'have-local-offer') {
         logger.warn('ConnectionManager', 'Cannot set remote answer: wrong signaling state', {
           peerId,
-          state: pc.signalingState
+          state: currentState
         });
         
-        // If we're stable, we might have already processed this answer
-        if (pc.signalingState === 'stable') {
-          logger.debug('ConnectionManager', 'Already stable, answer may have been processed', { peerId });
-          return;
-        }
-        
-        // Wait for correct state
+        // Wait for correct state with timeout
         await new Promise((resolve, reject) => {
           const timeout = setTimeout(() => {
-            reject(new Error('Timeout waiting for have-local-offer state'));
-          }, 5000);
+            logger.warn('ConnectionManager', 'Timeout waiting for have-local-offer state', { peerId, finalState: pc.signalingState });
+            resolve(); // Don't reject, just continue
+          }, 2000);
 
           const checkState = () => {
             if (pc.signalingState === 'have-local-offer') {
@@ -544,7 +554,14 @@ class ConnectionManager {
         });
       }
 
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      // Double-check state before setting remote description
+      if (pc.signalingState === 'have-local-offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        logger.debug('ConnectionManager', 'Remote answer set successfully', { peerId, newState: pc.signalingState });
+      } else {
+        logger.warn('ConnectionManager', 'Skipping answer - still in wrong state', { peerId, state: pc.signalingState });
+        return;
+      }
 
       // Process queued ICE candidates
       if (this.iceCandidateQueues.has(peerId)) {
@@ -565,7 +582,7 @@ class ConnectionManager {
         this.iceCandidateQueues.delete(peerId);
       }
     } catch (error) {
-      logger.error('ConnectionManager', 'Failed to handle answer', { peerId, error });
+      logger.error('ConnectionManager', 'Failed to handle answer', { peerId, error, state: pc.signalingState });
       // Don't throw - log and continue, connection might still work
       logger.warn('ConnectionManager', 'Continuing despite answer handling error', { peerId });
     }
