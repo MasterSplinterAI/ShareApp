@@ -100,8 +100,9 @@ app.get('/', (req, res) => {
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
     console.log(`Request received with protocol: ${protocol}`);
     
-    // Redirect to HTTPS if not secure and not on localhost
-    if (protocol !== 'https' && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+    // Only redirect to HTTPS if explicitly HTTP and not behind a proxy (no x-forwarded-proto header)
+    // If behind a proxy (like Cloudflare), trust that HTTPS is already handled
+    if (protocol === 'http' && !req.headers['x-forwarded-proto'] && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
         console.log(`Redirecting ${req.hostname} to HTTPS`);
         return res.redirect(`https://${req.hostname}${req.url}`);
     }
@@ -114,8 +115,9 @@ app.get('/v2', (req, res) => {
     // Get protocol from headers if behind a proxy
     const protocol = req.headers['x-forwarded-proto'] || req.protocol;
     
-    // Redirect to HTTPS if not secure and not on localhost
-    if (protocol !== 'https' && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+    // Only redirect to HTTPS if explicitly HTTP and not behind a proxy (no x-forwarded-proto header)
+    // If behind a proxy (like Cloudflare), trust that HTTPS is already handled
+    if (protocol === 'http' && !req.headers['x-forwarded-proto'] && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
         return res.redirect(`https://${req.hostname}/v2`);
     }
     
