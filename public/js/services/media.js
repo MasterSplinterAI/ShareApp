@@ -983,9 +983,34 @@ export async function stopScreenSharing() {
       document.dispatchEvent(new CustomEvent('pinned-participant-changed'));
     }
     
-    // Remove screen share from all peer connections
+    // Remove screen share from all peer connections (inline to avoid missing import)
     Object.entries(window.appState.peerConnections || {}).forEach(([peerId, pc]) => {
-      removeScreenShareFromPeerConnections(peerId);
+      if (!pc) return;
+      const senders = pc.getSenders();
+      const screenSenders = senders.filter(sender => sender.track && sender.track.kind === 'video' && (
+        sender.track.label.toLowerCase().includes('screen') ||
+        sender.track.label.toLowerCase().includes('desktop') ||
+        sender.track.label.toLowerCase().includes('window') ||
+        sender.track.label.toLowerCase().includes('display')
+      ));
+      screenSenders.forEach(sender => {
+        try {
+          console.log(`Removing screen share sender for ${peerId}`);
+          pc.removeTrack(sender);
+        } catch (e) {
+          console.warn(`Failed removing screen sender for ${peerId}:`, e);
+        }
+      });
+      // Renegotiate only when stable
+      if (screenSenders.length > 0 && pc.signalingState === 'stable') {
+        renegotiateConnection(pc, peerId);
+      } else if (screenSenders.length > 0) {
+        setTimeout(() => {
+          if (pc.signalingState === 'stable') {
+            renegotiateConnection(pc, peerId);
+          }
+        }, 300);
+      }
     });
 
     // Ensure camera is restored in localStream if needed
