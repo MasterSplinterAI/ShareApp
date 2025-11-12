@@ -755,7 +755,7 @@ export async function createPeerConnection(peerId) {
             if (label) {
               videoContainer.insertBefore(remoteVideo, label);
             } else {
-              videoContainer.appendChild(remoteVideo);
+            videoContainer.appendChild(remoteVideo);
             }
             // Setup fullscreen for this newly created tile
             import('../utils/fullscreen.js').then(({ setupFullscreenForTile }) => {
@@ -812,19 +812,25 @@ export async function createPeerConnection(peerId) {
             remoteVideo.srcObject = cameraStream;
           } else {
             console.log(`Replacing existing camera video track for peer ${peerId}`);
-          stream.removeTrack(existingVideoTrack);
+            stream.removeTrack(existingVideoTrack);
             stream.addTrack(event.track);
-        }
+          }
         } else {
           // No existing track, just add the new one
-        stream.addTrack(event.track);
+          stream.addTrack(event.track);
+        }
+        
+        // Ensure srcObject is set (in case it wasn't already)
+        if (!remoteVideo.srcObject) {
+          remoteVideo.srcObject = stream;
         }
         
         // Ensure object-contain is set (no cropping)
         remoteVideo.style.objectFit = 'contain';
         
         // Adjust container aspect ratio based on video dimensions when loaded
-        remoteVideo.onloadedmetadata = () => {
+        // Use addEventListener to avoid overwriting the playback handler
+        remoteVideo.addEventListener('loadedmetadata', () => {
           if (remoteVideo.videoWidth > 0 && remoteVideo.videoHeight > 0) {
             const aspectRatio = remoteVideo.videoWidth / remoteVideo.videoHeight;
             // If portrait video (height > width), adjust container
@@ -836,7 +842,7 @@ export async function createPeerConnection(peerId) {
               videoContainer.style.aspectRatio = '16/9';
             }
           }
-        };
+        });
         
         // Remove the placeholder completely since we now have video (not just hide it)
         const placeholderEl = videoContainer.querySelector('.no-video-placeholder');
@@ -850,28 +856,83 @@ export async function createPeerConnection(peerId) {
         remoteVideo.style.visibility = 'visible';
         remoteVideo.style.position = 'relative'; // Ensure it's in normal flow
         remoteVideo.style.zIndex = '1'; // Above background
+        remoteVideo.style.width = '100%';
+        remoteVideo.style.height = '100%';
         
-        // Always ensure playback after metadata
+        // Aggressive playback function with multiple retry strategies
         const playVideo = () => {
-          if (remoteVideo.srcObject && remoteVideo.srcObject.getVideoTracks().length > 0) {
-            remoteVideo.play().then(() => {
-              console.log(`Video playing for peer ${peerId}`);
-            }).catch(err => {
-              console.warn(`Could not autoplay for ${peerId}:`, err);
-              // Retry on user interaction
-              document.addEventListener('click', function playOnClick() {
-                remoteVideo.play().catch(e => console.warn('Still cannot play video:', e));
-                document.removeEventListener('click', playOnClick);
-              }, { once: true });
-            });
+          if (!remoteVideo.srcObject) {
+            console.warn(`No srcObject for peer ${peerId}, cannot play`);
+            return;
           }
+          
+          const videoTracks = remoteVideo.srcObject.getVideoTracks();
+          if (videoTracks.length === 0) {
+            console.warn(`No video tracks in stream for peer ${peerId}, cannot play`);
+            return;
+          }
+          
+          console.log(`Attempting to play video for peer ${peerId}, readyState: ${remoteVideo.readyState}, paused: ${remoteVideo.paused}`);
+          
+          remoteVideo.play().then(() => {
+            console.log(`✅ Video playing for peer ${peerId}`);
+          }).catch(err => {
+            console.warn(`Could not autoplay for ${peerId}:`, err);
+            // Retry after a short delay
+            setTimeout(() => {
+              remoteVideo.play().catch(e => {
+                console.warn(`Retry failed for ${peerId}:`, e);
+                // Retry on user interaction
+                const playOnClick = () => {
+                  remoteVideo.play().catch(e2 => console.warn('Still cannot play video:', e2));
+                  document.removeEventListener('click', playOnClick);
+                };
+                document.addEventListener('click', playOnClick, { once: true });
+              });
+            }, 500);
+          });
         };
         
-        remoteVideo.onloadedmetadata = playVideo;
-        // If metadata already loaded, attempt play immediately
-        if (remoteVideo.readyState >= 2) {
+        // Set up multiple event listeners to catch playback opportunities
+        // Use addEventListener to avoid overwriting other handlers
+        remoteVideo.addEventListener('loadedmetadata', () => {
+          console.log(`Metadata loaded for peer ${peerId}`);
           playVideo();
+        });
+        
+        remoteVideo.addEventListener('canplay', () => {
+          console.log(`Can play for peer ${peerId}`);
+          playVideo();
+        });
+        
+        remoteVideo.addEventListener('canplaythrough', () => {
+          console.log(`Can play through for peer ${peerId}`);
+          playVideo();
+        });
+        
+        // Try immediately if ready
+        if (remoteVideo.readyState >= 1) {
+          console.log(`Video readyState is ${remoteVideo.readyState} for peer ${peerId}, attempting immediate play`);
+          playVideo();
+        } else {
+          // If not ready, try after a short delay
+          setTimeout(() => {
+            if (remoteVideo.readyState >= 1) {
+              playVideo();
+            }
+          }, 100);
         }
+        
+        // Also try after track is added to stream
+        setTimeout(() => {
+          playVideo();
+        }, 200);
+        
+        // Final attempt after everything is set up
+        setTimeout(() => {
+          console.log(`Final playback attempt for peer ${peerId}`);
+          playVideo();
+        }, 500);
         
         // Mark this participant as having video available
         if (window.appState.participants[peerId]) {
