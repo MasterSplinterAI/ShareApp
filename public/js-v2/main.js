@@ -144,26 +144,51 @@ class Application {
 
     // Handle user joined - create peer connection
     eventBus.on('room:userJoined', async (data) => {
-      const socketId = stateManager.getState('socketId');
+      const socketId = stateManager.getState('socketId') || signalingClient.getSocketId();
+      logger.info('Application', 'User joined event received', { 
+        userId: data.userId, 
+        name: data.name,
+        mySocketId: socketId
+      });
+      
       if (data.userId !== socketId) {
         setTimeout(async () => {
           try {
+            logger.info('Application', 'Creating connection to newly joined user', { peerId: data.userId });
             await connectionManager.createConnection(data.userId);
           } catch (error) {
             logger.error('Application', 'Failed to create connection to new user', { error });
           }
         }, 500);
+      } else {
+        logger.debug('Application', 'Ignoring own user joined event');
       }
     });
 
     // Handle room joined - connect to all existing participants
     eventBus.on('room:joined', async (data) => {
-      const socketId = stateManager.getState('socketId');
+      const socketId = stateManager.getState('socketId') || signalingClient.getSocketId();
+      logger.info('Application', 'Room joined event received', { 
+        socketId, 
+        participantCount: data.participants?.length || 0,
+        participants: data.participants?.map(p => ({ id: p.id, name: p.name })) || []
+      });
+      
+      if (!data.participants || !Array.isArray(data.participants)) {
+        logger.warn('Application', 'No participants array in room:joined event', { data });
+        return;
+      }
+      
       const otherParticipants = data.participants.filter(p => p.id !== socketId);
+      logger.info('Application', 'Connecting to existing participants', { 
+        count: otherParticipants.length,
+        participants: otherParticipants.map(p => ({ id: p.id, name: p.name }))
+      });
       
       for (const participant of otherParticipants) {
         setTimeout(async () => {
           try {
+            logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
             await connectionManager.createConnection(participant.id);
           } catch (error) {
             logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });

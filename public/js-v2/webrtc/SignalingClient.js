@@ -103,23 +103,31 @@ class SignalingClient {
    */
   setupRoomHandlers() {
     this.socket.on('room-joined', (data) => {
-      logger.info('SignalingClient', 'Room joined', { roomId: data.roomId });
+      logger.info('SignalingClient', 'Room joined', { 
+        roomId: data.roomId, 
+        hostId: data.hostId,
+        participantCount: data.participants?.length || 0,
+        participants: data.participants?.map(p => ({ id: p.id, name: p.name })) || []
+      });
       stateManager.setState({
         roomId: data.roomId,
         isHost: data.hostId === this.socket.id,
-        'room.hostId': data.hostId
+        'room.hostId': data.hostId,
+        socketId: this.socket.id
       });
 
       // Update participants
       const participants = new Map();
-      data.participants.forEach(p => {
-        participants.set(p.id, {
-          id: p.id,
-          name: p.name,
-          isHost: p.isHost,
-          joinedAt: p.joinedAt ? new Date(p.joinedAt) : new Date()
+      if (data.participants && Array.isArray(data.participants)) {
+        data.participants.forEach(p => {
+          participants.set(p.id, {
+            id: p.id,
+            name: p.name,
+            isHost: p.isHost,
+            joinedAt: p.joinedAt ? new Date(p.joinedAt) : new Date()
+          });
         });
-      });
+      }
       stateManager.setState({ 'room.participants': participants });
 
       eventBus.emit('room:joined', data);
