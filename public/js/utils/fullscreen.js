@@ -49,43 +49,24 @@ export function setupFullscreenForTile(container, videoElement) {
   // Add button to container
   container.appendChild(fullscreenBtn);
 
-  // Disable controls and PiP pausing for live streams
-  videoElement.setAttribute('controls', 'false');
-  videoElement.setAttribute('disablePictureInPicture', 'true');
+  // Ensure inline playback; do not force-disable PiP or controls
   videoElement.setAttribute('playsinline', 'true');
-  videoElement.disableRemotePlayback = true;
-
-  console.log('Disabled controls and PiP for live video tile');
 
   // Handle PiP events for mobile
   if ('pictureInPictureEnabled' in document) {
     videoElement.addEventListener('enterpictureinpicture', () => {
-      console.log('Entered PiP - temporary controls enabled');
-      videoElement.setAttribute('controls', 'true');
+      console.log('Entered PiP');
     });
 
     videoElement.addEventListener('leavepictureinpicture', () => {
-      console.log('Exited PiP - auto-resuming and disabling controls');
-      videoElement.removeAttribute('controls');
-      videoElement.setAttribute('disablePictureInPicture', 'true');
+      console.log('Exited PiP - attempting resume');
       if (videoElement.srcObject && videoElement.paused) {
-        videoElement.play().then(() => {
-          console.log('Auto-resumed after PiP exit');
-        }).catch(err => {
-          console.warn('Auto-resume after PiP failed:', err);
-        });
+        videoElement.play().catch(err => console.warn('Auto-resume after PiP failed:', err));
       }
     });
   }
 
-  // Prevent pause on fullscreen exit
-  videoElement.addEventListener('pause', (e) => {
-    if (videoElement.srcObject) { // Live stream
-      console.log('Preventing pause on live stream');
-      e.preventDefault();
-      videoElement.play().catch(err => console.warn('Prevent pause failed:', err));
-    }
-  });
+  // Do not aggressively prevent pause; only resume on explicit events
 
   // Function to check if we should use native video fullscreen (iOS and some mobile browsers)
   const shouldUseNativeVideoFullscreen = () => {
@@ -136,9 +117,7 @@ export function setupFullscreenForTile(container, videoElement) {
   // Function to exit fullscreen
   const exitFullscreen = () => {
     try {
-      if (shouldUseNativeVideoFullscreen()) {
-        videoElement.removeAttribute('controls');
-      }
+      // No-op
       
       if (document.exitFullscreen) {
         document.exitFullscreen();
@@ -152,18 +131,12 @@ export function setupFullscreenForTile(container, videoElement) {
       
       fullscreenBtn.innerHTML = '<i class="fas fa-expand text-xs"></i>';
 
-      // Always disable controls and resume for live streams
-      videoElement.removeAttribute('controls');
-      videoElement.setAttribute('disablePictureInPicture', 'true');
+      // Gently resume if paused after fullscreen exit
       if (videoElement.srcObject && videoElement.paused) {
-        console.log('Force resuming after fullscreen exit');
-        videoElement.play().then(() => {
-          console.log('Resumed after fullscreen exit');
-        }).catch(err => {
+        videoElement.play().catch(err => {
           console.warn('Resume after fullscreen failed:', err);
         });
       }
-      videoElement.disableRemotePlayback = true;
     } catch (err) {
       console.error('Exit fullscreen error:', err);
     }
@@ -216,9 +189,7 @@ export function setupFullscreenForTile(container, videoElement) {
       fullscreenBtn.innerHTML = '<i class="fas fa-compress text-xs"></i>';
     } else {
       fullscreenBtn.innerHTML = '<i class="fas fa-expand text-xs"></i>';
-      // Restore live stream state
-      videoElement.removeAttribute('controls');
-      videoElement.setAttribute('disablePictureInPicture', 'true');
+      // Attempt resume if needed
       if (videoElement.srcObject && videoElement.paused) {
         videoElement.play().catch(err => console.warn('Resume after fullscreen change failed:', err));
       }
@@ -235,7 +206,6 @@ export function setupFullscreenForTile(container, videoElement) {
   videoElement.addEventListener('webkitfullscreenchange', () => {
     if (!videoElement.webkitDisplayingFullscreen) {
       fullscreenBtn.innerHTML = '<i class="fas fa-expand text-xs"></i>';
-      videoElement.removeAttribute('controls');
       // Ensure video continues playing
       if (videoElement.paused && videoElement.srcObject) {
         videoElement.play().catch(err => {
