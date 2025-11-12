@@ -109,6 +109,19 @@ app.get('/', (req, res) => {
     res.sendFile(__dirname + '/public/index.html');
 });
 
+// V2 route
+app.get('/v2', (req, res) => {
+    // Get protocol from headers if behind a proxy
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    
+    // Redirect to HTTPS if not secure and not on localhost
+    if (protocol !== 'https' && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
+        return res.redirect(`https://${req.hostname}/v2${req.url}`);
+    }
+    
+    res.sendFile(__dirname + '/public/v2.html');
+});
+
 // Server status endpoint
 app.get('/status', (req, res) => {
     res.json({ 

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="HandheldFriendly" content="true">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>ScreenShare App v2</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎥</text></svg>">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a6cf7">
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="container mx-auto px-4 py-6 max-w-6xl">
+    <h1 class="text-center text-2xl md:text-3xl font-bold mb-6 text-dark">ScreenShare App v2</h1>
+    
+    <!-- Home screen -->
+    <div id="home" class="flex flex-col items-center gap-4">
+      <button id="hostBtn" class="btn btn-primary w-full md:w-64" aria-label="Host Meeting">
+        <i class="fas fa-plus-circle mr-2"></i> Host Meeting
+      </button>
+      <button id="joinBtn" class="btn btn-primary w-full md:w-64" aria-label="Join Meeting">
+        <i class="fas fa-sign-in-alt mr-2"></i> Join Meeting
+      </button>
+    </div>
+    
+    <!-- Meeting screen -->
+    <div id="meeting" class="hidden">
+      <!-- Connection status indicator -->
+      <div id="connectionStatus" class="text-center py-2 mb-2 hidden">
+        <span id="connectionStatusText" class="text-yellow-700 bg-yellow-100 px-3 py-1 rounded-full text-sm font-medium">
+          <i class="fas fa-circle-notch fa-spin mr-2"></i> Connecting...
+        </span>
+      </div>
+      
+      <div id="videoGrid" class="flex flex-col">
+        <!-- Grid of participant videos -->
+        <div id="participantsGrid" class="grid grid-cols-2 gap-3 w-full video-grid">
+          <!-- Local video -->
+          <div class="video-container bg-black rounded-lg overflow-hidden relative" id="localVideoContainer" style="aspect-ratio: 16/9;">
+            <video id="localVideo" class="w-full h-full object-contain" autoplay playsinline muted></video>
+            <div class="video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10">
+              <span>You</span>
+            </div>
+          </div>
+          
+          <!-- Remote videos will be added here dynamically -->
+        </div>
+      </div>
+      
+      <!-- Controls -->
+      <div id="controls" class="controls bg-white rounded-lg shadow p-3 md:p-4 mb-6 flex flex-wrap justify-around items-center gap-3">
+        <div class="flex gap-3">
+          <button id="toggleCameraBtn" class="btn-circle btn-danger" title="Turn on camera" aria-label="Turn on camera">
+            <i class="fas fa-video-slash"></i>
+          </button>
+          <button id="toggleMicBtn" class="btn-circle btn-primary" title="Toggle Microphone" aria-label="Toggle Microphone">
+            <i class="fas fa-microphone"></i>
+          </button>
+          <button id="shareScreenBtn" class="btn-circle btn-secondary" title="Share Screen" aria-label="Share Screen">
+            <i class="fas fa-desktop"></i>
+          </button>
+          <button id="stopShareBtn" class="hidden btn-circle btn-danger" title="Stop Sharing" aria-label="Stop Sharing">
+            <i class="fas fa-stop-circle"></i>
+          </button>
+        </div>
+        
+        <div class="flex gap-3">
+          <button id="participantsBtn" class="btn-circle btn-secondary" title="Participants" aria-label="Show Participants">
+            <i class="fas fa-users"></i>
+          </button>
+          <button id="chatBtn" class="btn-circle btn-secondary" title="Chat" aria-label="Open Chat">
+            <i class="fas fa-comment"></i>
+          </button>
+          <button id="leaveBtn" class="btn btn-danger" title="Leave Meeting" aria-label="Leave Meeting">
+            <i class="fas fa-phone-slash mr-2"></i><span>Leave</span>
+          </button>
+        </div>
+      </div>
+      
+      <!-- Participants panel -->
+      <div id="participantsPanel" class="fixed inset-0 md:inset-auto md:absolute md:right-5 md:top-20 md:w-64 bg-white md:rounded-lg shadow-lg z-20 hidden">
+        <div class="flex justify-between items-center p-4 border-b">
+          <h3 class="text-lg font-medium">Participants</h3>
+          <button id="closeParticipantsBtn" class="text-gray-500 hover:text-gray-700" title="Close" aria-label="Close Participants Panel">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div id="participantsList" class="max-h-[60vh] md:max-h-80 overflow-y-auto p-3">
+          <!-- Participants will be listed here dynamically -->
+        </div>
+      </div>
+      
+      <!-- Chat panel -->
+      <div id="chatPanel" class="fixed inset-0 md:inset-auto md:absolute md:right-5 md:top-20 md:w-80 bg-white md:rounded-lg shadow-lg z-20 hidden flex flex-col">
+        <div class="flex justify-between items-center p-4 border-b">
+          <h3 class="text-lg font-medium">Chat</h3>
+          <button id="closeChatBtn" class="text-gray-500 hover:text-gray-700" title="Close" aria-label="Close Chat Panel">
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+        <div id="chatMessages" class="flex-grow max-h-[40vh] md:max-h-80 overflow-y-auto p-3">
+          <!-- Messages will be displayed here -->
+        </div>
+        <div class="p-3 border-t">
+          <form id="chatForm" class="flex gap-2">
+            <input type="text" id="chatInput" class="flex-grow px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Type a message...">
+            <button type="submit" class="btn-circle btn-primary" title="Send" aria-label="Send Message">
+              <i class="fas fa-paper-plane"></i>
+            </button>
+          </form>
+        </div>
+      </div>
+      
+      <!-- Share info panel -->
+      <div id="shareInfo" class="panel mt-4 hidden">
+        <p class="mb-2">Share this code with others: <span id="roomCode" class="font-bold bg-gray-100 p-1 rounded"></span></p>
+        <p class="mb-2">Or share this link: <span id="shareLink" class="font-bold bg-gray-100 p-1 rounded break-all text-sm"></span></p>
+        <button id="copyLinkBtn" class="btn btn-success mt-2" aria-label="Copy Meeting Link">
+          <i class="fas fa-copy"></i> Copy Link
+        </button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Error toast -->
+  <div id="errorToast" class="fixed bottom-4 right-4 bg-red-500 text-white p-4 rounded-lg shadow-lg transform transition-transform duration-300 translate-y-full opacity-0 hidden">
+    <div class="flex gap-2 items-start">
+      <i class="fas fa-exclamation-circle mt-1"></i>
+      <div>
+        <div class="font-bold">Error</div>
+        <div id="errorMessage" class="text-sm"></div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Notification container -->
+  <div id="notification-container"></div>
+  
+  <!-- Socket.io -->
+  <script src="/socket.io/socket.io.js"></script>
+  
+  <!-- Main script v2 -->
+  <script type="module" src="/js-v2/main.js"></script>
+  
+  <!-- Wire up UI events -->
+  <script type="module">
+    // Wait for app to initialize
+    window.addEventListener('app:ready', async () => {
+      const { commandDispatcher } = await import('/js-v2/main.js');
+      const { roomService } = await import('/js-v2/services/RoomService.js');
+      const { notificationService } = await import('/js-v2/services/NotificationService.js');
+      const { trackManager } = await import('/js-v2/webrtc/TrackManager.js');
+      
+      // Host button
+      document.getElementById('hostBtn').addEventListener('click', async () => {
+        try {
+          const userName = prompt('Enter your name:', 'Host') || 'Host';
+          const result = await commandDispatcher.execute('createRoom', { userName });
+          
+          // Show share info
+          document.getElementById('shareInfo').classList.remove('hidden');
+          document.getElementById('roomCode').textContent = result.participantCode;
+          document.getElementById('shareLink').textContent = roomService.getShareableLink(result.roomId, result.participantCode);
+          
+          // Copy link button
+          document.getElementById('copyLinkBtn').onclick = () => {
+            navigator.clipboard.writeText(roomService.getShareableLink(result.roomId, result.participantCode));
+            notificationService.success('Link copied to clipboard!');
+          };
+          
+          // Switch to meeting view
+          document.getElementById('home').classList.add('hidden');
+          document.getElementById('meeting').classList.remove('hidden');
+          
+          // Initialize media
+          await trackManager.enableMicrophone();
+          
+          notificationService.success('Room created! Share the link with participants.');
+        } catch (error) {
+          notificationService.error('Failed to create room: ' + error.message);
+        }
+      });
+      
+      // Join button
+      document.getElementById('joinBtn').addEventListener('click', async () => {
+        try {
+          const roomId = prompt('Enter room ID:') || roomService.getRoomIdFromUrl();
+          const pin = prompt('Enter PIN (optional):') || roomService.getPinFromUrl();
+          const userName = prompt('Enter your name:', 'Participant') || 'Participant';
+          
+          if (!roomId) {
+            notificationService.error('Room ID is required');
+            return;
+          }
+          
+          await commandDispatcher.execute('joinRoom', { roomId, userName, accessCode: pin });
+          
+          // Switch to meeting view
+          document.getElementById('home').classList.add('hidden');
+          document.getElementById('meeting').classList.remove('hidden');
+          
+          // Initialize media
+          await trackManager.enableMicrophone();
+          
+          notificationService.success('Joined room!');
+        } catch (error) {
+          notificationService.error('Failed to join room: ' + error.message);
+        }
+      });
+      
+      // Check URL for room and PIN
+      const roomId = roomService.getRoomIdFromUrl();
+      const pin = roomService.getPinFromUrl();
+      
+      if (roomId) {
+        // Auto-join if room ID in URL
+        setTimeout(() => {
+          document.getElementById('joinBtn').click();
+        }, 1000);
+      }
+    });
+  </script>
+</body>
+</html>
+
