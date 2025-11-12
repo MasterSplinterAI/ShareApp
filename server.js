@@ -116,7 +116,7 @@ app.get('/v2', (req, res) => {
     
     // Redirect to HTTPS if not secure and not on localhost
     if (protocol !== 'https' && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
-        return res.redirect(`https://${req.hostname}/v2${req.url}`);
+        return res.redirect(`https://${req.hostname}/v2`);
     }
     
     res.sendFile(__dirname + '/public/v2.html');
