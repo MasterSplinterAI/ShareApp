@@ -511,19 +511,26 @@ export async function createPeerConnection(peerId) {
         });
       }
       
-      // IMPORTANT: Check if this is a screen share track BEFORE processing as regular video
-      // Screen share tracks typically have labels like "screen", "desktop", "window", "display"
+      // Line ~515: Enhanced screen share detection
       const trackLabel = event.track.label.toLowerCase();
+      const trackSettings = event.track.getSettings ? event.track.getSettings() : null;
+      const displaySurface = trackSettings ? trackSettings.displaySurface : null;
+
       const isScreenShare = trackLabel.includes('screen') || 
                            trackLabel.includes('desktop') || 
                            trackLabel.includes('window') ||
                            trackLabel.includes('display') ||
                            trackLabel.includes('monitor') ||
-                           // Also check track settings for screen share indicators
-                           (event.track.getSettings && event.track.getSettings().displaySurface);
-      
-      console.log(`Track detection - Label: "${event.track.label}", isScreenShare: ${isScreenShare}`);
-      
+                           // More reliable browser API for screen share detection
+                           (displaySurface && (displaySurface === 'screen' || 
+                                              displaySurface === 'window' || 
+                                              displaySurface === 'monitor' || 
+                                              displaySurface === 'browser')) ||
+                           // Fallback: If in screen sharing context and video track
+                           (window.appState.isScreenSharing && event.track.kind === 'video');
+
+      console.log(`Track detection - Label: "${event.track.label}", Settings:`, trackSettings, `isScreenShare: ${isScreenShare}`);
+
       // If this is a screen share track, handle it separately
       if (isScreenShare && event.track.kind === 'video') {
         console.log(`✅ Detected screen share track from peer ${peerId} - creating separate tile`);
@@ -626,7 +633,7 @@ export async function createPeerConnection(peerId) {
           });
           
           console.log(`Created separate screen share tile for peer ${peerId}`);
-          return; // Don't process as regular video track
+          return; // Always skip regular video processing for screen shares
         } else {
           // Update existing screen share tile
           console.log(`Updating existing screen share tile for peer ${peerId}`);
@@ -638,7 +645,7 @@ export async function createPeerConnection(peerId) {
               console.warn(`Could not play screen share in existing tile:`, err);
             });
           }
-          return; // Don't process as regular video track
+          return; // Always skip regular video processing for screen shares
         }
       }
       
