@@ -1625,7 +1625,7 @@ export function refreshScreenSharing() {
 }
 
 // Function to update screen share for a specific new participant
-export function updateScreenShareForNewParticipant(participantId) {
+export async function updateScreenShareForNewParticipant(participantId) {
   console.log(`Updating screen share for new participant: ${participantId}`);
   
   // Check if we are screen sharing
