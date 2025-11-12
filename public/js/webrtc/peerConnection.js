@@ -812,12 +812,12 @@ export async function createPeerConnection(peerId) {
             remoteVideo.srcObject = cameraStream;
           } else {
             console.log(`Replacing existing camera video track for peer ${peerId}`);
-            stream.removeTrack(existingVideoTrack);
+          stream.removeTrack(existingVideoTrack);
             stream.addTrack(event.track);
-          }
+        }
         } else {
           // No existing track, just add the new one
-          stream.addTrack(event.track);
+        stream.addTrack(event.track);
         }
         
         // Ensure srcObject is set (in case it wasn't already)

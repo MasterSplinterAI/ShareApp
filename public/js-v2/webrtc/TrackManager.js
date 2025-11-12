@@ -201,6 +201,13 @@ class TrackManager {
 
     eventBus.emit('track:screen:stopped', { track });
     logger.info('TrackManager', 'Screen share track stopped');
+
+    // Restore camera feed if it was enabled
+    if (this.cameraTrack && this.cameraTrack.readyState === 'live') {
+      // Re-emit camera track to restore display
+      eventBus.emit('track:camera:added', { track: this.cameraTrack });
+      logger.debug('TrackManager', 'Restored camera feed after screen share stopped');
+    }
   }
 
   /**

@@ -37,7 +37,8 @@ class VideoGrid {
     });
 
     eventBus.on('track:screen:added', (data) => {
-      this.updateLocalVideo('local-screen', data.track, 'screen');
+      // Create a separate tile for screen share
+      this.addVideoTile('local-screen', data.track, 'screen', null);
     });
 
     eventBus.on('track:screen:stopped', () => {
@@ -92,6 +93,12 @@ class VideoGrid {
       return;
     }
 
+    // Special handling for local video - use existing container
+    if (peerId === 'local' && trackType === 'camera') {
+      this.updateLocalVideo('local', track, 'camera');
+      return;
+    }
+
     // Get or create tile container
     let tile = this.tiles.get(peerId);
     if (!tile) {
@@ -104,7 +111,7 @@ class VideoGrid {
       tile.video = document.createElement('video');
       tile.video.autoplay = true;
       tile.video.playsInline = true;
-      tile.video.muted = peerId !== 'local';
+      tile.video.muted = peerId !== 'local' && peerId !== 'local-screen';
       tile.video.style.cssText = `
         width: 100%;
         height: 100%;

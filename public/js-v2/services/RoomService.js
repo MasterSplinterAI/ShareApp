@@ -165,7 +165,7 @@ class RoomService {
    */
   getPinFromUrl() {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('pin');
+    return urlParams.get('pin') || urlParams.get('code');
   }
 
   /**
@@ -173,7 +173,7 @@ class RoomService {
    */
   getRoomIdFromUrl() {
     const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('room');
+    return urlParams.get('room') || urlParams.get('roomId');
   }
 
   /**

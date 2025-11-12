@@ -67,8 +67,8 @@ export function getShareableLink(roomId, pin = null) {
 export function getShareableLinkWithCode(roomId, accessCode) {
   // Now includes PIN in URL
   return getShareableLink(roomId, accessCode);
-}
-
+  }
+  
 // Get PIN from URL parameters
 export function getPinFromUrl() {
   const urlParams = new URLSearchParams(window.location.search);

@@ -158,7 +158,7 @@ export function updateMainVideo() {
       if (container.id === 'mainVideoContainer') {
         container.classList.add('hidden');
       } else {
-        container.classList.remove('hidden');
+      container.classList.remove('hidden');
       }
     });
     
@@ -194,21 +194,21 @@ export function updateMainVideo() {
       }
       
       // Ensure main video container stays hidden
-      if (mainVideoContainer) {
+        if (mainVideoContainer) {
         mainVideoContainer.classList.add('hidden');
-      }
-      
+        }
+        
       // Trigger layout update to ensure equal sizing
       import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
         updateVideoTileLayout();
-      }).catch(err => {
+              }).catch(err => {
         console.warn('Could not import updateVideoTileLayout:', err);
       });
       
       mainVideoUpdateInProgress = false;
-      return;
-    }
-    
+            return;
+          }
+          
     // If we are showing local user in main view
     if (pinnedParticipant === 'local') {
       console.log('Local user pinned, but keeping all tiles in grid (equal-sized)');
@@ -222,18 +222,18 @@ export function updateMainVideo() {
       // Ensure main video container stays hidden
       if (mainVideoContainer) {
         mainVideoContainer.classList.add('hidden');
-      }
+                }
       
       // Trigger layout update to ensure equal sizing
       import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
         updateVideoTileLayout();
-      }).catch(err => {
+              }).catch(err => {
         console.warn('Could not import updateVideoTileLayout:', err);
       });
       
       mainVideoUpdateInProgress = false;
       return;
-    }
+        }
     
     // If we're showing another participant (not a screen share)
     if (pinnedParticipant && !pinnedParticipant.startsWith('screen-share-')) {
@@ -247,10 +247,10 @@ export function updateMainVideo() {
       }
       
       // Ensure main video container stays hidden
-      if (mainVideoContainer) {
+            if (mainVideoContainer) {
         mainVideoContainer.classList.add('hidden');
-      }
-      
+          }
+          
       // Trigger layout update to ensure equal sizing
       import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
         updateVideoTileLayout();
@@ -259,16 +259,16 @@ export function updateMainVideo() {
       });
       
       mainVideoUpdateInProgress = false;
-      return;
-    }
-    
+          return;
+        }
+        
     // Default: No pinned participant or unknown - ensure all tiles visible in grid
     console.log('No specific pinned participant, ensuring all tiles in grid');
-    
+            
     // Ensure main video container stays hidden
     if (mainVideoContainer) {
       mainVideoContainer.classList.add('hidden');
-    }
+                }
     
     // Trigger layout update to ensure equal sizing
     import('../ui/layout.js').then(({ updateVideoTileLayout }) => {
@@ -277,10 +277,10 @@ export function updateMainVideo() {
       console.warn('Could not import updateVideoTileLayout:', err);
     });
     
-    mainVideoUpdateInProgress = false;
+          mainVideoUpdateInProgress = false;
   } catch (error) {
     console.error('Error in updateMainVideo:', error);
-    mainVideoUpdateInProgress = false;
+      mainVideoUpdateInProgress = false;
   }
 }
 

@@ -240,16 +240,37 @@
         });
       }
       
-      // Check URL for room and PIN
-      const roomId = roomService.getRoomIdFromUrl();
-      const pin = roomService.getPinFromUrl();
+      // Check URL for room and PIN on page load
+      const checkUrlAndAutoJoin = () => {
+        const roomId = roomService.getRoomIdFromUrl();
+        const pin = roomService.getPinFromUrl();
+        
+        if (roomId) {
+          console.log('Auto-joining room from URL:', roomId, 'PIN:', pin);
+          // Auto-join if room ID in URL
+          setTimeout(async () => {
+            try {
+              const userName = prompt('Enter your name:', 'Participant') || 'Participant';
+              await commandDispatcher.execute('joinRoom', { roomId, userName, accessCode: pin });
+              
+              // Switch to meeting view
+              document.getElementById('home').classList.add('hidden');
+              document.getElementById('meeting').classList.remove('hidden');
+              
+              // Initialize media
+              await trackManager.enableMicrophone();
+              
+              notificationService.success('Joined room!');
+            } catch (error) {
+              console.error('Failed to auto-join room:', error);
+              notificationService.error('Failed to join room: ' + error.message);
+            }
+          }, 1000);
+        }
+      };
       
-      if (roomId) {
-        // Auto-join if room ID in URL
-        setTimeout(() => {
-          joinBtn?.click();
-        }, 1000);
-      }
+      // Check URL after handlers are set up
+      setTimeout(checkUrlAndAutoJoin, 500);
     }
     
     let handlersSetup = false;

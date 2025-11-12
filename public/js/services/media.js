@@ -624,7 +624,7 @@ export async function startScreenSharing() {
     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
     const screenVideoTrack = screenStream.getVideoTracks()[0];
     if (!screenVideoTrack) throw new Error('No screen video track');
-
+    
     // Log sender settings
     console.log('Sender screen track settings:', screenVideoTrack.getSettings ? screenVideoTrack.getSettings() : 'No settings');
 
@@ -1112,7 +1112,7 @@ export async function stopScreenSharing() {
       
       if (screenSenders.length > 0) {
         renegotiateConnection(pc, peerId);
-      }
+          }
     });
     
     // IMPORTANT: We need to update all peer connections to send the camera feed now
@@ -1717,7 +1717,7 @@ export async function updateScreenShareForNewParticipant(participantId) {
           window.appState.peerTransceivers[participantId] = window.appState.peerTransceivers[participantId] || {};
           window.appState.peerTransceivers[participantId].screen = transceiver;
           console.log(`Created screen transceiver for ${participantId}`);
-        }
+            }
       } catch (err) {
         console.warn('Fallback to addTrack for screen share');
         peerConnection.addTrack(screenVideoTrack, screenShareStream);
