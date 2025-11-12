@@ -817,9 +817,13 @@ export async function createPeerConnection(peerId) {
           placeholder.classList.add('hidden');
         }
         
-        // Force remoteVideo element to update its srcObject to trigger playback
-        remoteVideo.srcObject = null;
-        remoteVideo.srcObject = stream;
+        // Do NOT reset srcObject repeatedly; it causes AbortError. We update tracks in-place above
+        // Ensure playback after metadata is loaded
+        if (remoteVideo.readyState < 2) {
+          remoteVideo.onloadedmetadata = () => {
+            remoteVideo.play().catch(err => console.warn(`Could not autoplay after metadata for ${peerId}:`, err));
+          };
+        }
         
         // Mark this participant as having video available
         if (window.appState.participants[peerId]) {
@@ -1103,6 +1107,17 @@ export async function createPeerConnection(peerId) {
 // Create and send an offer to a peer
 async function createAndSendOffer(peerConnection, peerId) {
   try {
+    // Defer offer creation until signaling state is stable to avoid race conditions
+    if (peerConnection.signalingState !== 'stable') {
+      console.warn(`Deferring offer for ${peerId}; signalingState=${peerConnection.signalingState}`);
+      setTimeout(() => {
+        if (peerConnection.signalingState === 'stable') {
+          createAndSendOffer(peerConnection, peerId);
+        }
+      }, 250);
+      return;
+    }
+    
     // Prevent duplicate offers
     if (pendingOffers.has(peerId)) {
       console.log(`Already have a pending offer for ${peerId}, skipping`);
