@@ -112,15 +112,8 @@ app.get('/', (req, res) => {
 
 // V2 route
 app.get('/v2', (req, res) => {
-    // Get protocol from headers if behind a proxy
-    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
-    
-    // Only redirect to HTTPS if explicitly HTTP and not behind a proxy (no x-forwarded-proto header)
-    // If behind a proxy (like Cloudflare), trust that HTTPS is already handled
-    if (protocol === 'http' && !req.headers['x-forwarded-proto'] && req.hostname !== 'localhost' && req.hostname !== '127.0.0.1') {
-        return res.redirect(`https://${req.hostname}/v2`);
-    }
-    
+    // Never redirect - if we're behind Cloudflare or a proxy, HTTPS is already handled
+    // Just serve the file directly
     res.sendFile(__dirname + '/public/v2.html');
 });
 
