@@ -277,23 +277,31 @@ class ConnectionManager {
   async addLocalTracks(pc, peerId) {
     const { trackManager } = await import('./TrackManager.js');
     
-    const transceivers = this.transceivers.get(peerId);
+    let transceivers = this.transceivers.get(peerId);
     if (!transceivers) {
-      logger.warn('ConnectionManager', 'No transceivers found', { peerId });
-      return;
+      transceivers = { camera: null, screen: null, audio: null };
+      this.transceivers.set(peerId, transceivers);
     }
 
-    // Add audio track
+    // Add audio track - create transceiver if needed
     const audioTrack = trackManager.getAudioTrack();
     if (audioTrack && audioTrack.readyState === 'live') {
-      await transceivers.audio.sender.replaceTrack(audioTrack);
+      if (!transceivers.audio) {
+        transceivers.audio = pc.addTransceiver(audioTrack, { direction: 'sendrecv' });
+      } else {
+        await transceivers.audio.sender.replaceTrack(audioTrack);
+      }
       logger.debug('ConnectionManager', 'Added audio track', { peerId });
     }
 
-    // Add camera track
+    // Add camera track - create transceiver if needed
     const cameraTrack = trackManager.getCameraTrack();
     if (cameraTrack && cameraTrack.readyState === 'live' && cameraTrack.enabled) {
-      await transceivers.camera.sender.replaceTrack(cameraTrack);
+      if (!transceivers.camera) {
+        transceivers.camera = pc.addTransceiver(cameraTrack, { direction: 'sendrecv' });
+      } else {
+        await transceivers.camera.sender.replaceTrack(cameraTrack);
+      }
       logger.debug('ConnectionManager', 'Added camera track', { peerId });
     }
 
