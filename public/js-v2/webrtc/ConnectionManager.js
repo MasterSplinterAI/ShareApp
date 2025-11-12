@@ -603,20 +603,33 @@ class ConnectionManager {
       throw new Error(`No connection found for peer ${peerId}`);
     }
 
-    const transceivers = this.transceivers.get(peerId);
+    let transceivers = this.transceivers.get(peerId);
     if (!transceivers) {
-      throw new Error(`No transceivers found for peer ${peerId}`);
+      transceivers = { camera: null, screen: null, audio: null };
+      this.transceivers.set(peerId, transceivers);
     }
 
     try {
       if (type === 'camera') {
-        await transceivers.camera.sender.replaceTrack(track);
+        if (!transceivers.camera) {
+          transceivers.camera = pc.addTransceiver(track, { direction: 'sendrecv' });
+        } else {
+          await transceivers.camera.sender.replaceTrack(track);
+        }
         logger.info('ConnectionManager', 'Added camera track', { peerId });
       } else if (type === 'screen') {
-        await transceivers.screen.sender.replaceTrack(track);
+        if (!transceivers.screen) {
+          transceivers.screen = pc.addTransceiver(track, { direction: 'sendrecv' });
+        } else {
+          await transceivers.screen.sender.replaceTrack(track);
+        }
         logger.info('ConnectionManager', 'Added screen track', { peerId });
       } else if (type === 'audio') {
-        await transceivers.audio.sender.replaceTrack(track);
+        if (!transceivers.audio) {
+          transceivers.audio = pc.addTransceiver(track, { direction: 'sendrecv' });
+        } else {
+          await transceivers.audio.sender.replaceTrack(track);
+        }
         logger.info('ConnectionManager', 'Added audio track', { peerId });
       }
 
