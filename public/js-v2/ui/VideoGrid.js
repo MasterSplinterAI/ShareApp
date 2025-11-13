@@ -268,11 +268,13 @@ class VideoGrid {
    * Remove video tile
    */
   removeVideoTile(peerId, trackType = null) {
-    const tile = this.tiles.get(peerId);
+    // For screen share, use the screen tile ID
+    const tileId = trackType === 'screen' ? `${peerId}-screen` : peerId;
+    const tile = this.tiles.get(tileId);
     if (!tile) return;
 
     // If removing specific track type, check if other tracks exist
-    if (trackType) {
+    if (trackType && trackType !== 'screen') {
       const peers = stateManager.getState('peers') || new Map();
       const peer = peers.get(peerId);
       if (peer && peer.tracks) {
