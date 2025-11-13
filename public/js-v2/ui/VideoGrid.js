@@ -169,6 +169,10 @@ class VideoGrid {
         height: 100%;
         object-fit: contain;
         background: #000;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 1;
       `;
       tile.container.appendChild(tile.video);
     }
@@ -181,11 +185,25 @@ class VideoGrid {
       tile.video.srcObject = newStream;
     }
 
+    // Hide placeholder when video is added
+    const placeholder = tile.container.querySelector('.no-video-placeholder');
+    if (placeholder) {
+      placeholder.style.display = 'none';
+    }
+
+    // Ensure video is visible
+    tile.video.style.display = 'block';
+    tile.video.style.visibility = 'visible';
+
     // Play video with retry logic
     const playVideo = async () => {
       try {
         await tile.video.play();
         logger.debug('VideoGrid', 'Video playing', { peerId });
+        // Once playing, ensure placeholder is hidden
+        if (placeholder) {
+          placeholder.style.display = 'none';
+        }
       } catch (error) {
         logger.warn('VideoGrid', 'Failed to play video, will retry', { peerId, error });
         // Retry after a short delay
@@ -204,6 +222,15 @@ class VideoGrid {
     tile.video.addEventListener('loadedmetadata', () => {
       playVideo();
     }, { once: true });
+
+    // Listen for video track ended to show placeholder
+    if (track) {
+      track.onended = () => {
+        logger.info('VideoGrid', 'Video track ended, showing placeholder', { peerId });
+        this.showPlaceholder(tile.container);
+        tile.video.style.display = 'none';
+      };
+    }
 
     // Update label (use original peerId for name lookup)
     this.updateTileLabel(peerId, trackType);
@@ -371,6 +398,13 @@ class VideoGrid {
       fullscreenBtn.style.webkitTouchCallout = 'none';
       fullscreenBtn.style.pointerEvents = 'auto';
       fullscreenBtn.style.zIndex = '30';
+      fullscreenBtn.style.cursor = 'pointer';
+      // Remove any existing event listeners by cloning
+      const newBtn = fullscreenBtn.cloneNode(true);
+      fullscreenBtn.parentNode.replaceChild(newBtn, fullscreenBtn);
+      const btn = newBtn;
+    } else {
+      var btn = fullscreenBtn;
     }
 
     // Ensure video has playsinline for mobile
@@ -379,31 +413,42 @@ class VideoGrid {
 
     const enterFullscreen = async () => {
       try {
-        // On mobile iOS/Android, use native video fullscreen
-        if (isMobile && (isIOS || isAndroid)) {
-          // For iOS, use webkitEnterFullscreen
-          if (isIOS && video.webkitEnterFullscreen) {
+        logger.info('VideoGrid', 'Entering fullscreen', { isMobile, isIOS, isAndroid });
+        
+        // On mobile iOS, use webkitEnterFullscreen (native video player)
+        if (isMobile && isIOS) {
+          if (video.webkitEnterFullscreen) {
+            logger.info('VideoGrid', 'Using iOS webkitEnterFullscreen');
             video.webkitEnterFullscreen();
-            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            btn.innerHTML = '<i class="fas fa-compress"></i>';
             return;
-          }
-          
-          // For Android, enable controls and use requestFullscreen on video
-          if (isAndroid) {
+          } else {
+            // Fallback: enable controls and let user tap video
+            logger.warn('VideoGrid', 'webkitEnterFullscreen not available, enabling controls');
             video.setAttribute('controls', 'true');
-            if (video.requestFullscreen) {
-              await video.requestFullscreen();
-            } else if (video.webkitRequestFullscreen) {
-              await video.webkitRequestFullscreen();
-            } else if (video.mozRequestFullScreen) {
-              await video.mozRequestFullScreen();
-            }
-            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            video.style.width = '100%';
+            video.style.height = '100%';
             return;
           }
         }
+        
+        // On Android, enable controls and use requestFullscreen on video
+        if (isMobile && isAndroid) {
+          logger.info('VideoGrid', 'Using Android fullscreen');
+          video.setAttribute('controls', 'true');
+          if (video.requestFullscreen) {
+            await video.requestFullscreen();
+          } else if (video.webkitRequestFullscreen) {
+            await video.webkitRequestFullscreen();
+          } else if (video.mozRequestFullScreen) {
+            await video.mozRequestFullScreen();
+          }
+          btn.innerHTML = '<i class="fas fa-compress"></i>';
+          return;
+        }
 
         // Desktop or fallback: use container fullscreen
+        logger.info('VideoGrid', 'Using container fullscreen');
         if (container.requestFullscreen) {
           await container.requestFullscreen();
         } else if (container.webkitRequestFullscreen) {
@@ -413,9 +458,13 @@ class VideoGrid {
         } else if (container.msRequestFullscreen) {
           await container.msRequestFullscreen();
         }
-        fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+        btn.innerHTML = '<i class="fas fa-compress"></i>';
       } catch (error) {
-        logger.warn('VideoGrid', 'Fullscreen failed', { error });
+        logger.error('VideoGrid', 'Fullscreen failed', { error, message: error.message });
+        // On iOS, if fullscreen fails, enable controls as fallback
+        if (isMobile && isIOS) {
+          video.setAttribute('controls', 'true');
+        }
       }
     };
 
@@ -430,7 +479,7 @@ class VideoGrid {
         } else if (document.msFullscreenElement) {
           await document.msExitFullscreen();
         }
-        fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        btn.innerHTML = '<i class="fas fa-expand"></i>';
         
         // Remove controls on mobile after exiting
         if (isMobile) {
@@ -448,7 +497,8 @@ class VideoGrid {
       }
     };
 
-    fullscreenBtn.onclick = async (e) => {
+    // Use both click and touchstart for better mobile support
+    const handleFullscreen = async (e) => {
       e.stopPropagation();
       e.preventDefault();
       
@@ -458,12 +508,19 @@ class VideoGrid {
                            document.msFullscreenElement === container ||
                            (isIOS && video.webkitDisplayingFullscreen);
 
+      logger.info('VideoGrid', 'Fullscreen button clicked', { isFullscreen, isMobile, isIOS });
+      
       if (isFullscreen) {
         await exitFullscreen();
       } else {
         await enterFullscreen();
       }
     };
+
+    btn.addEventListener('click', handleFullscreen, { passive: false });
+    if (isMobile) {
+      btn.addEventListener('touchend', handleFullscreen, { passive: false });
+    }
 
     // Update button on fullscreen change
     const updateButton = () => {
@@ -474,9 +531,9 @@ class VideoGrid {
                           (isIOS && video.webkitDisplayingFullscreen);
 
       if (isFullscreen) {
-        fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+        btn.innerHTML = '<i class="fas fa-compress"></i>';
       } else {
-        fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        btn.innerHTML = '<i class="fas fa-expand"></i>';
         // Remove controls on mobile after exiting
         if (isMobile) {
           video.removeAttribute('controls');
@@ -492,8 +549,9 @@ class VideoGrid {
     // Handle iOS native video fullscreen
     if (isIOS) {
       video.addEventListener('webkitfullscreenchange', () => {
+        logger.info('VideoGrid', 'iOS fullscreen changed', { displaying: video.webkitDisplayingFullscreen });
         if (!video.webkitDisplayingFullscreen) {
-          fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+          btn.innerHTML = '<i class="fas fa-expand"></i>';
           video.removeAttribute('controls');
           if (video.paused && video.srcObject) {
             video.play().catch(err => {
@@ -544,6 +602,9 @@ class VideoGrid {
       // Create stream from track
       const stream = new MediaStream([track]);
       localVideo.srcObject = stream;
+      localVideo.style.display = 'block';
+      localVideo.style.visibility = 'visible';
+      localVideo.style.zIndex = '1';
       localVideo.play().catch(error => {
         logger.warn('VideoGrid', 'Failed to play local video', { error });
       });
@@ -551,7 +612,8 @@ class VideoGrid {
       // Hide placeholder
       this.hidePlaceholder(localContainer);
     } else {
-      // Show placeholder
+      // Show placeholder and hide video
+      localVideo.style.display = 'none';
       this.showPlaceholder(localContainer);
     }
   }
@@ -599,7 +661,7 @@ class VideoGrid {
       align-items: center;
       justify-content: center;
       background: #1f2937;
-      z-index: 5;
+      z-index: 2;
     `;
 
     // Generate initials from name
@@ -656,7 +718,7 @@ class VideoGrid {
         align-items: center;
         justify-content: center;
         background: #1f2937;
-        z-index: 5;
+        z-index: 2;
       `;
       
       const icon = document.createElement('i');
