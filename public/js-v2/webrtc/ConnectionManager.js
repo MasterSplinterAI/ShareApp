@@ -484,7 +484,7 @@ class ConnectionManager {
           pc.close();
           this.connections.delete(peerId);
           this.transceivers.delete(peerId);
-          pc = await this.createConnection(peerId);
+          pc = await this.createConnection(peerId, true); // Still skip offer since we're receiving one
         }
       }
 

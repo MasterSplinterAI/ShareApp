@@ -148,7 +148,8 @@ class Application {
       logger.info('Application', 'User joined event received', { 
         userId: data.userId, 
         name: data.name,
-        mySocketId: socketId
+        mySocketId: socketId,
+        isHost: stateManager.getState('isHost')
       });
       
       if (data.userId !== socketId) {
@@ -159,14 +160,23 @@ class Application {
           return;
         }
         
+        // Only create connection if we're the host or if we've been in the room for a bit
+        // This prevents both peers from creating offers simultaneously
+        const isHost = stateManager.getState('isHost');
+        const delay = isHost ? 500 : 2000; // Host creates faster, participant waits longer
+        
         setTimeout(async () => {
           try {
-            logger.info('Application', 'Creating connection to newly joined user', { peerId: data.userId });
+            logger.info('Application', 'Creating connection to newly joined user', { 
+              peerId: data.userId,
+              delay,
+              isHost
+            });
             await connectionManager.createConnection(data.userId);
           } catch (error) {
             logger.error('Application', 'Failed to create connection to new user', { error });
           }
-        }, 1000); // Increased delay to avoid race conditions
+        }, delay);
       } else {
         logger.debug('Application', 'Ignoring own user joined event');
       }

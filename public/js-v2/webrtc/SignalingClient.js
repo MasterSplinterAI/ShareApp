@@ -178,10 +178,12 @@ class SignalingClient {
    */
   setupSignalingHandlers() {
     this.socket.on('offer', (data) => {
-      logger.info('SignalingClient', 'Received offer', { 
+      logger.info('SignalingClient', 'Received offer', {
         from: data.senderId || data.targetUserId,
         to: this.socket.id,
-        hasSdp: !!data.sdp
+        hasSdp: !!data.sdp,
+        sdpType: data.sdp?.type,
+        roomId: data.roomId
       });
       eventBus.emit('webrtc:offer', {
         senderId: data.senderId || data.targetUserId,
