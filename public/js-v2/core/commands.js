@@ -16,31 +16,31 @@ export function registerCommands() {
     
     if (isCameraOn) {
       // Camera is on - disable it
-      const cameraTrack = trackManager.getCameraTrack();
+      // Like the original code: just disable the track, don't remove it from connections
+      await trackManager.disableCamera();
       
-      // Disable the track (but keep it live) - this is what the original code does
-      if (cameraTrack && cameraTrack.readyState === 'live') {
-        cameraTrack.enabled = false;
-        await trackManager.disableCamera();
-        
-        // Update all peer connections to reflect disabled state
-        const peers = Array.from(connectionManager.getAllConnections());
-        for (const { peerId } of peers) {
-          // Replace track with disabled version (or null)
-          await connectionManager.removeTrack(peerId, 'camera');
-        }
-      } else {
-        await trackManager.disableCamera();
-      }
+      // The track is still in the connection, just disabled
+      // Peers will detect track.enabled = false and show placeholder
+      // No need to remove/replace tracks - they stay in the connection
     } else {
       // Camera is off - enable it
-      const cameraTrack = await trackManager.enableCamera();
+      let cameraTrack = trackManager.getCameraTrack();
       
-      // Add camera track to all existing peer connections
-      if (cameraTrack) {
-        const peers = Array.from(connectionManager.getAllConnections());
-        for (const { peerId } of peers) {
-          await connectionManager.addTrack(peerId, cameraTrack, 'camera');
+      // If track exists but is disabled, just enable it
+      if (cameraTrack && cameraTrack.readyState === 'live' && !cameraTrack.enabled) {
+        cameraTrack.enabled = true;
+        await trackManager.enableCamera();
+        // Track is already in connections, just re-enabled
+      } else {
+        // No track exists, create new one
+        cameraTrack = await trackManager.enableCamera();
+        
+        // Add camera track to all existing peer connections
+        if (cameraTrack) {
+          const peers = Array.from(connectionManager.getAllConnections());
+          for (const { peerId } of peers) {
+            await connectionManager.addTrack(peerId, cameraTrack, 'camera');
+          }
         }
       }
     }
