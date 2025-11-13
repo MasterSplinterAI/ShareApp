@@ -79,13 +79,23 @@ class Config {
       isSafari,
       isFirefox,
       isChrome,
-      isProduction: !isLocalhost && hostname !== '127.0.0.1'
+      isProduction: !isLocalhost && hostname !== '127.0.0.1',
+      isLandscape: false
     };
+    
+    // Update orientation
+    this.updateOrientation();
   }
 
   isMobile() {
     return window.innerWidth <= 768 || 
            /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+  }
+
+  updateOrientation() {
+    if (this.environment.isMobile) {
+      this.environment.isLandscape = window.innerWidth > window.innerHeight;
+    }
   }
 
   applyEnvironmentOverrides() {

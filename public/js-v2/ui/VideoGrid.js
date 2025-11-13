@@ -198,8 +198,22 @@ class VideoGrid {
     container.className = 'video-container';
     container.id = `video-tile-${peerId}`;
     const isMobile = config.environment.isMobile;
-    const aspectRatio = isMobile ? '4/3' : '16/9';
-    const maxHeight = isMobile ? 'calc((100vh - 300px) / 2)' : 'none';
+    const isLandscape = isMobile && window.innerWidth > window.innerHeight;
+    
+    // Dynamic aspect ratio based on orientation
+    let aspectRatio = '16/9';
+    let maxHeight = 'none';
+    
+    if (isMobile) {
+      if (isLandscape) {
+        aspectRatio = '16/9'; // Wider in landscape
+        maxHeight = 'calc(100vh - 200px)';
+      } else {
+        aspectRatio = '4/3'; // Portrait
+        maxHeight = 'calc((100vh - 300px) / 2)';
+      }
+    }
+    
     container.style.cssText = `
       background: #000;
       border-radius: 8px;
@@ -317,30 +331,175 @@ class VideoGrid {
    */
   setupFullscreen(container, video) {
     const fullscreenBtn = container.querySelector('.tile-fullscreen-btn');
-    if (!fullscreenBtn) return;
+    if (!fullscreenBtn || !video) return;
 
-    fullscreenBtn.onclick = async () => {
+    const isMobile = config.environment.isMobile;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isAndroid = /Android/.test(navigator.userAgent);
+
+    // Make button more touch-friendly on mobile
+    if (isMobile) {
+      fullscreenBtn.style.minWidth = '44px';
+      fullscreenBtn.style.minHeight = '44px';
+      fullscreenBtn.style.fontSize = '18px';
+      fullscreenBtn.style.touchAction = 'manipulation';
+      fullscreenBtn.style.webkitTouchCallout = 'none';
+      fullscreenBtn.style.pointerEvents = 'auto';
+      fullscreenBtn.style.zIndex = '30';
+    }
+
+    // Ensure video has playsinline for mobile
+    video.setAttribute('playsinline', 'true');
+    video.setAttribute('webkit-playsinline', 'true');
+
+    const enterFullscreen = async () => {
       try {
-        if (!document.fullscreenElement) {
-          await container.requestFullscreen();
-          fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
-        } else {
-          await document.exitFullscreen();
-          fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        // On mobile iOS/Android, use native video fullscreen
+        if (isMobile && (isIOS || isAndroid)) {
+          // For iOS, use webkitEnterFullscreen
+          if (isIOS && video.webkitEnterFullscreen) {
+            video.webkitEnterFullscreen();
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            return;
+          }
+          
+          // For Android, enable controls and use requestFullscreen on video
+          if (isAndroid) {
+            video.setAttribute('controls', 'true');
+            if (video.requestFullscreen) {
+              await video.requestFullscreen();
+            } else if (video.webkitRequestFullscreen) {
+              await video.webkitRequestFullscreen();
+            } else if (video.mozRequestFullScreen) {
+              await video.mozRequestFullScreen();
+            }
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
+            return;
+          }
         }
+
+        // Desktop or fallback: use container fullscreen
+        if (container.requestFullscreen) {
+          await container.requestFullscreen();
+        } else if (container.webkitRequestFullscreen) {
+          await container.webkitRequestFullscreen();
+        } else if (container.mozRequestFullScreen) {
+          await container.mozRequestFullScreen();
+        } else if (container.msRequestFullscreen) {
+          await container.msRequestFullscreen();
+        }
+        fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
       } catch (error) {
         logger.warn('VideoGrid', 'Fullscreen failed', { error });
       }
     };
 
+    const exitFullscreen = async () => {
+      try {
+        if (document.fullscreenElement) {
+          await document.exitFullscreen();
+        } else if (document.webkitFullscreenElement) {
+          await document.webkitExitFullscreen();
+        } else if (document.mozFullScreenElement) {
+          await document.mozCancelFullScreen();
+        } else if (document.msFullscreenElement) {
+          await document.msExitFullscreen();
+        }
+        fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        
+        // Remove controls on mobile after exiting
+        if (isMobile) {
+          video.removeAttribute('controls');
+        }
+        
+        // Ensure video continues playing
+        if (video.paused && video.srcObject) {
+          video.play().catch(err => {
+            logger.warn('VideoGrid', 'Failed to resume video after fullscreen', { error: err });
+          });
+        }
+      } catch (error) {
+        logger.warn('VideoGrid', 'Exit fullscreen failed', { error });
+      }
+    };
+
+    fullscreenBtn.onclick = async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      
+      const isFullscreen = document.fullscreenElement === container ||
+                           document.webkitFullscreenElement === container ||
+                           document.mozFullScreenElement === container ||
+                           document.msFullscreenElement === container ||
+                           (isIOS && video.webkitDisplayingFullscreen);
+
+      if (isFullscreen) {
+        await exitFullscreen();
+      } else {
+        await enterFullscreen();
+      }
+    };
+
     // Update button on fullscreen change
-    document.addEventListener('fullscreenchange', () => {
-      if (document.fullscreenElement === container) {
+    const updateButton = () => {
+      const isFullscreen = document.fullscreenElement === container ||
+                          document.webkitFullscreenElement === container ||
+                          document.mozFullScreenElement === container ||
+                          document.msFullscreenElement === container ||
+                          (isIOS && video.webkitDisplayingFullscreen);
+
+      if (isFullscreen) {
         fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
       } else {
         fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+        // Remove controls on mobile after exiting
+        if (isMobile) {
+          video.removeAttribute('controls');
+        }
+      }
+    };
+
+    document.addEventListener('fullscreenchange', updateButton);
+    document.addEventListener('webkitfullscreenchange', updateButton);
+    document.addEventListener('mozfullscreenchange', updateButton);
+    document.addEventListener('MSFullscreenChange', updateButton);
+
+    // Handle iOS native video fullscreen
+    if (isIOS) {
+      video.addEventListener('webkitfullscreenchange', () => {
+        if (!video.webkitDisplayingFullscreen) {
+          fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
+          video.removeAttribute('controls');
+          if (video.paused && video.srcObject) {
+            video.play().catch(err => {
+              logger.warn('VideoGrid', 'Failed to resume video after iOS fullscreen', { error: err });
+            });
+          }
+        }
+      });
+    }
+  }
+
+  /**
+   * Update tile aspect ratios based on orientation
+   */
+  updateTileAspectRatios(isLandscape) {
+    const aspectRatio = isLandscape ? '16/9' : '4/3';
+    const maxHeight = isLandscape ? 'calc(100vh - 200px)' : 'calc((100vh - 300px) / 2)';
+
+    this.tiles.forEach((tile, peerId) => {
+      if (tile.container) {
+        tile.container.style.aspectRatio = aspectRatio;
+        tile.container.style.maxHeight = maxHeight;
       }
     });
+
+    // Also update local video container
+    const localContainer = document.getElementById('localVideoContainer');
+    if (localContainer) {
+      localContainer.style.aspectRatio = aspectRatio;
+      localContainer.style.maxHeight = maxHeight;
+    }
   }
 
   /**
