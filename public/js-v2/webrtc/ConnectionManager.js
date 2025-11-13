@@ -79,27 +79,24 @@ class ConnectionManager {
       // Set up event handlers
       this.setupConnectionHandlers(pc, peerId, stateMachine);
 
-      // Always create transceivers for receiving tracks, even if we don't have local tracks
-      // This ensures we can receive remote audio/video
-      // Use addTransceiver with 'recvonly' to ensure SDP has m-lines for receiving
-      const transceivers = this.transceivers.get(peerId);
-      if (!transceivers.audio) {
-        transceivers.audio = pc.addTransceiver('audio', { 
-          direction: 'recvonly',
-          streams: []
-        });
-        logger.debug('ConnectionManager', 'Created audio transceiver for receiving', { peerId });
-      }
-      if (!transceivers.camera) {
-        transceivers.camera = pc.addTransceiver('video', { 
-          direction: 'recvonly',
-          streams: []
-        });
-        logger.debug('ConnectionManager', 'Created video transceiver for receiving', { peerId });
-      }
-
-      // Add local tracks (will update transceivers if tracks exist)
+      // Add local tracks first - this will create transceivers automatically
+      // The offer/answer will include offerToReceiveAudio/Video which ensures we can receive tracks
       await this.addLocalTracks(pc, peerId);
+      
+      // If we don't have local tracks, create recvonly transceivers to ensure we can receive
+      const transceivers = this.transceivers.get(peerId);
+      if (!transceivers.audio || !transceivers.audio.sender?.track) {
+        if (!transceivers.audio) {
+          transceivers.audio = pc.addTransceiver('audio', { direction: 'recvonly' });
+          logger.debug('ConnectionManager', 'Created audio transceiver for receiving', { peerId });
+        }
+      }
+      if (!transceivers.camera || !transceivers.camera.sender?.track) {
+        if (!transceivers.camera) {
+          transceivers.camera = pc.addTransceiver('video', { direction: 'recvonly' });
+          logger.debug('ConnectionManager', 'Created video transceiver for receiving', { peerId });
+        }
+      }
 
       // Create and send offer (unless we're expecting an incoming offer)
       if (!skipOffer) {
@@ -526,6 +523,22 @@ class ConnectionManager {
       }
 
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      
+      // Log transceivers after setting remote description to see what tracks we can receive
+      const transceiversAfterRemote = pc.getTransceivers();
+      logger.info('ConnectionManager', 'Transceivers after setting remote offer', {
+        peerId,
+        count: transceiversAfterRemote.length,
+        transceivers: transceiversAfterRemote.map(t => ({
+          mid: t.mid,
+          direction: t.direction,
+          kind: t.receiver.track?.kind || 'unknown',
+          hasSender: !!t.sender.track,
+          hasReceiver: !!t.receiver.track,
+          receiverTrackLabel: t.receiver.track?.label,
+          senderTrackLabel: t.sender.track?.label
+        }))
+      });
 
       // Process queued ICE candidates
       if (this.iceCandidateQueues.has(peerId)) {
