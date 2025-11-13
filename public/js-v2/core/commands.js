@@ -24,23 +24,20 @@ export function registerCommands() {
       // No need to remove/replace tracks - they stay in the connection
     } else {
       // Camera is off - enable it
-      let cameraTrack = trackManager.getCameraTrack();
+      // Let enableCamera() handle both cases: re-enabling existing track or creating new one
+      const cameraTrack = await trackManager.enableCamera();
       
-      // If track exists but is disabled, just enable it
-      if (cameraTrack && cameraTrack.readyState === 'live' && !cameraTrack.enabled) {
-        cameraTrack.enabled = true;
-        await trackManager.enableCamera();
-        // Track is already in connections, just re-enabled
-      } else {
-        // No track exists, create new one
-        cameraTrack = await trackManager.enableCamera();
-        
-        // Add camera track to all existing peer connections
-        if (cameraTrack) {
-          const peers = Array.from(connectionManager.getAllConnections());
-          for (const { peerId } of peers) {
+      // If a new track was created (not just re-enabled), add it to peer connections
+      if (cameraTrack) {
+        const peers = Array.from(connectionManager.getAllConnections());
+        for (const { peerId } of peers) {
+          // Check if track is already in connection (re-enabled case)
+          const existingTrack = connectionManager.getTrack(peerId, 'camera');
+          if (!existingTrack || existingTrack.id !== cameraTrack.id) {
+            // New track or different track - add it
             await connectionManager.addTrack(peerId, cameraTrack, 'camera');
           }
+          // If track was re-enabled, it's already in the connection, no need to add
         }
       }
     }

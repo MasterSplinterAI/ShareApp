@@ -167,10 +167,13 @@ class VideoGrid {
       } else {
         // Camera is on - check if we have a track and update display
         const cameraTrack = stateManager.getState('cameraTrack');
-        if (cameraTrack && cameraTrack.readyState === 'live') {
-          this.updateLocalVideo('local', cameraTrack, 'camera');
+        if (cameraTrack && cameraTrack.readyState === 'live' && cameraTrack.enabled) {
+          // Small delay to ensure state is fully updated
+          setTimeout(() => {
+            this.updateLocalVideo('local', cameraTrack, 'camera');
+          }, 50);
         } else {
-          // No track yet, but camera is enabled - show placeholder
+          // No track yet, or track is disabled - show placeholder
           if (localVideo) {
             localVideo.style.display = 'none';
           }
@@ -181,7 +184,14 @@ class VideoGrid {
 
     // Also listen for camera enabled event
     eventBus.on('track:camera:enabled', (data) => {
-      if (data.track && data.track.readyState === 'live') {
+      if (data.track && data.track.readyState === 'live' && data.track.enabled) {
+        this.updateLocalVideo('local', data.track, 'camera');
+      }
+    });
+
+    // Listen for camera added event (includes re-enabled tracks)
+    eventBus.on('track:camera:added', (data) => {
+      if (data.track && data.track.readyState === 'live' && data.track.enabled) {
         this.updateLocalVideo('local', data.track, 'camera');
       }
     });

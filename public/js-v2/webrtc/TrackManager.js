@@ -50,22 +50,33 @@ class TrackManager {
       }
 
       // If we have an existing track that's just disabled, re-enable it instead of creating new one
-      if (this.cameraTrack && this.cameraTrack.readyState === 'live' && !this.cameraTrack.enabled) {
-        // Re-enable existing track
-        this.cameraTrack.enabled = true;
-        this.updateLocalStream();
-        stateManager.setState({ 
-          isCameraOn: true, 
-          cameraTrack: this.cameraTrack 
-        });
-        eventBus.emit('track:camera:enabled', { track: this.cameraTrack });
-        eventBus.emit('track:camera:added', { track: this.cameraTrack });
-        logger.info('TrackManager', 'Camera track re-enabled', {
-          trackId: this.cameraTrack.id,
-          label: this.cameraTrack.label,
-          enabled: this.cameraTrack.enabled
-        });
-        return this.cameraTrack;
+      if (this.cameraTrack && this.cameraTrack.readyState === 'live') {
+        if (!this.cameraTrack.enabled) {
+          // Re-enable existing track
+          this.cameraTrack.enabled = true;
+          this.updateLocalStream();
+          stateManager.setState({ 
+            isCameraOn: true, 
+            cameraTrack: this.cameraTrack 
+          });
+          eventBus.emit('track:camera:enabled', { track: this.cameraTrack });
+          eventBus.emit('track:camera:added', { track: this.cameraTrack });
+          logger.info('TrackManager', 'Camera track re-enabled', {
+            trackId: this.cameraTrack.id,
+            label: this.cameraTrack.label,
+            enabled: this.cameraTrack.enabled,
+            readyState: this.cameraTrack.readyState
+          });
+          return this.cameraTrack;
+        } else {
+          // Track is already enabled - just return it
+          logger.info('TrackManager', 'Camera track already enabled', {
+            trackId: this.cameraTrack.id,
+            label: this.cameraTrack.label,
+            enabled: this.cameraTrack.enabled
+          });
+          return this.cameraTrack;
+        }
       }
 
       // Stop old track if exists
