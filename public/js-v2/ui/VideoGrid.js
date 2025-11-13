@@ -80,6 +80,19 @@ class VideoGrid {
     stateManager.subscribe('isCameraOn', (isOn) => {
       if (!isOn) {
         this.showPlaceholder('local');
+      } else {
+        // Camera is on - check if we have a track and update display
+        const cameraTrack = stateManager.getState('cameraTrack');
+        if (cameraTrack && cameraTrack.readyState === 'live') {
+          this.updateLocalVideo('local', cameraTrack, 'camera');
+        }
+      }
+    });
+
+    // Also listen for camera enabled event
+    eventBus.on('track:camera:enabled', (data) => {
+      if (data.track && data.track.readyState === 'live') {
+        this.updateLocalVideo('local', data.track, 'camera');
       }
     });
   }

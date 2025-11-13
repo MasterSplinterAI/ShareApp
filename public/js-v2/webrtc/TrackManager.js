@@ -19,8 +19,11 @@ class TrackManager {
       // Track already exists and is live, just enable it
       if (!this.cameraTrack.enabled) {
         this.cameraTrack.enabled = true;
+        this.updateLocalStream();
         stateManager.setState({ isCameraOn: true });
+        // Emit both enabled and added events so UI updates
         eventBus.emit('track:camera:enabled', { track: this.cameraTrack });
+        eventBus.emit('track:camera:added', { track: this.cameraTrack });
         logger.info('TrackManager', 'Camera track enabled');
       }
       return this.cameraTrack;
