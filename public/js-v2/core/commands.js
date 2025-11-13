@@ -27,17 +27,12 @@ export function registerCommands() {
       // Let enableCamera() handle both cases: re-enabling existing track or creating new one
       const cameraTrack = await trackManager.enableCamera();
       
-      // If a new track was created (not just re-enabled), add it to peer connections
+      // Add track to peer connections
+      // If track was re-enabled, replaceTrack will update it; if new, addTrack will add it
       if (cameraTrack) {
         const peers = Array.from(connectionManager.getAllConnections());
         for (const { peerId } of peers) {
-          // Check if track is already in connection (re-enabled case)
-          const existingTrack = connectionManager.getTrack(peerId, 'camera');
-          if (!existingTrack || existingTrack.id !== cameraTrack.id) {
-            // New track or different track - add it
-            await connectionManager.addTrack(peerId, cameraTrack, 'camera');
-          }
-          // If track was re-enabled, it's already in the connection, no need to add
+          await connectionManager.addTrack(peerId, cameraTrack, 'camera');
         }
       }
     }
