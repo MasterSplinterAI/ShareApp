@@ -82,7 +82,22 @@ class VideoGrid {
       // Create placeholder tile for new participant immediately
       // This ensures they see a placeholder even if video is disabled
       if (data.userId !== stateManager.getState('socketId')) {
-        this.createParticipantPlaceholder(data.userId, data.name);
+        // Check if tile already exists (might have been created from room:joined)
+        if (!this.tiles.has(data.userId)) {
+          this.createParticipantPlaceholder(data.userId, data.name);
+        }
+      }
+    });
+
+    // Listen for room joined to create placeholders for existing participants
+    eventBus.on('room:joined', (data) => {
+      const socketId = stateManager.getState('socketId');
+      if (data.participants && Array.isArray(data.participants)) {
+        data.participants.forEach(participant => {
+          if (participant.id !== socketId && !this.tiles.has(participant.id)) {
+            this.createParticipantPlaceholder(participant.id, participant.name);
+          }
+        });
       }
     });
 
@@ -101,13 +116,26 @@ class VideoGrid {
     });
 
     stateManager.subscribe('isCameraOn', (isOn) => {
+      const localContainer = document.getElementById('localVideoContainer');
+      const localVideo = document.getElementById('localVideo');
+      
       if (!isOn) {
+        // Show placeholder and hide video
+        if (localVideo) {
+          localVideo.style.display = 'none';
+        }
         this.showPlaceholder('local');
       } else {
         // Camera is on - check if we have a track and update display
         const cameraTrack = stateManager.getState('cameraTrack');
         if (cameraTrack && cameraTrack.readyState === 'live') {
           this.updateLocalVideo('local', cameraTrack, 'camera');
+        } else {
+          // No track yet, but camera is enabled - show placeholder
+          if (localVideo) {
+            localVideo.style.display = 'none';
+          }
+          this.showPlaceholder('local');
         }
       }
     });
@@ -622,13 +650,18 @@ class VideoGrid {
       return;
     }
 
-    if (track && track.readyState === 'live') {
+    if (track && track.readyState === 'live' && track.enabled) {
       // Create stream from track
       const stream = new MediaStream([track]);
       localVideo.srcObject = stream;
       localVideo.style.display = 'block';
       localVideo.style.visibility = 'visible';
       localVideo.style.zIndex = '1';
+      localVideo.style.position = 'absolute';
+      localVideo.style.top = '0';
+      localVideo.style.left = '0';
+      localVideo.style.width = '100%';
+      localVideo.style.height = '100%';
       localVideo.play().catch(error => {
         logger.warn('VideoGrid', 'Failed to play local video', { error });
       });
@@ -638,6 +671,7 @@ class VideoGrid {
     } else {
       // Show placeholder and hide video
       localVideo.style.display = 'none';
+      localVideo.srcObject = null;
       this.showPlaceholder(localContainer);
     }
   }
