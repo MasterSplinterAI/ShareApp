@@ -79,7 +79,19 @@ class ConnectionManager {
       // Set up event handlers
       this.setupConnectionHandlers(pc, peerId, stateMachine);
 
-      // Add local tracks
+      // Always create transceivers for receiving tracks, even if we don't have local tracks
+      // This ensures we can receive remote audio/video
+      const transceivers = this.transceivers.get(peerId);
+      if (!transceivers.audio) {
+        transceivers.audio = pc.addTransceiver('audio', { direction: 'recvonly' });
+        logger.debug('ConnectionManager', 'Created audio transceiver for receiving', { peerId });
+      }
+      if (!transceivers.camera) {
+        transceivers.camera = pc.addTransceiver('video', { direction: 'recvonly' });
+        logger.debug('ConnectionManager', 'Created video transceiver for receiving', { peerId });
+      }
+
+      // Add local tracks (will update transceivers if tracks exist)
       await this.addLocalTracks(pc, peerId);
 
       // Create and send offer (unless we're expecting an incoming offer)
@@ -173,14 +185,31 @@ class ConnectionManager {
 
     // Track handler
     pc.ontrack = (event) => {
-      const [track] = event.streams[0]?.getTracks() || [event.track];
-      if (!track) return;
+      logger.info('ConnectionManager', 'ontrack event fired', {
+        peerId,
+        streams: event.streams?.length || 0,
+        track: event.track ? {
+          id: event.track.id,
+          kind: event.track.kind,
+          label: event.track.label,
+          enabled: event.track.enabled,
+          readyState: event.track.readyState
+        } : null
+      });
+
+      const track = event.track;
+      if (!track) {
+        logger.warn('ConnectionManager', 'No track in ontrack event', { peerId, event });
+        return;
+      }
 
       logger.info('ConnectionManager', 'Received remote track', {
         peerId,
         trackId: track.id,
         kind: track.kind,
-        label: track.label
+        label: track.label,
+        enabled: track.enabled,
+        readyState: track.readyState
       });
 
       // Determine track type
@@ -287,26 +316,34 @@ class ConnectionManager {
       this.transceivers.set(peerId, transceivers);
     }
 
-    // Add audio track - create transceiver if needed
+    // Add audio track - update transceiver if it exists
     const audioTrack = trackManager.getAudioTrack();
     if (audioTrack && audioTrack.readyState === 'live') {
-      if (!transceivers.audio) {
-        transceivers.audio = pc.addTransceiver(audioTrack, { direction: 'sendrecv' });
-      } else {
+      if (transceivers.audio) {
+        // Update existing transceiver to sendrecv and replace track
+        transceivers.audio.direction = 'sendrecv';
         await transceivers.audio.sender.replaceTrack(audioTrack);
+        logger.debug('ConnectionManager', 'Added audio track to existing transceiver', { peerId });
+      } else {
+        // Create new transceiver with track
+        transceivers.audio = pc.addTransceiver(audioTrack, { direction: 'sendrecv' });
+        logger.debug('ConnectionManager', 'Created audio transceiver with track', { peerId });
       }
-      logger.debug('ConnectionManager', 'Added audio track', { peerId });
     }
 
-    // Add camera track - create transceiver if needed
+    // Add camera track - update transceiver if it exists
     const cameraTrack = trackManager.getCameraTrack();
     if (cameraTrack && cameraTrack.readyState === 'live' && cameraTrack.enabled) {
-      if (!transceivers.camera) {
-        transceivers.camera = pc.addTransceiver(cameraTrack, { direction: 'sendrecv' });
-      } else {
+      if (transceivers.camera) {
+        // Update existing transceiver to sendrecv and replace track
+        transceivers.camera.direction = 'sendrecv';
         await transceivers.camera.sender.replaceTrack(cameraTrack);
+        logger.debug('ConnectionManager', 'Added camera track to existing transceiver', { peerId });
+      } else {
+        // Create new transceiver with track
+        transceivers.camera = pc.addTransceiver(cameraTrack, { direction: 'sendrecv' });
+        logger.debug('ConnectionManager', 'Created camera transceiver with track', { peerId });
       }
-      logger.debug('ConnectionManager', 'Added camera track', { peerId });
     }
 
     // Screen track is added separately when screen sharing starts
