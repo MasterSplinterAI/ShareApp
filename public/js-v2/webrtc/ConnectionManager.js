@@ -206,17 +206,30 @@ class ConnectionManager {
 
       // Update peer tracks
       const peers = stateManager.getState('peers') || new Map();
-      if (peers.has(peerId)) {
-        const peer = peers.get(peerId);
-        if (trackType === 'camera') {
-          peer.tracks.camera = track;
-        } else if (trackType === 'screen') {
-          peer.tracks.screen = track;
-        } else if (trackType === 'audio') {
-          peer.tracks.audio = track;
-        }
-        stateManager.setState({ peers });
+      if (!peers.has(peerId)) {
+        // Initialize peer if doesn't exist
+        peers.set(peerId, {
+          connection: pc,
+          state: 'connected',
+          tracks: { camera: null, screen: null, audio: null },
+          metadata: {}
+        });
       }
+      
+      const peer = peers.get(peerId);
+      if (trackType === 'camera') {
+        peer.tracks.camera = track;
+      } else if (trackType === 'screen') {
+        peer.tracks.screen = track;
+      } else if (trackType === 'audio') {
+        peer.tracks.audio = track;
+        // Start audio level monitoring for audio tracks
+        this.startAudioLevelMonitoring(peerId, track);
+      }
+      stateManager.setState({ peers });
+      
+      // Update status indicators
+      eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, { peerId, trackType });
 
       // Emit track event
       eventBus.emit(`webrtc:track:${peerId}`, {
@@ -976,6 +989,61 @@ class ConnectionManager {
     });
 
     logger.debug('ConnectionManager', 'Audio playback setup', { peerId });
+  }
+
+  /**
+   * Start audio level monitoring for a peer's audio track
+   */
+  startAudioLevelMonitoring(peerId, audioTrack) {
+    if (!audioTrack || audioTrack.kind !== 'audio') {
+      return;
+    }
+
+    try {
+      // Create audio context for level monitoring
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.8;
+
+      const source = audioContext.createMediaStreamSource(new MediaStream([audioTrack]));
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      let isMonitoring = true;
+
+      const checkLevel = () => {
+        if (!isMonitoring) return;
+
+        analyser.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        const level = average / 255; // Normalize to 0-1
+        const isSpeaking = level > 0.1; // Threshold for speaking
+
+        // Emit audio level event
+        eventBus.emit(`webrtc:audioLevel:${peerId}`, {
+          peerId,
+          level,
+          isSpeaking
+        });
+
+        if (isMonitoring) {
+          requestAnimationFrame(checkLevel);
+        }
+      };
+
+      checkLevel();
+
+      // Stop monitoring when track ends
+      audioTrack.onended = () => {
+        isMonitoring = false;
+        audioContext.close();
+      };
+
+      logger.debug('ConnectionManager', 'Started audio level monitoring', { peerId });
+    } catch (error) {
+      logger.warn('ConnectionManager', 'Failed to start audio level monitoring', { peerId, error });
+    }
   }
 }
 

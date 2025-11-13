@@ -42,7 +42,7 @@ class VideoGrid {
     });
 
     eventBus.on('track:screen:stopped', () => {
-      this.removeVideoTile('local-screen');
+      this.removeVideoTile('local-screen', 'screen');
     });
 
     // Listen for remote track events
@@ -68,7 +68,8 @@ class VideoGrid {
 
     // Listen for participant changes
     eventBus.on('room:userJoined', (data) => {
-      // Tile will be created when track arrives
+      // Create placeholder tile for new participant immediately
+      this.createParticipantPlaceholder(data.userId, data.name);
     });
 
     eventBus.on('room:userLeft', (data) => {
@@ -384,6 +385,69 @@ class VideoGrid {
         logger.warn('VideoGrid', 'Failed to play local video', { error });
       });
     }
+  }
+
+  /**
+   * Create participant placeholder tile
+   */
+  createParticipantPlaceholder(peerId, name) {
+    if (peerId === 'local' || peerId === 'local-screen') {
+      return; // Don't create placeholder for local
+    }
+
+    // Check if tile already exists
+    if (this.tiles.has(peerId)) {
+      return;
+    }
+
+    // Create tile container
+    const tile = this.createTileContainer(peerId);
+    this.tiles.set(peerId, tile);
+
+    // Create placeholder with avatar
+    const placeholder = document.createElement('div');
+    placeholder.className = 'no-video-placeholder';
+    placeholder.style.cssText = `
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: #1f2937;
+      z-index: 5;
+    `;
+
+    // Generate initials from name
+    const initials = name ? name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 'P';
+    
+    const avatar = document.createElement('div');
+    avatar.style.cssText = `
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 32px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+    `;
+    avatar.textContent = initials;
+    placeholder.appendChild(avatar);
+
+    tile.container.appendChild(placeholder);
+
+    // Update label
+    this.updateTileLabel(peerId, null);
+
+    // Update status indicators
+    this.updateStatusIndicators(peerId, peerId);
+
+    logger.info('VideoGrid', 'Created participant placeholder', { peerId, name });
+    this.updateLayout();
   }
 
   /**
