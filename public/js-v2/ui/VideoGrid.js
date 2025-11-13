@@ -48,6 +48,17 @@ class VideoGrid {
     // Listen for remote track events
     eventBus.on('webrtc:track:*', (data) => {
       if (data.peerId !== 'local') {
+        // If this is a video track, hide placeholder and show video
+        if (data.type === 'camera' || data.type === 'screen') {
+          const tileId = data.type === 'screen' ? `${data.peerId}-screen` : data.peerId;
+          const tile = this.tiles.get(tileId);
+          if (tile) {
+            const placeholder = tile.container.querySelector('.no-video-placeholder');
+            if (placeholder) {
+              placeholder.style.display = 'none';
+            }
+          }
+        }
         this.addVideoTile(data.peerId, data.track, data.type, data.stream);
       }
     });
