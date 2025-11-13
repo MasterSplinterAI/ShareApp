@@ -224,6 +224,18 @@ class Application {
         isHost
       });
       
+      // Automatically enable microphone when joining a room (for both host and participants)
+      // This ensures users can hear and be heard immediately
+      try {
+        const { trackManager } = await import('./webrtc/TrackManager.js');
+        if (!trackManager.hasActiveMicrophone()) {
+          logger.info('Application', 'Auto-enabling microphone on room join');
+          await trackManager.enableMicrophone();
+        }
+      } catch (error) {
+        logger.warn('Application', 'Failed to auto-enable microphone on room join', { error });
+      }
+      
       // Only create connections if we're the host
       // Participants should wait for the host to create connections and send offers
       if (!isHost) {
@@ -233,15 +245,39 @@ class Application {
         return;
       }
       
-      for (const participant of otherParticipants) {
-        setTimeout(async () => {
-          try {
-            logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
-            await connectionManager.createConnection(participant.id);
-          } catch (error) {
-            logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });
+      // Ensure microphone is enabled before creating connections
+      try {
+        const { trackManager } = await import('./webrtc/TrackManager.js');
+        const audioTrack = trackManager.getAudioTrack();
+        if (audioTrack && audioTrack.readyState === 'live') {
+          for (const participant of otherParticipants) {
+            setTimeout(async () => {
+              try {
+                logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
+                await connectionManager.createConnection(participant.id);
+                
+                // After connection is created, ensure audio track is added
+                await connectionManager.addTrack(participant.id, audioTrack, 'audio');
+              } catch (error) {
+                logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });
+              }
+            }, 500);
           }
-        }, 500);
+        } else {
+          // No audio track yet, create connections without audio for now
+          for (const participant of otherParticipants) {
+            setTimeout(async () => {
+              try {
+                logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
+                await connectionManager.createConnection(participant.id);
+              } catch (error) {
+                logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });
+              }
+            }, 500);
+          }
+        }
+      } catch (error) {
+        logger.error('Application', 'Error setting up connections to existing participants', { error });
       }
     });
 
