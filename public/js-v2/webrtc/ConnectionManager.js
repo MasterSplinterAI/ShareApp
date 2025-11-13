@@ -79,24 +79,9 @@ class ConnectionManager {
       // Set up event handlers
       this.setupConnectionHandlers(pc, peerId, stateMachine);
 
-      // Add local tracks first - this will create transceivers automatically
-      // The offer/answer will include offerToReceiveAudio/Video which ensures we can receive tracks
+      // Add local tracks - this will create transceivers automatically
+      // Using addTrack() ensures transceivers are created properly
       await this.addLocalTracks(pc, peerId);
-      
-      // If we don't have local tracks, create recvonly transceivers to ensure we can receive
-      const transceivers = this.transceivers.get(peerId);
-      if (!transceivers.audio || !transceivers.audio.sender?.track) {
-        if (!transceivers.audio) {
-          transceivers.audio = pc.addTransceiver('audio', { direction: 'recvonly' });
-          logger.debug('ConnectionManager', 'Created audio transceiver for receiving', { peerId });
-        }
-      }
-      if (!transceivers.camera || !transceivers.camera.sender?.track) {
-        if (!transceivers.camera) {
-          transceivers.camera = pc.addTransceiver('video', { direction: 'recvonly' });
-          logger.debug('ConnectionManager', 'Created video transceiver for receiving', { peerId });
-        }
-      }
 
       // Create and send offer (unless we're expecting an incoming offer)
       if (!skipOffer) {
@@ -320,55 +305,60 @@ class ConnectionManager {
       this.transceivers.set(peerId, transceivers);
     }
 
-    // Add audio track - update transceiver if it exists
+    // Add audio track using addTrack - this automatically creates/updates transceivers
     const audioTrack = trackManager.getAudioTrack();
     if (audioTrack && audioTrack.readyState === 'live') {
-      if (transceivers.audio && transceivers.audio.sender) {
-        // Transceiver exists and has sender, replace track
-        await transceivers.audio.sender.replaceTrack(audioTrack);
-        logger.debug('ConnectionManager', 'Added audio track to existing transceiver', { peerId });
-      } else if (transceivers.audio) {
-        // Transceiver exists but is recvonly (no sender), add track which will create sender
-        pc.addTrack(audioTrack);
-        // Find the transceiver that now has this track
-        const transceiversList = pc.getTransceivers();
-        const audioTransceiver = transceiversList.find(t => 
-          t.receiver.track?.kind === 'audio' && t.sender.track === audioTrack
-        );
-        if (audioTransceiver) {
-          transceivers.audio = audioTransceiver;
+      try {
+        // Check if we already have an audio sender
+        const existingSenders = pc.getSenders().filter(s => s.track?.kind === 'audio');
+        if (existingSenders.length > 0) {
+          // Replace track on existing sender
+          await existingSenders[0].replaceTrack(audioTrack);
+          logger.debug('ConnectionManager', 'Replaced audio track', { peerId });
+        } else {
+          // Use addTrack which automatically creates transceiver
+          const sender = pc.addTrack(audioTrack);
+          // Find the transceiver that now has this track
+          const transceiversList = pc.getTransceivers();
+          const audioTransceiver = transceiversList.find(t => t.sender === sender);
+          if (audioTransceiver) {
+            transceivers.audio = audioTransceiver;
+            logger.debug('ConnectionManager', 'Added audio track', { peerId, transceiverMid: audioTransceiver.mid });
+          }
         }
-        logger.debug('ConnectionManager', 'Added audio track to recvonly transceiver', { peerId });
-      } else {
-        // Create new transceiver with track
-        transceivers.audio = pc.addTransceiver(audioTrack, { direction: 'sendrecv' });
-        logger.debug('ConnectionManager', 'Created audio transceiver with track', { peerId });
+      } catch (error) {
+        logger.error('ConnectionManager', 'Failed to add audio track', { peerId, error });
       }
     }
 
-    // Add camera track - update transceiver if it exists
+    // Add camera track using addTrack - this automatically creates/updates transceivers
     const cameraTrack = trackManager.getCameraTrack();
     if (cameraTrack && cameraTrack.readyState === 'live' && cameraTrack.enabled) {
-      if (transceivers.camera && transceivers.camera.sender) {
-        // Transceiver exists and has sender, replace track
-        await transceivers.camera.sender.replaceTrack(cameraTrack);
-        logger.debug('ConnectionManager', 'Added camera track to existing transceiver', { peerId });
-      } else if (transceivers.camera) {
-        // Transceiver exists but is recvonly (no sender), add track which will create sender
-        pc.addTrack(cameraTrack);
-        // Find the transceiver that now has this track
-        const transceiversList = pc.getTransceivers();
-        const videoTransceiver = transceiversList.find(t => 
-          t.receiver.track?.kind === 'video' && t.sender.track === cameraTrack
-        );
-        if (videoTransceiver) {
-          transceivers.camera = videoTransceiver;
+      try {
+        // Check if we already have a video sender (but not screen share)
+        const existingSenders = pc.getSenders().filter(s => {
+          if (s.track?.kind !== 'video') return false;
+          // Don't replace screen share senders
+          const settings = s.track.getSettings();
+          return !settings?.displaySurface;
+        });
+        if (existingSenders.length > 0) {
+          // Replace track on existing sender
+          await existingSenders[0].replaceTrack(cameraTrack);
+          logger.debug('ConnectionManager', 'Replaced camera track', { peerId });
+        } else {
+          // Use addTrack which automatically creates transceiver
+          const sender = pc.addTrack(cameraTrack);
+          // Find the transceiver that now has this track
+          const transceiversList = pc.getTransceivers();
+          const videoTransceiver = transceiversList.find(t => t.sender === sender);
+          if (videoTransceiver) {
+            transceivers.camera = videoTransceiver;
+            logger.debug('ConnectionManager', 'Added camera track', { peerId, transceiverMid: videoTransceiver.mid });
+          }
         }
-        logger.debug('ConnectionManager', 'Added camera track to recvonly transceiver', { peerId });
-      } else {
-        // Create new transceiver with track
-        transceivers.camera = pc.addTransceiver(cameraTrack, { direction: 'sendrecv' });
-        logger.debug('ConnectionManager', 'Created camera transceiver with track', { peerId });
+      } catch (error) {
+        logger.error('ConnectionManager', 'Failed to add camera track', { peerId, error });
       }
     }
 
