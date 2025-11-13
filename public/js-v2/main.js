@@ -197,10 +197,22 @@ class Application {
       }
       
       const otherParticipants = data.participants.filter(p => p.id !== socketId);
+      const isHost = stateManager.getState('isHost');
+      
       logger.info('Application', 'Connecting to existing participants', { 
         count: otherParticipants.length,
-        participants: otherParticipants.map(p => ({ id: p.id, name: p.name }))
+        participants: otherParticipants.map(p => ({ id: p.id, name: p.name })),
+        isHost
       });
+      
+      // Only create connections if we're the host
+      // Participants should wait for the host to create connections and send offers
+      if (!isHost) {
+        logger.info('Application', 'Not host - waiting for host to create connections', { 
+          participantCount: otherParticipants.length 
+        });
+        return;
+      }
       
       for (const participant of otherParticipants) {
         setTimeout(async () => {
