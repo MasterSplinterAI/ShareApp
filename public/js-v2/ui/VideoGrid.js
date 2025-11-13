@@ -104,6 +104,31 @@ class VideoGrid {
         this.updateLocalVideo('local', data.track, 'camera');
       }
     });
+
+    // Listen for orientation changes on mobile
+    if (config.environment.isMobile) {
+      let orientationTimeout;
+      const handleOrientationChange = () => {
+        clearTimeout(orientationTimeout);
+        orientationTimeout = setTimeout(() => {
+          // Update config with new orientation
+          const isLandscape = window.innerWidth > window.innerHeight;
+          config.environment.isLandscape = isLandscape;
+          config.updateOrientation();
+          
+          // Update all tile aspect ratios
+          this.updateTileAspectRatios(isLandscape);
+          
+          // Update layout
+          this.updateLayout();
+          
+          logger.info('VideoGrid', 'Orientation changed', { isLandscape });
+        }, 100);
+      };
+
+      window.addEventListener('orientationchange', handleOrientationChange);
+      window.addEventListener('resize', handleOrientationChange);
+    }
   }
 
   /**
