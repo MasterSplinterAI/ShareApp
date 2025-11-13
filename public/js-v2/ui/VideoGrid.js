@@ -67,13 +67,28 @@ class VideoGrid {
       // Handle both local and remote track ended events
       if (data.trackType === 'screen') {
         // Remove screen share tile (local or remote)
-        if (data.peerId === 'local' || data.peerId === 'local-screen') {
-          this.removeVideoTile('local-screen', 'screen');
-        } else {
-          this.removeVideoTile(data.peerId, 'screen');
+        const tileId = data.peerId === 'local' || data.peerId === 'local-screen' ? 'local-screen' : `${data.peerId}-screen`;
+        this.removeVideoTile(tileId, 'screen');
+      } else if (data.trackType === 'camera' && data.peerId !== 'local') {
+        // Camera track ended - show placeholder
+        const tile = this.tiles.get(data.peerId);
+        if (tile) {
+          tile.video.style.display = 'none';
+          this.showPlaceholder(tile.container);
         }
       } else if (data.peerId !== 'local') {
         this.removeVideoTile(data.peerId, data.trackType);
+      }
+    });
+
+    // Listen for track disabled events (camera turned off)
+    eventBus.on('webrtc:trackDisabled:*', (data) => {
+      if (data.trackType === 'camera' && data.peerId !== 'local') {
+        const tile = this.tiles.get(data.peerId);
+        if (tile && tile.video) {
+          tile.video.style.display = 'none';
+          this.showPlaceholder(tile.container);
+        }
       }
     });
 
@@ -424,39 +439,61 @@ class VideoGrid {
    * Setup fullscreen functionality
    */
   setupFullscreen(container, video) {
-    const fullscreenBtn = container.querySelector('.tile-fullscreen-btn');
+    let fullscreenBtn = container.querySelector('.tile-fullscreen-btn');
     if (!fullscreenBtn || !video) return;
 
     const isMobile = config.environment.isMobile;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     const isAndroid = /Android/.test(navigator.userAgent);
 
-    // Make button more touch-friendly on mobile
-    if (isMobile) {
-      fullscreenBtn.style.minWidth = '48px';
-      fullscreenBtn.style.minHeight = '48px';
-      fullscreenBtn.style.fontSize = '20px';
-      fullscreenBtn.style.touchAction = 'manipulation';
-      fullscreenBtn.style.webkitTouchCallout = 'none';
-      fullscreenBtn.style.pointerEvents = 'auto';
-      fullscreenBtn.style.zIndex = '100';
-      fullscreenBtn.style.cursor = 'pointer';
-      fullscreenBtn.style.position = 'absolute';
-      fullscreenBtn.style.top = '8px';
-      fullscreenBtn.style.right = '8px';
-      fullscreenBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-      fullscreenBtn.style.border = 'none';
-      fullscreenBtn.style.borderRadius = '6px';
-      fullscreenBtn.style.padding = '10px';
-      fullscreenBtn.style.display = 'flex';
-      fullscreenBtn.style.alignItems = 'center';
-      fullscreenBtn.style.justifyContent = 'center';
-      // Remove any existing event listeners by cloning
+    // Remove any existing button and create a fresh one to avoid event listener issues
+    if (fullscreenBtn.parentNode) {
       const newBtn = fullscreenBtn.cloneNode(true);
       fullscreenBtn.parentNode.replaceChild(newBtn, fullscreenBtn);
-      const btn = newBtn;
+      fullscreenBtn = newBtn;
+    }
+
+    // Make button more touch-friendly on mobile
+    if (isMobile) {
+      fullscreenBtn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        min-width: 48px;
+        min-height: 48px;
+        font-size: 20px;
+        touch-action: manipulation;
+        -webkit-touch-callout: none;
+        pointer-events: auto;
+        z-index: 9999;
+        cursor: pointer;
+        background-color: rgba(0, 0, 0, 0.7);
+        border: none;
+        border-radius: 6px;
+        padding: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+      `;
     } else {
-      var btn = fullscreenBtn;
+      fullscreenBtn.style.cssText = `
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        z-index: 20;
+        background: rgba(0,0,0,0.5);
+        color: white;
+        border: none;
+        border-radius: 4px;
+        padding: 8px;
+        cursor: pointer;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
     }
 
     // Ensure video has playsinline for mobile
@@ -549,10 +586,11 @@ class VideoGrid {
       }
     };
 
-    // Use both click and touchstart for better mobile support
+    // Use both click and touch events for better mobile support
     const handleFullscreen = async (e) => {
       e.stopPropagation();
       e.preventDefault();
+      e.stopImmediatePropagation();
       
       const isFullscreen = document.fullscreenElement === container ||
                            document.webkitFullscreenElement === container ||
@@ -569,10 +607,17 @@ class VideoGrid {
       }
     };
 
-    btn.addEventListener('click', handleFullscreen, { passive: false });
-    if (isMobile) {
-      btn.addEventListener('touchend', handleFullscreen, { passive: false });
-    }
+    // Use capture phase and ensure button is on top
+    fullscreenBtn.addEventListener('click', handleFullscreen, { capture: true, passive: false });
+    fullscreenBtn.addEventListener('touchend', handleFullscreen, { capture: true, passive: false });
+    fullscreenBtn.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+    }, { capture: true, passive: false });
+    
+    // Ensure button is always on top
+    fullscreenBtn.style.pointerEvents = 'auto';
+    fullscreenBtn.style.userSelect = 'none';
+    fullscreenBtn.style.webkitUserSelect = 'none';
 
     // Update button on fullscreen change
     const updateButton = () => {
