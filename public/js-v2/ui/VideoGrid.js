@@ -53,7 +53,15 @@ class VideoGrid {
     });
 
     eventBus.on('webrtc:trackEnded:*', (data) => {
-      if (data.peerId !== 'local') {
+      // Handle both local and remote track ended events
+      if (data.trackType === 'screen') {
+        // Remove screen share tile (local or remote)
+        if (data.peerId === 'local' || data.peerId === 'local-screen') {
+          this.removeVideoTile('local-screen', 'screen');
+        } else {
+          this.removeVideoTile(data.peerId, 'screen');
+        }
+      } else if (data.peerId !== 'local') {
         this.removeVideoTile(data.peerId, data.trackType);
       }
     });
@@ -188,12 +196,17 @@ class VideoGrid {
     const container = document.createElement('div');
     container.className = 'video-container';
     container.id = `video-tile-${peerId}`;
+    const isMobile = config.environment.isMobile;
+    const aspectRatio = isMobile ? '4/3' : '16/9';
+    const maxHeight = isMobile ? 'calc((100vh - 300px) / 2)' : 'none';
     container.style.cssText = `
       background: #000;
       border-radius: 8px;
       overflow: hidden;
       position: relative;
-      aspect-ratio: ${config.environment.isMobile ? '3/4' : '16/9'};
+      aspect-ratio: ${aspectRatio};
+      ${maxHeight !== 'none' ? `max-height: ${maxHeight};` : ''}
+      width: 100%;
     `;
 
     // Label
@@ -432,16 +445,19 @@ class VideoGrid {
 
     const layoutMode = stateManager.getState('layoutMode') || 'grid';
     const tileCount = this.tiles.size;
+    const isMobile = config.environment.isMobile;
+    const gap = isMobile ? '8px' : '12px';
 
-    // Apply 2-column grid layout
+    // Apply 2-column grid layout with mobile optimizations
     this.container.style.cssText = `
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
+      gap: ${gap};
       width: 100%;
+      ${isMobile ? 'max-height: calc(100vh - 250px); overflow-y: auto;' : ''}
     `;
 
-    logger.debug('VideoGrid', 'Layout updated', { layoutMode, tileCount });
+    logger.debug('VideoGrid', 'Layout updated', { layoutMode, tileCount, isMobile });
   }
 
   /**

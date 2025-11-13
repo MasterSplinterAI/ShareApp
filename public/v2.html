@@ -37,9 +37,9 @@
       
       <div id="videoGrid" class="flex flex-col">
         <!-- Grid of participant videos -->
-        <div id="participantsGrid" class="grid grid-cols-2 gap-3 w-full video-grid">
+        <div id="participantsGrid" class="grid grid-cols-2 gap-2 md:gap-3 w-full video-grid" style="max-height: calc(100vh - 250px); overflow-y: auto;">
           <!-- Local video -->
-          <div class="video-container bg-black rounded-lg overflow-hidden relative" id="localVideoContainer" style="aspect-ratio: 16/9;">
+          <div class="video-container bg-black rounded-lg overflow-hidden relative" id="localVideoContainer" style="aspect-ratio: 4/3; max-height: calc((100vh - 300px) / 2);">
             <video id="localVideo" class="w-full h-full object-contain" autoplay playsinline muted></video>
             <div class="video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10">
               <span>You</span>
