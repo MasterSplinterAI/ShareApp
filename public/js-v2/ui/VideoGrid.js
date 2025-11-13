@@ -465,9 +465,27 @@ class VideoGrid {
    */
   clear() {
     this.tiles.forEach((tile, peerId) => {
-      tile.container.remove();
+      if (tile.container && tile.container.parentNode) {
+        tile.container.remove();
+      }
+      // Stop video playback
+      if (tile.video) {
+        tile.video.srcObject = null;
+        tile.video.pause();
+      }
     });
     this.tiles.clear();
+    
+    // Also clear local video placeholder
+    const localContainer = document.getElementById('localVideoContainer');
+    if (localContainer) {
+      const placeholder = localContainer.querySelector('.no-video-placeholder');
+      if (placeholder) {
+        placeholder.remove();
+      }
+    }
+    
+    logger.info('VideoGrid', 'All tiles cleared');
   }
 }
 

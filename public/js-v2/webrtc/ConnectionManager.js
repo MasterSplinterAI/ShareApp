@@ -914,7 +914,27 @@ class ConnectionManager {
   closeAllConnections() {
     const peerIds = Array.from(this.connections.keys());
     peerIds.forEach(peerId => this.closeConnection(peerId));
-    logger.info('ConnectionManager', 'All connections closed');
+    
+    // Clear all state
+    this.connections.clear();
+    this.stateMachines.clear();
+    this.transceivers.clear();
+    this.pendingOffers.clear();
+    this.pendingAnswers.clear();
+    this.iceCandidateQueues.clear();
+    this.renegotiationQueue.clear();
+    this.isRenegotiating = false;
+    
+    // Clear peer state
+    stateManager.setState({ peers: new Map() });
+    
+    // Remove all audio elements
+    document.querySelectorAll('audio[id^="audio-"]').forEach(audio => {
+      audio.srcObject = null;
+      audio.remove();
+    });
+    
+    logger.info('ConnectionManager', 'All connections closed and state cleared');
   }
 
   /**

@@ -99,8 +99,54 @@ export function registerCommands() {
 
   // Leave room
   commandDispatcher.register('leaveRoom', async () => {
-    connectionManager.closeAllConnections();
-    await roomService.leaveRoom();
+    try {
+      // Stop all tracks
+      const { trackManager } = await import('../webrtc/TrackManager.js');
+      if (trackManager.cameraTrack) {
+        await trackManager.stopCamera();
+      }
+      if (trackManager.screenTrack) {
+        await trackManager.stopScreenShare();
+      }
+      if (trackManager.audioTrack) {
+        await trackManager.stopMicrophone();
+      }
+      
+      // Close all connections
+      connectionManager.closeAllConnections();
+      
+      // Leave room
+      await roomService.leaveRoom();
+      
+      // Clear video grid
+      const { videoGrid } = await import('../ui/VideoGrid.js');
+      videoGrid.clear();
+      
+      // Clear local video
+      const localVideo = document.getElementById('localVideo');
+      if (localVideo) {
+        localVideo.srcObject = null;
+      }
+      
+      // Switch back to home page
+      const homeDiv = document.getElementById('home');
+      const meetingDiv = document.getElementById('meeting');
+      if (homeDiv && meetingDiv) {
+        homeDiv.classList.remove('hidden');
+        meetingDiv.classList.add('hidden');
+      }
+      
+      // Clear URL parameters
+      const url = new URL(window.location);
+      url.searchParams.delete('room');
+      url.searchParams.delete('pin');
+      window.history.replaceState({}, '', url);
+      
+      logger.info('Commands', 'Left room and returned to home');
+    } catch (error) {
+      logger.error('Commands', 'Error leaving room', { error });
+      throw error;
+    }
   });
 
   logger.info('Commands', 'All commands registered');

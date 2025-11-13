@@ -297,6 +297,28 @@ class TrackManager {
   }
 
   /**
+   * Stop microphone (remove track)
+   */
+  async stopMicrophone() {
+    if (!this.audioTrack) {
+      return;
+    }
+
+    const track = this.audioTrack;
+    this.audioTrack.stop();
+    this.audioTrack = null;
+    this.updateLocalStream();
+
+    stateManager.setState({ 
+      isMicOn: false, 
+      audioTrack: null 
+    });
+
+    eventBus.emit('track:audio:stopped', { track });
+    logger.info('TrackManager', 'Audio track stopped');
+  }
+
+  /**
    * Update local stream with current tracks
    */
   updateLocalStream() {
