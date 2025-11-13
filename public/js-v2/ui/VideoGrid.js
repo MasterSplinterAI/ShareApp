@@ -69,7 +69,10 @@ class VideoGrid {
     // Listen for participant changes
     eventBus.on('room:userJoined', (data) => {
       // Create placeholder tile for new participant immediately
-      this.createParticipantPlaceholder(data.userId, data.name);
+      // This ensures they see a placeholder even if video is disabled
+      if (data.userId !== stateManager.getState('socketId')) {
+        this.createParticipantPlaceholder(data.userId, data.name);
+      }
     });
 
     eventBus.on('room:userLeft', (data) => {
