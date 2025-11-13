@@ -245,15 +245,18 @@ class ConnectionManager {
       }
 
       // Set up track ended handler
-      track.onended = () => {
+      const originalOnEnded = () => {
         logger.info('ConnectionManager', 'Remote track ended', { peerId, trackType });
         const peers = stateManager.getState('peers') || new Map();
         if (peers.has(peerId)) {
           const peer = peers.get(peerId);
           if (trackType === 'camera') {
             peer.tracks.camera = null;
-            // When camera track ends, check if we should restore it from another source
-            // This handles the case where screen share replaced camera temporarily
+            // Emit track ended event so VideoGrid can show placeholder
+            eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+              peerId,
+              trackType: 'camera'
+            });
           } else if (trackType === 'screen') {
             peer.tracks.screen = null;
             // Emit track ended event so VideoGrid can remove the screen share tile
@@ -282,8 +285,68 @@ class ConnectionManager {
           }
           stateManager.setState({ peers });
         }
-        eventBus.emit(`webrtc:trackEnded:${peerId}`, { peerId, trackType });
       };
+
+      track.onended = originalOnEnded;
+
+      // Monitor track enabled/disabled state for camera tracks (when camera is turned on/off)
+      if (trackType === 'camera' && track.kind === 'video') {
+        let enabledState = track.enabled;
+        let enabledCheckInterval = null;
+
+        const checkTrackEnabled = () => {
+          if (track.readyState === 'ended') {
+            if (enabledCheckInterval) {
+              clearInterval(enabledCheckInterval);
+              enabledCheckInterval = null;
+            }
+            return;
+          }
+
+          if (track.enabled !== enabledState) {
+            enabledState = track.enabled;
+            logger.info('ConnectionManager', 'Remote camera track enabled state changed', { 
+              peerId, 
+              enabled: track.enabled,
+              readyState: track.readyState 
+            });
+
+            if (!track.enabled && track.readyState === 'live') {
+              // Track is disabled but still live - show placeholder
+              eventBus.emit(`webrtc:trackDisabled:${peerId}`, {
+                peerId,
+                trackType: 'camera'
+              });
+            } else if (track.enabled && track.readyState === 'live') {
+              // Track is enabled - ensure video is shown
+              eventBus.emit(`webrtc:track:${peerId}`, {
+                peerId,
+                track,
+                type: 'camera',
+                stream: new MediaStream([track])
+              });
+            }
+          }
+        };
+
+        // Check immediately
+        checkTrackEnabled();
+
+        // Poll for changes (MediaStreamTrack doesn't have enabled change event)
+        enabledCheckInterval = setInterval(checkTrackEnabled, 500);
+
+        // Clean up interval when track ends
+        const originalOnEndedHandler = track.onended;
+        track.onended = () => {
+          if (enabledCheckInterval) {
+            clearInterval(enabledCheckInterval);
+            enabledCheckInterval = null;
+          }
+          if (originalOnEndedHandler) {
+            originalOnEndedHandler();
+          }
+        };
+      }
     };
 
     // Connection state change
@@ -848,6 +911,11 @@ class ConnectionManager {
     try {
       if (type === 'camera') {
         await transceivers.camera.sender.replaceTrack(null);
+        // Emit track disabled event so peers can show placeholder
+        eventBus.emit(`webrtc:trackDisabled:${peerId}`, {
+          peerId,
+          trackType: 'camera'
+        });
         logger.info('ConnectionManager', 'Removed camera track', { peerId });
       } else if (type === 'screen') {
         await transceivers.screen.sender.replaceTrack(null);
