@@ -234,10 +234,28 @@ class ConnectionManager {
           const peer = peers.get(peerId);
           if (trackType === 'camera') {
             peer.tracks.camera = null;
+            // When camera track ends, check if we should restore it from another source
+            // This handles the case where screen share replaced camera temporarily
           } else if (trackType === 'screen') {
             peer.tracks.screen = null;
+            // When screen share ends, ensure camera feed is still visible
+            if (peer.tracks.camera && peer.tracks.camera.readyState === 'live') {
+              // Re-emit camera track to ensure it's displayed
+              eventBus.emit(`webrtc:track:${peerId}`, {
+                peerId,
+                track: peer.tracks.camera,
+                type: 'camera',
+                stream: new MediaStream([peer.tracks.camera])
+              });
+            }
           } else if (trackType === 'audio') {
             peer.tracks.audio = null;
+            // Remove audio element
+            const audioElement = document.getElementById(`audio-${peerId}`);
+            if (audioElement) {
+              audioElement.srcObject = null;
+              audioElement.remove();
+            }
           }
           stateManager.setState({ peers });
         }
@@ -906,6 +924,33 @@ class ConnectionManager {
    */
   getAllConnections() {
     return Array.from(this.connections.entries()).map(([peerId, pc]) => ({ peerId, pc }));
+  }
+
+  /**
+   * Setup audio playback for remote audio track
+   */
+  setupAudioPlayback(peerId, audioTrack) {
+    // Check if audio element already exists
+    let audioElement = document.getElementById(`audio-${peerId}`);
+    if (!audioElement) {
+      audioElement = document.createElement('audio');
+      audioElement.id = `audio-${peerId}`;
+      audioElement.autoplay = true;
+      audioElement.playsInline = true;
+      audioElement.style.display = 'none';
+      document.body.appendChild(audioElement);
+    }
+
+    // Create stream from track and set as source
+    const audioStream = new MediaStream([audioTrack]);
+    audioElement.srcObject = audioStream;
+    
+    // Play audio
+    audioElement.play().catch(error => {
+      logger.warn('ConnectionManager', 'Failed to play remote audio', { peerId, error });
+    });
+
+    logger.debug('ConnectionManager', 'Audio playback setup', { peerId });
   }
 }
 

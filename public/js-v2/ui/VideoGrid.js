@@ -112,11 +112,14 @@ class VideoGrid {
       return;
     }
 
+    // For screen share, use a separate tile ID to avoid replacing camera feed
+    const tileId = trackType === 'screen' ? `${peerId}-screen` : peerId;
+
     // Get or create tile container
-    let tile = this.tiles.get(peerId);
+    let tile = this.tiles.get(tileId);
     if (!tile) {
-      tile = this.createTileContainer(peerId);
-      this.tiles.set(peerId, tile);
+      tile = this.createTileContainer(tileId);
+      this.tiles.set(tileId, tile);
     }
 
     // Create video element if needed
@@ -168,13 +171,13 @@ class VideoGrid {
       playVideo();
     }, { once: true });
 
-    // Update label
+    // Update label (use original peerId for name lookup)
     this.updateTileLabel(peerId, trackType);
 
     // Setup fullscreen
     this.setupFullscreen(tile.container, tile.video);
 
-    logger.info('VideoGrid', 'Video tile added', { peerId, trackType });
+    logger.info('VideoGrid', 'Video tile added', { peerId, tileId, trackType });
     this.updateLayout();
   }
 
