@@ -441,6 +441,13 @@ class TrackManager {
   }
 
   /**
+   * Get current audio track (even if disabled)
+   */
+  getAudioTrack() {
+    return this.audioTrack;
+  }
+
+  /**
    * Stop all tracks
    */
   async stopAllTracks() {
