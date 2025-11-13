@@ -16,8 +16,22 @@ export function registerCommands() {
     
     if (isCameraOn) {
       await trackManager.disableCamera();
+      
+      // Remove camera track from all peer connections
+      const peers = Array.from(connectionManager.getAllConnections());
+      for (const { peerId } of peers) {
+        await connectionManager.removeTrack(peerId, 'camera');
+      }
     } else {
-      await trackManager.enableCamera();
+      const cameraTrack = await trackManager.enableCamera();
+      
+      // Add camera track to all existing peer connections
+      if (cameraTrack) {
+        const peers = Array.from(connectionManager.getAllConnections());
+        for (const { peerId } of peers) {
+          await connectionManager.addTrack(peerId, cameraTrack, 'camera');
+        }
+      }
     }
   });
 
@@ -27,8 +41,22 @@ export function registerCommands() {
     
     if (isMicOn) {
       await trackManager.disableMicrophone();
+      
+      // Remove audio track from all peer connections
+      const peers = Array.from(connectionManager.getAllConnections());
+      for (const { peerId } of peers) {
+        await connectionManager.removeTrack(peerId, 'audio');
+      }
     } else {
-      await trackManager.enableMicrophone();
+      const audioTrack = await trackManager.enableMicrophone();
+      
+      // Add audio track to all existing peer connections
+      if (audioTrack) {
+        const peers = Array.from(connectionManager.getAllConnections());
+        for (const { peerId } of peers) {
+          await connectionManager.addTrack(peerId, audioTrack, 'audio');
+        }
+      }
     }
   });
 

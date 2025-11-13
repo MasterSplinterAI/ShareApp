@@ -616,7 +616,12 @@ class ConnectionManager {
    * Handle received answer
    */
   async handleAnswer(peerId, sdp) {
-    logger.info('ConnectionManager', 'Handling answer', { peerId, currentState: this.connections.get(peerId)?.signalingState });
+    logger.info('ConnectionManager', 'Handling answer', { 
+      peerId, 
+      currentState: this.connections.get(peerId)?.signalingState,
+      hasSdp: !!sdp,
+      sdpType: sdp?.type
+    });
 
     const pc = this.connections.get(peerId);
     if (!pc) {
@@ -667,6 +672,23 @@ class ConnectionManager {
       // Double-check state before setting remote description
       if (pc.signalingState === 'have-local-offer') {
         await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+        
+        // Log transceivers after setting remote answer
+        const transceiversAfterAnswer = pc.getTransceivers();
+        logger.info('ConnectionManager', 'Transceivers after setting remote answer', {
+          peerId,
+          count: transceiversAfterAnswer.length,
+          transceivers: transceiversAfterAnswer.map(t => ({
+            mid: t.mid,
+            direction: t.direction,
+            kind: t.receiver.track?.kind || 'unknown',
+            hasSender: !!t.sender.track,
+            hasReceiver: !!t.receiver.track,
+            receiverTrackLabel: t.receiver.track?.label,
+            senderTrackLabel: t.sender.track?.label
+          }))
+        });
+        
         logger.debug('ConnectionManager', 'Remote answer set successfully', { peerId, newState: pc.signalingState });
       } else {
         logger.warn('ConnectionManager', 'Skipping answer - still in wrong state', { peerId, state: pc.signalingState });
