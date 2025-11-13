@@ -920,6 +920,11 @@ class ConnectionManager {
         logger.info('ConnectionManager', 'Removed camera track', { peerId });
       } else if (type === 'screen') {
         await transceivers.screen.sender.replaceTrack(null);
+        // Emit track ended event so peer VideoGrid removes the screen share tile
+        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+          peerId,
+          trackType: 'screen'
+        });
         logger.info('ConnectionManager', 'Removed screen track', { peerId });
       } else if (type === 'audio') {
         await transceivers.audio.sender.replaceTrack(null);

@@ -160,6 +160,18 @@ class Application {
           return;
         }
         
+        // Ensure microphone is enabled before creating connection
+        // This ensures audio tracks are available when connection is established
+        try {
+          const { trackManager } = await import('./webrtc/TrackManager.js');
+          if (!trackManager.hasActiveMicrophone()) {
+            logger.info('Application', 'Auto-enabling microphone before connecting to new user');
+            await trackManager.enableMicrophone();
+          }
+        } catch (error) {
+          logger.warn('Application', 'Failed to auto-enable microphone before connection', { error });
+        }
+        
         // Only create connection if we're the host or if we've been in the room for a bit
         // This prevents both peers from creating offers simultaneously
         const isHost = stateManager.getState('isHost');
@@ -173,6 +185,13 @@ class Application {
               isHost
             });
             await connectionManager.createConnection(data.userId);
+            
+            // After connection is created, ensure audio track is added
+            const { trackManager } = await import('./webrtc/TrackManager.js');
+            const audioTrack = trackManager.getAudioTrack();
+            if (audioTrack && audioTrack.readyState === 'live') {
+              await connectionManager.addTrack(data.userId, audioTrack, 'audio');
+            }
           } catch (error) {
             logger.error('Application', 'Failed to create connection to new user', { error });
           }

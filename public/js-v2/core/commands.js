@@ -82,9 +82,16 @@ export function registerCommands() {
     await trackManager.stopScreenShare();
     
     // Remove screen track from all peer connections
+    // This will trigger track.onended on peer side, which will remove the tile
     const peers = Array.from(connectionManager.getAllConnections());
     for (const { peerId } of peers) {
       await connectionManager.removeTrack(peerId, 'screen');
+      // Explicitly emit track ended event for peer side
+      // This ensures the peer VideoGrid removes the screen share tile
+      eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+        peerId,
+        trackType: 'screen'
+      });
     }
   });
 
