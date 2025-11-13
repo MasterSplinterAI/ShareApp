@@ -178,18 +178,35 @@ class SignalingClient {
    */
   setupSignalingHandlers() {
     this.socket.on('offer', (data) => {
-      logger.debug('SignalingClient', 'Received offer', { from: data.senderId });
-      eventBus.emit('webrtc:offer', data);
+      logger.info('SignalingClient', 'Received offer', { 
+        from: data.senderId || data.targetUserId,
+        to: this.socket.id,
+        hasSdp: !!data.sdp
+      });
+      eventBus.emit('webrtc:offer', {
+        senderId: data.senderId || data.targetUserId,
+        sdp: data.sdp
+      });
     });
 
     this.socket.on('answer', (data) => {
-      logger.debug('SignalingClient', 'Received answer', { from: data.senderId });
-      eventBus.emit('webrtc:answer', data);
+      logger.info('SignalingClient', 'Received answer', { 
+        from: data.senderId || data.targetUserId,
+        to: this.socket.id,
+        hasSdp: !!data.sdp
+      });
+      eventBus.emit('webrtc:answer', {
+        senderId: data.senderId || data.targetUserId,
+        sdp: data.sdp
+      });
     });
 
     this.socket.on('ice-candidate', (data) => {
-      logger.debug('SignalingClient', 'Received ICE candidate', { from: data.senderId });
-      eventBus.emit('webrtc:iceCandidate', data);
+      logger.debug('SignalingClient', 'Received ICE candidate', { from: data.senderId || data.targetUserId });
+      eventBus.emit('webrtc:iceCandidate', {
+        senderId: data.senderId || data.targetUserId,
+        candidate: data.candidate
+      });
     });
   }
 

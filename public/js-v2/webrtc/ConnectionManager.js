@@ -379,13 +379,19 @@ class ConnectionManager {
    * Handle received offer
    */
   async handleOffer(peerId, sdp) {
-    logger.info('ConnectionManager', 'Handling offer', { peerId, currentState: this.connections.get(peerId)?.signalingState });
+    logger.info('ConnectionManager', 'Handling offer', { 
+      peerId, 
+      currentState: this.connections.get(peerId)?.signalingState,
+      hasSdp: !!sdp,
+      sdpType: sdp?.type
+    });
 
     let pc = this.connections.get(peerId);
     
-    // Create connection if it doesn't exist
+    // Create connection if it doesn't exist (skip offer creation since we're receiving one)
     if (!pc) {
-      pc = await this.createConnection(peerId);
+      logger.info('ConnectionManager', 'No connection exists, creating new one for offer', { peerId });
+      pc = await this.createConnection(peerId, true); // Skip offer creation
     }
 
     try {
