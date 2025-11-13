@@ -256,6 +256,11 @@ class ConnectionManager {
             // This handles the case where screen share replaced camera temporarily
           } else if (trackType === 'screen') {
             peer.tracks.screen = null;
+            // Emit track ended event so VideoGrid can remove the screen share tile
+            eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+              peerId,
+              trackType: 'screen'
+            });
             // When screen share ends, ensure camera feed is still visible
             if (peer.tracks.camera && peer.tracks.camera.readyState === 'live') {
               // Re-emit camera track to ensure it's displayed

@@ -405,14 +405,24 @@ class VideoGrid {
 
     // Make button more touch-friendly on mobile
     if (isMobile) {
-      fullscreenBtn.style.minWidth = '44px';
-      fullscreenBtn.style.minHeight = '44px';
-      fullscreenBtn.style.fontSize = '18px';
+      fullscreenBtn.style.minWidth = '48px';
+      fullscreenBtn.style.minHeight = '48px';
+      fullscreenBtn.style.fontSize = '20px';
       fullscreenBtn.style.touchAction = 'manipulation';
       fullscreenBtn.style.webkitTouchCallout = 'none';
       fullscreenBtn.style.pointerEvents = 'auto';
-      fullscreenBtn.style.zIndex = '30';
+      fullscreenBtn.style.zIndex = '100';
       fullscreenBtn.style.cursor = 'pointer';
+      fullscreenBtn.style.position = 'absolute';
+      fullscreenBtn.style.top = '8px';
+      fullscreenBtn.style.right = '8px';
+      fullscreenBtn.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      fullscreenBtn.style.border = 'none';
+      fullscreenBtn.style.borderRadius = '6px';
+      fullscreenBtn.style.padding = '10px';
+      fullscreenBtn.style.display = 'flex';
+      fullscreenBtn.style.alignItems = 'center';
+      fullscreenBtn.style.justifyContent = 'center';
       // Remove any existing event listeners by cloning
       const newBtn = fullscreenBtn.cloneNode(true);
       fullscreenBtn.parentNode.replaceChild(newBtn, fullscreenBtn);

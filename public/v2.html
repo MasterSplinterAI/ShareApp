@@ -116,7 +116,8 @@
       
       <!-- Share info panel -->
       <div id="shareInfo" class="panel mt-4 hidden">
-        <p class="mb-2">Share this code with others: <span id="roomCode" class="font-bold bg-gray-100 p-1 rounded"></span></p>
+        <p class="mb-2">Host Code (for you to rejoin): <span id="hostCode" class="font-bold bg-blue-100 p-1 rounded"></span></p>
+        <p class="mb-2">Participant Code (share with others): <span id="roomCode" class="font-bold bg-gray-100 p-1 rounded"></span></p>
         <p class="mb-2">Or share this link: <span id="shareLink" class="font-bold bg-gray-100 p-1 rounded break-all text-sm"></span></p>
         <button id="copyLinkBtn" class="btn btn-success mt-2" aria-label="Copy Meeting Link">
           <i class="fas fa-copy"></i> Copy Link
@@ -176,6 +177,7 @@
             const shareInfo = document.getElementById('shareInfo');
             if (shareInfo) {
               shareInfo.classList.remove('hidden');
+              document.getElementById('hostCode').textContent = result.hostCode;
               document.getElementById('roomCode').textContent = result.participantCode;
               document.getElementById('shareLink').textContent = roomService.getShareableLink(result.roomId, result.participantCode);
             }
