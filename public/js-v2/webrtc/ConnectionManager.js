@@ -81,13 +81,20 @@ class ConnectionManager {
 
       // Always create transceivers for receiving tracks, even if we don't have local tracks
       // This ensures we can receive remote audio/video
+      // Use addTransceiver with 'recvonly' to ensure SDP has m-lines for receiving
       const transceivers = this.transceivers.get(peerId);
       if (!transceivers.audio) {
-        transceivers.audio = pc.addTransceiver('audio', { direction: 'recvonly' });
+        transceivers.audio = pc.addTransceiver('audio', { 
+          direction: 'recvonly',
+          streams: []
+        });
         logger.debug('ConnectionManager', 'Created audio transceiver for receiving', { peerId });
       }
       if (!transceivers.camera) {
-        transceivers.camera = pc.addTransceiver('video', { direction: 'recvonly' });
+        transceivers.camera = pc.addTransceiver('video', { 
+          direction: 'recvonly',
+          streams: []
+        });
         logger.debug('ConnectionManager', 'Created video transceiver for receiving', { peerId });
       }
 
