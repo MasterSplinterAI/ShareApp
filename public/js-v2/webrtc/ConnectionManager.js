@@ -426,6 +426,21 @@ class ConnectionManager {
           offerToReceiveVideo: true
         });
 
+        // Log SDP to verify tracks are included
+        const sdpLines = offer.sdp.split('\n');
+        const audioMLines = sdpLines.filter(l => l.startsWith('m=audio'));
+        const videoMLines = sdpLines.filter(l => l.startsWith('m=video'));
+        const senders = pc.getSenders();
+        const receivers = pc.getReceivers();
+        logger.info('ConnectionManager', 'Offer SDP details', {
+          peerId,
+          audioMLines: audioMLines.length,
+          videoMLines: videoMLines.length,
+          senders: senders.length,
+          receivers: receivers.length,
+          senderTracks: senders.map(s => ({ kind: s.track?.kind, label: s.track?.label, enabled: s.track?.enabled }))
+        });
+
         await pc.setLocalDescription(offer);
 
         const roomId = stateManager.getState('roomId');
@@ -559,6 +574,22 @@ class ConnectionManager {
         logger.info('ConnectionManager', 'Creating answer', { peerId });
 
         const answer = await pc.createAnswer();
+        
+        // Log SDP to verify tracks are included
+        const sdpLines = answer.sdp.split('\n');
+        const audioMLines = sdpLines.filter(l => l.startsWith('m=audio'));
+        const videoMLines = sdpLines.filter(l => l.startsWith('m=video'));
+        const senders = pc.getSenders();
+        const receivers = pc.getReceivers();
+        logger.info('ConnectionManager', 'Answer SDP details', {
+          peerId,
+          audioMLines: audioMLines.length,
+          videoMLines: videoMLines.length,
+          senders: senders.length,
+          receivers: receivers.length,
+          senderTracks: senders.map(s => ({ kind: s.track?.kind, label: s.track?.label, enabled: s.track?.enabled }))
+        });
+        
         await pc.setLocalDescription(answer);
 
         const roomId = stateManager.getState('roomId');
