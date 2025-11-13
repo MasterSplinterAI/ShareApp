@@ -86,8 +86,32 @@ class VideoGrid {
       if (data.trackType === 'camera' && data.peerId !== 'local') {
         const tile = this.tiles.get(data.peerId);
         if (tile && tile.video) {
+          // Hide video but keep srcObject attached (track is still live, just disabled)
           tile.video.style.display = 'none';
+          tile.video.style.visibility = 'hidden';
           this.showPlaceholder(tile.container);
+          logger.info('VideoGrid', 'Showing placeholder for disabled camera', { peerId: data.peerId });
+        }
+      }
+    });
+
+    // Listen for track enabled events (camera turned back on)
+    eventBus.on('webrtc:trackEnabled:*', (data) => {
+      if (data.trackType === 'camera' && data.peerId !== 'local') {
+        const tile = this.tiles.get(data.peerId);
+        if (tile && tile.video && data.track) {
+          // Show video and hide placeholder
+          tile.video.style.display = 'block';
+          tile.video.style.visibility = 'visible';
+          this.hidePlaceholder(tile.container);
+          
+          // Ensure video is playing
+          if (tile.video.paused && tile.video.srcObject) {
+            tile.video.play().catch(err => {
+              logger.warn('VideoGrid', 'Failed to play video after re-enable', { peerId: data.peerId, error: err });
+            });
+          }
+          logger.info('VideoGrid', 'Restored video for re-enabled camera', { peerId: data.peerId });
         }
       }
     });

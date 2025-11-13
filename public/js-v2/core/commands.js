@@ -15,14 +15,25 @@ export function registerCommands() {
     const isCameraOn = trackManager.hasActiveCamera();
     
     if (isCameraOn) {
-      await trackManager.disableCamera();
+      // Camera is on - disable it
+      const cameraTrack = trackManager.getCameraTrack();
       
-      // Remove camera track from all peer connections
-      const peers = Array.from(connectionManager.getAllConnections());
-      for (const { peerId } of peers) {
-        await connectionManager.removeTrack(peerId, 'camera');
+      // Disable the track (but keep it live) - this is what the original code does
+      if (cameraTrack && cameraTrack.readyState === 'live') {
+        cameraTrack.enabled = false;
+        await trackManager.disableCamera();
+        
+        // Update all peer connections to reflect disabled state
+        const peers = Array.from(connectionManager.getAllConnections());
+        for (const { peerId } of peers) {
+          // Replace track with disabled version (or null)
+          await connectionManager.removeTrack(peerId, 'camera');
+        }
+      } else {
+        await trackManager.disableCamera();
       }
     } else {
+      // Camera is off - enable it
       const cameraTrack = await trackManager.enableCamera();
       
       // Add camera track to all existing peer connections

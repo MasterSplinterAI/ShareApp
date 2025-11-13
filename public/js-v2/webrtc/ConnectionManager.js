@@ -315,15 +315,16 @@ class ConnectionManager {
               // Track is disabled but still live - show placeholder
               eventBus.emit(`webrtc:trackDisabled:${peerId}`, {
                 peerId,
-                trackType: 'camera'
+                trackType: 'camera',
+                track: track
               });
             } else if (track.enabled && track.readyState === 'live') {
               // Track is enabled - ensure video is shown
-              eventBus.emit(`webrtc:track:${peerId}`, {
+              // Don't recreate the tile, just restore the video display
+              eventBus.emit(`webrtc:trackEnabled:${peerId}`, {
                 peerId,
-                track,
-                type: 'camera',
-                stream: new MediaStream([track])
+                trackType: 'camera',
+                track: track
               });
             }
           }
