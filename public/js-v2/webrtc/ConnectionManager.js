@@ -22,7 +22,7 @@ class ConnectionManager {
   /**
    * Create a peer connection
    */
-  async createConnection(peerId) {
+  async createConnection(peerId, skipOffer = false) {
     // Prevent self-connection
     const socketId = signalingClient.getSocketId();
     if (peerId === socketId) {
@@ -45,7 +45,7 @@ class ConnectionManager {
       this.closeConnection(peerId);
     }
 
-    logger.info('ConnectionManager', 'Creating peer connection', { peerId });
+    logger.info('ConnectionManager', 'Creating peer connection', { peerId, skipOffer });
 
     try {
       // Get ICE servers
@@ -82,8 +82,12 @@ class ConnectionManager {
       // Add local tracks
       await this.addLocalTracks(pc, peerId);
 
-      // Create and send offer
-      await this.createAndSendOffer(peerId);
+      // Create and send offer (unless we're expecting an incoming offer)
+      if (!skipOffer) {
+        await this.createAndSendOffer(peerId);
+      } else {
+        logger.debug('ConnectionManager', 'Skipping offer creation, expecting incoming offer', { peerId });
+      }
 
       // Update state
       const peers = stateManager.getState('peers') || new Map();
