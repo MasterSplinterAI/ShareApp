@@ -742,7 +742,18 @@ class VideoGrid {
       localVideo.style.width = '100%';
       localVideo.style.height = '100%';
       localVideo.play().catch(error => {
-        logger.warn('VideoGrid', 'Failed to play local video', { error });
+        // AbortError is common when srcObject changes - retry after a short delay
+        if (error.name === 'AbortError') {
+          setTimeout(() => {
+            if (localVideo.srcObject && localVideo.paused) {
+              localVideo.play().catch(err => {
+                logger.debug('VideoGrid', 'Retry play after AbortError', { error: err });
+              });
+            }
+          }, 100);
+        } else {
+          logger.warn('VideoGrid', 'Failed to play local video', { error });
+        }
       });
       
       // Hide placeholder
