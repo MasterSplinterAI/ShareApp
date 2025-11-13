@@ -226,6 +226,11 @@ class ConnectionManager {
         stream: event.streams[0]
       });
 
+      // For audio tracks, create an audio element and play it
+      if (trackType === 'audio' && track.kind === 'audio') {
+        this.setupAudioPlayback(peerId, track);
+      }
+
       // Set up track ended handler
       track.onended = () => {
         logger.info('ConnectionManager', 'Remote track ended', { peerId, trackType });

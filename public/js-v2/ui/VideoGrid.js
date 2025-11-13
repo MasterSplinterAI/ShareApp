@@ -290,9 +290,9 @@ class VideoGrid {
 
     // Remove tile completely
     tile.container.remove();
-    this.tiles.delete(peerId);
+    this.tiles.delete(tileId);
 
-    logger.info('VideoGrid', 'Video tile removed', { peerId });
+    logger.info('VideoGrid', 'Video tile removed', { peerId, tileId, trackType });
     this.updateLayout();
   }
 
