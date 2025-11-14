@@ -852,11 +852,16 @@ class VideoGrid {
    */
   createParticipantPlaceholder(peerId, name) {
     if (peerId === 'local' || peerId === 'local-screen') {
-      return; // Don't create placeholder for local
+      return; // Don't create placeholder for local (handled separately)
     }
 
     // Check if tile already exists
     if (this.tiles.has(peerId)) {
+      const tile = this.tiles.get(peerId);
+      const placeholder = tile.container.querySelector('.no-video-placeholder');
+      if (placeholder) {
+        this.updatePlaceholderState(placeholder, peerId, name);
+      }
       return;
     }
 
@@ -864,49 +869,53 @@ class VideoGrid {
     const tile = this.createTileContainer(peerId);
     this.tiles.set(peerId, tile);
 
-    // Create placeholder with avatar
+    // Create placeholder with original app styling
     const placeholder = document.createElement('div');
-    placeholder.className = 'no-video-placeholder';
-    placeholder.style.cssText = `
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: #1f2937;
-      z-index: 2;
-    `;
+    placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800';
+    placeholder.setAttribute('data-peer-id', peerId);
 
     // Generate initials from name
     const initials = name ? name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 'P';
     
-    const avatar = document.createElement('div');
-    avatar.style.cssText = `
-      width: 80px;
-      height: 80px;
-      border-radius: 50%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      font-size: 32px;
-      font-weight: bold;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 8px;
-    `;
-    avatar.textContent = initials;
-    placeholder.appendChild(avatar);
+    // Create avatar circle (matching original app - bg-blue-600)
+    const avatarCircle = document.createElement('div');
+    avatarCircle.className = 'avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full';
+    avatarCircle.textContent = initials;
+    
+    // Create status indicators container
+    const statusContainer = document.createElement('div');
+    statusContainer.className = 'status-indicators absolute bottom-2 left-2 flex gap-2';
+    
+    // Camera status icon
+    const cameraStatus = document.createElement('div');
+    cameraStatus.className = 'camera-status bg-black bg-opacity-50 rounded-full p-1';
+    cameraStatus.innerHTML = '<i class="fas fa-video-slash text-xs text-gray-400"></i>';
+    cameraStatus.setAttribute('data-peer-id', peerId);
+    
+    // Mic status icon
+    const micStatus = document.createElement('div');
+    micStatus.className = 'mic-status bg-black bg-opacity-50 rounded-full p-1';
+    micStatus.innerHTML = '<i class="fas fa-microphone text-xs text-green-400"></i>';
+    micStatus.setAttribute('data-peer-id', peerId);
+    
+    statusContainer.appendChild(cameraStatus);
+    statusContainer.appendChild(micStatus);
+    
+    // Speaking indicator (green pulse when speaking)
+    const speakingIndicator = document.createElement('div');
+    speakingIndicator.className = 'speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden';
+    speakingIndicator.innerHTML = '<div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>';
+    
+    placeholder.appendChild(avatarCircle);
+    placeholder.appendChild(statusContainer);
+    placeholder.appendChild(speakingIndicator);
 
     tile.container.appendChild(placeholder);
 
     // Update label
     this.updateTileLabel(peerId, null);
 
-    // Update status indicators
-    this.updateStatusIndicators(peerId, peerId);
-
-    logger.info('VideoGrid', 'Created participant placeholder', { peerId, name });
+    logger.info('VideoGrid', 'Created participant placeholder', { peerId, name, initials });
     this.updateLayout();
   }
 
@@ -915,34 +924,98 @@ class VideoGrid {
    */
   showPlaceholder(containerOrId) {
     const container = typeof containerOrId === 'string' 
-      ? document.getElementById(containerOrId === 'local' ? 'localVideoContainer' : containerOrId)
+      ? document.getElementById(containerOrId === 'local' ? 'localVideoContainer' : `video-container-${containerOrId}`)
       : containerOrId;
     
     if (!container) return;
 
+    const peerId = containerOrId === 'local' ? 'local' : containerOrId;
+    
     // Check if placeholder already exists
     let placeholder = container.querySelector('.no-video-placeholder');
     if (!placeholder) {
+      // Create placeholder with original app styling
       placeholder = document.createElement('div');
-      placeholder.className = 'no-video-placeholder';
-      placeholder.style.cssText = `
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #1f2937;
-        z-index: 2;
-      `;
+      placeholder.className = 'no-video-placeholder absolute inset-0 flex items-center justify-center bg-gray-800';
+      placeholder.setAttribute('data-peer-id', peerId);
       
-      const icon = document.createElement('i');
-      icon.className = 'fas fa-user-circle';
-      icon.style.cssText = 'font-size: 64px; color: #6b7280;';
-      placeholder.appendChild(icon);
+      // Get name for initials
+      let name = 'You';
+      if (peerId !== 'local') {
+        const participants = stateManager.getState('room.participants') || new Map();
+        const participant = participants.get(peerId);
+        name = participant?.name || peerId.substring(0, 5);
+      } else {
+        const participants = stateManager.getState('room.participants') || new Map();
+        const socketId = stateManager.getState('socketId');
+        const participant = participants.get(socketId);
+        name = participant?.name || 'You';
+      }
+      
+      const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
+      
+      // Create avatar circle (matching original app - bg-blue-600)
+      const avatarCircle = document.createElement('div');
+      avatarCircle.className = 'avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full';
+      avatarCircle.textContent = initials;
+      
+      // Create status indicators container
+      const statusContainer = document.createElement('div');
+      statusContainer.className = 'status-indicators absolute bottom-2 left-2 flex gap-2';
+      
+      // Camera status icon
+      const cameraStatus = document.createElement('div');
+      cameraStatus.className = 'camera-status bg-black bg-opacity-50 rounded-full p-1';
+      if (peerId === 'local') {
+        const isCameraOn = stateManager.getState('isCameraOn');
+        cameraStatus.innerHTML = isCameraOn 
+          ? '<i class="fas fa-video text-xs text-green-400"></i>'
+          : '<i class="fas fa-video-slash text-xs text-gray-400"></i>';
+      } else {
+        cameraStatus.innerHTML = '<i class="fas fa-video-slash text-xs text-gray-400"></i>';
+      }
+      cameraStatus.setAttribute('data-peer-id', peerId);
+      
+      // Mic status icon
+      const micStatus = document.createElement('div');
+      micStatus.className = 'mic-status bg-black bg-opacity-50 rounded-full p-1';
+      if (peerId === 'local') {
+        const isMicOn = stateManager.getState('isMicOn');
+        micStatus.innerHTML = isMicOn
+          ? '<i class="fas fa-microphone text-xs text-green-400"></i>'
+          : '<i class="fas fa-microphone-slash text-xs text-red-400"></i>';
+      } else {
+        micStatus.innerHTML = '<i class="fas fa-microphone text-xs text-green-400"></i>';
+      }
+      micStatus.setAttribute('data-peer-id', peerId);
+      
+      statusContainer.appendChild(cameraStatus);
+      statusContainer.appendChild(micStatus);
+      
+      // Speaking indicator (green pulse when speaking)
+      const speakingIndicator = document.createElement('div');
+      speakingIndicator.className = 'speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden';
+      speakingIndicator.innerHTML = '<div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>';
+      
+      placeholder.appendChild(avatarCircle);
+      placeholder.appendChild(statusContainer);
+      placeholder.appendChild(speakingIndicator);
       
       container.appendChild(placeholder);
+    } else {
+      // Update existing placeholder state
+      if (peerId !== 'local') {
+        const participants = stateManager.getState('room.participants') || new Map();
+        const participant = participants.get(peerId);
+        const name = participant?.name || peerId.substring(0, 5);
+        this.updatePlaceholderState(placeholder, peerId, name);
+      } else {
+        this.updatePlaceholderState(placeholder, 'local', 'You');
+      }
     }
+    
     placeholder.style.display = 'flex';
+    placeholder.style.zIndex = '2';
   }
 
   /**
