@@ -477,7 +477,35 @@ class ConnectionManager {
       }
     }
 
-    // Screen track is added separately when screen sharing starts
+    // Add screen track if available
+    const screenTrack = trackManager.getScreenTrack();
+    if (screenTrack && screenTrack.readyState === 'live') {
+      try {
+        // Check if we already have a screen share sender
+        const existingSenders = pc.getSenders().filter(s => {
+          if (s.track?.kind !== 'video') return false;
+          const settings = s.track.getSettings();
+          return settings?.displaySurface; // Screen share has displaySurface
+        });
+        if (existingSenders.length > 0) {
+          // Replace track on existing screen sender
+          await existingSenders[0].replaceTrack(screenTrack);
+          logger.debug('ConnectionManager', 'Replaced screen track', { peerId });
+        } else {
+          // Use addTrack which automatically creates transceiver
+          const sender = pc.addTrack(screenTrack);
+          // Find the transceiver that now has this track
+          const transceiversList = pc.getTransceivers();
+          const screenTransceiver = transceiversList.find(t => t.sender === sender);
+          if (screenTransceiver) {
+            transceivers.screen = screenTransceiver;
+            logger.debug('ConnectionManager', 'Added screen track', { peerId, transceiverMid: screenTransceiver.mid });
+          }
+        }
+      } catch (error) {
+        logger.error('ConnectionManager', 'Failed to add screen track', { peerId, error });
+      }
+    }
   }
 
   /**

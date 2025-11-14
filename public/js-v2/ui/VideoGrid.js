@@ -64,6 +64,8 @@ class VideoGrid {
             }
           }
         }
+        
+        // Add video tile with proper labeling
         this.addVideoTile(data.peerId, data.track, data.type, data.stream);
         
         // Update status indicators when track is added
@@ -578,7 +580,9 @@ class VideoGrid {
    * Update tile label
    */
   updateTileLabel(peerId, trackType) {
-    const tile = this.tiles.get(peerId);
+    // For screen share tiles, use the screen tile ID
+    const tileId = trackType === 'screen' ? `${peerId}-screen` : peerId;
+    const tile = this.tiles.get(tileId);
     if (!tile) return;
 
     const participants = stateManager.getState('room.participants') || new Map();
@@ -587,7 +591,7 @@ class VideoGrid {
 
     let labelText = name;
     if (trackType === 'screen') {
-      labelText += ' (Screen Share)';
+      labelText = `${name} (Screen Share)`;
     }
 
     // Update name span (first child of label)

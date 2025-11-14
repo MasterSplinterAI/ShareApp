@@ -160,17 +160,8 @@ class Application {
           return;
         }
         
-        // Ensure microphone is enabled before creating connection
-        // This ensures audio tracks are available when connection is established
-        try {
-          const { trackManager } = await import('./webrtc/TrackManager.js');
-          if (!trackManager.hasActiveMicrophone()) {
-            logger.info('Application', 'Auto-enabling microphone before connecting to new user');
-            await trackManager.enableMicrophone();
-          }
-        } catch (error) {
-          logger.warn('Application', 'Failed to auto-enable microphone before connection', { error });
-        }
+        // DO NOT auto-enable microphone when a peer joins - only enable on room join
+        // The user should control their own microphone
         
         // Only create connection if we're the host or if we've been in the room for a bit
         // This prevents both peers from creating offers simultaneously
@@ -186,11 +177,25 @@ class Application {
             });
             await connectionManager.createConnection(data.userId);
             
-            // After connection is created, ensure audio track is added
+            // After connection is created, add all existing tracks (camera, screen, audio)
             const { trackManager } = await import('./webrtc/TrackManager.js');
+            
+            // Add audio track if available
             const audioTrack = trackManager.getAudioTrack();
             if (audioTrack && audioTrack.readyState === 'live') {
               await connectionManager.addTrack(data.userId, audioTrack, 'audio');
+            }
+            
+            // Add camera track if available and enabled
+            const cameraTrack = trackManager.getCameraTrack();
+            if (cameraTrack && cameraTrack.readyState === 'live' && cameraTrack.enabled) {
+              await connectionManager.addTrack(data.userId, cameraTrack, 'camera');
+            }
+            
+            // Add screen share track if available
+            const screenTrack = trackManager.getScreenTrack();
+            if (screenTrack && screenTrack.readyState === 'live') {
+              await connectionManager.addTrack(data.userId, screenTrack, 'screen');
             }
           } catch (error) {
             logger.error('Application', 'Failed to create connection to new user', { error });
@@ -256,36 +261,37 @@ class Application {
         return;
       }
       
-      // Ensure microphone is enabled before creating connections
+      // Create connections to existing participants and add all existing tracks
       try {
         const { trackManager } = await import('./webrtc/TrackManager.js');
-        const audioTrack = trackManager.getAudioTrack();
-        if (audioTrack && audioTrack.readyState === 'live') {
-          for (const participant of otherParticipants) {
-            setTimeout(async () => {
-              try {
-                logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
-                await connectionManager.createConnection(participant.id);
-                
-                // After connection is created, ensure audio track is added
+        
+        for (const participant of otherParticipants) {
+          setTimeout(async () => {
+            try {
+              logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
+              await connectionManager.createConnection(participant.id);
+
+              // Add all existing tracks (audio, camera, screen) if available
+              const audioTrack = trackManager.getAudioTrack();
+              if (audioTrack && audioTrack.readyState === 'live') {
                 await connectionManager.addTrack(participant.id, audioTrack, 'audio');
-              } catch (error) {
-                logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });
               }
-            }, 500);
-          }
-        } else {
-          // No audio track yet, create connections without audio for now
-          for (const participant of otherParticipants) {
-            setTimeout(async () => {
-              try {
-                logger.info('Application', 'Creating connection to participant', { peerId: participant.id });
-                await connectionManager.createConnection(participant.id);
-              } catch (error) {
-                logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });
+              
+              // Add camera track if available and enabled
+              const cameraTrack = trackManager.getCameraTrack();
+              if (cameraTrack && cameraTrack.readyState === 'live' && cameraTrack.enabled) {
+                await connectionManager.addTrack(participant.id, cameraTrack, 'camera');
               }
-            }, 500);
-          }
+              
+              // Add screen share track if available
+              const screenTrack = trackManager.getScreenTrack();
+              if (screenTrack && screenTrack.readyState === 'live') {
+                await connectionManager.addTrack(participant.id, screenTrack, 'screen');
+              }
+            } catch (error) {
+              logger.error('Application', 'Failed to create connection', { peerId: participant.id, error });
+            }
+          }, 500);
         }
       } catch (error) {
         logger.error('Application', 'Error setting up connections to existing participants', { error });
