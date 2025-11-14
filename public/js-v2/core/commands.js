@@ -79,19 +79,33 @@ export function registerCommands() {
 
   // Stop screen share
   commandDispatcher.register('stopScreenShare', async () => {
+    // Get all peer connections BEFORE stopping screen share
+    // This ensures we have the list of peers to notify
+    const peers = Array.from(connectionManager.getAllConnections());
+    
+    // Stop the screen share track locally
     await trackManager.stopScreenShare();
     
     // Remove screen track from all peer connections
-    // This will trigger track.onended on peer side, which will remove the tile
-    const peers = Array.from(connectionManager.getAllConnections());
+    // removeTrack will stop the track and emit trackEnded events
     for (const { peerId } of peers) {
-      await connectionManager.removeTrack(peerId, 'screen');
-      // Explicitly emit track ended event for peer side
-      // This ensures the peer VideoGrid removes the screen share tile
-      eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-        peerId,
-        trackType: 'screen'
-      });
+      try {
+        await connectionManager.removeTrack(peerId, 'screen');
+        // Explicitly emit track ended event for peer side as backup
+        // The track.onended handler should also fire, but this ensures it
+        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+          peerId,
+          trackType: 'screen'
+        });
+        logger.info('Commands', 'Removed screen track and emitted trackEnded event', { peerId });
+      } catch (error) {
+        logger.error('Commands', 'Failed to remove screen track', { peerId, error });
+        // Still emit the event even if removal failed
+        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+          peerId,
+          trackType: 'screen'
+        });
+      }
     }
   });
 
