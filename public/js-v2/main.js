@@ -236,6 +236,17 @@ class Application {
         logger.warn('Application', 'Failed to auto-enable microphone on room join', { error });
       }
       
+      // Show placeholder for local user if camera is off
+      try {
+        const { videoGrid } = await import('./ui/VideoGrid.js');
+        const isCameraOn = stateManager.getState('isCameraOn');
+        if (!isCameraOn) {
+          videoGrid.showPlaceholder('local');
+        }
+      } catch (error) {
+        logger.warn('Application', 'Failed to show local placeholder', { error });
+      }
+      
       // Only create connections if we're the host
       // Participants should wait for the host to create connections and send offers
       if (!isHost) {

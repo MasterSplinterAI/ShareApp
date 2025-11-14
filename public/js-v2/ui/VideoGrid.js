@@ -124,6 +124,66 @@ class VideoGrid {
         // Check if tile already exists (might have been created from room:joined)
         if (!this.tiles.has(data.userId)) {
           this.createParticipantPlaceholder(data.userId, data.name);
+        } else {
+          // Update existing placeholder
+          const tile = this.tiles.get(data.userId);
+          if (tile) {
+            const placeholder = tile.container.querySelector('.no-video-placeholder');
+            if (placeholder) {
+              this.updatePlaceholderState(placeholder, data.userId, data.name);
+            }
+          }
+        }
+      }
+    });
+    
+    // Listen for audio level events to show speaking indicator
+    eventBus.on('webrtc:audioLevel:*', (data) => {
+      const { peerId, isSpeaking } = data;
+      const tileId = peerId === 'local' ? 'local' : peerId;
+      const tile = this.tiles.get(tileId);
+      
+      if (tile) {
+        const placeholder = tile.container.querySelector('.no-video-placeholder');
+        if (placeholder) {
+          const speakingIndicator = placeholder.querySelector('.speaking-indicator');
+          if (speakingIndicator) {
+            if (isSpeaking) {
+              speakingIndicator.classList.remove('hidden');
+              tile.container.classList.add('speaking');
+            } else {
+              speakingIndicator.classList.add('hidden');
+              tile.container.classList.remove('speaking');
+            }
+          }
+        }
+      }
+    });
+    
+    // Listen for peer track updates to update status indicators
+    eventBus.on('webrtc:peer:trackUpdated:*', (data) => {
+      const { peerId } = data;
+      const tileId = peerId === 'local' ? 'local' : peerId;
+      const tile = this.tiles.get(tileId);
+      
+      if (tile) {
+        const placeholder = tile.container.querySelector('.no-video-placeholder');
+        if (placeholder) {
+          const participants = stateManager.getState('room.participants') || new Map();
+          const participant = participants.get(peerId);
+          const name = participant?.name || (peerId === 'local' ? 'You' : peerId.substring(0, 5));
+          this.updatePlaceholderState(placeholder, peerId, name);
+        }
+      }
+    });
+    
+    // Listen for local state changes to update local placeholder
+    stateManager.subscribe('isMicOn', (isMicOn) => {
+      const localContainer = document.getElementById('localVideoContainer');
+      if (localContainer) {
+        const placeholder = localContainer.querySelector('.no-video-placeholder');
+        if (placeholder) {
+          this.updatePlaceholderState(placeholder, 'local', 'You');
         }
       }
     });
@@ -157,6 +217,12 @@ class VideoGrid {
     stateManager.subscribe('isCameraOn', (isOn) => {
       const localContainer = document.getElementById('localVideoContainer');
       const localVideo = document.getElementById('localVideo');
+      
+      // Update placeholder state indicators
+      const placeholder = localContainer?.querySelector('.no-video-placeholder');
+      if (placeholder) {
+        this.updatePlaceholderState(placeholder, 'local', 'You');
+      }
       
       if (!isOn) {
         // Show placeholder and hide video
