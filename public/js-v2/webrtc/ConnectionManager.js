@@ -376,11 +376,8 @@ class ConnectionManager {
               originalOnEnded();
               return;
             }
-          }
-          
-          // Check if transceiver direction changed to recvonly (sender removed)
-          const pc = this.connections.get(peerId);
-          if (pc && transceivers && transceivers.screen) {
+            
+            // Check if transceiver direction changed to recvonly or inactive (sender removed)
             const currentDirection = transceivers.screen.direction;
             if (currentDirection === 'recvonly' || currentDirection === 'inactive') {
               clearInterval(readyStateCheckInterval);
