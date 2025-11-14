@@ -436,6 +436,9 @@ class VideoGrid {
 
     // Update label (use original peerId for name lookup)
     this.updateTileLabel(peerId, trackType);
+    
+    // Update status indicators when video is added
+    this.updateStatusIndicators(peerId, tileId);
 
     // Setup fullscreen
     this.setupFullscreen(tile.container, tile.video);
@@ -455,6 +458,8 @@ class VideoGrid {
     const isLandscape = isMobile && window.innerWidth > window.innerHeight;
     
     // Dynamic aspect ratio based on orientation
+    // Desktop: consistent 16/9 for all tiles
+    // Mobile: responsive based on orientation
     let aspectRatio = '16/9';
     let maxHeight = 'none';
     
@@ -466,6 +471,10 @@ class VideoGrid {
         aspectRatio = '4/3'; // Portrait
         maxHeight = 'calc((100vh - 300px) / 2)';
       }
+    } else {
+      // Desktop: ensure all tiles are equal size
+      aspectRatio = '16/9';
+      maxHeight = 'none';
     }
     
     container.style.cssText = `
@@ -476,6 +485,7 @@ class VideoGrid {
       aspect-ratio: ${aspectRatio};
       ${maxHeight !== 'none' ? `max-height: ${maxHeight};` : ''}
       width: 100%;
+      height: auto;
     `;
 
     // Label with status indicators (matching original app)
