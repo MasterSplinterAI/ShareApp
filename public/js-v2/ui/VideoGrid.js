@@ -48,14 +48,19 @@ class VideoGrid {
     // Listen for remote track events
     eventBus.on('webrtc:track:*', (data) => {
       if (data.peerId !== 'local') {
-        // If this is a video track, hide placeholder and show video
+        // If this is a video track, check if it's enabled before hiding placeholder
         if (data.type === 'camera' || data.type === 'screen') {
           const tileId = data.type === 'screen' ? `${data.peerId}-screen` : data.peerId;
           const tile = this.tiles.get(tileId);
           if (tile) {
             const placeholder = tile.container.querySelector('.no-video-placeholder');
-            if (placeholder) {
+            // Only hide placeholder if track is enabled and ready
+            if (placeholder && data.track && data.track.enabled && data.track.readyState === 'live') {
               placeholder.style.display = 'none';
+            } else if (placeholder && (!data.track || !data.track.enabled)) {
+              // Track is disabled - keep placeholder visible and update state
+              placeholder.style.display = 'flex';
+              this.updatePlaceholderState(placeholder, data.peerId, null);
             }
           }
         }
@@ -882,9 +887,9 @@ class VideoGrid {
     avatarCircle.className = 'avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full';
     avatarCircle.textContent = initials;
     
-    // Create status indicators container
+    // Create status indicators container (positioned above label)
     const statusContainer = document.createElement('div');
-    statusContainer.className = 'status-indicators absolute bottom-2 left-2 flex gap-2';
+    statusContainer.className = 'status-indicators absolute bottom-10 left-2 flex gap-2 z-20';
     
     // Camera status icon
     const cameraStatus = document.createElement('div');
