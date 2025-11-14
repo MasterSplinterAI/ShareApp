@@ -1067,29 +1067,63 @@ class ConnectionManager {
           }))
         });
         
-        // Check if screen share track was removed (transceiver receiver track is null)
+        // Check for new screen share tracks or removed ones
         const transceivers = this.transceivers.get(peerId);
-        if (transceivers && transceivers.screen) {
-          const screenTransceiver = transceiversAfterAnswer.find(t => 
-            t.receiver.track && 
-            (t.receiver.track.getSettings?.()?.displaySurface || 
-             t.receiver.track.label?.toLowerCase().includes('screen'))
-          );
-          
-          // If we had a screen transceiver but now it's gone or has no receiver track, screen share ended
-          if (!screenTransceiver || !screenTransceiver.receiver.track) {
-            const peers = stateManager.getState('peers') || new Map();
-            const peer = peers.get(peerId);
-            if (peer && peer.tracks && peer.tracks.screen) {
-              logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
-              peer.tracks.screen = null;
-              stateManager.setState({ peers });
-              eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-                peerId,
-                trackType: 'screen'
+        const peers = stateManager.getState('peers') || new Map();
+        const peer = peers.get(peerId);
+        
+        // Look for screen share transceivers in the updated transceivers
+        const screenTransceivers = transceiversAfterAnswer.filter(t => {
+          if (!t.receiver.track || t.receiver.track.kind !== 'video') return false;
+          try {
+            const settings = t.receiver.track.getSettings();
+            if (settings.displaySurface) return true;
+          } catch (e) {}
+          const label = t.receiver.track.label?.toLowerCase() || '';
+          return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
+        });
+        
+        // If we have screen transceivers, check if we need to emit track events
+        if (screenTransceivers.length > 0) {
+          for (const screenTransceiver of screenTransceivers) {
+            const screenTrack = screenTransceiver.receiver.track;
+            if (screenTrack && (!peer || !peer.tracks.screen || peer.tracks.screen.id !== screenTrack.id)) {
+              // New screen share track detected
+              logger.info('ConnectionManager', 'New screen share track detected after answer', { 
+                peerId, 
+                trackId: screenTrack.id,
+                label: screenTrack.label
               });
+              
+              // Store transceiver reference
+              if (transceivers) {
+                transceivers.screen = screenTransceiver;
+              }
+              
+              // Update peer tracks and emit event
+              if (peer) {
+                peer.tracks.screen = screenTrack;
+                stateManager.setState({ peers });
+                
+                // Emit track event so VideoGrid can create the tile
+                eventBus.emit(`webrtc:track:${peerId}`, {
+                  peerId,
+                  track: screenTrack,
+                  type: 'screen',
+                  stream: new MediaStream([screenTrack])
+                });
+              }
             }
           }
+        } else if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
+          // We had a screen transceiver but now it's gone - screen share ended
+          logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
+          peer.tracks.screen = null;
+          stateManager.setState({ peers });
+          eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+            peerId,
+            trackType: 'screen'
+          });
         }
         
         logger.debug('ConnectionManager', 'Remote answer set successfully', { peerId, newState: pc.signalingState });
