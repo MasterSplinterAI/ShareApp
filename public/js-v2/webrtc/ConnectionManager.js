@@ -863,8 +863,12 @@ class ConnectionManager {
       const peers = stateManager.getState('peers') || new Map();
       const peer = peers.get(peerId);
       
-      // Look for screen share transceivers in the updated transceivers
-      const screenTransceivers = transceiversAfterRemote.filter(t => {
+      // Check if we had a screen track stored BEFORE checking transceivers
+      const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
+      const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+      
+      // Look for screen share transceivers in the updated transceivers (with tracks)
+      const screenTransceiversWithTracks = transceiversAfterRemote.filter(t => {
         if (!t.receiver.track || t.receiver.track.kind !== 'video') return false;
         try {
           const settings = t.receiver.track.getSettings();
@@ -874,13 +878,27 @@ class ConnectionManager {
         return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
       });
       
-      // Check if we had a screen track stored
-      const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
-      const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+      // Also look for screen transceivers WITHOUT tracks (might be the one that was removed)
+      // Check by comparing with stored screen transceiver MID or by position/index
+      const storedScreenTransceiver = transceivers && transceivers.screen;
+      const screenTransceiverWithoutTrack = storedScreenTransceiver ? 
+        transceiversAfterRemote.find(t => {
+          // Match by MID if available
+          if (t.mid && storedScreenTransceiver.mid && t.mid === storedScreenTransceiver.mid) {
+            return !t.receiver.track || t.receiver.track.readyState === 'ended';
+          }
+          // Or match by position/index (screen share is usually the last video transceiver)
+          const videoTransceivers = transceiversAfterRemote.filter(tr => tr.receiver.track?.kind === 'video' || tr.receiver.track === null);
+          if (videoTransceivers.length > 1) {
+            const lastVideoTransceiver = videoTransceivers[videoTransceivers.length - 1];
+            return lastVideoTransceiver === t && (!t.receiver.track || t.receiver.track.readyState === 'ended');
+          }
+          return false;
+        }) : null;
       
       // If we have screen transceivers with tracks, check if we need to emit track events
-      if (screenTransceivers.length > 0) {
-        for (const screenTransceiver of screenTransceivers) {
+      if (screenTransceiversWithTracks.length > 0) {
+        for (const screenTransceiver of screenTransceiversWithTracks) {
           const screenTrack = screenTransceiver.receiver.track;
           if (screenTrack && (!peer || !peer.tracks.screen || peer.tracks.screen.id !== screenTrack.id)) {
             // New screen share track detected
@@ -913,7 +931,7 @@ class ConnectionManager {
       }
       
       // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
-      if (hadScreenTrack && screenTransceivers.length === 0) {
+      if (hadScreenTrack && screenTransceiversWithTracks.length === 0) {
         // Verify the stored screen track is actually a screen share (not a misidentified camera)
         let isActuallyScreenShare = false;
         if (storedScreenTrack) {
@@ -932,23 +950,30 @@ class ConnectionManager {
           }
         }
         
-        // Also check if the transceiver still exists but has no receiver track
-        const existingScreenTransceiver = transceivers && transceivers.screen;
-        const transceiverHasNoTrack = existingScreenTransceiver && 
-                                      (!existingScreenTransceiver.receiver.track || 
-                                       existingScreenTransceiver.receiver.track.readyState === 'ended');
+        // Check if the transceiver still exists but has no receiver track
+        const transceiverHasNoTrack = screenTransceiverWithoutTrack !== null;
         
         // Also check transceiver direction - if it's recvonly or inactive, sender was removed
-        const transceiverDirectionRemoved = existingScreenTransceiver && 
-                                           (existingScreenTransceiver.direction === 'recvonly' || 
-                                            existingScreenTransceiver.direction === 'inactive');
+        const transceiverDirectionRemoved = screenTransceiverWithoutTrack && 
+                                           (screenTransceiverWithoutTrack.direction === 'recvonly' || 
+                                            screenTransceiverWithoutTrack.direction === 'inactive');
         
-        if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved)) {
-          logger.info('ConnectionManager', 'Screen share track removed - no screen transceivers with tracks found', { 
+        // Also check if stored transceiver reference has no track or wrong direction
+        const storedTransceiverHasNoTrack = storedScreenTransceiver && 
+                                           (!storedScreenTransceiver.receiver.track || 
+                                            storedScreenTransceiver.receiver.track.readyState === 'ended');
+        const storedTransceiverDirectionRemoved = storedScreenTransceiver && 
+                                                 (storedScreenTransceiver.direction === 'recvonly' || 
+                                                  storedScreenTransceiver.direction === 'inactive');
+        
+        if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved || storedTransceiverHasNoTrack || storedTransceiverDirectionRemoved)) {
+          logger.info('ConnectionManager', 'Screen share track removed - detected removal in offer', { 
             peerId,
             transceiverHasNoTrack,
             transceiverDirectionRemoved,
-            direction: existingScreenTransceiver?.direction
+            storedTransceiverHasNoTrack,
+            storedTransceiverDirectionRemoved,
+            direction: screenTransceiverWithoutTrack?.direction || storedScreenTransceiver?.direction
           });
           peer.tracks.screen = null;
           stateManager.setState({ peers });
@@ -1127,8 +1152,12 @@ class ConnectionManager {
         const peers = stateManager.getState('peers') || new Map();
         const peer = peers.get(peerId);
         
-        // Look for screen share transceivers in the updated transceivers
-        const screenTransceivers = transceiversAfterAnswer.filter(t => {
+        // Check if we had a screen track stored BEFORE checking transceivers
+        const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
+        const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+        
+        // Look for screen share transceivers in the updated transceivers (with tracks)
+        const screenTransceiversWithTracks = transceiversAfterAnswer.filter(t => {
           if (!t.receiver.track || t.receiver.track.kind !== 'video') return false;
           try {
             const settings = t.receiver.track.getSettings();
@@ -1138,13 +1167,27 @@ class ConnectionManager {
           return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
         });
         
-        // Check if we had a screen track stored
-        const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
-        const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+        // Also look for screen transceivers WITHOUT tracks (might be the one that was removed)
+        // Check by comparing with stored screen transceiver MID or by position/index
+        const storedScreenTransceiver = transceivers && transceivers.screen;
+        const screenTransceiverWithoutTrack = storedScreenTransceiver ? 
+          transceiversAfterAnswer.find(t => {
+            // Match by MID if available
+            if (t.mid && storedScreenTransceiver.mid && t.mid === storedScreenTransceiver.mid) {
+              return !t.receiver.track || t.receiver.track.readyState === 'ended';
+            }
+            // Or match by position/index (screen share is usually the last video transceiver)
+            const videoTransceivers = transceiversAfterAnswer.filter(tr => tr.receiver.track?.kind === 'video' || tr.receiver.track === null);
+            if (videoTransceivers.length > 1) {
+              const lastVideoTransceiver = videoTransceivers[videoTransceivers.length - 1];
+              return lastVideoTransceiver === t && (!t.receiver.track || t.receiver.track.readyState === 'ended');
+            }
+            return false;
+          }) : null;
         
         // If we have screen transceivers with tracks, check if we need to emit track events
-        if (screenTransceivers.length > 0) {
-          for (const screenTransceiver of screenTransceivers) {
+        if (screenTransceiversWithTracks.length > 0) {
+          for (const screenTransceiver of screenTransceiversWithTracks) {
             const screenTrack = screenTransceiver.receiver.track;
             if (screenTrack && (!peer || !peer.tracks.screen || peer.tracks.screen.id !== screenTrack.id)) {
               // New screen share track detected
@@ -1177,7 +1220,7 @@ class ConnectionManager {
         }
         
         // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
-        if (hadScreenTrack && screenTransceivers.length === 0) {
+        if (hadScreenTrack && screenTransceiversWithTracks.length === 0) {
           // Verify the stored screen track is actually a screen share (not a misidentified camera)
           let isActuallyScreenShare = false;
           if (storedScreenTrack) {
@@ -1196,23 +1239,30 @@ class ConnectionManager {
             }
           }
           
-          // Also check if the transceiver still exists but has no receiver track
-          const existingScreenTransceiver = transceivers && transceivers.screen;
-          const transceiverHasNoTrack = existingScreenTransceiver && 
-                                        (!existingScreenTransceiver.receiver.track || 
-                                         existingScreenTransceiver.receiver.track.readyState === 'ended');
+          // Check if the transceiver still exists but has no receiver track
+          const transceiverHasNoTrack = screenTransceiverWithoutTrack !== null;
           
           // Also check transceiver direction - if it's recvonly or inactive, sender was removed
-          const transceiverDirectionRemoved = existingScreenTransceiver && 
-                                             (existingScreenTransceiver.direction === 'recvonly' || 
-                                              existingScreenTransceiver.direction === 'inactive');
+          const transceiverDirectionRemoved = screenTransceiverWithoutTrack && 
+                                             (screenTransceiverWithoutTrack.direction === 'recvonly' || 
+                                              screenTransceiverWithoutTrack.direction === 'inactive');
           
-          if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved)) {
-            logger.info('ConnectionManager', 'Screen share track removed - no screen transceivers with tracks found', { 
+          // Also check if stored transceiver reference has no track or wrong direction
+          const storedTransceiverHasNoTrack = storedScreenTransceiver && 
+                                             (!storedScreenTransceiver.receiver.track || 
+                                              storedScreenTransceiver.receiver.track.readyState === 'ended');
+          const storedTransceiverDirectionRemoved = storedScreenTransceiver && 
+                                                   (storedScreenTransceiver.direction === 'recvonly' || 
+                                                    storedScreenTransceiver.direction === 'inactive');
+          
+          if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved || storedTransceiverHasNoTrack || storedTransceiverDirectionRemoved)) {
+            logger.info('ConnectionManager', 'Screen share track removed - detected removal in answer', { 
               peerId,
               transceiverHasNoTrack,
               transceiverDirectionRemoved,
-              direction: existingScreenTransceiver?.direction
+              storedTransceiverHasNoTrack,
+              storedTransceiverDirectionRemoved,
+              direction: screenTransceiverWithoutTrack?.direction || storedScreenTransceiver?.direction
             });
             peer.tracks.screen = null;
             stateManager.setState({ peers });
