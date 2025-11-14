@@ -77,11 +77,15 @@ class VideoGrid {
     });
 
     eventBus.on('webrtc:trackEnded:*', (data) => {
+      logger.info('VideoGrid', 'Track ended event received', { peerId: data.peerId, trackType: data.trackType });
+      
       // Handle both local and remote track ended events
       if (data.trackType === 'screen') {
         // Remove screen share tile (local or remote)
-        const tileId = data.peerId === 'local' || data.peerId === 'local-screen' ? 'local-screen' : `${data.peerId}-screen`;
-        this.removeVideoTile(tileId, 'screen');
+        // Use the actual peerId - removeVideoTile will construct the correct tileId
+        const peerIdForRemoval = data.peerId === 'local' || data.peerId === 'local-screen' ? 'local' : data.peerId;
+        logger.info('VideoGrid', 'Removing screen share tile', { peerId: peerIdForRemoval, trackType: 'screen' });
+        this.removeVideoTile(peerIdForRemoval, 'screen');
       } else if (data.trackType === 'camera' && data.peerId !== 'local') {
         // Camera track ended - show placeholder
         const tile = this.tiles.get(data.peerId);
