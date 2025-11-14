@@ -287,7 +287,17 @@ class ConnectionManager {
         }
       };
 
-      track.onended = originalOnEnded;
+      // Set up track ended handler - ensure it's called when track ends
+      track.onended = () => {
+        logger.info('ConnectionManager', 'Track onended event fired', { peerId, trackType, trackId: track.id });
+        originalOnEnded();
+      };
+      
+      // Also listen for track ended event as backup
+      track.addEventListener('ended', () => {
+        logger.info('ConnectionManager', 'Track ended event listener fired', { peerId, trackType, trackId: track.id });
+        originalOnEnded();
+      }, { once: true });
 
       // Monitor track enabled/disabled state for camera tracks (when camera is turned on/off)
       if (trackType === 'camera' && track.kind === 'video') {
