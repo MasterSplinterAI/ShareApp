@@ -894,7 +894,7 @@ class VideoGrid {
       video.addEventListener('webkitfullscreenchange', () => {
         logger.info('VideoGrid', 'iOS fullscreen changed', { displaying: video.webkitDisplayingFullscreen });
         if (!video.webkitDisplayingFullscreen) {
-          btn.innerHTML = '<i class="fas fa-expand"></i>';
+          fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
           video.removeAttribute('controls');
           if (video.paused && video.srcObject) {
             video.play().catch(err => {
