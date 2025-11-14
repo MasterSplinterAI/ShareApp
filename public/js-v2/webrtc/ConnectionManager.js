@@ -1137,6 +1137,14 @@ class ConnectionManager {
       sdpType: sdp?.type
     });
 
+    // IMPORTANT: Check if we had a screen track BEFORE processing this answer
+    // This must be done BEFORE setRemoteDescription, because ontrack events fire during setRemoteDescription
+    // and will update peer.tracks.screen before we can check
+    const peers = stateManager.getState('peers') || new Map();
+    const peer = peers.get(peerId);
+    const hadScreenTrackBefore = peer && peer.tracks && peer.tracks.screen !== null && peer.tracks.screen !== undefined;
+    const storedScreenTrackBefore = hadScreenTrackBefore ? peer.tracks.screen : null;
+
     const pc = this.connections.get(peerId);
     if (!pc) {
       logger.warn('ConnectionManager', 'No connection found for answer', { peerId });
