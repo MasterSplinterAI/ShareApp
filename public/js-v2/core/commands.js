@@ -1,6 +1,7 @@
 // Command handlers registration
 import { commandDispatcher } from './CommandDispatcher.js';
 import { logger } from './Logger.js';
+import { eventBus } from './EventBus.js';
 import { trackManager } from '../webrtc/TrackManager.js';
 import { connectionManager } from '../webrtc/ConnectionManager.js';
 import { roomService } from '../services/RoomService.js';
