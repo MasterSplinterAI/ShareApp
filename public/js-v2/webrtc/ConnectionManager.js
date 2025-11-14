@@ -903,14 +903,46 @@ class ConnectionManager {
       // before setRemoteDescription was called, so they reflect the state BEFORE this offer
       
       // Look for screen share transceivers in the updated transceivers (with tracks)
+      // Use the same detection logic as determineTrackType
+      const videoTransceiversWithTracks = transceiversAfterRemote.filter(t => 
+        t.receiver.track && t.receiver.track.kind === 'video' && t.receiver.track.readyState === 'live'
+      );
+      
+      // Get current peer state to check for existing camera track
+      const currentPeers = stateManager.getState('peers') || new Map();
+      const currentPeer = currentPeers.get(peerId);
+      const existingCameraTrack = currentPeer?.tracks?.camera;
+      
       const screenTransceiversWithTracks = transceiversAfterRemote.filter(t => {
         if (!t.receiver.track || t.receiver.track.kind !== 'video') return false;
+        const track = t.receiver.track;
+        
+        // Check 1: displaySurface (most reliable)
         try {
-          const settings = t.receiver.track.getSettings();
+          const settings = track.getSettings();
           if (settings.displaySurface) return true;
         } catch (e) {}
-        const label = t.receiver.track.label?.toLowerCase() || '';
-        return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
+        
+        // Check 2: label keywords
+        const label = track.label?.toLowerCase() || '';
+        if (label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display')) {
+          return true;
+        }
+        
+        // Check 3: If we have multiple video transceivers and an existing camera track,
+        // and this track is different from the camera track, it's likely screen share
+        if (videoTransceiversWithTracks.length > 1 && existingCameraTrack && track.id !== existingCameraTrack.id) {
+          // Find the camera transceiver
+          const cameraTransceiver = transceiversAfterRemote.find(tr => 
+            tr.receiver.track && tr.receiver.track.id === existingCameraTrack.id
+          );
+          // If this transceiver is NOT the camera transceiver, it's likely screen share
+          if (cameraTransceiver && t !== cameraTransceiver) {
+            return true;
+          }
+        }
+        
+        return false;
       });
       
       // If we have screen transceivers with tracks, check if we need to emit track events
@@ -1248,14 +1280,46 @@ class ConnectionManager {
         // before setRemoteDescription was called, so they reflect the state BEFORE this answer
         
         // Look for screen share transceivers in the updated transceivers (with tracks)
+        // Use the same detection logic as determineTrackType
+        const videoTransceiversWithTracks = transceiversAfterAnswer.filter(t => 
+          t.receiver.track && t.receiver.track.kind === 'video' && t.receiver.track.readyState === 'live'
+        );
+        
+        // Get current peer state to check for existing camera track
+        const currentPeers = stateManager.getState('peers') || new Map();
+        const currentPeer = currentPeers.get(peerId);
+        const existingCameraTrack = currentPeer?.tracks?.camera;
+        
         const screenTransceiversWithTracks = transceiversAfterAnswer.filter(t => {
           if (!t.receiver.track || t.receiver.track.kind !== 'video') return false;
+          const track = t.receiver.track;
+          
+          // Check 1: displaySurface (most reliable)
           try {
-            const settings = t.receiver.track.getSettings();
+            const settings = track.getSettings();
             if (settings.displaySurface) return true;
           } catch (e) {}
-          const label = t.receiver.track.label?.toLowerCase() || '';
-          return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
+          
+          // Check 2: label keywords
+          const label = track.label?.toLowerCase() || '';
+          if (label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display')) {
+            return true;
+          }
+          
+          // Check 3: If we have multiple video transceivers and an existing camera track,
+          // and this track is different from the camera track, it's likely screen share
+          if (videoTransceiversWithTracks.length > 1 && existingCameraTrack && track.id !== existingCameraTrack.id) {
+            // Find the camera transceiver
+            const cameraTransceiver = transceiversAfterAnswer.find(tr => 
+              tr.receiver.track && tr.receiver.track.id === existingCameraTrack.id
+            );
+            // If this transceiver is NOT the camera transceiver, it's likely screen share
+            if (cameraTransceiver && t !== cameraTransceiver) {
+              return true;
+            }
+          }
+          
+          return false;
         });
         
         // Also look for screen transceivers WITHOUT tracks (might be the one that was removed)
