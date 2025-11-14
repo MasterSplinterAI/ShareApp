@@ -557,24 +557,36 @@ class ConnectionManager {
       }
     }
 
-    // Check transceivers - if we have multiple video transceivers, the second one is likely screen
+    // Check transceivers - if we have multiple video transceivers with tracks, the second one is likely screen
+    // BUT only if we already have a camera track stored for this peer
     const pc = this.connections.get(peerId);
     if (pc) {
       const transceivers = pc.getTransceivers();
       const videoTransceivers = transceivers.filter(t => 
-        t.receiver.track && t.receiver.track.kind === 'video'
+        t.receiver.track && t.receiver.track.kind === 'video' && t.receiver.track.readyState === 'live'
       );
       
-      // If we have multiple video transceivers and this isn't the first one, it's likely screen
+      // Only use this heuristic if:
+      // 1. We have multiple video transceivers with live tracks
+      // 2. We already have a camera track stored for this peer
+      // 3. This track is NOT the same as the stored camera track
       if (videoTransceivers.length > 1) {
-        const isFirstVideoTrack = videoTransceivers[0].receiver.track === track;
-        if (!isFirstVideoTrack) {
-          logger.info('ConnectionManager', 'Detected screen share via multiple video transceivers', { 
-            peerId, 
-            trackId: track.id,
-            videoTransceiverCount: videoTransceivers.length
-          });
-          return 'screen';
+        const peers = stateManager.getState('peers') || new Map();
+        if (peers.has(peerId)) {
+          const peer = peers.get(peerId);
+          if (peer.tracks.camera && peer.tracks.camera.id !== track.id) {
+            // We have a camera track, and this is a different track - likely screen
+            const isFirstVideoTrack = videoTransceivers[0].receiver.track === track;
+            if (!isFirstVideoTrack) {
+              logger.info('ConnectionManager', 'Detected screen share via multiple video transceivers', { 
+                peerId, 
+                trackId: track.id,
+                cameraTrackId: peer.tracks.camera.id,
+                videoTransceiverCount: videoTransceivers.length
+              });
+              return 'screen';
+            }
+          }
         }
       }
     }
@@ -897,15 +909,42 @@ class ConnectionManager {
             }
           }
         }
-      } else if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
-        // We had a screen transceiver but now it's gone - screen share ended
-        logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
-        peer.tracks.screen = null;
-        stateManager.setState({ peers });
-        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-          peerId,
-          trackType: 'screen'
-        });
+      } else {
+        // Check if we had a screen transceiver but now it's gone
+        // Only remove if we actually had a screen track stored (not just a transceiver reference)
+        if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
+          // Verify the stored screen track is actually a screen share (not a misidentified camera)
+          const storedScreenTrack = peer.tracks.screen;
+          let isActuallyScreenShare = false;
+          try {
+            const settings = storedScreenTrack.getSettings();
+            if (settings.displaySurface) {
+              isActuallyScreenShare = true;
+            }
+          } catch (e) {}
+          if (!isActuallyScreenShare && storedScreenTrack.label) {
+            const labelLower = storedScreenTrack.label.toLowerCase();
+            isActuallyScreenShare = labelLower.includes('screen') || 
+                                   labelLower.includes('desktop') || 
+                                   labelLower.includes('window') || 
+                                   labelLower.includes('display');
+          }
+          
+          // Only remove if it was actually a screen share
+          if (isActuallyScreenShare) {
+            logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
+            peer.tracks.screen = null;
+            stateManager.setState({ peers });
+            eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+              peerId,
+              trackType: 'screen'
+            });
+          } else {
+            // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
+            logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
+            transceivers.screen = null;
+          }
+        }
       }
 
       // Process queued ICE candidates
@@ -1115,15 +1154,42 @@ class ConnectionManager {
               }
             }
           }
-        } else if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
-          // We had a screen transceiver but now it's gone - screen share ended
-          logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
-          peer.tracks.screen = null;
-          stateManager.setState({ peers });
-          eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-            peerId,
-            trackType: 'screen'
-          });
+        } else {
+          // Check if we had a screen transceiver but now it's gone
+          // Only remove if we actually had a screen track stored (not just a transceiver reference)
+          if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
+            // Verify the stored screen track is actually a screen share (not a misidentified camera)
+            const storedScreenTrack = peer.tracks.screen;
+            let isActuallyScreenShare = false;
+            try {
+              const settings = storedScreenTrack.getSettings();
+              if (settings.displaySurface) {
+                isActuallyScreenShare = true;
+              }
+            } catch (e) {}
+            if (!isActuallyScreenShare && storedScreenTrack.label) {
+              const labelLower = storedScreenTrack.label.toLowerCase();
+              isActuallyScreenShare = labelLower.includes('screen') || 
+                                     labelLower.includes('desktop') || 
+                                     labelLower.includes('window') || 
+                                     labelLower.includes('display');
+            }
+            
+            // Only remove if it was actually a screen share
+            if (isActuallyScreenShare) {
+              logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
+              peer.tracks.screen = null;
+              stateManager.setState({ peers });
+              eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+                peerId,
+                trackType: 'screen'
+              });
+            } else {
+              // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
+              logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
+              transceivers.screen = null;
+            }
+          }
         }
         
         logger.debug('ConnectionManager', 'Remote answer set successfully', { peerId, newState: pc.signalingState });
