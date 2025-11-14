@@ -987,13 +987,9 @@ class ConnectionManager {
         // Replace with null to remove from connection
         await transceivers.screen.sender.replaceTrack(null);
         
-        // Emit track ended event so peer VideoGrid removes the screen share tile
-        // Use the peer's ID (not local) for the event
-        // The track.onended handler should also fire, but emit explicitly as backup
-        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-          peerId: peerId, // This is the peer who will receive the event
-          trackType: 'screen'
-        });
+        // NOTE: Do NOT emit trackEnded event here - it should be emitted on the peer side
+        // when their remote track.onended fires. The peer's ConnectionManager will handle
+        // the track.onended event and emit webrtc:trackEnded locally.
         
         logger.info('ConnectionManager', 'Removed screen track', { peerId });
       } else if (type === 'audio') {

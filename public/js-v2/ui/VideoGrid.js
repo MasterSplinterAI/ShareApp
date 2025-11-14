@@ -48,9 +48,39 @@ class VideoGrid {
     // Listen for remote track events
     eventBus.on('webrtc:track:*', (data) => {
       if (data.peerId !== 'local') {
-        // If this is a video track, check if it's enabled before hiding placeholder
+        // For audio-only tracks, ensure placeholder exists but don't create video tile
+        if (data.type === 'audio') {
+          // Ensure placeholder exists for audio-only participants
+          if (!this.tiles.has(data.peerId)) {
+            const participants = stateManager.getState('room.participants') || new Map();
+            const participant = participants.get(data.peerId);
+            this.createParticipantPlaceholder(data.peerId, participant?.name || 'Participant');
+          }
+          // Update status indicators
+          setTimeout(() => {
+            this.updateStatusIndicators(data.peerId, data.peerId);
+          }, 100);
+          return; // Don't create video tile for audio tracks
+        }
+        
+        // For video tracks (camera or screen), add video tile
         if (data.type === 'camera' || data.type === 'screen') {
           const tileId = data.type === 'screen' ? `${data.peerId}-screen` : data.peerId;
+          
+          // Ensure tile exists (create placeholder if needed)
+          if (!this.tiles.has(tileId)) {
+            const participants = stateManager.getState('room.participants') || new Map();
+            const participant = participants.get(data.peerId);
+            if (data.type === 'screen') {
+              // For screen share, create tile container but don't create placeholder
+              const tile = this.createTileContainer(tileId);
+              this.tiles.set(tileId, tile);
+            } else {
+              // For camera, create placeholder
+              this.createParticipantPlaceholder(data.peerId, participant?.name || 'Participant');
+            }
+          }
+          
           const tile = this.tiles.get(tileId);
           if (tile) {
             const placeholder = tile.container.querySelector('.no-video-placeholder');
@@ -63,16 +93,15 @@ class VideoGrid {
               this.updatePlaceholderState(placeholder, data.peerId, null);
             }
           }
+          
+          // Add video tile with proper labeling
+          this.addVideoTile(data.peerId, data.track, data.type, data.stream);
+          
+          // Update status indicators when track is added
+          setTimeout(() => {
+            this.updateStatusIndicators(data.peerId, tileId);
+          }, 100);
         }
-        
-        // Add video tile with proper labeling
-        this.addVideoTile(data.peerId, data.track, data.type, data.stream);
-        
-        // Update status indicators when track is added
-        const tileId = data.type === 'screen' ? `${data.peerId}-screen` : data.peerId;
-        setTimeout(() => {
-          this.updateStatusIndicators(data.peerId, tileId);
-        }, 100);
       }
     });
 
