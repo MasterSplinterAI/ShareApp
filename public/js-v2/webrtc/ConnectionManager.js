@@ -948,14 +948,21 @@ class ConnectionManager {
       // If we have screen transceivers with tracks, check if we need to emit track events
       // This handles NEW screen shares being added
       if (screenTransceiversWithTracks.length > 0) {
+        // Refresh peer reference after setRemoteDescription (it may have been updated by ontrack)
+        const updatedPeers = stateManager.getState('peers') || new Map();
+        const updatedPeer = updatedPeers.get(peerId);
+        
         for (const screenTransceiver of screenTransceiversWithTracks) {
           const screenTrack = screenTransceiver.receiver.track;
-          if (screenTrack && (!peer || !peer.tracks.screen || peer.tracks.screen.id !== screenTrack.id)) {
+          // Check if this is a new screen share track (different from what we have stored)
+          if (screenTrack && (!updatedPeer || !updatedPeer.tracks.screen || updatedPeer.tracks.screen.id !== screenTrack.id)) {
             // New screen share track detected
             logger.info('ConnectionManager', 'New screen share track detected after offer', { 
               peerId, 
               trackId: screenTrack.id,
-              label: screenTrack.label
+              label: screenTrack.label,
+              hadScreenTrackBefore,
+              existingScreenTrackId: updatedPeer?.tracks?.screen?.id
             });
             
             // Store transceiver reference
@@ -964,9 +971,9 @@ class ConnectionManager {
             }
             
             // Update peer tracks and emit event
-            if (peer) {
-              peer.tracks.screen = screenTrack;
-              stateManager.setState({ peers });
+            if (updatedPeer) {
+              updatedPeer.tracks.screen = screenTrack;
+              stateManager.setState({ peers: updatedPeers });
               
               // Emit track event so VideoGrid can create the tile
               eventBus.emit(`webrtc:track:${peerId}`, {
@@ -1343,14 +1350,21 @@ class ConnectionManager {
         // If we have screen transceivers with tracks, check if we need to emit track events
         // This handles NEW screen shares being added
         if (screenTransceiversWithTracks.length > 0) {
+          // Refresh peer reference after setRemoteDescription (it may have been updated by ontrack)
+          const updatedPeers = stateManager.getState('peers') || new Map();
+          const updatedPeer = updatedPeers.get(peerId);
+          
           for (const screenTransceiver of screenTransceiversWithTracks) {
             const screenTrack = screenTransceiver.receiver.track;
-            if (screenTrack && (!peer || !peer.tracks.screen || peer.tracks.screen.id !== screenTrack.id)) {
+            // Check if this is a new screen share track (different from what we have stored)
+            if (screenTrack && (!updatedPeer || !updatedPeer.tracks.screen || updatedPeer.tracks.screen.id !== screenTrack.id)) {
               // New screen share track detected
               logger.info('ConnectionManager', 'New screen share track detected after answer', { 
                 peerId, 
                 trackId: screenTrack.id,
-                label: screenTrack.label
+                label: screenTrack.label,
+                hadScreenTrackBefore,
+                existingScreenTrackId: updatedPeer?.tracks?.screen?.id
               });
               
               // Store transceiver reference
@@ -1359,9 +1373,9 @@ class ConnectionManager {
               }
               
               // Update peer tracks and emit event
-              if (peer) {
-                peer.tracks.screen = screenTrack;
-                stateManager.setState({ peers });
+              if (updatedPeer) {
+                updatedPeer.tracks.screen = screenTrack;
+                stateManager.setState({ peers: updatedPeers });
                 
                 // Emit track event so VideoGrid can create the tile
                 eventBus.emit(`webrtc:track:${peerId}`, {
