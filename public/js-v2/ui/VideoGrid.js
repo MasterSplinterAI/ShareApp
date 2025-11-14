@@ -755,7 +755,7 @@ class VideoGrid {
           if (video.webkitEnterFullscreen) {
             logger.info('VideoGrid', 'Using iOS webkitEnterFullscreen');
             video.webkitEnterFullscreen();
-            btn.innerHTML = '<i class="fas fa-compress"></i>';
+            fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
             return;
           } else {
             // Fallback: enable controls and let user tap video
@@ -778,7 +778,7 @@ class VideoGrid {
           } else if (video.mozRequestFullScreen) {
             await video.mozRequestFullScreen();
           }
-          btn.innerHTML = '<i class="fas fa-compress"></i>';
+          fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
           return;
         }
 
@@ -793,7 +793,7 @@ class VideoGrid {
         } else if (container.msRequestFullscreen) {
           await container.msRequestFullscreen();
         }
-        btn.innerHTML = '<i class="fas fa-compress"></i>';
+        fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
       } catch (error) {
         logger.error('VideoGrid', 'Fullscreen failed', { error, message: error.message });
         // On iOS, if fullscreen fails, enable controls as fallback
@@ -814,7 +814,7 @@ class VideoGrid {
         } else if (document.msFullscreenElement) {
           await document.msExitFullscreen();
         }
-        btn.innerHTML = '<i class="fas fa-expand"></i>';
+        fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
         
         // Remove controls on mobile after exiting
         if (isMobile) {
@@ -874,9 +874,9 @@ class VideoGrid {
                           (isIOS && video.webkitDisplayingFullscreen);
 
       if (isFullscreen) {
-        btn.innerHTML = '<i class="fas fa-compress"></i>';
+        fullscreenBtn.innerHTML = '<i class="fas fa-compress"></i>';
       } else {
-        btn.innerHTML = '<i class="fas fa-expand"></i>';
+        fullscreenBtn.innerHTML = '<i class="fas fa-expand"></i>';
         // Remove controls on mobile after exiting
         if (isMobile) {
           video.removeAttribute('controls');
