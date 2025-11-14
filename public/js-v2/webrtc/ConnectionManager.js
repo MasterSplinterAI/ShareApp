@@ -572,10 +572,13 @@ class ConnectionManager {
 
     // Check if we already have a camera track for this peer
     // If we do, and this is a different video track, it's likely screen share
+    // BUT only if the camera track is still live (not replaced)
     const peers = stateManager.getState('peers') || new Map();
     if (peers.has(peerId)) {
       const peer = peers.get(peerId);
-      if (peer.tracks.camera && track.id !== peer.tracks.camera.id) {
+      if (peer.tracks.camera && 
+          peer.tracks.camera.readyState === 'live' && 
+          track.id !== peer.tracks.camera.id) {
         logger.info('ConnectionManager', 'Detected screen share via existing camera track', { 
           peerId, 
           cameraTrackId: peer.tracks.camera.id,
@@ -597,13 +600,16 @@ class ConnectionManager {
       // Only use this heuristic if:
       // 1. We have multiple video transceivers with live tracks
       // 2. We already have a camera track stored for this peer
-      // 3. This track is NOT the same as the stored camera track
+      // 3. The camera track is still live (not replaced)
+      // 4. This track is NOT the same as the stored camera track
       if (videoTransceivers.length > 1) {
         const peers = stateManager.getState('peers') || new Map();
         if (peers.has(peerId)) {
           const peer = peers.get(peerId);
-          if (peer.tracks.camera && peer.tracks.camera.id !== track.id) {
-            // We have a camera track, and this is a different track - likely screen
+          if (peer.tracks.camera && 
+              peer.tracks.camera.readyState === 'live' && 
+              peer.tracks.camera.id !== track.id) {
+            // We have a live camera track, and this is a different track - likely screen
             const isFirstVideoTrack = videoTransceivers[0].receiver.track === track;
             if (!isFirstVideoTrack) {
               logger.info('ConnectionManager', 'Detected screen share via multiple video transceivers', { 
@@ -1034,9 +1040,13 @@ class ConnectionManager {
           screenTransceiversWithTracksCount: screenTransceiversWithTracks.length,
           storedScreenTrackId: storedScreenTrackBefore?.id,
           storedScreenTrackLabel: storedScreenTrackBefore?.label,
+          storedScreenTrackReadyState: storedScreenTrackBefore?.readyState,
           hasCameraTrack: peer?.tracks?.camera !== null,
           cameraTrackId: peer?.tracks?.camera?.id
         });
+        
+        // First check: if the stored screen track itself has ended, that's a clear removal
+        const storedTrackEnded = storedScreenTrackBefore && storedScreenTrackBefore.readyState === 'ended';
         
         // Verify the stored screen track is actually a screen share (not a misidentified camera)
         let isActuallyScreenShare = false;
@@ -1113,6 +1123,7 @@ class ConnectionManager {
         logger.info('ConnectionManager', 'Screen share removal check results', {
           peerId,
           isActuallyScreenShare,
+          storedTrackEnded,
           transceiverHasNoTrack,
           transceiverDirectionRemoved,
           storedTransceiverHasNoTrack,
@@ -1120,9 +1131,11 @@ class ConnectionManager {
           direction: screenTransceiverWithoutTrack?.direction || storedScreenTransceiver?.direction
         });
         
-        if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved || storedTransceiverHasNoTrack || storedTransceiverDirectionRemoved)) {
+        // If the stored track has ended OR any of the transceiver checks indicate removal, emit trackEnded
+        if (isActuallyScreenShare && (storedTrackEnded || transceiverHasNoTrack || transceiverDirectionRemoved || storedTransceiverHasNoTrack || storedTransceiverDirectionRemoved)) {
           logger.info('ConnectionManager', 'Screen share track removed - detected removal in offer', { 
             peerId,
+            storedTrackEnded,
             transceiverHasNoTrack,
             transceiverDirectionRemoved,
             storedTransceiverHasNoTrack,
@@ -1143,6 +1156,7 @@ class ConnectionManager {
           logger.warn('ConnectionManager', 'Screen share removal conditions not met', {
             peerId,
             isActuallyScreenShare,
+            storedTrackEnded,
             transceiverHasNoTrack,
             transceiverDirectionRemoved,
             storedTransceiverHasNoTrack,
