@@ -1239,6 +1239,7 @@ class ConnectionManager {
           }) : null;
         
         // If we have screen transceivers with tracks, check if we need to emit track events
+        // This handles NEW screen shares being added
         if (screenTransceiversWithTracks.length > 0) {
           for (const screenTransceiver of screenTransceiversWithTracks) {
             const screenTrack = screenTransceiver.receiver.track;
