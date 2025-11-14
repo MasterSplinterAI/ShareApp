@@ -172,6 +172,10 @@ class VideoGrid {
       const tile = this.tiles.get(tileId);
       
       if (tile) {
+        // Update status indicators in label
+        this.updateStatusIndicators(peerId, tileId);
+        
+        // Update placeholder avatar if needed
         const placeholder = tile.container.querySelector('.no-video-placeholder');
         if (placeholder) {
           const participants = stateManager.getState('room.participants') || new Map();
@@ -182,8 +186,12 @@ class VideoGrid {
       }
     });
     
-    // Listen for local state changes to update local placeholder
+    // Listen for local state changes to update local placeholder and status indicators
     stateManager.subscribe('isMicOn', (isMicOn) => {
+      const localTile = this.tiles.get('local');
+      if (localTile) {
+        this.updateStatusIndicators('local', 'local');
+      }
       const localContainer = document.getElementById('localVideoContainer');
       if (localContainer) {
         const placeholder = localContainer.querySelector('.no-video-placeholder');
@@ -223,7 +231,13 @@ class VideoGrid {
       const localContainer = document.getElementById('localVideoContainer');
       const localVideo = document.getElementById('localVideo');
       
-      // Update placeholder state indicators
+      // Update status indicators in label
+      const localTile = this.tiles.get('local');
+      if (localTile) {
+        this.updateStatusIndicators('local', 'local');
+      }
+      
+      // Update placeholder state
       const placeholder = localContainer?.querySelector('.no-video-placeholder');
       if (placeholder) {
         this.updatePlaceholderState(placeholder, 'local', 'You');
@@ -464,20 +478,32 @@ class VideoGrid {
       width: 100%;
     `;
 
-    // Label
+    // Label with status indicators (matching original app)
     const label = document.createElement('div');
-    label.className = 'video-label';
-    label.style.cssText = `
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
-      color: white;
-      padding: 8px 12px;
-      font-size: 14px;
-      z-index: 10;
+    label.className = 'video-label absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent text-white px-3 py-2 text-sm z-10 flex items-center justify-between';
+    
+    // Name section
+    const nameSpan = document.createElement('span');
+    nameSpan.className = 'font-medium';
+    nameSpan.textContent = peerId === 'local' ? 'You' : 'Participant';
+    
+    // Status indicators section (inside label, matching original app)
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'flex items-center gap-2';
+    statusSpan.innerHTML = `
+      <span class="mic-status" data-peer-id="${peerId}">
+        <i class="fas fa-microphone text-xs"></i>
+      </span>
+      <span class="video-status" data-peer-id="${peerId}">
+        <i class="fas fa-video text-xs"></i>
+      </span>
+      <span class="speaking-indicator-wrapper hidden" data-peer-id="${peerId}">
+        <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+      </span>
     `;
+    
+    label.appendChild(nameSpan);
+    label.appendChild(statusSpan);
     container.appendChild(label);
 
     // Fullscreen button
@@ -529,7 +555,14 @@ class VideoGrid {
       labelText += ' (Screen Share)';
     }
 
-    tile.label.textContent = labelText;
+    // Update name span (first child of label)
+    const nameSpan = tile.label.querySelector('span.font-medium');
+    if (nameSpan) {
+      nameSpan.textContent = labelText;
+    } else {
+      // Fallback if structure is different
+      tile.label.textContent = labelText;
+    }
   }
 
   /**
@@ -908,37 +941,28 @@ class VideoGrid {
     // Generate initials from name
     const initials = name ? name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) : 'P';
     
-    // Create avatar circle (matching original app - bg-blue-600)
+    // Create avatar circle with purple gradient (matching original app)
     const avatarCircle = document.createElement('div');
-    avatarCircle.className = 'avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full';
+    avatarCircle.style.cssText = `
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 32px;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    `;
     avatarCircle.textContent = initials;
     
-    // Create status indicators container (positioned above label)
-    const statusContainer = document.createElement('div');
-    statusContainer.className = 'status-indicators absolute bottom-10 left-2 flex gap-2 z-20';
-    
-    // Camera status icon
-    const cameraStatus = document.createElement('div');
-    cameraStatus.className = 'camera-status bg-black bg-opacity-50 rounded-full p-1';
-    cameraStatus.innerHTML = '<i class="fas fa-video-slash text-xs text-gray-400"></i>';
-    cameraStatus.setAttribute('data-peer-id', peerId);
-    
-    // Mic status icon
-    const micStatus = document.createElement('div');
-    micStatus.className = 'mic-status bg-black bg-opacity-50 rounded-full p-1';
-    micStatus.innerHTML = '<i class="fas fa-microphone text-xs text-green-400"></i>';
-    micStatus.setAttribute('data-peer-id', peerId);
-    
-    statusContainer.appendChild(cameraStatus);
-    statusContainer.appendChild(micStatus);
-    
-    // Speaking indicator (green pulse when speaking)
+    // Speaking indicator (green pulse when speaking) - at bottom center
     const speakingIndicator = document.createElement('div');
     speakingIndicator.className = 'speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden';
     speakingIndicator.innerHTML = '<div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>';
     
     placeholder.appendChild(avatarCircle);
-    placeholder.appendChild(statusContainer);
     placeholder.appendChild(speakingIndicator);
 
     tile.container.appendChild(placeholder);
@@ -1056,50 +1080,66 @@ class VideoGrid {
     if (!placeholder) return;
     
     // Update avatar initials if name changed
-    const avatarCircle = placeholder.querySelector('.avatar-circle');
+    const avatarCircle = placeholder.querySelector('div[style*="linear-gradient"]');
     if (avatarCircle && name) {
       const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
       avatarCircle.textContent = initials;
     }
     
-    // Update camera status
-    const cameraStatus = placeholder.querySelector('.camera-status');
-    if (cameraStatus) {
-      let hasCamera = false;
-      if (peerId === 'local') {
-        hasCamera = stateManager.getState('isCameraOn');
-      } else {
-        const peers = stateManager.getState('peers') || new Map();
-        const peer = peers.get(peerId);
-        hasCamera = peer && peer.tracks && peer.tracks.camera && peer.tracks.camera.readyState === 'live' && peer.tracks.camera.enabled;
-      }
-      const icon = cameraStatus.querySelector('i');
-      if (icon) {
-        if (hasCamera) {
-          icon.className = 'fas fa-video text-xs text-green-400';
-        } else {
-          icon.className = 'fas fa-video-slash text-xs text-gray-400';
-        }
-      }
+    // Status indicators are now in the label, not the placeholder
+    // Update them via the tile's label
+    const tileId = peerId === 'local' ? 'local' : peerId;
+    const tile = this.tiles.get(tileId);
+    if (tile && tile.label) {
+      this.updateStatusIndicators(peerId, tileId);
+    }
+  }
+  
+  /**
+   * Update status indicators in label (matching original app)
+   */
+  updateStatusIndicators(peerId, tileId) {
+    const tile = this.tiles.get(tileId);
+    if (!tile || !tile.label) return;
+    
+    // Get status indicators from label
+    const micStatus = tile.label.querySelector(`.mic-status[data-peer-id="${peerId}"]`);
+    const videoStatus = tile.label.querySelector(`.video-status[data-peer-id="${peerId}"]`);
+    
+    // Determine states
+    let hasCamera = false;
+    let hasAudio = false;
+    
+    if (peerId === 'local') {
+      hasCamera = stateManager.getState('isCameraOn');
+      hasAudio = stateManager.getState('isMicOn');
+    } else {
+      const peers = stateManager.getState('peers') || new Map();
+      const peer = peers.get(peerId);
+      hasCamera = peer && peer.tracks && peer.tracks.camera && peer.tracks.camera.readyState === 'live' && peer.tracks.camera.enabled;
+      hasAudio = peer && peer.tracks && peer.tracks.audio && peer.tracks.audio.readyState === 'live' && peer.tracks.audio.enabled;
     }
     
     // Update mic status
-    const micStatus = placeholder.querySelector('.mic-status');
     if (micStatus) {
-      let hasAudio = false;
-      if (peerId === 'local') {
-        hasAudio = stateManager.getState('isMicOn');
-      } else {
-        const peers = stateManager.getState('peers') || new Map();
-        const peer = peers.get(peerId);
-        hasAudio = peer && peer.tracks && peer.tracks.audio && peer.tracks.audio.readyState === 'live' && peer.tracks.audio.enabled;
-      }
       const icon = micStatus.querySelector('i');
       if (icon) {
         if (hasAudio) {
           icon.className = 'fas fa-microphone text-xs text-green-400';
         } else {
           icon.className = 'fas fa-microphone-slash text-xs text-red-400';
+        }
+      }
+    }
+    
+    // Update camera status
+    if (videoStatus) {
+      const icon = videoStatus.querySelector('i');
+      if (icon) {
+        if (hasCamera) {
+          icon.className = 'fas fa-video text-xs text-green-400';
+        } else {
+          icon.className = 'fas fa-video-slash text-xs text-gray-400';
         }
       }
     }
