@@ -65,6 +65,12 @@ class VideoGrid {
           }
         }
         this.addVideoTile(data.peerId, data.track, data.type, data.stream);
+        
+        // Update status indicators when track is added
+        const tileId = data.type === 'screen' ? `${data.peerId}-screen` : data.peerId;
+        setTimeout(() => {
+          this.updateStatusIndicators(data.peerId, tileId);
+        }, 100);
       }
     });
 
@@ -149,6 +155,7 @@ class VideoGrid {
       const tile = this.tiles.get(tileId);
       
       if (tile) {
+        // Update speaking indicator in placeholder
         const placeholder = tile.container.querySelector('.no-video-placeholder');
         if (placeholder) {
           const speakingIndicator = placeholder.querySelector('.speaking-indicator');
@@ -158,6 +165,20 @@ class VideoGrid {
               tile.container.classList.add('speaking');
             } else {
               speakingIndicator.classList.add('hidden');
+              tile.container.classList.remove('speaking');
+            }
+          }
+        }
+        
+        // Update speaking indicator in label (matching original app)
+        if (tile.label) {
+          const speakingWrapper = tile.label.querySelector(`.speaking-indicator-wrapper[data-peer-id="${peerId}"]`);
+          if (speakingWrapper) {
+            if (isSpeaking) {
+              speakingWrapper.classList.remove('hidden');
+              tile.container.classList.add('speaking');
+            } else {
+              speakingWrapper.classList.add('hidden');
               tile.container.classList.remove('speaking');
             }
           }
@@ -208,6 +229,10 @@ class VideoGrid {
         data.participants.forEach(participant => {
           if (participant.id !== socketId && !this.tiles.has(participant.id)) {
             this.createParticipantPlaceholder(participant.id, participant.name);
+            // Update status indicators after creating placeholder
+            setTimeout(() => {
+              this.updateStatusIndicators(participant.id, participant.id);
+            }, 100);
           }
         });
       }
