@@ -1206,8 +1206,9 @@ class ConnectionManager {
         const peer = peers.get(peerId);
         
         // Check if we had a screen track stored BEFORE checking transceivers
-        const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
-        const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+        // IMPORTANT: Check BEFORE processing new tracks, so we know if we had one before this answer
+        const hadScreenTrackBefore = peer && peer.tracks && peer.tracks.screen !== null && peer.tracks.screen !== undefined;
+        const storedScreenTrackBefore = hadScreenTrackBefore ? peer.tracks.screen : null;
         
         // Look for screen share transceivers in the updated transceivers (with tracks)
         const screenTransceiversWithTracks = transceiversAfterAnswer.filter(t => {
