@@ -432,6 +432,10 @@ class ConnectionManager {
               enabled: track.enabled,
               readyState: track.readyState 
             });
+            
+            // Update peer tracks state
+            peer.tracks.camera = track;
+            stateManager.setState({ peers });
 
             if (!track.enabled && track.readyState === 'live') {
               // Track is disabled but still live - show placeholder
@@ -440,6 +444,12 @@ class ConnectionManager {
                 trackType: 'camera',
                 track: track
               });
+              
+              // Also emit track updated event to update status indicators
+              eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, {
+                peerId,
+                trackType: 'camera'
+              });
             } else if (track.enabled && track.readyState === 'live') {
               // Track is enabled - ensure video is shown
               // Don't recreate the tile, just restore the video display
@@ -447,6 +457,12 @@ class ConnectionManager {
                 peerId,
                 trackType: 'camera',
                 track: track
+              });
+              
+              // Also emit track updated event to update status indicators
+              eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, {
+                peerId,
+                trackType: 'camera'
               });
             }
           }
@@ -1112,11 +1128,27 @@ class ConnectionManager {
     try {
       if (type === 'camera') {
         await transceivers.camera.sender.replaceTrack(null);
+        
+        // Update peer state to reflect no camera track
+        const peers = stateManager.getState('peers') || new Map();
+        if (peers.has(peerId)) {
+          const peer = peers.get(peerId);
+          peer.tracks.camera = null;
+          stateManager.setState({ peers });
+        }
+        
         // Emit track disabled event so peers can show placeholder
         eventBus.emit(`webrtc:trackDisabled:${peerId}`, {
           peerId,
           trackType: 'camera'
         });
+        
+        // Emit track updated event to update status indicators
+        eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, {
+          peerId,
+          trackType: 'camera'
+        });
+        
         logger.info('ConnectionManager', 'Removed camera track', { peerId });
       } else if (type === 'screen') {
         // Stop the track first
@@ -1137,6 +1169,21 @@ class ConnectionManager {
         logger.info('ConnectionManager', 'Removed screen track', { peerId });
       } else if (type === 'audio') {
         await transceivers.audio.sender.replaceTrack(null);
+        
+        // Update peer state to reflect no audio track
+        const peers = stateManager.getState('peers') || new Map();
+        if (peers.has(peerId)) {
+          const peer = peers.get(peerId);
+          peer.tracks.audio = null;
+          stateManager.setState({ peers });
+          
+          // Emit event to update status indicators
+          eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, {
+            peerId,
+            trackType: 'audio'
+          });
+        }
+        
         logger.info('ConnectionManager', 'Removed audio track', { peerId });
       }
 
