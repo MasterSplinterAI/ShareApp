@@ -1019,6 +1019,62 @@ class VideoGrid {
   }
 
   /**
+   * Update placeholder state (muted, camera off, speaking)
+   */
+  updatePlaceholderState(placeholder, peerId, name) {
+    if (!placeholder) return;
+    
+    // Update avatar initials if name changed
+    const avatarCircle = placeholder.querySelector('.avatar-circle');
+    if (avatarCircle && name) {
+      const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+      avatarCircle.textContent = initials;
+    }
+    
+    // Update camera status
+    const cameraStatus = placeholder.querySelector('.camera-status');
+    if (cameraStatus) {
+      let hasCamera = false;
+      if (peerId === 'local') {
+        hasCamera = stateManager.getState('isCameraOn');
+      } else {
+        const peers = stateManager.getState('peers') || new Map();
+        const peer = peers.get(peerId);
+        hasCamera = peer && peer.tracks && peer.tracks.camera && peer.tracks.camera.readyState === 'live' && peer.tracks.camera.enabled;
+      }
+      const icon = cameraStatus.querySelector('i');
+      if (icon) {
+        if (hasCamera) {
+          icon.className = 'fas fa-video text-xs text-green-400';
+        } else {
+          icon.className = 'fas fa-video-slash text-xs text-gray-400';
+        }
+      }
+    }
+    
+    // Update mic status
+    const micStatus = placeholder.querySelector('.mic-status');
+    if (micStatus) {
+      let hasAudio = false;
+      if (peerId === 'local') {
+        hasAudio = stateManager.getState('isMicOn');
+      } else {
+        const peers = stateManager.getState('peers') || new Map();
+        const peer = peers.get(peerId);
+        hasAudio = peer && peer.tracks && peer.tracks.audio && peer.tracks.audio.readyState === 'live' && peer.tracks.audio.enabled;
+      }
+      const icon = micStatus.querySelector('i');
+      if (icon) {
+        if (hasAudio) {
+          icon.className = 'fas fa-microphone text-xs text-green-400';
+        } else {
+          icon.className = 'fas fa-microphone-slash text-xs text-red-400';
+        }
+      }
+    }
+  }
+
+  /**
    * Hide placeholder
    */
   hidePlaceholder(containerOrId) {
