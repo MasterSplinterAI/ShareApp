@@ -932,21 +932,49 @@ class ConnectionManager {
       
       // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
       if (hadScreenTrack && screenTransceiversWithTracks.length === 0) {
+        logger.info('ConnectionManager', 'Checking for screen share removal', {
+          peerId,
+          hadScreenTrack,
+          screenTransceiversWithTracksCount: screenTransceiversWithTracks.length,
+          storedScreenTrackId: storedScreenTrack?.id,
+          storedScreenTrackLabel: storedScreenTrack?.label,
+          hasCameraTrack: peer?.tracks?.camera !== null,
+          cameraTrackId: peer?.tracks?.camera?.id
+        });
+        
         // Verify the stored screen track is actually a screen share (not a misidentified camera)
         let isActuallyScreenShare = false;
         if (storedScreenTrack) {
+          // Check 1: displaySurface (most reliable)
           try {
             const settings = storedScreenTrack.getSettings();
             if (settings.displaySurface) {
               isActuallyScreenShare = true;
+              logger.info('ConnectionManager', 'Screen share confirmed via displaySurface', { peerId, displaySurface: settings.displaySurface });
             }
           } catch (e) {}
+          
+          // Check 2: label keywords
           if (!isActuallyScreenShare && storedScreenTrack.label) {
             const labelLower = storedScreenTrack.label.toLowerCase();
-            isActuallyScreenShare = labelLower.includes('screen') || 
-                                   labelLower.includes('desktop') || 
-                                   labelLower.includes('window') || 
-                                   labelLower.includes('display');
+            if (labelLower.includes('screen') || 
+                labelLower.includes('desktop') || 
+                labelLower.includes('window') || 
+                labelLower.includes('display')) {
+              isActuallyScreenShare = true;
+              logger.info('ConnectionManager', 'Screen share confirmed via label', { peerId, label: storedScreenTrack.label });
+            }
+          }
+          
+          // Check 3: If we have BOTH camera and screen tracks stored, and they're different, 
+          // then the screen track is definitely a screen share (detected via heuristic)
+          if (!isActuallyScreenShare && peer && peer.tracks.camera && peer.tracks.camera.id !== storedScreenTrack.id) {
+            isActuallyScreenShare = true;
+            logger.info('ConnectionManager', 'Screen share confirmed via camera/screen track comparison', { 
+              peerId, 
+              cameraTrackId: peer.tracks.camera.id,
+              screenTrackId: storedScreenTrack.id
+            });
           }
         }
         
@@ -965,6 +993,16 @@ class ConnectionManager {
         const storedTransceiverDirectionRemoved = storedScreenTransceiver && 
                                                  (storedScreenTransceiver.direction === 'recvonly' || 
                                                   storedScreenTransceiver.direction === 'inactive');
+        
+        logger.info('ConnectionManager', 'Screen share removal check results', {
+          peerId,
+          isActuallyScreenShare,
+          transceiverHasNoTrack,
+          transceiverDirectionRemoved,
+          storedTransceiverHasNoTrack,
+          storedTransceiverDirectionRemoved,
+          direction: screenTransceiverWithoutTrack?.direction || storedScreenTransceiver?.direction
+        });
         
         if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved || storedTransceiverHasNoTrack || storedTransceiverDirectionRemoved)) {
           logger.info('ConnectionManager', 'Screen share track removed - detected removal in offer', { 
@@ -985,6 +1023,15 @@ class ConnectionManager {
           // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
           logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
           transceivers.screen = null;
+        } else {
+          logger.warn('ConnectionManager', 'Screen share removal conditions not met', {
+            peerId,
+            isActuallyScreenShare,
+            transceiverHasNoTrack,
+            transceiverDirectionRemoved,
+            storedTransceiverHasNoTrack,
+            storedTransceiverDirectionRemoved
+          });
         }
       }
 
@@ -1221,21 +1268,49 @@ class ConnectionManager {
         
         // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
         if (hadScreenTrack && screenTransceiversWithTracks.length === 0) {
+          logger.info('ConnectionManager', 'Checking for screen share removal in answer', {
+            peerId,
+            hadScreenTrack,
+            screenTransceiversWithTracksCount: screenTransceiversWithTracks.length,
+            storedScreenTrackId: storedScreenTrack?.id,
+            storedScreenTrackLabel: storedScreenTrack?.label,
+            hasCameraTrack: peer?.tracks?.camera !== null,
+            cameraTrackId: peer?.tracks?.camera?.id
+          });
+          
           // Verify the stored screen track is actually a screen share (not a misidentified camera)
           let isActuallyScreenShare = false;
           if (storedScreenTrack) {
+            // Check 1: displaySurface (most reliable)
             try {
               const settings = storedScreenTrack.getSettings();
               if (settings.displaySurface) {
                 isActuallyScreenShare = true;
+                logger.info('ConnectionManager', 'Screen share confirmed via displaySurface in answer', { peerId, displaySurface: settings.displaySurface });
               }
             } catch (e) {}
+            
+            // Check 2: label keywords
             if (!isActuallyScreenShare && storedScreenTrack.label) {
               const labelLower = storedScreenTrack.label.toLowerCase();
-              isActuallyScreenShare = labelLower.includes('screen') || 
-                                     labelLower.includes('desktop') || 
-                                     labelLower.includes('window') || 
-                                     labelLower.includes('display');
+              if (labelLower.includes('screen') || 
+                  labelLower.includes('desktop') || 
+                  labelLower.includes('window') || 
+                  labelLower.includes('display')) {
+                isActuallyScreenShare = true;
+                logger.info('ConnectionManager', 'Screen share confirmed via label in answer', { peerId, label: storedScreenTrack.label });
+              }
+            }
+            
+            // Check 3: If we have BOTH camera and screen tracks stored, and they're different, 
+            // then the screen track is definitely a screen share (detected via heuristic)
+            if (!isActuallyScreenShare && peer && peer.tracks.camera && peer.tracks.camera.id !== storedScreenTrack.id) {
+              isActuallyScreenShare = true;
+              logger.info('ConnectionManager', 'Screen share confirmed via camera/screen track comparison in answer', { 
+                peerId, 
+                cameraTrackId: peer.tracks.camera.id,
+                screenTrackId: storedScreenTrack.id
+              });
             }
           }
           
@@ -1255,6 +1330,16 @@ class ConnectionManager {
                                                    (storedScreenTransceiver.direction === 'recvonly' || 
                                                     storedScreenTransceiver.direction === 'inactive');
           
+          logger.info('ConnectionManager', 'Screen share removal check results in answer', {
+            peerId,
+            isActuallyScreenShare,
+            transceiverHasNoTrack,
+            transceiverDirectionRemoved,
+            storedTransceiverHasNoTrack,
+            storedTransceiverDirectionRemoved,
+            direction: screenTransceiverWithoutTrack?.direction || storedScreenTransceiver?.direction
+          });
+          
           if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved || storedTransceiverHasNoTrack || storedTransceiverDirectionRemoved)) {
             logger.info('ConnectionManager', 'Screen share track removed - detected removal in answer', { 
               peerId,
@@ -1272,8 +1357,17 @@ class ConnectionManager {
             });
           } else if (!isActuallyScreenShare && transceivers && transceivers.screen) {
             // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
-            logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
+            logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference in answer', { peerId });
             transceivers.screen = null;
+          } else {
+            logger.warn('ConnectionManager', 'Screen share removal conditions not met in answer', {
+              peerId,
+              isActuallyScreenShare,
+              transceiverHasNoTrack,
+              transceiverDirectionRemoved,
+              storedTransceiverHasNoTrack,
+              storedTransceiverDirectionRemoved
+            });
           }
         }
         
