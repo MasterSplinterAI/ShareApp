@@ -348,6 +348,13 @@ class ConnectionManager {
       
       // For screen tracks, also monitor readyState changes and transceiver state
       if (trackType === 'screen' && track.kind === 'video') {
+        // Store initial direction and track state to avoid false positives during SDP negotiation
+        const transceivers = this.transceivers.get(peerId);
+        let initialDirection = transceivers?.screen?.direction || null;
+        let initialDirectionSet = false;
+        let checkStartTime = Date.now();
+        const SETUP_GRACE_PERIOD = 2000; // 2 seconds grace period for SDP negotiation
+        
         let readyStateCheckInterval = setInterval(() => {
           // Check if track itself is ended
           if (track.readyState === 'ended') {
@@ -358,9 +365,9 @@ class ConnectionManager {
           }
           
           // Check transceiver receiver track state
-          const transceivers = this.transceivers.get(peerId);
-          if (transceivers && transceivers.screen) {
-            const receiverTrack = transceivers.screen.receiver.track;
+          const currentTransceivers = this.transceivers.get(peerId);
+          if (currentTransceivers && currentTransceivers.screen) {
+            const receiverTrack = currentTransceivers.screen.receiver.track;
             // If receiver track is null or ended, screen share has stopped
             if (!receiverTrack || receiverTrack.readyState === 'ended') {
               clearInterval(readyStateCheckInterval);
@@ -377,13 +384,37 @@ class ConnectionManager {
               return;
             }
             
-            // Check if transceiver direction changed to recvonly or inactive (sender removed)
-            const currentDirection = transceivers.screen.direction;
-            if (currentDirection === 'recvonly' || currentDirection === 'inactive') {
-              clearInterval(readyStateCheckInterval);
-              logger.info('ConnectionManager', 'Screen transceiver direction changed - sender removed', { peerId, direction: currentDirection });
-              originalOnEnded();
-              return;
+            // Store initial direction on first check (after SDP negotiation settles)
+            if (!initialDirectionSet) {
+              const elapsed = Date.now() - checkStartTime;
+              if (elapsed > 500) { // Wait 500ms for SDP to settle
+                initialDirection = currentTransceivers.screen.direction;
+                initialDirectionSet = true;
+                logger.debug('ConnectionManager', 'Screen track initial direction set', { peerId, initialDirection, trackId: track.id });
+              }
+            }
+            
+            // Only check direction changes after grace period and if we've set initial direction
+            const elapsed = Date.now() - checkStartTime;
+            if (elapsed > SETUP_GRACE_PERIOD && initialDirectionSet) {
+              const currentDirection = currentTransceivers.screen.direction;
+              // Only treat as removal if:
+              // 1. Initial direction was sendrecv or sendonly (we were receiving)
+              // 2. Current direction is recvonly or inactive (sender was removed)
+              // 3. Track is still live (not ended)
+              if ((initialDirection === 'sendrecv' || initialDirection === 'sendonly') &&
+                  (currentDirection === 'recvonly' || currentDirection === 'inactive') &&
+                  track.readyState === 'live') {
+                clearInterval(readyStateCheckInterval);
+                logger.info('ConnectionManager', 'Screen transceiver direction changed - sender removed', { 
+                  peerId, 
+                  initialDirection,
+                  currentDirection,
+                  trackId: track.id 
+                });
+                originalOnEnded();
+                return;
+              }
             }
           }
         }, 100);
