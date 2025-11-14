@@ -1009,51 +1009,28 @@ class VideoGrid {
       
       const initials = name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2) || 'U';
       
-      // Create avatar circle (matching original app - bg-blue-600)
+      // Create avatar circle with purple gradient (matching original app)
       const avatarCircle = document.createElement('div');
-      avatarCircle.className = 'avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full';
+      avatarCircle.style.cssText = `
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-size: 32px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      `;
       avatarCircle.textContent = initials;
       
-      // Create status indicators container (positioned above label)
-      const statusContainer = document.createElement('div');
-      statusContainer.className = 'status-indicators absolute bottom-10 left-2 flex gap-2 z-20';
-      
-      // Camera status icon
-      const cameraStatus = document.createElement('div');
-      cameraStatus.className = 'camera-status bg-black bg-opacity-50 rounded-full p-1';
-      if (peerId === 'local') {
-        const isCameraOn = stateManager.getState('isCameraOn');
-        cameraStatus.innerHTML = isCameraOn 
-          ? '<i class="fas fa-video text-xs text-green-400"></i>'
-          : '<i class="fas fa-video-slash text-xs text-gray-400"></i>';
-      } else {
-        cameraStatus.innerHTML = '<i class="fas fa-video-slash text-xs text-gray-400"></i>';
-      }
-      cameraStatus.setAttribute('data-peer-id', peerId);
-      
-      // Mic status icon
-      const micStatus = document.createElement('div');
-      micStatus.className = 'mic-status bg-black bg-opacity-50 rounded-full p-1';
-      if (peerId === 'local') {
-        const isMicOn = stateManager.getState('isMicOn');
-        micStatus.innerHTML = isMicOn
-          ? '<i class="fas fa-microphone text-xs text-green-400"></i>'
-          : '<i class="fas fa-microphone-slash text-xs text-red-400"></i>';
-      } else {
-        micStatus.innerHTML = '<i class="fas fa-microphone text-xs text-green-400"></i>';
-      }
-      micStatus.setAttribute('data-peer-id', peerId);
-      
-      statusContainer.appendChild(cameraStatus);
-      statusContainer.appendChild(micStatus);
-      
-      // Speaking indicator (green pulse when speaking)
+      // Speaking indicator (green pulse when speaking) - at bottom center
       const speakingIndicator = document.createElement('div');
       speakingIndicator.className = 'speaking-indicator absolute bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1 hidden';
       speakingIndicator.innerHTML = '<div class="w-3 h-3 bg-green-500 rounded-full animate-pulse"></div>';
       
       placeholder.appendChild(avatarCircle);
-      placeholder.appendChild(statusContainer);
       placeholder.appendChild(speakingIndicator);
       
       container.appendChild(placeholder);
