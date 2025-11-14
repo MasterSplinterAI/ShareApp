@@ -347,15 +347,41 @@ class VideoGrid {
       tile.video.srcObject = newStream;
     }
 
-    // Hide placeholder when video is added
+    // Check if track is enabled before showing video
+    // For camera tracks, if disabled, show placeholder but keep srcObject attached
+    const shouldShowVideo = !track || (track.enabled && track.readyState === 'live') || trackType === 'screen';
+    
+    // Get placeholder reference
     const placeholder = tile.container.querySelector('.no-video-placeholder');
-    if (placeholder) {
-      placeholder.style.display = 'none';
-    }
+    
+    if (shouldShowVideo) {
+      // Hide placeholder when video is enabled and ready
+      if (placeholder) {
+        placeholder.style.display = 'none';
+      }
 
-    // Ensure video is visible
-    tile.video.style.display = 'block';
-    tile.video.style.visibility = 'visible';
+      // Ensure video is visible
+      tile.video.style.display = 'block';
+      tile.video.style.visibility = 'visible';
+    } else {
+      // Track is disabled or not ready - show placeholder, keep video hidden but srcObject attached
+      tile.video.style.display = 'none';
+      tile.video.style.visibility = 'hidden';
+      if (!placeholder) {
+        // Create placeholder if it doesn't exist
+        const participants = stateManager.getState('room.participants') || new Map();
+        const participant = participants.get(peerId);
+        const name = participant?.name || (peerId === 'local' ? 'You' : peerId.substring(0, 5));
+        this.showPlaceholder(tile.container);
+      } else {
+        // Update existing placeholder state
+        placeholder.style.display = 'flex';
+        const participants = stateManager.getState('room.participants') || new Map();
+        const participant = participants.get(peerId);
+        const name = participant?.name || (peerId === 'local' ? 'You' : peerId.substring(0, 5));
+        this.updatePlaceholderState(placeholder, peerId, name);
+      }
+    }
 
     // Play video with retry logic
     const playVideo = async () => {
@@ -964,9 +990,9 @@ class VideoGrid {
       avatarCircle.className = 'avatar-circle bg-blue-600 text-white text-2xl font-bold flex items-center justify-center w-20 h-20 rounded-full';
       avatarCircle.textContent = initials;
       
-      // Create status indicators container
+      // Create status indicators container (positioned above label)
       const statusContainer = document.createElement('div');
-      statusContainer.className = 'status-indicators absolute bottom-2 left-2 flex gap-2';
+      statusContainer.className = 'status-indicators absolute bottom-10 left-2 flex gap-2 z-20';
       
       // Camera status icon
       const cameraStatus = document.createElement('div');
@@ -1107,12 +1133,13 @@ class VideoGrid {
     const gap = isMobile ? '8px' : '12px';
 
     // Apply 2-column grid layout with mobile optimizations
+    // On desktop, ensure consistent tile sizing
     this.container.style.cssText = `
       display: grid;
       grid-template-columns: repeat(2, 1fr);
       gap: ${gap};
       width: 100%;
-      ${isMobile ? 'max-height: calc(100vh - 250px); overflow-y: auto;' : ''}
+      ${isMobile ? 'max-height: calc(100vh - 250px); overflow-y: auto;' : 'align-content: start;'}
     `;
 
     logger.debug('VideoGrid', 'Layout updated', { layoutMode, tileCount, isMobile });
