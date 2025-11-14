@@ -288,16 +288,35 @@ class ConnectionManager {
       };
 
       // Set up track ended handler - ensure it's called when track ends
+      // This fires when the remote peer stops sending the track
       track.onended = () => {
-        logger.info('ConnectionManager', 'Track onended event fired', { peerId, trackType, trackId: track.id });
+        logger.info('ConnectionManager', 'Remote track onended event fired', { peerId, trackType, trackId: track.id });
         originalOnEnded();
       };
       
       // Also listen for track ended event as backup
       track.addEventListener('ended', () => {
-        logger.info('ConnectionManager', 'Track ended event listener fired', { peerId, trackType, trackId: track.id });
+        logger.info('ConnectionManager', 'Remote track ended event listener fired', { peerId, trackType, trackId: track.id });
         originalOnEnded();
       }, { once: true });
+      
+      // For screen tracks, also monitor readyState changes
+      if (trackType === 'screen' && track.kind === 'video') {
+        let readyStateCheckInterval = setInterval(() => {
+          if (track.readyState === 'ended') {
+            clearInterval(readyStateCheckInterval);
+            logger.info('ConnectionManager', 'Screen track readyState changed to ended', { peerId, trackId: track.id });
+            originalOnEnded();
+          }
+        }, 100);
+        
+        // Clean up interval when track ends
+        const originalOnEndedWithCleanup = () => {
+          clearInterval(readyStateCheckInterval);
+          originalOnEnded();
+        };
+        track.onended = originalOnEndedWithCleanup;
+      }
 
       // Monitor track enabled/disabled state for camera tracks (when camera is turned on/off)
       if (trackType === 'camera' && track.kind === 'video') {

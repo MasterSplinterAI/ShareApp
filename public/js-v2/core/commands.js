@@ -88,24 +88,17 @@ export function registerCommands() {
     await trackManager.stopScreenShare();
     
     // Remove screen track from all peer connections
-    // removeTrack will stop the track and emit trackEnded events
+    // removeTrack will stop the track, which should trigger track.onended on peer side
+    // The peer's ConnectionManager will handle the track.onended event and emit webrtc:trackEnded
     for (const { peerId } of peers) {
       try {
         await connectionManager.removeTrack(peerId, 'screen');
-        // Explicitly emit track ended event for peer side as backup
-        // The track.onended handler should also fire, but this ensures it
-        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-          peerId,
-          trackType: 'screen'
-        });
-        logger.info('Commands', 'Removed screen track and emitted trackEnded event', { peerId });
+        logger.info('Commands', 'Removed screen track from peer connection', { peerId });
+        // Note: We don't emit trackEnded here because it should be emitted on the peer side
+        // when their remote track.onended fires. The removeTrack function stops the track,
+        // which should trigger the ended event on the peer side.
       } catch (error) {
         logger.error('Commands', 'Failed to remove screen track', { peerId, error });
-        // Still emit the event even if removal failed
-        eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-          peerId,
-          trackType: 'screen'
-        });
       }
     }
   });
