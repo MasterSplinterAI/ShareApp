@@ -225,6 +225,39 @@ class ConnectionManager {
         peer.tracks.audio = track;
         // Start audio level monitoring for audio tracks
         this.startAudioLevelMonitoring(peerId, track);
+        
+        // Monitor track enabled/disabled state for audio tracks (when mic is muted/unmuted)
+        let enabledState = track.enabled;
+        let enabledCheckInterval = setInterval(() => {
+          if (track.readyState === 'ended') {
+            clearInterval(enabledCheckInterval);
+            return;
+          }
+          
+          if (track.enabled !== enabledState) {
+            enabledState = track.enabled;
+            logger.info('ConnectionManager', 'Remote audio track enabled state changed', {
+              peerId,
+              enabled: track.enabled,
+              readyState: track.readyState
+            });
+            
+            // Emit event to update status indicators
+            eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, {
+              peerId,
+              trackType: 'audio'
+            });
+          }
+        }, 500);
+        
+        // Clean up interval when track ends
+        const originalAudioOnEnded = track.onended;
+        track.onended = () => {
+          clearInterval(enabledCheckInterval);
+          if (originalAudioOnEnded) {
+            originalAudioOnEnded();
+          }
+        };
       }
       stateManager.setState({ peers });
       
@@ -300,7 +333,7 @@ class ConnectionManager {
         originalOnEnded();
       }, { once: true });
       
-      // For screen tracks, also monitor readyState changes
+      // For screen tracks, also monitor readyState changes and transceiver state
       if (trackType === 'screen' && track.kind === 'video') {
         let readyStateCheckInterval = setInterval(() => {
           if (track.readyState === 'ended') {
@@ -308,14 +341,37 @@ class ConnectionManager {
             logger.info('ConnectionManager', 'Screen track readyState changed to ended', { peerId, trackId: track.id });
             originalOnEnded();
           }
+          
+          // Also check if the transceiver receiver track is null or ended
+          const transceivers = this.transceivers.get(peerId);
+          if (transceivers && transceivers.screen) {
+            const receiverTrack = transceivers.screen.receiver.track;
+            if (!receiverTrack || receiverTrack.readyState === 'ended') {
+              clearInterval(readyStateCheckInterval);
+              logger.info('ConnectionManager', 'Screen transceiver receiver track ended', { peerId, trackId: track.id });
+              originalOnEnded();
+            }
+          }
         }, 100);
         
         // Clean up interval when track ends
         const originalOnEndedWithCleanup = () => {
-          clearInterval(readyStateCheckInterval);
+          if (readyStateCheckInterval) {
+            clearInterval(readyStateCheckInterval);
+            readyStateCheckInterval = null;
+          }
           originalOnEnded();
         };
         track.onended = originalOnEndedWithCleanup;
+        
+        // Store interval reference for cleanup
+        if (!this.trackMonitoringIntervals) {
+          this.trackMonitoringIntervals = new Map();
+        }
+        if (!this.trackMonitoringIntervals.has(peerId)) {
+          this.trackMonitoringIntervals.set(peerId, new Map());
+        }
+        this.trackMonitoringIntervals.get(peerId).set(track.id, readyStateCheckInterval);
       }
 
       // Monitor track enabled/disabled state for camera tracks (when camera is turned on/off)
