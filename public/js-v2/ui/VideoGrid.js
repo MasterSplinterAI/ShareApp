@@ -355,6 +355,8 @@ class VideoGrid {
 
     // For screen share, use a separate tile ID to avoid replacing camera feed
     const tileId = trackType === 'screen' ? `${peerId}-screen` : peerId;
+    
+    logger.info('VideoGrid', 'Adding video tile', { peerId, tileId, trackType, hasTrack: !!track, trackId: track?.id });
 
     // Get or create tile container
     let tile = this.tiles.get(tileId);
