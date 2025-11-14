@@ -960,13 +960,17 @@ class ConnectionManager {
         // Stop the track first
         const screenTrack = transceivers.screen.sender.track;
         if (screenTrack) {
+          // Stop the track - this will trigger onended on peer side
           screenTrack.stop();
+          logger.info('ConnectionManager', 'Stopped screen track', { peerId, trackId: screenTrack.id });
         }
         
+        // Replace with null to remove from connection
         await transceivers.screen.sender.replaceTrack(null);
         
         // Emit track ended event so peer VideoGrid removes the screen share tile
         // Use the peer's ID (not local) for the event
+        // The track.onended handler should also fire, but emit explicitly as backup
         eventBus.emit(`webrtc:trackEnded:${peerId}`, {
           peerId: peerId, // This is the peer who will receive the event
           trackType: 'screen'

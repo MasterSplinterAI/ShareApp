@@ -298,6 +298,34 @@ class Application {
       }
     });
 
+    // Listen for audio track added - add to all existing connections
+    // This ensures when a peer auto-enables their mic, it's added to all connections
+    eventBus.on('track:audio:added', async (data) => {
+      if (!data.track) return;
+      
+      try {
+        const { connectionManager } = await import('./webrtc/ConnectionManager.js');
+        const peers = Array.from(connectionManager.getAllConnections());
+        
+        logger.info('Application', 'Audio track added - adding to all peer connections', { 
+          trackId: data.track.id,
+          peerCount: peers.length 
+        });
+        
+        // Add audio track to all existing peer connections
+        for (const { peerId } of peers) {
+          try {
+            await connectionManager.addTrack(peerId, data.track, 'audio');
+            logger.debug('Application', 'Added audio track to peer', { peerId });
+          } catch (error) {
+            logger.warn('Application', 'Failed to add audio track to peer', { peerId, error });
+          }
+        }
+      } catch (error) {
+        logger.error('Application', 'Error adding audio track to connections', { error });
+      }
+    });
+
     logger.debug('Application', 'Event handlers set up');
   }
 
