@@ -864,8 +864,9 @@ class ConnectionManager {
       const peer = peers.get(peerId);
       
       // Check if we had a screen track stored BEFORE checking transceivers
-      const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
-      const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+      // IMPORTANT: Check BEFORE processing new tracks, so we know if we had one before this offer
+      const hadScreenTrackBefore = peer && peer.tracks && peer.tracks.screen !== null && peer.tracks.screen !== undefined;
+      const storedScreenTrackBefore = hadScreenTrackBefore ? peer.tracks.screen : null;
       
       // Look for screen share transceivers in the updated transceivers (with tracks)
       const screenTransceiversWithTracks = transceiversAfterRemote.filter(t => {
@@ -878,25 +879,8 @@ class ConnectionManager {
         return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
       });
       
-      // Also look for screen transceivers WITHOUT tracks (might be the one that was removed)
-      // Check by comparing with stored screen transceiver MID or by position/index
-      const storedScreenTransceiver = transceivers && transceivers.screen;
-      const screenTransceiverWithoutTrack = storedScreenTransceiver ? 
-        transceiversAfterRemote.find(t => {
-          // Match by MID if available
-          if (t.mid && storedScreenTransceiver.mid && t.mid === storedScreenTransceiver.mid) {
-            return !t.receiver.track || t.receiver.track.readyState === 'ended';
-          }
-          // Or match by position/index (screen share is usually the last video transceiver)
-          const videoTransceivers = transceiversAfterRemote.filter(tr => tr.receiver.track?.kind === 'video' || tr.receiver.track === null);
-          if (videoTransceivers.length > 1) {
-            const lastVideoTransceiver = videoTransceivers[videoTransceivers.length - 1];
-            return lastVideoTransceiver === t && (!t.receiver.track || t.receiver.track.readyState === 'ended');
-          }
-          return false;
-        }) : null;
-      
       // If we have screen transceivers with tracks, check if we need to emit track events
+      // This handles NEW screen shares being added
       if (screenTransceiversWithTracks.length > 0) {
         for (const screenTransceiver of screenTransceiversWithTracks) {
           const screenTrack = screenTransceiver.receiver.track;
@@ -930,24 +914,26 @@ class ConnectionManager {
         }
       }
       
-      // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
-      if (hadScreenTrack && screenTransceiversWithTracks.length === 0) {
+      // Check if screen share was removed (we had a screen track BEFORE this offer but now don't have any screen transceivers with tracks)
+      // IMPORTANT: Only check for removal if we had a screen track BEFORE processing this offer
+      // AND we don't have any screen transceivers with tracks now (meaning it was removed, not added)
+      if (hadScreenTrackBefore && screenTransceiversWithTracks.length === 0) {
         logger.info('ConnectionManager', 'Checking for screen share removal', {
           peerId,
-          hadScreenTrack,
+          hadScreenTrackBefore,
           screenTransceiversWithTracksCount: screenTransceiversWithTracks.length,
-          storedScreenTrackId: storedScreenTrack?.id,
-          storedScreenTrackLabel: storedScreenTrack?.label,
+          storedScreenTrackId: storedScreenTrackBefore?.id,
+          storedScreenTrackLabel: storedScreenTrackBefore?.label,
           hasCameraTrack: peer?.tracks?.camera !== null,
           cameraTrackId: peer?.tracks?.camera?.id
         });
         
         // Verify the stored screen track is actually a screen share (not a misidentified camera)
         let isActuallyScreenShare = false;
-        if (storedScreenTrack) {
+        if (storedScreenTrackBefore) {
           // Check 1: displaySurface (most reliable)
           try {
-            const settings = storedScreenTrack.getSettings();
+            const settings = storedScreenTrackBefore.getSettings();
             if (settings.displaySurface) {
               isActuallyScreenShare = true;
               logger.info('ConnectionManager', 'Screen share confirmed via displaySurface', { peerId, displaySurface: settings.displaySurface });
@@ -955,28 +941,48 @@ class ConnectionManager {
           } catch (e) {}
           
           // Check 2: label keywords
-          if (!isActuallyScreenShare && storedScreenTrack.label) {
-            const labelLower = storedScreenTrack.label.toLowerCase();
+          if (!isActuallyScreenShare && storedScreenTrackBefore.label) {
+            const labelLower = storedScreenTrackBefore.label.toLowerCase();
             if (labelLower.includes('screen') || 
                 labelLower.includes('desktop') || 
                 labelLower.includes('window') || 
                 labelLower.includes('display')) {
               isActuallyScreenShare = true;
-              logger.info('ConnectionManager', 'Screen share confirmed via label', { peerId, label: storedScreenTrack.label });
+              logger.info('ConnectionManager', 'Screen share confirmed via label', { peerId, label: storedScreenTrackBefore.label });
             }
           }
           
           // Check 3: If we have BOTH camera and screen tracks stored, and they're different, 
           // then the screen track is definitely a screen share (detected via heuristic)
-          if (!isActuallyScreenShare && peer && peer.tracks.camera && peer.tracks.camera.id !== storedScreenTrack.id) {
+          // Use the CURRENT peer state (after processing new tracks) to compare
+          const currentCameraTrack = peer && peer.tracks && peer.tracks.camera;
+          if (!isActuallyScreenShare && currentCameraTrack && currentCameraTrack.id !== storedScreenTrackBefore.id) {
             isActuallyScreenShare = true;
             logger.info('ConnectionManager', 'Screen share confirmed via camera/screen track comparison', { 
               peerId, 
-              cameraTrackId: peer.tracks.camera.id,
-              screenTrackId: storedScreenTrack.id
+              cameraTrackId: currentCameraTrack.id,
+              screenTrackId: storedScreenTrackBefore.id
             });
           }
         }
+        
+        // Also look for screen transceivers WITHOUT tracks (might be the one that was removed)
+        // Check by comparing with stored screen transceiver MID or by position/index
+        const storedScreenTransceiver = transceivers && transceivers.screen;
+        const screenTransceiverWithoutTrack = storedScreenTransceiver ? 
+          transceiversAfterRemote.find(t => {
+            // Match by MID if available
+            if (t.mid && storedScreenTransceiver.mid && t.mid === storedScreenTransceiver.mid) {
+              return !t.receiver.track || t.receiver.track.readyState === 'ended';
+            }
+            // Or match by position/index (screen share is usually the last video transceiver)
+            const videoTransceivers = transceiversAfterRemote.filter(tr => tr.receiver.track?.kind === 'video' || tr.receiver.track === null);
+            if (videoTransceivers.length > 1) {
+              const lastVideoTransceiver = videoTransceivers[videoTransceivers.length - 1];
+              return lastVideoTransceiver === t && (!t.receiver.track || t.receiver.track.readyState === 'ended');
+            }
+            return false;
+          }) : null;
         
         // Check if the transceiver still exists but has no receiver track
         const transceiverHasNoTrack = screenTransceiverWithoutTrack !== null;
