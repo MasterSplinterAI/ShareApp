@@ -221,6 +221,15 @@ class ConnectionManager {
         peer.tracks.camera = track;
       } else if (trackType === 'screen') {
         peer.tracks.screen = track;
+        // Store transceiver reference for screen track monitoring
+        const transceivers = this.transceivers.get(peerId);
+        if (transceivers) {
+          // Find the transceiver that has this track as receiver
+          const transceiver = pc.getTransceivers().find(t => t.receiver.track === track);
+          if (transceiver) {
+            transceivers.screen = transceiver;
+          }
+        }
       } else if (trackType === 'audio') {
         peer.tracks.audio = track;
         // Start audio level monitoring for audio tracks
@@ -241,6 +250,10 @@ class ConnectionManager {
               enabled: track.enabled,
               readyState: track.readyState
             });
+            
+            // Update peer tracks state
+            peer.tracks.audio = track;
+            stateManager.setState({ peers });
             
             // Emit event to update status indicators
             eventBus.emit(`webrtc:peer:trackUpdated:${peerId}`, {
@@ -336,20 +349,44 @@ class ConnectionManager {
       // For screen tracks, also monitor readyState changes and transceiver state
       if (trackType === 'screen' && track.kind === 'video') {
         let readyStateCheckInterval = setInterval(() => {
+          // Check if track itself is ended
           if (track.readyState === 'ended') {
             clearInterval(readyStateCheckInterval);
             logger.info('ConnectionManager', 'Screen track readyState changed to ended', { peerId, trackId: track.id });
             originalOnEnded();
+            return;
           }
           
-          // Also check if the transceiver receiver track is null or ended
+          // Check transceiver receiver track state
           const transceivers = this.transceivers.get(peerId);
           if (transceivers && transceivers.screen) {
             const receiverTrack = transceivers.screen.receiver.track;
+            // If receiver track is null or ended, screen share has stopped
             if (!receiverTrack || receiverTrack.readyState === 'ended') {
               clearInterval(readyStateCheckInterval);
-              logger.info('ConnectionManager', 'Screen transceiver receiver track ended', { peerId, trackId: track.id });
+              logger.info('ConnectionManager', 'Screen transceiver receiver track ended', { peerId, trackId: track.id, receiverTrackId: receiverTrack?.id });
               originalOnEnded();
+              return;
+            }
+            
+            // Also check if the receiver track ID changed (new track replaced it)
+            if (receiverTrack.id !== track.id) {
+              clearInterval(readyStateCheckInterval);
+              logger.info('ConnectionManager', 'Screen transceiver receiver track replaced', { peerId, oldTrackId: track.id, newTrackId: receiverTrack.id });
+              originalOnEnded();
+              return;
+            }
+          }
+          
+          // Check if transceiver direction changed to recvonly (sender removed)
+          const pc = this.connections.get(peerId);
+          if (pc && transceivers && transceivers.screen) {
+            const currentDirection = transceivers.screen.direction;
+            if (currentDirection === 'recvonly' || currentDirection === 'inactive') {
+              clearInterval(readyStateCheckInterval);
+              logger.info('ConnectionManager', 'Screen transceiver direction changed - sender removed', { peerId, direction: currentDirection });
+              originalOnEnded();
+              return;
             }
           }
         }, 100);
@@ -747,6 +784,31 @@ class ConnectionManager {
           senderTrackLabel: t.sender.track?.label
         }))
       });
+      
+      // Check if screen share track was removed (transceiver receiver track is null)
+      const transceivers = this.transceivers.get(peerId);
+      if (transceivers && transceivers.screen) {
+        const screenTransceiver = transceiversAfterRemote.find(t => 
+          t.receiver.track && 
+          (t.receiver.track.getSettings?.()?.displaySurface || 
+           t.receiver.track.label?.toLowerCase().includes('screen'))
+        );
+        
+        // If we had a screen transceiver but now it's gone or has no receiver track, screen share ended
+        if (!screenTransceiver || !screenTransceiver.receiver.track) {
+          const peers = stateManager.getState('peers') || new Map();
+          const peer = peers.get(peerId);
+          if (peer && peer.tracks && peer.tracks.screen) {
+            logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
+            peer.tracks.screen = null;
+            stateManager.setState({ peers });
+            eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+              peerId,
+              trackType: 'screen'
+            });
+          }
+        }
+      }
 
       // Process queued ICE candidates
       if (this.iceCandidateQueues.has(peerId)) {
@@ -906,6 +968,31 @@ class ConnectionManager {
             senderTrackLabel: t.sender.track?.label
           }))
         });
+        
+        // Check if screen share track was removed (transceiver receiver track is null)
+        const transceivers = this.transceivers.get(peerId);
+        if (transceivers && transceivers.screen) {
+          const screenTransceiver = transceiversAfterAnswer.find(t => 
+            t.receiver.track && 
+            (t.receiver.track.getSettings?.()?.displaySurface || 
+             t.receiver.track.label?.toLowerCase().includes('screen'))
+          );
+          
+          // If we had a screen transceiver but now it's gone or has no receiver track, screen share ended
+          if (!screenTransceiver || !screenTransceiver.receiver.track) {
+            const peers = stateManager.getState('peers') || new Map();
+            const peer = peers.get(peerId);
+            if (peer && peer.tracks && peer.tracks.screen) {
+              logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
+              peer.tracks.screen = null;
+              stateManager.setState({ peers });
+              eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+                peerId,
+                trackType: 'screen'
+              });
+            }
+          }
+        }
         
         logger.debug('ConnectionManager', 'Remote answer set successfully', { peerId, newState: pc.signalingState });
       } else {

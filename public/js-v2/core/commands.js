@@ -23,6 +23,12 @@ export function registerCommands() {
       // The track is still in the connection, just disabled
       // Peers will detect track.enabled = false and show placeholder
       // No need to remove/replace tracks - they stay in the connection
+      
+      // Emit event to update local status indicators
+      eventBus.emit('webrtc:peer:trackUpdated:local', {
+        peerId: 'local',
+        trackType: 'camera'
+      });
     } else {
       // Camera is off - enable it
       // Let enableCamera() handle both cases: re-enabling existing track or creating new one
@@ -36,6 +42,12 @@ export function registerCommands() {
           await connectionManager.addTrack(peerId, cameraTrack, 'camera');
         }
       }
+      
+      // Emit event to update local status indicators
+      eventBus.emit('webrtc:peer:trackUpdated:local', {
+        peerId: 'local',
+        trackType: 'camera'
+      });
     }
   });
 
@@ -51,6 +63,12 @@ export function registerCommands() {
       for (const { peerId } of peers) {
         await connectionManager.removeTrack(peerId, 'audio');
       }
+      
+      // Emit event to update local status indicators
+      eventBus.emit('webrtc:peer:trackUpdated:local', {
+        peerId: 'local',
+        trackType: 'audio'
+      });
     } else {
       const audioTrack = await trackManager.enableMicrophone();
       
@@ -61,6 +79,12 @@ export function registerCommands() {
           await connectionManager.addTrack(peerId, audioTrack, 'audio');
         }
       }
+      
+      // Emit event to update local status indicators
+      eventBus.emit('webrtc:peer:trackUpdated:local', {
+        peerId: 'local',
+        trackType: 'audio'
+      });
     }
   });
 
