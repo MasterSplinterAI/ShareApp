@@ -877,7 +877,11 @@ class ConnectionManager {
         return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
       });
       
-      // If we have screen transceivers, check if we need to emit track events
+      // Check if we had a screen track stored
+      const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
+      const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+      
+      // If we have screen transceivers with tracks, check if we need to emit track events
       if (screenTransceivers.length > 0) {
         for (const screenTransceiver of screenTransceivers) {
           const screenTrack = screenTransceiver.receiver.track;
@@ -909,13 +913,13 @@ class ConnectionManager {
             }
           }
         }
-      } else {
-        // Check if we had a screen transceiver but now it's gone
-        // Only remove if we actually had a screen track stored (not just a transceiver reference)
-        if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
-          // Verify the stored screen track is actually a screen share (not a misidentified camera)
-          const storedScreenTrack = peer.tracks.screen;
-          let isActuallyScreenShare = false;
+      }
+      
+      // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
+      if (hadScreenTrack && screenTransceivers.length === 0) {
+        // Verify the stored screen track is actually a screen share (not a misidentified camera)
+        let isActuallyScreenShare = false;
+        if (storedScreenTrack) {
           try {
             const settings = storedScreenTrack.getSettings();
             if (settings.displaySurface) {
@@ -929,21 +933,36 @@ class ConnectionManager {
                                    labelLower.includes('window') || 
                                    labelLower.includes('display');
           }
-          
-          // Only remove if it was actually a screen share
-          if (isActuallyScreenShare) {
-            logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
-            peer.tracks.screen = null;
-            stateManager.setState({ peers });
-            eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-              peerId,
-              trackType: 'screen'
-            });
-          } else {
-            // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
-            logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
-            transceivers.screen = null;
-          }
+        }
+        
+        // Also check if the transceiver still exists but has no receiver track
+        const existingScreenTransceiver = transceivers && transceivers.screen;
+        const transceiverHasNoTrack = existingScreenTransceiver && 
+                                      (!existingScreenTransceiver.receiver.track || 
+                                       existingScreenTransceiver.receiver.track.readyState === 'ended');
+        
+        // Also check transceiver direction - if it's recvonly or inactive, sender was removed
+        const transceiverDirectionRemoved = existingScreenTransceiver && 
+                                           (existingScreenTransceiver.direction === 'recvonly' || 
+                                            existingScreenTransceiver.direction === 'inactive');
+        
+        if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved)) {
+          logger.info('ConnectionManager', 'Screen share track removed - no screen transceivers with tracks found', { 
+            peerId,
+            transceiverHasNoTrack,
+            transceiverDirectionRemoved,
+            direction: existingScreenTransceiver?.direction
+          });
+          peer.tracks.screen = null;
+          stateManager.setState({ peers });
+          eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+            peerId,
+            trackType: 'screen'
+          });
+        } else if (!isActuallyScreenShare && transceivers && transceivers.screen) {
+          // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
+          logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
+          transceivers.screen = null;
         }
       }
 
@@ -1122,7 +1141,11 @@ class ConnectionManager {
           return label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display');
         });
         
-        // If we have screen transceivers, check if we need to emit track events
+        // Check if we had a screen track stored
+        const hadScreenTrack = peer && peer.tracks && peer.tracks.screen;
+        const storedScreenTrack = hadScreenTrack ? peer.tracks.screen : null;
+        
+        // If we have screen transceivers with tracks, check if we need to emit track events
         if (screenTransceivers.length > 0) {
           for (const screenTransceiver of screenTransceivers) {
             const screenTrack = screenTransceiver.receiver.track;
@@ -1154,13 +1177,13 @@ class ConnectionManager {
               }
             }
           }
-        } else {
-          // Check if we had a screen transceiver but now it's gone
-          // Only remove if we actually had a screen track stored (not just a transceiver reference)
-          if (transceivers && transceivers.screen && peer && peer.tracks && peer.tracks.screen) {
-            // Verify the stored screen track is actually a screen share (not a misidentified camera)
-            const storedScreenTrack = peer.tracks.screen;
-            let isActuallyScreenShare = false;
+        }
+        
+        // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
+        if (hadScreenTrack && screenTransceivers.length === 0) {
+          // Verify the stored screen track is actually a screen share (not a misidentified camera)
+          let isActuallyScreenShare = false;
+          if (storedScreenTrack) {
             try {
               const settings = storedScreenTrack.getSettings();
               if (settings.displaySurface) {
@@ -1174,21 +1197,36 @@ class ConnectionManager {
                                      labelLower.includes('window') || 
                                      labelLower.includes('display');
             }
-            
-            // Only remove if it was actually a screen share
-            if (isActuallyScreenShare) {
-              logger.info('ConnectionManager', 'Screen share track removed - transceiver receiver track is null', { peerId });
-              peer.tracks.screen = null;
-              stateManager.setState({ peers });
-              eventBus.emit(`webrtc:trackEnded:${peerId}`, {
-                peerId,
-                trackType: 'screen'
-              });
-            } else {
-              // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
-              logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
-              transceivers.screen = null;
-            }
+          }
+          
+          // Also check if the transceiver still exists but has no receiver track
+          const existingScreenTransceiver = transceivers && transceivers.screen;
+          const transceiverHasNoTrack = existingScreenTransceiver && 
+                                        (!existingScreenTransceiver.receiver.track || 
+                                         existingScreenTransceiver.receiver.track.readyState === 'ended');
+          
+          // Also check transceiver direction - if it's recvonly or inactive, sender was removed
+          const transceiverDirectionRemoved = existingScreenTransceiver && 
+                                             (existingScreenTransceiver.direction === 'recvonly' || 
+                                              existingScreenTransceiver.direction === 'inactive');
+          
+          if (isActuallyScreenShare && (transceiverHasNoTrack || transceiverDirectionRemoved)) {
+            logger.info('ConnectionManager', 'Screen share track removed - no screen transceivers with tracks found', { 
+              peerId,
+              transceiverHasNoTrack,
+              transceiverDirectionRemoved,
+              direction: existingScreenTransceiver?.direction
+            });
+            peer.tracks.screen = null;
+            stateManager.setState({ peers });
+            eventBus.emit(`webrtc:trackEnded:${peerId}`, {
+              peerId,
+              trackType: 'screen'
+            });
+          } else if (!isActuallyScreenShare && transceivers && transceivers.screen) {
+            // It was misidentified - clear the screen transceiver reference but don't emit trackEnded
+            logger.debug('ConnectionManager', 'Clearing misidentified screen transceiver reference', { peerId });
+            transceivers.screen = null;
           }
         }
         
