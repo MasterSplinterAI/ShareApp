@@ -920,25 +920,62 @@ class ConnectionManager {
         // Check 1: displaySurface (most reliable)
         try {
           const settings = track.getSettings();
-          if (settings.displaySurface) return true;
+          if (settings.displaySurface) {
+            logger.debug('ConnectionManager', 'Screen share detected via displaySurface in offer filter', { 
+              peerId, 
+              trackId: track.id,
+              displaySurface: settings.displaySurface
+            });
+            return true;
+          }
         } catch (e) {}
         
         // Check 2: label keywords
         const label = track.label?.toLowerCase() || '';
         if (label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display')) {
+          logger.debug('ConnectionManager', 'Screen share detected via label in offer filter', { 
+            peerId, 
+            trackId: track.id,
+            label: track.label
+          });
           return true;
         }
         
-        // Check 3: If we have multiple video transceivers and an existing camera track,
-        // and this track is different from the camera track, it's likely screen share
-        if (videoTransceiversWithTracks.length > 1 && existingCameraTrack && track.id !== existingCameraTrack.id) {
-          // Find the camera transceiver
+        // Check 3: Heuristic - only use if we have multiple video transceivers AND an existing camera track
+        // AND the existing camera track is still present (not replaced)
+        // AND this track is different from the camera track
+        // IMPORTANT: This is a fallback heuristic and should be used carefully
+        if (videoTransceiversWithTracks.length > 1 && existingCameraTrack) {
+          // Verify the camera track still exists in the transceivers (not replaced)
           const cameraTransceiver = transceiversAfterRemote.find(tr => 
             tr.receiver.track && tr.receiver.track.id === existingCameraTrack.id
           );
-          // If this transceiver is NOT the camera transceiver, it's likely screen share
-          if (cameraTransceiver && t !== cameraTransceiver) {
-            return true;
+          
+          // Only use heuristic if:
+          // 1. Camera track still exists (not replaced)
+          // 2. This track is different from camera track
+          // 3. This transceiver is NOT the camera transceiver
+          if (cameraTransceiver && track.id !== existingCameraTrack.id && t !== cameraTransceiver) {
+            // Additional verification: check if we already have a screen track stored
+            // If we do, and this track matches it, it's likely screen share
+            const existingScreenTrack = currentPeer?.tracks?.screen;
+            if (existingScreenTrack && track.id === existingScreenTrack.id) {
+              logger.debug('ConnectionManager', 'Screen share detected via existing screen track match in offer filter', { 
+                peerId, 
+                trackId: track.id
+              });
+              return true;
+            }
+            
+            // If we don't have a screen track stored, be more conservative
+            // Only use heuristic if we're certain (e.g., track has been confirmed as screen share before)
+            // For now, skip this heuristic to avoid false positives
+            logger.debug('ConnectionManager', 'Skipping heuristic screen share detection to avoid false positives', { 
+              peerId, 
+              trackId: track.id,
+              cameraTrackId: existingCameraTrack.id,
+              videoTransceiverCount: videoTransceiversWithTracks.length
+            });
           }
         }
         
@@ -1304,25 +1341,62 @@ class ConnectionManager {
           // Check 1: displaySurface (most reliable)
           try {
             const settings = track.getSettings();
-            if (settings.displaySurface) return true;
+            if (settings.displaySurface) {
+              logger.debug('ConnectionManager', 'Screen share detected via displaySurface in answer filter', { 
+                peerId, 
+                trackId: track.id,
+                displaySurface: settings.displaySurface
+              });
+              return true;
+            }
           } catch (e) {}
           
           // Check 2: label keywords
           const label = track.label?.toLowerCase() || '';
           if (label.includes('screen') || label.includes('desktop') || label.includes('window') || label.includes('display')) {
+            logger.debug('ConnectionManager', 'Screen share detected via label in answer filter', { 
+              peerId, 
+              trackId: track.id,
+              label: track.label
+            });
             return true;
           }
           
-          // Check 3: If we have multiple video transceivers and an existing camera track,
-          // and this track is different from the camera track, it's likely screen share
-          if (videoTransceiversWithTracks.length > 1 && existingCameraTrack && track.id !== existingCameraTrack.id) {
-            // Find the camera transceiver
+          // Check 3: Heuristic - only use if we have multiple video transceivers AND an existing camera track
+          // AND the existing camera track is still present (not replaced)
+          // AND this track is different from the camera track
+          // IMPORTANT: This is a fallback heuristic and should be used carefully
+          if (videoTransceiversWithTracks.length > 1 && existingCameraTrack) {
+            // Verify the camera track still exists in the transceivers (not replaced)
             const cameraTransceiver = transceiversAfterAnswer.find(tr => 
               tr.receiver.track && tr.receiver.track.id === existingCameraTrack.id
             );
-            // If this transceiver is NOT the camera transceiver, it's likely screen share
-            if (cameraTransceiver && t !== cameraTransceiver) {
-              return true;
+            
+            // Only use heuristic if:
+            // 1. Camera track still exists (not replaced)
+            // 2. This track is different from camera track
+            // 3. This transceiver is NOT the camera transceiver
+            if (cameraTransceiver && track.id !== existingCameraTrack.id && t !== cameraTransceiver) {
+              // Additional verification: check if we already have a screen track stored
+              // If we do, and this track matches it, it's likely screen share
+              const existingScreenTrack = currentPeer?.tracks?.screen;
+              if (existingScreenTrack && track.id === existingScreenTrack.id) {
+                logger.debug('ConnectionManager', 'Screen share detected via existing screen track match in answer filter', { 
+                  peerId, 
+                  trackId: track.id
+                });
+                return true;
+              }
+              
+              // If we don't have a screen track stored, be more conservative
+              // Only use heuristic if we're certain (e.g., track has been confirmed as screen share before)
+              // For now, skip this heuristic to avoid false positives
+              logger.debug('ConnectionManager', 'Skipping heuristic screen share detection to avoid false positives', { 
+                peerId, 
+                trackId: track.id,
+                cameraTrackId: existingCameraTrack.id,
+                videoTransceiverCount: videoTransceiversWithTracks.length
+              });
             }
           }
           
