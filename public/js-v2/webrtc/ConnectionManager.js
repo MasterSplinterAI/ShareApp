@@ -786,6 +786,14 @@ class ConnectionManager {
       sdpType: sdp?.type
     });
 
+    // IMPORTANT: Check if we had a screen track BEFORE processing this offer
+    // This must be done BEFORE setRemoteDescription, because ontrack events fire during setRemoteDescription
+    // and will update peer.tracks.screen before we can check
+    const peers = stateManager.getState('peers') || new Map();
+    const peer = peers.get(peerId);
+    const hadScreenTrackBefore = peer && peer.tracks && peer.tracks.screen !== null && peer.tracks.screen !== undefined;
+    const storedScreenTrackBefore = hadScreenTrackBefore ? peer.tracks.screen : null;
+
     let pc = this.connections.get(peerId);
     
     // Create connection if it doesn't exist (skip offer creation since we're receiving one)
@@ -860,13 +868,8 @@ class ConnectionManager {
       
       // Check for new screen share tracks or removed ones
       const transceivers = this.transceivers.get(peerId);
-      const peers = stateManager.getState('peers') || new Map();
-      const peer = peers.get(peerId);
-      
-      // Check if we had a screen track stored BEFORE checking transceivers
-      // IMPORTANT: Check BEFORE processing new tracks, so we know if we had one before this offer
-      const hadScreenTrackBefore = peer && peer.tracks && peer.tracks.screen !== null && peer.tracks.screen !== undefined;
-      const storedScreenTrackBefore = hadScreenTrackBefore ? peer.tracks.screen : null;
+      // Note: hadScreenTrackBefore and storedScreenTrackBefore are already set at the beginning of handleOffer
+      // before setRemoteDescription was called, so they reflect the state BEFORE this offer
       
       // Look for screen share transceivers in the updated transceivers (with tracks)
       const screenTransceiversWithTracks = transceiversAfterRemote.filter(t => {
@@ -1202,13 +1205,8 @@ class ConnectionManager {
         
         // Check for new screen share tracks or removed ones
         const transceivers = this.transceivers.get(peerId);
-        const peers = stateManager.getState('peers') || new Map();
-        const peer = peers.get(peerId);
-        
-        // Check if we had a screen track stored BEFORE checking transceivers
-        // IMPORTANT: Check BEFORE processing new tracks, so we know if we had one before this answer
-        const hadScreenTrackBefore = peer && peer.tracks && peer.tracks.screen !== null && peer.tracks.screen !== undefined;
-        const storedScreenTrackBefore = hadScreenTrackBefore ? peer.tracks.screen : null;
+        // Note: hadScreenTrackBefore and storedScreenTrackBefore are already set at the beginning of handleAnswer
+        // before setRemoteDescription was called, so they reflect the state BEFORE this answer
         
         // Look for screen share transceivers in the updated transceivers (with tracks)
         const screenTransceiversWithTracks = transceiversAfterAnswer.filter(t => {
