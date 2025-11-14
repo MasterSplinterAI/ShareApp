@@ -1274,14 +1274,16 @@ class ConnectionManager {
           }
         }
         
-        // Check if screen share was removed (we had a screen track but now don't have any screen transceivers with tracks)
-        if (hadScreenTrack && screenTransceiversWithTracks.length === 0) {
+        // Check if screen share was removed (we had a screen track BEFORE this answer but now don't have any screen transceivers with tracks)
+        // IMPORTANT: Only check for removal if we had a screen track BEFORE processing this answer
+        // AND we don't have any screen transceivers with tracks now (meaning it was removed, not added)
+        if (hadScreenTrackBefore && screenTransceiversWithTracks.length === 0) {
           logger.info('ConnectionManager', 'Checking for screen share removal in answer', {
             peerId,
-            hadScreenTrack,
+            hadScreenTrackBefore,
             screenTransceiversWithTracksCount: screenTransceiversWithTracks.length,
-            storedScreenTrackId: storedScreenTrack?.id,
-            storedScreenTrackLabel: storedScreenTrack?.label,
+            storedScreenTrackId: storedScreenTrackBefore?.id,
+            storedScreenTrackLabel: storedScreenTrackBefore?.label,
             hasCameraTrack: peer?.tracks?.camera !== null,
             cameraTrackId: peer?.tracks?.camera?.id
           });
