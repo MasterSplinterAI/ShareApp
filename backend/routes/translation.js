@@ -40,7 +40,16 @@ router.post('/start', async (req, res) => {
     const DAILY_API_URL = 'https://api.daily.co/v1';
     const API_KEY = process.env.DAILY_API_KEY;
     
+    if (!API_KEY) {
+      throw new Error('DAILY_API_KEY not set in backend environment');
+    }
+    
+    if (!process.env.OPENAI_API_KEY) {
+      console.warn('WARNING: OPENAI_API_KEY not set in backend environment. Translation will not work.');
+    }
+    
     try {
+      console.log(`Fetching room info for meeting: ${meetingId}`);
       // Fetch room info to get room URL
       const roomResponse = await axios.get(
         `${DAILY_API_URL}/rooms/${meetingId}`,
