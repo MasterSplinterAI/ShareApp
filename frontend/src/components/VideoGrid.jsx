@@ -220,27 +220,18 @@ const VideoGrid = () => {
     ? [localParticipant.session_id, ...participantIds.filter(id => id !== localParticipant.session_id)]
     : participantIds;
 
-  // Count total tiles including screen shares
-  const countTotalTiles = () => {
-    let total = 0;
-    allParticipantIds.forEach(sessionId => {
-      const isLocal = localParticipant?.session_id === sessionId;
-      const participant = isLocal ? localParticipant : useParticipant(sessionId);
-      total++; // Camera tile
-      if (participant?.screenVideoTrack) {
-        total++; // Screen share tile
-      }
-    });
-    return total;
-  };
+  // Count screen shares by checking local participant and collecting all tiles
+  // We'll count tiles as they're rendered, so use a reasonable estimate
+  const hasLocalScreenShare = !!localParticipant?.screenVideoTrack;
+  const estimatedTiles = allParticipantIds.length + (hasLocalScreenShare ? 1 : 0);
 
-  // Responsive grid classes based on total tiles (camera + screen shares)
+  // Responsive grid classes - use flexible grid that adapts to content
   const getGridClasses = () => {
-    const totalTiles = countTotalTiles();
-    // Always use 2 columns on medium+ screens for 2+ tiles
-    if (totalTiles <= 1) return 'grid-cols-1';
-    if (totalTiles === 2) return 'grid-cols-1 sm:grid-cols-2';
-    if (totalTiles <= 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
+    // Use auto-fit to handle variable number of tiles (camera + screen shares)
+    // This will automatically create columns based on available space
+    if (estimatedTiles <= 1) return 'grid-cols-1';
+    if (estimatedTiles === 2) return 'grid-cols-1 sm:grid-cols-2';
+    if (estimatedTiles <= 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
     return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   };
 
