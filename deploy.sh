@@ -115,7 +115,14 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   # Install backend dependencies in final location (ensure node_modules is present)
   echo "Installing backend dependencies in final location..."
   cd $BACKEND_DIR
+  # Remove old node_modules if it exists to ensure clean install
+  sudo rm -rf node_modules 2>/dev/null || true
   npm install --production --prefer-offline --no-audit
+  # Verify installation
+  if [ ! -d "node_modules" ]; then
+    echo "ERROR: node_modules not installed! Trying again..."
+    npm install --production --no-audit
+  fi
   
   # Install PM2 if not installed
   if ! command -v pm2 &> /dev/null; then
