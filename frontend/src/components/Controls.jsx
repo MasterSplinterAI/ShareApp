@@ -1,6 +1,6 @@
 import { useDaily, useLocalParticipant } from '@daily-co/daily-react';
 
-const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showParticipants }) => {
+const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showParticipants, onAudioStateChange }) => {
   const daily = useDaily();
   const localParticipant = useLocalParticipant();
 
@@ -14,6 +14,9 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
         const newAudioState = !micEnabled;
         await daily.setLocalAudio(newAudioState);
         console.log('Mic toggled:', newAudioState);
+        if (onAudioStateChange) {
+          onAudioStateChange(newAudioState);
+        }
       } catch (error) {
         console.error('Error toggling mic:', error);
       }

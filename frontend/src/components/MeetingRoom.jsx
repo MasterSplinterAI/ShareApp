@@ -136,14 +136,17 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
         )}
       </div>
 
-      {/* Controls Bar */}
-      <Controls
-        onLeave={handleLeave}
-        onToggleChat={() => setShowChat(!showChat)}
-        onToggleParticipants={() => setShowParticipants(!showParticipants)}
-        showChat={showChat}
-        showParticipants={showParticipants}
-      />
+          {/* Controls Bar */}
+          <Controls
+            onLeave={handleLeave}
+            onToggleChat={() => setShowChat(!showChat)}
+            onToggleParticipants={() => setShowParticipants(!showParticipants)}
+            showChat={showChat}
+            showParticipants={showParticipants}
+            onAudioStateChange={(enabled) => {
+              desiredAudioState.current = enabled;
+            }}
+          />
 
       {/* Share Modal */}
       <ShareModal
