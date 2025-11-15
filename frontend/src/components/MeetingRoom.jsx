@@ -22,9 +22,10 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
   
   // Debug: Log when translation is enabled and participant is available
   useEffect(() => {
+    console.log('[MeetingRoom] Translation enabled:', translationEnabled);
+    console.log('[MeetingRoom] Local participant:', localParticipant?.session_id);
     if (translationEnabled) {
-      console.log('Translation enabled, localParticipant:', localParticipant);
-      console.log('localParticipant.session_id:', localParticipant?.session_id);
+      console.log('[MeetingRoom] Language selector should be visible');
     }
   }, [translationEnabled, localParticipant]);
 
@@ -127,6 +128,20 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
                     Loading language selector...
                   </div>
                 )}
+              </div>
+            )}
+            
+            {/* Mobile: Show language selector in a more accessible location */}
+            {translationEnabled && (
+              <div className="md:hidden fixed bottom-20 left-4 right-4 z-10">
+                {localParticipant?.session_id ? (
+                  <LanguageSelector
+                    meetingId={meetingId}
+                    participantId={localParticipant.session_id}
+                    currentLanguage={selectedLanguage}
+                    onLanguageChange={setSelectedLanguage}
+                  />
+                ) : null}
               </div>
             )}
 

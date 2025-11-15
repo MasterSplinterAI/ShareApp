@@ -41,9 +41,9 @@ class TranslationAgent:
         self.call_client = None
         self.openai_client = None
         self.running = False
-        self.participant_languages = {}  # Map participant_id -> language_code
+        self.participant_languages = {}  # Map participant_id -> language_code (what language they want to hear)
         self.audio_buffers = {}  # Map participant_id -> audio buffer
-        self.realtime_clients = {}  # Map participant_id -> OpenAIRealtimeClient
+        self.realtime_clients = {}  # Map (speaker_id, listener_id) -> OpenAIRealtimeClient
         self.backend_url = os.getenv('BACKEND_URL', 'http://localhost:3000')
         
     async def initialize(self):
@@ -92,13 +92,14 @@ class TranslationAgent:
             # Default to English for all participants
             self.participant_languages = {}
     
-    async def get_or_create_realtime_client(self, participant_id):
-        """Get or create OpenAI Realtime client for a participant"""
-        if participant_id in self.realtime_clients:
-            return self.realtime_clients[participant_id]
+    async def get_or_create_realtime_client(self, speaker_id, listener_id):
+        """Get or create OpenAI Realtime client for translating speaker_id's audio to listener_id's language"""
+        client_key = (speaker_id, listener_id)
+        if client_key in self.realtime_clients:
+            return self.realtime_clients[client_key]
         
-        # Get target language for this participant
-        target_language = self.participant_languages.get(participant_id, 'en')
+        # Get target language for the listener (what language they want to hear)
+        target_language = self.participant_languages.get(listener_id, 'en')
         
         # Create new Realtime client
         client = OpenAIRealtimeClient(
@@ -108,13 +109,13 @@ class TranslationAgent:
         
         # Set up callbacks
         def on_transcription(text):
-            print(f"[{participant_id}] Transcription: {text}")
-            # Store transcription for backend API access
-            asyncio.create_task(self._store_transcription(participant_id, text))
+            print(f"[Speaker: {speaker_id} -> Listener: {listener_id}] Transcription: {text}")
+            # Store transcription for the listener (they see the translated text)
+            asyncio.create_task(self._store_transcription(listener_id, text, speaker_id))
         
         def on_audio(audio_data):
-            # Inject translated audio back into Daily.co call
-            self._inject_translated_audio(participant_id, audio_data)
+            # Inject translated audio back into Daily.co call for the listener
+            self._inject_translated_audio(listener_id, audio_data)
         
         client.on_transcription = on_transcription
         client.on_audio = on_audio
@@ -122,33 +123,43 @@ class TranslationAgent:
         # Connect
         connected = await client.connect()
         if connected:
-            self.realtime_clients[participant_id] = client
+            self.realtime_clients[client_key] = client
             return client
         else:
             return None
     
-    async def process_audio_with_openai(self, participant_id, audio_data, source_language='auto'):
-        """Process audio through OpenAI Realtime API for translation"""
+    async def process_audio_with_openai(self, speaker_id, audio_data, source_language='auto'):
+        """Process audio through OpenAI Realtime API for translation
+        Translates speaker_id's audio to each listener's preferred language"""
         try:
-            # Get target language for this participant
-            target_language = self.participant_languages.get(participant_id, 'en')
+            # Get all participants and their language preferences
+            participants = self.call_client.participants() if self.call_client else {}
             
-            if target_language == source_language or (target_language == 'en' and source_language == 'auto'):
-                # No translation needed
-                return None
-            
-            # Get or create Realtime client for this participant
-            client = await self.get_or_create_realtime_client(participant_id)
-            if not client:
-                print(f"Failed to create Realtime client for {participant_id}")
-                return None
-            
-            # Ensure audio_data is numpy array
-            if not isinstance(audio_data, np.ndarray):
-                audio_data = np.array(audio_data, dtype=np.float32)
-            
-            # Send audio to OpenAI Realtime API
-            await client.send_audio(audio_data)
+            # Process audio for each listener (translate speaker's audio to listener's language)
+            for listener_id, listener_data in participants.items():
+                if listener_id == 'local' or listener_id == speaker_id:
+                    # Skip bot itself and the speaker (they hear original audio)
+                    continue
+                
+                # Get target language for this listener
+                target_language = self.participant_languages.get(listener_id, 'en')
+                
+                # Skip if no translation needed (listener wants same language as source)
+                if target_language == source_language:
+                    continue
+                
+                # Get or create Realtime client for this speaker->listener pair
+                client = await self.get_or_create_realtime_client(speaker_id, listener_id)
+                if not client:
+                    print(f"Failed to create Realtime client for {speaker_id} -> {listener_id}")
+                    continue
+                
+                # Ensure audio_data is numpy array
+                if not isinstance(audio_data, np.ndarray):
+                    audio_data = np.array(audio_data, dtype=np.float32)
+                
+                # Send audio to OpenAI Realtime API for this listener
+                await client.send_audio(audio_data.copy())  # Copy to avoid issues with multiple listeners
             
         except Exception as e:
             print(f"Error processing audio with OpenAI: {e}")
@@ -156,15 +167,17 @@ class TranslationAgent:
             traceback.print_exc()
             return None
     
-    async def _store_transcription(self, participant_id, text):
-        """Store transcription in backend for frontend display"""
+    async def _store_transcription(self, listener_id, text, speaker_id=None):
+        """Store transcription in backend for frontend display
+        Stores translated text for the listener (what they see/hear)"""
         try:
             async with aiohttp.ClientSession() as session:
                 url = f"{self.backend_url}/api/translation/transcription"
                 data = {
                     "meetingId": self.meeting_id,
-                    "participantId": participant_id,
+                    "participantId": listener_id,  # Store for the listener
                     "text": text,
+                    "speakerId": speaker_id,  # Who said it originally
                     "timestamp": asyncio.get_event_loop().time()
                 }
                 async with session.post(url, json=data) as response:
@@ -350,11 +363,11 @@ class TranslationAgent:
             self.running = False
             
             # Close all OpenAI Realtime clients
-            for participant_id, client in self.realtime_clients.items():
+            for client_key, client in self.realtime_clients.items():
                 try:
                     await client.close()
                 except Exception as e:
-                    print(f"Error closing Realtime client for {participant_id}: {e}")
+                    print(f"Error closing Realtime client for {client_key}: {e}")
             self.realtime_clients.clear()
             
             # Leave Daily.co call

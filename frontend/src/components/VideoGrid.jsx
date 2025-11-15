@@ -188,6 +188,13 @@ const ParticipantTiles = ({ sessionId, isLocal, localParticipant }) => {
   // Check if participant has screen share
   const hasScreenShare = !!participant?.screenVideoTrack;
   
+  // Debug logging
+  useEffect(() => {
+    if (hasScreenShare) {
+      console.log(`[VideoGrid] Participant ${sessionId} has screen share`);
+    }
+  }, [hasScreenShare, sessionId]);
+  
   return (
     <>
       {/* Camera tile - always render */}

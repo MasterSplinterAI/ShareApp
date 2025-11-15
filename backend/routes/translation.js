@@ -273,45 +273,46 @@ router.get('/languages/:meetingId', (req, res) => {
 const transcriptions = new Map(); // key: `${meetingId}:${participantId}`, value: array of transcriptions
 
 router.post('/transcription', (req, res) => {
-  try {
-    const { meetingId, participantId, text, timestamp } = req.body;
+      try {
+        const { meetingId, participantId, text, timestamp, speakerId } = req.body;
 
-    if (!meetingId || !participantId || !text) {
-      return res.status(400).json({
-        error: 'meetingId, participantId, and text are required'
-      });
-    }
+        if (!meetingId || !participantId || !text) {
+          return res.status(400).json({
+            error: 'meetingId, participantId, and text are required'
+          });
+        }
 
-    const key = `${meetingId}:${participantId}`;
-    if (!transcriptions.has(key)) {
-      transcriptions.set(key, []);
-    }
+        const key = `${meetingId}:${participantId}`;
+        if (!transcriptions.has(key)) {
+          transcriptions.set(key, []);
+        }
 
-    const transcriptList = transcriptions.get(key);
-    transcriptList.push({
-      text,
-      timestamp: timestamp || Date.now(),
-      speaker: participantId
+        const transcriptList = transcriptions.get(key);
+        transcriptList.push({
+          text,
+          timestamp: timestamp || Date.now(),
+          speaker: speakerId || participantId,  // Original speaker
+          listener: participantId  // Who sees this translation
+        });
+
+        // Keep only last 50 transcriptions
+        if (transcriptList.length > 50) {
+          transcriptList.shift();
+        }
+
+        res.json({
+          success: true,
+          meetingId,
+          participantId,
+          transcription: { text, timestamp, speakerId }
+        });
+      } catch (error) {
+        console.error('Store transcription error:', error);
+        res.status(500).json({
+          error: 'Failed to store transcription'
+        });
+      }
     });
-
-    // Keep only last 50 transcriptions
-    if (transcriptList.length > 50) {
-      transcriptList.shift();
-    }
-
-    res.json({
-      success: true,
-      meetingId,
-      participantId,
-      transcription: { text, timestamp }
-    });
-  } catch (error) {
-    console.error('Store transcription error:', error);
-    res.status(500).json({
-      error: 'Failed to store transcription'
-    });
-  }
-});
 
 // Get transcriptions for a participant
 router.get('/transcriptions/:meetingId/:participantId', (req, res) => {
