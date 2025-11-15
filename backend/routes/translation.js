@@ -64,8 +64,16 @@ router.post('/start', async (req, res) => {
       };
       
       // Spawn Python agent process
+      // Use venv python if available, otherwise use system python3
+      const venvPython = path.join(__dirname, '../../translation-agent/venv/bin/python3');
+      const pythonCmd = require('fs').existsSync(venvPython) ? venvPython : 'python3';
       const agentPath = path.join(__dirname, '../../translation-agent/agent.py');
-      const agentProcess = spawn('python3', [agentPath], {
+      
+      console.log(`Starting translation agent with: ${pythonCmd} ${agentPath}`);
+      console.log(`Working directory: ${path.join(__dirname, '../../translation-agent')}`);
+      console.log(`OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}`);
+      
+      const agentProcess = spawn(pythonCmd, [agentPath], {
         env: agentEnv,
         cwd: path.join(__dirname, '../../translation-agent'),
         stdio: ['ignore', 'pipe', 'pipe']
@@ -83,9 +91,17 @@ router.post('/start', async (req, res) => {
         console.error(`Translation agent ${agentId} error: ${data.toString()}`);
       });
       
-      agentProcess.on('exit', (code) => {
-        console.log(`Translation agent ${agentId} exited with code ${code}`);
+      agentProcess.on('exit', (code, signal) => {
+        console.log(`Translation agent ${agentId} exited with code ${code}, signal ${signal}`);
+        if (code !== 0 && code !== null) {
+          console.error(`Translation agent ${agentId} crashed! Check logs above for errors.`);
+        }
         activeAgents.delete(meetingId);
+      });
+      
+      // Log immediately when process starts
+      agentProcess.on('spawn', () => {
+        console.log(`Translation agent ${agentId} process spawned successfully`);
       });
       
       console.log(`Translation agent ${agentId} started for meeting ${meetingId}`);

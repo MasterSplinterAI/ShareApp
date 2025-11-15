@@ -368,30 +368,47 @@ class TranslationAgent:
 
 async def main():
     """Main entry point for the agent"""
+    print("=" * 60)
+    print("Translation Agent Starting...")
+    print("=" * 60)
+    
     meeting_id = os.getenv('MEETING_ID')
     room_url = os.getenv('DAILY_ROOM_URL')
     token = os.getenv('DAILY_TOKEN')
+    openai_key = os.getenv('OPENAI_API_KEY')
+    
+    print(f"MEETING_ID: {meeting_id}")
+    print(f"DAILY_ROOM_URL: {room_url}")
+    print(f"DAILY_TOKEN: {'***' + token[-10:] if token else 'NOT SET'}")
+    print(f"OPENAI_API_KEY: {'***' + openai_key[-10:] if openai_key else 'NOT SET'}")
     
     if not meeting_id or not room_url or not token:
-        print("Error: MEETING_ID, DAILY_ROOM_URL, and DAILY_TOKEN must be set")
+        print("ERROR: MEETING_ID, DAILY_ROOM_URL, and DAILY_TOKEN must be set")
         print("Set these in your .env file or as environment variables")
+        return
+    
+    if not openai_key:
+        print("ERROR: OPENAI_API_KEY must be set")
         return
     
     agent = TranslationAgent(room_url, token, meeting_id)
     
     try:
+        print("\nAttempting to join meeting...")
         success = await agent.join_meeting()
         if success:
-            print("Translation agent is running. Press Ctrl+C to stop.")
+            print("\n" + "=" * 60)
+            print("Translation agent is running!")
+            print("=" * 60)
             # Keep running until interrupted
             await asyncio.Event().wait()
         else:
-            print("Failed to join meeting")
+            print("ERROR: Failed to join meeting")
     except KeyboardInterrupt:
         print("\nStopping translation agent...")
         await agent.leave_meeting()
     except Exception as e:
-        print(f"Error in main: {e}")
+        print(f"\nERROR in main: {e}")
         import traceback
         traceback.print_exc()
         await agent.leave_meeting()
