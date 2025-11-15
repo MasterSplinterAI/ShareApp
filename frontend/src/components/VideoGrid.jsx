@@ -13,75 +13,76 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     const videoTrack = isScreenShare ? participant.screenVideoTrack : participant.videoTrack;
     const audioTrack = participant.audioTrack;
 
-    // Get current stream or create new one
+    // For LOCAL participants: Daily.co manages everything internally
+    // We just attach the video track directly - audio is handled by Daily.co separately
+    if (isLocal) {
+      if (videoTrack) {
+        // For local participants, create a simple stream with just the video track
+        // Daily.co handles audio transmission separately
+        const stream = new MediaStream([videoTrack]);
+        videoRef.current.srcObject = stream;
+      } else {
+        // No video track - clear the stream (audio still works via Daily.co)
+        videoRef.current.srcObject = null;
+      }
+      return; // Early return for local participants
+    }
+
+    // For REMOTE participants: We need to manage the MediaStream ourselves
+    // to ensure audio continues even when video is disabled
     let stream = videoRef.current.srcObject;
-    
-    // For remote participants, we need audio even if video is off
-    // For local participants, audio is handled separately by Daily.co, but we still need to maintain the stream
-    const needsAudioTrack = !isLocal && audioTrack;
     const hasVideoTrack = !!videoTrack;
-    const hasAnyTrack = hasVideoTrack || needsAudioTrack;
+    const hasAudioTrack = !!audioTrack;
     
-    // For local participants: always maintain stream (Daily.co handles audio separately, but stream must exist)
-    // For remote participants: maintain stream if we have any track
-    const shouldMaintainStream = isLocal || hasAnyTrack;
-    
-    if (shouldMaintainStream) {
+    // Maintain stream if we have video OR audio
+    if (hasVideoTrack || hasAudioTrack) {
       if (!stream) {
-        // Create new MediaStream
         stream = new MediaStream();
         videoRef.current.srcObject = stream;
       }
       
-      // Update tracks in the stream
+      // Update video tracks
       const currentVideoTracks = stream.getVideoTracks();
-      const currentAudioTracks = stream.getAudioTracks();
-      
-      // Handle video track
       if (videoTrack) {
-        // Remove old video tracks that don't match
+        // Remove old video tracks
         currentVideoTracks.forEach(track => {
           if (track !== videoTrack) {
             stream.removeTrack(track);
           }
         });
-        
-        // Add video track if not already present
+        // Add video track if not present
         if (!currentVideoTracks.includes(videoTrack)) {
           stream.addTrack(videoTrack);
         }
       } else {
-        // No video track - remove all video tracks (but keep stream alive)
+        // Remove all video tracks but keep stream alive for audio
         currentVideoTracks.forEach(track => {
           stream.removeTrack(track);
         });
       }
       
-      // Handle audio track for remote participants
-      if (needsAudioTrack) {
-        // Remove old audio tracks that don't match
+      // Update audio tracks (always include audio if available, even when video is off)
+      const currentAudioTracks = stream.getAudioTracks();
+      if (audioTrack) {
+        // Remove old audio tracks
         currentAudioTracks.forEach(track => {
           if (track !== audioTrack) {
             stream.removeTrack(track);
           }
         });
-        
-        // Add audio track if not already present
+        // Add audio track if not present
         if (!currentAudioTracks.includes(audioTrack)) {
           stream.addTrack(audioTrack);
         }
-      } else if (!isLocal) {
-        // For remote participants, remove audio tracks if not needed
-        // For local participants, leave audio tracks alone (Daily.co manages them)
+      } else {
+        // Remove audio tracks if not available
         currentAudioTracks.forEach(track => {
           stream.removeTrack(track);
         });
       }
-      // For local participants, we don't touch audio tracks - Daily.co handles them
     } else {
-      // Only clear stream if we truly have no tracks AND it's not a local participant
-      // (local participants might temporarily have no tracks but should keep stream alive)
-      if (stream && !isLocal) {
+      // No tracks at all - clear stream
+      if (stream) {
         videoRef.current.srcObject = null;
       }
     }
@@ -213,18 +214,21 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
       <div className="absolute top-2 left-2 flex gap-2">
         {!isScreenShare && (
           <>
-            {micOn ? (
-              <div className="bg-green-500 rounded-full p-1.5">
-                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                </svg>
-              </div>
-            ) : (
-              <div className="bg-red-500 rounded-full p-1.5">
-                <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-                </svg>
-              </div>
+            {/* Only show mic indicator if video is enabled OR if mic is off (to show muted state) */}
+            {(hasVideo || !micOn) && (
+              micOn ? (
+                <div className="bg-green-500 rounded-full p-1.5">
+                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              ) : (
+                <div className="bg-red-500 rounded-full p-1.5">
+                  <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                  </svg>
+                </div>
+              )
             )}
           </>
         )}
