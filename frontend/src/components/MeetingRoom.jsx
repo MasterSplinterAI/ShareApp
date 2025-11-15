@@ -157,19 +157,27 @@ const MeetingRoom = ({ meetingId, name, isHost, onLeave, roomUrl, shareableLink,
         // This handles cases where roomUrl might be null, invalid, or contain placeholder domains
         let finalRoomUrl = roomUrl;
         
-        // If no roomUrl provided, or if it contains placeholder domain, fetch from backend
-        if (!finalRoomUrl || finalRoomUrl.includes('yourdomain') || !finalRoomUrl.includes('.daily.co')) {
-          if (meetingId) {
-            console.log('Fetching room info for meeting:', meetingId);
-            // Fetch room info to get the actual Daily.co URL
-            const roomInfo = await meetingService.getMeetingInfo(meetingId);
-            finalRoomUrl = roomInfo.roomUrl;
-            console.log('Fetched room URL:', finalRoomUrl);
+        // Validate roomUrl - if it's missing, invalid, or contains placeholder, fetch from backend
+        const isValidUrl = finalRoomUrl && 
+                          !finalRoomUrl.includes('yourdomain') && 
+                          finalRoomUrl.includes('.daily.co') &&
+                          finalRoomUrl.startsWith('https://');
+        
+        if (!isValidUrl) {
+          if (!meetingId) {
+            throw new Error('Meeting ID is required');
           }
+          
+          console.log('Fetching room info for meeting:', meetingId, 'Current roomUrl:', finalRoomUrl);
+          // Fetch room info to get the actual Daily.co URL
+          const roomInfo = await meetingService.getMeetingInfo(meetingId);
+          finalRoomUrl = roomInfo.roomUrl;
+          console.log('Fetched room URL:', finalRoomUrl);
         }
 
-        if (!finalRoomUrl || finalRoomUrl.includes('yourdomain')) {
-          throw new Error('Room URL not available. Please check the meeting ID.');
+        // Final validation
+        if (!finalRoomUrl || finalRoomUrl.includes('yourdomain') || !finalRoomUrl.includes('.daily.co')) {
+          throw new Error(`Invalid room URL: ${finalRoomUrl}. Please check the meeting ID.`);
         }
 
         // Extract room name from URL (e.g., https://domain.daily.co/room-name -> room-name)
