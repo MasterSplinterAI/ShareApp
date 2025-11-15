@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { translationService, tokenService } from '../services/api';
 
-const TranslationControls = ({ meetingId }) => {
+const TranslationControls = ({ meetingId, onTranslationEnabled }) => {
   const [enabled, setEnabled] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -17,6 +17,9 @@ const TranslationControls = ({ meetingId }) => {
         const status = await translationService.getTranslationStatus(meetingId);
         if (isMounted) {
           setEnabled(status.active);
+          if (onTranslationEnabled) {
+            onTranslationEnabled(status.active);
+          }
         }
       } catch (err) {
         // Silently fail - translation status check is optional
@@ -42,12 +45,18 @@ const TranslationControls = ({ meetingId }) => {
         // Stop translation
         await translationService.stopTranslation(meetingId);
         setEnabled(false);
+        if (onTranslationEnabled) {
+          onTranslationEnabled(false);
+        }
       } else {
         // Start translation - get token for the translation agent
         // Use meetingId as roomName (they're the same in Daily.co)
         const token = await tokenService.getToken(meetingId, 'Translation Agent', false);
         await translationService.startTranslation(meetingId, token);
         setEnabled(true);
+        if (onTranslationEnabled) {
+          onTranslationEnabled(true);
+        }
       }
     } catch (err) {
       console.error('Translation toggle error:', err);

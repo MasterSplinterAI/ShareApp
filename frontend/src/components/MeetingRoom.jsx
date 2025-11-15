@@ -7,6 +7,7 @@ import ChatPanel from './ChatPanel';
 import ParticipantsList from './ParticipantsList';
 import TranslationControls from './TranslationControls';
 import ShareModal from './ShareModal';
+import LanguageSelector from './LanguageSelector';
 
 const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shareableLink, shareableLinkNetwork, hostCode }) => {
   const daily = useDaily();
@@ -14,6 +15,8 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
   const [showChat, setShowChat] = useState(false);
   const [showParticipants, setShowParticipants] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [translationEnabled, setTranslationEnabled] = useState(false);
 
   useEffect(() => {
     if (!daily || !roomUrl || !token) return;
@@ -68,7 +71,22 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
         {/* Translation Controls - Host Only */}
         {isHost && (
           <div className="absolute top-4 left-4 z-10">
-            <TranslationControls meetingId={meetingId} />
+            <TranslationControls 
+              meetingId={meetingId} 
+              onTranslationEnabled={setTranslationEnabled}
+            />
+          </div>
+        )}
+
+        {/* Language Selector - All Participants (when translation is enabled) */}
+        {translationEnabled && localParticipant?.session_id && (
+          <div className="absolute top-4 left-4 z-10" style={isHost ? { top: '80px' } : {}}>
+            <LanguageSelector
+              meetingId={meetingId}
+              participantId={localParticipant.session_id}
+              currentLanguage={selectedLanguage}
+              onLanguageChange={setSelectedLanguage}
+            />
           </div>
         )}
 

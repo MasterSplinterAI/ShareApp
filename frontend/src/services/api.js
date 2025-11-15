@@ -128,6 +128,30 @@ export const translationService = {
       throw error;
     }
   },
+
+  async setLanguagePreference(meetingId, participantId, languageCode) {
+    try {
+      const response = await api.post('/api/translation/language', {
+        meetingId,
+        participantId,
+        languageCode
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to set language preference:', error);
+      throw error;
+    }
+  },
+
+  async getLanguagePreference(meetingId, participantId) {
+    try {
+      const response = await api.get(`/api/translation/language/${meetingId}/${participantId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get language preference:', error);
+      throw error;
+    }
+  },
 };
 
 export default api;
