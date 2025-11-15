@@ -19,6 +19,14 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [translationEnabled, setTranslationEnabled] = useState(false);
   const desiredAudioState = useRef(true); // Track what audio state we want
+  
+  // Debug: Log when translation is enabled and participant is available
+  useEffect(() => {
+    if (translationEnabled) {
+      console.log('Translation enabled, localParticipant:', localParticipant);
+      console.log('localParticipant.session_id:', localParticipant?.session_id);
+    }
+  }, [translationEnabled, localParticipant]);
 
   // Monitor participant updates to ensure audio stays enabled when video is disabled
   // Use a ref to prevent infinite loops
@@ -105,14 +113,20 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
         )}
 
             {/* Language Selector - All Participants (when translation is enabled) */}
-            {translationEnabled && localParticipant?.session_id && (
-              <div className="absolute top-4 left-4 z-10" style={isHost ? { top: '80px' } : {}}>
-                <LanguageSelector
-                  meetingId={meetingId}
-                  participantId={localParticipant.session_id}
-                  currentLanguage={selectedLanguage}
-                  onLanguageChange={setSelectedLanguage}
-                />
+            {translationEnabled && (
+              <div className="absolute top-4 left-4 z-10" style={isHost ? { top: '80px' } : { top: '4px' }}>
+                {localParticipant?.session_id ? (
+                  <LanguageSelector
+                    meetingId={meetingId}
+                    participantId={localParticipant.session_id}
+                    currentLanguage={selectedLanguage}
+                    onLanguageChange={setSelectedLanguage}
+                  />
+                ) : (
+                  <div className="bg-white rounded-lg shadow-md px-3 py-2 text-sm text-gray-600">
+                    Loading language selector...
+                  </div>
+                )}
               </div>
             )}
 
