@@ -1,0 +1,5 @@
+videosdk>=0.0.1
+videosdk-plugins-openai>=0.0.1
+python-dotenv>=1.0.0
+numpy>=1.24.0
+

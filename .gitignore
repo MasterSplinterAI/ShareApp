@@ -1,4 +1,36 @@
+# Dependencies
 node_modules/
-*.log
+frontend/node_modules/
+backend/node_modules/
+
+# Environment variables
 .env
-dist/
+.env.local
+.env.*.local
+backend/.env
+translation-agent/.env
+
+# Build outputs
+frontend/dist/
+frontend/build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+translation-agent/__pycache__/
+translation-agent/*.pyc
+translation-agent/.venv/
+translation-agent/venv/
+
+# Backup
+backup/
