@@ -14,16 +14,43 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     const audioTrack = participant.audioTrack;
 
     // For LOCAL participants: Daily.co manages everything internally
-    // We just attach the video track directly - audio is handled by Daily.co separately
+    // We need to keep the video element active even when video is off, so audio continues
     if (isLocal) {
+      let stream = videoRef.current.srcObject;
+      
       if (videoTrack) {
-        // For local participants, create a simple stream with just the video track
-        // Daily.co handles audio transmission separately
-        const stream = new MediaStream([videoTrack]);
-        videoRef.current.srcObject = stream;
+        // Video is enabled - attach the video track
+        if (!stream) {
+          stream = new MediaStream([videoTrack]);
+          videoRef.current.srcObject = stream;
+        } else {
+          // Update existing stream
+          const currentVideoTracks = stream.getVideoTracks();
+          // Remove old tracks
+          currentVideoTracks.forEach(track => {
+            if (track !== videoTrack) {
+              stream.removeTrack(track);
+            }
+          });
+          // Add video track if not present
+          if (!currentVideoTracks.includes(videoTrack)) {
+            stream.addTrack(videoTrack);
+          }
+        }
       } else {
-        // No video track - clear the stream (audio still works via Daily.co)
-        videoRef.current.srcObject = null;
+        // Video is disabled - but keep stream alive with empty MediaStream
+        // This ensures Daily.co can still transmit audio
+        if (!stream) {
+          // Create empty stream to keep video element active
+          stream = new MediaStream();
+          videoRef.current.srcObject = stream;
+        } else {
+          // Remove all video tracks but keep stream alive
+          const currentVideoTracks = stream.getVideoTracks();
+          currentVideoTracks.forEach(track => {
+            stream.removeTrack(track);
+          });
+        }
       }
       return; // Early return for local participants
     }
