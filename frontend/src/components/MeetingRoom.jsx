@@ -195,13 +195,14 @@ const MeetingRoom = ({ meetingId, name, isHost, onLeave, roomUrl, shareableLink,
         // This handles cases where roomUrl might be null, invalid, or contain placeholder domains
         let finalRoomUrl = roomUrl;
         
-        // Validate roomUrl - if it's missing, invalid, or contains placeholder, fetch from backend
+        // Always fetch from backend if roomUrl is invalid or missing
+        // This ensures we always have the correct Daily.co domain
         const isValidUrl = finalRoomUrl && 
                           !finalRoomUrl.includes('yourdomain') && 
                           finalRoomUrl.includes('.daily.co') &&
                           finalRoomUrl.startsWith('https://');
         
-        if (!isValidUrl) {
+        if (!isValidUrl || !finalRoomUrl) {
           if (!meetingId) {
             throw new Error('Meeting ID is required');
           }
@@ -213,10 +214,13 @@ const MeetingRoom = ({ meetingId, name, isHost, onLeave, roomUrl, shareableLink,
           console.log('Fetched room URL:', finalRoomUrl);
         }
 
-        // Final validation
+        // Final validation - if still invalid, throw error
         if (!finalRoomUrl || finalRoomUrl.includes('yourdomain') || !finalRoomUrl.includes('.daily.co')) {
+          console.error('Invalid room URL after fetch:', finalRoomUrl);
           throw new Error(`Invalid room URL: ${finalRoomUrl}. Please check the meeting ID.`);
         }
+        
+        console.log('Using room URL:', finalRoomUrl);
 
         // Extract room name from URL (e.g., https://domain.daily.co/room-name -> room-name)
         const roomName = finalRoomUrl.split('/').pop() || meetingId;
