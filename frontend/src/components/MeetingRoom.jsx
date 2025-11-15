@@ -21,8 +21,20 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
     const joinMeeting = async () => {
       try {
         console.log('Joining Daily.co room:', roomUrl);
-        await daily.join({ url: roomUrl, userName: name, token });
+        await daily.join({ 
+          url: roomUrl, 
+          userName: name, 
+          token,
+          // Explicitly enable audio and video
+          startVideoOff: false,
+          startAudioOff: false
+        });
         console.log('Successfully joined Daily.co room');
+        
+        // Ensure audio and video are enabled after join
+        await daily.setLocalAudio(true);
+        await daily.setLocalVideo(true);
+        console.log('Audio and video enabled');
       } catch (error) {
         console.error('Failed to join Daily.co room:', error);
         // Daily.co SDK will handle retries automatically

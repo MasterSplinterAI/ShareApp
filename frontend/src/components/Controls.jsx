@@ -20,13 +20,26 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
     }
   };
 
-  const toggleScreenShare = () => {
-    if (daily) {
+  const toggleScreenShare = async () => {
+    if (!daily) return;
+    
+    try {
       if (screenShareEnabled) {
-        daily.stopScreenShare();
+        console.log('Stopping screen share...');
+        await daily.stopScreenShare();
+        console.log('Screen share stopped');
       } else {
-        daily.startScreenShare();
+        console.log('Starting screen share...');
+        await daily.startScreenShare({
+          audio: true, // Include system audio
+          width: 1920,
+          height: 1080
+        });
+        console.log('Screen share started');
       }
+    } catch (error) {
+      console.error('Screen share error:', error);
+      alert(`Screen share failed: ${error.message || 'Please check browser permissions'}`);
     }
   };
 
