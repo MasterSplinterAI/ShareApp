@@ -88,9 +88,9 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900">
+    <div className="flex flex-col h-screen bg-gray-900 overflow-hidden">
       {/* Main Content Area */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden">
         <VideoGrid />
         
         {/* Translation Controls - Host Only */}

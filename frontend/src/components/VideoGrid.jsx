@@ -96,7 +96,7 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
   const hasVideo = !!videoTrack;
 
   return (
-    <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video group">
+    <div className={`relative bg-gray-800 rounded-lg overflow-hidden group ${isScreenShare ? 'aspect-video' : 'aspect-video'}`}>
       {/* Video element */}
       <video
         ref={videoRef}
@@ -239,7 +239,7 @@ const VideoGrid = () => {
   }
 
   return (
-    <div className={`grid ${getGridClasses()} gap-4 p-4 h-full w-full overflow-auto auto-rows-fr`}>
+    <div className={`grid ${getGridClasses()} gap-4 p-4 w-full overflow-auto auto-rows-fr`} style={{ height: 'calc(100vh - 120px)' }}>
       {allParticipantIds.map((sessionId) => {
         const isLocal = localParticipant?.session_id === sessionId;
         return (
