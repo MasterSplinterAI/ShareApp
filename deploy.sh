@@ -6,7 +6,7 @@ echo "=== Starting deployment to production server ==="
 # Set up variables
 REMOTE_USER="ubuntu"
 REMOTE_HOST="3.16.210.84"
-PEM_KEY="$HOME/.ssh/AxisAlgo.pem"  # Update this path to your PEM key location
+PEM_KEY="$HOME/Downloads/AxisAlgo.pem"
 APP_DIR="/var/www/share-app"
 BACKEND_DIR="$APP_DIR/backend"
 FRONTEND_DIR="$APP_DIR/frontend"
