@@ -19,16 +19,21 @@ if [ ! -f "$PEM_KEY" ]; then
   exit 1
 fi
 
-# 1. Commit and push to git
-echo "=== Step 1: Committing and pushing to git ==="
-read -p "Commit message (or press Enter for default): " COMMIT_MSG
-if [ -z "$COMMIT_MSG" ]; then
-  COMMIT_MSG="Deploy Daily.co video conference app"
+# 1. Commit and push to git (if there are changes)
+echo "=== Step 1: Checking git status ==="
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Changes detected. Committing and pushing..."
+  read -p "Commit message (or press Enter for default): " COMMIT_MSG
+  if [ -z "$COMMIT_MSG" ]; then
+    COMMIT_MSG="Deploy Daily.co video conference app"
+  fi
+  
+  git add -A
+  git commit -m "$COMMIT_MSG"
+  git push origin main
+else
+  echo "No changes to commit. Proceeding with deployment..."
 fi
-
-git add -A
-git commit -m "$COMMIT_MSG"
-git push origin main
 
 # 2. SSH to server and deploy code
 echo "=== Step 2: Deploying to server ==="
