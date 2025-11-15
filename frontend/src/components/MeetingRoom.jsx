@@ -153,18 +153,23 @@ const MeetingRoom = ({ meetingId, name, isHost, onLeave, roomUrl, shareableLink,
     
     const setupRoom = async () => {
       try {
-        // If roomUrl is provided, use it directly
-        // Otherwise, fetch room info from backend to get the actual Daily.co URL
+        // Always fetch room info from backend to ensure we have the correct Daily.co URL
+        // This handles cases where roomUrl might be null, invalid, or contain placeholder domains
         let finalRoomUrl = roomUrl;
         
-        if (!finalRoomUrl && meetingId) {
-          // Fetch room info to get the actual Daily.co URL
-          const roomInfo = await meetingService.getMeetingInfo(meetingId);
-          finalRoomUrl = roomInfo.roomUrl;
+        // If no roomUrl provided, or if it contains placeholder domain, fetch from backend
+        if (!finalRoomUrl || finalRoomUrl.includes('yourdomain') || !finalRoomUrl.includes('.daily.co')) {
+          if (meetingId) {
+            console.log('Fetching room info for meeting:', meetingId);
+            // Fetch room info to get the actual Daily.co URL
+            const roomInfo = await meetingService.getMeetingInfo(meetingId);
+            finalRoomUrl = roomInfo.roomUrl;
+            console.log('Fetched room URL:', finalRoomUrl);
+          }
         }
 
-        if (!finalRoomUrl) {
-          throw new Error('Room URL not available');
+        if (!finalRoomUrl || finalRoomUrl.includes('yourdomain')) {
+          throw new Error('Room URL not available. Please check the meeting ID.');
         }
 
         // Extract room name from URL (e.g., https://domain.daily.co/room-name -> room-name)
