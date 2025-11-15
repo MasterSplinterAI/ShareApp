@@ -7,13 +7,18 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   
   // Use Daily.co's useMediaTrack hook for proper track management
-  const videoTrack = useMediaTrack(sessionId, isScreenShare ? 'screenVideo' : 'video');
-  const audioTrack = useMediaTrack(sessionId, 'audio');
+  // Fallback to participant tracks if useMediaTrack returns null
+  const mediaTrackVideo = useMediaTrack(sessionId, isScreenShare ? 'screenVideo' : 'video');
+  const mediaTrackAudio = useMediaTrack(sessionId, 'audio');
+  
+  // Use useMediaTrack if available, otherwise fall back to participant tracks
+  const videoTrack = mediaTrackVideo || (isScreenShare ? participant?.screenVideoTrack : participant?.videoTrack);
+  const audioTrack = mediaTrackAudio || participant?.audioTrack;
 
   useEffect(() => {
     if (!videoRef.current || !participant) return;
 
-    // useMediaTrack can return null when track isn't available - check for that
+    // Check if tracks are valid MediaStreamTrack instances
     const hasVideoTrack = videoTrack && videoTrack instanceof MediaStreamTrack;
     const hasAudioTrack = audioTrack && audioTrack instanceof MediaStreamTrack;
     
@@ -125,7 +130,21 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
 
   const displayName = participant?.user_name || 'User';
   const micOn = participant?.audio;
+  // Check if we have a valid video track
   const hasVideo = videoTrack && videoTrack instanceof MediaStreamTrack;
+  
+  // Debug logging
+  useEffect(() => {
+    if (isLocal) {
+      console.log('Local participant video state:', {
+        hasVideo,
+        videoTrack: !!videoTrack,
+        participantVideo: !!participant?.videoTrack,
+        mediaTrackVideo: !!mediaTrackVideo,
+        participant: !!participant
+      });
+    }
+  }, [hasVideo, videoTrack, participant, isLocal, mediaTrackVideo]);
 
   // Don't return early - always render the full component so video element stays mounted
   // This ensures Daily.co can continue managing audio even when video is disabled
