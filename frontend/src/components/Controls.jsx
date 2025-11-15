@@ -22,8 +22,19 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
   const toggleWebcam = async () => {
     if (daily) {
       try {
-        await daily.setLocalVideo(!webcamEnabled);
-        console.log('Camera toggled:', !webcamEnabled);
+        const newVideoState = !webcamEnabled;
+        await daily.setLocalVideo(newVideoState);
+        console.log('Camera toggled:', newVideoState);
+        
+        // Explicitly ensure audio stays enabled when toggling video
+        // This prevents Daily.co from accidentally disabling audio
+        if (micEnabled) {
+          // Small delay to ensure video toggle completes
+          setTimeout(async () => {
+            await daily.setLocalAudio(true);
+            console.log('Audio re-enabled after video toggle');
+          }, 100);
+        }
       } catch (error) {
         console.error('Error toggling camera:', error);
       }
