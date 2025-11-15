@@ -65,15 +65,31 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
       // Update audio tracks (always include audio if available, even when video is off)
       const currentAudioTracks = stream.getAudioTracks();
       if (audioTrack) {
-        // Remove old audio tracks
-        currentAudioTracks.forEach(track => {
-          if (track !== audioTrack) {
+        // Check if this audio track is already in the stream
+        const trackExists = currentAudioTracks.some(track => track.id === audioTrack.id);
+        
+        if (!trackExists) {
+          // Remove old audio tracks first
+          currentAudioTracks.forEach(track => {
             stream.removeTrack(track);
-          }
-        });
-        // Add audio track if not present
-        if (!currentAudioTracks.includes(audioTrack)) {
+          });
+          // Add the new audio track
           stream.addTrack(audioTrack);
+          console.log('Audio track added for remote participant:', sessionId);
+        } else {
+          // Track already exists, but verify it's the right one
+          currentAudioTracks.forEach(track => {
+            if (track.id !== audioTrack.id) {
+              stream.removeTrack(track);
+            }
+          });
+        }
+        
+        // Ensure video element can play audio
+        if (videoRef.current && !videoRef.current.muted) {
+          videoRef.current.play().catch(err => {
+            console.log('Audio play prevented:', err);
+          });
         }
       } else {
         // Remove audio tracks if not available
@@ -188,6 +204,14 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
         playsInline
         muted={isLocal && !isScreenShare}
         className={`w-full h-full object-cover ${hasVideo ? '' : 'hidden'}`}
+        onLoadedMetadata={() => {
+          // Ensure audio plays for remote participants
+          if (!isLocal && videoRef.current && !videoRef.current.muted) {
+            videoRef.current.play().catch(err => {
+              console.log('Auto-play prevented, user interaction required:', err);
+            });
+          }
+        }}
       />
       
       {/* Show placeholder when no video */}
