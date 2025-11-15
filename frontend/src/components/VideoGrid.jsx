@@ -17,11 +17,13 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     let stream = videoRef.current.srcObject;
     
     // For remote participants, we need audio even if video is off
-    // For local participants, audio is handled separately by Daily.co
+    // For local participants, audio is handled separately by Daily.co, but we still need to maintain the stream
     const needsAudioTrack = !isLocal && audioTrack;
-    const hasAnyTrack = videoTrack || needsAudioTrack;
+    const hasVideoTrack = !!videoTrack;
+    const hasAnyTrack = hasVideoTrack || needsAudioTrack;
     
-    if (hasAnyTrack) {
+    // Always maintain the stream if we have any track OR if it's a local participant (to preserve state)
+    if (hasAnyTrack || (isLocal && stream)) {
       if (!stream) {
         // Create new MediaStream
         stream = new MediaStream();
@@ -46,7 +48,7 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
           stream.addTrack(videoTrack);
         }
       } else {
-        // No video track - remove all video tracks
+        // No video track - remove all video tracks (but keep stream alive)
         currentVideoTracks.forEach(track => {
           stream.removeTrack(track);
         });
@@ -65,15 +67,18 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
         if (!currentAudioTracks.includes(audioTrack)) {
           stream.addTrack(audioTrack);
         }
-      } else {
-        // Remove audio tracks (local participant or no audio)
+      } else if (!isLocal) {
+        // For remote participants, remove audio tracks if not needed
+        // For local participants, leave audio tracks alone (Daily.co manages them)
         currentAudioTracks.forEach(track => {
           stream.removeTrack(track);
         });
       }
+      // For local participants, we don't touch audio tracks - Daily.co handles them
     } else {
-      // No tracks at all - clear the stream
-      if (stream) {
+      // Only clear stream if we truly have no tracks AND it's not a local participant
+      // (local participants might temporarily have no tracks but should keep stream alive)
+      if (stream && !isLocal) {
         videoRef.current.srcObject = null;
       }
     }
