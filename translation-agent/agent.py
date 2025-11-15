@@ -12,21 +12,23 @@ import config
 
 load_dotenv()
 
-# Try to import Daily.co Python SDK
+# Import Daily.co Python SDK
 try:
-    from daily import Daily
+    from daily import Daily, CallClient
     DAILY_AVAILABLE = True
 except ImportError:
-    print("WARNING: daily-python not installed. Install with: pip install daily-python")
+    print("ERROR: daily-python not installed. Install with: pip install daily-python")
+    print("Or activate venv: source venv/bin/activate && pip install daily-python")
     DAILY_AVAILABLE = False
     Daily = None
+    CallClient = None
 
-# Try to import OpenAI
+# Import OpenAI
 try:
     from openai import OpenAI
     OPENAI_AVAILABLE = True
 except ImportError:
-    print("WARNING: openai not installed. Install with: pip install openai")
+    print("ERROR: openai not installed. Install with: pip install openai")
     OPENAI_AVAILABLE = False
     OpenAI = None
 
@@ -35,7 +37,7 @@ class TranslationAgent:
         self.room_url = room_url
         self.token = token
         self.meeting_id = meeting_id
-        self.daily = None
+        self.call_client = None
         self.openai_client = None
         self.running = False
         self.participant_languages = {}  # Map participant_id -> language_code
@@ -54,8 +56,11 @@ class TranslationAgent:
             if not OPENAI_AVAILABLE:
                 raise ImportError("openai SDK not installed")
             
-            # Initialize Daily.co client
-            self.daily = Daily()
+            # Initialize Daily.co
+            Daily.init()
+            
+            # Create CallClient
+            self.call_client = CallClient()
             
             # Initialize OpenAI client
             self.openai_client = OpenAI(api_key=config.OPENAI_API_KEY)
@@ -64,6 +69,8 @@ class TranslationAgent:
             return True
         except Exception as e:
             print(f"Error initializing agent: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     async def fetch_language_preferences(self):
@@ -89,7 +96,7 @@ class TranslationAgent:
             # Get target language for this participant
             target_language = self.participant_languages.get(participant_id, 'en')
             
-            if target_language == source_language or target_language == 'en' and source_language == 'auto':
+            if target_language == source_language or (target_language == 'en' and source_language == 'auto'):
                 # No translation needed
                 return None
             
@@ -110,71 +117,68 @@ class TranslationAgent:
             print(f"Error processing audio with OpenAI: {e}")
             return None
     
-    async def setup_audio_processing(self, call_client):
-        """Set up audio processing for participants"""
+    def setup_audio_processing(self):
+        """Set up audio processing for participants using Daily.co Python SDK"""
         try:
-            # Daily.co Python SDK event handlers
-            @call_client.on("participant-joined")
-            async def on_participant_joined(participant):
-                participant_id = participant.get('id')
-                print(f"Participant {participant_id} joined")
+            # Get all participants
+            participants = self.call_client.participants()
+            print(f"Setting up audio processing for {len(participants)} participants")
+            
+            # Set up audio renderer for each participant
+            for participant_id, participant in participants.items():
+                if participant_id == 'local':  # Skip local (bot itself)
+                    continue
                 
-                # Fetch updated language preferences
-                await self.fetch_language_preferences()
-            
-            @call_client.on("participant-left")
-            async def on_participant_left(participant):
-                participant_id = participant.get('id')
-                print(f"Participant {participant_id} left")
-                if participant_id in self.audio_buffers:
-                    del self.audio_buffers[participant_id]
-            
-            @call_client.on("track-started")
-            async def on_track_started(track):
-                if track.get('type') == 'audio':
-                    participant_id = track.get('participant_id')
-                    print(f"Audio track started for participant {participant_id}")
-            
-            @call_client.on("track-stopped")
-            async def on_track_stopped(track):
-                if track.get('type') == 'audio':
-                    participant_id = track.get('participant_id')
-                    print(f"Audio track stopped for participant {participant_id}")
-            
-            # Set up frame processor for audio frames
-            @call_client.frame_processor("audio")
-            async def process_audio_frame(frame):
+                def make_audio_renderer(pid):
+                    """Create audio renderer closure for specific participant"""
+                    def audio_renderer(audio_frame):
+                        """Called when audio frame is received from participant"""
+                        try:
+                            # Get audio data from frame
+                            # Daily.co Python SDK provides audio_frame as numpy array or similar
+                            audio_data = audio_frame
+                            
+                            if audio_data is None:
+                                return
+                            
+                            # Process audio for translation (async wrapper)
+                            asyncio.create_task(self.process_audio_with_openai(
+                                pid,
+                                audio_data,
+                                source_language='auto'
+                            ))
+                        except Exception as e:
+                            print(f"Error in audio renderer for {pid}: {e}")
+                    return audio_renderer
+                
+                # Set audio renderer for this participant
                 try:
-                    participant_id = frame.get('participant_id')
-                    if not participant_id:
-                        return
-                    
-                    # Get audio data from frame
-                    audio_data = frame.get('audio')
-                    if audio_data is None:
-                        return
-                    
-                    # Process audio for translation
-                    translated_audio = await self.process_audio_with_openai(
-                        participant_id,
-                        audio_data,
-                        source_language='auto'
+                    self.call_client.set_audio_renderer(
+                        participant_id=participant_id,
+                        callback=make_audio_renderer(participant_id),
+                        audio_source='microphone',  # or 'speaker' depending on what we want
+                        sample_rate=16000,  # OpenAI requires 16kHz
+                        callback_interval_ms=20  # Process every 20ms
                     )
-                    
-                    # If we have translated audio, inject it back
-                    # Daily.co's Python SDK supports sending audio tracks
-                    
+                    print(f"Audio renderer set up for participant {participant_id}")
                 except Exception as e:
-                    print(f"Error processing audio frame: {e}")
+                    print(f"Error setting audio renderer for {participant_id}: {e}")
             
             print("Audio processing set up")
         except Exception as e:
             print(f"Error setting up audio processing: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def update_audio_processing(self):
+        """Update audio processing when participants join/leave"""
+        # Re-setup audio processing for new participants
+        self.setup_audio_processing()
     
     async def join_meeting(self):
         """Join the Daily.co meeting"""
         try:
-            if not self.daily:
+            if not self.call_client:
                 if not await self.initialize():
                     return False
             
@@ -182,18 +186,28 @@ class TranslationAgent:
             await self.fetch_language_preferences()
             
             # Join the room using Daily.co Python SDK
-            call_client = self.daily.join(
+            def join_completion(join_data, error):
+                """Callback when join completes"""
+                if error:
+                    print(f"Error joining meeting: {error}")
+                    return
+                
+                print(f"Translation agent joined meeting {self.meeting_id}")
+                print(f"Join data: {join_data}")
+                
+                # Set up audio processing after joining
+                # Wait a bit for participants to be available
+                asyncio.create_task(self._delayed_audio_setup())
+            
+            # Join with completion callback
+            self.call_client.join(
                 self.room_url,
-                token=self.token,
-                user_name=config.AGENT_NAME,
-                audio=True,
-                video=False  # Bot doesn't need video
+                meeting_token=self.token,
+                completion=join_completion
             )
             
-            print(f"Translation agent joined meeting {self.meeting_id}")
-            
-            # Set up audio processing
-            await self.setup_audio_processing(call_client)
+            # Wait a moment for join to complete
+            await asyncio.sleep(1)
             
             self.running = True
             
@@ -204,15 +218,33 @@ class TranslationAgent:
             traceback.print_exc()
             return False
     
+    async def _delayed_audio_setup(self):
+        """Set up audio processing after a short delay"""
+        await asyncio.sleep(2)  # Wait for participants to be available
+        self.setup_audio_processing()
+        
+        # Periodically check for new participants and update audio processing
+        while self.running:
+            await asyncio.sleep(5)  # Check every 5 seconds
+            if self.running:
+                self.update_audio_processing()
+        except Exception as e:
+            print(f"Error joining meeting: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
     async def leave_meeting(self):
         """Leave the meeting"""
         try:
             self.running = False
-            if self.daily:
-                self.daily.leave()
+            if self.call_client:
+                self.call_client.leave()
                 print(f"Translation agent left meeting {self.meeting_id}")
         except Exception as e:
             print(f"Error leaving meeting: {e}")
+            import traceback
+            traceback.print_exc()
 
 async def main():
     """Main entry point for the agent"""
