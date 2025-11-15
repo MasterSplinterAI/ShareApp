@@ -13,44 +13,18 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     const videoTrack = isScreenShare ? participant.screenVideoTrack : participant.videoTrack;
     const audioTrack = participant.audioTrack;
 
-    // For LOCAL participants: Daily.co manages everything internally
-    // We need to keep the video element active even when video is off, so audio continues
+    // For LOCAL participants: Don't manage MediaStreams at all - Daily.co handles it internally
+    // Just attach the video track when it exists, Daily.co manages audio separately
     if (isLocal) {
-      let stream = videoRef.current.srcObject;
-      
       if (videoTrack) {
-        // Video is enabled - attach the video track
-        if (!stream) {
-          stream = new MediaStream([videoTrack]);
-          videoRef.current.srcObject = stream;
-        } else {
-          // Update existing stream
-          const currentVideoTracks = stream.getVideoTracks();
-          // Remove old tracks
-          currentVideoTracks.forEach(track => {
-            if (track !== videoTrack) {
-              stream.removeTrack(track);
-            }
-          });
-          // Add video track if not present
-          if (!currentVideoTracks.includes(videoTrack)) {
-            stream.addTrack(videoTrack);
-          }
-        }
+        // Video is enabled - attach the video track directly
+        // Daily.co manages audio transmission separately, so we don't need to touch it
+        const stream = new MediaStream([videoTrack]);
+        videoRef.current.srcObject = stream;
       } else {
-        // Video is disabled - but keep stream alive with empty MediaStream
-        // This ensures Daily.co can still transmit audio
-        if (!stream) {
-          // Create empty stream to keep video element active
-          stream = new MediaStream();
-          videoRef.current.srcObject = stream;
-        } else {
-          // Remove all video tracks but keep stream alive
-          const currentVideoTracks = stream.getVideoTracks();
-          currentVideoTracks.forEach(track => {
-            stream.removeTrack(track);
-          });
-        }
+        // Video is disabled - clear the video element
+        // Daily.co will continue transmitting audio independently via setLocalAudio()
+        videoRef.current.srcObject = null;
       }
       return; // Early return for local participants
     }
