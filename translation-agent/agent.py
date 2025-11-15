@@ -213,10 +213,10 @@ class TranslationAgent:
                     # Write audio data to the source (this needs to be done continuously)
                     # For now, we'll implement a simple version
                     # In production, this would need a continuous audio stream
-                    print(f"Added custom audio track {track_name} for {participant_id}")
-                    print("Note: Audio injection requires continuous streaming - implementing...")
+                    audio_source.write_frames(audio_bytes)
                     
-                    print(f"Injected translated audio for {participant_id} (track: {track_id})")
+                    print(f"Added custom audio track {track_name} for {participant_id}")
+                    print(f"Injected translated audio for {participant_id} (track: {track_name})")
                 except Exception as e:
                     print(f"Error injecting audio (may need different format): {e}")
                     print("Note: Audio injection requires proper MediaStreamTrack format")
