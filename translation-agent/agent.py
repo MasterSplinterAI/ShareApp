@@ -220,19 +220,19 @@ class TranslationAgent:
     
     async def _delayed_audio_setup(self):
         """Set up audio processing after a short delay"""
-        await asyncio.sleep(2)  # Wait for participants to be available
-        self.setup_audio_processing()
-        
-        # Periodically check for new participants and update audio processing
-        while self.running:
-            await asyncio.sleep(5)  # Check every 5 seconds
-            if self.running:
-                self.update_audio_processing()
+        try:
+            await asyncio.sleep(2)  # Wait for participants to be available
+            self.setup_audio_processing()
+            
+            # Periodically check for new participants and update audio processing
+            while self.running:
+                await asyncio.sleep(5)  # Check every 5 seconds
+                if self.running:
+                    self.update_audio_processing()
         except Exception as e:
-            print(f"Error joining meeting: {e}")
+            print(f"Error in delayed audio setup: {e}")
             import traceback
             traceback.print_exc()
-            return False
     
     async def leave_meeting(self):
         """Leave the meeting"""
