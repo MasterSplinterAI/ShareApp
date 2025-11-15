@@ -13,18 +13,40 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     const videoTrack = isScreenShare ? participant.screenVideoTrack : participant.videoTrack;
     const audioTrack = participant.audioTrack;
 
-    // For LOCAL participants: Don't manage MediaStreams at all - Daily.co handles it internally
-    // Just attach the video track when it exists, Daily.co manages audio separately
+    // For LOCAL participants: Keep video element active even when video is disabled
+    // This ensures Daily.co can continue transmitting audio
     if (isLocal) {
+      let stream = videoRef.current.srcObject;
+      
       if (videoTrack) {
-        // Video is enabled - attach the video track directly
-        // Daily.co manages audio transmission separately, so we don't need to touch it
-        const stream = new MediaStream([videoTrack]);
-        videoRef.current.srcObject = stream;
+        // Video is enabled - attach the video track
+        if (!stream) {
+          stream = new MediaStream([videoTrack]);
+          videoRef.current.srcObject = stream;
+        } else {
+          // Update existing stream
+          const currentTracks = stream.getVideoTracks();
+          currentTracks.forEach(track => {
+            if (track !== videoTrack) {
+              stream.removeTrack(track);
+            }
+          });
+          if (!currentTracks.includes(videoTrack)) {
+            stream.addTrack(videoTrack);
+          }
+        }
       } else {
-        // Video is disabled - clear the video element
-        // Daily.co will continue transmitting audio independently via setLocalAudio()
-        videoRef.current.srcObject = null;
+        // Video is disabled - but keep an empty stream attached
+        // This is critical: Daily.co needs the video element to stay active for audio transmission
+        if (!stream) {
+          stream = new MediaStream();
+          videoRef.current.srcObject = stream;
+        }
+        // Remove all video tracks but keep stream alive
+        const currentTracks = stream.getVideoTracks();
+        currentTracks.forEach(track => {
+          stream.removeTrack(track);
+        });
       }
       return; // Early return for local participants
     }
