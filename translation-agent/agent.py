@@ -9,6 +9,7 @@ import numpy as np
 import aiohttp
 from dotenv import load_dotenv
 import config
+from openai_realtime import OpenAIRealtimeClient
 
 load_dotenv()
 
@@ -42,6 +43,7 @@ class TranslationAgent:
         self.running = False
         self.participant_languages = {}  # Map participant_id -> language_code
         self.audio_buffers = {}  # Map participant_id -> audio buffer
+        self.realtime_clients = {}  # Map participant_id -> OpenAIRealtimeClient
         self.backend_url = os.getenv('BACKEND_URL', 'http://localhost:3000')
         
     async def initialize(self):
@@ -90,6 +92,39 @@ class TranslationAgent:
             # Default to English for all participants
             self.participant_languages = {}
     
+    async def get_or_create_realtime_client(self, participant_id):
+        """Get or create OpenAI Realtime client for a participant"""
+        if participant_id in self.realtime_clients:
+            return self.realtime_clients[participant_id]
+        
+        # Get target language for this participant
+        target_language = self.participant_languages.get(participant_id, 'en')
+        
+        # Create new Realtime client
+        client = OpenAIRealtimeClient(
+            api_key=config.OPENAI_API_KEY,
+            target_language=target_language
+        )
+        
+        # Set up callbacks
+        def on_transcription(text):
+            print(f"[{participant_id}] Transcription: {text}")
+        
+        def on_audio(audio_data):
+            # Inject translated audio back into Daily.co call
+            self._inject_translated_audio(participant_id, audio_data)
+        
+        client.on_transcription = on_transcription
+        client.on_audio = on_audio
+        
+        # Connect
+        connected = await client.connect()
+        if connected:
+            self.realtime_clients[participant_id] = client
+            return client
+        else:
+            return None
+    
     async def process_audio_with_openai(self, participant_id, audio_data, source_language='auto'):
         """Process audio through OpenAI Realtime API for translation"""
         try:
@@ -100,22 +135,48 @@ class TranslationAgent:
                 # No translation needed
                 return None
             
-            print(f"Processing audio from {participant_id}, translating to {target_language}")
+            # Get or create Realtime client for this participant
+            client = await self.get_or_create_realtime_client(participant_id)
+            if not client:
+                print(f"Failed to create Realtime client for {participant_id}")
+                return None
             
-            # TODO: Implement full OpenAI Realtime API integration
-            # This requires:
-            # 1. Creating a Realtime session with OpenAI
-            # 2. Sending audio chunks via WebSocket
-            # 3. Receiving translated audio/text
-            # 4. Converting back to audio format Daily.co expects
+            # Ensure audio_data is numpy array
+            if not isinstance(audio_data, np.ndarray):
+                audio_data = np.array(audio_data, dtype=np.float32)
             
-            # For now, this is a placeholder
-            # Full implementation would use OpenAI's Realtime API WebSocket connection
+            # Send audio to OpenAI Realtime API
+            await client.send_audio(audio_data)
             
-            return None  # Placeholder
         except Exception as e:
             print(f"Error processing audio with OpenAI: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    def _inject_translated_audio(self, participant_id, audio_data):
+        """Inject translated audio back into Daily.co call"""
+        try:
+            # Convert float32 audio to int16 for Daily.co
+            audio_int16 = (np.clip(audio_data, -1.0, 1.0) * 32767).astype(np.int16)
+            
+            # Use Daily.co's add_custom_audio_track or similar method
+            # Note: This may require creating a custom audio track
+            # Check Daily.co Python SDK docs for exact method
+            
+            # For now, we'll use add_custom_audio_track if available
+            if self.call_client:
+                try:
+                    # This is a placeholder - actual implementation depends on Daily.co SDK
+                    # We may need to create an audio track and add it
+                    print(f"Injecting translated audio for {participant_id}")
+                    # TODO: Implement actual audio injection using Daily.co SDK
+                except Exception as e:
+                    print(f"Error injecting audio: {e}")
+        except Exception as e:
+            print(f"Error in _inject_translated_audio: {e}")
+            import traceback
+            traceback.print_exc()
     
     def setup_audio_processing(self):
         """Set up audio processing for participants using Daily.co Python SDK"""
@@ -238,6 +299,16 @@ class TranslationAgent:
         """Leave the meeting"""
         try:
             self.running = False
+            
+            # Close all OpenAI Realtime clients
+            for participant_id, client in self.realtime_clients.items():
+                try:
+                    await client.close()
+                except Exception as e:
+                    print(f"Error closing Realtime client for {participant_id}: {e}")
+            self.realtime_clients.clear()
+            
+            # Leave Daily.co call
             if self.call_client:
                 self.call_client.leave()
                 print(f"Translation agent left meeting {self.meeting_id}")
