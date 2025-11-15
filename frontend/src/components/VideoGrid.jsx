@@ -220,10 +220,11 @@ const VideoGrid = () => {
   // Responsive grid classes
   const getGridClasses = () => {
     const count = allParticipantIds.length;
+    // Always use 2 columns on medium+ screens for 2+ participants
     if (count <= 1) return 'grid-cols-1';
-    if (count === 2) return 'grid-cols-1 md:grid-cols-2';
-    if (count <= 4) return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-2';
-    return 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
+    if (count === 2) return 'grid-cols-1 sm:grid-cols-2';
+    if (count <= 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
+    return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   };
 
   if (allParticipantIds.length === 0) {
@@ -238,7 +239,7 @@ const VideoGrid = () => {
   }
 
   return (
-    <div className={`grid ${getGridClasses()} gap-4 p-4 h-full overflow-auto`}>
+    <div className={`grid ${getGridClasses()} gap-4 p-4 h-full w-full overflow-auto auto-rows-fr`}>
       {allParticipantIds.map((sessionId) => {
         const isLocal = localParticipant?.session_id === sessionId;
         return (
