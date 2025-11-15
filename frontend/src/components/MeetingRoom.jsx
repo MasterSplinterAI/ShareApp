@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DailyProvider, useDaily, useLocalParticipant } from '@daily-co/daily-react';
-import { tokenService } from '../services/api';
+import { tokenService, meetingService } from '../services/api';
 import VideoGrid from './VideoGrid';
 import Controls from './Controls';
 import ChatPanel from './ChatPanel';
@@ -124,14 +124,17 @@ const MeetingRoom = ({ meetingId, name, isHost, onLeave, roomUrl, shareableLink,
     const setupRoom = async () => {
       try {
         // If roomUrl is provided, use it directly
-        // Otherwise, we need to get/create the room URL
+        // Otherwise, fetch room info from backend to get the actual Daily.co URL
         let finalRoomUrl = roomUrl;
         
+        if (!finalRoomUrl && meetingId) {
+          // Fetch room info to get the actual Daily.co URL
+          const roomInfo = await meetingService.getMeetingInfo(meetingId);
+          finalRoomUrl = roomInfo.roomUrl;
+        }
+
         if (!finalRoomUrl) {
-          // For now, construct Daily.co room URL from meetingId
-          // In production, you'd get this from the backend when creating the room
-          const dailyDomain = import.meta.env.VITE_DAILY_DOMAIN || 'yourdomain.daily.co';
-          finalRoomUrl = `https://${dailyDomain}/${meetingId}`;
+          throw new Error('Room URL not available');
         }
 
         // Extract room name from URL (e.g., https://domain.daily.co/room-name -> room-name)
