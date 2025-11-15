@@ -185,6 +185,9 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
 const ParticipantTiles = ({ sessionId, isLocal, localParticipant }) => {
   const participant = isLocal ? localParticipant : useParticipant(sessionId);
   
+  // Check if participant has screen share
+  const hasScreenShare = !!participant?.screenVideoTrack;
+  
   return (
     <>
       {/* Camera tile - always render */}
@@ -195,8 +198,8 @@ const ParticipantTiles = ({ sessionId, isLocal, localParticipant }) => {
         isScreenShare={false}
       />
       
-      {/* Screen share tile if available */}
-      {participant?.screenVideoTrack && (
+      {/* Screen share tile if available - render as separate tile */}
+      {hasScreenShare && (
         <ParticipantVideo 
           key={`${sessionId}-screen`}
           sessionId={sessionId}
@@ -217,13 +220,27 @@ const VideoGrid = () => {
     ? [localParticipant.session_id, ...participantIds.filter(id => id !== localParticipant.session_id)]
     : participantIds;
 
-  // Responsive grid classes
+  // Count total tiles including screen shares
+  const countTotalTiles = () => {
+    let total = 0;
+    allParticipantIds.forEach(sessionId => {
+      const isLocal = localParticipant?.session_id === sessionId;
+      const participant = isLocal ? localParticipant : null;
+      total++; // Camera tile
+      if (participant?.screenVideoTrack) {
+        total++; // Screen share tile
+      }
+    });
+    return total;
+  };
+
+  // Responsive grid classes based on total tiles (camera + screen shares)
   const getGridClasses = () => {
-    const count = allParticipantIds.length;
-    // Always use 2 columns on medium+ screens for 2+ participants
-    if (count <= 1) return 'grid-cols-1';
-    if (count === 2) return 'grid-cols-1 sm:grid-cols-2';
-    if (count <= 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
+    const totalTiles = countTotalTiles();
+    // Always use 2 columns on medium+ screens for 2+ tiles
+    if (totalTiles <= 1) return 'grid-cols-1';
+    if (totalTiles === 2) return 'grid-cols-1 sm:grid-cols-2';
+    if (totalTiles <= 4) return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-2';
     return 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4';
   };
 
