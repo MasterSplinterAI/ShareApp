@@ -32,7 +32,22 @@ class OpenAIRealtimeClient:
                 "OpenAI-Beta": "realtime=v1"
             }
             
-            self.websocket = await websockets.connect(uri, extra_headers=headers)
+            # websockets 15.0+ uses additional_headers instead of extra_headers
+            # Convert dict to list of tuples for compatibility
+            header_list = [(k, v) for k, v in headers.items()]
+            
+            try:
+                # Try additional_headers first (websockets 15.0+)
+                self.websocket = await websockets.connect(uri, additional_headers=header_list)
+            except TypeError:
+                # Fallback: try extra_headers (older versions)
+                try:
+                    self.websocket = await websockets.connect(uri, extra_headers=headers)
+                except TypeError:
+                    # Last resort: connect and manually send headers via HTTP upgrade
+                    # This is a workaround - may need to use a different approach
+                    raise Exception("Websockets library version incompatible. Please upgrade websockets: pip install --upgrade websockets")
+            
             self.running = True
             
             # Send session configuration

@@ -45,6 +45,7 @@ class TranslationAgent:
         self.audio_buffers = {}  # Map participant_id -> audio buffer
         self.realtime_clients = {}  # Map (speaker_id, listener_id) -> OpenAIRealtimeClient
         self.backend_url = os.getenv('BACKEND_URL', 'http://localhost:3000')
+        self.event_loop = None  # Store event loop reference
         
     async def initialize(self):
         """Initialize Daily.co client and OpenAI client"""
@@ -254,8 +255,9 @@ class TranslationAgent:
                 
                 def make_audio_renderer(pid):
                     """Create audio renderer closure for specific participant"""
-                    def audio_renderer(audio_frame):
-                        """Called when audio frame is received from participant"""
+                    def audio_renderer(audio_frame, *args, **kwargs):
+                        """Called when audio frame is received from participant
+                        Daily.co SDK may pass multiple arguments, so accept *args and **kwargs"""
                         try:
                             # Get audio data from frame
                             # Daily.co Python SDK provides audio_frame as numpy array or similar
@@ -265,13 +267,30 @@ class TranslationAgent:
                                 return
                             
                             # Process audio for translation (async wrapper)
-                            asyncio.create_task(self.process_audio_with_openai(
-                                pid,
-                                audio_data,
-                                source_language='auto'
-                            ))
+                            # Use event loop if available, otherwise create task
+                            try:
+                                if self.event_loop and self.event_loop.is_running():
+                                    self.event_loop.call_soon_threadsafe(
+                                        lambda: asyncio.create_task(self.process_audio_with_openai(
+                                            pid,
+                                            audio_data,
+                                            source_language='auto'
+                                        ))
+                                    )
+                                else:
+                                    # Fallback: try to get current loop
+                                    loop = asyncio.get_event_loop()
+                                    loop.create_task(self.process_audio_with_openai(
+                                        pid,
+                                        audio_data,
+                                        source_language='auto'
+                                    ))
+                            except Exception as loop_error:
+                                print(f"Error scheduling audio processing task for {pid}: {loop_error}")
                         except Exception as e:
                             print(f"Error in audio renderer for {pid}: {e}")
+                            import traceback
+                            traceback.print_exc()
                     return audio_renderer
                 
                 # Set audio renderer for this participant
@@ -305,6 +324,9 @@ class TranslationAgent:
                 if not await self.initialize():
                     return False
             
+            # Store event loop reference for use in callbacks
+            self.event_loop = asyncio.get_event_loop()
+            
             # Fetch language preferences before joining
             await self.fetch_language_preferences()
             
@@ -320,7 +342,23 @@ class TranslationAgent:
                 
                 # Set up audio processing after joining
                 # Wait a bit for participants to be available
-                asyncio.create_task(self._delayed_audio_setup())
+                # Use stored event loop reference
+                try:
+                    if self.event_loop and self.event_loop.is_running():
+                        # Schedule the coroutine to run
+                        self.event_loop.call_soon_threadsafe(
+                            lambda: asyncio.create_task(self._delayed_audio_setup())
+                        )
+                    else:
+                        # If no loop, create a new one (shouldn't happen)
+                        print("Warning: No event loop available, creating new one")
+                        new_loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(new_loop)
+                        new_loop.run_until_complete(self._delayed_audio_setup())
+                except Exception as e:
+                    print(f"Error creating audio setup task: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             # Join with completion callback
             self.call_client.join(
@@ -330,7 +368,7 @@ class TranslationAgent:
             )
             
             # Wait a moment for join to complete
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)
             
             self.running = True
             
