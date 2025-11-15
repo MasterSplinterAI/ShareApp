@@ -138,8 +138,8 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Clean up old files to free space
   echo "Cleaning up old files..."
-  # Remove old node_modules if they exist
-  sudo rm -rf $BACKEND_DIR/node_modules 2>/dev/null || true
+  # DO NOT remove backend node_modules - it's needed for the server to run!
+  # Only remove frontend node_modules (not needed after build)
   sudo rm -rf $FRONTEND_DIR/node_modules 2>/dev/null || true
   # Remove old build artifacts
   sudo rm -rf $FRONTEND_DIR/dist 2>/dev/null || true
