@@ -59,25 +59,32 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
     exit 1
   fi
   
-  # Install backend dependencies
+  # Install backend dependencies (production only, saves space)
   echo "Installing backend dependencies..."
   cd "\$TEMP_DIR/backend"
-  npm install --production
+  npm ci --production --prefer-offline --no-audit 2>/dev/null || npm install --production --prefer-offline --no-audit
   
-  # Build frontend
+  # Build frontend (clean install to save space)
   echo "Building frontend..."
   cd "\$TEMP_DIR/frontend"
-  npm install
+  npm ci --prefer-offline --no-audit 2>/dev/null || npm install --prefer-offline --no-audit
   npm run build
+  
+  # Remove node_modules after build to save space
+  echo "Removing frontend node_modules after build..."
+  rm -rf node_modules
+  
+  # Clean up old files before copying new ones
+  echo "Cleaning up old deployment files..."
+  sudo rm -rf $BACKEND_DIR/* 2>/dev/null || true
+  sudo rm -rf $FRONTEND_DIR/* 2>/dev/null || true
   
   # Copy backend files
   echo "Copying backend files..."
-  sudo rm -rf $BACKEND_DIR/*
   sudo cp -R "\$TEMP_DIR/backend"/* $BACKEND_DIR/
   
   # Copy frontend build
   echo "Copying frontend build..."
-  sudo rm -rf $FRONTEND_DIR/*
   sudo cp -R "\$TEMP_DIR/frontend/dist"/* $FRONTEND_DIR/
   
   # Copy other files
@@ -102,12 +109,27 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   pm2 start server.js --name share-app-backend --update-env
   pm2 save
   
-  # Set up Nginx for frontend (if needed)
-  echo "Frontend built and ready. Configure Nginx to serve $FRONTEND_DIR"
+  # Clean up old files to free space
+  echo "Cleaning up old files..."
+  # Remove old node_modules if they exist
+  sudo rm -rf $BACKEND_DIR/node_modules 2>/dev/null || true
+  sudo rm -rf $FRONTEND_DIR/node_modules 2>/dev/null || true
+  # Remove old build artifacts
+  sudo rm -rf $FRONTEND_DIR/dist 2>/dev/null || true
+  sudo rm -rf $FRONTEND_DIR/build 2>/dev/null || true
+  # Remove backup folder if it exists
+  sudo rm -rf $APP_DIR/backup 2>/dev/null || true
+  # Remove any .log files
+  sudo find $APP_DIR -name "*.log" -type f -delete 2>/dev/null || true
   
-  # Clean up
-  echo "Cleaning up..."
+  # Clean up temp directory
+  echo "Cleaning up temp directory..."
   rm -rf "\$TEMP_DIR"
+  
+  # Show disk usage
+  echo ""
+  echo "Disk usage after cleanup:"
+  df -h $APP_DIR | tail -1
   
   echo "=== Deployment completed successfully! ==="
   echo "Backend running on port 3000"
