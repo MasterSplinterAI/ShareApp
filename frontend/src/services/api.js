@@ -7,8 +7,16 @@ const getApiBaseUrl = () => {
     return import.meta.env.VITE_API_URL;
   }
   
-  // If accessing via network IP (192.168.x.x), use network IP for API
   const hostname = window.location.hostname;
+  const protocol = window.location.protocol;
+  const isProduction = import.meta.env.PROD;
+  
+  // In production (HTTPS), use relative paths - Nginx will proxy /api to backend
+  if (isProduction || protocol === 'https:') {
+    return ''; // Use relative paths, axios will use current origin
+  }
+  
+  // If accessing via network IP (192.168.x.x), use network IP for API
   if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
     // We're on the network, use the same hostname for API
     return `http://${hostname}:3000`;
