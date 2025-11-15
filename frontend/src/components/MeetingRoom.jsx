@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { DailyProvider, useDaily, useLocalParticipant } from '@daily-co/daily-react';
+import { useState, useEffect, useRef } from 'react';
+import { DailyProvider, useDaily, useLocalParticipant, useDailyEvent } from '@daily-co/daily-react';
 import { tokenService, meetingService } from '../services/api';
 import VideoGrid from './VideoGrid';
 import Controls from './Controls';
@@ -17,6 +17,21 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
   const [translationEnabled, setTranslationEnabled] = useState(false);
+  const desiredAudioState = useRef(true); // Track what audio state we want
+
+  // Monitor participant updates to ensure audio stays enabled when video is disabled
+  useDailyEvent('participant-updated', (event) => {
+    if (event.participant.local && daily) {
+      const participant = event.participant;
+      // If video was just disabled but audio should be enabled, ensure audio stays on
+      if (!participant.video && desiredAudioState.current && !participant.audio) {
+        console.log('Audio was disabled when video turned off, re-enabling...');
+        daily.setLocalAudio(true).catch(err => {
+          console.error('Failed to re-enable audio:', err);
+        });
+      }
+    }
+  });
 
   useEffect(() => {
     if (!daily || !roomUrl || !token) return;
@@ -37,6 +52,7 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
         // Ensure audio and video are enabled after join
         await daily.setLocalAudio(true);
         await daily.setLocalVideo(true);
+        desiredAudioState.current = true;
         console.log('Audio and video enabled');
       } catch (error) {
         console.error('Failed to join Daily.co room:', error);

@@ -11,8 +11,9 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
   const toggleMic = async () => {
     if (daily) {
       try {
-        await daily.setLocalAudio(!micEnabled);
-        console.log('Mic toggled:', !micEnabled);
+        const newAudioState = !micEnabled;
+        await daily.setLocalAudio(newAudioState);
+        console.log('Mic toggled:', newAudioState);
       } catch (error) {
         console.error('Error toggling mic:', error);
       }
@@ -23,17 +24,39 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
     if (daily) {
       try {
         const newVideoState = !webcamEnabled;
+        const currentAudioState = micEnabled;
+        
+        // Store desired audio state before toggling video
+        console.log('Toggling camera:', newVideoState, 'Current audio:', currentAudioState);
+        
         await daily.setLocalVideo(newVideoState);
         console.log('Camera toggled:', newVideoState);
         
-        // Explicitly ensure audio stays enabled when toggling video
-        // This prevents Daily.co from accidentally disabling audio
-        if (micEnabled) {
-          // Small delay to ensure video toggle completes
-          setTimeout(async () => {
-            await daily.setLocalAudio(true);
-            console.log('Audio re-enabled after video toggle');
-          }, 100);
+        // Immediately re-enable audio if it was enabled before video toggle
+        // Use multiple attempts to ensure it sticks
+        if (currentAudioState) {
+          const ensureAudio = async () => {
+            try {
+              await daily.setLocalAudio(true);
+              console.log('Audio ensured after video toggle');
+              
+              // Double-check after a short delay
+              setTimeout(async () => {
+                const participant = daily.participants()?.local;
+                if (participant && !participant.audio) {
+                  console.log('Audio was disabled, re-enabling again...');
+                  await daily.setLocalAudio(true);
+                }
+              }, 200);
+            } catch (err) {
+              console.error('Error ensuring audio:', err);
+            }
+          };
+          
+          // Try immediately and after delays
+          ensureAudio();
+          setTimeout(ensureAudio, 50);
+          setTimeout(ensureAudio, 150);
         }
       } catch (error) {
         console.error('Error toggling camera:', error);
