@@ -255,15 +255,43 @@ class TranslationAgent:
                 
                 def make_audio_renderer(pid):
                     """Create audio renderer closure for specific participant"""
-                    def audio_renderer(audio_frame, *args, **kwargs):
+                    def audio_renderer(*args, **kwargs):
                         """Called when audio frame is received from participant
-                        Daily.co SDK may pass multiple arguments, so accept *args and **kwargs"""
+                        Daily.co SDK callback signature may vary - handle all cases"""
                         try:
-                            # Get audio data from frame
-                            # Daily.co Python SDK provides audio_frame as numpy array or similar
-                            audio_data = audio_frame
+                            # Daily.co SDK may pass arguments in different orders
+                            # Try to find the audio data (should be numpy array or bytes)
+                            audio_data = None
+                            
+                            # Check all arguments for audio data
+                            for arg in args:
+                                if arg is None:
+                                    continue
+                                # Check if it's numpy array, bytes, or numeric array
+                                if isinstance(arg, np.ndarray):
+                                    audio_data = arg
+                                    break
+                                elif isinstance(arg, (bytes, bytearray)):
+                                    # Convert bytes to numpy array
+                                    audio_data = np.frombuffer(arg, dtype=np.int16).astype(np.float32) / 32767.0
+                                    break
+                                elif isinstance(arg, (list, tuple)) and len(arg) > 0:
+                                    # Try to convert list/tuple to numpy array
+                                    try:
+                                        audio_data = np.array(arg, dtype=np.float32)
+                                        break
+                                    except (ValueError, TypeError):
+                                        continue
+                                # Skip strings (likely participant IDs)
+                                elif isinstance(arg, str):
+                                    continue
                             
                             if audio_data is None:
+                                # No valid audio data found
+                                return
+                            
+                            # Validate audio data is numeric
+                            if not isinstance(audio_data, np.ndarray):
                                 return
                             
                             # Process audio for translation (async wrapper)
