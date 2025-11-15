@@ -11,8 +11,9 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-realtime-2025-08-28')
 OPENAI_VOICE = os.getenv('OPENAI_VOICE', 'alloy')
 
-# VideoSDK Configuration
-VIDEOSDK_AUTH_TOKEN = os.getenv('VIDEOSDK_AUTH_TOKEN')
+# Daily.co Configuration
+DAILY_ROOM_URL = os.getenv('DAILY_ROOM_URL')
+DAILY_TOKEN = os.getenv('DAILY_TOKEN')
 
 # Translation Configuration
 TRANSLATION_ENABLED = os.getenv('TRANSLATION_ENABLED', 'true').lower() == 'true'

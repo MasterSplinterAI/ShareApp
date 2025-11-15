@@ -31,15 +31,75 @@ router.post('/start', async (req, res) => {
     const agentId = `agent-${Date.now()}`;
     activeAgents.set(meetingId, agentId);
 
-    // TODO: Trigger Python agent to join meeting
-    // This would typically spawn a subprocess or call a service
-    // For now, we'll just track it
-    console.log(`Translation agent ${agentId} started for meeting ${meetingId}`);
+    // Spawn Python agent process to join meeting
+    const { spawn } = require('child_process');
+    const path = require('path');
+    
+    // Get room URL from meeting service
+    const axios = require('axios');
+    const DAILY_API_URL = 'https://api.daily.co/v1';
+    const API_KEY = process.env.DAILY_API_KEY;
+    
+    try {
+      // Fetch room info to get room URL
+      const roomResponse = await axios.get(
+        `${DAILY_API_URL}/rooms/${meetingId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      const roomUrl = roomResponse.data.url;
+      
+      // Set environment variables for Python agent
+      const agentEnv = {
+        ...process.env,
+        MEETING_ID: meetingId,
+        DAILY_ROOM_URL: roomUrl,
+        DAILY_TOKEN: token,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY || ''
+      };
+      
+      // Spawn Python agent process
+      const agentPath = path.join(__dirname, '../../translation-agent/agent.py');
+      const agentProcess = spawn('python3', [agentPath], {
+        env: agentEnv,
+        cwd: path.join(__dirname, '../../translation-agent'),
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      
+      // Store process reference
+      activeAgents.set(meetingId, { agentId, process: agentProcess });
+      
+      // Handle process output
+      agentProcess.stdout.on('data', (data) => {
+        console.log(`Translation agent ${agentId}: ${data.toString()}`);
+      });
+      
+      agentProcess.stderr.on('data', (data) => {
+        console.error(`Translation agent ${agentId} error: ${data.toString()}`);
+      });
+      
+      agentProcess.on('exit', (code) => {
+        console.log(`Translation agent ${agentId} exited with code ${code}`);
+        activeAgents.delete(meetingId);
+      });
+      
+      console.log(`Translation agent ${agentId} started for meeting ${meetingId}`);
+    } catch (error) {
+      console.error('Error starting translation agent:', error);
+      activeAgents.delete(meetingId);
+      throw error;
+    }
 
     res.json({
       success: true,
       agentId,
-      meetingId
+      meetingId,
+      message: 'Translation agent started'
     });
   } catch (error) {
     console.error('Translation start error:', error);
@@ -61,10 +121,14 @@ router.post('/stop', async (req, res) => {
     }
 
     if (activeAgents.has(meetingId)) {
+      const agentInfo = activeAgents.get(meetingId);
       activeAgents.delete(meetingId);
-      console.log(`Translation agent stopped for meeting ${meetingId}`);
       
-      // TODO: Actually stop the Python agent process
+      // Stop the Python agent process
+      if (agentInfo.process) {
+        agentInfo.process.kill('SIGTERM');
+        console.log(`Translation agent ${agentInfo.agentId} stopped for meeting ${meetingId}`);
+      }
       
       res.json({
         success: true,
@@ -89,11 +153,13 @@ router.get('/status/:meetingId', (req, res) => {
   try {
     const { meetingId } = req.params;
     const isActive = activeAgents.has(meetingId);
+    const agentInfo = isActive ? activeAgents.get(meetingId) : null;
 
     res.json({
       active: isActive,
-      agentId: isActive ? activeAgents.get(meetingId) : null,
-      meetingId
+      agentId: agentInfo?.agentId || agentInfo || null,
+      meetingId,
+      processRunning: agentInfo?.process ? !agentInfo.process.killed : false
     });
   } catch (error) {
     console.error('Translation status error:', error);
