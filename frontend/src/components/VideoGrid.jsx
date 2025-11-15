@@ -1,70 +1,30 @@
-import { useParticipantIds, useParticipant, useLocalParticipant } from '@daily-co/daily-react';
+import { useParticipantIds, useParticipant, useLocalParticipant, useMediaTrack } from '@daily-co/daily-react';
 import { useEffect, useRef, useState } from 'react';
 
 const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
   const participant = useParticipant(sessionId);
   const videoRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  
+  // Use Daily.co's useMediaTrack hook for proper track management
+  const videoTrack = useMediaTrack(sessionId, isScreenShare ? 'screenVideo' : 'video');
+  const audioTrack = useMediaTrack(sessionId, 'audio');
 
   useEffect(() => {
     if (!videoRef.current || !participant) return;
 
-    // Get the appropriate track based on whether this is screen share or camera
-    const videoTrack = isScreenShare ? participant.screenVideoTrack : participant.videoTrack;
-    const audioTrack = participant.audioTrack;
-
-    // For LOCAL participants: Keep video element active even when video is disabled
-    // This ensures Daily.co can continue transmitting audio
-    if (isLocal) {
-      let stream = videoRef.current.srcObject;
-      
-      if (videoTrack) {
-        // Video is enabled - attach the video track
-        if (!stream) {
-          stream = new MediaStream([videoTrack]);
-          videoRef.current.srcObject = stream;
-        } else {
-          // Update existing stream
-          const currentTracks = stream.getVideoTracks();
-          currentTracks.forEach(track => {
-            if (track !== videoTrack) {
-              stream.removeTrack(track);
-            }
-          });
-          if (!currentTracks.includes(videoTrack)) {
-            stream.addTrack(videoTrack);
-          }
-        }
-      } else {
-        // Video is disabled - but keep an empty stream attached
-        // This is critical: Daily.co needs the video element to stay active for audio transmission
-        if (!stream) {
-          stream = new MediaStream();
-          videoRef.current.srcObject = stream;
-        }
-        // Remove all video tracks but keep stream alive
-        const currentTracks = stream.getVideoTracks();
-        currentTracks.forEach(track => {
-          stream.removeTrack(track);
-        });
-      }
-      return; // Early return for local participants
-    }
-
-    // For REMOTE participants: We need to manage the MediaStream ourselves
-    // to ensure audio continues even when video is disabled
+    // Use Daily.co's track management - just attach tracks directly
+    // Daily.co handles audio/video independence internally
     let stream = videoRef.current.srcObject;
-    const hasVideoTrack = !!videoTrack;
-    const hasAudioTrack = !!audioTrack;
     
-    // Maintain stream if we have video OR audio
-    if (hasVideoTrack || hasAudioTrack) {
+    // Create or update stream with available tracks
+    if (videoTrack || (!isLocal && audioTrack)) {
       if (!stream) {
         stream = new MediaStream();
         videoRef.current.srcObject = stream;
       }
       
-      // Update video tracks
+      // Handle video track
       const currentVideoTracks = stream.getVideoTracks();
       if (videoTrack) {
         // Remove old video tracks
@@ -78,54 +38,44 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
           stream.addTrack(videoTrack);
         }
       } else {
-        // Remove all video tracks but keep stream alive for audio
+        // Remove all video tracks
         currentVideoTracks.forEach(track => {
           stream.removeTrack(track);
         });
       }
       
-      // Update audio tracks (always include audio if available, even when video is off)
-      const currentAudioTracks = stream.getAudioTracks();
-      if (audioTrack) {
-        // Check if this audio track is already in the stream
-        const trackExists = currentAudioTracks.some(track => track.id === audioTrack.id);
-        
-        if (!trackExists) {
-          // Remove old audio tracks first
-          currentAudioTracks.forEach(track => {
+      // Handle audio track (for remote participants only - local is handled by Daily.co)
+      if (!isLocal && audioTrack) {
+        const currentAudioTracks = stream.getAudioTracks();
+        // Remove old audio tracks
+        currentAudioTracks.forEach(track => {
+          if (track !== audioTrack) {
             stream.removeTrack(track);
-          });
-          // Add the new audio track
+          }
+        });
+        // Add audio track if not present
+        if (!currentAudioTracks.includes(audioTrack)) {
           stream.addTrack(audioTrack);
-          console.log('Audio track added for remote participant:', sessionId);
-        } else {
-          // Track already exists, but verify it's the right one
-          currentAudioTracks.forEach(track => {
-            if (track.id !== audioTrack.id) {
-              stream.removeTrack(track);
-            }
-          });
         }
-        
-        // Ensure video element can play audio
-        if (videoRef.current && !videoRef.current.muted) {
-          videoRef.current.play().catch(err => {
-            console.log('Audio play prevented:', err);
-          });
-        }
-      } else {
-        // Remove audio tracks if not available
+      } else if (!isLocal) {
+        // Remove audio tracks if not available (remote only)
+        const currentAudioTracks = stream.getAudioTracks();
         currentAudioTracks.forEach(track => {
           stream.removeTrack(track);
         });
       }
     } else {
-      // No tracks at all - clear stream
-      if (stream) {
+      // No tracks - clear stream (but only for remote participants)
+      // For local participants, keep stream alive even when no tracks (Daily.co manages audio)
+      if (stream && !isLocal) {
         videoRef.current.srcObject = null;
+      } else if (isLocal && !stream) {
+        // Keep an empty stream for local participants to ensure audio continues
+        stream = new MediaStream();
+        videoRef.current.srcObject = stream;
       }
     }
-  }, [participant?.videoTrack, participant?.screenVideoTrack, participant?.audioTrack, isScreenShare, isLocal]);
+  }, [videoTrack, audioTrack, participant, isScreenShare, isLocal]);
 
   const handleFullscreen = () => {
     if (!videoRef.current) return;
@@ -173,7 +123,7 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
 
   const displayName = participant?.user_name || 'User';
   const micOn = participant?.audio;
-  const hasVideo = isScreenShare ? !!participant?.screenVideoTrack : !!participant?.videoTrack;
+  const hasVideo = !!videoTrack;
 
   if (!hasVideo && !isScreenShare) {
     // Only show placeholder for camera, not for screen share
