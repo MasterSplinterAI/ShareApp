@@ -152,6 +152,16 @@ export const translationService = {
       throw error;
     }
   },
+
+  async getTranscriptions(meetingId, participantId) {
+    try {
+      const response = await api.get(`/api/translation/transcriptions/${meetingId}/${participantId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get transcriptions:', error);
+      throw error;
+    }
+  }
 };
 
 export default api;
