@@ -92,6 +92,22 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   sudo cp -R "\$TEMP_DIR/translation-agent" $APP_DIR/ 2>/dev/null || true
   sudo cp "\$TEMP_DIR"/*.md $APP_DIR/ 2>/dev/null || true
   
+  # Copy .env files if they exist in the repo
+  echo "Copying .env files..."
+  if [ -f "\$TEMP_DIR/backend/.env" ]; then
+    sudo cp "\$TEMP_DIR/backend/.env" $BACKEND_DIR/.env
+    echo "Copied backend/.env"
+  else
+    echo "Warning: backend/.env not found in repo. Create it manually on server."
+  fi
+  
+  if [ -f "\$TEMP_DIR/translation-agent/.env" ]; then
+    sudo cp "\$TEMP_DIR/translation-agent/.env" $APP_DIR/translation-agent/.env
+    echo "Copied translation-agent/.env"
+  else
+    echo "Warning: translation-agent/.env not found in repo. Create it manually on server."
+  fi
+  
   # Set proper permissions
   echo "Setting permissions..."
   sudo chown -R ubuntu:ubuntu $APP_DIR
