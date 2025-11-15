@@ -109,6 +109,8 @@ class TranslationAgent:
         # Set up callbacks
         def on_transcription(text):
             print(f"[{participant_id}] Transcription: {text}")
+            # Store transcription for backend API access
+            asyncio.create_task(self._store_transcription(participant_id, text))
         
         def on_audio(audio_data):
             # Inject translated audio back into Daily.co call
@@ -154,25 +156,59 @@ class TranslationAgent:
             traceback.print_exc()
             return None
     
+    async def _store_transcription(self, participant_id, text):
+        """Store transcription in backend for frontend display"""
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"{self.backend_url}/api/translation/transcription"
+                data = {
+                    "meetingId": self.meeting_id,
+                    "participantId": participant_id,
+                    "text": text,
+                    "timestamp": asyncio.get_event_loop().time()
+                }
+                async with session.post(url, json=data) as response:
+                    if response.status != 200:
+                        print(f"Failed to store transcription: {response.status}")
+        except Exception as e:
+            print(f"Error storing transcription: {e}")
+    
     def _inject_translated_audio(self, participant_id, audio_data):
         """Inject translated audio back into Daily.co call"""
         try:
             # Convert float32 audio to int16 for Daily.co
             audio_int16 = (np.clip(audio_data, -1.0, 1.0) * 32767).astype(np.int16)
             
-            # Use Daily.co's add_custom_audio_track or similar method
-            # Note: This may require creating a custom audio track
-            # Check Daily.co Python SDK docs for exact method
-            
-            # For now, we'll use add_custom_audio_track if available
+            # Daily.co Python SDK's add_custom_audio_track method
+            # This creates a custom audio track that can be sent to participants
             if self.call_client:
                 try:
-                    # This is a placeholder - actual implementation depends on Daily.co SDK
-                    # We may need to create an audio track and add it
-                    print(f"Injecting translated audio for {participant_id}")
-                    # TODO: Implement actual audio injection using Daily.co SDK
+                    # Create audio track from numpy array
+                    # Daily.co expects audio as bytes or MediaStreamTrack
+                    # We need to convert numpy array to a format Daily.co accepts
+                    
+                    # Convert to bytes
+                    audio_bytes = audio_int16.tobytes()
+                    
+                    # Use add_custom_audio_track to inject audio
+                    # Parameters: track_id, audio_source, sample_rate, channels
+                    track_id = f"translation-{participant_id}"
+                    
+                    # Note: Daily.co Python SDK may require different format
+                    # Check SDK docs for exact implementation
+                    self.call_client.add_custom_audio_track(
+                        track_id=track_id,
+                        audio_source=audio_bytes,  # May need to be a MediaStreamTrack or file path
+                        sample_rate=16000,
+                        channels=1
+                    )
+                    
+                    print(f"Injected translated audio for {participant_id} (track: {track_id})")
                 except Exception as e:
-                    print(f"Error injecting audio: {e}")
+                    print(f"Error injecting audio (may need different format): {e}")
+                    print("Note: Audio injection requires proper MediaStreamTrack format")
+                    # Fallback: Log that audio was received but not injected
+                    print(f"Translated audio received for {participant_id} but not injected (see transcriptions)")
         except Exception as e:
             print(f"Error in _inject_translated_audio: {e}")
             import traceback

@@ -8,6 +8,7 @@ import ParticipantsList from './ParticipantsList';
 import TranslationControls from './TranslationControls';
 import ShareModal from './ShareModal';
 import LanguageSelector from './LanguageSelector';
+import TranslationDisplay from './TranslationDisplay';
 
 const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shareableLink, shareableLinkNetwork, hostCode }) => {
   const daily = useDaily();
@@ -103,17 +104,26 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
           </div>
         )}
 
-        {/* Language Selector - All Participants (when translation is enabled) */}
-        {translationEnabled && localParticipant?.session_id && (
-          <div className="absolute top-4 left-4 z-10" style={isHost ? { top: '80px' } : {}}>
-            <LanguageSelector
-              meetingId={meetingId}
-              participantId={localParticipant.session_id}
-              currentLanguage={selectedLanguage}
-              onLanguageChange={setSelectedLanguage}
-            />
-          </div>
-        )}
+            {/* Language Selector - All Participants (when translation is enabled) */}
+            {translationEnabled && localParticipant?.session_id && (
+              <div className="absolute top-4 left-4 z-10" style={isHost ? { top: '80px' } : {}}>
+                <LanguageSelector
+                  meetingId={meetingId}
+                  participantId={localParticipant.session_id}
+                  currentLanguage={selectedLanguage}
+                  onLanguageChange={setSelectedLanguage}
+                />
+              </div>
+            )}
+
+            {/* Translation Display - Shows transcriptions */}
+            {translationEnabled && localParticipant?.session_id && (
+              <TranslationDisplay
+                meetingId={meetingId}
+                participantId={localParticipant.session_id}
+                enabled={translationEnabled}
+              />
+            )}
 
         {/* Share Button - Host Only */}
         {isHost && (shareableLink || shareableLinkNetwork) && (

@@ -244,5 +244,69 @@ router.get('/languages/:meetingId', (req, res) => {
   }
 });
 
+// Store transcriptions (for display/testing)
+const transcriptions = new Map(); // key: `${meetingId}:${participantId}`, value: array of transcriptions
+
+router.post('/transcription', (req, res) => {
+  try {
+    const { meetingId, participantId, text, timestamp } = req.body;
+
+    if (!meetingId || !participantId || !text) {
+      return res.status(400).json({
+        error: 'meetingId, participantId, and text are required'
+      });
+    }
+
+    const key = `${meetingId}:${participantId}`;
+    if (!transcriptions.has(key)) {
+      transcriptions.set(key, []);
+    }
+
+    const transcriptList = transcriptions.get(key);
+    transcriptList.push({
+      text,
+      timestamp: timestamp || Date.now(),
+      speaker: participantId
+    });
+
+    // Keep only last 50 transcriptions
+    if (transcriptList.length > 50) {
+      transcriptList.shift();
+    }
+
+    res.json({
+      success: true,
+      meetingId,
+      participantId,
+      transcription: { text, timestamp }
+    });
+  } catch (error) {
+    console.error('Store transcription error:', error);
+    res.status(500).json({
+      error: 'Failed to store transcription'
+    });
+  }
+});
+
+// Get transcriptions for a participant
+router.get('/transcriptions/:meetingId/:participantId', (req, res) => {
+  try {
+    const { meetingId, participantId } = req.params;
+    const key = `${meetingId}:${participantId}`;
+    const transcriptList = transcriptions.get(key) || [];
+
+    res.json({
+      meetingId,
+      participantId,
+      transcriptions: transcriptList
+    });
+  } catch (error) {
+    console.error('Get transcriptions error:', error);
+    res.status(500).json({
+      error: 'Failed to get transcriptions'
+    });
+  }
+});
+
 module.exports = router;
 
