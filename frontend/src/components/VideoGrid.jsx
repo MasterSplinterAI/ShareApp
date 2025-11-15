@@ -225,7 +225,7 @@ const VideoGrid = () => {
     let total = 0;
     allParticipantIds.forEach(sessionId => {
       const isLocal = localParticipant?.session_id === sessionId;
-      const participant = isLocal ? localParticipant : null;
+      const participant = isLocal ? localParticipant : useParticipant(sessionId);
       total++; // Camera tile
       if (participant?.screenVideoTrack) {
         total++; // Screen share tile
