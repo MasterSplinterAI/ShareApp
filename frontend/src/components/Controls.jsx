@@ -8,15 +8,25 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
   const webcamEnabled = localParticipant?.video;
   const screenShareEnabled = localParticipant?.screenVideo;
 
-  const toggleMic = () => {
+  const toggleMic = async () => {
     if (daily) {
-      daily.setLocalAudio(!micEnabled);
+      try {
+        await daily.setLocalAudio(!micEnabled);
+        console.log('Mic toggled:', !micEnabled);
+      } catch (error) {
+        console.error('Error toggling mic:', error);
+      }
     }
   };
 
-  const toggleWebcam = () => {
+  const toggleWebcam = async () => {
     if (daily) {
-      daily.setLocalVideo(!webcamEnabled);
+      try {
+        await daily.setLocalVideo(!webcamEnabled);
+        console.log('Camera toggled:', !webcamEnabled);
+      } catch (error) {
+        console.error('Error toggling camera:', error);
+      }
     }
   };
 
