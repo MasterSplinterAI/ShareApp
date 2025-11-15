@@ -27,56 +27,20 @@ const Controls = ({ onLeave, onToggleChat, onToggleParticipants, showChat, showP
     if (daily) {
       try {
         const newVideoState = !webcamEnabled;
-        const currentAudioState = micEnabled;
-        
-        console.log('Toggling camera:', newVideoState, 'Current audio:', currentAudioState);
+        await daily.setLocalVideo(newVideoState);
+        console.log('Camera toggled:', newVideoState);
         
         // If disabling video and audio is enabled, ensure audio stays enabled
-        if (!newVideoState && currentAudioState) {
-          // Set video first, then immediately ensure audio
-          await daily.setLocalVideo(false);
-          
-          // Check participant state immediately
-          const checkAndFix = async () => {
+        // But only check once, not multiple times to avoid loops
+        if (!newVideoState && micEnabled) {
+          setTimeout(async () => {
             const participants = daily.participants();
             const local = participants?.local;
-            console.log('Local participant state after video toggle:', {
-              video: local?.video,
-              audio: local?.audio,
-              tracks: {
-                video: !!local?.videoTrack,
-                audio: !!local?.audioTrack
-              }
-            });
-            
-            if (local && !local.audio && currentAudioState) {
-              console.log('Audio was disabled, re-enabling...');
+            if (local && !local.audio && micEnabled) {
+              console.log('Audio was disabled when video turned off, re-enabling...');
               await daily.setLocalAudio(true);
-              
-              // Verify it stuck
-              setTimeout(async () => {
-                const participants2 = daily.participants();
-                const local2 = participants2?.local;
-                if (local2 && !local2.audio) {
-                  console.error('Audio still disabled after re-enable attempt!');
-                  // Try one more time
-                  await daily.setLocalAudio(true);
-                } else {
-                  console.log('Audio successfully re-enabled');
-                }
-              }, 100);
             }
-          };
-          
-          // Check immediately and after delays
-          checkAndFix();
-          setTimeout(checkAndFix, 50);
-          setTimeout(checkAndFix, 150);
-          setTimeout(checkAndFix, 300);
-        } else {
-          // Normal toggle when audio is off or enabling video
-          await daily.setLocalVideo(newVideoState);
-          console.log('Camera toggled:', newVideoState);
+          }, 100);
         }
       } catch (error) {
         console.error('Error toggling camera:', error);

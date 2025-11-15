@@ -20,14 +20,23 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
   const desiredAudioState = useRef(true); // Track what audio state we want
 
   // Monitor participant updates to ensure audio stays enabled when video is disabled
+  // Use a ref to prevent infinite loops
+  const isHandlingUpdate = useRef(false);
+  
   useDailyEvent('participant-updated', (event) => {
-    if (event.participant.local && daily) {
+    if (event.participant.local && daily && !isHandlingUpdate.current) {
       const participant = event.participant;
       // If video was just disabled but audio should be enabled, ensure audio stays on
       if (!participant.video && desiredAudioState.current && !participant.audio) {
+        isHandlingUpdate.current = true;
         console.log('Audio was disabled when video turned off, re-enabling...');
-        daily.setLocalAudio(true).catch(err => {
+        daily.setLocalAudio(true).then(() => {
+          setTimeout(() => {
+            isHandlingUpdate.current = false;
+          }, 100);
+        }).catch(err => {
           console.error('Failed to re-enable audio:', err);
+          isHandlingUpdate.current = false;
         });
       }
     }

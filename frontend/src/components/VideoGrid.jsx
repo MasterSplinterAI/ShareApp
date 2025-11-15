@@ -14,7 +14,8 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     if (!videoRef.current) return;
 
     // Create MediaStream from tracks
-    if (videoTrack || audioTrack) {
+    // Only update if we have video track OR (for remote) audio track
+    if (videoTrack || (!isLocal && audioTrack)) {
       const stream = new MediaStream();
       
       if (videoTrack) {
@@ -33,17 +34,14 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
         console.log('Video play prevented:', err);
       });
     } else {
-      // Clear stream when no tracks
+      // Clear stream when no tracks (but don't stop tracks - Daily.co manages them)
       videoRef.current.srcObject = null;
     }
 
-    // Cleanup function
+    // Cleanup function - DON'T stop tracks, Daily.co manages track lifecycle
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const stream = videoRef.current.srcObject;
-        stream.getTracks().forEach(track => {
-          track.stop();
-        });
+      if (videoRef.current) {
+        // Just clear the srcObject, don't stop tracks
         videoRef.current.srcObject = null;
       }
     };
