@@ -13,12 +13,14 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
   useEffect(() => {
     if (!videoRef.current || !participant) return;
 
-    // Use Daily.co's track management - just attach tracks directly
-    // Daily.co handles audio/video independence internally
+    // useMediaTrack can return null when track isn't available - check for that
+    const hasVideoTrack = videoTrack && videoTrack instanceof MediaStreamTrack;
+    const hasAudioTrack = audioTrack && audioTrack instanceof MediaStreamTrack;
+    
     let stream = videoRef.current.srcObject;
     
     // Create or update stream with available tracks
-    if (videoTrack || (!isLocal && audioTrack)) {
+    if (hasVideoTrack || (!isLocal && hasAudioTrack)) {
       if (!stream) {
         stream = new MediaStream();
         videoRef.current.srcObject = stream;
@@ -26,7 +28,7 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
       
       // Handle video track
       const currentVideoTracks = stream.getVideoTracks();
-      if (videoTrack) {
+      if (hasVideoTrack) {
         // Remove old video tracks
         currentVideoTracks.forEach(track => {
           if (track !== videoTrack) {
@@ -45,7 +47,7 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
       }
       
       // Handle audio track (for remote participants only - local is handled by Daily.co)
-      if (!isLocal && audioTrack) {
+      if (!isLocal && hasAudioTrack) {
         const currentAudioTracks = stream.getAudioTracks();
         // Remove old audio tracks
         currentAudioTracks.forEach(track => {
@@ -123,7 +125,7 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
 
   const displayName = participant?.user_name || 'User';
   const micOn = participant?.audio;
-  const hasVideo = !!videoTrack;
+  const hasVideo = videoTrack && videoTrack instanceof MediaStreamTrack;
 
   if (!hasVideo && !isScreenShare) {
     // Only show placeholder for camera, not for screen share
