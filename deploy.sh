@@ -112,6 +112,11 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   echo "Setting permissions..."
   sudo chown -R ubuntu:ubuntu $APP_DIR
   
+  # Install backend dependencies in final location (ensure node_modules is present)
+  echo "Installing backend dependencies in final location..."
+  cd $BACKEND_DIR
+  npm install --production --prefer-offline --no-audit
+  
   # Install PM2 if not installed
   if ! command -v pm2 &> /dev/null; then
     echo "Installing PM2..."
@@ -120,7 +125,6 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Restart backend server with PM2
   echo "Restarting backend server..."
-  cd $BACKEND_DIR
   pm2 delete share-app-backend 2>/dev/null || true
   pm2 start server.js --name share-app-backend --update-env
   pm2 save
