@@ -22,8 +22,11 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
     const hasVideoTrack = !!videoTrack;
     const hasAnyTrack = hasVideoTrack || needsAudioTrack;
     
-    // Always maintain the stream if we have any track OR if it's a local participant (to preserve state)
-    if (hasAnyTrack || (isLocal && stream)) {
+    // For local participants: always maintain stream (Daily.co handles audio separately, but stream must exist)
+    // For remote participants: maintain stream if we have any track
+    const shouldMaintainStream = isLocal || hasAnyTrack;
+    
+    if (shouldMaintainStream) {
       if (!stream) {
         // Create new MediaStream
         stream = new MediaStream();
