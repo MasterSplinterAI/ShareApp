@@ -127,57 +127,19 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
   const micOn = participant?.audio;
   const hasVideo = videoTrack && videoTrack instanceof MediaStreamTrack;
 
-  if (!hasVideo && !isScreenShare) {
-    // Only show placeholder for camera, not for screen share
-    return (
-      <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
-        <div className="w-full h-full flex items-center justify-center bg-gray-700">
-          <div className="text-center">
-            <div className="w-20 h-20 bg-gray-600 rounded-full flex items-center justify-center mx-auto mb-2">
-              <span className="text-2xl text-white">
-                {displayName?.charAt(0)?.toUpperCase() || 'U'}
-              </span>
-            </div>
-            <p className="text-white text-sm">{displayName || 'User'}</p>
-          </div>
-        </div>
-        
-        {/* Name Label */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
-          <p className="text-white text-sm font-medium">
-            {displayName || 'User'} {isLocal && '(You)'}
-          </p>
-        </div>
-
-        {/* Mic Status */}
-        <div className="absolute top-2 left-2">
-          {micOn ? (
-            <div className="bg-green-500 rounded-full p-1.5">
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-              </svg>
-            </div>
-          ) : (
-            <div className="bg-red-500 rounded-full p-1.5">
-              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
-              </svg>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  // Don't return early - always render the full component so video element stays mounted
+  // This ensures Daily.co can continue managing audio even when video is disabled
 
   return (
     <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video group">
-      {/* Always render video element so ref stays consistent */}
+      {/* Always render video element so ref stays consistent - keep it mounted even when video is off */}
       <video
         ref={videoRef}
         autoPlay
         playsInline
         muted={isLocal && !isScreenShare}
         className={`w-full h-full object-cover ${hasVideo ? '' : 'hidden'}`}
+        style={{ display: hasVideo ? 'block' : 'none' }}
         onLoadedMetadata={() => {
           // Ensure audio plays for remote participants
           if (!isLocal && videoRef.current && !videoRef.current.muted) {
@@ -188,9 +150,9 @@ const ParticipantVideo = ({ sessionId, isLocal, isScreenShare = false }) => {
         }}
       />
       
-      {/* Show placeholder when no video */}
+      {/* Show placeholder when no video - always show for local participant when video is off */}
       {!hasVideo && (
-        <div className="w-full h-full flex items-center justify-center bg-gray-700 absolute inset-0">
+        <div className="w-full h-full flex items-center justify-center bg-gray-700 absolute inset-0 z-10">
           <div className="text-center">
             <div className="w-20 h-20 bg-gray-600 rounded-full flex items-center justify-center mx-auto mb-2">
               <span className="text-2xl text-white">
