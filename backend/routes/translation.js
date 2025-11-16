@@ -64,13 +64,21 @@ router.post('/start', async (req, res) => {
       const roomUrl = roomResponse.data.url;
       
       // Set environment variables for Python agent
+      // IMPORTANT: Load .env file explicitly to ensure OPENAI_API_KEY is available
+      require('dotenv').config({ path: path.join(__dirname, '../.env') });
+      
+      const openaiKey = process.env.OPENAI_API_KEY || '';
+      console.log(`OPENAI_API_KEY from process.env: ${!!openaiKey}, length: ${openaiKey.length}`);
+      
       const agentEnv = {
         ...process.env,
         MEETING_ID: meetingId,
         DAILY_ROOM_URL: roomUrl,
         DAILY_TOKEN: token,
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY || ''
+        OPENAI_API_KEY: openaiKey
       };
+      
+      console.log(`Agent env OPENAI_API_KEY: ${!!agentEnv.OPENAI_API_KEY}, length: ${agentEnv.OPENAI_API_KEY ? agentEnv.OPENAI_API_KEY.length : 0}`);
       
       // Spawn Python agent process
       // Use venv python if available, otherwise use system python3
@@ -80,7 +88,7 @@ router.post('/start', async (req, res) => {
       
       console.log(`Starting translation agent with: ${pythonCmd} ${agentPath}`);
       console.log(`Working directory: ${path.join(__dirname, '../../translation-agent')}`);
-      console.log(`OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}`);
+      console.log(`OPENAI_API_KEY present: ${!!openaiKey}`);
       
       const agentProcess = spawn(pythonCmd, [agentPath], {
         env: agentEnv,

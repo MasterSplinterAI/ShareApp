@@ -25,7 +25,9 @@ class OpenAIRealtimeClient:
     async def connect(self):
         """Connect to OpenAI Realtime API"""
         try:
-            uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-12-17"
+            # Use the correct model name - check OpenAI docs for latest
+            # Model options: gpt-4o-realtime-preview-2024-12-17 or gpt-4o-realtime-preview-2024-10-01
+            uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
             
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
@@ -36,13 +38,43 @@ class OpenAIRealtimeClient:
             # Convert dict to list of tuples for compatibility
             header_list = [(k, v) for k, v in headers.items()]
             
+            print(f"Attempting to connect to OpenAI Realtime API...", flush=True)
+            
             try:
+                # Add timeout and ping_interval for better connection handling
                 # Try additional_headers first (websockets 15.0+)
-                self.websocket = await websockets.connect(uri, additional_headers=header_list)
+                self.websocket = await asyncio.wait_for(
+                    websockets.connect(
+                        uri, 
+                        additional_headers=header_list,
+                        ping_interval=20,  # Send ping every 20 seconds
+                        ping_timeout=10,   # Wait 10 seconds for pong
+                        close_timeout=10   # Wait 10 seconds for close
+                    ),
+                    timeout=30  # 30 second connection timeout
+                )
+                print(f"WebSocket connection established", flush=True)
+            except asyncio.TimeoutError:
+                print(f"Connection timeout after 30 seconds", flush=True)
+                raise Exception("Connection timeout - OpenAI Realtime API not responding")
             except TypeError:
                 # Fallback: try extra_headers (older versions)
                 try:
-                    self.websocket = await websockets.connect(uri, extra_headers=headers)
+                    print(f"Trying with extra_headers (older websockets version)...", flush=True)
+                    self.websocket = await asyncio.wait_for(
+                        websockets.connect(
+                            uri, 
+                            extra_headers=headers,
+                            ping_interval=20,
+                            ping_timeout=10,
+                            close_timeout=10
+                        ),
+                        timeout=30
+                    )
+                    print(f"WebSocket connection established (fallback)", flush=True)
+                except asyncio.TimeoutError:
+                    print(f"Connection timeout (fallback) after 30 seconds", flush=True)
+                    raise Exception("Connection timeout - OpenAI Realtime API not responding")
                 except TypeError:
                     # Last resort: connect and manually send headers via HTTP upgrade
                     # This is a workaround - may need to use a different approach
@@ -51,15 +83,16 @@ class OpenAIRealtimeClient:
             self.running = True
             
             # Send session configuration
+            print(f"Sending session configuration...", flush=True)
             await self._send_config()
             
             # Start listening for responses
             asyncio.create_task(self._listen_for_responses())
             
-            print("Connected to OpenAI Realtime API")
+            print("Connected to OpenAI Realtime API", flush=True)
             return True
         except Exception as e:
-            print(f"Error connecting to OpenAI Realtime API: {e}")
+            print(f"Error connecting to OpenAI Realtime API: {e}", flush=True)
             import traceback
             traceback.print_exc()
             return False

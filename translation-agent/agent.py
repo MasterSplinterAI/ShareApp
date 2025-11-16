@@ -110,9 +110,20 @@ class TranslationAgent:
         
         # Set up callbacks
         def on_transcription(text):
-            print(f"[Speaker: {speaker_id} -> Listener: {listener_id}] Transcription: {text}")
+            print(f"[Speaker: {speaker_id} -> Listener: {listener_id}] Transcription: {text}", flush=True)
             # Store transcription for the listener (they see the translated text)
-            asyncio.create_task(self._store_transcription(listener_id, text, speaker_id))
+            # Schedule the async task properly using the event loop
+            if self.event_loop and self.event_loop.is_running():
+                self.event_loop.call_soon_threadsafe(
+                    lambda: asyncio.create_task(self._store_transcription(listener_id, text, speaker_id))
+                )
+            else:
+                # Fallback: try to get current loop
+                try:
+                    loop = asyncio.get_event_loop()
+                    loop.create_task(self._store_transcription(listener_id, text, speaker_id))
+                except Exception as e:
+                    print(f"Error scheduling transcription storage task: {e}", flush=True)
         
         def on_audio(audio_data):
             # Inject translated audio back into Daily.co call for the listener
@@ -122,11 +133,14 @@ class TranslationAgent:
         client.on_audio = on_audio
         
         # Connect
+        print(f"Connecting OpenAI Realtime client for {speaker_id} -> {listener_id} (target: {target_language})...", flush=True)
         connected = await client.connect()
         if connected:
+            print(f"OpenAI Realtime client connected for {speaker_id} -> {listener_id}", flush=True)
             self.realtime_clients[client_key] = client
             return client
         else:
+            print(f"Failed to connect OpenAI Realtime client for {speaker_id} -> {listener_id}", flush=True)
             return None
     
     async def process_audio_with_openai(self, speaker_id, audio_data, source_language='auto'):
@@ -134,14 +148,18 @@ class TranslationAgent:
         Translates speaker_id's audio to each listener's preferred language
         Also handles case where speaker is alone - they still get transcriptions"""
         try:
+            print(f"process_audio_with_openai called for speaker {speaker_id}", flush=True)
             # Get all participants and their language preferences
             participants = self.call_client.participants() if self.call_client else {}
+            print(f"Found {len(participants)} participants: {list(participants.keys())}", flush=True)
             
             # Get speaker's own language preference (for when they're alone)
             speaker_target_language = self.participant_languages.get(speaker_id, 'en')
+            print(f"Speaker {speaker_id} target language: {speaker_target_language}", flush=True)
             
             # Check if speaker is alone (only bot and speaker)
             is_alone = len(participants) <= 2  # 'local' (bot) + speaker
+            print(f"Speaker is alone: {is_alone}", flush=True)
             
             # If speaker is alone, still process for transcription/translation
             if is_alone:
@@ -150,17 +168,19 @@ class TranslationAgent:
                 target_language = speaker_target_language
                 
                 # Get or create Realtime client for this speaker->speaker pair
+                print(f"Getting/creating Realtime client for solo speaker {speaker_id} -> {listener_id} (target: {target_language})", flush=True)
                 client = await self.get_or_create_realtime_client(speaker_id, listener_id)
                 if client:
+                    print(f"Realtime client obtained for solo speaker {speaker_id}", flush=True)
                     # Ensure audio_data is numpy array
                     if not isinstance(audio_data, np.ndarray):
                         audio_data = np.array(audio_data, dtype=np.float32)
                     
                     # Send audio to OpenAI Realtime API
                     await client.send_audio(audio_data.copy())
-                    print(f"Processing audio for solo speaker {speaker_id} -> {target_language}", flush=True)
+                    print(f"Sent audio to OpenAI for solo speaker {speaker_id} -> {target_language}, shape={audio_data.shape}", flush=True)
                 else:
-                    print(f"Failed to create Realtime client for solo speaker {speaker_id}")
+                    print(f"Failed to create Realtime client for solo speaker {speaker_id}", flush=True)
             
             # Process audio for each listener (translate speaker's audio to listener's language)
             for listener_id, listener_data in participants.items():
@@ -189,7 +209,7 @@ class TranslationAgent:
                 await client.send_audio(audio_data.copy())  # Copy to avoid issues with multiple listeners
             
         except Exception as e:
-            print(f"Error processing audio with OpenAI: {e}")
+            print(f"Error processing audio with OpenAI: {e}", flush=True)
             import traceback
             traceback.print_exc()
             return None
@@ -198,6 +218,8 @@ class TranslationAgent:
         """Store transcription in backend for frontend display
         Stores translated text for the listener (what they see/hear)"""
         try:
+            import time
+            print(f"Storing transcription for listener {listener_id}: '{text}' (speaker: {speaker_id})", flush=True)
             async with aiohttp.ClientSession() as session:
                 url = f"{self.backend_url}/api/translation/transcription"
                 data = {
@@ -205,13 +227,19 @@ class TranslationAgent:
                     "participantId": listener_id,  # Store for the listener
                     "text": text,
                     "speakerId": speaker_id,  # Who said it originally
-                    "timestamp": asyncio.get_event_loop().time()
+                    "timestamp": time.time()  # Use seconds since epoch
                 }
+                print(f"POST {url} with data: meetingId={data['meetingId']}, participantId={data['participantId']}, text='{data['text'][:50]}...'", flush=True)
                 async with session.post(url, json=data) as response:
-                    if response.status != 200:
-                        print(f"Failed to store transcription: {response.status}")
+                    response_text = await response.text()
+                    if response.status == 200:
+                        print(f"Successfully stored transcription for {listener_id}", flush=True)
+                    else:
+                        print(f"Failed to store transcription: {response.status} - {response_text}", flush=True)
         except Exception as e:
-            print(f"Error storing transcription: {e}")
+            print(f"Error storing transcription: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
     
     def _inject_translated_audio(self, participant_id, audio_data):
         """Inject translated audio back into Daily.co call"""
@@ -289,22 +317,127 @@ class TranslationAgent:
                             # Try to find the audio data (should be numpy array or bytes)
                             audio_data = None
                             
+                            # Debug: log what we're receiving
+                            if len(args) > 0:
+                                print(f"Audio renderer called for {pid} with {len(args)} args, types: {[type(a).__name__ for a in args[:3]]}", flush=True)
+                            
                             # Check all arguments for audio data
                             for arg in args:
                                 if arg is None:
                                     continue
+                                
+                                # Check if it's Daily.co AudioData object
+                                arg_type_name = type(arg).__name__
+                                if 'AudioData' in arg_type_name:
+                                    # First, log all attributes to understand the structure
+                                    attrs = [a for a in dir(arg) if not a.startswith('_')]
+                                    print(f"Found AudioData object for {pid}: type={arg_type_name}, attrs={attrs[:15]}", flush=True)
+                                    
+                                    # Try to extract audio samples from AudioData object
+                                    try:
+                                        # Daily.co AudioData has .audio_frames attribute!
+                                        if hasattr(arg, 'audio_frames'):
+                                            audio_frames = arg.audio_frames
+                                            if isinstance(audio_frames, bytes):
+                                                # Convert bytes to numpy array based on bits_per_sample
+                                                bits_per_sample = getattr(arg, 'bits_per_sample', 16)
+                                                if bits_per_sample == 16:
+                                                    audio_data = np.frombuffer(audio_frames, dtype=np.int16).astype(np.float32) / 32767.0
+                                                elif bits_per_sample == 32:
+                                                    audio_data = np.frombuffer(audio_frames, dtype=np.int32).astype(np.float32) / 2147483647.0
+                                                else:
+                                                    audio_data = np.frombuffer(audio_frames, dtype=np.int16).astype(np.float32) / 32767.0
+                                                print(f"Extracted audio from .audio_frames (bytes): shape={audio_data.shape}, bits_per_sample={bits_per_sample}", flush=True)
+                                            elif isinstance(audio_frames, (list, tuple, np.ndarray)):
+                                                audio_data = np.array(audio_frames, dtype=np.float32)
+                                                print(f"Extracted audio from .audio_frames (array): shape={audio_data.shape}", flush=True)
+                                            else:
+                                                print(f".audio_frames exists but is type {type(audio_frames)}, trying next...", flush=True)
+                                                continue
+                                        elif hasattr(arg, 'samples'):
+                                            samples = arg.samples
+                                            if isinstance(samples, (list, tuple, np.ndarray)):
+                                                audio_data = np.array(samples, dtype=np.float32)
+                                            elif isinstance(samples, bytes):
+                                                audio_data = np.frombuffer(samples, dtype=np.int16).astype(np.float32) / 32767.0
+                                            else:
+                                                audio_data = np.array(samples, dtype=np.float32)
+                                            print(f"Extracted audio from .samples: shape={audio_data.shape}", flush=True)
+                                        elif hasattr(arg, 'data'):
+                                            data = arg.data
+                                            if isinstance(data, bytes):
+                                                audio_data = np.frombuffer(data, dtype=np.int16).astype(np.float32) / 32767.0
+                                                print(f"Extracted audio from .data (bytes): shape={audio_data.shape}", flush=True)
+                                            elif isinstance(data, (list, tuple, np.ndarray)):
+                                                audio_data = np.array(data, dtype=np.float32)
+                                                print(f"Extracted audio from .data (array): shape={audio_data.shape}", flush=True)
+                                            else:
+                                                print(f".data exists but is type {type(data)}, trying next...", flush=True)
+                                                continue
+                                        elif hasattr(arg, 'buffer'):
+                                            buffer_data = arg.buffer
+                                            if isinstance(buffer_data, bytes):
+                                                audio_data = np.frombuffer(buffer_data, dtype=np.int16).astype(np.float32) / 32767.0
+                                                print(f"Extracted audio from .buffer: shape={audio_data.shape}", flush=True)
+                                            else:
+                                                print(f".buffer exists but is type {type(buffer_data)}, trying next...", flush=True)
+                                                continue
+                                        elif hasattr(arg, 'audio'):
+                                            audio_bytes = arg.audio
+                                            if isinstance(audio_bytes, bytes):
+                                                audio_data = np.frombuffer(audio_bytes, dtype=np.int16).astype(np.float32) / 32767.0
+                                                print(f"Extracted audio from .audio: shape={audio_data.shape}", flush=True)
+                                            else:
+                                                print(f".audio exists but is type {type(audio_bytes)}, trying next...", flush=True)
+                                                continue
+                                        elif hasattr(arg, '__array__'):
+                                            # If AudioData supports numpy array interface
+                                            audio_data = np.asarray(arg, dtype=np.float32)
+                                            print(f"Extracted audio via __array__: shape={audio_data.shape}", flush=True)
+                                        else:
+                                            # Last resort: try to iterate or convert
+                                            print(f"AudioData has no known audio attributes. Available attrs: {attrs[:20]}", flush=True)
+                                            # Try to get the actual audio data - maybe it's indexable?
+                                            try:
+                                                if hasattr(arg, '__getitem__'):
+                                                    # Try to access as array-like
+                                                    audio_data = np.array([arg[i] for i in range(min(100, len(arg)))], dtype=np.float32)
+                                                    print(f"Extracted audio via __getitem__: shape={audio_data.shape}", flush=True)
+                                                else:
+                                                    print(f"Cannot extract audio from AudioData - no known method", flush=True)
+                                                    continue
+                                            except Exception as e2:
+                                                print(f"Failed to extract via __getitem__: {e2}", flush=True)
+                                                continue
+                                        
+                                        # Validate we got valid audio data
+                                        if audio_data is not None and isinstance(audio_data, np.ndarray) and len(audio_data) > 0:
+                                            print(f"Successfully extracted audio for {pid}: shape={audio_data.shape}, dtype={audio_data.dtype}, min={audio_data.min():.4f}, max={audio_data.max():.4f}", flush=True)
+                                            break
+                                        else:
+                                            print(f"Extracted audio_data is invalid: {type(audio_data)}, {audio_data}", flush=True)
+                                            continue
+                                    except Exception as e:
+                                        print(f"Error extracting audio from AudioData object: {e}", flush=True)
+                                        import traceback
+                                        traceback.print_exc()
+                                        continue
+                                
                                 # Check if it's numpy array, bytes, or numeric array
-                                if isinstance(arg, np.ndarray):
+                                elif isinstance(arg, np.ndarray):
                                     audio_data = arg
+                                    print(f"Found numpy array audio data for {pid}: shape={audio_data.shape}, dtype={audio_data.dtype}", flush=True)
                                     break
                                 elif isinstance(arg, (bytes, bytearray)):
                                     # Convert bytes to numpy array
                                     audio_data = np.frombuffer(arg, dtype=np.int16).astype(np.float32) / 32767.0
+                                    print(f"Found bytes audio data for {pid}: len={len(arg)}", flush=True)
                                     break
                                 elif isinstance(arg, (list, tuple)) and len(arg) > 0:
                                     # Try to convert list/tuple to numpy array
                                     try:
                                         audio_data = np.array(arg, dtype=np.float32)
+                                        print(f"Found list/tuple audio data for {pid}: len={len(arg)}", flush=True)
                                         break
                                     except (ValueError, TypeError):
                                         continue
@@ -314,11 +447,15 @@ class TranslationAgent:
                             
                             if audio_data is None:
                                 # No valid audio data found
+                                print(f"No audio data found in args for {pid}", flush=True)
                                 return
                             
                             # Validate audio data is numeric
                             if not isinstance(audio_data, np.ndarray):
+                                print(f"Audio data is not numpy array for {pid}: {type(audio_data)}", flush=True)
                                 return
+                            
+                            print(f"Processing audio frame for {pid}: shape={audio_data.shape}, dtype={audio_data.dtype}, min={audio_data.min():.4f}, max={audio_data.max():.4f}", flush=True)
                             
                             # Process audio for translation (async wrapper)
                             # Use event loop if available, otherwise create task
@@ -340,9 +477,11 @@ class TranslationAgent:
                                         source_language='auto'
                                     ))
                             except Exception as loop_error:
-                                print(f"Error scheduling audio processing task for {pid}: {loop_error}")
+                                print(f"Error scheduling audio processing task for {pid}: {loop_error}", flush=True)
+                                import traceback
+                                traceback.print_exc()
                         except Exception as e:
-                            print(f"Error in audio renderer for {pid}: {e}")
+                            print(f"Error in audio renderer for {pid}: {e}", flush=True)
                             import traceback
                             traceback.print_exc()
                     return audio_renderer
