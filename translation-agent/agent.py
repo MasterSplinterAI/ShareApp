@@ -103,6 +103,8 @@ class TranslationAgent:
         
         # Get target language for the listener (what language they want to hear)
         target_language = self.participant_languages.get(listener_id, 'en')
+        # Get speaker's language (what language they speak)
+        speaker_language = self.participant_languages.get(speaker_id, 'en')
         
         # Create new Realtime client
         client = OpenAIRealtimeClient(
@@ -130,8 +132,14 @@ class TranslationAgent:
         def on_audio(audio_data):
             # Inject translated audio back into Daily.co call for the listener
             # Only inject if translation is actually needed (source != target)
-            # This prevents injecting audio when no translation occurred
-            print(f"Injecting translated audio for listener {listener_id} (speaker: {speaker_id})", flush=True)
+            # Skip audio injection when languages match - we only want transcriptions
+            if target_language == speaker_language:
+                # Languages match - skip audio injection, we only want transcriptions
+                print(f"Skipping audio injection for {listener_id}: languages match ({target_language}), transcription only", flush=True)
+                return
+            
+            # Languages differ - inject translated audio
+            print(f"Injecting translated audio for listener {listener_id} (speaker: {speaker_id}, {speaker_language} -> {target_language})", flush=True)
             self._inject_translated_audio(listener_id, audio_data)
         
         client.on_transcription = on_transcription
@@ -191,6 +199,8 @@ class TranslationAgent:
                     print(f"Failed to create Realtime client for solo speaker {speaker_id}", flush=True)
             
             # Process audio for each listener (translate speaker's audio to listener's language)
+            # IMPORTANT: Always process for transcription, even if languages match
+            # We'll skip audio injection if languages match, but still get transcriptions
             for listener_id, listener_data in participants.items():
                 if listener_id == 'local' or listener_id == speaker_id:
                     # Skip bot itself and the speaker (already handled above if alone)
@@ -199,14 +209,13 @@ class TranslationAgent:
                 # Get target language for this listener (what language they want to hear)
                 target_language = self.participant_languages.get(listener_id, 'en')
                 
-                # IMPORTANT: Skip translation if listener wants the same language the speaker speaks
-                # This prevents unnecessary translation and audio injection
-                # Example: Speaker speaks English, Listener wants English -> Skip translation
-                if target_language == speaker_target_language:
-                    print(f"Skipping translation for {speaker_id} -> {listener_id}: Both use {target_language} (no translation needed)", flush=True)
-                    continue
+                # Always process for transcription - even when languages match
+                # When languages match, we still want transcriptions but don't need translation
+                # Use speaker->listener mapping so transcriptions are stored for the listener
+                print(f"Processing audio for {speaker_id} -> {listener_id} (target: {target_language}, speaker: {speaker_target_language})", flush=True)
                 
                 # Get or create Realtime client for this speaker->listener pair
+                # The client will handle transcription and translation based on target language
                 client = await self.get_or_create_realtime_client(speaker_id, listener_id)
                 if not client:
                     print(f"Failed to create Realtime client for {speaker_id} -> {listener_id}", flush=True)
@@ -216,9 +225,13 @@ class TranslationAgent:
                 if not isinstance(audio_data, np.ndarray):
                     audio_data = np.array(audio_data, dtype=np.float32)
                 
-                # Send audio to OpenAI Realtime API for this listener
+                # Send audio to OpenAI Realtime API
+                # This will generate transcriptions (and translations if languages differ)
                 await client.send_audio(audio_data.copy())  # Copy to avoid issues with multiple listeners
-                print(f"Processing translation: {speaker_id} ({speaker_target_language}) -> {listener_id} ({target_language})", flush=True)
+                if target_language == speaker_target_language:
+                    print(f"Processing transcription only: {speaker_id} ({speaker_target_language}) -> {listener_id} (same language, transcription only)", flush=True)
+                else:
+                    print(f"Processing translation: {speaker_id} ({speaker_target_language}) -> {listener_id} ({target_language})", flush=True)
             
         except Exception as e:
             print(f"Error processing audio with OpenAI: {e}", flush=True)
