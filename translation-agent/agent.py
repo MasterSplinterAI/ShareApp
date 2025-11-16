@@ -131,15 +131,41 @@ class TranslationAgent:
     
     async def process_audio_with_openai(self, speaker_id, audio_data, source_language='auto'):
         """Process audio through OpenAI Realtime API for translation
-        Translates speaker_id's audio to each listener's preferred language"""
+        Translates speaker_id's audio to each listener's preferred language
+        Also handles case where speaker is alone - they still get transcriptions"""
         try:
             # Get all participants and their language preferences
             participants = self.call_client.participants() if self.call_client else {}
             
+            # Get speaker's own language preference (for when they're alone)
+            speaker_target_language = self.participant_languages.get(speaker_id, 'en')
+            
+            # Check if speaker is alone (only bot and speaker)
+            is_alone = len(participants) <= 2  # 'local' (bot) + speaker
+            
+            # If speaker is alone, still process for transcription/translation
+            if is_alone:
+                # Create a client for speaker->speaker (self-transcription/translation)
+                listener_id = speaker_id
+                target_language = speaker_target_language
+                
+                # Get or create Realtime client for this speaker->speaker pair
+                client = await self.get_or_create_realtime_client(speaker_id, listener_id)
+                if client:
+                    # Ensure audio_data is numpy array
+                    if not isinstance(audio_data, np.ndarray):
+                        audio_data = np.array(audio_data, dtype=np.float32)
+                    
+                    # Send audio to OpenAI Realtime API
+                    await client.send_audio(audio_data.copy())
+                    print(f"Processing audio for solo speaker {speaker_id} -> {target_language}")
+                else:
+                    print(f"Failed to create Realtime client for solo speaker {speaker_id}")
+            
             # Process audio for each listener (translate speaker's audio to listener's language)
             for listener_id, listener_data in participants.items():
                 if listener_id == 'local' or listener_id == speaker_id:
-                    # Skip bot itself and the speaker (they hear original audio)
+                    # Skip bot itself and the speaker (already handled above if alone)
                     continue
                 
                 # Get target language for this listener

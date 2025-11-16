@@ -151,6 +151,24 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
     npm install --production --no-audit
   fi
   
+  # Install Python dependencies for translation agent
+  echo "Installing Python dependencies for translation agent..."
+  cd $APP_DIR/translation-agent
+  if [ ! -d "venv" ]; then
+    echo "Creating Python virtual environment..."
+    python3 -m venv venv
+  fi
+  source venv/bin/activate
+  pip install --upgrade pip --quiet
+  if [ -f "requirements.txt" ]; then
+    pip install -r requirements.txt --quiet
+    echo "Python dependencies installed"
+  else
+    echo "Warning: requirements.txt not found, installing basic dependencies..."
+    pip install daily-python openai python-dotenv numpy aiohttp websockets --quiet
+  fi
+  deactivate
+  
   # Install PM2 if not installed
   if ! command -v pm2 &> /dev/null; then
     echo "Installing PM2..."
