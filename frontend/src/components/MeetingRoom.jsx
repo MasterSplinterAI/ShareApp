@@ -125,7 +125,7 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
                   />
                 ) : (
                   <div className="bg-white rounded-lg shadow-md px-3 py-2 text-sm text-gray-600">
-                    Loading language selector...
+                    Waiting for participant ID...
                   </div>
                 )}
               </div>
@@ -141,7 +141,11 @@ const MeetingContent = ({ roomUrl, name, isHost, onLeave, meetingId, token, shar
                     currentLanguage={selectedLanguage}
                     onLanguageChange={setSelectedLanguage}
                   />
-                ) : null}
+                ) : (
+                  <div className="bg-white rounded-lg shadow-md px-3 py-2 text-sm text-gray-600 text-center">
+                    Waiting for participant ID...
+                  </div>
+                )}
               </div>
             )}
 
