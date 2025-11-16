@@ -54,10 +54,24 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   if [ -d "$GIT_REPO" ]; then
     # Fetch latest changes from remote
     echo "Fetching latest changes from git..."
-    git --git-dir="$GIT_REPO" fetch origin main || git --git-dir="$GIT_REPO" fetch origin master
-    # Checkout latest code
-    git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f main || git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f master
-    echo "Checked out latest code from git"
+    git --git-dir="$GIT_REPO" fetch origin main 2>&1 || git --git-dir="$GIT_REPO" fetch origin master 2>&1
+    
+    # Try to checkout from FETCH_HEAD first (most recent), then fall back to branch
+    echo "Checking out latest code from git..."
+    if git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f FETCH_HEAD 2>&1; then
+      echo "Checked out latest code from FETCH_HEAD"
+    elif git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f main 2>&1; then
+      echo "Checked out latest code from main branch"
+    elif git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f master 2>&1; then
+      echo "Checked out latest code from master branch"
+    else
+      echo "ERROR: Failed to checkout code from git"
+      exit 1
+    fi
+    
+    # Verify we got the latest code
+    LATEST_COMMIT=\$(git --git-dir="$GIT_REPO" rev-parse FETCH_HEAD 2>/dev/null || git --git-dir="$GIT_REPO" rev-parse HEAD)
+    echo "Deployed commit: \$LATEST_COMMIT"
   else
     echo "Git repo not found at $GIT_REPO"
     echo "Please set up the git repo on the server first"
