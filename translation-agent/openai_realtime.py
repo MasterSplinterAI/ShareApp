@@ -6,6 +6,7 @@ import asyncio
 import json
 import base64
 import websockets
+import ssl
 import os
 from typing import Optional, Callable, Dict, Any
 import numpy as np
@@ -29,6 +30,10 @@ class OpenAIRealtimeClient:
             # Model options: gpt-4o-realtime-preview-2024-12-17 or gpt-4o-realtime-preview-2024-10-01
             uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
             
+            # Validate API key
+            if not self.api_key or len(self.api_key) < 10:
+                raise ValueError(f"Invalid API key: length={len(self.api_key) if self.api_key else 0}")
+            
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "OpenAI-Beta": "realtime=v1"
@@ -37,43 +42,59 @@ class OpenAIRealtimeClient:
             # websockets 15.0+ uses additional_headers - convert dict to list of tuples
             header_list = list(headers.items())
             
+            # Create SSL context for secure WebSocket connection
+            ssl_context = ssl.create_default_context()
+            ssl_context.check_hostname = True
+            ssl_context.verify_mode = ssl.CERT_REQUIRED
+            
             print(f"Attempting to connect to OpenAI Realtime API...", flush=True)
             print(f"URI: {uri}", flush=True)
             print(f"Headers: {list(headers.keys())}", flush=True)
+            print(f"API key present: {bool(self.api_key)}, length: {len(self.api_key)}", flush=True)
             
             try:
-                # Use asyncio.wait_for with a shorter timeout for faster failure detection
-                # websockets 15.0+ uses additional_headers
+                # Use asyncio.wait_for with timeout for connection
+                # websockets 15.0+ uses additional_headers and ssl parameter
+                print(f"Establishing WebSocket connection with SSL...", flush=True)
                 self.websocket = await asyncio.wait_for(
                     websockets.connect(
                         uri, 
                         additional_headers=header_list,
+                        ssl=ssl_context,
                         ping_interval=20,  # Send ping every 20 seconds
                         ping_timeout=10,   # Wait 10 seconds for pong
                         close_timeout=10   # Wait 10 seconds for close
                     ),
-                    timeout=15  # Reduced to 15 seconds for faster failure
+                    timeout=30  # Increased timeout to 30 seconds
                 )
-                print(f"WebSocket connection established", flush=True)
+                print(f"WebSocket connection established successfully", flush=True)
             except asyncio.TimeoutError as e:
-                print(f"Connection timeout after 15 seconds: {e}", flush=True)
+                print(f"Connection timeout after 30 seconds: {e}", flush=True)
                 # Try once more with a fresh attempt
                 try:
-                    print(f"Retrying connection...", flush=True)
+                    print(f"Retrying connection with longer timeout...", flush=True)
                     self.websocket = await asyncio.wait_for(
                         websockets.connect(
                             uri, 
                             additional_headers=header_list,
+                            ssl=ssl_context,
                             ping_interval=20,
                             ping_timeout=10,
                             close_timeout=10
                         ),
-                        timeout=15
+                        timeout=30
                     )
                     print(f"WebSocket connection established on retry", flush=True)
                 except Exception as retry_error:
-                    print(f"Retry also failed: {retry_error}", flush=True)
+                    print(f"Retry also failed: {type(retry_error).__name__}: {retry_error}", flush=True)
+                    import traceback
+                    traceback.print_exc()
                     raise Exception(f"Connection timeout - OpenAI Realtime API not responding: {retry_error}")
+            except websockets.exceptions.InvalidStatusCode as e:
+                print(f"WebSocket connection failed with status {e.status_code}: {e}", flush=True)
+                if e.status_code == 401:
+                    raise Exception("Authentication failed - check your OpenAI API key")
+                raise
             except Exception as e:
                 print(f"Connection error: {type(e).__name__}: {e}", flush=True)
                 import traceback
