@@ -108,11 +108,30 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Copy other files
   echo "Copying other files..."
-  # Copy translation-agent directory (ensure it's completely replaced)
+  # Copy translation-agent directory (preserve venv if it exists)
   if [ -d "\$TEMP_DIR/translation-agent" ]; then
     echo "Copying translation-agent directory..."
+    # Backup venv if it exists
+    if [ -d "$APP_DIR/translation-agent/venv" ]; then
+      echo "Backing up existing venv..."
+      sudo mv $APP_DIR/translation-agent/venv $APP_DIR/translation-agent/venv.backup 2>/dev/null || true
+    fi
+    # Remove old translation-agent (but preserve .env if it exists)
+    if [ -f "$APP_DIR/translation-agent/.env" ]; then
+      sudo cp $APP_DIR/translation-agent/.env /tmp/translation-agent-env.backup 2>/dev/null || true
+    fi
     sudo rm -rf $APP_DIR/translation-agent 2>/dev/null || true
     sudo cp -R "\$TEMP_DIR/translation-agent" $APP_DIR/
+    # Restore venv if backup exists
+    if [ -d "$APP_DIR/translation-agent/venv.backup" ]; then
+      echo "Restoring venv..."
+      sudo mv $APP_DIR/translation-agent/venv.backup $APP_DIR/translation-agent/venv 2>/dev/null || true
+    fi
+    # Restore .env if backup exists
+    if [ -f "/tmp/translation-agent-env.backup" ]; then
+      sudo cp /tmp/translation-agent-env.backup $APP_DIR/translation-agent/.env 2>/dev/null || true
+      sudo rm /tmp/translation-agent-env.backup 2>/dev/null || true
+    fi
     echo "Translation-agent copied successfully"
   else
     echo "Warning: translation-agent directory not found in repo"

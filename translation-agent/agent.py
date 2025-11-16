@@ -158,7 +158,7 @@ class TranslationAgent:
                     
                     # Send audio to OpenAI Realtime API
                     await client.send_audio(audio_data.copy())
-                    print(f"Processing audio for solo speaker {speaker_id} -> {target_language}")
+                    print(f"Processing audio for solo speaker {speaker_id} -> {target_language}", flush=True)
                 else:
                     print(f"Failed to create Realtime client for solo speaker {speaker_id}")
             
@@ -356,7 +356,7 @@ class TranslationAgent:
                         sample_rate=16000,  # OpenAI requires 16kHz
                         callback_interval_ms=20  # Process every 20ms
                     )
-                    print(f"Audio renderer set up for participant {participant_id}")
+                    print(f"Audio renderer set up for participant {participant_id}", flush=True)
                 except Exception as e:
                     print(f"Error setting audio renderer for {participant_id}: {e}")
             
@@ -391,8 +391,8 @@ class TranslationAgent:
                     print(f"Error joining meeting: {error}")
                     return
                 
-                print(f"Translation agent joined meeting {self.meeting_id}")
-                print(f"Join data: {join_data}")
+                print(f"Translation agent joined meeting {self.meeting_id}", flush=True)
+                print(f"Join data: {join_data}", flush=True)
                 
                 # Set up audio processing after joining
                 # Wait a bit for participants to be available
@@ -473,50 +473,58 @@ class TranslationAgent:
 
 async def main():
     """Main entry point for the agent"""
-    print("=" * 60)
-    print("Translation Agent Starting...")
-    print("=" * 60)
+    import sys
+    # Force stdout/stderr to be unbuffered for real-time logging
+    sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+    sys.stderr.reconfigure(line_buffering=True) if hasattr(sys.stderr, 'reconfigure') else None
+    
+    print("=" * 60, flush=True)
+    print("Translation Agent Starting...", flush=True)
+    print("=" * 60, flush=True)
     
     meeting_id = os.getenv('MEETING_ID')
     room_url = os.getenv('DAILY_ROOM_URL')
     token = os.getenv('DAILY_TOKEN')
     openai_key = os.getenv('OPENAI_API_KEY')
     
-    print(f"MEETING_ID: {meeting_id}")
-    print(f"DAILY_ROOM_URL: {room_url}")
-    print(f"DAILY_TOKEN: {'***' + token[-10:] if token else 'NOT SET'}")
-    print(f"OPENAI_API_KEY: {'***' + openai_key[-10:] if openai_key else 'NOT SET'}")
+    print(f"MEETING_ID: {meeting_id}", flush=True)
+    print(f"DAILY_ROOM_URL: {room_url}", flush=True)
+    print(f"DAILY_TOKEN: {'***' + token[-10:] if token else 'NOT SET'}", flush=True)
+    print(f"OPENAI_API_KEY: {'***' + openai_key[-10:] if openai_key else 'NOT SET'}", flush=True)
     
     if not meeting_id or not room_url or not token:
-        print("ERROR: MEETING_ID, DAILY_ROOM_URL, and DAILY_TOKEN must be set")
-        print("Set these in your .env file or as environment variables")
-        return
+        print("ERROR: MEETING_ID, DAILY_ROOM_URL, and DAILY_TOKEN must be set", flush=True)
+        print("Set these in your .env file or as environment variables", flush=True)
+        sys.exit(1)
     
     if not openai_key:
-        print("ERROR: OPENAI_API_KEY must be set")
-        return
+        print("ERROR: OPENAI_API_KEY must be set", flush=True)
+        sys.exit(1)
     
     agent = TranslationAgent(room_url, token, meeting_id)
     
     try:
-        print("\nAttempting to join meeting...")
+        print("\nAttempting to join meeting...", flush=True)
         success = await agent.join_meeting()
         if success:
-            print("\n" + "=" * 60)
-            print("Translation agent is running!")
-            print("=" * 60)
+            print("\n" + "=" * 60, flush=True)
+            print("Translation agent is running!", flush=True)
+            print("=" * 60, flush=True)
+            print("Waiting for audio...", flush=True)
             # Keep running until interrupted
             await asyncio.Event().wait()
         else:
-            print("ERROR: Failed to join meeting")
+            print("ERROR: Failed to join meeting", flush=True)
+            sys.exit(1)
     except KeyboardInterrupt:
-        print("\nStopping translation agent...")
+        print("\nStopping translation agent...", flush=True)
         await agent.leave_meeting()
     except Exception as e:
-        print(f"\nERROR in main: {e}")
+        print(f"\nERROR in main: {e}", flush=True)
         import traceback
         traceback.print_exc()
         await agent.leave_meeting()
+        sys.exit(1)
 
 if __name__ == '__main__':
     asyncio.run(main())
