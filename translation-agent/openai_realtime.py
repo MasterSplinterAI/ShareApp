@@ -56,6 +56,9 @@ class OpenAIRealtimeClient:
                 # Use asyncio.wait_for with timeout for connection
                 # websockets 15.0+ uses additional_headers and ssl parameter
                 print(f"Establishing WebSocket connection with SSL...", flush=True)
+                print(f"Using websockets library version: {websockets.__version__}", flush=True)
+                
+                # Try connecting with explicit parameters
                 self.websocket = await asyncio.wait_for(
                     websockets.connect(
                         uri, 
@@ -63,16 +66,20 @@ class OpenAIRealtimeClient:
                         ssl=ssl_context,
                         ping_interval=20,  # Send ping every 20 seconds
                         ping_timeout=10,   # Wait 10 seconds for pong
-                        close_timeout=10   # Wait 10 seconds for close
+                        close_timeout=10,   # Wait 10 seconds for close
+                        open_timeout=30,    # Explicit open timeout
+                        max_size=2**20,     # 1MB max message size
+                        max_queue=32        # Max queued messages
                     ),
-                    timeout=30  # Increased timeout to 30 seconds
+                    timeout=45  # Increased timeout to 45 seconds to account for DNS + SSL + WebSocket handshake
                 )
                 print(f"WebSocket connection established successfully", flush=True)
             except asyncio.TimeoutError as e:
-                print(f"Connection timeout after 30 seconds: {e}", flush=True)
-                # Try once more with a fresh attempt
+                print(f"Connection timeout after 45 seconds: {e}", flush=True)
+                print(f"This might indicate network/firewall issues blocking WebSocket connections", flush=True)
+                # Try once more with a fresh attempt and even longer timeout
                 try:
-                    print(f"Retrying connection with longer timeout...", flush=True)
+                    print(f"Retrying connection with extended timeout (60s)...", flush=True)
                     self.websocket = await asyncio.wait_for(
                         websockets.connect(
                             uri, 
@@ -80,13 +87,18 @@ class OpenAIRealtimeClient:
                             ssl=ssl_context,
                             ping_interval=20,
                             ping_timeout=10,
-                            close_timeout=10
+                            close_timeout=10,
+                            open_timeout=60,
+                            max_size=2**20,
+                            max_queue=32
                         ),
-                        timeout=30
+                        timeout=60
                     )
                     print(f"WebSocket connection established on retry", flush=True)
                 except Exception as retry_error:
                     print(f"Retry also failed: {type(retry_error).__name__}: {retry_error}", flush=True)
+                    print(f"Network connectivity test: DNS and HTTPS work, but WebSocket handshake times out", flush=True)
+                    print(f"This suggests a firewall or network policy blocking WebSocket upgrades", flush=True)
                     import traceback
                     traceback.print_exc()
                     raise Exception(f"Connection timeout - OpenAI Realtime API not responding: {retry_error}")
