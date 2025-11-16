@@ -103,7 +103,7 @@ class OpenAIRealtimeClient:
             "type": "session.update",
             "session": {
                 "modalities": ["text", "audio"],
-                "instructions": f"You are a real-time translation assistant. Translate all speech to {self.target_language}. Only output the translation, no explanations.",
+                "instructions": f"You are a real-time translation assistant. Translate all speech to {self.target_language}. Always provide BOTH transcription AND audio output. Only output the translation, no explanations. If the input is already in {self.target_language}, just transcribe it without translating but still provide audio output.",
                 "voice": "alloy",
                 "input_audio_format": "pcm16",
                 "output_audio_format": "pcm16",
@@ -194,13 +194,21 @@ class OpenAIRealtimeClient:
             # Audio delta - translated audio
             audio_b64 = data.get("delta", "")
             if audio_b64 and self.on_audio:
-                # Decode base64 audio
-                audio_bytes = base64.b64decode(audio_b64)
-                # Convert to numpy array (int16 PCM)
-                audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
-                # Convert to float32 for Daily.co
-                audio_float = audio_array.astype(np.float32) / 32767.0
-                self.on_audio(audio_float)
+                try:
+                    # Decode base64 audio
+                    audio_bytes = base64.b64decode(audio_b64)
+                    # Convert to numpy array (int16 PCM)
+                    audio_array = np.frombuffer(audio_bytes, dtype=np.int16)
+                    # Convert to float32 for Daily.co
+                    audio_float = audio_array.astype(np.float32) / 32767.0
+                    # Call the audio callback
+                    self.on_audio(audio_float)
+                    # Log occasionally
+                    import random
+                    if random.random() < 0.1:  # Log 10% of the time
+                        print(f"Received audio delta: {len(audio_bytes)} bytes, shape={audio_float.shape}", flush=True)
+                except Exception as e:
+                    print(f"Error processing audio delta: {e}", flush=True)
         
         elif response_type == "response.audio.done":
             # Audio complete

@@ -7,13 +7,14 @@ import { translationService } from '../services/api';
  */
 const TranslationDisplay = ({ meetingId, participantId, enabled }) => {
   const [transcriptions, setTranscriptions] = useState([]);
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(true); // Open by default to show transcriptions
 
   useEffect(() => {
     if (!enabled || !meetingId || !participantId) return;
 
     // Poll for transcriptions from backend
-    // In production, this would use WebSocket or Server-Sent Events
+    // TODO: Replace with WebSocket or Server-Sent Events for true real-time updates
+    // Reduced to 200ms for near real-time feel (was 1000ms)
     const interval = setInterval(async () => {
       try {
         const data = await translationService.getTranscriptions(meetingId, participantId);
@@ -24,7 +25,7 @@ const TranslationDisplay = ({ meetingId, participantId, enabled }) => {
         // Silently fail - transcriptions may not be available yet
         console.debug('Error fetching transcriptions:', error);
       }
-    }, 1000); // Poll every second
+    }, 200); // Poll every 200ms for near real-time updates
 
     return () => clearInterval(interval);
   }, [enabled, meetingId, participantId]);
@@ -52,20 +53,21 @@ const TranslationDisplay = ({ meetingId, participantId, enabled }) => {
         </div>
         
         {isOpen && (
-          <div className="space-y-2 max-h-40 overflow-y-auto">
+          <div className="space-y-1 max-h-40 overflow-y-auto">
             {transcriptions.length === 0 ? (
               <p className="text-white/60 text-sm italic">
                 Waiting for translation... Speak to see transcriptions.
               </p>
             ) : (
-              transcriptions.map((transcription, index) => (
-                <div key={index} className="text-white text-sm">
-                  <span className="text-white/70 text-xs">
-                    {transcription.speaker}: 
+              <div className="text-white text-sm">
+                {/* Combine all transcriptions into a single readable text */}
+                <span>{transcriptions.map(t => t.text).join('')}</span>
+                {transcriptions.length > 0 && (
+                  <span className="text-white/50 text-xs ml-2">
+                    ({transcriptions.length} segments)
                   </span>
-                  <span className="ml-2">{transcription.text}</span>
-                </div>
-              ))
+                )}
+              </div>
             )}
           </div>
         )}

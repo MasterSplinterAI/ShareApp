@@ -46,6 +46,8 @@ class TranslationAgent:
         self.realtime_clients = {}  # Map (speaker_id, listener_id) -> OpenAIRealtimeClient
         self.backend_url = os.getenv('BACKEND_URL', 'http://localhost:3000')
         self.event_loop = None  # Store event loop reference
+        self.custom_audio_sources = {}  # Map participant_id -> CustomAudioSource (for audio injection)
+        self.custom_audio_tracks = {}  # Map participant_id -> CustomAudioTrack (for audio injection)
         
     async def initialize(self):
         """Initialize Daily.co client and OpenAI client"""
@@ -127,6 +129,9 @@ class TranslationAgent:
         
         def on_audio(audio_data):
             # Inject translated audio back into Daily.co call for the listener
+            # Only inject if translation is actually needed (source != target)
+            # This prevents injecting audio when no translation occurred
+            print(f"Injecting translated audio for listener {listener_id} (speaker: {speaker_id})", flush=True)
             self._inject_translated_audio(listener_id, audio_data)
         
         client.on_transcription = on_transcription
@@ -146,6 +151,7 @@ class TranslationAgent:
     async def process_audio_with_openai(self, speaker_id, audio_data, source_language='auto'):
         """Process audio through OpenAI Realtime API for translation
         Translates speaker_id's audio to each listener's preferred language
+        Smart skipping: Don't translate if source language matches listener's target language
         Also handles case where speaker is alone - they still get transcriptions"""
         try:
             print(f"process_audio_with_openai called for speaker {speaker_id}", flush=True)
@@ -153,22 +159,23 @@ class TranslationAgent:
             participants = self.call_client.participants() if self.call_client else {}
             print(f"Found {len(participants)} participants: {list(participants.keys())}", flush=True)
             
-            # Get speaker's own language preference (for when they're alone)
+            # Get speaker's own language preference (what language they speak/want to hear)
             speaker_target_language = self.participant_languages.get(speaker_id, 'en')
-            print(f"Speaker {speaker_id} target language: {speaker_target_language}", flush=True)
+            print(f"Speaker {speaker_id} speaks/wants: {speaker_target_language}", flush=True)
             
             # Check if speaker is alone (only bot and speaker)
             is_alone = len(participants) <= 2  # 'local' (bot) + speaker
             print(f"Speaker is alone: {is_alone}", flush=True)
             
-            # If speaker is alone, still process for transcription/translation
+            # If speaker is alone, only process if they want transcription (not translation)
             if is_alone:
-                # Create a client for speaker->speaker (self-transcription/translation)
                 listener_id = speaker_id
                 target_language = speaker_target_language
                 
-                # Get or create Realtime client for this speaker->speaker pair
-                print(f"Getting/creating Realtime client for solo speaker {speaker_id} -> {listener_id} (target: {target_language})", flush=True)
+                # For solo speaker: Only transcribe, don't translate if source == target
+                # Since we don't know the source language yet, we'll let OpenAI handle it
+                # But we'll configure it to NOT translate if already in target language
+                print(f"Processing solo speaker {speaker_id} -> {listener_id} (target: {target_language})", flush=True)
                 client = await self.get_or_create_realtime_client(speaker_id, listener_id)
                 if client:
                     print(f"Realtime client obtained for solo speaker {speaker_id}", flush=True)
@@ -177,6 +184,7 @@ class TranslationAgent:
                         audio_data = np.array(audio_data, dtype=np.float32)
                     
                     # Send audio to OpenAI Realtime API
+                    # OpenAI will transcribe and only translate if needed
                     await client.send_audio(audio_data.copy())
                     print(f"Sent audio to OpenAI for solo speaker {speaker_id} -> {target_language}, shape={audio_data.shape}", flush=True)
                 else:
@@ -188,17 +196,20 @@ class TranslationAgent:
                     # Skip bot itself and the speaker (already handled above if alone)
                     continue
                 
-                # Get target language for this listener
+                # Get target language for this listener (what language they want to hear)
                 target_language = self.participant_languages.get(listener_id, 'en')
                 
-                # Skip if no translation needed (listener wants same language as source)
-                if target_language == source_language:
+                # IMPORTANT: Skip translation if listener wants the same language the speaker speaks
+                # This prevents unnecessary translation and audio injection
+                # Example: Speaker speaks English, Listener wants English -> Skip translation
+                if target_language == speaker_target_language:
+                    print(f"Skipping translation for {speaker_id} -> {listener_id}: Both use {target_language} (no translation needed)", flush=True)
                     continue
                 
                 # Get or create Realtime client for this speaker->listener pair
                 client = await self.get_or_create_realtime_client(speaker_id, listener_id)
                 if not client:
-                    print(f"Failed to create Realtime client for {speaker_id} -> {listener_id}")
+                    print(f"Failed to create Realtime client for {speaker_id} -> {listener_id}", flush=True)
                     continue
                 
                 # Ensure audio_data is numpy array
@@ -207,6 +218,7 @@ class TranslationAgent:
                 
                 # Send audio to OpenAI Realtime API for this listener
                 await client.send_audio(audio_data.copy())  # Copy to avoid issues with multiple listeners
+                print(f"Processing translation: {speaker_id} ({speaker_target_language}) -> {listener_id} ({target_language})", flush=True)
             
         except Exception as e:
             print(f"Error processing audio with OpenAI: {e}", flush=True)
@@ -242,56 +254,46 @@ class TranslationAgent:
             traceback.print_exc()
     
     def _inject_translated_audio(self, participant_id, audio_data):
-        """Inject translated audio back into Daily.co call"""
+        """Inject translated audio back into Daily.co call
+        This is called continuously as audio chunks arrive from OpenAI"""
         try:
             # Convert float32 audio to int16 for Daily.co
             audio_int16 = (np.clip(audio_data, -1.0, 1.0) * 32767).astype(np.int16)
             
-            # Daily.co Python SDK's add_custom_audio_track method
-            # This creates a custom audio track that can be sent to participants
-            if self.call_client:
-                try:
-                    # Create audio track from numpy array
-                    # Daily.co expects audio as bytes or MediaStreamTrack
-                    # We need to convert numpy array to a format Daily.co accepts
-                    
-                    # Convert to bytes
-                    audio_bytes = audio_int16.tobytes()
-                    
-                    # Use Daily.co's CustomAudioTrack and CustomAudioSource
-                    from daily import CustomAudioTrack, CustomAudioSource
-                    
-                    # Create custom audio source
-                    audio_source = CustomAudioSource(sample_rate=16000, channels=1)
-                    
-                    # Create custom audio track
-                    audio_track = CustomAudioTrack(audio_source)
-                    
-                    # Write audio frames to the source
-                    # Note: This needs to be done continuously, not just once
-                    # For now, we'll log that audio injection needs continuous streaming
-                    track_name = f"translation-{participant_id}"
-                    
-                    # Add the track
-                    self.call_client.add_custom_audio_track(
-                        track_name=track_name,
-                        audio_track=audio_track
-                    )
-                    
-                    # Write audio data to the source (this needs to be done continuously)
-                    # For now, we'll implement a simple version
-                    # In production, this would need a continuous audio stream
-                    audio_source.write_frames(audio_bytes)
-                    
-                    print(f"Added custom audio track {track_name} for {participant_id}")
-                    print(f"Injected translated audio for {participant_id} (track: {track_name})")
-                except Exception as e:
-                    print(f"Error injecting audio (may need different format): {e}")
-                    print("Note: Audio injection requires proper MediaStreamTrack format")
-                    # Fallback: Log that audio was received but not injected
-                    print(f"Translated audio received for {participant_id} but not injected (see transcriptions)")
+            # Get or create custom audio source for this participant
+            if participant_id not in self.custom_audio_sources:
+                from daily import CustomAudioTrack, CustomAudioSource
+                
+                # Create custom audio source (this is a continuous stream)
+                audio_source = CustomAudioSource(sample_rate=16000, channels=1)
+                self.custom_audio_sources[participant_id] = audio_source
+                
+                # Create custom audio track
+                audio_track = CustomAudioTrack(audio_source)
+                self.custom_audio_tracks[participant_id] = audio_track
+                
+                # Add the track to the call
+                track_name = f"translation-{participant_id}"
+                self.call_client.add_custom_audio_track(
+                    track_name=track_name,
+                    audio_track=audio_track
+                )
+                print(f"Created custom audio track {track_name} for {participant_id}", flush=True)
+            
+            # Get the audio source for this participant
+            audio_source = self.custom_audio_sources[participant_id]
+            
+            # Write audio frames continuously (this is called for each audio chunk)
+            audio_bytes = audio_int16.tobytes()
+            audio_source.write_frames(audio_bytes)
+            
+            # Log occasionally (not every frame to avoid spam)
+            import random
+            if random.random() < 0.01:  # Log 1% of the time
+                print(f"Injecting audio chunk for {participant_id}: {len(audio_bytes)} bytes", flush=True)
+                
         except Exception as e:
-            print(f"Error in _inject_translated_audio: {e}")
+            print(f"Error injecting audio for {participant_id}: {e}", flush=True)
             import traceback
             traceback.print_exc()
     

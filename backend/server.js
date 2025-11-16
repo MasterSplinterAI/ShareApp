@@ -8,7 +8,9 @@ const PORT = process.env.PORT || 3000;
 // Middleware - Allow CORS from localhost and local network
 const allowedOrigins = [
   'http://localhost:5173',
+  'http://localhost:5174', // Vite may use alternate port if 5173 is busy
   'http://127.0.0.1:5173',
+  'http://127.0.0.1:5174',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
@@ -16,24 +18,17 @@ const allowedOrigins = [
 const localNetworkPattern = /^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/;
 const isLocalNetwork = (origin) => {
   if (!origin) return false;
-  return localNetworkPattern.test(origin) || origin.includes(':5173');
+    return localNetworkPattern.test(origin) || origin.includes(':5173') || origin.includes(':5174');
 };
 
+// CORS configuration - allow all origins for local development
+// TODO: Restrict in production
 app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Check if origin is in allowed list or is local network
-    if (allowedOrigins.includes(origin) || isLocalNetwork(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true, // Allow all origins for local dev
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Length', 'Content-Type']
 }));
 app.use(express.json());
 
