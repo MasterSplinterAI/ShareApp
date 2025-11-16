@@ -52,7 +52,12 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   # Checkout the latest code
   echo "Checking out latest code..."
   if [ -d "$GIT_REPO" ]; then
+    # Fetch latest changes from remote
+    echo "Fetching latest changes from git..."
+    git --git-dir="$GIT_REPO" fetch origin main || git --git-dir="$GIT_REPO" fetch origin master
+    # Checkout latest code
     git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f main || git --work-tree="\$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f master
+    echo "Checked out latest code from git"
   else
     echo "Git repo not found at $GIT_REPO"
     echo "Please set up the git repo on the server first"
@@ -89,7 +94,15 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Copy other files
   echo "Copying other files..."
-  sudo cp -R "\$TEMP_DIR/translation-agent" $APP_DIR/ 2>/dev/null || true
+  # Copy translation-agent directory (ensure it's completely replaced)
+  if [ -d "\$TEMP_DIR/translation-agent" ]; then
+    echo "Copying translation-agent directory..."
+    sudo rm -rf $APP_DIR/translation-agent 2>/dev/null || true
+    sudo cp -R "\$TEMP_DIR/translation-agent" $APP_DIR/
+    echo "Translation-agent copied successfully"
+  else
+    echo "Warning: translation-agent directory not found in repo"
+  fi
   sudo cp "\$TEMP_DIR"/*.md $APP_DIR/ 2>/dev/null || true
   
   # Copy .env files if they exist in the repo
