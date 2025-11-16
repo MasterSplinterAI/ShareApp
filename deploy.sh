@@ -197,6 +197,7 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   # Restart backend server with PM2
   echo "Restarting backend server..."
   pm2 delete share-app-backend 2>/dev/null || true
+  cd $BACKEND_DIR
   pm2 start server.js --name share-app-backend --update-env
   pm2 save
   
