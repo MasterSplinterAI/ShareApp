@@ -262,35 +262,54 @@ class TranslationAgent:
             
             # Get or create custom audio source for this participant
             if participant_id not in self.custom_audio_sources:
-                from daily import CustomAudioTrack, CustomAudioSource
-                
-                # Create custom audio source (this is a continuous stream)
-                audio_source = CustomAudioSource(sample_rate=16000, channels=1)
-                self.custom_audio_sources[participant_id] = audio_source
-                
-                # Create custom audio track
-                audio_track = CustomAudioTrack(audio_source)
-                self.custom_audio_tracks[participant_id] = audio_track
-                
-                # Add the track to the call
-                track_name = f"translation-{participant_id}"
-                self.call_client.add_custom_audio_track(
-                    track_name=track_name,
-                    audio_track=audio_track
-                )
-                print(f"Created custom audio track {track_name} for {participant_id}", flush=True)
+                try:
+                    from daily import CustomAudioTrack, CustomAudioSource
+                    
+                    # Create custom audio source (this is a continuous stream)
+                    audio_source = CustomAudioSource(sample_rate=16000, channels=1)
+                    self.custom_audio_sources[participant_id] = audio_source
+                    
+                    # Create custom audio track
+                    audio_track = CustomAudioTrack(audio_source)
+                    self.custom_audio_tracks[participant_id] = audio_track
+                    
+                    # Add the track to the call
+                    track_name = f"translation-{participant_id}"
+                    print(f"Attempting to add custom audio track {track_name} for {participant_id}...", flush=True)
+                    
+                    # Try to add the track
+                    result = self.call_client.add_custom_audio_track(
+                        track_name=track_name,
+                        audio_track=audio_track
+                    )
+                    print(f"Created custom audio track {track_name} for {participant_id} (result: {result})", flush=True)
+                except Exception as track_error:
+                    print(f"Error creating custom audio track for {participant_id}: {track_error}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    # Don't return - try to write anyway in case source was created
+                    if participant_id not in self.custom_audio_sources:
+                        return
             
             # Get the audio source for this participant
+            if participant_id not in self.custom_audio_sources:
+                print(f"Warning: No audio source found for {participant_id}, skipping audio injection", flush=True)
+                return
+                
             audio_source = self.custom_audio_sources[participant_id]
             
             # Write audio frames continuously (this is called for each audio chunk)
             audio_bytes = audio_int16.tobytes()
-            audio_source.write_frames(audio_bytes)
-            
-            # Log occasionally (not every frame to avoid spam)
-            import random
-            if random.random() < 0.01:  # Log 1% of the time
-                print(f"Injecting audio chunk for {participant_id}: {len(audio_bytes)} bytes", flush=True)
+            try:
+                audio_source.write_frames(audio_bytes)
+                # Log occasionally (not every frame to avoid spam)
+                import random
+                if random.random() < 0.05:  # Log 5% of the time for debugging
+                    print(f"Injecting audio chunk for {participant_id}: {len(audio_bytes)} bytes", flush=True)
+            except Exception as write_error:
+                print(f"Error writing audio frames for {participant_id}: {write_error}", flush=True)
+                import traceback
+                traceback.print_exc()
                 
         except Exception as e:
             print(f"Error injecting audio for {participant_id}: {e}", flush=True)
