@@ -34,15 +34,16 @@ class OpenAIRealtimeClient:
                 "OpenAI-Beta": "realtime=v1"
             }
             
-            # websockets 15.0+ uses additional_headers instead of extra_headers
-            # Convert dict to list of tuples for compatibility
-            header_list = [(k, v) for k, v in headers.items()]
+            # websockets 15.0+ uses additional_headers - convert dict to list of tuples
+            header_list = list(headers.items())
             
             print(f"Attempting to connect to OpenAI Realtime API...", flush=True)
+            print(f"URI: {uri}", flush=True)
+            print(f"Headers: {list(headers.keys())}", flush=True)
             
             try:
-                # Add timeout and ping_interval for better connection handling
-                # Try additional_headers first (websockets 15.0+)
+                # Use asyncio.wait_for with a shorter timeout for faster failure detection
+                # websockets 15.0+ uses additional_headers
                 self.websocket = await asyncio.wait_for(
                     websockets.connect(
                         uri, 
@@ -51,34 +52,33 @@ class OpenAIRealtimeClient:
                         ping_timeout=10,   # Wait 10 seconds for pong
                         close_timeout=10   # Wait 10 seconds for close
                     ),
-                    timeout=30  # 30 second connection timeout
+                    timeout=15  # Reduced to 15 seconds for faster failure
                 )
                 print(f"WebSocket connection established", flush=True)
-            except asyncio.TimeoutError:
-                print(f"Connection timeout after 30 seconds", flush=True)
-                raise Exception("Connection timeout - OpenAI Realtime API not responding")
-            except TypeError:
-                # Fallback: try extra_headers (older versions)
+            except asyncio.TimeoutError as e:
+                print(f"Connection timeout after 15 seconds: {e}", flush=True)
+                # Try once more with a fresh attempt
                 try:
-                    print(f"Trying with extra_headers (older websockets version)...", flush=True)
+                    print(f"Retrying connection...", flush=True)
                     self.websocket = await asyncio.wait_for(
                         websockets.connect(
                             uri, 
-                            extra_headers=headers,
+                            additional_headers=header_list,
                             ping_interval=20,
                             ping_timeout=10,
                             close_timeout=10
                         ),
-                        timeout=30
+                        timeout=15
                     )
-                    print(f"WebSocket connection established (fallback)", flush=True)
-                except asyncio.TimeoutError:
-                    print(f"Connection timeout (fallback) after 30 seconds", flush=True)
-                    raise Exception("Connection timeout - OpenAI Realtime API not responding")
-                except TypeError:
-                    # Last resort: connect and manually send headers via HTTP upgrade
-                    # This is a workaround - may need to use a different approach
-                    raise Exception("Websockets library version incompatible. Please upgrade websockets: pip install --upgrade websockets")
+                    print(f"WebSocket connection established on retry", flush=True)
+                except Exception as retry_error:
+                    print(f"Retry also failed: {retry_error}", flush=True)
+                    raise Exception(f"Connection timeout - OpenAI Realtime API not responding: {retry_error}")
+            except Exception as e:
+                print(f"Connection error: {type(e).__name__}: {e}", flush=True)
+                import traceback
+                traceback.print_exc()
+                raise
             
             self.running = True
             
