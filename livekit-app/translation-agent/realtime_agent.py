@@ -1042,9 +1042,10 @@ class TranslationAgent:
             target_lang_name = language_names.get(target_language, target_language)
             
             # Create translation context
-            translation_ctx = llm.ChatContext().append(
+            translation_ctx = llm.ChatContext()
+            translation_ctx.add_message(
                 role="system",
-                text=(
+                content=(
                     f"You are a real-time translator. Translate all speech to {target_lang_name}. "
                     f"Output ONLY the translation, no explanations. Maintain the original tone and style."
                 )
@@ -1071,8 +1072,12 @@ class TranslationAgent:
             )
             
             # Create Agent with translation instructions
+            # Get the system message content
+            system_message = translation_ctx.messages[0] if translation_ctx.messages else None
+            instructions = system_message.content if system_message else f"Translate all speech to {target_lang_name}."
+            
             agent = Agent(
-                instructions=translation_ctx.messages[-1].content,  # Use the system message
+                instructions=instructions,
                 chat_ctx=translation_ctx,
             )
             
