@@ -125,12 +125,16 @@ class TranslationAgent:
             logger.info(f"Agent check #{check_attempt + 1}: Found {len(all_agent_identities)} agent(s) in room: {all_agent_identities}")
             
             # Only the lexicographically first agent should stay
-            if len(all_agent_identities) > 1 and my_identity != all_agent_identities[0]:
+            # TEMPORARILY DISABLED: Allow production agent to stay even if cloud agent exists
+            # TODO: Remove cloud agent or fix duplicate detection logic
+            if False and len(all_agent_identities) > 1 and my_identity != all_agent_identities[0]:
                 logger.info(f"⚠️ DUPLICATE DETECTED: Another agent ({all_agent_identities[0]}) is lexicographically first. Exiting to avoid duplicates.")
                 logger.info(f"   All agents: {all_agent_identities}")
                 logger.info(f"   My identity: {my_identity}")
                 logger.info(f"   Primary agent: {all_agent_identities[0]}")
                 return  # Exit immediately - don't process anything
+            elif len(all_agent_identities) > 1:
+                logger.warning(f"⚠️ MULTIPLE AGENTS DETECTED: {all_agent_identities}. Continuing anyway (duplicate detection disabled).")
         
         # Final check after all attempts
         final_agent_identities = []
@@ -143,9 +147,12 @@ class TranslationAgent:
             final_agent_identities.append(my_identity)
         final_agent_identities.sort()
         
-        if len(final_agent_identities) > 1 and my_identity != final_agent_identities[0]:
+        # TEMPORARILY DISABLED: Allow production agent to stay
+        if False and len(final_agent_identities) > 1 and my_identity != final_agent_identities[0]:
             logger.info(f"⚠️ FINAL CHECK: Another agent ({final_agent_identities[0]}) detected. Exiting.")
             return
+        elif len(final_agent_identities) > 1:
+            logger.warning(f"⚠️ FINAL CHECK: Multiple agents detected: {final_agent_identities}. Continuing anyway.")
         
         logger.info(f"✅ I am the primary agent ({my_identity}). Proceeding with translation.")
         
