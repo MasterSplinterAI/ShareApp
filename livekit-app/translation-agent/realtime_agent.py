@@ -94,41 +94,65 @@ class TranslationAgent:
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         
         my_identity = ctx.room.local_participant.identity
-        logger.info(f"Agent connected with identity: {my_identity}")
+        logger.info(f"AGENT ENTRYPOINT CALLED! Agent connected with identity: {my_identity}")
         
         # Check for other agents in the room BEFORE processing
         # Wait and check multiple times to ensure all agents have connected
-        for check_attempt in range(5):  # Check up to 5 times
-            await asyncio.sleep(0.3)  # Wait 300ms between checks
+        # Increased wait time and checks to handle race conditions
+        for check_attempt in range(8):  # Check up to 8 times (was 5)
+            await asyncio.sleep(0.5)  # Wait 500ms between checks (was 300ms)
+            
+            # Get ALL participants (including local and remote) to catch all agents
+            all_participants = list(ctx.room.participants.values())
             
             # Get all agent identities (including self)
             all_agent_identities = [
-                p.identity for p in ctx.room.remote_participants.values()
+                p.identity for p in all_participants
                 if p.identity.startswith('agent-')
             ]
-            all_agent_identities.append(my_identity)  # Include self
+            
+            # Ensure self is included
+            if my_identity not in all_agent_identities:
+                all_agent_identities.append(my_identity)
             
             # Sort to get deterministic ordering
             all_agent_identities.sort()
             
-            logger.info(f"Agent check #{check_attempt + 1}: All agents in room: {all_agent_identities}")
+            logger.info(f"Agent check #{check_attempt + 1}: Found {len(all_agent_identities)} agent(s) in room: {all_agent_identities}")
             
             # Only the lexicographically first agent should stay
-            if my_identity != all_agent_identities[0]:
-                logger.info(f"Another agent ({all_agent_identities[0]}) is already processing. Exiting to avoid duplicates.")
+            if len(all_agent_identities) > 1 and my_identity != all_agent_identities[0]:
+                logger.info(f"⚠️ DUPLICATE DETECTED: Another agent ({all_agent_identities[0]}) is lexicographically first. Exiting to avoid duplicates.")
+                logger.info(f"   All agents: {all_agent_identities}")
+                logger.info(f"   My identity: {my_identity}")
+                logger.info(f"   Primary agent: {all_agent_identities[0]}")
                 return  # Exit immediately - don't process anything
         
-        logger.info(f"I am the primary agent ({my_identity}). Proceeding with translation.")
+        # Final check after all attempts
+        all_participants = list(ctx.room.participants.values())
+        final_agent_identities = [
+            p.identity for p in all_participants
+            if p.identity.startswith('agent-')
+        ]
+        if my_identity not in final_agent_identities:
+            final_agent_identities.append(my_identity)
+        final_agent_identities.sort()
+        
+        if len(final_agent_identities) > 1 and my_identity != final_agent_identities[0]:
+            logger.info(f"⚠️ FINAL CHECK: Another agent ({final_agent_identities[0]}) detected. Exiting.")
+            return
+        
+        logger.info(f"✅ I am the primary agent ({my_identity}). Proceeding with translation.")
         
         # Log other agents (excluding self)
         other_agents = [
-            p.identity for p in ctx.room.remote_participants.values()
+            p.identity for p in ctx.room.participants.values()
             if p.identity.startswith('agent-') and p.identity != my_identity
         ]
         if other_agents:
-            logger.info(f"Other agents detected (will exit): {other_agents}")
+            logger.warning(f"⚠️ WARNING: Other agents detected but I'm primary: {other_agents}")
         else:
-            logger.info("No other agents detected - I'm the only one")
+            logger.info("✅ No other agents detected - I'm the only one")
         
         logger.info(f"Connected to room with {len(ctx.room.remote_participants)} participants")
         
