@@ -212,7 +212,7 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   pm2 delete livekit-agent 2>/dev/null || true
   cd $AGENT_DIR
   source venv/bin/activate
-  pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python -- dev
+  pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python -- start
   pm2 save
   deactivate
   
