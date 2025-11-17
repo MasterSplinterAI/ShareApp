@@ -14,9 +14,11 @@ import numpy as np
 class OpenAIRealtimeClient:
     """Client for OpenAI Realtime API WebSocket connection"""
     
-    def __init__(self, api_key: str, target_language: str = 'en'):
+    def __init__(self, api_key: str, target_language: str = 'en', model: str = None):
         self.api_key = api_key
         self.target_language = target_language
+        # Use provided model or default to latest stable model
+        self.model = model or 'gpt-4o-realtime-preview-2024-10-01'
         self.websocket: Optional[Any] = None  # websockets.WebSocketClientProtocol
         self.running = False
         self.audio_buffer = []
@@ -26,9 +28,9 @@ class OpenAIRealtimeClient:
     async def connect(self):
         """Connect to OpenAI Realtime API"""
         try:
-            # Use the correct model name - check OpenAI docs for latest
+            # Use the model from config or default
             # Model options: gpt-4o-realtime-preview-2024-12-17 or gpt-4o-realtime-preview-2024-10-01
-            uri = "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01"
+            uri = f"wss://api.openai.com/v1/realtime?model={self.model}"
             
             # Validate API key
             if not self.api_key or len(self.api_key) < 10:

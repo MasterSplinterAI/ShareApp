@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 import config
 from openai_realtime import OpenAIRealtimeClient
 
-load_dotenv()
+# Load .env but don't override env vars passed by backend
+load_dotenv(override=False)
 
 # Import Daily.co Python SDK
 try:
@@ -107,9 +108,11 @@ class TranslationAgent:
         speaker_language = self.participant_languages.get(speaker_id, 'en')
         
         # Create new Realtime client
+        # Use model from config (defaults to gpt-4o-realtime-preview-2024-10-01 if not set)
         client = OpenAIRealtimeClient(
             api_key=config.OPENAI_API_KEY,
-            target_language=target_language
+            target_language=target_language,
+            model=config.OPENAI_MODEL if config.OPENAI_MODEL and config.OPENAI_MODEL.startswith('gpt-4o-realtime') else 'gpt-4o-realtime-preview-2024-10-01'
         )
         
         # Set up callbacks
