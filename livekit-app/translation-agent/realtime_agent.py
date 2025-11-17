@@ -83,9 +83,9 @@ class TranslationAgent:
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
         logger.info(f"Translation Agent starting in room: {ctx.room.name}")
-        # Room SID is a property, access it directly
+        # Room SID is a coroutine, await it
         try:
-            room_sid = ctx.room.sid if hasattr(ctx.room, 'sid') else 'N/A'
+            room_sid = await ctx.room.sid() if hasattr(ctx.room, 'sid') else 'N/A'
             logger.info(f"Room SID: {room_sid}")
         except Exception as e:
             logger.debug(f"Could not get room SID: {e}")
@@ -226,9 +226,21 @@ class TranslationAgent:
                                 
                                 if self.use_voiceassistant:
                                     # Use VoiceAssistant (better performance, automatic pause detection)
-                                    asyncio.create_task(
-                                        self.create_voiceassistant_for_participant(ctx, participant_id, language)
-                                    )
+                                    # Create VoiceAssistant for EACH OTHER participant in the room
+                                    # This participant wants to hear others translated
+                                    for other_participant in ctx.room.remote_participants.values():
+                                        if other_participant.identity.startswith('agent-'):
+                                            continue  # Skip agents
+                                        if other_participant.identity != participant_id:
+                                            logger.info(f"Creating VoiceAssistant to translate {other_participant.identity} -> {language} for {participant_id}")
+                                            asyncio.create_task(
+                                                self.create_voiceassistant_for_participant(
+                                                    ctx, 
+                                                    participant_id, 
+                                                    language,
+                                                    source_participant_id=other_participant.identity
+                                                )
+                                            )
                                 else:
                                     # Use manual implementation (current approach)
                                     logger.info(f"Remote participants in room: {list(ctx.room.remote_participants.keys())}")
@@ -970,15 +982,26 @@ class TranslationAgent:
         self,
         ctx: JobContext,
         participant_id: str,
-        target_language: str
+        target_language: str,
+        source_participant_id: str = None
     ):
-        """Create an AgentSession (VoiceAssistant) for a participant"""
+        """Create an AgentSession (VoiceAssistant) for a participant
+        
+        Args:
+            participant_id: The participant who wants translation
+            target_language: Target language for translation
+            source_participant_id: The participant whose audio to translate (if None, translates all)
+        """
         try:
-            # Stop existing assistant if any
-            if participant_id in self.assistants:
-                await self.stop_voiceassistant_for_participant(participant_id)
+            # Create unique key for this translation pair
+            assistant_key = f"{participant_id}:{source_participant_id or 'all'}"
             
-            logger.info(f"Creating VoiceAssistant for {participant_id} -> {target_language}")
+            # Stop existing assistant if any
+            if assistant_key in self.assistants:
+                session = self.assistants.pop(assistant_key)
+                await session.aclose()
+            
+            logger.info(f"Creating VoiceAssistant: translating {source_participant_id or 'all'} -> {target_language} for {participant_id}")
             
             # Language name mapping
             language_names = {
@@ -1049,24 +1072,40 @@ class TranslationAgent:
                         self.send_transcription_data(ctx, participant_id, translated_text, translated_text, target_language)
                     )
             
+            # Find the source participant if specified
+            source_participant = None
+            if source_participant_id:
+                for p in ctx.room.remote_participants.values():
+                    if p.identity == source_participant_id:
+                        source_participant = p
+                        break
+                if not source_participant:
+                    logger.warning(f"Source participant {source_participant_id} not found, listening to all")
+            
             # Start the session with the agent
-            session.start(agent, room=ctx.room)
+            # If source_participant is specified, AgentSession will listen to that participant's audio
+            if source_participant:
+                session.start(agent, room=ctx.room, participant=source_participant)
+            else:
+                session.start(agent, room=ctx.room)
             
-            # Store session
-            self.assistants[participant_id] = session
+            # Store session with unique key
+            self.assistants[assistant_key] = session
             
-            logger.info(f"✅ AgentSession (VoiceAssistant) started for {participant_id} -> {target_language}")
+            logger.info(f"✅ AgentSession (VoiceAssistant) started: {source_participant_id or 'all'} -> {target_language} for {participant_id}")
             
         except Exception as e:
             logger.error(f"Error creating VoiceAssistant for {participant_id}: {e}", exc_info=True)
     
     async def stop_voiceassistant_for_participant(self, participant_id: str):
-        """Stop AgentSession (VoiceAssistant) for a participant"""
+        """Stop all AgentSessions for a participant"""
         try:
-            if participant_id in self.assistants:
-                session = self.assistants.pop(participant_id)
-                await session.aclose()  # Close the session
-                logger.info(f"Stopped AgentSession for {participant_id}")
+            # Find all assistants for this participant
+            keys_to_remove = [key for key in self.assistants.keys() if key.startswith(f"{participant_id}:")]
+            for key in keys_to_remove:
+                session = self.assistants.pop(key)
+                await session.aclose()
+                logger.info(f"Stopped AgentSession {key}")
         except Exception as e:
             logger.error(f"Error stopping AgentSession for {participant_id}: {e}", exc_info=True)
     
