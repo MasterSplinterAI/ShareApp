@@ -108,11 +108,11 @@ class TranslationAgent:
         speaker_language = self.participant_languages.get(speaker_id, 'en')
         
         # Create new Realtime client
-        # Use model from config (defaults to gpt-4o-realtime-preview-2024-10-01 if not set)
+        # Use model from config
         client = OpenAIRealtimeClient(
             api_key=config.OPENAI_API_KEY,
             target_language=target_language,
-            model=config.OPENAI_MODEL if config.OPENAI_MODEL and config.OPENAI_MODEL.startswith('gpt-4o-realtime') else 'gpt-4o-realtime-preview-2024-10-01'
+            model=config.OPENAI_MODEL or 'gpt-realtime-2025-08-28'
         )
         
         # Set up callbacks

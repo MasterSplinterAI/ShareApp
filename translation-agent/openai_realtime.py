@@ -17,8 +17,8 @@ class OpenAIRealtimeClient:
     def __init__(self, api_key: str, target_language: str = 'en', model: str = None):
         self.api_key = api_key
         self.target_language = target_language
-        # Use provided model or default to latest stable model
-        self.model = model or 'gpt-4o-realtime-preview-2024-10-01'
+        # Use provided model or default to latest model
+        self.model = model or 'gpt-realtime-2025-08-28'
         self.websocket: Optional[Any] = None  # websockets.WebSocketClientProtocol
         self.running = False
         self.audio_buffer = []
@@ -28,8 +28,8 @@ class OpenAIRealtimeClient:
     async def connect(self):
         """Connect to OpenAI Realtime API"""
         try:
-            # Use the model from config or default
-            # Model options: gpt-4o-realtime-preview-2024-12-17 or gpt-4o-realtime-preview-2024-10-01
+            # Use the model from config
+            # Model options: gpt-realtime-2025-08-28 (newest) or gpt-4o-realtime-preview-2024-10-01
             uri = f"wss://api.openai.com/v1/realtime?model={self.model}"
             
             # Validate API key

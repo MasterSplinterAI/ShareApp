@@ -11,7 +11,7 @@ load_dotenv(override=False)
 # OpenAI Configuration
 # Prefer environment variable (passed by backend) over .env file
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-realtime-preview-2024-10-01')
+OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-realtime-2025-08-28')
 OPENAI_VOICE = os.getenv('OPENAI_VOICE', 'alloy')
 
 # Daily.co Configuration
