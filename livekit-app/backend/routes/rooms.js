@@ -40,6 +40,8 @@ router.post('/create', async (req, res) => {
     const room = await roomService.createRoom(createOptions);
     
     // Dispatch agent to room explicitly
+    // Note: We're using auto-dispatch now, so this is optional
+    // But if we want explicit dispatch, use the named agent "translation-bot"
     try {
       const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
       const agentDispatch = new AgentDispatchClient(
@@ -48,14 +50,15 @@ router.post('/create', async (req, res) => {
         process.env.LIVEKIT_API_SECRET
       );
       
-      // Create dispatch - for unnamed self-hosted agents, pass undefined for agentName
+      // Dispatch to named agent "translation-bot"
       // Signature: createDispatch(roomName, agentName, options)
-      await agentDispatch.createDispatch(roomName, undefined);
+      await agentDispatch.createDispatch(roomName, 'translation-bot');
       
       console.log(`Agent dispatched to room ${roomName}`);
     } catch (agentError) {
       console.warn('Could not dispatch agent:', agentError.message);
       // Continue anyway - room creation succeeded
+      // Auto-dispatch should still work if explicit dispatch fails
     }
     
     // Generate host code for easy rejoin
