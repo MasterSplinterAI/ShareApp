@@ -101,11 +101,11 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Copy backend files
   echo "Copying backend files..."
-  sudo cp -R "\$TEMP_DIR/backend"/* $BACKEND_DIR/
+  sudo cp -R "\$TEMP_DIR/livekit-app/backend"/* $BACKEND_DIR/
   
   # Copy frontend build
   echo "Copying frontend build..."
-  sudo cp -R "\$TEMP_DIR/frontend/dist"/* $FRONTEND_DIR/
+  sudo cp -R "\$TEMP_DIR/livekit-app/frontend/dist"/* $FRONTEND_DIR/
   
   # Copy other files
   echo "Copying other files..."
