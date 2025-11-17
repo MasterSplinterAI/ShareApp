@@ -1072,9 +1072,18 @@ class TranslationAgent:
             )
             
             # Create Agent with translation instructions
-            # Get the system message content
-            system_message = translation_ctx.messages[0] if translation_ctx.messages else None
-            instructions = system_message.content if system_message else f"Translate all speech to {target_lang_name}."
+            # Get the system message content from ChatContext.items
+            instructions = f"Translate all speech to {target_lang_name}."
+            if translation_ctx.items and len(translation_ctx.items) > 0:
+                system_message = translation_ctx.items[0]
+                if hasattr(system_message, 'text_content') and system_message.text_content:
+                    instructions = system_message.text_content
+                elif hasattr(system_message, 'content'):
+                    # content is a list, join it if needed
+                    if isinstance(system_message.content, list):
+                        instructions = ' '.join(str(c) for c in system_message.content)
+                    else:
+                        instructions = str(system_message.content)
             
             agent = Agent(
                 instructions=instructions,
