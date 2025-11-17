@@ -8,8 +8,9 @@ REMOTE_USER="ubuntu"
 REMOTE_HOST="3.16.210.84"
 PEM_KEY="$HOME/Downloads/AxisAlgo.pem"
 APP_DIR="/var/www/share-app"
-BACKEND_DIR="$APP_DIR/backend"
-FRONTEND_DIR="$APP_DIR/frontend"
+BACKEND_DIR="$APP_DIR/livekit-app/backend"
+FRONTEND_DIR="$APP_DIR/livekit-app/frontend"
+AGENT_DIR="$APP_DIR/livekit-app/translation-agent"
 GIT_REPO="/home/ubuntu/git/share-app.git"
 
 # Check if PEM key exists
@@ -80,12 +81,12 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Install backend dependencies (production only, saves space)
   echo "Installing backend dependencies..."
-  cd "\$TEMP_DIR/backend"
+  cd "\$TEMP_DIR/livekit-app/backend"
   npm ci --production --prefer-offline --no-audit 2>/dev/null || npm install --production --prefer-offline --no-audit
   
   # Build frontend (clean install to save space)
   echo "Building frontend..."
-  cd "\$TEMP_DIR/frontend"
+  cd "\$TEMP_DIR/livekit-app/frontend"
   npm ci --prefer-offline --no-audit 2>/dev/null || npm install --prefer-offline --no-audit
   npm run build
   
@@ -109,27 +110,28 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   # Copy other files
   echo "Copying other files..."
   # Copy translation-agent directory (preserve venv if it exists)
-  if [ -d "\$TEMP_DIR/translation-agent" ]; then
+  if [ -d "\$TEMP_DIR/livekit-app/translation-agent" ]; then
     echo "Copying translation-agent directory..."
     # Backup venv if it exists
-    if [ -d "$APP_DIR/translation-agent/venv" ]; then
+    if [ -d "$AGENT_DIR/venv" ]; then
       echo "Backing up existing venv..."
-      sudo mv $APP_DIR/translation-agent/venv $APP_DIR/translation-agent/venv.backup 2>/dev/null || true
+      sudo mv $AGENT_DIR/venv $AGENT_DIR/venv.backup 2>/dev/null || true
     fi
     # Remove old translation-agent (but preserve .env if it exists)
-    if [ -f "$APP_DIR/translation-agent/.env" ]; then
-      sudo cp $APP_DIR/translation-agent/.env /tmp/translation-agent-env.backup 2>/dev/null || true
+    if [ -f "$AGENT_DIR/.env" ]; then
+      sudo cp $AGENT_DIR/.env /tmp/translation-agent-env.backup 2>/dev/null || true
     fi
-    sudo rm -rf $APP_DIR/translation-agent 2>/dev/null || true
-    sudo cp -R "\$TEMP_DIR/translation-agent" $APP_DIR/
+    sudo rm -rf $AGENT_DIR 2>/dev/null || true
+    sudo mkdir -p $AGENT_DIR
+    sudo cp -R "\$TEMP_DIR/livekit-app/translation-agent"/* $AGENT_DIR/
     # Restore venv if backup exists
-    if [ -d "$APP_DIR/translation-agent/venv.backup" ]; then
+    if [ -d "$AGENT_DIR/venv.backup" ]; then
       echo "Restoring venv..."
-      sudo mv $APP_DIR/translation-agent/venv.backup $APP_DIR/translation-agent/venv 2>/dev/null || true
+      sudo mv $AGENT_DIR/venv.backup $AGENT_DIR/venv 2>/dev/null || true
     fi
     # Restore .env if backup exists
     if [ -f "/tmp/translation-agent-env.backup" ]; then
-      sudo cp /tmp/translation-agent-env.backup $APP_DIR/translation-agent/.env 2>/dev/null || true
+      sudo cp /tmp/translation-agent-env.backup $AGENT_DIR/.env 2>/dev/null || true
       sudo rm /tmp/translation-agent-env.backup 2>/dev/null || true
     fi
     echo "Translation-agent copied successfully"
@@ -140,15 +142,15 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Copy .env files if they exist in the repo
   echo "Copying .env files..."
-  if [ -f "\$TEMP_DIR/backend/.env" ]; then
-    sudo cp "\$TEMP_DIR/backend/.env" $BACKEND_DIR/.env
+  if [ -f "\$TEMP_DIR/livekit-app/backend/.env" ]; then
+    sudo cp "\$TEMP_DIR/livekit-app/backend/.env" $BACKEND_DIR/.env
     echo "Copied backend/.env"
   else
     echo "Warning: backend/.env not found in repo. Create it manually on server."
   fi
   
-  if [ -f "\$TEMP_DIR/translation-agent/.env" ]; then
-    sudo cp "\$TEMP_DIR/translation-agent/.env" $APP_DIR/translation-agent/.env
+  if [ -f "\$TEMP_DIR/livekit-app/translation-agent/.env" ]; then
+    sudo cp "\$TEMP_DIR/livekit-app/translation-agent/.env" $AGENT_DIR/.env
     echo "Copied translation-agent/.env"
   else
     echo "Warning: translation-agent/.env not found in repo. Create it manually on server."
@@ -172,19 +174,22 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Install Python dependencies for translation agent
   echo "Installing Python dependencies for translation agent..."
-  cd $APP_DIR/translation-agent
+  cd $AGENT_DIR
   if [ ! -d "venv" ]; then
     echo "Creating Python virtual environment..."
     python3 -m venv venv
   fi
   source venv/bin/activate
   pip install --upgrade pip --quiet
-  if [ -f "requirements.txt" ]; then
+  if [ -f "requirements_livekit.txt" ]; then
+    pip install -r requirements_livekit.txt --quiet
+    echo "Python dependencies installed from requirements_livekit.txt"
+  elif [ -f "requirements.txt" ]; then
     pip install -r requirements.txt --quiet
-    echo "Python dependencies installed"
+    echo "Python dependencies installed from requirements.txt"
   else
-    echo "Warning: requirements.txt not found, installing basic dependencies..."
-    pip install daily-python openai python-dotenv numpy aiohttp websockets --quiet
+    echo "Warning: requirements file not found, installing basic dependencies..."
+    pip install livekit-agents livekit-plugins-openai livekit-plugins-silero openai python-dotenv numpy aiohttp websockets --quiet
   fi
   deactivate
   
@@ -196,10 +201,20 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Restart backend server with PM2
   echo "Restarting backend server..."
+  pm2 delete livekit-backend 2>/dev/null || true
   pm2 delete share-app-backend 2>/dev/null || true
   cd $BACKEND_DIR
-  pm2 start server.js --name share-app-backend --update-env
+  pm2 start server.js --name livekit-backend --update-env
   pm2 save
+  
+  # Start translation agent with PM2 (if not already running)
+  echo "Starting translation agent..."
+  pm2 delete livekit-agent 2>/dev/null || true
+  cd $AGENT_DIR
+  source venv/bin/activate
+  pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python -- dev
+  pm2 save
+  deactivate
   
   # Clean up old files to free space
   echo "Cleaning up old files..."
@@ -236,8 +251,9 @@ echo ""
 echo "=== Local deployment completed! ==="
 echo "Next steps on server:"
 echo "  1. SSH to server and set up .env files:"
-echo "     - $BACKEND_DIR/.env (DAILY_API_KEY, PORT, FRONTEND_URL)"
-echo "     - $FRONTEND_DIR/.env (if needed)"
+echo "     - $BACKEND_DIR/.env (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, PORT)"
+echo "     - $AGENT_DIR/.env (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, OPENAI_API_KEY, AGENT_NAME)"
 echo "  2. Configure Nginx to serve frontend and proxy /api to backend"
 echo "  3. Set up SSL certificates (Let's Encrypt) for HTTPS"
-echo "  4. Restart services: pm2 restart share-app-backend" 
+echo "  4. Check services: pm2 status"
+echo "  5. View logs: pm2 logs livekit-backend or pm2 logs livekit-agent" 

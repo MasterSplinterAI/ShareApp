@@ -1,0 +1,7 @@
+# Simplified requirements using only OpenAI
+livekit
+livekit-agents>=0.6.0
+livekit-plugins-openai>=0.6.0
+openai>=1.0.0
+python-dotenv==1.0.0
+numpy==1.24.3

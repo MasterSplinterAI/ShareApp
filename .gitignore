@@ -9,6 +9,10 @@ backend/node_modules/
 .env.*.local
 backend/.env
 translation-agent/.env
+livekit-app/backend/.env
+livekit-app/translation-agent/.env
+livekit-app/translation-agent/env
+translation-agent/env
 
 # Build outputs
 frontend/dist/

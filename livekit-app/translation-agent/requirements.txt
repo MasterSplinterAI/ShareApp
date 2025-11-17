@@ -1,0 +1,25 @@
+# LiveKit Python SDK
+livekit
+livekit-agents>=0.6.0
+livekit-plugins-openai>=0.6.0
+livekit-plugins-deepgram>=0.6.0
+livekit-plugins-google>=0.6.0
+livekit-plugins-elevenlabs>=0.6.0
+
+# Core dependencies
+python-dotenv==1.0.0
+aiohttp==3.9.1
+numpy==1.24.3
+
+# STT providers
+deepgram-sdk==3.0.0
+
+# Translation
+google-cloud-translate==3.13.0
+
+# TTS providers
+elevenlabs==0.2.26
+
+# Logging and utilities
+colorlog==6.8.0
+tenacity==8.2.3
