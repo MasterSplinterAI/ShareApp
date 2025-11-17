@@ -18,6 +18,7 @@ from livekit.agents import (
     WorkerOptions,
     cli,
     llm,
+    room_io,
 )
 # VoiceAssistant API - AgentSession is the correct class
 from livekit.agents.voice import AgentSession, Agent
@@ -1126,9 +1127,10 @@ class TranslationAgent:
                     logger.warning(f"Source participant {source_participant_id} not found, listening to all")
             
             # Start the session with the agent
-            # If source_participant is specified, AgentSession will listen to that participant's audio
-            if source_participant:
-                session.start(agent, room=ctx.room, participant=source_participant)
+            # If source_participant_id is specified, use room_input_options to listen to that participant's audio
+            if source_participant_id:
+                room_input_opts = room_io.RoomInputOptions(participant_identity=source_participant_id)
+                session.start(agent, room=ctx.room, room_input_options=room_input_opts)
             else:
                 session.start(agent, room=ctx.room)
             
