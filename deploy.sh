@@ -79,16 +79,11 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
     exit 1
   fi
   
-  # Install backend dependencies (production only, saves space)
-  echo "Installing backend dependencies..."
-  cd "\$TEMP_DIR/livekit-app/backend"
-  npm ci --production --prefer-offline --no-audit 2>/dev/null || npm install --production --prefer-offline --no-audit
-  
-  # Build frontend (clean install to save space)
+  # Build frontend (only if needed)
   echo "Building frontend..."
   cd "\$TEMP_DIR/livekit-app/frontend"
-  npm ci --prefer-offline --no-audit 2>/dev/null || npm install --prefer-offline --no-audit
-  npm run build
+  npm ci --prefer-offline --no-audit --silent 2>/dev/null || npm install --prefer-offline --no-audit --silent
+  npm run build --silent
   
   # Remove node_modules after build to save space
   echo "Removing frontend node_modules after build..."
@@ -160,38 +155,51 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   echo "Setting permissions..."
   sudo chown -R ubuntu:ubuntu $APP_DIR
   
-  # Install backend dependencies in final location (ensure node_modules is present)
-  echo "Installing backend dependencies in final location..."
+  # Install backend dependencies in final location (only once, not duplicated)
+  echo "Installing backend dependencies..."
   cd $BACKEND_DIR
-  # Remove old node_modules if it exists to ensure clean install
-  sudo rm -rf node_modules 2>/dev/null || true
-  npm install --production --prefer-offline --no-audit
-  # Verify installation
-  if [ ! -d "node_modules" ]; then
-    echo "ERROR: node_modules not installed! Trying again..."
-    npm install --production --no-audit
+  # Only reinstall if package.json changed or node_modules missing
+  if [ ! -d "node_modules" ] || [ "package.json" -nt "node_modules/.package-lock.json" ] 2>/dev/null; then
+    npm install --production --prefer-offline --no-audit --silent
+  else
+    echo "Using existing backend node_modules (package.json unchanged)"
   fi
   
-  # Install Python dependencies for translation agent
+  # Install Python dependencies for translation agent (only if requirements changed)
   echo "Installing Python dependencies for translation agent..."
   cd $AGENT_DIR
   if [ ! -d "venv" ]; then
     echo "Creating Python virtual environment..."
     python3 -m venv venv
-  fi
-  source venv/bin/activate
-  pip install --upgrade pip --quiet
-  if [ -f "requirements_livekit.txt" ]; then
-    pip install -r requirements_livekit.txt --quiet
-    echo "Python dependencies installed from requirements_livekit.txt"
-  elif [ -f "requirements.txt" ]; then
-    pip install -r requirements.txt --quiet
-    echo "Python dependencies installed from requirements.txt"
+    source venv/bin/activate
+    pip install --upgrade pip --quiet --disable-pip-version-check
+    if [ -f "requirements_livekit.txt" ]; then
+      pip install -r requirements_livekit.txt --quiet --disable-pip-version-check
+    elif [ -f "requirements.txt" ]; then
+      pip install -r requirements.txt --quiet --disable-pip-version-check
+    else
+      echo "Warning: requirements file not found, installing basic dependencies..."
+      pip install livekit-agents livekit-plugins-openai livekit-plugins-silero openai python-dotenv numpy aiohttp websockets --quiet --disable-pip-version-check
+    fi
+    deactivate
   else
-    echo "Warning: requirements file not found, installing basic dependencies..."
-    pip install livekit-agents livekit-plugins-openai livekit-plugins-silero openai python-dotenv numpy aiohttp websockets --quiet
+    # Only reinstall if requirements file changed
+    source venv/bin/activate
+    if [ -f "requirements_livekit.txt" ] && [ "requirements_livekit.txt" -nt "venv/.requirements-installed" ] 2>/dev/null; then
+      pip install --upgrade pip --quiet --disable-pip-version-check
+      pip install -r requirements_livekit.txt --quiet --disable-pip-version-check
+      touch venv/.requirements-installed
+      echo "Python dependencies updated"
+    elif [ -f "requirements.txt" ] && [ "requirements.txt" -nt "venv/.requirements-installed" ] 2>/dev/null; then
+      pip install --upgrade pip --quiet --disable-pip-version-check
+      pip install -r requirements.txt --quiet --disable-pip-version-check
+      touch venv/.requirements-installed
+      echo "Python dependencies updated"
+    else
+      echo "Using existing Python dependencies (requirements unchanged)"
+    fi
+    deactivate
   fi
-  deactivate
   
   # Install PM2 if not installed
   if ! command -v pm2 &> /dev/null; then
