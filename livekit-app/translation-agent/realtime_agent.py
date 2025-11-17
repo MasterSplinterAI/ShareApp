@@ -294,6 +294,28 @@ class TranslationAgent:
         def on_participant_connected(participant: rtc.RemoteParticipant):
             logger.info(f"=== PARTICIPANT CONNECTED: {participant.identity} (SID: {participant.sid}) ===")
             logger.info(f"Total participants now: {len(ctx.room.remote_participants)}")
+            
+            # If other participants already have translation enabled, create VoiceAssistants for this new participant
+            if self.use_voiceassistant:
+                new_participant_id = participant.identity
+                if new_participant_id.startswith('agent-'):
+                    return  # Skip agents
+                
+                # Check if any existing participants want translation
+                for existing_participant_id, target_language in self.participant_languages.items():
+                    if existing_participant_id == new_participant_id:
+                        continue  # Skip self
+                    if self.translation_enabled.get(existing_participant_id, False):
+                        # This existing participant wants translation - create VoiceAssistant for new participant
+                        logger.info(f"Creating VoiceAssistant: {new_participant_id} -> {target_language} for {existing_participant_id}")
+                        asyncio.create_task(
+                            self.create_voiceassistant_for_participant(
+                                ctx,
+                                existing_participant_id,
+                                target_language,
+                                source_participant_id=new_participant_id
+                            )
+                        )
         
         @ctx.room.on("participant_disconnected")
         def on_participant_disconnected(participant: rtc.RemoteParticipant):
