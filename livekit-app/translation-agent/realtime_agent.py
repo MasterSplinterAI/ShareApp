@@ -1195,9 +1195,15 @@ async def main(ctx: JobContext):
 
 
 if __name__ == "__main__":
-    # Use named agent "translation-bot" to prevent duplicate dispatches
-    # Set AGENT_NAME=translation-bot in .env, or default to "translation-bot"
-    agent_name = os.getenv('AGENT_NAME', 'translation-bot')  # Default to named agent
+    # Use unique agent name to prevent conflicts with cloud-deployed agents
+    # Set AGENT_NAME in .env to match backend AGENT_NAME
+    # Default to a unique production name
+    agent_name = os.getenv('AGENT_NAME', 'translation-agent-production')
+    
+    # Ensure agent name is set (required for named agent dispatch)
+    if not agent_name or agent_name.strip() == '':
+        agent_name = 'translation-agent-production'
+    
     logger.info(f"Starting agent with name: '{agent_name}'")
     logger.info(f"LiveKit URL: {os.getenv('LIVEKIT_URL', 'wss://jayme-rhmomj8r.livekit.cloud')}")
     

@@ -39,9 +39,9 @@ router.post('/create', async (req, res) => {
     // Create room
     const room = await roomService.createRoom(createOptions);
     
-    // Dispatch agent to room explicitly
-    // Note: We're using auto-dispatch now, so this is optional
-    // But if we want explicit dispatch, use the named agent "translation-bot"
+    // Dispatch agent to room explicitly - ONLY to our named agent
+    // This prevents cloud-deployed unnamed agents from auto-joining
+    const agentName = process.env.AGENT_NAME || 'translation-agent-production';
     try {
       const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
       const agentDispatch = new AgentDispatchClient(
@@ -50,15 +50,15 @@ router.post('/create', async (req, res) => {
         process.env.LIVEKIT_API_SECRET
       );
       
-      // Dispatch to named agent "translation-bot"
+      // Dispatch ONLY to our named agent (prevents cloud agent from joining)
       // Signature: createDispatch(roomName, agentName, options)
-      await agentDispatch.createDispatch(roomName, 'translation-bot');
+      await agentDispatch.createDispatch(roomName, agentName);
       
-      console.log(`Agent dispatched to room ${roomName}`);
+      console.log(`Agent "${agentName}" dispatched to room ${roomName}`);
     } catch (agentError) {
-      console.warn('Could not dispatch agent:', agentError.message);
+      console.warn(`Could not dispatch agent "${agentName}":`, agentError.message);
       // Continue anyway - room creation succeeded
-      // Auto-dispatch should still work if explicit dispatch fails
+      // Note: If explicit dispatch fails, auto-dispatch might bring in cloud agent
     }
     
     // Generate host code for easy rejoin
