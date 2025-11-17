@@ -103,15 +103,19 @@ class TranslationAgent:
             await asyncio.sleep(0.5)  # Wait 500ms between checks (was 300ms)
             
             # Get ALL participants (including local and remote) to catch all agents
-            all_participants = list(ctx.room.participants.values())
+            # Room object has remote_participants dict and local_participant object
+            all_agent_identities = []
             
-            # Get all agent identities (including self)
-            all_agent_identities = [
-                p.identity for p in all_participants
-                if p.identity.startswith('agent-')
-            ]
+            # Add local participant (self)
+            if ctx.room.local_participant and ctx.room.local_participant.identity.startswith('agent-'):
+                all_agent_identities.append(ctx.room.local_participant.identity)
             
-            # Ensure self is included
+            # Add remote participants that are agents
+            for participant in ctx.room.remote_participants.values():
+                if participant.identity.startswith('agent-'):
+                    all_agent_identities.append(participant.identity)
+            
+            # Ensure self is included (even if not starting with 'agent-')
             if my_identity not in all_agent_identities:
                 all_agent_identities.append(my_identity)
             
@@ -129,11 +133,12 @@ class TranslationAgent:
                 return  # Exit immediately - don't process anything
         
         # Final check after all attempts
-        all_participants = list(ctx.room.participants.values())
-        final_agent_identities = [
-            p.identity for p in all_participants
-            if p.identity.startswith('agent-')
-        ]
+        final_agent_identities = []
+        if ctx.room.local_participant and ctx.room.local_participant.identity.startswith('agent-'):
+            final_agent_identities.append(ctx.room.local_participant.identity)
+        for participant in ctx.room.remote_participants.values():
+            if participant.identity.startswith('agent-'):
+                final_agent_identities.append(participant.identity)
         if my_identity not in final_agent_identities:
             final_agent_identities.append(my_identity)
         final_agent_identities.sort()
@@ -146,7 +151,7 @@ class TranslationAgent:
         
         # Log other agents (excluding self)
         other_agents = [
-            p.identity for p in ctx.room.participants.values()
+            p.identity for p in ctx.room.remote_participants.values()
             if p.identity.startswith('agent-') and p.identity != my_identity
         ]
         if other_agents:
