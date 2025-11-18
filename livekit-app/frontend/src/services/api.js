@@ -31,8 +31,8 @@ const api = axios.create({
 // Room management
 export const roomService = {
   // Create a new room
-  create: async () => {
-    const response = await api.post('/rooms/create');
+  create: async (roomMode = 'multi-language') => {
+    const response = await api.post('/rooms/create', { roomMode });
     return response.data;
   },
 

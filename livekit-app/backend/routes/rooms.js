@@ -22,6 +22,9 @@ router.post('/create', async (req, res) => {
   try {
     const roomService = getRoomService();
     
+    // Get room mode from request (default: 'multi-language')
+    const roomMode = req.body.roomMode || 'multi-language';
+    
     // Generate unique room name
     const roomName = `room-${Math.random().toString(36).substring(2, 15)}-${Date.now().toString(36)}`;
     
@@ -32,7 +35,8 @@ router.post('/create', async (req, res) => {
       maxParticipants: 50,
       metadata: JSON.stringify({
         createdAt: new Date().toISOString(),
-        type: 'conference'
+        type: 'conference',
+        roomMode: roomMode // Store room mode in metadata
       })
     };
 
@@ -41,7 +45,8 @@ router.post('/create', async (req, res) => {
     
     // Dispatch agent to room explicitly - ONLY to our named agent
     // This prevents cloud-deployed unnamed agents from auto-joining
-    const agentName = process.env.AGENT_NAME || 'translation-agent-production';
+    // Default to 'translation-bot-dev' for local dev, 'translation-agent-production' for production
+    const agentName = process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-agent-production' : 'translation-bot-dev');
     try {
       const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
       const agentDispatch = new AgentDispatchClient(
@@ -86,6 +91,14 @@ router.post('/create', async (req, res) => {
     console.log('Request origin:', origin);
     console.log('Shareable link:', shareableLink);
     
+    // Parse metadata to include roomMode
+    let metadata = {};
+    try {
+      metadata = room.metadata ? JSON.parse(room.metadata) : {};
+    } catch (e) {
+      console.warn('Failed to parse room metadata:', e);
+    }
+
     res.json({
       roomName: room.name,
       roomId: room.sid,
@@ -93,7 +106,8 @@ router.post('/create', async (req, res) => {
       shareableLink,
       shareableLinkNetwork,
       createdAt: room.creationTime ? room.creationTime.toString() : Date.now().toString(),
-      metadata: room.metadata
+      metadata: room.metadata,
+      roomMode: metadata.roomMode || roomMode // Include room mode in response
     });
   } catch (error) {
     console.error('Room creation error:', error);
@@ -118,9 +132,18 @@ router.get('/:roomName', async (req, res) => {
       return res.status(404).json({ error: 'Room not found' });
     }
     
+    // Parse metadata to include roomMode
+    let metadata = {};
+    try {
+      metadata = room.metadata ? JSON.parse(room.metadata) : {};
+    } catch (e) {
+      console.warn('Failed to parse room metadata:', e);
+    }
+    
     res.json({
       roomName: room.name,
       roomId: room.sid,
+      roomMode: metadata.roomMode || 'multi-language', // Include room mode from metadata
       numParticipants: room.numParticipants,
       maxParticipants: room.maxParticipants,
       creationTime: room.creationTime ? room.creationTime.toString() : null,

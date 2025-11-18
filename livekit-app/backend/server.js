@@ -14,7 +14,8 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.NETWORK_URL,
   'https://cockatoo-easy-similarly.ngrok.app', // Your custom ngrok domain
-  'https://45304f934cbd.ngrok.app', // Current ngrok URL
+  'https://45304f934cbd.ngrok.app', // Previous ngrok URL
+  'https://f46bc88e5f4e.ngrok.app', // Current ngrok URL
   /^https:\/\/.*\.ngrok\.app$/, // Any ngrok.app domain
   /^https:\/\/.*\.ngrok-free\.app$/, // Any ngrok-free.app domain (free accounts)
   /^https:\/\/.*\.ngrok\.io$/,  // Any ngrok.io domain
@@ -24,6 +25,15 @@ app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
+    
+    // In development, be more permissive
+    if (process.env.NODE_ENV === 'development') {
+      // Allow all ngrok domains and localhost
+      if (origin.includes('ngrok') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+        console.log(`✅ Allowing CORS for origin: ${origin}`);
+        return callback(null, true);
+      }
+    }
     
     // Check if origin is in allowed list
     const isAllowed = allowedOrigins.some(allowed => {
@@ -37,8 +47,11 @@ app.use(cors({
     });
     
     if (isAllowed) {
+      console.log(`✅ Allowing CORS for origin: ${origin}`);
       callback(null, true);
     } else {
+      console.log(`❌ Blocking CORS for origin: ${origin}`);
+      console.log(`   Allowed origins:`, allowedOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },

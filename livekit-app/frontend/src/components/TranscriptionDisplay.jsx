@@ -5,6 +5,7 @@ import { useRoomContext } from '@livekit/components-react';
 function TranscriptionDisplay({ participantId, isVisible = true }) {
   const room = useRoomContext();
   const [transcriptions, setTranscriptions] = useState([]);
+  const [liveCaptions, setLiveCaptions] = useState({}); // Live streaming captions per speaker
   const [isMinimized, setIsMinimized] = useState(false);
   const [showTranscriptions, setShowTranscriptions] = useState(isVisible);
   const scrollRef = useRef(null);
@@ -14,8 +15,10 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload, participant) => {
+    const handleDataReceived = (payload, participant, kind, topic) => {
       try {
+        if (topic !== 'transcription') return;
+        
         const decoder = new TextDecoder();
         const message = JSON.parse(decoder.decode(payload));
         
@@ -23,37 +26,61 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
         
         // Handle transcription messages
         if (message.type === 'transcription') {
-          // Deduplicate: Check if we already have this exact transcription recently (within 2 seconds)
+          const speakerId = message.participant_id || participant?.identity || 'Unknown';
           const now = Date.now();
-          const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : now; // Convert seconds to ms if needed
+          const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : now;
           
-          setTranscriptions(prev => {
-            // Check for duplicates (same text, same originalText, within 2 seconds)
-            const isDuplicate = prev.some(t => 
-              t.text === message.text && 
-              t.originalText === message.originalText &&
-              Math.abs(t.timestamp - messageTimestamp) < 2000
-            );
+          if (message.partial) {
+            // Partial/streaming update - update live caption in place
+            setLiveCaptions(prev => ({
+              ...prev,
+              [speakerId]: {
+                text: message.text || '',
+                originalText: message.originalText || message.text || '',
+                language: message.language || 'en',
+                timestamp: messageTimestamp
+              }
+            }));
+            console.log('TranscriptionDisplay: Updating live caption:', message.text);
+          } else {
+            // Final transcription - move to permanent chat history
+            setTranscriptions(prev => {
+              // Check for duplicates (same text, same originalText, within 2 seconds)
+              const isDuplicate = prev.some(t => 
+                t.text === message.text && 
+                t.originalText === message.originalText &&
+                Math.abs(t.timestamp - messageTimestamp) < 2000
+              );
+              
+              if (isDuplicate) {
+                console.log('TranscriptionDisplay: Skipping duplicate transcription:', message.text);
+                return prev;
+              }
+              
+              transcriptionIdRef.current += 1;
+              const transcription = {
+                id: transcriptionIdRef.current,
+                speaker: speakerId,
+                text: message.text || '', // Translated text (target language)
+                originalText: message.originalText || message.text || '', // Original text (source language)
+                language: message.language || 'en',
+                timestamp: messageTimestamp,
+                hasTranslation: message.originalText && message.text && message.originalText !== message.text // True if actually translated
+              };
+              
+              console.log('TranscriptionDisplay: Adding final transcription:', transcription);
+              return [...prev, transcription];
+            });
             
-            if (isDuplicate) {
-              console.log('TranscriptionDisplay: Skipping duplicate transcription:', message.text);
-              return prev;
-            }
-            
-            transcriptionIdRef.current += 1;
-            const transcription = {
-              id: transcriptionIdRef.current,
-              speaker: participant?.identity || message.participant_id || 'Unknown',
-              text: message.text || '', // Translated text (what user wants to see)
-              originalText: message.originalText || message.text || '',
-              language: message.language || 'en',
-              timestamp: messageTimestamp,
-              translated: message.originalText && message.text !== message.originalText ? message.originalText : undefined // Show original as reference
-            };
-            
-            console.log('TranscriptionDisplay: Adding transcription:', transcription);
-            return [...prev, transcription];
-          });
+            // Clear live caption after a short delay
+            setTimeout(() => {
+              setLiveCaptions(prev => {
+                const next = { ...prev };
+                delete next[speakerId];
+                return next;
+              });
+            }, 2000);
+          }
         }
       } catch (error) {
         console.error('TranscriptionDisplay: Error parsing data message:', error, 'payload:', payload);
@@ -67,12 +94,12 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
     };
   }, [room]);
   
-  // Auto-scroll to bottom when new transcriptions arrive
+  // Auto-scroll to bottom when new transcriptions or live captions arrive
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcriptions]);
+  }, [transcriptions, liveCaptions]);
   
   if (!showTranscriptions) {
     return (
@@ -89,7 +116,7 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
   return (
     <div 
       className={`fixed bottom-20 right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl transition-all z-40 ${
-        isMinimized ? 'w-64' : 'w-96'
+        isMinimized ? 'w-64' : 'w-[28rem]'
       }`}
     >
       {/* Header */}
@@ -122,15 +149,35 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
       {!isMinimized && (
         <div 
           ref={scrollRef}
-          className="max-h-80 overflow-y-auto p-4 space-y-3"
+          className="max-h-96 overflow-y-auto p-4 space-y-3"
         >
-          {transcriptions.length === 0 ? (
+          {/* Live streaming captions (grows word-by-word) */}
+          {Object.entries(liveCaptions).map(([speakerId, caption]) => (
+            <div key={`live-${speakerId}`} className="space-y-1 opacity-75">
+              <div className="flex items-baseline gap-2">
+                <span className="text-xs font-medium text-blue-400">
+                  {speakerId}
+                </span>
+                <span className="text-xs text-gray-500">
+                  Live...
+                </span>
+              </div>
+              <p className="text-sm text-gray-300 break-words whitespace-normal" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                {caption.text}
+                <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
+              </p>
+            </div>
+          ))}
+          
+          {/* Permanent chat bubbles */}
+          {transcriptions.length === 0 && Object.keys(liveCaptions).length === 0 ? (
             <p className="text-gray-500 text-sm text-center py-8">
               Waiting for speech...
             </p>
           ) : (
             transcriptions.map((item) => (
-              <div key={item.id} className="space-y-1">
+              <div key={item.id} className="space-y-2 border-b border-gray-700 pb-3 last:border-b-0">
+                {/* Speaker and timestamp */}
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-medium text-blue-400">
                     {item.speaker}
@@ -139,12 +186,31 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
                     {new Date(item.timestamp).toLocaleTimeString()}
                   </span>
                 </div>
-                <p className="text-sm text-gray-300">
-                  {item.text}
-                </p>
-                {item.translated && (
-                  <p className="text-sm text-gray-400 italic pl-4 border-l-2 border-gray-700">
-                    {item.translated}
+                
+                {/* Original text (source language) - Always show */}
+                {item.originalText && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-500 uppercase">Original</span>
+                    <p className="text-sm text-gray-300 break-words whitespace-normal bg-gray-800/50 rounded px-2 py-1" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                      {item.originalText}
+                    </p>
+                  </div>
+                )}
+                
+                {/* Translated text (target language) - Show if different from original */}
+                {item.hasTranslation && item.text && (
+                  <div className="space-y-1">
+                    <span className="text-xs text-gray-500 uppercase">Translated ({item.language})</span>
+                    <p className="text-sm text-green-300 break-words whitespace-normal bg-green-900/20 rounded px-2 py-1 border-l-2 border-green-500 pl-2" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                      {item.text}
+                    </p>
+                  </div>
+                )}
+                
+                {/* If no translation (same language), just show the text */}
+                {!item.hasTranslation && item.text && (
+                  <p className="text-sm text-gray-300 break-words whitespace-normal bg-gray-800/50 rounded px-2 py-1" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    {item.text}
                   </p>
                 )}
               </div>

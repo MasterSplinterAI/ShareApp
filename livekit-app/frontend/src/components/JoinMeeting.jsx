@@ -46,10 +46,12 @@ function JoinMeeting() {
     console.log('JoinMeeting: handleNameSubmit called with name:', name, 'roomName:', roomName);
     
     // Store participant info in sessionStorage to persist across navigation
+    // Include roomMode from roomInfo if available
     const participantInfo = {
       participantName: name,
       isHost: false,
-      roomName: roomName
+      roomName: roomName,
+      roomMode: roomInfo?.roomMode || 'multi-language' // Get room mode from room info
     };
     
     sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));

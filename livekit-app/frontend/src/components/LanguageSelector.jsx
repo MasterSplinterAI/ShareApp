@@ -26,35 +26,37 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
   };
 
   return (
-    <div className="relative">
+    <div className="relative lk-language-selector">
       <div className="flex items-center gap-2">
         {/* Translation Toggle */}
         <button
           onClick={onTranslationToggle}
-          className={`p-2 rounded-lg transition-colors ${
+          className={`lk-translation-toggle p-2 rounded-lg transition-all min-w-[44px] min-h-[44px] md:min-w-[48px] md:min-h-[48px] flex items-center justify-center ${
             translationEnabled 
               ? 'bg-green-600 hover:bg-green-700 text-white' 
               : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
           }`}
           title={translationEnabled ? 'Translation ON' : 'Translation OFF'}
+          aria-label={translationEnabled ? 'Disable translation' : 'Enable translation'}
         >
-          <Globe className="w-4 h-4" />
+          <Globe className="w-5 h-5 md:w-6 md:h-6" />
         </button>
 
         {/* Language Selector */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg transition-colors flex items-center gap-2 text-sm"
+          className="lk-language-button bg-gray-700 hover:bg-gray-600 text-white px-2 py-2 md:px-3 md:py-2 rounded-lg transition-colors flex items-center gap-2 text-sm min-h-[44px] md:min-h-[48px]"
           disabled={!translationEnabled}
+          aria-label="Select language"
         >
-          <span>{selectedLanguage.flag}</span>
-          <span>{selectedLanguage.name}</span>
+          <span className="text-base md:text-lg">{selectedLanguage.flag}</span>
+          <span className="hidden sm:inline">{selectedLanguage.name}</span>
         </button>
       </div>
 
-      {/* Dropdown Menu */}
+      {/* Dropdown Menu - Positioned above on mobile, below on desktop */}
       {isOpen && translationEnabled && (
-        <div className="absolute top-full right-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-50 max-h-80 overflow-y-auto">
+        <div className="lk-language-dropdown absolute bottom-full right-0 mb-2 md:bottom-full md:mb-2 w-48 bg-gray-800 rounded-lg shadow-lg border border-gray-700 z-50 max-h-80 overflow-y-auto">
           {SUPPORTED_LANGUAGES.map((language) => (
             <button
               key={language.code}
@@ -64,7 +66,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
               }`}
             >
               <span className="flex items-center gap-2">
-                <span>{language.flag}</span>
+                <span className="text-base">{language.flag}</span>
                 <span className="text-sm text-white">{language.name}</span>
               </span>
               {language.code === value && (

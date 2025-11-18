@@ -220,7 +220,15 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   pm2 delete livekit-agent 2>/dev/null || true
   cd $AGENT_DIR
   source venv/bin/activate
-  pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python -- start
+  # Use realtime_agent_realtime.py (current implementation) or fallback to realtime_agent.py
+  if [ -f "realtime_agent_realtime.py" ]; then
+    pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python
+  elif [ -f "realtime_agent.py" ]; then
+    pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python -- start
+  else
+    echo "ERROR: No agent file found (realtime_agent_realtime.py or realtime_agent.py)"
+    exit 1
+  fi
   pm2 save
   deactivate
   

@@ -84,14 +84,8 @@ class TranslationAgent:
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
         logger.info(f"Translation Agent starting in room: {ctx.room.name}")
-        # Room SID is a coroutine, await it
-        try:
-            room_sid = await ctx.room.sid() if hasattr(ctx.room, 'sid') else 'N/A'
-            logger.info(f"Room SID: {room_sid}")
-        except Exception as e:
-            logger.debug(f"Could not get room SID: {e}")
         
-        # Connect to room
+        # Connect to room FIRST (before any other operations)
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         
         my_identity = ctx.room.local_participant.identity
@@ -1062,14 +1056,15 @@ class TranslationAgent:
                 ),
                 llm=openai.LLM(
                     api_key=self.openai_api_key,
-                    model="gpt-4o-mini"  # Faster and cheaper for translation
+                    model="gpt-4o-mini",  # Faster and cheaper for translation
+                    temperature=0.3,  # Lower temperature for faster, more consistent translations
                 ),
                 tts=openai.TTS(
                     api_key=self.openai_api_key,
-                    model="tts-1-hd",
+                    model="tts-1",  # Use faster tts-1 instead of tts-1-hd for lower latency
                     voice="alloy"  # Use same voice as manual mode
                 ),
-                allow_interruptions=True,  # Pause when user speaks
+                allow_interruptions=False,  # Disable interruptions to reduce choppiness
             )
             
             # Create Agent with translation instructions
@@ -1094,27 +1089,90 @@ class TranslationAgent:
             # Set up event handlers for transcriptions
             from livekit.agents.voice.events import UserInputTranscribedEvent, SpeechCreatedEvent
             
+            # Store original text and translated text for pairing
+            original_text_storage = {}
+            translated_text_storage = {}
+            
             @session.on("user_input_transcribed")
             def on_user_speech(event: UserInputTranscribedEvent):
                 """Handle when user speech is transcribed"""
-                text = event.transcript
-                logger.info(f"[{participant_id}] Original speech: {text[:100]}...")
-                # Send original transcription via data channel
-                asyncio.create_task(
-                    self.send_transcription_data(ctx, participant_id, text, text, target_language)
-                )
+                original_text = event.transcript if hasattr(event, 'transcript') else None
+                if not original_text and hasattr(event, 'model_dump'):
+                    data = event.model_dump()
+                    original_text = data.get('transcript')
+                
+                if original_text:
+                    logger.info(f"[{participant_id}] Original speech: {original_text[:100]}...")
+                    original_text_storage[participant_id] = original_text
+                else:
+                    logger.warning(f"[{participant_id}] UserInputTranscribedEvent received but no transcript found")
+            
+            # Track LLM responses to get translated text
+            @agent.on("function_calls_completed")
+            def on_function_calls_completed(event):
+                """Track when LLM completes processing"""
+                logger.debug(f"[{participant_id}] Function calls completed")
+            
+            # Track LLM responses via session events - more reliable than polling chat context
+            @session.on("agent_response")
+            def on_agent_response(event):
+                """Handle when agent generates a response (translation)"""
+                logger.info(f"[{participant_id}] Agent response event received")
+                # Try to get text from response
+                translated_text = None
+                if hasattr(event, 'text'):
+                    translated_text = event.text
+                elif hasattr(event, 'content'):
+                    translated_text = event.content
+                elif hasattr(event, 'message') and hasattr(event.message, 'content'):
+                    translated_text = event.message.content
+                
+                if translated_text:
+                    logger.info(f"[{participant_id}] Found translation from agent_response: {translated_text[:100]}...")
+                    translated_text_storage[participant_id] = translated_text
+            
+            # Also monitor chat context as fallback
+            def track_translation_from_chat():
+                """Monitor chat context for new assistant messages (translations)"""
+                try:
+                    if hasattr(agent, 'chat_ctx') and agent.chat_ctx:
+                        items = agent.chat_ctx.items if hasattr(agent.chat_ctx, 'items') else []
+                        if items:
+                            # Get the last assistant message (translation)
+                            for item in reversed(items):
+                                if hasattr(item, 'role') and item.role == 'assistant':
+                                    translated_text = None
+                                    if hasattr(item, 'content'):
+                                        translated_text = item.content
+                                    elif hasattr(item, 'text_content'):
+                                        translated_text = item.text_content
+                                    
+                                    if translated_text and participant_id not in translated_text_storage:
+                                        translated_text_storage[participant_id] = translated_text
+                                        logger.info(f"[{participant_id}] Found translation in chat context: {translated_text[:100]}...")
+                                    break
+                except Exception as e:
+                    logger.debug(f"Error tracking from chat context: {e}")
             
             @session.on("speech_created")
             def on_agent_speech(event: SpeechCreatedEvent):
-                """Handle when translation is spoken"""
-                # Get the speech text from the event
-                if hasattr(event, 'text') and event.text:
-                    translated_text = event.text
-                    logger.info(f"[{participant_id}] Translated ({target_language}): {translated_text[:100]}...")
-                    # Send translated transcription via data channel
+                """Handle when translation is spoken - trigger transcription send"""
+                logger.info(f"[{participant_id}] SpeechCreatedEvent received - checking for translated text")
+                # SpeechCreatedEvent doesn't have text, but speech was created
+                # Check if we have the translated text stored from chat context
+                if participant_id in translated_text_storage:
+                    translated_text = translated_text_storage.pop(participant_id)
+                    original_text = original_text_storage.pop(participant_id, translated_text)
+                    logger.info(f"[{participant_id}] Sending transcription: original='{original_text[:50]}...', translated='{translated_text[:50]}...'")
                     asyncio.create_task(
-                        self.send_transcription_data(ctx, participant_id, translated_text, translated_text, target_language)
+                        self.send_transcription_data(ctx, participant_id, original_text, translated_text, target_language)
                     )
+                else:
+                    # Try to get from chat context now
+                    track_translation_from_chat()
+                    # If still not found, log warning
+                    if participant_id not in translated_text_storage:
+                        logger.warning(f"[{participant_id}] SpeechCreatedEvent received but no translated text found yet")
             
             # Find the source participant if specified
             source_participant = None
@@ -1128,11 +1186,21 @@ class TranslationAgent:
             
             # Start the session with the agent
             # If source_participant_id is specified, use room_input_options to listen to that participant's audio
+            # Use room_output_options to send audio ONLY to the participant who wants translation
+            room_input_opts = None
+            room_output_opts = None
+            
             if source_participant_id:
                 room_input_opts = room_io.RoomInputOptions(participant_identity=source_participant_id)
-                session.start(agent, room=ctx.room, room_input_options=room_input_opts)
+            
+            # NOTE: AgentSession publishes audio to ALL participants by default
+            # This is a LiveKit limitation - we cannot restrict audio to specific participants
+            # However, transcriptions are sent per-participant via data channel
+            # Start session - audio will go to all participants
+            if room_input_opts:
+                await session.start(agent, room=ctx.room, room_input_options=room_input_opts)
             else:
-                session.start(agent, room=ctx.room)
+                await session.start(agent, room=ctx.room)
             
             # Store session with unique key
             self.assistants[assistant_key] = session
@@ -1173,13 +1241,15 @@ class TranslationAgent:
                 "timestamp": asyncio.get_event_loop().time()
             })
             
+            # Send to ALL participants (not just one) so everyone sees transcriptions
+            # Remove destination_identities to broadcast to all
             await ctx.room.local_participant.publish_data(
                 message.encode('utf-8'),
                 reliable=True,
-                destination_identities=[participant_id],
+                # Remove destination_identities to send to all participants
                 topic="transcription"
             )
-            logger.debug(f"Sent transcription to {participant_id}")
+            logger.info(f"✅ Sent transcription (broadcast): original='{original_text[:50]}...', translated='{translated_text[:50]}...' for {participant_id}")
         except Exception as e:
             logger.error(f"Failed to send transcription: {e}")
 

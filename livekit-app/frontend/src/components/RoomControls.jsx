@@ -7,16 +7,29 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName })
   const localParticipant = useLocalParticipant();
 
   // Send language preference updates when they change
+  // IMPORTANT: Always send updates (including when disabled) so backend can stop assistants
   useEffect(() => {
     if (!room || !localParticipant?.localParticipant) return;
 
+    // Check if room is connected before sending data
+    if (room.state !== 'connected') {
+      console.log('Room not connected, skipping language preference send. State:', room.state);
+      return;
+    }
+
     const sendLanguagePreference = async () => {
       try {
+        // Double-check connection state before sending
+        if (room.state !== 'connected') {
+          console.log('Room disconnected during send, aborting');
+          return;
+        }
+
         const data = {
           type: 'language_update', // Match what agent expects
           participantName: participantName,
           language: selectedLanguage, // Match what agent expects
-          enabled: translationEnabled // Match what agent expects
+          enabled: translationEnabled // Match what agent expects - CRITICAL: Send false when disabled!
         };
 
         const encoder = new TextEncoder();
@@ -31,14 +44,19 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName })
 
         console.log('Sent language preference:', data);
       } catch (error) {
+        // Suppress "PC manager is closed" errors - they're harmless during disconnect
+        if (error.message?.includes('PC manager is closed') || 
+            error.message?.includes('closed peer connection')) {
+          console.log('Room closing, skipping data send');
+          return;
+        }
         console.error('Error sending language preference:', error);
       }
     };
 
-    // Send preference when translation is enabled or language changes
-    if (translationEnabled) {
-      sendLanguagePreference();
-    }
+    // ALWAYS send preference updates - including when disabled (enabled: false)
+    // This ensures backend stops assistants when translation is turned off
+    sendLanguagePreference();
   }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
 
   // Listen for transcriptions and other data

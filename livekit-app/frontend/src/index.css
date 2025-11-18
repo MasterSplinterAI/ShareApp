@@ -32,3 +32,174 @@
 ::-webkit-scrollbar-thumb:hover {
   @apply bg-gray-500;
 }
+
+/* Custom Control Bar - Language Selector and Share Button */
+.lk-control-bar-custom {
+  /* Position at bottom, aligned with LiveKit's control bar */
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* Language Selector Styling */
+.lk-language-selector {
+  display: flex;
+  align-items: center;
+}
+
+.lk-translation-toggle {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.lk-translation-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.15), 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.lk-language-button {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.lk-language-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.15), 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.lk-language-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Language Dropdown - appears above button since control bar is at bottom */
+.lk-language-dropdown {
+  /* Ensure dropdown appears above the control bar */
+  z-index: 70;
+  /* Add max-height for mobile */
+  max-height: 60vh;
+}
+
+.lk-share-button {
+  /* Match LiveKit control button styling */
+  background-color: rgba(31, 41, 55, 0.95);
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.lk-share-button:hover {
+  background-color: rgba(55, 65, 81, 0.95);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 8px -1px rgba(0, 0, 0, 0.15), 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.lk-share-button:active {
+  transform: translateY(0);
+}
+
+.lk-share-button-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: none;
+}
+
+/* Desktop: Show text label */
+@media (min-width: 640px) {
+  .lk-share-button {
+    padding: 0.5rem 1rem;
+  }
+  
+  .lk-share-button-text {
+    display: inline;
+  }
+}
+
+/* Mobile: Adjust positioning and sizing */
+@media (max-width: 640px) {
+  .lk-control-bar-custom {
+    bottom: 0.75rem;
+    right: 0.5rem;
+    gap: 0.5rem;
+  }
+  
+  .lk-share-button {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0.5rem;
+  }
+  
+  .lk-share-button svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+  
+  .lk-translation-toggle {
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0.5rem;
+  }
+  
+  .lk-language-button {
+    min-height: 40px;
+    padding: 0.5rem;
+  }
+  
+  .lk-language-dropdown {
+    /* On mobile, ensure dropdown doesn't go off screen */
+    max-width: calc(100vw - 2rem);
+    right: 0;
+  }
+}
+
+/* On larger screens, position it to the right side, aligned with control bar */
+@media (min-width: 1024px) {
+  .lk-control-bar-custom {
+    /* Keep it at bottom-right, but ensure proper spacing */
+    right: 1.5rem;
+  }
+}
+
+/* Adjust for very small screens */
+@media (max-width: 480px) {
+  .lk-control-bar-custom {
+    bottom: 0.5rem;
+    right: 0.25rem;
+    gap: 0.375rem;
+  }
+  
+  .lk-share-button {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0.375rem;
+  }
+  
+  .lk-translation-toggle {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0.375rem;
+  }
+  
+  .lk-language-button {
+    min-height: 36px;
+    padding: 0.375rem 0.5rem;
+  }
+  
+  .lk-language-dropdown {
+    width: 200px;
+    max-height: 50vh;
+  }
+}
