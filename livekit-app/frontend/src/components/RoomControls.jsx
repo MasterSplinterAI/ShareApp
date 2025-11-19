@@ -1,10 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { DataPacket_Kind } from 'livekit-client';
+import { Settings } from 'lucide-react';
 
-function RoomControls({ selectedLanguage, translationEnabled, participantName }) {
+function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
+  const [vadSensitivity, setVadSensitivity] = useState('medium'); // 'low', 'medium', 'high'
+  const [showVadControls, setShowVadControls] = useState(false);
 
   // Send language preference updates when they change
   // IMPORTANT: Always send updates (including when disabled) so backend can stop assistants
@@ -59,6 +62,37 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName })
     sendLanguagePreference();
   }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
 
+  // Send VAD setting when host changes it
+  const sendVadSetting = async (level) => {
+    if (!isHost || !room || !localParticipant?.localParticipant) return;
+    
+    if (room.state !== 'connected') {
+      console.log('Room not connected, skipping VAD setting send');
+      return;
+    }
+
+    try {
+      const data = {
+        type: 'host_vad_setting',
+        level: level, // 'low', 'medium', 'high'
+      };
+
+      const encoder = new TextEncoder();
+      const encodedData = encoder.encode(JSON.stringify(data));
+
+      await localParticipant.localParticipant.publishData(
+        encodedData,
+        DataPacket_Kind.RELIABLE,
+        { topic: 'host-control' }
+      );
+
+      console.log('Sent VAD setting:', data);
+      setVadSensitivity(level);
+    } catch (error) {
+      console.error('Error sending VAD setting:', error);
+    }
+  };
+
   // Listen for transcriptions and other data
   useEffect(() => {
     if (!room) return;
@@ -83,6 +117,21 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName })
       room.off('dataReceived', handleDataReceived);
     };
   }, [room]);
+
+  // Expose VAD functions via window for MeetingRoom to access
+  // This is a simple way to share functions between components
+  useEffect(() => {
+    if (isHost) {
+      window.__roomControls = {
+        vadSensitivity,
+        setVadSensitivity,
+        sendVadSetting,
+      };
+    }
+    return () => {
+      delete window.__roomControls;
+    };
+  }, [isHost, vadSensitivity, sendVadSetting]);
 
   return null; // This component doesn't render anything, just handles data
 }

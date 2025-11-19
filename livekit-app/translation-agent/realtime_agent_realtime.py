@@ -34,6 +34,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Language detection removed - using simple same-language prevention instead
+# If two participants have the same target language, no translation tracks are created between them
+# OpenAI instructions handle edge cases (e.g., Spanish speaker speaking English)
+
 
 class RealtimeTranslationAgent:
     """
@@ -50,6 +54,8 @@ class RealtimeTranslationAgent:
         self.participant_languages: Dict[str, str] = {}
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, AgentSession] = {}
+        self.host_vad_setting: str = "medium"  # 'low', 'medium', 'high'
+        self.host_participant_id: Optional[str] = None  # Track who the host is
 
         logger.info("Realtime Translation Agent initialized with OpenAI Realtime API (UNIFIED MODE)")
 
@@ -63,8 +69,8 @@ class RealtimeTranslationAgent:
         my_identity = ctx.room.local_participant.identity
         logger.info(f"AGENT ENTRYPOINT CALLED! Agent connected with identity: {my_identity}")
         logger.info(f"Connected to room with {len(ctx.room.remote_participants)} participants")
-
-        # Handle data channel messages for language preferences
+        
+        # Handle data channel messages for language preferences AND host VAD settings
         @ctx.room.on("data_received")
         def on_data_received(data: rtc.DataPacket):
             try:
@@ -72,10 +78,25 @@ class RealtimeTranslationAgent:
                 participant_id = data.participant.identity
                 logger.info(f"📨 Data received - Topic: '{data.topic}', From: {participant_id}, Message: {message}")
                 
+                message_type = message.get('type')
+                
+                # Handle host VAD setting changes
+                if message_type == 'host_vad_setting':
+                    # Accept from any participant for now (you can add host verification via room metadata)
+                    new_setting = message.get('level', 'medium')
+                    if new_setting in ['low', 'medium', 'high']:
+                        old_setting = self.host_vad_setting
+                        self.host_vad_setting = new_setting
+                        self.host_participant_id = participant_id
+                        logger.info(f"🎛️ Host changed VAD sensitivity: {old_setting} → {new_setting} (from {participant_id})")
+                        
+                        # Restart all assistants with new VAD settings
+                        asyncio.create_task(self._restart_all_assistants_for_vad_change(ctx))
+                    return
+                
                 # Handle both message formats from frontend
                 # RoomControls.jsx sends: type='language_update', language, enabled
                 # useTranslation.js sends: type='language_preference', target_language, translation_enabled
-                message_type = message.get('type')
                 if message_type == 'language_update':
                     participant_name = message.get('participantName', participant_id)
                     language = message.get('language', 'en')
@@ -102,22 +123,57 @@ class RealtimeTranslationAgent:
                 logger.info(f"📊 Translation enabled status: {dict(self.translation_enabled)}")
                 
                 if enabled:
-                    # Skip same-language translations to prevent echo/doubles
-                    if language == 'en':
-                        logger.info(f"⏭️ Skipping translation for {participant_id} - target language is English (same-language skip)")
-                        return
-                    
-                    # If language changed, stop ALL existing assistants first, then create new ones
+                    # If language changed, stop existing assistants FOR this participant first, then create new ones
                     if language_changed:
                         logger.info(f"🔄 Language changed from {old_language} to {language} for {participant_id} - stopping old assistants first")
                         async def stop_and_recreate():
+                            # Stop assistants WHERE this participant is the listener
                             await self.stop_realtime_assistant(participant_id)
+                            
+                            # CRITICAL: Also stop assistants FROM this participant TO others if they target the NEW language
+                            # This prevents same-language tracks (e.g., two English listeners shouldn't have translation-en-* tracks)
+                            # Key format: "{other_participant_id}:{participant_id}" where participant_id is the speaker
+                            keys_to_remove = []
+                            for key in self.assistants.keys():
+                                if key.endswith(f":{participant_id}"):
+                                    # This is an assistant FROM participant_id TO another participant
+                                    listener_id = key.split(':')[0]
+                                    listener_target_lang = self.participant_languages.get(listener_id)
+                                    # If listener's target language matches participant's NEW language, stop it
+                                    if listener_target_lang == language:
+                                        logger.info(f"🛑 Stopping same-language assistant {key}: {participant_id} (now {language}) -> {listener_id} (also {language})")
+                                        keys_to_remove.append(key)
+                            
+                            for key in keys_to_remove:
+                                assistant = self.assistants.pop(key)
+                                await assistant.aclose()
+                                logger.info(f"✅ Stopped same-language assistant {key}")
+                            
                             await asyncio.sleep(0.2)
+                            
+                            # ALWAYS create assistants FROM others → this participant's NEW language
+                            # OpenAI will auto-detect and stay silent when spoken language == target language
                             self._create_shared_assistant_for_target_language(ctx, participant_id, language)
+                            
+                            # ALWAYS create assistants FROM this participant → others' languages
+                            # OpenAI auto-detects the spoken language, so we just need to know:
+                            # - Who is speaking (this participant)
+                            # - Who wants to hear (others)
+                            # - What language they want (their target language)
+                            # NOTE: These assistants are shared, so if they already exist, they won't be recreated
+                            self._create_assistants_from_participant_to_others(ctx, participant_id)
                         asyncio.create_task(stop_and_recreate())
                     else:
                         # Language didn't change, just create assistants normally
+                        # ALWAYS create assistants FROM others → this participant's language
+                        # OpenAI will auto-detect and stay silent when spoken language == target language
                         self._create_shared_assistant_for_target_language(ctx, participant_id, language)
+                        # ALWAYS create assistants FROM this participant → others' languages
+                        # OpenAI auto-detects the spoken language, so we just need to know:
+                        # - Who is speaking (this participant)
+                        # - Who wants to hear (others)
+                        # - What language they want (their target language)
+                        self._create_assistants_from_participant_to_others(ctx, participant_id)
                 else:
                     # Translation disabled - stop all assistants for this participant
                     logger.info(f"🛑 Translation disabled for {participant_id}, stopping all assistants")
@@ -176,15 +232,15 @@ class RealtimeTranslationAgent:
                         )
                     )
             
-            # Also create assistants for the new participant if they have translation enabled
+            # Create assistants for the new participant if they have translation enabled
             if new_participant_id in self.participant_languages and self.translation_enabled.get(new_participant_id, False):
                 target_language = self.participant_languages[new_participant_id]
                 
-                if target_language == 'en':
-                    logger.info(f"⏭️ Skipping translation for {new_participant_id} - target language is English")
-                    return
-                
+                # ALWAYS create assistants FROM others → new participant's language
+                # OpenAI will auto-detect and stay silent when spoken language == target language
                 self._create_shared_assistant_for_target_language(ctx, new_participant_id, target_language)
+                # ALSO create assistants FROM new participant → others' languages
+                self._create_assistants_from_participant_to_others(ctx, new_participant_id)
 
         @ctx.room.on("participant_disconnected")
         def on_participant_disconnected(participant: rtc.RemoteParticipant):
@@ -212,15 +268,25 @@ class RealtimeTranslationAgent:
 
     def _create_shared_assistant_for_target_language(self, ctx: JobContext, any_participant_id: str, target_language: str):
         """Create ONE shared translation assistant per target language.
+        Creates assistants FROM other participants TO this participant's target language.
         Works perfectly for 2 languages or 20 — no duplicates, no overlap.
+        
+        CRITICAL: Skip creating assistants when source and target have the same language.
+        Example: Two English listeners don't need translation tracks between them.
         """
-        logger.info(f"🎯 Creating shared assistants for {any_participant_id} -> {target_language}")
+        logger.info(f"🎯 Creating shared assistants FROM others -> {target_language} FOR {any_participant_id}")
         
         # Get all other participants (sources to translate FROM)
         other_participants = [p for p in ctx.room.remote_participants.values() 
                             if not p.identity.startswith('agent-') and p.identity != any_participant_id]
         
         for source_participant in other_participants:
+            # CRITICAL: Skip if source participant also has the same target language
+            # Two English listeners don't need translation tracks between them
+            source_target_lang = self.participant_languages.get(source_participant.identity)
+            if source_target_lang == target_language:
+                logger.info(f"⏭️ Skipping assistant FROM {source_participant.identity} -> {target_language}: both have same target language ({target_language})")
+                continue
             # Check if we already have a shared assistant for this language pair
             # Track name format: translation-{target_lang}-{source_participant}
             assistant_exists = False
@@ -244,6 +310,92 @@ class RealtimeTranslationAgent:
                         any_participant_id,
                         target_language,
                         source_participant_id=source_participant.identity,
+                        use_language_based_track=True
+                    )
+                )
+
+    def _create_assistants_from_participant_to_others(self, ctx: JobContext, source_participant_id: str):
+        """Create assistants FROM this participant TO other participants' target languages.
+        
+        ARCHITECTURE CLARIFICATION:
+        - User language setting = what they want to HEAR (not what they speak)
+        - OpenAI auto-detects what language is actually being spoken
+        - We create one assistant per (speaker, target_language) pair
+        
+        Example:
+        - User A wants to hear English, User B wants Spanish, User C wants English
+        - When User A speaks (OpenAI detects English):
+          → Create assistant: A → English (for User A) → OpenAI stays silent (no translation needed)
+          → Create assistant: A → Spanish (for User B) → OpenAI translates English → Spanish
+          → Create assistant: A → English (for User C) → OpenAI stays silent (no translation needed)
+        
+        - When User B speaks Spanish (OpenAI detects Spanish):
+          → Create assistant: B → English (for User A) → OpenAI translates Spanish → English
+          → Create assistant: B → Spanish (for User B) → OpenAI stays silent (no translation needed)
+          → Create assistant: B → English (for User C) → OpenAI translates Spanish → English
+        
+        OpenAI automatically:
+        - Detects what language source_participant is actually speaking
+        - Translates it to target_language if needed
+        - Stays silent if the spoken language already matches target_language
+        """
+        logger.info(f"🎯 Creating assistants FROM {source_participant_id} -> others' languages")
+        
+        # Get all other participants who have translation enabled
+        for other_participant_id, target_language in self.participant_languages.items():
+            if other_participant_id == source_participant_id:
+                continue
+            
+            if not self.translation_enabled.get(other_participant_id, False):
+                continue
+            
+            # CRITICAL: Skip if source participant also has the same target language as the target participant
+            # Two English listeners don't need translation tracks between them
+            source_target_lang = self.participant_languages.get(source_participant_id)
+            if source_target_lang == target_language:
+                logger.info(f"⏭️ Skipping assistant FROM {source_participant_id} -> {target_language} FOR {other_participant_id}: both have same target language ({target_language})")
+                continue
+            
+            # Check if we already have a shared assistant for this language pair
+            # Track name format: translation-{target_lang}-{source_participant}
+            # We need to check if ANY participant with this target_language already has an assistant FROM source_participant_id
+            assistant_exists = False
+            for existing_key in self.assistants.keys():
+                # existing_key format: "{participant_id}:{source_participant_id}"
+                if existing_key.endswith(f":{source_participant_id}"):
+                    # Check if any participant with this target language already has this assistant
+                    existing_participant_id = existing_key.split(':')[0]
+                    existing_target_lang = self.participant_languages.get(existing_participant_id)
+                    if existing_target_lang == target_language:
+                        logger.info(f"♻️ Reusing existing shared assistant: {source_participant_id} → {target_language} (for {existing_participant_id}, will also serve {other_participant_id})")
+                        assistant_exists = True
+                        break
+            
+            # Also check by track name to be extra sure (defensive check)
+            expected_track_name = f"translation-{target_language}-{source_participant_id}"
+            if not assistant_exists:
+                # Double-check by looking for the track name in existing assistants
+                # This is a safety check in case the key format doesn't match
+                for existing_key, existing_assistant in self.assistants.items():
+                    # We can't easily check track names from here, but we can verify the key pattern
+                    if existing_key.endswith(f":{source_participant_id}"):
+                        existing_participant_id = existing_key.split(':')[0]
+                        existing_target_lang = self.participant_languages.get(existing_participant_id)
+                        if existing_target_lang == target_language:
+                            logger.info(f"♻️ Found shared assistant via secondary check: {source_participant_id} → {target_language}")
+                            assistant_exists = True
+                            break
+            
+            if not assistant_exists:
+                # Create new shared assistant FROM source_participant TO target_language
+                # OpenAI will auto-detect source language and only translate when needed
+                logger.info(f"🚀 Creating shared assistant FROM {source_participant_id} -> {target_language} (OpenAI auto-detects source language)")
+                asyncio.create_task(
+                    self.create_realtime_assistant(
+                        ctx,
+                        other_participant_id,  # The participant who wants to hear this translation
+                        target_language,       # Their target language
+                        source_participant_id=source_participant_id,  # Who is speaking
                         use_language_based_track=True
                     )
                 )
@@ -281,6 +433,10 @@ class RealtimeTranslationAgent:
             }
             target_lang_name = language_names.get(target_language, target_language)
             
+            # Get VAD config based on host setting
+            vad_config = self._get_vad_config()
+            logger.info(f"🎛️ Using VAD config: {vad_config} (host setting: {self.host_vad_setting})")
+            
             # Create AgentSession with OpenAI RealtimeModel for ultra-low latency
             # RealtimeModel provides speech-to-speech translation in a single integrated model
             # This eliminates the ~300-800ms latency from STT → LLM → TTS pipeline
@@ -292,12 +448,7 @@ class RealtimeTranslationAgent:
                 voice="alloy",  # Choose voice for target language
                 modalities=["text", "audio"],  # ← text FIRST ensures events fire reliably
                 temperature=0.7,  # Balanced for natural translations
-                turn_detection={  # ← CRITICAL: Enables instant turn ending and streaming deltas (dict format)
-                    "type": "server_vad",
-                    "threshold": 0.5,  # 0.1 = very sensitive, 0.9 = less sensitive (0.5 is sweet spot)
-                    "prefix_padding_ms": 300,  # Include a little audio before speech starts
-                    "silence_duration_ms": 500,  # 500ms silence = end of turn (feels natural, like ChatGPT Voice)
-                },
+                turn_detection=vad_config,  # Use dynamic VAD config based on host setting
             )
             
             session = AgentSession(
@@ -314,14 +465,22 @@ class RealtimeTranslationAgent:
                 instructions=(
                     f"You are a real-time translator. Your ONLY job is to translate speech. "
                     f"The listener has chosen {target_lang_name} as their preferred language. "
-                    "Automatically detect the actual spoken language from the audio stream. "
-                    f"If the detected spoken language is already {target_lang_name}, stay completely silent — "
-                    "output no audio and no text. Do not repeat, echo, or dub the original. "
-                    f"Only output translation when the spoken language differs from {target_lang_name}. "
-                    "Translate accurately and naturally. Never add acknowledgments, confirmations, explanations, or meta-commentary. "
-                    "Never say things like 'I understand', 'I'll stay silent', 'Understood', 'no output', 'zero output', "
-                    "or any similar phrases. When languages match, produce absolutely nothing — not even a single word. "
-                    "Do not output any text that describes your state or actions. Output ONLY translations when needed."
+                    "CRITICAL: Automatically detect the actual spoken language from the audio stream. "
+                    f"If the detected spoken language is already {target_lang_name}, you MUST produce ABSOLUTELY NOTHING — "
+                    "no audio output, no text output, no sound, no words, no acknowledgments, no confirmations, no explanations, no translations. "
+                    "Do NOT translate English to English. Do NOT translate Spanish to Spanish. Do NOT translate any language to itself. "
+                    "Do not repeat, echo, dub, or translate the original when languages match. "
+                    "Do not say 'thank you', 'not translating', 'I understand', 'I'll stay silent', 'Understood', "
+                    "'no output', 'zero output', 'complete silence', 'I will remain silent', or ANY other words or phrases. "
+                    "When the spoken language matches the target language, you must produce complete silence — zero output. "
+                    f"ONLY output translation when the spoken language DIFFERS from {target_lang_name}. "
+                    "Example: If listener wants English and speaker speaks English → produce NOTHING (no translation needed). "
+                    "Example: If listener wants English and speaker speaks Spanish → translate Spanish to English. "
+                    "Example: If listener wants Spanish and speaker speaks English → translate English to Spanish. "
+                    "Example: If listener wants Spanish and speaker speaks Spanish → produce NOTHING (no translation needed). "
+                    "Translate accurately and naturally when translation is needed. Never add acknowledgments, confirmations, explanations, or meta-commentary. "
+                    "Never describe your state, actions, or decisions. Output ONLY translations when needed. "
+                    "If you have nothing to translate, produce nothing — not even a single character or sound."
                 ),
             )
             
@@ -339,27 +498,37 @@ class RealtimeTranslationAgent:
             
             # Helper function to detect and filter meta-commentary responses
             def is_meta_commentary(text: str) -> bool:
-                """Check if text is meta-commentary that should be filtered out"""
+                """Check if text is meta-commentary that should be filtered out.
+                This catches OpenAI's responses when languages match (e.g., "not translating", "thank you", etc.)
+                """
                 if not text:
                     return True
                 text_lower = text.lower().strip()
                 
                 # Remove punctuation for matching
-                text_clean = text_lower.replace(".", "").replace(",", "").replace("!", "").replace("?", "").strip()
+                text_clean = text_lower.replace(".", "").replace(",", "").replace("!", "").replace("?", "").replace("'", "").strip()
                 
-                # Common meta-commentary phrases OpenAI might generate
+                # Common meta-commentary phrases OpenAI might generate when languages match
                 meta_phrases = [
+                    # Direct acknowledgments
                     "i understand", "i'll stay silent", "i'll remain silent", "understood",
                     "i'll stop", "no translation needed", "staying silent", "remaining silent",
                     "no output", "zero output", "complete silence", "producing nothing",
                     "nothing to translate", "no translation", "staying quiet", "remaining quiet",
-                    "i understand now", "got it", "okay", "ok", "will stay silent", "will remain silent"
+                    "i understand now", "got it", "okay", "ok", "will stay silent", "will remain silent",
+                    # New phrases the user reported
+                    "not translating", "thank you", "thanks", "you're welcome", "no problem",
+                    "sure", "of course", "absolutely", "certainly", "indeed",
+                    # Other common acknowledgments
+                    "i see", "i hear you", "gotcha", "roger", "copy", "affirmative",
+                    "no need to translate", "already in", "same language", "no change needed",
+                    "no translation required", "already correct", "no action needed"
                 ]
                 
                 # Check if text matches exactly (with or without punctuation)
                 for phrase in meta_phrases:
-                    phrase_clean = phrase.replace(".", "").replace(",", "").replace("!", "").replace("?", "").strip()
-                    if text_clean == phrase_clean or text_clean.startswith(phrase_clean + " ") or text_clean == phrase_clean:
+                    phrase_clean = phrase.replace(".", "").replace(",", "").replace("!", "").replace("?", "").replace("'", "").strip()
+                    if text_clean == phrase_clean or text_clean.startswith(phrase_clean + " ") or text_clean.endswith(" " + phrase_clean):
                         return True
                 
                 # Check if text contains any meta-commentary phrase
@@ -367,16 +536,26 @@ class RealtimeTranslationAgent:
                     if phrase in text_lower:
                         return True
                 
+                # Common acknowledgment words for filtering
+                acknowledgment_words = [
+                    "understand", "silent", "ok", "okay", "got", "it", "no", "output", "zero", "nothing",
+                    "thanks", "thank", "sure", "yes", "yeah", "yep", "right", "correct", "exactly"
+                ]
+                
                 # Filter very short responses that are likely acknowledgments (1-4 words)
                 words = text_lower.split()
                 if len(words) <= 4:
-                    acknowledgment_words = ["understand", "silent", "ok", "okay", "got", "it", "no", "output", "zero", "nothing"]
                     if any(word in acknowledgment_words for word in words):
                         return True
                 
                 # Filter if text is just punctuation or whitespace
                 if not text_clean or len(text_clean) == 0:
                     return True
+                
+                # Filter if text is ONLY common acknowledgment words (even if longer)
+                if len(words) <= 6:
+                    if all(word in acknowledgment_words for word in words):
+                        return True
                 
                 return False
             
@@ -421,6 +600,7 @@ class RealtimeTranslationAgent:
                         session.user_data["original_parts"] = []  # Clear parts
                         # Reset sent_final flag for new speech turn - allows next translation to be sent
                         session.user_data["sent_final"] = False
+                        
                         logger.info(f"[{assistant_key}] 🔵 Original (final): {transcript[:80]} - Reset sent_final for new turn")
                     else:
                         # Partial - accumulate parts to build full text
@@ -431,6 +611,8 @@ class RealtimeTranslationAgent:
                             # Use the longest/latest partial as best guess
                             session.user_data["last_original"] = transcript
                             logger.debug(f"[{assistant_key}] 🔵 Original (partial): {transcript[:60]}...")
+                else:
+                    logger.warning(f"[{assistant_key}] ⚠️ user_input_transcribed fired but transcript is empty")
             
             @session.on("agent_speech_started")
             def on_agent_started(_):
@@ -438,10 +620,15 @@ class RealtimeTranslationAgent:
                 session.user_data["current_translation"] = ""
                 session.user_data["sent_final"] = False  # Reset flag to allow new transcription
                 logger.info(f"[{assistant_key}] 🎤 Agent speech started - reset translation accumulator and sent_final flag")
+                
+                # Ensure we have original text - if not, log warning
+                if not session.user_data.get("last_original"):
+                    logger.warning(f"[{assistant_key}] ⚠️ Agent speech started but no original text captured yet")
             
             @session.on("agent_speech_delta")
             def on_agent_delta(event):
                 """Handle streaming chunks of translated text - send incrementally for lower latency"""
+                
                 delta = getattr(event, "delta", "")
                 if delta:
                     session.user_data["current_translation"] += delta
@@ -457,19 +644,24 @@ class RealtimeTranslationAgent:
                         return
                     
                     # Only send if we have meaningful text (at least 2 words or 15 chars)
+                    # CRITICAL: Send incremental transcriptions for ALL languages (language-agnostic)
                     if len(accumulated.split()) >= 2 or len(accumulated) >= 15:
-                        logger.debug(f"[{assistant_key}] 📤 Sending incremental transcription: {accumulated[:50]}...")
+                        logger.info(f"[{assistant_key}] 📤 Sending incremental transcription: '{accumulated[:50]}...' (target: {target_language})")
                         try:
                             source_speaker = session.user_data.get("source_speaker_id") or participant_id
                             asyncio.create_task(
                                 self.send_transcription_data(ctx, source_speaker, participant_id, original, accumulated, target_language, partial=True)
                             )
+                            logger.debug(f"[{assistant_key}] ✅ Incremental transcription task created")
                         except RuntimeError as e:
-                            logger.debug(f"[{assistant_key}] Failed to send incremental: {e}")
+                            logger.error(f"[{assistant_key}] ❌ Failed to create task for incremental transcription: {e}")
+                        except Exception as e:
+                            logger.error(f"[{assistant_key}] ❌ Error sending incremental transcription: {e}", exc_info=True)
             
             @session.on("agent_speech_committed")
             def on_agent_committed(event):
                 """Handle when agent speech is committed (final translated text) - PRIMARY METHOD"""
+                
                 if session.user_data.get("sent_final"):
                     logger.debug(f"[{assistant_key}] ⚠️ agent_speech_committed fired but already sent final, skipping")
                     return
@@ -487,10 +679,22 @@ class RealtimeTranslationAgent:
                     return
                 
                 # Filter out meta-commentary responses (e.g., "I'll remain silent now")
-                if is_meta_commentary(final):
-                    logger.info(f"[{assistant_key}] 🚫 Filtered out meta-commentary response: {final[:100]}...")
+                # BUT: Only filter if it's VERY short and matches meta-phrases exactly
+                # Longer text should always be sent through (even if it contains meta-phrases)
+                is_meta = is_meta_commentary(final)
+                text_length = len(final)
+                word_count = len(final.split())
+                
+                # Only filter if it's very short (<= 15 chars or <= 3 words) AND matches meta-commentary
+                # This prevents filtering legitimate translations that happen to contain common words
+                if is_meta and text_length <= 15 and word_count <= 3:
+                    logger.info(f"[{assistant_key}] 🚫 Filtered out meta-commentary response: {final[:100]}... (length: {text_length}, words: {word_count})")
                     session.user_data["sent_final"] = True  # Mark as sent to prevent retries
                     return
+                elif is_meta:
+                    # Longer text that contains meta-phrases but is likely a real translation
+                    # Log it but don't filter - let it through
+                    logger.info(f"[{assistant_key}] ⚠️ Text contains meta-phrases but is long enough ({text_length} chars, {word_count} words) - sending through: {final[:100]}...")
                 
                 original = session.user_data.get("last_original") or final
                 session.user_data["sent_final"] = True
@@ -498,15 +702,27 @@ class RealtimeTranslationAgent:
                 # Get source speaker from session data (who actually spoke)
                 source_speaker = session.user_data.get("source_speaker_id") or participant_id
                 
-                logger.info(f"[{assistant_key}] ✅ Translation (final from agent_speech_committed): {final[:100]}... (full length: {len(final)})")
+                logger.info(f"[{assistant_key}] ✅ Translation (final from agent_speech_committed): {final[:100]}... (full length: {len(final)}, target_language: {target_language})")
+                
+                # CRITICAL: Always send transcription when audio is generated
+                # Even if original is missing, send what we have (better than nothing)
+                if not original:
+                    logger.warning(f"[{assistant_key}] ⚠️ No original text captured, using translation as original")
+                    original = final
                 
                 # Safe: we are inside LiveKit's async context
+                # CRITICAL: Send transcriptions for ALL languages (language-agnostic)
+                # This ensures English → Spanish, Spanish → English, and all other combinations work
                 try:
+                    logger.info(f"[{assistant_key}] 📤 Sending transcription: source={source_speaker}, target={participant_id}, target_lang={target_language}, original='{original[:50]}...', translated='{final[:50]}...'")
                     asyncio.create_task(
                         self.send_transcription_data(ctx, source_speaker, participant_id, original, final, target_language, partial=False)
                     )
+                    logger.info(f"[{assistant_key}] ✅ Transcription task created successfully")
                 except RuntimeError as e:
                     logger.error(f"[{assistant_key}] ❌ Failed to create task for sending transcription: {e}")
+                except Exception as e:
+                    logger.error(f"[{assistant_key}] ❌ Error sending transcription: {e}", exc_info=True)
             
             # conversation_item_added as fallback - but prefer agent_speech_committed for full text
             # Only use this if agent_speech_committed didn't fire (shouldn't happen with server_vad)
@@ -608,10 +824,10 @@ class RealtimeTranslationAgent:
             
             # Output: Create unique track name for this translation pair
             # ALWAYS use language-based track names (shared across listeners)
-            # Track name format: translation-{target_language}-{source_participant}
-            # Example: translation-es-EnglishSpeaker (Spanish translation from English speaker)
-            # All Spanish listeners will subscribe to this same track
-            track_name = f"translation-{target_language}-{source_participant_id or 'all'}"
+                # Track name format: translation-{target_language}-{source_participant}
+                # Example: translation-es-EnglishSpeaker (Spanish translation from English speaker)
+                # All Spanish listeners will subscribe to this same track
+                track_name = f"translation-{target_language}-{source_participant_id or 'all'}"
             logger.info(f"🎯 Using shared language-based track: {track_name}")
             room_output_opts = room_io.RoomOutputOptions(
                 audio_track_name=track_name  # Unique track name to identify this translation
@@ -648,18 +864,35 @@ class RealtimeTranslationAgent:
             logger.error(f"Traceback: {traceback.format_exc()}")
 
     async def stop_realtime_assistant(self, participant_id: str):
-        """Stop all Realtime assistants for a participant"""
+        """Stop all Realtime assistants for a participant.
+        
+        This stops assistants WHERE participant_id is the listener (key format: "{participant_id}:{source}").
+        It does NOT stop assistants WHERE participant_id is the speaker (key format: "{other}:{participant_id}").
+        Those assistants are shared and should remain active for other listeners.
+        """
         try:
+            # Only stop assistants WHERE this participant is the listener (not the speaker)
+            # Key format: "{participant_id}:{source_participant_id}"
             keys_to_remove = [key for key in self.assistants.keys() if key.startswith(f"{participant_id}:")]
             for key in keys_to_remove:
                 assistant = self.assistants.pop(key)
                 await assistant.aclose()
-                logger.info(f"Stopped Realtime assistant {key}")
+                logger.info(f"Stopped Realtime assistant {key} (listener: {participant_id})")
+            
+            # Note: We don't stop assistants where participant_id is the speaker (e.g., "Other:Kenny")
+            # because those are shared assistants for other listeners and should remain active
+            logger.debug(f"Kept assistants where {participant_id} is the speaker (shared for other listeners)")
         except Exception as e:
             logger.error(f"Error stopping Realtime assistant for {participant_id}: {e}", exc_info=True)
 
     async def send_transcription_data(self, ctx: JobContext, source_speaker_id: str, target_participant_id: str, original_text: str, translated_text: str, language: str, partial: bool = False):
         """Send transcription via data channel to ALL participants (broadcast)
+        
+        ARCHITECTURE:
+        - User language setting = what they want to HEAR (not what they speak)
+        - OpenAI auto-detects what language is actually being spoken
+        - When OpenAI translates (spoken language ≠ target language), we send transcriptions
+        - When OpenAI stays silent (spoken language = target language), we don't send transcriptions
         
         This allows everyone to see both original and translated text, helping speakers
         verify if AI missed anything and enabling better cross-language communication.
@@ -667,9 +900,9 @@ class RealtimeTranslationAgent:
         Args:
             source_speaker_id: The participant who actually spoke (source speaker)
             target_participant_id: The participant who receives this translation (target recipient)
-            original_text: Original text in source language
-            translated_text: Translated text in target language
-            language: Target language code (e.g., 'es', 'fr')
+            original_text: Original text in source language (what was actually spoken)
+            translated_text: Translated text in target language (what the listener wants to hear)
+            language: Target language code (e.g., 'es', 'fr', 'en') - what the listener wants to hear
             partial: If True, this is an incremental/streaming update (will be followed by final=False)
                     Frontend can show this as "typing..." or update live text
         """
@@ -689,20 +922,101 @@ class RealtimeTranslationAgent:
             if partial:
                 logger.debug(f"📤 Broadcasting incremental transcription: {source_speaker_id} -> {language} for {target_participant_id}: {translated_text[:50]}...")
             else:
-                logger.info(f"📤 Broadcasting final transcription: {source_speaker_id} -> {language} for {target_participant_id}: {translated_text[:50]}...")
+                logger.info(f"📤 Broadcasting final transcription: {source_speaker_id} -> {language} for {target_participant_id}: original='{original_text[:50]}...', translated='{translated_text[:50]}...'")
             
             # Broadcast to ALL participants so everyone can see both original and translated text
             # This helps speakers verify accuracy and enables better cross-language communication
-            await ctx.room.local_participant.publish_data(
-                message.encode('utf-8'),
-                reliable=True,
-                # Remove destination_identities to broadcast to all participants
-                topic="transcription"
-            )
-            if not partial:
-                logger.info(f"✅ Broadcast transcription to all: speaker={source_speaker_id}, original='{original_text[:50]}...', translated='{translated_text[:50]}...'")
+            try:
+                await ctx.room.local_participant.publish_data(
+                    message.encode('utf-8'),
+                    reliable=True,
+                    # Remove destination_identities to broadcast to all participants
+                    topic="transcription"
+                )
+                if not partial:
+                    logger.info(f"✅ Successfully broadcast transcription: {source_speaker_id} -> {language} for {target_participant_id}: original='{original_text[:50]}...', translated='{translated_text[:50]}...'")
+            except Exception as e:
+                logger.error(f"❌ Failed to broadcast transcription: {source_speaker_id} -> {language} for {target_participant_id}: {e}", exc_info=True)
+                raise  # Re-raise to be caught by caller
         except Exception as e:
             logger.error(f"❌ Failed to send transcription: {e}", exc_info=True)
+
+    def _get_vad_config(self):
+        """Get VAD configuration based on host setting"""
+        base_config = {
+            "type": "server_vad",
+            "prefix_padding_ms": 300,
+        }
+        
+        if self.host_vad_setting == "low":
+            # Low sensitivity: more forgiving, ignores small noises
+            return {
+                **base_config,
+                "threshold": 0.75,  # Higher threshold = less sensitive
+                "silence_duration_ms": 1000,  # Longer silence before ending turn
+            }
+        elif self.host_vad_setting == "high":
+            # High sensitivity: very responsive, fast interruptions
+            return {
+                **base_config,
+                "threshold": 0.4,  # Lower threshold = more sensitive
+                "silence_duration_ms": 400,  # Shorter silence before ending turn
+            }
+        else:
+            # Medium sensitivity: balanced (default)
+            return {
+                **base_config,
+                "threshold": 0.5,  # Balanced threshold
+                "silence_duration_ms": 500,  # Balanced silence duration
+            }
+
+    async def _close_session_after_transcription(self, session, transcription_task, assistant_key: str):
+        """Close session after transcription has been sent (with timeout)"""
+        try:
+            # Wait for transcription to complete, but with a timeout
+            await asyncio.wait_for(transcription_task, timeout=2.0)
+            logger.info(f"[{assistant_key}] ✅ Transcription sent successfully, closing session")
+        except asyncio.TimeoutError:
+            logger.warning(f"[{assistant_key}] ⚠️ Transcription task timed out, closing session anyway")
+        except Exception as e:
+            logger.error(f"[{assistant_key}] ❌ Error waiting for transcription: {e}")
+        finally:
+            # Always close the session
+            try:
+                await session.aclose()
+                logger.info(f"[{assistant_key}] ✅ Session closed after transcription")
+            except Exception as e:
+                logger.error(f"[{assistant_key}] ❌ Error closing session: {e}")
+
+    async def _restart_all_assistants_for_vad_change(self, ctx: JobContext):
+        """Restart all assistants when VAD setting changes to apply new sensitivity"""
+        try:
+            logger.info(f"🔄 Restarting all assistants with new VAD setting: {self.host_vad_setting}")
+            
+            # Store current state
+            current_participants = dict(self.participant_languages)
+            current_enabled = dict(self.translation_enabled)
+            
+            # Stop all existing assistants
+            for key in list(self.assistants.keys()):
+                assistant = self.assistants.pop(key)
+                await assistant.aclose()
+            
+            # Small delay to let audio drain
+            await asyncio.sleep(0.5)
+            
+            # Recreate assistants for all participants who have translation enabled
+            # FIXED: Include English listeners too - they need translations FROM others
+            for participant_id, target_language in current_participants.items():
+                if current_enabled.get(participant_id, False):
+                    logger.info(f"🔄 Recreating assistant for {participant_id} -> {target_language} with VAD: {self.host_vad_setting}")
+                    self._create_shared_assistant_for_target_language(ctx, participant_id, target_language)
+                    # Also recreate assistants FROM this participant TO others
+                    self._create_assistants_from_participant_to_others(ctx, participant_id)
+            
+            logger.info(f"✅ All assistants restarted with VAD setting: {self.host_vad_setting}")
+        except Exception as e:
+            logger.error(f"Error restarting assistants for VAD change: {e}", exc_info=True)
 
 
 async def main(ctx: JobContext):

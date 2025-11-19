@@ -23,3 +23,6 @@ elevenlabs==0.2.26
 # Logging and utilities
 colorlog==6.8.0
 tenacity==8.2.3
+
+# Language detection
+langdetect==1.0.9

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { LiveKitRoom, VideoConference, formatChatMessageLinks, useRoomContext } from '@livekit/components-react';
 import toast from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Settings } from 'lucide-react';
 import { authService, roomService } from '../services/api';
 import ShareModal from './ShareModal';
 import LanguageSelector from './LanguageSelector';
@@ -29,7 +29,6 @@ function MeetingRoom() {
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [roomMode, setRoomMode] = useState('multi-language'); // '2-languages' or 'multi-language'
   
   console.log('MeetingRoom: State initialized, isInitialized:', isInitialized, 'participantInfo:', participantInfo);
 
@@ -68,33 +67,9 @@ function MeetingRoom() {
     const hostCode = stateInfo.hostCode || sessionInfo.hostCode;
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
-    // Get roomMode from state/sessionStorage, or fetch from room if not available
-    let roomModeFromState = stateInfo.roomMode || sessionInfo.roomMode;
     
     console.log('MeetingRoom: Resolved participantName:', participantName);
     console.log('MeetingRoom: isHost:', isHost);
-    console.log('MeetingRoom: roomMode from state/session:', roomModeFromState);
-    
-    // If roomMode not in state/sessionStorage, fetch it from room metadata
-    if (!roomModeFromState && roomName) {
-      // Fetch room info to get roomMode
-      roomService.getInfo(roomName).then(info => {
-        if (info.roomMode) {
-          setRoomMode(info.roomMode);
-          console.log('MeetingRoom: Fetched roomMode from room:', info.roomMode);
-        }
-      }).catch(err => {
-        console.warn('MeetingRoom: Could not fetch room info for roomMode:', err);
-        // Default to multi-language if fetch fails
-        setRoomMode('multi-language');
-      });
-      // Use default while fetching
-      roomModeFromState = 'multi-language';
-    }
-    
-    if (!roomModeFromState) {
-      roomModeFromState = 'multi-language'; // Default fallback
-    }
     
     if (!participantName) {
       // No name provided, redirect to join page
@@ -112,7 +87,6 @@ function MeetingRoom() {
       shareableLink,
       shareableLinkNetwork
     });
-    setRoomMode(roomModeFromState);
     setIsInitialized(true);
     
     console.log('MeetingRoom: Participant info set, ready to connect');
@@ -257,7 +231,10 @@ function MeetingRoom() {
         data-lk-theme="default"
         className="h-full"
       >
-        <TrackFilter roomMode={roomMode} />
+        <TrackFilter 
+          selectedLanguage={selectedLanguage}
+          translationEnabled={translationEnabled}
+        />
         <VideoConference 
           chatMessageFormatter={formatChatMessageLinks}
         />
@@ -267,9 +244,10 @@ function MeetingRoom() {
           selectedLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
           participantName={participantInfo?.participantName || ''}
+          isHost={participantInfo?.isHost || false}
         />
         
-        {/* Custom Control Bar at Bottom - Language Selector and Share Button */}
+        {/* Custom Control Bar at Bottom - Language Selector, VAD Controls (Host), and Share Button */}
         {/* Positioned at bottom, aligned with LiveKit's control bar */}
         <div className="lk-control-bar-custom">
           {/* Language Selector */}
@@ -279,6 +257,9 @@ function MeetingRoom() {
             onTranslationToggle={() => setTranslationEnabled(!translationEnabled)}
             translationEnabled={translationEnabled}
           />
+          
+          {/* VAD Sensitivity Controls - Host Only */}
+          {participantInfo?.isHost && <VADSensitivityControls />}
           
           {/* Share Button - Host Only */}
           {participantInfo?.isHost && (
@@ -318,14 +299,11 @@ function MeetingRoom() {
   );
 }
 
-// Component to filter translation tracks based on room mode
-// - 'multi-language': Each participant only hears their own translations (filtered)
-// - '2-languages': Everyone hears all translations (no filtering)
-// 
-// IMPORTANT: participant.identity is set when joining the room and NEVER changes, even when language changes.
-// When language changes, new tracks are published but they still use the same identity in track names.
-// So we only need to capture identity once when the room connects.
-function TrackFilter({ roomMode = 'multi-language' }) {
+// Component to filter translation tracks based on selected language
+// Always subscribes to tracks matching your selected language (unified optimized mode)
+// Track format: translation-{target_language}-{source_participant}
+// Example: translation-es-Kenny (Spanish translation from Kenny)
+function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
   const room = useRoomContext();
   const [myIdentity, setMyIdentity] = useState('');
 
@@ -358,11 +336,11 @@ function TrackFilter({ roomMode = 'multi-language' }) {
     };
   }, [room]);
 
-  // Handle track subscriptions based on room mode
+  // Handle track subscriptions based on room mode AND selected language
   useEffect(() => {
     if (!room) return;
 
-    console.log('🎯 TrackFilter: Setting up track handlers, roomMode:', roomMode, 'myIdentity:', myIdentity);
+    console.log('🎯 TrackFilter: Setting up track handlers, selectedLanguage:', selectedLanguage, 'translationEnabled:', translationEnabled);
 
     const onTrackSubscribed = (track, publication, participant) => {
       // Only handle audio tracks
@@ -377,56 +355,45 @@ function TrackFilter({ roomMode = 'multi-language' }) {
       }
 
       // This is a translation track
-      console.log('🔊 Translation track subscribed:', trackName, 'roomMode:', roomMode);
+      console.log('🔊 Translation track subscribed:', trackName);
       
-      if (roomMode === '2-languages') {
-        // In 2-languages mode: Subscribe to ALL translation tracks so everyone hears everything
-        console.log('🌍 2-languages mode: Ensuring subscription to translation track:', trackName);
+      // Unified mode: Subscribe based on selected language
+      // Track format: translation-{target_language}-{source_participant}
+      // Example: translation-es-Kenny → parts = ["translation", "es", "Kenny"]
+      // Example: translation-en-Ii → parts = ["translation", "en", "Ii"] (English listeners need this!)
+      
+      if (!translationEnabled) {
+        // Translation disabled → unsubscribe from all translation tracks
+        console.log('🚫 Translation disabled, unsubscribing from:', trackName);
+        if (publication.isSubscribed) {
+          publication.setSubscribed(false);
+        }
+        track.detach();
+        return;
+      }
+
+      const parts = trackName.split('-');
+      if (parts.length < 3) {
+        console.warn('Invalid translation track name format:', trackName);
+        return;
+      }
+
+      const targetLanguage = parts[1]; // The target language (e.g., "es", "fr", "en")
+
+      if (targetLanguage === selectedLanguage) {
+        // This translation matches my selected language → subscribe
+        // This works for English listeners too! They subscribe to translation-en-* tracks
+        console.log('✅ Subscribing to my language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
         if (!publication.isSubscribed) {
           publication.setSubscribed(true);
-          console.log('✅ Subscribed to translation track:', trackName);
-        }
-        // Ensure track is attached (VideoConference should handle this, but ensure it)
-        if (track.attachedElements.length === 0) {
-          // Find or create audio element for this track
-          const audioElement = document.createElement('audio');
-          audioElement.autoplay = true;
-          audioElement.playsInline = true;
-          track.attach(audioElement);
-          document.body.appendChild(audioElement);
-          console.log('✅ Attached translation track in 2-languages mode:', trackName);
-        } else {
-          console.log('✅ Translation track already attached:', trackName);
         }
       } else {
-        // Multi-language mode: Only subscribe to tracks meant for me
-        if (!myIdentity) {
-          console.warn('⚠️ Multi-language mode but identity not available yet');
-          return;
+        // This is a different language → unsubscribe to save bandwidth
+        console.log('🚫 Ignoring foreign language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+        if (publication.isSubscribed) {
+          publication.setSubscribed(false);
         }
-
-        const parts = trackName.split('-');
-        if (parts.length < 3) {
-          console.warn('Invalid translation track name format:', trackName);
-          return;
-        }
-
-        const targetIdentity = parts[1]; // The participant this translation is FOR
-
-        if (targetIdentity === myIdentity) {
-          // This translation is for me → ensure it's subscribed
-          console.log('✅ Allowing my translation track:', trackName, '(target:', targetIdentity, 'me:', myIdentity + ')');
-          if (!publication.isSubscribed) {
-            publication.setSubscribed(true);
-          }
-        } else {
-          // This is someone else's translation → unsubscribe to save bandwidth
-          console.log('🚫 Ignoring foreign translation track:', trackName, '(target:', targetIdentity, 'me:', myIdentity + ')');
-          if (publication.isSubscribed) {
-            publication.setSubscribed(false);
-          }
-          track.detach();
-        }
+        track.detach();
       }
     };
 
@@ -438,29 +405,25 @@ function TrackFilter({ roomMode = 'multi-language' }) {
       console.log('📢 Track published:', trackName, 'from participant:', participant?.identity);
       
       if (trackName.startsWith('translation-')) {
-        console.log('🔊 Translation track published:', trackName, 'roomMode:', roomMode);
+        console.log('🔊 Translation track published:', trackName);
         
-        if (roomMode === '2-languages') {
-          // In 2-languages mode, subscribe to all translation tracks
-          console.log('🌍 2-languages mode: Subscribing to published translation track:', trackName);
-          if (!publication.isSubscribed) {
-            publication.setSubscribed(true);
-            console.log('✅ Subscribed to published translation track:', trackName);
-          } else {
-            console.log('✅ Already subscribed to translation track:', trackName);
-          }
-        } else {
-          // Multi-language mode: Only subscribe if it's for me
-          if (myIdentity) {
-            const parts = trackName.split('-');
-            if (parts.length >= 3 && parts[1] === myIdentity) {
-              console.log('✅ Subscribing to my translation track:', trackName);
-              if (!publication.isSubscribed) {
-                publication.setSubscribed(true);
-              }
-            } else {
-              console.log('🚫 Not subscribing to foreign translation track:', trackName);
+        // Unified mode: Subscribe based on selected language
+        if (!translationEnabled) {
+          console.log('🚫 Translation disabled, not subscribing to:', trackName);
+          return;
+        }
+
+        const parts = trackName.split('-');
+        if (parts.length >= 3) {
+          const targetLanguage = parts[1];
+          if (targetLanguage === selectedLanguage) {
+            // This works for English listeners too! They subscribe to translation-en-* tracks
+            console.log('✅ Subscribing to my language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+            if (!publication.isSubscribed) {
+              publication.setSubscribed(true);
             }
+          } else {
+            console.log('🚫 Not subscribing to foreign language track:', trackName);
           }
         }
       }
@@ -472,15 +435,34 @@ function TrackFilter({ roomMode = 'multi-language' }) {
       room.remoteParticipants.forEach((participant) => {
         participant.audioTrackPublications.forEach((publication) => {
           const trackName = publication.trackName || '';
-          if (trackName.startsWith('translation-')) {
-            console.log('🔊 Found existing translation track:', trackName, 'subscribed:', publication.isSubscribed);
-            if (roomMode === '2-languages') {
-              if (!publication.isSubscribed) {
-                publication.setSubscribed(true);
-                console.log('✅ Subscribed to existing translation track:', trackName);
+            if (trackName.startsWith('translation-')) {
+              console.log('🔊 Found existing translation track:', trackName, 'subscribed:', publication.isSubscribed);
+              
+              // Unified mode: Update subscription based on current language selection
+              if (!translationEnabled) {
+                if (publication.isSubscribed) {
+                  publication.setSubscribed(false);
+                  console.log('🚫 Unsubscribed from translation track (disabled):', trackName);
+                }
+              } else {
+                const parts = trackName.split('-');
+                if (parts.length >= 3) {
+                  const targetLanguage = parts[1];
+                  if (targetLanguage === selectedLanguage) {
+                    // This works for English listeners too! They subscribe to translation-en-* tracks
+                    if (!publication.isSubscribed) {
+                      publication.setSubscribed(true);
+                      console.log('✅ Subscribed to existing translation track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+                    }
+                  } else {
+                    if (publication.isSubscribed) {
+                      publication.setSubscribed(false);
+                      console.log('🚫 Unsubscribed from foreign language track:', trackName);
+                    }
+                  }
+                }
               }
             }
-          }
         });
       });
     };
@@ -496,9 +478,200 @@ function TrackFilter({ roomMode = 'multi-language' }) {
       room.off('trackSubscribed', onTrackSubscribed);
       room.off('trackPublished', onTrackPublished);
     };
-  }, [room, myIdentity, roomMode]);
+  }, [room, myIdentity, selectedLanguage, translationEnabled]); // Add selectedLanguage and translationEnabled to dependencies
 
   return null; // This component doesn't render anything
+}
+
+// VAD Sensitivity Controls Component - Rendered in bottom control bar for host
+function VADSensitivityControls() {
+  const [vadSensitivity, setVadSensitivity] = useState('medium');
+  const [showDropdown, setShowDropdown] = useState(false);
+
+  const handleVadChange = (level) => {
+    if (window.__roomControls?.sendVadSetting) {
+      window.__roomControls.sendVadSetting(level);
+      setVadSensitivity(level);
+      setShowDropdown(false);
+    }
+  };
+
+  // Sync with RoomControls state
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (window.__roomControls?.vadSensitivity) {
+        setVadSensitivity(window.__roomControls.vadSensitivity);
+      }
+    }, 500);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!showDropdown) return;
+    
+    const handleClickOutside = (event) => {
+      const target = event.target;
+      if (!target.closest('.lk-vad-dropdown') && !target.closest('.lk-vad-button')) {
+        setShowDropdown(false);
+      }
+    };
+    
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showDropdown]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowDropdown(!showDropdown)}
+        className="lk-vad-button"
+        title="Translation Sensitivity"
+        aria-label="Translation Sensitivity"
+        style={{
+          background: 'rgba(31, 41, 55, 0.95)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '0.5rem',
+          minWidth: '44px',
+          minHeight: '44px',
+          padding: '0.5rem 0.75rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '0.5rem',
+          cursor: 'pointer',
+          transition: 'all 0.2s ease',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+        }}
+        onMouseEnter={(e) => {
+          e.target.style.transform = 'translateY(-1px)';
+          e.target.style.boxShadow = '0 6px 8px -1px rgba(0, 0, 0, 0.15), 0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+        }}
+        onMouseLeave={(e) => {
+          e.target.style.transform = 'translateY(0)';
+          e.target.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
+        }}
+      >
+        <Settings className="w-5 h-5 md:w-6 md:h-6" />
+        <span className="hidden sm:inline lk-vad-button-text" style={{ fontSize: '0.875rem' }}>
+          {vadSensitivity === 'low' ? 'Low' : vadSensitivity === 'high' ? 'High' : 'Medium'}
+        </span>
+      </button>
+
+      {showDropdown && (
+        <div className="lk-vad-dropdown" style={{
+          position: 'absolute',
+          bottom: '100%',
+          right: 0,
+          marginBottom: '0.5rem',
+          background: 'rgba(31, 41, 55, 0.98)',
+          borderRadius: '0.5rem',
+          padding: '0.75rem',
+          minWidth: '240px',
+          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
+          zIndex: 70,
+          border: '1px solid rgba(75, 85, 99, 0.5)',
+        }}>
+          <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.75rem', lineHeight: '1.4' }}>
+            Translation Sensitivity
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <button
+              onClick={() => handleVadChange('low')}
+              style={{
+                padding: '0.75rem',
+                borderRadius: '0.375rem',
+                border: vadSensitivity === 'low' ? '2px solid #3b82f6' : '1px solid rgba(75, 85, 99, 0.5)',
+                background: vadSensitivity === 'low' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(31, 41, 55, 0.8)',
+                color: 'white',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.2s',
+                fontSize: '0.8125rem',
+              }}
+              onMouseEnter={(e) => {
+                if (vadSensitivity !== 'low') {
+                  e.target.style.background = 'rgba(55, 65, 81, 0.8)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (vadSensitivity !== 'low') {
+                  e.target.style.background = 'rgba(31, 41, 55, 0.8)';
+                }
+              }}
+            >
+              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>Low Sensitivity</div>
+              <div style={{ fontSize: '0.6875rem', color: '#9ca3af', lineHeight: '1.3' }}>
+                Forgiving - ignores coughs, "umm", background noise
+              </div>
+            </button>
+            
+            <button
+              onClick={() => handleVadChange('medium')}
+              style={{
+                padding: '0.75rem',
+                borderRadius: '0.375rem',
+                border: vadSensitivity === 'medium' ? '2px solid #3b82f6' : '1px solid rgba(75, 85, 99, 0.5)',
+                background: vadSensitivity === 'medium' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(31, 41, 55, 0.8)',
+                color: 'white',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.2s',
+                fontSize: '0.8125rem',
+              }}
+              onMouseEnter={(e) => {
+                if (vadSensitivity !== 'medium') {
+                  e.target.style.background = 'rgba(55, 65, 81, 0.8)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (vadSensitivity !== 'medium') {
+                  e.target.style.background = 'rgba(31, 41, 55, 0.8)';
+                }
+              }}
+            >
+              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>Medium Sensitivity</div>
+              <div style={{ fontSize: '0.6875rem', color: '#9ca3af', lineHeight: '1.3' }}>
+                Balanced - good for most conversations (default)
+              </div>
+            </button>
+            
+            <button
+              onClick={() => handleVadChange('high')}
+              style={{
+                padding: '0.75rem',
+                borderRadius: '0.375rem',
+                border: vadSensitivity === 'high' ? '2px solid #3b82f6' : '1px solid rgba(75, 85, 99, 0.5)',
+                background: vadSensitivity === 'high' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(31, 41, 55, 0.8)',
+                color: 'white',
+                cursor: 'pointer',
+                textAlign: 'left',
+                transition: 'all 0.2s',
+                fontSize: '0.8125rem',
+              }}
+              onMouseEnter={(e) => {
+                if (vadSensitivity !== 'high') {
+                  e.target.style.background = 'rgba(55, 65, 81, 0.8)';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (vadSensitivity !== 'high') {
+                  e.target.style.background = 'rgba(31, 41, 55, 0.8)';
+                }
+              }}
+            >
+              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>High Sensitivity</div>
+              <div style={{ fontSize: '0.6875rem', color: '#9ca3af', lineHeight: '1.3' }}>
+                Very responsive - fast interruptions, good for debates
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default MeetingRoom;

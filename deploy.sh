@@ -221,10 +221,12 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   cd $AGENT_DIR
   source venv/bin/activate
   # Use realtime_agent_realtime.py (current implementation) or fallback to realtime_agent.py
+  # Note: PM2 will load .env file automatically when started from the directory containing it
+  # The 'dev' command is required by LiveKit CLI framework
   if [ -f "realtime_agent_realtime.py" ]; then
-    pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python
+    pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python --update-env -- dev
   elif [ -f "realtime_agent.py" ]; then
-    pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python -- start
+    pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python --update-env -- dev
   else
     echo "ERROR: No agent file found (realtime_agent_realtime.py or realtime_agent.py)"
     exit 1

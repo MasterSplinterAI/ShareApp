@@ -31,8 +31,9 @@ const api = axios.create({
 // Room management
 export const roomService = {
   // Create a new room
-  create: async (roomMode = 'multi-language') => {
-    const response = await api.post('/rooms/create', { roomMode });
+  create: async () => {
+    // No roomMode needed - agent uses unified optimized mode automatically
+    const response = await api.post('/rooms/create', {});
     return response.data;
   },
 

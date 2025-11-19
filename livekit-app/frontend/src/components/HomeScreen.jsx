@@ -10,14 +10,14 @@ function HomeScreen() {
   const [isCreating, setIsCreating] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [roomData, setRoomData] = useState(null);
-  const [roomMode, setRoomMode] = useState('multi-language'); // '2-languages' or 'multi-language'
 
   const handleHostMeeting = async () => {
     setIsCreating(true);
     try {
-      const response = await roomService.create(roomMode);
+      // No roomMode needed - agent uses unified optimized mode automatically
+      const response = await roomService.create();
       console.log('Room created:', response);
-      setRoomData({ ...response, roomMode });
+      setRoomData(response);
       setShowNameModal(true);
     } catch (error) {
       console.error('Failed to create room:', error);
@@ -37,7 +37,6 @@ function HomeScreen() {
         shareableLink: roomData.shareableLink,
         shareableLinkNetwork: roomData.shareableLinkNetwork,
         roomName: roomData.roomName,
-        roomMode: roomData.roomMode || 'multi-language' // Default to multi-language
       };
       
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
@@ -78,35 +77,6 @@ function HomeScreen() {
             <Users className="w-12 h-12 text-purple-400 mb-4" />
             <h3 className="text-lg font-semibold text-white mb-2">No Login Required</h3>
             <p className="text-gray-400">Join instantly with just a link - no account needed</p>
-          </div>
-        </div>
-
-        {/* Room Mode Selector (Host Only) */}
-        <div className="bg-gray-800 p-6 rounded-lg mb-6 max-w-2xl mx-auto">
-          <h3 className="text-lg font-semibold text-white mb-4 text-center">Room Translation Mode</h3>
-          <div className="flex gap-4 justify-center">
-            <button
-              onClick={() => setRoomMode('2-languages')}
-              className={`flex-1 py-3 px-6 rounded-lg transition-colors font-medium ${
-                roomMode === '2-languages'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-            >
-              <div className="text-sm font-semibold mb-1">2 Languages</div>
-              <div className="text-xs opacity-90">Everyone hears all translations</div>
-            </button>
-            <button
-              onClick={() => setRoomMode('multi-language')}
-              className={`flex-1 py-3 px-6 rounded-lg transition-colors font-medium ${
-                roomMode === 'multi-language'
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-            >
-              <div className="text-sm font-semibold mb-1">Multi-Language</div>
-              <div className="text-xs opacity-90">Each person hears only their translation</div>
-            </button>
           </div>
         </div>
 
