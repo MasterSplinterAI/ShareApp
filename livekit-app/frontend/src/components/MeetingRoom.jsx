@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LiveKitRoom, VideoConference, formatChatMessageLinks, useRoomContext } from '@livekit/components-react';
+import { LiveKitRoom, VideoConference, formatChatMessageLinks, useRoomContext, GridLayout, FocusLayout, ParticipantTile, useTracks, useParticipants, useLocalParticipant } from '@livekit/components-react';
+import { Track } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { Loader2, Settings } from 'lucide-react';
 import { authService, roomService } from '../services/api';
@@ -8,6 +9,8 @@ import ShareModal from './ShareModal';
 import LanguageSelector from './LanguageSelector';
 import TranscriptionDisplay from './TranscriptionDisplay';
 import RoomControls from './RoomControls';
+import CustomControlBar from './CustomControlBar';
+// Will use public folder path - no import needed
 
 function MeetingRoom() {
   console.log('MeetingRoom: Component function called');
@@ -91,6 +94,30 @@ function MeetingRoom() {
     
     console.log('MeetingRoom: Participant info set, ready to connect');
   }, [roomName, navigate]); // Removed location.state from deps to prevent re-runs
+
+  // Handle orientation changes to prevent layout jitter
+  useEffect(() => {
+    let resizeTimer;
+    const handleOrientationChange = () => {
+      // Debounce resize events to prevent excessive recalculations
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        // Force a layout recalculation after orientation change
+        window.dispatchEvent(new Event('resize'));
+      }, 100);
+    };
+
+    // Listen for orientation changes (works on mobile)
+    window.addEventListener('orientationchange', handleOrientationChange);
+    // Also listen for resize as fallback
+    window.addEventListener('resize', handleOrientationChange);
+
+    return () => {
+      clearTimeout(resizeTimer);
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      window.removeEventListener('resize', handleOrientationChange);
+    };
+  }, []);
 
   // Connect to room once initialized
   useEffect(() => {
@@ -221,23 +248,33 @@ function MeetingRoom() {
   }
 
   return (
-    <div className="h-screen bg-gray-900 relative">
+    <div className="h-[100dvh] bg-gray-900 relative overflow-hidden w-full">
       <LiveKitRoom
         video={true}
         audio={true}
         token={token}
         serverUrl={livekitUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud'}
         onDisconnected={handleDisconnected}
+        options={{
+          adaptiveStream: true,
+          dynacast: true,
+          publishDefaults: {
+            videoSimulcastLayers: [],
+            videoCodec: 'vp8',
+          },
+        }}
         data-lk-theme="default"
-        className="h-full"
+        className="h-full flex flex-col"
       >
         <TrackFilter 
           selectedLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
         />
-        <VideoConference 
-          chatMessageFormatter={formatChatMessageLinks}
-        />
+        
+        {/* Video Grid Container - let LiveKit handle sizing */}
+        <div className="flex-1 min-h-0">
+          <VideoLayoutComponent />
+        </div>
         
         {/* Room controls for handling translation data */}
         <RoomControls 
@@ -247,35 +284,16 @@ function MeetingRoom() {
           isHost={participantInfo?.isHost || false}
         />
         
-        {/* Custom Control Bar at Bottom - Language Selector, VAD Controls (Host), and Share Button */}
-        {/* Positioned at bottom, aligned with LiveKit's control bar */}
-        <div className="lk-control-bar-custom">
-          {/* Language Selector */}
-          <LanguageSelector
-            value={selectedLanguage}
-            onChange={setSelectedLanguage}
-            onTranslationToggle={() => setTranslationEnabled(!translationEnabled)}
-            translationEnabled={translationEnabled}
-          />
-          
-          {/* VAD Sensitivity Controls - Host Only */}
-          {participantInfo?.isHost && <VADSensitivityControls />}
-          
-          {/* Share Button - Host Only */}
-          {participantInfo?.isHost && (
-            <button
-              onClick={() => setShowShareModal(true)}
-              className="lk-share-button"
-              title="Share meeting link"
-              aria-label="Share meeting"
-            >
-              <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-              </svg>
-              <span className="lk-share-button-text">Share</span>
-            </button>
-          )}
-        </div>
+        {/* Custom Control Bar - Below video grid */}
+        <CustomControlBar
+          selectedLanguage={selectedLanguage}
+          setSelectedLanguage={setSelectedLanguage}
+          translationEnabled={translationEnabled}
+          setTranslationEnabled={setTranslationEnabled}
+          isHost={participantInfo?.isHost || false}
+          onShareClick={() => setShowShareModal(true)}
+          onDisconnect={handleDisconnected}
+        />
         
         {/* Transcription Display */}
         {translationEnabled && (
@@ -284,6 +302,9 @@ function MeetingRoom() {
             isVisible={true}
           />
         )}
+        
+        {/* Agent Tile Customization */}
+        <AgentTileCustomizer />
       </LiveKitRoom>
 
       {/* Share Modal */}
@@ -299,13 +320,381 @@ function MeetingRoom() {
   );
 }
 
+// VideoLayout component - using VideoConference which handles layout switching internally
+// Keep it simple - let LiveKit handle all layout logic
+function VideoLayoutComponent() {
+  return (
+    <VideoConference 
+      chatMessageFormatter={formatChatMessageLinks}
+    />
+  );
+}
+
+// Component to customize agent tiles: change name to "Translator" and add visual indicators
+function AgentTileCustomizer() {
+  const room = useRoomContext();
+  const participants = useParticipants();
+  // Track audio activity timestamps per participant
+  const audioActivityRef = useRef(new Map());
+  // Track active speakers from LiveKit
+  const [activeSpeakers, setActiveSpeakers] = useState(new Set());
+
+  useEffect(() => {
+    if (!room) return;
+
+    const updateAgentTiles = () => {
+      // Find all participant tiles
+      const tiles = document.querySelectorAll('.lk-participant-tile, [class*="ParticipantTile"]');
+      
+      // First, identify all agent participants by their identity (always starts with "agent-")
+      const agentParticipants = participants.filter(p => {
+        const identity = p.identity || '';
+        return identity.startsWith('agent-');
+      });
+      
+      // Create a map of agent identities for quick lookup
+      const agentIdentities = new Set(agentParticipants.map(p => p.identity));
+      
+      // Process each tile
+      tiles.forEach(tile => {
+        // Try to find participant identity from tile
+        const nameElement = tile.querySelector('[class*="name"], .lk-participant-name, [data-participant-name], [class*="ParticipantName"]');
+        if (!nameElement) return;
+
+        // Get the ORIGINAL name (before our modifications)
+        // CRITICAL: Check data-original-name first, then current text
+        let originalName = nameElement.getAttribute('data-original-name');
+        const currentDisplayName = nameElement.textContent?.trim() || '';
+        
+        // If we don't have a stored original name, use current display as original
+        // BUT: If current display is "Translator", we need to skip this tile or restore it
+        if (!originalName) {
+          if (currentDisplayName === 'Translator') {
+            // This tile was already changed but lost its original name - skip it
+            // We can't safely restore it without knowing what it was
+            return;
+          }
+          originalName = currentDisplayName;
+        }
+        
+        // Try to find which participant this tile belongs to
+        // Match by checking the ORIGINAL name - EXACT MATCHES ONLY
+        let matchingParticipant = null;
+        
+        for (const participant of participants) {
+          const identity = participant.identity || '';
+          const name = participant.name || '';
+          
+          // STRICT MATCHING: Only exact matches - no partial matches!
+          if (originalName === identity || originalName === name) {
+            matchingParticipant = participant;
+            break;
+          }
+        }
+        
+        // If we couldn't match, skip this tile to avoid false positives
+        if (!matchingParticipant) {
+          // If tile is already marked as agent but we can't match it, restore it
+          if (tile.getAttribute('data-is-agent') === 'true' && currentDisplayName === 'Translator') {
+            if (nameElement.hasAttribute('data-original-name')) {
+              const restoreName = nameElement.getAttribute('data-original-name');
+              console.log(`🔄 AgentTileCustomizer: Restoring tile name from "Translator" to "${restoreName}" (could not match)`);
+              nameElement.textContent = restoreName;
+              nameElement.removeAttribute('data-original-name');
+              tile.setAttribute('data-is-agent', 'false');
+            }
+          }
+          return;
+        }
+        
+        // Check if this participant is an agent (identity starts with "agent-")
+        const isAgent = agentIdentities.has(matchingParticipant.identity);
+        
+        // CRITICAL: If tile shows "Translator" but participant is NOT an agent, restore immediately!
+        if (currentDisplayName === 'Translator' && !isAgent) {
+          console.log(`⚠️ AgentTileCustomizer: Tile shows "Translator" but participant "${matchingParticipant.identity}" is NOT an agent. Restoring...`);
+          if (nameElement.hasAttribute('data-original-name')) {
+            const restoreName = nameElement.getAttribute('data-original-name');
+            nameElement.textContent = restoreName;
+            nameElement.removeAttribute('data-original-name');
+            tile.setAttribute('data-is-agent', 'false');
+          } else {
+            // Fallback: restore to participant name or identity
+            nameElement.textContent = matchingParticipant.name || matchingParticipant.identity || originalName;
+            tile.setAttribute('data-is-agent', 'false');
+          }
+          return;
+        }
+        
+        if (isAgent) {
+          // This is an AGENT tile
+          tile.setAttribute('data-is-agent', 'true');
+          tile.setAttribute('data-participant-identity', matchingParticipant.identity);
+          
+          // Update display name to "Translator" if not already set
+          if (!nameElement.hasAttribute('data-original-name')) {
+            const originalText = originalName || matchingParticipant.identity || '';
+            if (originalText && originalText !== 'Translator') {
+              nameElement.setAttribute('data-original-name', originalText);
+              nameElement.textContent = 'Translator';
+            }
+          } else if (nameElement.textContent !== 'Translator') {
+            // Ensure it says "Translator"
+            nameElement.textContent = 'Translator';
+          }
+
+          // Check if agent has video track - set data attribute for avatar display
+          // Agents typically don't publish video, so check participant's video track publications
+          const videoPublications = Array.from(matchingParticipant.videoTrackPublications.values());
+          const hasVideoTrack = videoPublications.some(pub => pub.track !== null && pub.track !== undefined);
+          
+          // Also check DOM for video element as fallback
+          const videoElement = tile.querySelector('video');
+          const hasVideoInDOM = videoElement && 
+                               videoElement.style.display !== 'none' && 
+                               videoElement.readyState >= 2;
+          
+          const hasVideo = hasVideoTrack || hasVideoInDOM;
+          
+          // Debug logging
+          if (matchingParticipant.identity.startsWith('agent-')) {
+            console.log(`🦉 Agent ${matchingParticipant.identity}: hasVideoTrack=${hasVideoTrack}, hasVideoInDOM=${hasVideoInDOM}, hasVideo=${hasVideo}`);
+          }
+          
+          if (hasVideo) {
+            tile.removeAttribute('data-no-video');
+            // Remove avatar if video is present
+            const avatarImg = tile.querySelector('.translator-owl-avatar');
+            if (avatarImg) avatarImg.remove();
+          } else {
+            tile.setAttribute('data-no-video', 'true');
+            
+            // Hide LiveKit's default placeholder (usually an SVG or icon)
+            const defaultPlaceholder = tile.querySelector('svg, [class*="placeholder"], [class*="avatar"], .lk-participant-placeholder');
+            if (defaultPlaceholder) {
+              defaultPlaceholder.style.display = 'none';
+            }
+            
+            // Also hide any default background patterns
+            const tileContent = tile.querySelector('[class*="content"], [class*="video"], .lk-participant-video');
+            if (tileContent && !tileContent.querySelector('video')) {
+              tileContent.style.backgroundImage = 'none';
+            }
+            
+            // Add avatar img element if not already present
+            let avatarImg = tile.querySelector('.translator-owl-avatar');
+            if (!avatarImg) {
+              avatarImg = document.createElement('img');
+              avatarImg.className = 'translator-owl-avatar';
+              // Use public folder path - Vite serves files from public at root
+              // Use a timestamp to bust cache if needed
+              avatarImg.src = `/translator-owl.jpg?t=${Date.now()}`;
+              avatarImg.alt = 'Translator';
+              avatarImg.loading = 'eager'; // Load immediately
+              avatarImg.crossOrigin = 'anonymous'; // Handle CORS if needed
+              
+              // Set inline styles with !important equivalent - responsive sizing
+              // Use viewport-based units for better scaling across screen sizes
+              const tileRect = tile.getBoundingClientRect();
+              const tileSize = Math.min(tileRect.width, tileRect.height);
+              // Make owl 40% of the smaller tile dimension, but with min/max constraints
+              const owlSize = Math.max(160, Math.min(300, tileSize * 0.4));
+              
+              avatarImg.setAttribute('style', `position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; width: ${owlSize}px !important; height: ${owlSize}px !important; max-width: 50% !important; max-height: 50% !important; object-fit: contain !important; opacity: 0.9 !important; z-index: 1000 !important; pointer-events: none !important; display: block !important; visibility: visible !important;`);
+              
+              // Add event handlers for debugging
+              avatarImg.onload = () => {
+                console.log('🦉 Owl image loaded successfully:', avatarImg.src);
+                console.log('🦉 Image dimensions:', avatarImg.naturalWidth, 'x', avatarImg.naturalHeight);
+                console.log('🦉 Image computed style:', window.getComputedStyle(avatarImg).display);
+                avatarImg.style.opacity = '0.9';
+              };
+              avatarImg.onerror = (e) => {
+                console.error('🦉 Failed to load owl image from:', avatarImg.src);
+                console.error('🦉 Error details:', e);
+                // Try fallback path
+                const fallbackPath = '/translator-owl.jpg';
+                if (avatarImg.src !== `${window.location.origin}${fallbackPath}`) {
+                  console.log('🦉 Trying fallback path:', fallbackPath);
+                  avatarImg.src = fallbackPath;
+                } else {
+                  console.error('🦉 All image paths failed. Check Network tab for details.');
+                }
+              };
+              
+              // Append directly to tile (most reliable)
+              tile.style.position = 'relative';
+              
+              // Use requestAnimationFrame to ensure DOM is ready
+              requestAnimationFrame(() => {
+                tile.appendChild(avatarImg);
+                console.log('🦉 Added owl avatar to agent tile:', matchingParticipant.identity);
+                console.log('🦉 Image source:', avatarImg.src);
+                console.log('🦉 Avatar element:', avatarImg);
+                
+                // Force a reflow to ensure rendering
+                void avatarImg.offsetHeight;
+              });
+            } else {
+              // Ensure existing avatar is visible
+              avatarImg.style.display = 'block';
+              avatarImg.style.visibility = 'visible';
+              avatarImg.style.opacity = '0.9';
+            }
+          }
+
+          // Use LiveKit's built-in speaking detection - much simpler and more reliable!
+          // Method 1: Check participant's isSpeaking property (most reliable)
+          const isSpeaking = matchingParticipant.isSpeaking || false;
+          
+          // Method 2: Check if participant is in active speakers list
+          const isActiveSpeaker = activeSpeakers.has(matchingParticipant.identity);
+          
+          // Method 3: Check if tile has LiveKit's speaking CSS class (blue outline)
+          // LiveKit typically adds 'lk-speaking' class or similar when speaking
+          const tileHasSpeakingClass = 
+            tile.classList.contains('lk-speaking') || 
+            tile.classList.contains('speaking') ||
+            tile.hasAttribute('data-speaking');
+          
+          // Check if currently speaking
+          const currentlySpeaking = isSpeaking || isActiveSpeaker || tileHasSpeakingClass;
+          
+          // Track speaking state with timestamp for smooth transitions
+          const participantId = matchingParticipant.identity;
+          const lastSpeakingKey = `${participantId}-lastSpeaking`;
+          
+          // Initialize hasActiveAudio
+          let hasActiveAudio = false;
+          
+          if (currentlySpeaking) {
+            // Speaking now - update timestamp and show indicator
+            audioActivityRef.current.set(lastSpeakingKey, Date.now());
+            hasActiveAudio = true;
+          } else {
+            // Not speaking - check if we should keep showing (grace period)
+            const lastSpeakingTime = audioActivityRef.current.get(lastSpeakingKey);
+            if (lastSpeakingTime) {
+              const timeSinceLastSpeaking = Date.now() - lastSpeakingTime;
+              // Keep showing for 500ms after speaking stops (smooth transition, handles pauses)
+              if (timeSinceLastSpeaking < 500) {
+                hasActiveAudio = true;
+              } else {
+                // Been silent for too long - clear timestamp
+                audioActivityRef.current.delete(lastSpeakingKey);
+              }
+            }
+          }
+
+          if (hasActiveAudio) {
+            tile.setAttribute('data-audio-active', 'true');
+            
+            // Add soundwave bars if not already present
+            if (!tile.querySelector('.soundwave-indicator')) {
+              const soundwave = document.createElement('div');
+              soundwave.className = 'soundwave-indicator';
+              for (let i = 0; i < 5; i++) {
+                const bar = document.createElement('div');
+                bar.className = 'soundwave-bar';
+                soundwave.appendChild(bar);
+              }
+              tile.appendChild(soundwave);
+            }
+          } else {
+            tile.removeAttribute('data-audio-active');
+            const soundwave = tile.querySelector('.soundwave-indicator');
+            if (soundwave) soundwave.remove();
+          }
+        } else {
+          // This is NOT an agent tile
+          tile.setAttribute('data-is-agent', 'false');
+          
+          // Restore original name if it was changed
+          if (nameElement.hasAttribute('data-original-name')) {
+            const originalNameToRestore = nameElement.getAttribute('data-original-name');
+            nameElement.textContent = originalNameToRestore;
+            nameElement.removeAttribute('data-original-name');
+          }
+          
+          // Remove any soundwave indicators
+          const soundwave = tile.querySelector('.soundwave-indicator');
+          if (soundwave) soundwave.remove();
+          tile.removeAttribute('data-audio-active');
+        }
+      });
+    };
+
+    // Run immediately
+    updateAgentTiles();
+
+    // Update on track events
+    const handleTrackSubscribed = () => {
+      setTimeout(updateAgentTiles, 100);
+    };
+
+    const handleTrackPublished = () => {
+      setTimeout(updateAgentTiles, 100);
+    };
+
+    const handleParticipantConnected = () => {
+      setTimeout(updateAgentTiles, 200);
+    };
+
+    // Listen to participant speaking changes - LiveKit's built-in detection
+    const handleParticipantSpeakingChanged = () => {
+      // Trigger tile update when speaking status changes
+      setTimeout(updateAgentTiles, 50);
+    };
+
+    room.on('trackSubscribed', handleTrackSubscribed);
+    room.on('trackPublished', handleTrackPublished);
+    room.on('participantConnected', handleParticipantConnected);
+    room.on('participantDisconnected', handleParticipantConnected);
+    room.on('activeSpeakersChanged', handleParticipantSpeakingChanged);
+    room.on('trackUnsubscribed', handleTrackSubscribed);
+
+    // Also listen to individual participant speaking events
+    participants.forEach(participant => {
+      if (participant.identity?.startsWith('agent-')) {
+        participant.on('isSpeakingChanged', handleParticipantSpeakingChanged);
+      }
+    });
+
+    // Check periodically to catch CSS class changes (LiveKit's blue outline)
+    const interval = setInterval(updateAgentTiles, 200);
+
+    return () => {
+      room.off('trackSubscribed', handleTrackSubscribed);
+      room.off('trackPublished', handleTrackPublished);
+      room.off('participantConnected', handleParticipantConnected);
+      room.off('participantDisconnected', handleParticipantConnected);
+      room.off('activeSpeakersChanged', handleParticipantSpeakingChanged);
+      room.off('trackUnsubscribed', handleTrackSubscribed);
+      
+      // Remove participant speaking listeners
+      participants.forEach(participant => {
+        if (participant.identity?.startsWith('agent-')) {
+          participant.off('isSpeakingChanged', handleParticipantSpeakingChanged);
+        }
+      });
+      
+      clearInterval(interval);
+    };
+  }, [room, participants]);
+
+  return null;
+}
+
 // Component to filter translation tracks based on selected language
 // Always subscribes to tracks matching your selected language (unified optimized mode)
 // Track format: translation-{target_language}-{source_participant}
 // Example: translation-es-Kenny (Spanish translation from Kenny)
+// UNIFIED MODE: When only 2 languages are active, subscribes to translation-unified tracks
 function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
   const room = useRoomContext();
   const [myIdentity, setMyIdentity] = useState('');
+  const [roomMode, setRoomMode] = useState('normal'); // 'normal' or 'unified'
+  const [unifiedLanguages, setUnifiedLanguages] = useState([]);
 
   // Get and store our identity when room connects
   // Identity is stable - it doesn't change when language preferences change
@@ -336,11 +725,36 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
     };
   }, [room]);
 
+  // Listen for room mode broadcasts from agent
+  useEffect(() => {
+    if (!room) return;
+
+    const handleDataReceived = (payload, participant) => {
+      try {
+        const decoder = new TextDecoder();
+        const message = JSON.parse(decoder.decode(payload));
+        
+        if (message.type === 'room_mode') {
+          console.log('📢 Room mode update received:', message);
+          setRoomMode(message.mode || 'normal');
+          setUnifiedLanguages(message.languages || []);
+        }
+      } catch (error) {
+        // Not a room mode message, ignore
+      }
+    };
+
+    room.on('dataReceived', handleDataReceived);
+    return () => {
+      room.off('dataReceived', handleDataReceived);
+    };
+  }, [room]);
+
   // Handle track subscriptions based on room mode AND selected language
   useEffect(() => {
     if (!room) return;
 
-    console.log('🎯 TrackFilter: Setting up track handlers, selectedLanguage:', selectedLanguage, 'translationEnabled:', translationEnabled);
+    console.log('🎯 TrackFilter: Setting up track handlers, selectedLanguage:', selectedLanguage, 'translationEnabled:', translationEnabled, 'roomMode:', roomMode);
 
     const onTrackSubscribed = (track, publication, participant) => {
       // Only handle audio tracks
@@ -357,14 +771,34 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       // This is a translation track
       console.log('🔊 Translation track subscribed:', trackName);
       
-      // Unified mode: Subscribe based on selected language
+      // Check if this is unified mode or normal mode
+      if (!translationEnabled) {
+        // Translation disabled → unsubscribe from all translation tracks
+        console.log('🚫 Translation disabled, unsubscribing from:', trackName);
+        if (publication.isSubscribed) {
+          publication.setSubscribed(false);
+        }
+        track.detach();
+        return;
+      }
+
+      // UNIFIED MODE: Subscribe to unified tracks
+      if (roomMode === 'unified' && trackName.startsWith('translation-unified')) {
+        console.log('✅ UNIFIED MODE: Subscribing to unified track:', trackName);
+        if (!publication.isSubscribed) {
+          publication.setSubscribed(true);
+        }
+        return;
+      }
+
+      // NORMAL MODE: Subscribe based on selected language
       // Track format: translation-{target_language}-{source_participant}
       // Example: translation-es-Kenny → parts = ["translation", "es", "Kenny"]
       // Example: translation-en-Ii → parts = ["translation", "en", "Ii"] (English listeners need this!)
       
-      if (!translationEnabled) {
-        // Translation disabled → unsubscribe from all translation tracks
-        console.log('🚫 Translation disabled, unsubscribing from:', trackName);
+      // Skip unified tracks in normal mode
+      if (trackName.startsWith('translation-unified')) {
+        console.log('🚫 Normal mode: Skipping unified track:', trackName);
         if (publication.isSubscribed) {
           publication.setSubscribed(false);
         }
@@ -407,9 +841,25 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       if (trackName.startsWith('translation-')) {
         console.log('🔊 Translation track published:', trackName);
         
-        // Unified mode: Subscribe based on selected language
+        // Check mode and subscribe accordingly
         if (!translationEnabled) {
           console.log('🚫 Translation disabled, not subscribing to:', trackName);
+          return;
+        }
+
+        // UNIFIED MODE: Subscribe to unified tracks
+        if (roomMode === 'unified' && trackName.startsWith('translation-unified')) {
+          console.log('✅ UNIFIED MODE: Subscribing to unified track:', trackName);
+          if (!publication.isSubscribed) {
+            publication.setSubscribed(true);
+          }
+          return;
+        }
+
+        // NORMAL MODE: Subscribe based on selected language
+        // Skip unified tracks in normal mode
+        if (trackName.startsWith('translation-unified')) {
+          console.log('🚫 Normal mode: Skipping unified track:', trackName);
           return;
         }
 
@@ -438,26 +888,41 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
             if (trackName.startsWith('translation-')) {
               console.log('🔊 Found existing translation track:', trackName, 'subscribed:', publication.isSubscribed);
               
-              // Unified mode: Update subscription based on current language selection
+              // Update subscription based on mode and language selection
               if (!translationEnabled) {
                 if (publication.isSubscribed) {
                   publication.setSubscribed(false);
                   console.log('🚫 Unsubscribed from translation track (disabled):', trackName);
                 }
-              } else {
-                const parts = trackName.split('-');
-                if (parts.length >= 3) {
-                  const targetLanguage = parts[1];
-                  if (targetLanguage === selectedLanguage) {
-                    // This works for English listeners too! They subscribe to translation-en-* tracks
-                    if (!publication.isSubscribed) {
-                      publication.setSubscribed(true);
-                      console.log('✅ Subscribed to existing translation track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
-                    }
-                  } else {
-                    if (publication.isSubscribed) {
-                      publication.setSubscribed(false);
-                      console.log('🚫 Unsubscribed from foreign language track:', trackName);
+              } else if (roomMode === 'unified' && trackName.startsWith('translation-unified')) {
+                // UNIFIED MODE: Subscribe to unified tracks
+                if (!publication.isSubscribed) {
+                  publication.setSubscribed(true);
+                  console.log('✅ UNIFIED MODE: Subscribed to unified track:', trackName);
+                }
+              } else if (roomMode === 'normal') {
+                // NORMAL MODE: Subscribe based on selected language
+                // Skip unified tracks in normal mode
+                if (trackName.startsWith('translation-unified')) {
+                  if (publication.isSubscribed) {
+                    publication.setSubscribed(false);
+                    console.log('🚫 Normal mode: Unsubscribed from unified track:', trackName);
+                  }
+                } else {
+                  const parts = trackName.split('-');
+                  if (parts.length >= 3) {
+                    const targetLanguage = parts[1];
+                    if (targetLanguage === selectedLanguage) {
+                      // This works for English listeners too! They subscribe to translation-en-* tracks
+                      if (!publication.isSubscribed) {
+                        publication.setSubscribed(true);
+                        console.log('✅ Subscribed to existing translation track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+                      }
+                    } else {
+                      if (publication.isSubscribed) {
+                        publication.setSubscribed(false);
+                        console.log('🚫 Unsubscribed from foreign language track:', trackName);
+                      }
                     }
                   }
                 }
@@ -478,13 +943,13 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       room.off('trackSubscribed', onTrackSubscribed);
       room.off('trackPublished', onTrackPublished);
     };
-  }, [room, myIdentity, selectedLanguage, translationEnabled]); // Add selectedLanguage and translationEnabled to dependencies
+  }, [room, myIdentity, selectedLanguage, translationEnabled, roomMode]); // Add roomMode to dependencies
 
   return null; // This component doesn't render anything
 }
 
 // VAD Sensitivity Controls Component - Rendered in bottom control bar for host
-function VADSensitivityControls() {
+export function VADSensitivityControls() {
   const [vadSensitivity, setVadSensitivity] = useState('medium');
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -512,9 +977,12 @@ function VADSensitivityControls() {
     
     const handleClickOutside = (event) => {
       const target = event.target;
-      if (!target.closest('.lk-vad-dropdown') && !target.closest('.lk-vad-button')) {
-        setShowDropdown(false);
+      const vadContainer = target.closest('.relative');
+      if (vadContainer && vadContainer.querySelector('button[aria-label="Translation Sensitivity"]')) {
+        // Clicked inside VAD controls, don't close
+        return;
       }
+      setShowDropdown(false);
     };
     
     document.addEventListener('mousedown', handleClickOutside);
@@ -525,148 +993,64 @@ function VADSensitivityControls() {
     <div className="relative">
       <button
         onClick={() => setShowDropdown(!showDropdown)}
-        className="lk-vad-button"
+        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
         title="Translation Sensitivity"
         aria-label="Translation Sensitivity"
-        style={{
-          background: 'rgba(31, 41, 55, 0.95)',
-          color: 'white',
-          border: 'none',
-          borderRadius: '0.5rem',
-          minWidth: '44px',
-          minHeight: '44px',
-          padding: '0.5rem 0.75rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '0.5rem',
-          cursor: 'pointer',
-          transition: 'all 0.2s ease',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-        }}
-        onMouseEnter={(e) => {
-          e.target.style.transform = 'translateY(-1px)';
-          e.target.style.boxShadow = '0 6px 8px -1px rgba(0, 0, 0, 0.15), 0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-        }}
-        onMouseLeave={(e) => {
-          e.target.style.transform = 'translateY(0)';
-          e.target.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)';
-        }}
       >
-        <Settings className="w-5 h-5 md:w-6 md:h-6" />
-        <span className="hidden sm:inline lk-vad-button-text" style={{ fontSize: '0.875rem' }}>
+        <Settings className="w-5 h-5" />
+        <span className="text-sm font-medium hidden sm:inline">
           {vadSensitivity === 'low' ? 'Low' : vadSensitivity === 'high' ? 'High' : 'Medium'}
         </span>
       </button>
 
       {showDropdown && (
-        <div className="lk-vad-dropdown" style={{
-          position: 'absolute',
-          bottom: '100%',
-          right: 0,
-          marginBottom: '0.5rem',
-          background: 'rgba(31, 41, 55, 0.98)',
-          borderRadius: '0.5rem',
-          padding: '0.75rem',
-          minWidth: '240px',
-          boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
-          zIndex: 70,
-          border: '1px solid rgba(75, 85, 99, 0.5)',
-        }}>
-          <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginBottom: '0.75rem', lineHeight: '1.4' }}>
-            Translation Sensitivity
-          </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <button
-              onClick={() => handleVadChange('low')}
-              style={{
-                padding: '0.75rem',
-                borderRadius: '0.375rem',
-                border: vadSensitivity === 'low' ? '2px solid #3b82f6' : '1px solid rgba(75, 85, 99, 0.5)',
-                background: vadSensitivity === 'low' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(31, 41, 55, 0.8)',
-                color: 'white',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'all 0.2s',
-                fontSize: '0.8125rem',
-              }}
-              onMouseEnter={(e) => {
-                if (vadSensitivity !== 'low') {
-                  e.target.style.background = 'rgba(55, 65, 81, 0.8)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (vadSensitivity !== 'low') {
-                  e.target.style.background = 'rgba(31, 41, 55, 0.8)';
-                }
-              }}
-            >
-              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>Low Sensitivity</div>
-              <div style={{ fontSize: '0.6875rem', color: '#9ca3af', lineHeight: '1.3' }}>
-                Forgiving - ignores coughs, "umm", background noise
-              </div>
-            </button>
+        <div className="absolute bottom-full right-0 mb-2 w-64 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] backdrop-blur-sm max-w-[calc(100vw-2rem)]">
+          <div className="p-3">
+            <div className="text-xs text-gray-400 mb-3 font-medium">Translation Sensitivity</div>
             
-            <button
-              onClick={() => handleVadChange('medium')}
-              style={{
-                padding: '0.75rem',
-                borderRadius: '0.375rem',
-                border: vadSensitivity === 'medium' ? '2px solid #3b82f6' : '1px solid rgba(75, 85, 99, 0.5)',
-                background: vadSensitivity === 'medium' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(31, 41, 55, 0.8)',
-                color: 'white',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'all 0.2s',
-                fontSize: '0.8125rem',
-              }}
-              onMouseEnter={(e) => {
-                if (vadSensitivity !== 'medium') {
-                  e.target.style.background = 'rgba(55, 65, 81, 0.8)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (vadSensitivity !== 'medium') {
-                  e.target.style.background = 'rgba(31, 41, 55, 0.8)';
-                }
-              }}
-            >
-              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>Medium Sensitivity</div>
-              <div style={{ fontSize: '0.6875rem', color: '#9ca3af', lineHeight: '1.3' }}>
-                Balanced - good for most conversations (default)
-              </div>
-            </button>
-            
-            <button
-              onClick={() => handleVadChange('high')}
-              style={{
-                padding: '0.75rem',
-                borderRadius: '0.375rem',
-                border: vadSensitivity === 'high' ? '2px solid #3b82f6' : '1px solid rgba(75, 85, 99, 0.5)',
-                background: vadSensitivity === 'high' ? 'rgba(30, 58, 138, 0.8)' : 'rgba(31, 41, 55, 0.8)',
-                color: 'white',
-                cursor: 'pointer',
-                textAlign: 'left',
-                transition: 'all 0.2s',
-                fontSize: '0.8125rem',
-              }}
-              onMouseEnter={(e) => {
-                if (vadSensitivity !== 'high') {
-                  e.target.style.background = 'rgba(55, 65, 81, 0.8)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (vadSensitivity !== 'high') {
-                  e.target.style.background = 'rgba(31, 41, 55, 0.8)';
-                }
-              }}
-            >
-              <div style={{ fontWeight: '600', marginBottom: '0.25rem' }}>High Sensitivity</div>
-              <div style={{ fontSize: '0.6875rem', color: '#9ca3af', lineHeight: '1.3' }}>
-                Very responsive - fast interruptions, good for debates
-              </div>
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => handleVadChange('low')}
+                className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                  vadSensitivity === 'low' 
+                    ? 'bg-blue-900/50 border-2 border-blue-500' 
+                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                <div className="font-semibold text-sm text-white mb-1">Low Sensitivity</div>
+                <div className="text-xs text-gray-400 leading-relaxed">
+                  Forgiving - ignores coughs, "umm", background noise
+                </div>
+              </button>
+              
+              <button
+                onClick={() => handleVadChange('medium')}
+                className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                  vadSensitivity === 'medium' 
+                    ? 'bg-blue-900/50 border-2 border-blue-500' 
+                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                <div className="font-semibold text-sm text-white mb-1">Medium Sensitivity</div>
+                <div className="text-xs text-gray-400 leading-relaxed">
+                  Balanced - good for most conversations (default)
+                </div>
+              </button>
+              
+              <button
+                onClick={() => handleVadChange('high')}
+                className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                  vadSensitivity === 'high' 
+                    ? 'bg-blue-900/50 border-2 border-blue-500' 
+                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                }`}
+              >
+                <div className="font-semibold text-sm text-white mb-1">High Sensitivity</div>
+                <div className="text-xs text-gray-400 leading-relaxed">
+                  Very responsive - fast interruptions, good for debates
+                </div>
+              </button>
+            </div>
           </div>
         </div>
       )}

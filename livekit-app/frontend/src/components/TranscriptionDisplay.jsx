@@ -115,12 +115,12 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
   
   return (
     <div 
-      className={`fixed bottom-20 right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl transition-all z-40 ${
-        isMinimized ? 'w-64' : 'w-[28rem]'
+      className={`fixed bottom-20 right-2 sm:right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl transition-all z-40 ${
+        isMinimized ? 'w-56 sm:w-64' : 'w-[calc(100vw-1rem)] sm:w-[28rem] max-w-[28rem]'
       }`}
     >
       {/* Header */}
-      <div className="bg-gray-800 px-4 py-3 rounded-t-lg flex items-center justify-between">
+      <div className="bg-gray-800 px-3 sm:px-4 py-2.5 sm:py-3 rounded-t-lg flex items-center justify-between">
         <div className="flex items-center gap-2">
           <MessageSquare className="w-4 h-4 text-blue-400" />
           <h3 className="text-sm font-medium text-white">Live Transcriptions</h3>
@@ -149,7 +149,7 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
       {!isMinimized && (
         <div 
           ref={scrollRef}
-          className="max-h-96 overflow-y-auto p-4 space-y-3"
+          className="max-h-[60vh] sm:max-h-96 overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3"
         >
           {/* Live streaming captions (grows word-by-word) */}
           {Object.entries(liveCaptions).map(([speakerId, caption]) => (
@@ -162,7 +162,7 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
                   Live...
                 </span>
               </div>
-              <p className="text-sm text-gray-300 break-words whitespace-normal" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+              <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
                 {caption.text}
                 <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
               </p>
@@ -171,12 +171,12 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
           
           {/* Permanent chat bubbles */}
           {transcriptions.length === 0 && Object.keys(liveCaptions).length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">
+            <p className="text-gray-500 text-xs sm:text-sm text-center py-8">
               Waiting for speech...
             </p>
           ) : (
             transcriptions.map((item) => (
-              <div key={item.id} className="space-y-2 border-b border-gray-700 pb-3 last:border-b-0">
+              <div key={item.id} className="space-y-2 border-b border-gray-700/50 pb-2 sm:pb-3 last:border-b-0">
                 {/* Speaker and timestamp */}
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-medium text-blue-400">
@@ -190,8 +190,8 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
                 {/* Original text (source language) - Always show */}
                 {item.originalText && (
                   <div className="space-y-1">
-                    <span className="text-xs text-gray-500 uppercase">Original</span>
-                    <p className="text-sm text-gray-300 break-words whitespace-normal bg-gray-800/50 rounded px-2 py-1" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Original</span>
+                    <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal bg-gray-800/50 rounded px-2 py-1.5 leading-relaxed">
                       {item.originalText}
                     </p>
                   </div>
@@ -200,8 +200,8 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
                 {/* Translated text (target language) - Show if different from original */}
                 {item.hasTranslation && item.text && (
                   <div className="space-y-1">
-                    <span className="text-xs text-gray-500 uppercase">Translated ({item.language})</span>
-                    <p className="text-sm text-green-300 break-words whitespace-normal bg-green-900/20 rounded px-2 py-1 border-l-2 border-green-500 pl-2" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    <span className="text-xs text-gray-500 uppercase tracking-wide">Translated ({item.language})</span>
+                    <p className="text-xs sm:text-sm text-green-300 break-words whitespace-normal bg-green-900/20 rounded px-2 py-1.5 border-l-2 border-green-500 pl-2 leading-relaxed">
                       {item.text}
                     </p>
                   </div>
@@ -209,7 +209,7 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
                 
                 {/* If no translation (same language), just show the text */}
                 {!item.hasTranslation && item.text && (
-                  <p className="text-sm text-gray-300 break-words whitespace-normal bg-gray-800/50 rounded px-2 py-1" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                  <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
                     {item.text}
                   </p>
                 )}
@@ -220,9 +220,9 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
       )}
       
       {/* Status */}
-      <div className="px-4 py-2 bg-gray-800 rounded-b-lg">
+      <div className="px-3 sm:px-4 py-2 bg-gray-800/50 rounded-b-lg border-t border-gray-700/50">
         <div className="flex items-center gap-2">
-          <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+          <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
           <span className="text-xs text-gray-400">Translation active</span>
         </div>
       </div>

@@ -9,18 +9,17 @@ export default defineConfig({
     {
       name: 'bypass-host-check',
       configureServer(server) {
-        // Add middleware to intercept requests and modify host header
+        // Serve static files from public before React Router
+        // This ensures images and other assets are served correctly
         server.middlewares.use((req, res, next) => {
           // Log the incoming host for debugging
           const host = req.headers.host || req.headers['x-forwarded-host'] || ''
-          console.log(`[Vite] Request from host: ${host}`)
           
           // In development, modify host header to match allowedHosts
           if (process.env.NODE_ENV !== 'production') {
             // If it's an ngrok domain, ensure it matches our allowed host
             if (host.includes('ngrok')) {
               req.headers.host = 'f46bc88e5f4e.ngrok.app'
-              console.log(`[Vite] Modified host header to: f46bc88e5f4e.ngrok.app`)
             }
           }
           next()

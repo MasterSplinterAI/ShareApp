@@ -56,6 +56,8 @@ class RealtimeTranslationAgent:
         self.assistants: Dict[str, AgentSession] = {}
         self.host_vad_setting: str = "medium"  # 'low', 'medium', 'high'
         self.host_participant_id: Optional[str] = None  # Track who the host is
+        self.unified_mode_active: bool = False  # Track if unified mode is active
+        self.unified_assistant_key: str = "unified:all"  # Key for unified assistant
 
         logger.info("Realtime Translation Agent initialized with OpenAI Realtime API (UNIFIED MODE)")
 
@@ -116,30 +118,42 @@ class RealtimeTranslationAgent:
                 old_language = self.participant_languages.get(participant_id)
                 language_changed = old_language and old_language != language
                 
+                # Log BEFORE updating
+                old_languages = self._get_enabled_languages()
+                logger.info(f"📊 BEFORE update - Enabled languages: {old_languages}, Unified mode active: {self.unified_mode_active}")
+                
                 self.participant_languages[participant_id] = language
                 self.translation_enabled[participant_id] = enabled
                 
+                # Log AFTER updating
+                new_languages = self._get_enabled_languages()
+                logger.info(f"📊 AFTER update - Enabled languages: {new_languages}, Unified mode active: {self.unified_mode_active}")
                 logger.info(f"📊 Current participants with translation: {list(self.participant_languages.keys())}")
                 logger.info(f"📊 Translation enabled status: {dict(self.translation_enabled)}")
                 
                 if enabled:
-                    # If language changed, stop existing assistants FOR this participant first, then create new ones
-                    if language_changed:
-                        logger.info(f"🔄 Language changed from {old_language} to {language} for {participant_id} - stopping old assistants first")
-                        async def stop_and_recreate():
+                    # Check unified mode FIRST before creating any assistants
+                    # This ensures we use the correct mode from the start
+                    async def handle_language_update():
+                        await self._check_and_update_unified_mode(ctx)
+                        
+                        # Unified mode disabled - always create normal assistants
+                        # if self.unified_mode_active:
+                        #     logger.info(f"✅ Unified mode active - skipping normal assistant creation for {participant_id}")
+                        #     return
+                        
+                        # If language changed, stop existing assistants FOR this participant first, then create new ones
+                        if language_changed:
+                            logger.info(f"🔄 Language changed from {old_language} to {language} for {participant_id} - stopping old assistants first")
                             # Stop assistants WHERE this participant is the listener
                             await self.stop_realtime_assistant(participant_id)
                             
                             # CRITICAL: Also stop assistants FROM this participant TO others if they target the NEW language
-                            # This prevents same-language tracks (e.g., two English listeners shouldn't have translation-en-* tracks)
-                            # Key format: "{other_participant_id}:{participant_id}" where participant_id is the speaker
                             keys_to_remove = []
                             for key in self.assistants.keys():
                                 if key.endswith(f":{participant_id}"):
-                                    # This is an assistant FROM participant_id TO another participant
                                     listener_id = key.split(':')[0]
                                     listener_target_lang = self.participant_languages.get(listener_id)
-                                    # If listener's target language matches participant's NEW language, stop it
                                     if listener_target_lang == language:
                                         logger.info(f"🛑 Stopping same-language assistant {key}: {participant_id} (now {language}) -> {listener_id} (also {language})")
                                         keys_to_remove.append(key)
@@ -151,35 +165,30 @@ class RealtimeTranslationAgent:
                             
                             await asyncio.sleep(0.2)
                             
-                            # ALWAYS create assistants FROM others → this participant's NEW language
-                            # OpenAI will auto-detect and stay silent when spoken language == target language
-                            self._create_shared_assistant_for_target_language(ctx, participant_id, language)
+                    # Unified mode disabled - always create normal assistants
+                    # await self._check_and_update_unified_mode(ctx)
+                    # if self.unified_mode_active:
+                    #     logger.info(f"✅ Unified mode activated during recreation - skipping normal assistants")
+                    #     return
                             
-                            # ALWAYS create assistants FROM this participant → others' languages
-                            # OpenAI auto-detects the spoken language, so we just need to know:
-                            # - Who is speaking (this participant)
-                            # - Who wants to hear (others)
-                            # - What language they want (their target language)
-                            # NOTE: These assistants are shared, so if they already exist, they won't be recreated
+                            # Create assistants FROM others → this participant's NEW language
+                            self._create_shared_assistant_for_target_language(ctx, participant_id, language)
+                            # Create assistants FROM this participant → others' languages
                             self._create_assistants_from_participant_to_others(ctx, participant_id)
-                        asyncio.create_task(stop_and_recreate())
-                    else:
-                        # Language didn't change, just create assistants normally
-                        # ALWAYS create assistants FROM others → this participant's language
-                        # OpenAI will auto-detect and stay silent when spoken language == target language
-                        self._create_shared_assistant_for_target_language(ctx, participant_id, language)
-                        # ALWAYS create assistants FROM this participant → others' languages
-                        # OpenAI auto-detects the spoken language, so we just need to know:
-                        # - Who is speaking (this participant)
-                        # - Who wants to hear (others)
-                        # - What language they want (their target language)
-                        self._create_assistants_from_participant_to_others(ctx, participant_id)
+                        else:
+                            # Language didn't change, just create assistants normally
+                            self._create_shared_assistant_for_target_language(ctx, participant_id, language)
+                            self._create_assistants_from_participant_to_others(ctx, participant_id)
+                    
+                    asyncio.create_task(handle_language_update())
                 else:
                     # Translation disabled - stop all assistants for this participant
                     logger.info(f"🛑 Translation disabled for {participant_id}, stopping all assistants")
                     asyncio.create_task(self.stop_realtime_assistant(participant_id))
                     # Also clear the enabled flag to prevent any new assistants from being created
                     self.translation_enabled[participant_id] = False
+                    # Unified mode disabled - no need to check
+                    # asyncio.create_task(self._check_and_update_unified_mode(ctx))
 
             except json.JSONDecodeError:
                 logger.warning(f"Received non-JSON data: {data.data.decode('utf-8')}")
@@ -195,52 +204,62 @@ class RealtimeTranslationAgent:
             if new_participant_id.startswith('agent-'):
                 return
             
-            # Create assistants for new participant: translate existing participants → new participant's language
-            new_participant_lang = self.participant_languages.get(new_participant_id, 'en')
-            
-            # Collect unique target languages from existing participants who have translation enabled
-            target_languages_needed = {}
-            for existing_participant_id, target_language in self.participant_languages.items():
-                if existing_participant_id == new_participant_id:
-                    continue
-                if self.translation_enabled.get(existing_participant_id, False):
-                    if target_language not in target_languages_needed:
-                        target_languages_needed[target_language] = existing_participant_id
-            
-            # Create ONE shared assistant per target language
-            for target_language, owner_participant_id in target_languages_needed.items():
-                # Check if assistant already exists for this language pair
-                assistant_exists = False
-                for existing_key in self.assistants.keys():
-                    if existing_key.endswith(f":{new_participant_id}"):
-                        existing_participant_id = existing_key.split(':')[0]
-                        existing_target_lang = self.participant_languages.get(existing_participant_id)
-                        if existing_target_lang == target_language:
-                            logger.info(f"♻️ Reusing existing assistant for language pair {new_participant_lang} → {target_language}")
-                            assistant_exists = True
-                            break
+            # Handle new participant connection asynchronously
+            async def handle_new_participant():
+                # Unified mode disabled - always use normal mode
+                # await self._check_and_update_unified_mode(ctx)
                 
-                if not assistant_exists:
-                    logger.info(f"🚀 New participant joined - Creating shared assistant: {new_participant_id} -> {target_language}")
-                    asyncio.create_task(
-                        self.create_realtime_assistant(
+                # Unified mode disabled - always create normal assistants
+                # if self.unified_mode_active:
+                #     logger.info(f"✅ Unified mode active - skipping normal assistant creation for new participant {new_participant_id}")
+                #     return
+                
+                # Create assistants for new participant: translate existing participants → new participant's language
+                new_participant_lang = self.participant_languages.get(new_participant_id, 'en')
+                
+                # Collect unique target languages from existing participants who have translation enabled
+                target_languages_needed = {}
+                for existing_participant_id, target_language in self.participant_languages.items():
+                    if existing_participant_id == new_participant_id:
+                        continue
+                    if self.translation_enabled.get(existing_participant_id, False):
+                        if target_language not in target_languages_needed:
+                            target_languages_needed[target_language] = existing_participant_id
+                
+                # Create ONE shared assistant per target language
+                for target_language, owner_participant_id in target_languages_needed.items():
+                    # Check if assistant already exists for this language pair
+                    assistant_exists = False
+                    for existing_key in self.assistants.keys():
+                        if existing_key.endswith(f":{new_participant_id}"):
+                            existing_participant_id = existing_key.split(':')[0]
+                            existing_target_lang = self.participant_languages.get(existing_participant_id)
+                            if existing_target_lang == target_language:
+                                logger.info(f"♻️ Reusing existing assistant for language pair {new_participant_lang} → {target_language}")
+                                assistant_exists = True
+                                break
+                    
+                    if not assistant_exists:
+                        logger.info(f"🚀 New participant joined - Creating shared assistant: {new_participant_id} -> {target_language}")
+                        await self.create_realtime_assistant(
                             ctx,
                             owner_participant_id,
                             target_language,
                             source_participant_id=new_participant_id,
                             use_language_based_track=True
                         )
-                    )
-            
-            # Create assistants for the new participant if they have translation enabled
-            if new_participant_id in self.participant_languages and self.translation_enabled.get(new_participant_id, False):
-                target_language = self.participant_languages[new_participant_id]
                 
-                # ALWAYS create assistants FROM others → new participant's language
-                # OpenAI will auto-detect and stay silent when spoken language == target language
-                self._create_shared_assistant_for_target_language(ctx, new_participant_id, target_language)
-                # ALSO create assistants FROM new participant → others' languages
-                self._create_assistants_from_participant_to_others(ctx, new_participant_id)
+                # Create assistants for the new participant if they have translation enabled
+                if new_participant_id in self.participant_languages and self.translation_enabled.get(new_participant_id, False):
+                    target_language = self.participant_languages[new_participant_id]
+                    
+                    # ALWAYS create assistants FROM others → new participant's language
+                    # OpenAI will auto-detect and stay silent when spoken language == target language
+                    self._create_shared_assistant_for_target_language(ctx, new_participant_id, target_language)
+                    # ALSO create assistants FROM new participant → others' languages
+                    self._create_assistants_from_participant_to_others(ctx, new_participant_id)
+            
+            asyncio.create_task(handle_new_participant())
 
         @ctx.room.on("participant_disconnected")
         def on_participant_disconnected(participant: rtc.RemoteParticipant):
@@ -251,6 +270,8 @@ class RealtimeTranslationAgent:
             self.translation_enabled.pop(participant_id, None)
             
             asyncio.create_task(self.stop_realtime_assistant(participant_id))
+            # Unified mode disabled - no need to check
+            # asyncio.create_task(self._check_and_update_unified_mode(ctx))
 
         logger.info("Realtime Translation Agent is running and listening for language preferences...")
 
@@ -266,6 +287,302 @@ class RealtimeTranslationAgent:
                 await assistant.aclose()
             logger.info("Agent cleanup complete.")
 
+    def _get_enabled_languages(self) -> set:
+        """Get set of unique enabled languages"""
+        enabled_languages = set()
+        for pid, enabled in self.translation_enabled.items():
+            if enabled:
+                lang = self.participant_languages.get(pid, 'en')
+                enabled_languages.add(lang)
+        return enabled_languages
+    
+    def _is_unified_mode(self) -> bool:
+        """Check if we should use unified mode (exactly 2 languages)"""
+        languages = self._get_enabled_languages()
+        return len(languages) == 2
+    
+    async def _broadcast_room_mode(self, ctx: JobContext):
+        """Broadcast room mode (unified or normal) to all participants"""
+        try:
+            languages = list(self._get_enabled_languages())
+            is_unified = len(languages) == 2
+            
+            message = {
+                'type': 'room_mode',
+                'mode': 'unified' if is_unified else 'normal',
+                'language_count': len(languages),
+                'languages': languages
+            }
+            
+            message_json = json.dumps(message)
+            message_bytes = message_json.encode('utf-8')
+            
+            # Broadcast to all participants
+            await ctx.room.local_participant.publish_data(
+                message_bytes,
+                reliable=True,
+                topic='room_mode'
+            )
+            
+            logger.info(f"📢 Broadcasted room mode: {message['mode']} (languages: {languages})")
+        except Exception as e:
+            logger.error(f"Error broadcasting room mode: {e}", exc_info=True)
+    
+    async def _check_and_update_unified_mode(self, ctx: JobContext):
+        """Check if unified mode should be active and update accordingly"""
+        try:
+            # DISABLED: Always use normal mode
+            should_be_unified = False  # Force normal mode always
+            languages = list(self._get_enabled_languages())
+            logger.info(f"🔍 Unified mode DISABLED - always using normal mode. Languages={languages}")
+            
+            # Never activate unified mode
+            if False and should_be_unified and not self.unified_mode_active:
+                # Switch to unified mode
+                logger.info("🔄 Switching to UNIFIED MODE (2 languages detected)")
+                self.unified_mode_active = True
+                
+                # Stop all existing normal assistants FIRST
+                logger.info("🛑 Stopping all normal assistants for unified mode...")
+                # Use the helper function to stop all normal assistants
+                await self.stop_realtime_assistant("", stop_all_normal=True)
+                
+                # Double-check: ensure no normal assistants remain
+                remaining_normal = [key for key in list(self.assistants.keys()) if key != self.unified_assistant_key]
+                if remaining_normal:
+                    logger.warning(f"⚠️ Some normal assistants still remain after stopping: {remaining_normal}")
+                    # Force stop them
+                    for key in remaining_normal:
+                        try:
+                            if key in self.assistants:
+                                assistant = self.assistants.pop(key)
+                                await assistant.aclose()
+                                logger.info(f"✅ Force-stopped remaining assistant: {key}")
+                        except Exception as e:
+                            logger.error(f"❌ Error force-stopping assistant {key}: {e}")
+                
+                # Small delay to ensure assistants are fully stopped and tracks are unpublished
+                await asyncio.sleep(0.5)
+                
+                # Create unified assistant
+                await self._create_unified_assistant(ctx)
+                
+                # Broadcast mode change
+                await self._broadcast_room_mode(ctx)
+                
+            elif not should_be_unified and self.unified_mode_active:
+                # Switch back to normal mode (could be 1 language or 3+ languages)
+                language_count = len(languages)
+                if language_count == 1:
+                    logger.info(f"🔄 Switching to NORMAL MODE (only 1 language detected: {languages[0]}) - no translation needed")
+                else:
+                    logger.info(f"🔄 Switching to NORMAL MODE ({language_count} languages detected)")
+                self.unified_mode_active = False
+                
+                # Stop unified assistant
+                if self.unified_assistant_key in self.assistants:
+                    try:
+                        assistant = self.assistants.pop(self.unified_assistant_key)
+                        await assistant.aclose()
+                        logger.info("✅ Stopped unified assistant")
+                    except Exception as e:
+                        logger.error(f"Error stopping unified assistant: {e}")
+                
+                # Small delay to ensure unified assistant is fully stopped
+                await asyncio.sleep(0.3)
+                
+                # Only recreate normal assistants if we have 2+ different languages
+                # If only 1 language, no translation is needed
+                if language_count >= 2:
+                    logger.info("🔄 Recreating normal assistants for all participants...")
+                    for participant_id, enabled in self.translation_enabled.items():
+                        if enabled:
+                            target_language = self.participant_languages.get(participant_id, 'en')
+                            self._create_shared_assistant_for_target_language(ctx, participant_id, target_language)
+                            self._create_assistants_from_participant_to_others(ctx, participant_id)
+                else:
+                    logger.info("ℹ️ Only 1 language active - no assistants needed (no translation required)")
+                
+                # Broadcast mode change
+                await self._broadcast_room_mode(ctx)
+            elif should_be_unified == self.unified_mode_active:
+                # Mode matches, just broadcast current state
+                await self._broadcast_room_mode(ctx)
+                
+        except Exception as e:
+            logger.error(f"Error checking/updating unified mode: {e}", exc_info=True)
+    
+    async def _create_unified_assistant(self, ctx: JobContext):
+        """Create a unified assistant for 2-language mode that routes translations intelligently"""
+        try:
+            languages = list(self._get_enabled_languages())
+            if len(languages) != 2:
+                logger.warning(f"Cannot create unified assistant: expected 2 languages, got {len(languages)}")
+                return
+            
+            lang1, lang2 = sorted(languages)  # Sort for consistency
+            
+            # Language name mapping
+            language_names = {
+                'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German',
+                'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian',
+                'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
+                'ar': 'Arabic', 'hi': 'Hindi'
+            }
+            lang1_name = language_names.get(lang1, lang1)
+            lang2_name = language_names.get(lang2, lang2)
+            
+            # Stop existing unified assistant if any
+            if self.unified_assistant_key in self.assistants:
+                assistant = self.assistants.pop(self.unified_assistant_key)
+                await assistant.aclose()
+            
+            logger.info(f"🌐 Creating UNIFIED assistant for {lang1_name} ↔ {lang2_name} mode")
+            
+            # Get VAD config
+            vad_config = self._get_vad_config()
+            
+            # Create RealtimeModel
+            realtime_model = RealtimeModel(
+                voice="alloy",
+                modalities=["text", "audio"],
+                temperature=0.7,
+                turn_detection=vad_config,
+            )
+            
+            session = AgentSession(
+                vad=silero.VAD.load(),
+                llm=realtime_model,
+                allow_interruptions=True,
+            )
+            
+            # Unified mode instructions: SUPER SIMPLE bidirectional translation
+            # Make it extremely explicit and direct
+            agent = Agent(
+                instructions=(
+                    f"You are a translator. "
+                    f"Room has 2 languages: {lang1_name} and {lang2_name}. "
+                    f"Listen to everyone speaking. "
+                    f"When someone speaks {lang1_name}, translate to {lang2_name} and speak it. "
+                    f"When someone speaks {lang2_name}, translate to {lang1_name} and speak it. "
+                    f"Always translate. Never stay silent when someone is speaking. "
+                    f"Only output translations. No other words."
+                ),
+            )
+            
+            # Set up event handlers similar to normal assistant
+            session.user_data = {
+                "last_original": "",
+                "current_translation": "",
+                "sent_final": False,
+                "original_parts": [],
+                "source_speaker_id": "all",
+                "unified_mode": True,
+                "lang1": lang1,
+                "lang2": lang2,
+            }
+            
+            # Helper function to detect meta-commentary (same as normal assistant)
+            def is_meta_commentary(text: str) -> bool:
+                if not text:
+                    return True
+                text_lower = text.lower().strip()
+                text_clean = text_lower.replace(".", "").replace(",", "").replace("!", "").replace("?", "").replace("'", "").strip()
+                
+                meta_phrases = [
+                    "i understand", "i'll stay silent", "understood", "no translation needed",
+                    "not translating", "thank you", "thanks", "sure", "of course",
+                    "i see", "gotcha", "no need to translate", "already in", "same language"
+                ]
+                
+                for phrase in meta_phrases:
+                    phrase_clean = phrase.replace(".", "").replace(",", "").replace("!", "").replace("?", "").replace("'", "").strip()
+                    if text_clean == phrase_clean or phrase in text_lower:
+                        return True
+                
+                words = text_lower.split()
+                acknowledgment_words = ["understand", "silent", "ok", "okay", "got", "thanks", "thank", "sure"]
+                if len(words) <= 4 and any(word in acknowledgment_words for word in words):
+                    return True
+                
+                return False
+            
+            # Event handlers for unified assistant
+            @session.on("agent_speech_delta")
+            def on_agent_speech_delta(event):
+                delta = getattr(event, "delta", None) or (getattr(event, "text", None) or "")
+                if delta and not is_meta_commentary(delta):
+                    session.user_data["current_translation"] += delta
+                    logger.debug(f"[UNIFIED] Translation delta: {delta[:50]}...")
+            
+            @session.on("agent_speech_committed")
+            def on_agent_speech_committed(event):
+                final = getattr(event, "text", None) or ""
+                if not final or is_meta_commentary(final):
+                    return
+                
+                original = session.user_data.get("last_original") or final
+                session.user_data["sent_final"] = True
+                
+                logger.info(f"[UNIFIED] ✅ Translation: {original[:50]}... → {final[:50]}...")
+                
+                # Send transcription to all participants (they all subscribe to unified track)
+                # We'll send it with a generic source since everyone hears it
+                try:
+                    asyncio.create_task(
+                        self.send_transcription_data(ctx, "unified", "all", original, final, "unified", partial=False)
+                    )
+                except Exception as e:
+                    logger.error(f"[UNIFIED] Error sending transcription: {e}")
+            
+            @session.on("user_speech_committed")
+            def on_user_speech_committed(event):
+                original = getattr(event, "text", None) or ""
+                if original:
+                    session.user_data["last_original"] = original
+                    logger.info(f"[UNIFIED] 🎤 Received speech from participant: {original[:100]}...")
+                else:
+                    logger.warning(f"[UNIFIED] ⚠️ user_speech_committed event fired but no text received")
+            
+            @session.on("user_speech_started")
+            def on_user_speech_started(event):
+                logger.info(f"[UNIFIED] 🎤 User speech started - assistant is listening!")
+            
+            @session.on("user_speech_stopped")
+            def on_user_speech_stopped(event):
+                logger.info(f"[UNIFIED] 🎤 User speech stopped")
+            
+            # Output: Unified track name
+            track_name = "translation-unified"
+            logger.info(f"🎯 Using unified track: {track_name}")
+            room_output_opts = room_io.RoomOutputOptions(
+                audio_track_name=track_name
+            )
+            
+            # Count participants for logging
+            participant_count = len([p for p in ctx.room.remote_participants.values() if not p.identity.startswith('agent-')])
+            logger.info(f"🎧 Found {participant_count} participants in room")
+            
+            # CRITICAL: Don't manually subscribe to tracks - AgentSession handles this automatically
+            # When no room_input_options is specified, AgentSession listens to ALL participant audio
+            # Manual subscription can interfere with AgentSession's internal audio handling
+            logger.info(f"🚀 Starting unified assistant - will listen to ALL {participant_count} participants automatically")
+            await session.start(
+                agent,
+                room=ctx.room,
+                room_output_options=room_output_opts
+                # No room_input_options = AgentSession automatically listens to ALL participant audio
+            )
+            logger.info(f"✅ Unified assistant started successfully!")
+            
+            self.assistants[self.unified_assistant_key] = session
+            logger.info(f"✅ UNIFIED assistant started (track: {track_name})")
+            
+        except Exception as e:
+            logger.error(f"❌ Error creating unified assistant: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
     def _create_shared_assistant_for_target_language(self, ctx: JobContext, any_participant_id: str, target_language: str):
         """Create ONE shared translation assistant per target language.
         Creates assistants FROM other participants TO this participant's target language.
@@ -274,6 +591,11 @@ class RealtimeTranslationAgent:
         CRITICAL: Skip creating assistants when source and target have the same language.
         Example: Two English listeners don't need translation tracks between them.
         """
+        # Unified mode disabled - always create normal assistants
+        # if self.unified_mode_active:
+        #     logger.debug(f"⏭️ Skipping normal assistant creation (unified mode active): {any_participant_id} -> {target_language}")
+        #     return
+        
         logger.info(f"🎯 Creating shared assistants FROM others -> {target_language} FOR {any_participant_id}")
         
         # Get all other participants (sources to translate FROM)
@@ -338,7 +660,14 @@ class RealtimeTranslationAgent:
         - Detects what language source_participant is actually speaking
         - Translates it to target_language if needed
         - Stays silent if the spoken language already matches target_language
+        
+        CRITICAL: Skip creating normal assistants when unified mode is active.
         """
+        # Skip if unified mode is active
+        if self.unified_mode_active:
+            logger.debug(f"⏭️ Skipping normal assistant creation (unified mode active): FROM {source_participant_id}")
+            return
+        
         logger.info(f"🎯 Creating assistants FROM {source_participant_id} -> others' languages")
         
         # Get all other participants who have translation enabled
@@ -863,25 +1192,41 @@ class RealtimeTranslationAgent:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
 
-    async def stop_realtime_assistant(self, participant_id: str):
+    async def stop_realtime_assistant(self, participant_id: str, stop_all_normal: bool = False):
         """Stop all Realtime assistants for a participant.
         
         This stops assistants WHERE participant_id is the listener (key format: "{participant_id}:{source}").
+        
+        If stop_all_normal is True, stops ALL normal assistants (for unified mode switching).
         It does NOT stop assistants WHERE participant_id is the speaker (key format: "{other}:{participant_id}").
         Those assistants are shared and should remain active for other listeners.
         """
         try:
-            # Only stop assistants WHERE this participant is the listener (not the speaker)
-            # Key format: "{participant_id}:{source_participant_id}"
-            keys_to_remove = [key for key in self.assistants.keys() if key.startswith(f"{participant_id}:")]
-            for key in keys_to_remove:
-                assistant = self.assistants.pop(key)
-                await assistant.aclose()
-                logger.info(f"Stopped Realtime assistant {key} (listener: {participant_id})")
+            if stop_all_normal:
+                # Stop ALL normal assistants (for unified mode)
+                keys_to_remove = [key for key in list(self.assistants.keys()) if key != self.unified_assistant_key]
+                logger.info(f"🛑 Stopping ALL normal assistants: {keys_to_remove}")
+            else:
+                # Only stop assistants WHERE this participant is the listener (not the speaker)
+                # Key format: "{participant_id}:{source_participant_id}"
+                keys_to_remove = [key for key in list(self.assistants.keys()) if key.startswith(f"{participant_id}:")]
+                logger.info(f"🛑 Stopping assistants for participant {participant_id}: {keys_to_remove}")
             
-            # Note: We don't stop assistants where participant_id is the speaker (e.g., "Other:Kenny")
-            # because those are shared assistants for other listeners and should remain active
-            logger.debug(f"Kept assistants where {participant_id} is the speaker (shared for other listeners)")
+            for key in keys_to_remove:
+                try:
+                    if key in self.assistants:
+                        assistant = self.assistants.pop(key)
+                        await assistant.aclose()
+                        logger.info(f"✅ Stopped Realtime assistant {key}")
+                    else:
+                        logger.warning(f"⚠️ Assistant {key} not found in assistants dict")
+                except Exception as e:
+                    logger.error(f"❌ Error stopping assistant {key}: {e}", exc_info=True)
+            
+            if not stop_all_normal:
+                # Note: We don't stop assistants where participant_id is the speaker (e.g., "Other:Kenny")
+                # because those are shared assistants for other listeners and should remain active
+                logger.debug(f"Kept assistants where {participant_id} is the speaker (shared for other listeners)")
         except Exception as e:
             logger.error(f"Error stopping Realtime assistant for {participant_id}: {e}", exc_info=True)
 
@@ -1021,6 +1366,9 @@ class RealtimeTranslationAgent:
 
 async def main(ctx: JobContext):
     logger.info("=" * 50)
+    logger.info("🚀 MAIN FUNCTION CALLED - JOB DISPATCHED!")
+    logger.info(f"📋 Room: {ctx.room.name if ctx.room else 'NO ROOM'}")
+    logger.info(f"📋 Job Context Type: {type(ctx)}")
     logger.info("LIVEKIT REALTIME TRANSLATION AGENT STARTED")
     logger.info("Using OpenAI Realtime API (GPT-4o) - UNIFIED MODE")
     logger.info("=" * 50)
