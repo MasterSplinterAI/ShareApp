@@ -756,6 +756,32 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 
     console.log('🎯 TrackFilter: Setting up track handlers, selectedLanguage:', selectedLanguage, 'translationEnabled:', translationEnabled, 'roomMode:', roomMode);
 
+    // Track which translation track we're subscribed to for each target language
+    // This ensures we only subscribe to ONE track per target language
+    const subscribedTracksByLanguage = new Map(); // Map<targetLanguage, trackName>
+
+    const unsubscribeFromOtherTracksForLanguage = (targetLanguage, currentTrackName) => {
+      // Find and unsubscribe from any other tracks for this target language
+      room.remoteParticipants.forEach((participant) => {
+        participant.audioTrackPublications.forEach((publication) => {
+          const trackName = publication.trackName || '';
+          if (trackName.startsWith('translation-') && 
+              !trackName.startsWith('translation-unified')) {
+            const parts = trackName.split('-');
+            if (parts.length >= 3 && parts[1] === targetLanguage && trackName !== currentTrackName) {
+              if (publication.isSubscribed) {
+                console.log('🔄 Unsubscribing from other track for same language:', trackName, '(keeping:', currentTrackName + ')');
+                publication.setSubscribed(false);
+                if (publication.track) {
+                  publication.track.detach();
+                }
+              }
+            }
+          }
+        });
+      });
+    };
+
     const onTrackSubscribed = (track, publication, participant) => {
       // Only handle audio tracks
       if (track.kind !== 'audio') return;
@@ -816,11 +842,21 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 
       if (targetLanguage === selectedLanguage) {
         // This translation matches my selected language → subscribe
-        // This works for English listeners too! They subscribe to translation-en-* tracks
+        // IMPORTANT: Only subscribe to ONE track per target language to avoid multiple audio streams
+        const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
+        
+        if (currentSubscribedTrack && currentSubscribedTrack !== trackName) {
+          // We already have a track subscribed for this language → unsubscribe from the old one
+          console.log('🔄 Already subscribed to track for', targetLanguage + ':', currentSubscribedTrack, '- unsubscribing before subscribing to:', trackName);
+          unsubscribeFromOtherTracksForLanguage(targetLanguage, trackName);
+        }
+        
+        // Subscribe to this track
         console.log('✅ Subscribing to my language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
         if (!publication.isSubscribed) {
           publication.setSubscribed(true);
         }
+        subscribedTracksByLanguage.set(targetLanguage, trackName);
       } else {
         // This is a different language → unsubscribe to save bandwidth
         console.log('🚫 Ignoring foreign language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
@@ -867,11 +903,21 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         if (parts.length >= 3) {
           const targetLanguage = parts[1];
           if (targetLanguage === selectedLanguage) {
-            // This works for English listeners too! They subscribe to translation-en-* tracks
+            // IMPORTANT: Only subscribe to ONE track per target language
+            const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
+            
+            if (currentSubscribedTrack && currentSubscribedTrack !== trackName) {
+              // Unsubscribe from the old track first
+              console.log('🔄 Switching translation track for', targetLanguage + ':', currentSubscribedTrack, '→', trackName);
+              unsubscribeFromOtherTracksForLanguage(targetLanguage, trackName);
+            }
+            
+            // Subscribe to this track
             console.log('✅ Subscribing to my language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
             if (!publication.isSubscribed) {
               publication.setSubscribed(true);
             }
+            subscribedTracksByLanguage.set(targetLanguage, trackName);
           } else {
             console.log('🚫 Not subscribing to foreign language track:', trackName);
           }
@@ -913,10 +959,28 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
                   if (parts.length >= 3) {
                     const targetLanguage = parts[1];
                     if (targetLanguage === selectedLanguage) {
-                      // This works for English listeners too! They subscribe to translation-en-* tracks
-                      if (!publication.isSubscribed) {
-                        publication.setSubscribed(true);
-                        console.log('✅ Subscribed to existing translation track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+                      // Only subscribe to ONE track per target language
+                      const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
+                      
+                      if (!currentSubscribedTrack) {
+                        // No track subscribed yet for this language → subscribe to this one
+                        if (!publication.isSubscribed) {
+                          publication.setSubscribed(true);
+                          console.log('✅ Subscribed to existing translation track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+                          subscribedTracksByLanguage.set(targetLanguage, trackName);
+                        }
+                      } else if (currentSubscribedTrack === trackName) {
+                        // This is the track we're already subscribed to → keep it
+                        if (!publication.isSubscribed) {
+                          publication.setSubscribed(true);
+                          console.log('✅ Re-subscribed to existing translation track:', trackName);
+                        }
+                      } else {
+                        // Another track is already subscribed → unsubscribe from this one
+                        if (publication.isSubscribed) {
+                          publication.setSubscribed(false);
+                          console.log('🚫 Unsubscribed from duplicate track:', trackName, '(already subscribed to:', currentSubscribedTrack + ')');
+                        }
                       }
                     } else {
                       if (publication.isSubscribed) {
@@ -932,9 +996,30 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       });
     };
 
+    // Handle track unsubscription to clean up our tracking
+    const onTrackUnsubscribed = (track, publication, participant) => {
+      if (track.kind !== 'audio') return;
+      const trackName = publication.trackName || '';
+      
+      if (trackName.startsWith('translation-') && !trackName.startsWith('translation-unified')) {
+        const parts = trackName.split('-');
+        if (parts.length >= 3) {
+          const targetLanguage = parts[1];
+          const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
+          
+          // If this was the track we were tracking, remove it from the map
+          if (currentSubscribedTrack === trackName) {
+            console.log('🧹 Track unsubscribed, removing from tracking:', trackName);
+            subscribedTracksByLanguage.delete(targetLanguage);
+          }
+        }
+      }
+    };
+
     // Set up event listeners
     room.on('trackSubscribed', onTrackSubscribed);
     room.on('trackPublished', onTrackPublished);
+    room.on('trackUnsubscribed', onTrackUnsubscribed);
     
     // Check existing tracks after a short delay (to ensure room is fully connected)
     setTimeout(checkExistingTracks, 1000);
@@ -942,6 +1027,8 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
     return () => {
       room.off('trackSubscribed', onTrackSubscribed);
       room.off('trackPublished', onTrackPublished);
+      room.off('trackUnsubscribed', onTrackUnsubscribed);
+      subscribedTracksByLanguage.clear();
     };
   }, [room, myIdentity, selectedLanguage, translationEnabled, roomMode]); // Add roomMode to dependencies
 
