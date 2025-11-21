@@ -687,8 +687,8 @@ function AgentTileCustomizer() {
 
 // Component to filter translation tracks based on selected language
 // Always subscribes to tracks matching your selected language (unified optimized mode)
-// Track format: translation-{target_language}-{source_participant}
-// Example: translation-es-Kenny (Spanish translation from Kenny)
+// Track format: translation-{target_language}
+// Example: translation-es (Spanish translation)
 // UNIFIED MODE: When only 2 languages are active, subscribes to translation-unified tracks
 function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
   const room = useRoomContext();
@@ -818,9 +818,9 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       }
 
       // NORMAL MODE: Subscribe based on selected language
-      // Track format: translation-{target_language}-{source_participant}
-      // Example: translation-es-Kenny → parts = ["translation", "es", "Kenny"]
-      // Example: translation-en-Ii → parts = ["translation", "en", "Ii"] (English listeners need this!)
+      // Track format: translation-{target_language}
+      // Example: translation-es → parts = ["translation", "es"]
+      // Example: translation-en → parts = ["translation", "en"]
       
       // Skip unified tracks in normal mode
       if (trackName.startsWith('translation-unified')) {
@@ -833,7 +833,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       }
 
       const parts = trackName.split('-');
-      if (parts.length < 3) {
+      if (parts.length < 2) {
         console.warn('Invalid translation track name format:', trackName);
         return;
       }
@@ -893,6 +893,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         }
 
         // NORMAL MODE: Subscribe based on selected language
+        // Track format: translation-{target_language} (NEW: one track per language)
         // Skip unified tracks in normal mode
         if (trackName.startsWith('translation-unified')) {
           console.log('🚫 Normal mode: Skipping unified track:', trackName);
@@ -900,7 +901,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         }
 
         const parts = trackName.split('-');
-        if (parts.length >= 3) {
+        if (parts.length >= 2) {
           const targetLanguage = parts[1];
           if (targetLanguage === selectedLanguage) {
             // IMPORTANT: Only subscribe to ONE track per target language
@@ -956,7 +957,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
                   }
                 } else {
                   const parts = trackName.split('-');
-                  if (parts.length >= 3) {
+                  if (parts.length >= 2) {
                     const targetLanguage = parts[1];
                     if (targetLanguage === selectedLanguage) {
                       // Only subscribe to ONE track per target language
@@ -1003,7 +1004,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       
       if (trackName.startsWith('translation-') && !trackName.startsWith('translation-unified')) {
         const parts = trackName.split('-');
-        if (parts.length >= 3) {
+        if (parts.length >= 2) {  // Changed from 3 to 2 for simplified track format
           const targetLanguage = parts[1];
           const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
           

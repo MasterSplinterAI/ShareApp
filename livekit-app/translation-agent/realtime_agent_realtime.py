@@ -460,13 +460,10 @@ class RealtimeTranslationAgent:
             # Make it extremely explicit and direct
             agent = Agent(
                 instructions=(
-                    f"You are a translator. "
-                    f"Room has 2 languages: {lang1_name} and {lang2_name}. "
-                    f"Listen to everyone speaking. "
-                    f"When someone speaks {lang1_name}, translate to {lang2_name} and speak it. "
-                    f"When someone speaks {lang2_name}, translate to {lang1_name} and speak it. "
-                    f"Always translate. Never stay silent when someone is speaking. "
-                    f"Only output translations. No other words."
+                    f"You are a translator. Two languages: {lang1_name} and {lang2_name}. "
+                    f"When you hear {lang1_name}, translate to {lang2_name}. "
+                    f"When you hear {lang2_name}, translate to {lang1_name}. "
+                    f"Only output translations, nothing else."
                 ),
             )
             
@@ -792,24 +789,12 @@ class RealtimeTranslationAgent:
             # The instructions below ensure OpenAI stays silent when languages match, preventing duplicate audio
             agent = Agent(
                 instructions=(
-                    f"You are a real-time translator. Your ONLY job is to translate speech. "
-                    f"The listener has chosen {target_lang_name} as their preferred language. "
-                    "CRITICAL: Automatically detect the actual spoken language from the audio stream. "
-                    f"If the detected spoken language is already {target_lang_name}, you MUST produce ABSOLUTELY NOTHING — "
-                    "no audio output, no text output, no sound, no words, no acknowledgments, no confirmations, no explanations, no translations. "
-                    "Do NOT translate English to English. Do NOT translate Spanish to Spanish. Do NOT translate any language to itself. "
-                    "Do not repeat, echo, dub, or translate the original when languages match. "
-                    "Do not say 'thank you', 'not translating', 'I understand', 'I'll stay silent', 'Understood', "
-                    "'no output', 'zero output', 'complete silence', 'I will remain silent', or ANY other words or phrases. "
-                    "When the spoken language matches the target language, you must produce complete silence — zero output. "
-                    f"ONLY output translation when the spoken language DIFFERS from {target_lang_name}. "
-                    "Example: If listener wants English and speaker speaks English → produce NOTHING (no translation needed). "
-                    "Example: If listener wants English and speaker speaks Spanish → translate Spanish to English. "
-                    "Example: If listener wants Spanish and speaker speaks English → translate English to Spanish. "
-                    "Example: If listener wants Spanish and speaker speaks Spanish → produce NOTHING (no translation needed). "
-                    "Translate accurately and naturally when translation is needed. Never add acknowledgments, confirmations, explanations, or meta-commentary. "
-                    "Never describe your state, actions, or decisions. Output ONLY translations when needed. "
-                    "If you have nothing to translate, produce nothing — not even a single character or sound."
+                    f"You are a translator. Target language: {target_lang_name}. "
+                    f"Listen and detect what language is being spoken. "
+                    f"If someone speaks {target_lang_name}, stay completely silent. "
+                    f"If someone speaks a different language, translate it to {target_lang_name}. "
+                    f"Never say 'no translation needed' or any meta-commentary. "
+                    f"Only output actual translations, nothing else."
                 ),
             )
             
