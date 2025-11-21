@@ -222,10 +222,10 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   source venv/bin/activate
   # Use simplified agent (realtime_agent_simple.py) for better architecture
   # Note: PM2 will load .env file automatically when started from the directory containing it
-  # The 'production' command for production environment
+  # The 'dev' command is required by LiveKit CLI framework
   if [ -f "realtime_agent_simple.py" ]; then
     echo "Starting SIMPLIFIED agent with one-per-language architecture..."
-    pm2 start realtime_agent_simple.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
+    pm2 start realtime_agent_simple.py --name livekit-agent --interpreter venv/bin/python --update-env -- dev
   elif [ -f "realtime_agent_realtime.py" ]; then
     pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
   elif [ -f "realtime_agent.py" ]; then
