@@ -55,6 +55,9 @@ class SimpleTranslationAgent:
 
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
+        # Connect to the room first
+        await ctx.connect()
+        
         logger.info(f"📋 Room: {ctx.room.name}")
         logger.info("✅ Simple Translation Agent initialized")
         logger.info(f"👥 Participants in room: {len(ctx.room.remote_participants)}")
