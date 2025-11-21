@@ -220,15 +220,18 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   pm2 delete livekit-agent 2>/dev/null || true
   cd $AGENT_DIR
   source venv/bin/activate
-  # Use realtime_agent_realtime.py (current implementation) or fallback to realtime_agent.py
+  # Use simplified agent (realtime_agent_simple.py) for better architecture
   # Note: PM2 will load .env file automatically when started from the directory containing it
-  # The 'dev' command is required by LiveKit CLI framework
-  if [ -f "realtime_agent_realtime.py" ]; then
-    pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python --update-env -- dev
+  # The 'production' command for production environment
+  if [ -f "realtime_agent_simple.py" ]; then
+    echo "Starting SIMPLIFIED agent with one-per-language architecture..."
+    pm2 start realtime_agent_simple.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
+  elif [ -f "realtime_agent_realtime.py" ]; then
+    pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
   elif [ -f "realtime_agent.py" ]; then
-    pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python --update-env -- dev
+    pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
   else
-    echo "ERROR: No agent file found (realtime_agent_realtime.py or realtime_agent.py)"
+    echo "ERROR: No agent file found"
     exit 1
   fi
   pm2 save
