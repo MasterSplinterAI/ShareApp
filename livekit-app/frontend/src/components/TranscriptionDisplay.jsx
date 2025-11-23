@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, X, Minimize2, Maximize2 } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
+import { useTranslation } from '../hooks/useTranslation';
 
 function TranscriptionDisplay({ participantId, isVisible = true }) {
   const room = useRoomContext();
+  const { isTranslationActive } = useTranslation();
   const [transcriptions, setTranscriptions] = useState([]);
   const [liveCaptions, setLiveCaptions] = useState({}); // Live streaming captions per speaker
   const [isMinimized, setIsMinimized] = useState(false);
@@ -222,8 +224,12 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
       {/* Status */}
       <div className="px-3 sm:px-4 py-2 bg-gray-800/50 rounded-b-lg border-t border-gray-700/50">
         <div className="flex items-center gap-2">
-          <div className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></div>
-          <span className="text-xs text-gray-400">Translation active</span>
+          <div className={`w-1.5 h-1.5 rounded-full ${
+            isTranslationActive ? 'bg-green-400 animate-pulse' : 'bg-gray-500'
+          }`}></div>
+          <span className="text-xs text-gray-400">
+            {isTranslationActive ? 'Translating...' : 'Translation ready'}
+          </span>
         </div>
       </div>
     </div>

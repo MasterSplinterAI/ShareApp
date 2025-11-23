@@ -10,6 +10,7 @@ import LanguageSelector from './LanguageSelector';
 import TranscriptionDisplay from './TranscriptionDisplay';
 import RoomControls from './RoomControls';
 import CustomControlBar from './CustomControlBar';
+import { useTranslation } from '../hooks/useTranslation';
 // Will use public folder path - no import needed
 
 function MeetingRoom() {
@@ -334,6 +335,7 @@ function VideoLayoutComponent() {
 function AgentTileCustomizer() {
   const room = useRoomContext();
   const participants = useParticipants();
+  const { isTranslationActive } = useTranslation(); // Get translation activity state
   // Track audio activity timestamps per participant
   const audioActivityRef = useRef(new Map());
   // Track active speakers from LiveKit
@@ -557,8 +559,12 @@ function AgentTileCustomizer() {
             tile.classList.contains('speaking') ||
             tile.hasAttribute('data-speaking');
           
-          // Check if currently speaking
+          // Check if currently speaking (audio-based detection)
           const currentlySpeaking = isSpeaking || isActiveSpeaker || tileHasSpeakingClass;
+          
+          // CRITICAL: Also check translation activity state - show indicator for ALL users when translation is active
+          // This ensures everyone sees the visual indicator, even if they're not subscribed to the translation audio track
+          const translationIsActive = isTranslationActive();
           
           // Track speaking state with timestamp for smooth transitions
           const participantId = matchingParticipant.identity;
@@ -567,12 +573,13 @@ function AgentTileCustomizer() {
           // Initialize hasActiveAudio
           let hasActiveAudio = false;
           
-          if (currentlySpeaking) {
-            // Speaking now - update timestamp and show indicator
+          // Show indicator if translation is active OR if agent is currently speaking
+          if (translationIsActive || currentlySpeaking) {
+            // Translation is active or agent is speaking - update timestamp and show indicator
             audioActivityRef.current.set(lastSpeakingKey, Date.now());
             hasActiveAudio = true;
           } else {
-            // Not speaking - check if we should keep showing (grace period)
+            // Not speaking and translation not active - check if we should keep showing (grace period)
             const lastSpeakingTime = audioActivityRef.current.get(lastSpeakingKey);
             if (lastSpeakingTime) {
               const timeSinceLastSpeaking = Date.now() - lastSpeakingTime;
@@ -680,7 +687,7 @@ function AgentTileCustomizer() {
       
       clearInterval(interval);
     };
-  }, [room, participants]);
+  }, [room, participants, isTranslationActive]); // Re-run when translation activity changes
 
   return null;
 }

@@ -14,12 +14,19 @@ export function useTranslation() {
   const [targetLanguage, setTargetLanguage] = useState('en');
   const [transcriptions, setTranscriptions] = useState([]);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
+  const [translationActivity, setTranslationActivity] = useState(new Map()); // Map of "speaker-targetLang" -> isActive
 
   // Check if translation agent is in the room
   useEffect(() => {
     if (!room) return;
 
     const checkAgent = () => {
+      // Check if room.participants exists before accessing it
+      if (!room.participants) {
+        setIsAgentConnected(false);
+        return;
+      }
+      
       const participants = Array.from(room.participants.values());
       const agent = participants.find(p => 
         p.identity.includes('translation-bot') || 
@@ -71,6 +78,65 @@ export function useTranslation() {
       room.off(RoomEvent.DataReceived, handleDataReceived);
     };
   }, [room, localParticipant]);
+
+  // Listen for translation activity events
+  useEffect(() => {
+    if (!room) return;
+
+    const handleData = (payload, participant, kind, topic) => {
+      if (topic !== 'translation_activity') return;
+      
+      try {
+        const decoder = new TextDecoder();
+        const data = JSON.parse(decoder.decode(payload));
+        
+        if (data.type === 'translation_activity') {
+          const key = `${data.source_speaker_id}-${data.target_language}`;
+          setTranslationActivity(prev => {
+            const next = new Map(prev);
+            next.set(key, data.is_active);
+            
+            // Auto-clear after 3 seconds if still active (in case stop event is missed)
+            if (data.is_active) {
+              setTimeout(() => {
+                setTranslationActivity(current => {
+                  const updated = new Map(current);
+                  if (updated.get(key) === true) {
+                    updated.set(key, false);
+                    return updated;
+                  }
+                  return current;
+                });
+              }, 3000);
+            }
+            
+            return next;
+          });
+        }
+      } catch (error) {
+        console.error('Error parsing translation_activity:', error);
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, handleData);
+    
+    return () => {
+      room.off(RoomEvent.DataReceived, handleData);
+    };
+  }, [room]);
+
+  // Helper to check if translation is active for current user's target language
+  const isTranslationActive = useCallback(() => {
+    if (!isEnabled || !localParticipant) return false;
+    
+    // Check if any translation activity exists for our target language
+    for (const [key, isActive] of translationActivity.entries()) {
+      if (isActive && key.endsWith(`-${targetLanguage}`)) {
+        return true;
+      }
+    }
+    return false;
+  }, [translationActivity, targetLanguage, isEnabled, localParticipant]);
 
   // Send language preference update to agent
   const updateLanguagePreference = useCallback(async (enabled, language) => {
@@ -135,6 +201,8 @@ export function useTranslation() {
     targetLanguage,
     transcriptions,
     isAgentConnected,
+    isTranslationActive,
+    translationActivity,
     
     // Actions
     toggleTranslation,

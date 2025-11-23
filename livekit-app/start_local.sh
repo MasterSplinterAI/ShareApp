@@ -40,17 +40,18 @@ echo "Frontend PID: $FRONTEND_PID"
 cd ..
 
 # Start Agent
-echo -e "${GREEN}Starting Translation Agent (OpenAI Realtime API)...${NC}"
+echo -e "${GREEN}Starting Translation Agent (Simple Model - ONE assistant per language)...${NC}"
 cd translation-agent
 source venv/bin/activate
-# Use realtime_agent_realtime.py for OpenAI Realtime API (lowest latency)
+# Use realtime_agent_simple.py - ONE assistant per target language (prevents duplicate audio tracks)
 # Set AGENT_NAME explicitly for local development to avoid conflicts with production
 export AGENT_NAME="${AGENT_NAME:-translation-bot-dev}"
 # Run with 'dev' command for local development
-python realtime_agent_realtime.py dev > ../agent.log 2>&1 &
+python realtime_agent_simple.py dev > ../agent.log 2>&1 &
 AGENT_PID=$!
 echo "Agent PID: $AGENT_PID"
 echo "Agent Name: ${AGENT_NAME:-translation-bot-dev}"
+echo "Agent File: realtime_agent_simple.py (ONE assistant per language)"
 deactivate
 cd ..
 
@@ -63,7 +64,7 @@ echo "Backend:  http://localhost:3000 (PID: $BACKEND_PID)"
 echo "Frontend: http://localhost:5174 (PID: $FRONTEND_PID)"
 echo "Agent:    Running (PID: $AGENT_PID)"
 echo ""
-echo "Ngrok URL: https://f46bc88e5f4e.ngrok.app"
+echo "Ngrok URL: https://e8376093ae1c.ngrok.app"
 echo ""
 echo "Logs:"
 echo "  - Backend:  ./backend.log"

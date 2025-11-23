@@ -19,7 +19,7 @@ export default defineConfig({
           if (process.env.NODE_ENV !== 'production') {
             // If it's an ngrok domain, ensure it matches our allowed host
             if (host.includes('ngrok')) {
-              req.headers.host = 'f46bc88e5f4e.ngrok.app'
+              req.headers.host = 'e8376093ae1c.ngrok.app'
             }
           }
           next()
@@ -37,7 +37,7 @@ export default defineConfig({
             <script>
               // Configure HMR to use ngrok URL when accessed via ngrok
               if (window.location.hostname.includes('ngrok')) {
-                window.__HMR_HOSTNAME__ = 'f46bc88e5f4e.ngrok.app';
+                window.__HMR_HOSTNAME__ = 'e8376093ae1c.ngrok.app';
                 window.__HMR_PORT__ = 443;
                 window.__HMR_PROTOCOL__ = 'wss';
               }
@@ -54,7 +54,7 @@ export default defineConfig({
     allowedHosts: [
       'localhost',
       '127.0.0.1',
-      'f46bc88e5f4e.ngrok.app', // Current ngrok URL - EXACT MATCH REQUIRED
+      'e8376093ae1c.ngrok.app', // Current ngrok URL - EXACT MATCH REQUIRED
     ],
     hmr: {
       // HMR will use the injected __HMR_HOSTNAME__ and __HMR_PROTOCOL__ from the HTML
