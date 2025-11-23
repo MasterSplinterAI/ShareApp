@@ -349,9 +349,12 @@ function AgentTileCustomizer() {
       const tiles = document.querySelectorAll('.lk-participant-tile, [class*="ParticipantTile"]');
       
       // First, identify all agent participants by their identity (always starts with "agent-")
+      // Also check for translation-bot in identity for compatibility with different agent names
       const agentParticipants = participants.filter(p => {
         const identity = p.identity || '';
-        return identity.startsWith('agent-');
+        return identity.startsWith('agent-') || 
+               identity.includes('translation-bot') ||
+               p.metadata?.role === 'agent';
       });
       
       // Create a map of agent identities for quick lookup

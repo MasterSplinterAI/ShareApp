@@ -14,6 +14,7 @@ const SUPPORTED_LANGUAGES = [
   { code: 'ko', name: 'Korean', flag: '🇰🇷' },
   { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
   { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
+  { code: 'tiv', name: 'Tiv', flag: '🇳🇬' },
 ];
 
 function LanguageSelector({ value, onChange, onTranslationToggle, translationEnabled = false }) {

@@ -126,12 +126,29 @@ export function useTranslation() {
   }, [room]);
 
   // Helper to check if translation is active for current user's target language
+  // OR if ANY translation is active (for showing indicators to all users)
   const isTranslationActive = useCallback(() => {
-    if (!isEnabled || !localParticipant) return false;
+    if (!isEnabled || !localParticipant) {
+      // Even if translation is disabled for this user, check if ANY translation is active
+      // This allows showing indicators to all users when translation is happening
+      for (const [key, isActive] of translationActivity.entries()) {
+        if (isActive) {
+          return true;
+        }
+      }
+      return false;
+    }
     
     // Check if any translation activity exists for our target language
     for (const [key, isActive] of translationActivity.entries()) {
       if (isActive && key.endsWith(`-${targetLanguage}`)) {
+        return true;
+      }
+    }
+    
+    // Also check if ANY translation is active (for showing indicators to all users)
+    for (const [key, isActive] of translationActivity.entries()) {
+      if (isActive) {
         return true;
       }
     }
