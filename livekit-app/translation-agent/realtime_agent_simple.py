@@ -431,6 +431,15 @@ class SimpleTranslationAgent:
                 source_speaker_id = speaker_id
                 
                 if transcript := transcript.strip():
+                    # Send translation activity START when we first detect user speech
+                    # This ensures the UI shows the indicator even if agent_speech_started doesn't fire
+                    if not session.user_data.get("translation_active_sent", False):
+                        asyncio.create_task(
+                            self._send_translation_activity(ctx, speaker_id, target_language, is_active=True)
+                        )
+                        session.user_data["translation_active_sent"] = True
+                        logger.info(f"[{target_language}] 🟢 Translation activity STARTED (from user_input_transcribed)")
+                    
                     if is_final:
                         # Final - store complete text
                         session.user_data["last_original"] = transcript
