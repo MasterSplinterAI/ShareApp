@@ -83,15 +83,20 @@ export function useTranslation() {
   useEffect(() => {
     if (!room) return;
 
+    // Use the same pattern as TranscriptionDisplay - room.on('dataReceived') with topic parameter
     const handleData = (payload, participant, kind, topic) => {
       // Debug: log all data received to see what topics are coming through
-      console.log('📡 Data received - topic:', topic, 'participant:', participant?.identity);
+      console.log('📡 Data received - topic:', topic, 'participant:', participant?.identity, 'kind:', kind);
       
-      if (topic !== 'translation_activity') return;
+      // Check topic if provided, otherwise check message type
+      if (topic && topic !== 'translation_activity') return;
       
       try {
         const decoder = new TextDecoder();
         const data = JSON.parse(decoder.decode(payload));
+        
+        // If no topic was provided, check the message type
+        if (!topic && data.type !== 'translation_activity') return;
         
         console.log('📡 Translation activity event received:', data);
         
@@ -124,10 +129,11 @@ export function useTranslation() {
       }
     };
 
-    room.on(RoomEvent.DataReceived, handleData);
+    // Use room.on('dataReceived') instead of RoomEvent.DataReceived to get topic parameter
+    room.on('dataReceived', handleData);
     
     return () => {
-      room.off(RoomEvent.DataReceived, handleData);
+      room.off('dataReceived', handleData);
     };
   }, [room]);
 
