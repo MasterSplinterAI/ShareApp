@@ -452,6 +452,15 @@ class SimpleTranslationAgent:
                 """Capture original speech text (fallback)"""
                 original = getattr(event, "text", None) or ""
                 if original:
+                    # Send translation activity START when we detect user speech
+                    # This ensures the UI shows the indicator even if agent_speech_started doesn't fire
+                    if not session.user_data.get("translation_active_sent", False):
+                        asyncio.create_task(
+                            self._send_translation_activity(ctx, speaker_id, target_language, is_active=True)
+                        )
+                        session.user_data["translation_active_sent"] = True
+                        logger.info(f"[{target_language}] 🟢 Translation activity STARTED (from user_speech_committed)")
+                    
                     session.user_data["last_original"] = original
                     session.user_data["source_speaker_id"] = speaker_id  # This assistant listens to this speaker
                     session.user_data["sent_final"] = False
@@ -472,9 +481,12 @@ class SimpleTranslationAgent:
                 session.user_data["sent_final"] = False  # CRITICAL: Reset flag so we can send transcriptions for this turn
                 logger.info(f"[{target_language}] 🎤 Agent speech started - reset sent_final flag")
                 # Notify that translation is active (for UI indicators)
+                # Also reset the flag so we can send activity again for next turn
+                session.user_data["translation_active_sent"] = False
                 asyncio.create_task(
                     self._send_translation_activity(ctx, speaker_id, target_language, is_active=True)
                 )
+                session.user_data["translation_active_sent"] = True
             
             @session.on("agent_speech_delta")
             def on_agent_speech_delta(event):
@@ -569,6 +581,8 @@ class SimpleTranslationAgent:
                 asyncio.create_task(
                     self._send_translation_activity(ctx, speaker_id, target_language, is_active=False)
                 )
+                # Reset flag so we can send activity again for next turn
+                session.user_data["translation_active_sent"] = False
             
             # conversation_item_added as fallback - but prefer agent_speech_committed for full text
             # Only use this if agent_speech_committed didn't fire (shouldn't happen with server_vad)
@@ -660,6 +674,8 @@ class SimpleTranslationAgent:
                             asyncio.create_task(
                                 self._send_translation_activity(ctx, source_speaker, target_language, is_active=False)
                             )
+                            # Reset flag so we can send activity again for next turn
+                            session.user_data["translation_active_sent"] = False
                         except RuntimeError as e:
                             logger.error(f"[{target_language}] ❌ Failed to create task: {e}")
                         except Exception as e:
