@@ -84,14 +84,20 @@ export function useTranslation() {
     if (!room) return;
 
     const handleData = (payload, participant, kind, topic) => {
+      // Debug: log all data received to see what topics are coming through
+      console.log('📡 Data received - topic:', topic, 'participant:', participant?.identity);
+      
       if (topic !== 'translation_activity') return;
       
       try {
         const decoder = new TextDecoder();
         const data = JSON.parse(decoder.decode(payload));
         
+        console.log('📡 Translation activity event received:', data);
+        
         if (data.type === 'translation_activity') {
           const key = `${data.source_speaker_id}-${data.target_language}`;
+          console.log('📡 Setting translation activity:', key, '=', data.is_active);
           setTranslationActivity(prev => {
             const next = new Map(prev);
             next.set(key, data.is_active);
@@ -128,30 +134,26 @@ export function useTranslation() {
   // Helper to check if translation is active for current user's target language
   // OR if ANY translation is active (for showing indicators to all users)
   const isTranslationActive = useCallback(() => {
-    if (!isEnabled || !localParticipant) {
-      // Even if translation is disabled for this user, check if ANY translation is active
-      // This allows showing indicators to all users when translation is happening
+    // CRITICAL: Check if ANY translation is active (for showing indicators to ALL users)
+    // This ensures everyone sees the indicator, even if they don't have translation enabled
+    for (const [key, isActive] of translationActivity.entries()) {
+      if (isActive) {
+        console.log('✅ Translation is active:', key, '=', isActive);
+        return true;
+      }
+    }
+    
+    // Also check for user's specific target language if enabled
+    if (isEnabled && localParticipant) {
       for (const [key, isActive] of translationActivity.entries()) {
-        if (isActive) {
+        if (isActive && key.endsWith(`-${targetLanguage}`)) {
+          console.log('✅ Translation is active for user language:', key);
           return true;
         }
       }
-      return false;
     }
     
-    // Check if any translation activity exists for our target language
-    for (const [key, isActive] of translationActivity.entries()) {
-      if (isActive && key.endsWith(`-${targetLanguage}`)) {
-        return true;
-      }
-    }
-    
-    // Also check if ANY translation is active (for showing indicators to all users)
-    for (const [key, isActive] of translationActivity.entries()) {
-      if (isActive) {
-        return true;
-      }
-    }
+    console.log('❌ No translation activity found. Map size:', translationActivity.size);
     return false;
   }, [translationActivity, targetLanguage, isEnabled, localParticipant]);
 
