@@ -1073,9 +1073,14 @@ export function VADSensitivityControls() {
   };
 
   const handleVoiceChange = (voice) => {
+    console.log('handleVoiceChange called with:', voice);
+    console.log('window.__roomControls:', window.__roomControls);
     if (window.__roomControls?.sendVoiceSetting) {
+      console.log('Calling sendVoiceSetting');
       window.__roomControls.sendVoiceSetting(voice);
       setSelectedVoice(voice);
+    } else {
+      console.error('sendVoiceSetting not available on window.__roomControls');
     }
   };
 
@@ -1098,16 +1103,38 @@ export function VADSensitivityControls() {
     
     const handleClickOutside = (event) => {
       const target = event.target;
-      const vadContainer = target.closest('.relative');
-      if (vadContainer && vadContainer.querySelector('button[aria-label="Translation Sensitivity"]')) {
-        // Clicked inside VAD controls, don't close
-        return;
+      console.log('Click outside handler triggered, target:', target);
+      
+      // Find the dropdown container (the .relative div)
+      const dropdownContainer = target.closest('.relative');
+      console.log('Dropdown container found:', !!dropdownContainer);
+      
+      if (dropdownContainer) {
+        // Check if click is inside the dropdown menu div
+        const dropdownMenu = dropdownContainer.querySelector('div.absolute.bottom-full');
+        console.log('Dropdown menu found:', !!dropdownMenu, 'contains target:', dropdownMenu?.contains(target));
+        
+        if (dropdownMenu && dropdownMenu.contains(target)) {
+          // Clicked inside dropdown menu, don't close
+          console.log('Click inside dropdown, keeping open');
+          return;
+        }
       }
+      
+      // Clicked outside, close dropdown
+      console.log('Click outside dropdown, closing');
       setShowDropdown(false);
     };
     
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    // Use a small delay to avoid immediate closing when opening
+    const timeoutId = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 100);
+    
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [showDropdown]);
 
   return (
@@ -1123,12 +1150,22 @@ export function VADSensitivityControls() {
       </button>
 
       {showDropdown && (
-        <div className="absolute bottom-full right-0 mb-2 w-80 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] backdrop-blur-sm max-w-[calc(100vw-2rem)]">
+        <div 
+          className="absolute bottom-full right-0 mb-2 w-80 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] backdrop-blur-sm max-w-[calc(100vw-2rem)]"
+          onClick={(e) => {
+            e.stopPropagation();
+            console.log('Dropdown menu clicked');
+          }}
+        >
           <div className="p-3">
             {/* Tab buttons */}
             <div className="flex gap-2 mb-3 border-b border-gray-700">
               <button
-                onClick={() => setActiveTab('sensitivity')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Switching to sensitivity tab');
+                  setActiveTab('sensitivity');
+                }}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   activeTab === 'sensitivity'
                     ? 'text-blue-400 border-b-2 border-blue-400'
@@ -1138,7 +1175,11 @@ export function VADSensitivityControls() {
                 Sensitivity
               </button>
               <button
-                onClick={() => setActiveTab('voice')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  console.log('Switching to voice tab');
+                  setActiveTab('voice');
+                }}
                 className={`px-3 py-1.5 text-xs font-medium transition-colors ${
                   activeTab === 'voice'
                     ? 'text-blue-400 border-b-2 border-blue-400'
@@ -1216,7 +1257,9 @@ export function VADSensitivityControls() {
                   {VOICE_OPTIONS.map((voice) => (
                     <button
                       key={voice.value}
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        console.log('Voice selected:', voice.value);
                         handleVoiceChange(voice.value);
                         setShowDropdown(false);
                       }}
