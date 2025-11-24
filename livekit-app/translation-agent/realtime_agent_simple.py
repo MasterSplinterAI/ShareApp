@@ -250,10 +250,27 @@ class SimpleTranslationAgent:
                 logger.info(f"Closed assistant for {language}")
             logger.info("Agent cleanup complete.")
 
+    def _normalize_language_code(self, language_code: str) -> str:
+        """
+        Normalize language codes to their base language for same-language detection.
+        This treats regional variants (e.g., es-CO, es-col) as the same as their base language (es).
+        Example: es-CO -> es, es-col -> es, es -> es
+        """
+        if not language_code:
+            return language_code
+        # Map regional variants to base language codes
+        if language_code.startswith('es-') or language_code.startswith('es_'):
+            return 'es'  # All Spanish variants are treated as Spanish
+        # Add more regional variant mappings here if needed in the future
+        # if language_code.startswith('pt-') or language_code.startswith('pt_'):
+        #     return 'pt'  # Portuguese variants
+        return language_code
+    
     async def _update_assistants_for_all_languages(self, ctx: JobContext):
         """
         Core logic: Create/update assistants per (speaker, target_language) pair.
         CRITICAL: Skip creating assistants where speaker_language == target_language.
+        Regional variants (e.g., es-CO) are treated as the same as their base language (es).
         This prevents unnecessary assistants and OpenAI commentary.
         """
         logger.info(f"📊 Updating assistants for all speaker-target pairs")
@@ -291,8 +308,11 @@ class SimpleTranslationAgent:
             
             for target_language, listeners in target_languages.items():
                 # CRITICAL: Skip same-language pairs (no English→English, etc.)
-                if speaker_language == target_language:
-                    logger.debug(f"  ⏭️ Skipping {speaker_id} → {target_language}: same language ({speaker_language})")
+                # Normalize both languages to handle regional variants (e.g., es-CO == es)
+                normalized_speaker = self._normalize_language_code(speaker_language)
+                normalized_target = self._normalize_language_code(target_language)
+                if normalized_speaker == normalized_target:
+                    logger.debug(f"  ⏭️ Skipping {speaker_id} → {target_language}: same language ({speaker_language} == {target_language}, normalized: {normalized_speaker})")
                     continue
                 
                 assistant_key = f"{speaker_id}:{target_language}"
@@ -872,8 +892,11 @@ class SimpleTranslationAgent:
                     logger.debug(f"  ⏭️ Skipping {participant.identity} - no language preference set yet")
                     continue
                 
-                if participant_target_lang == target_language:
-                    # Same language - assistant should NOT listen to this participant
+                # Normalize both languages to handle regional variants (e.g., es-CO == es)
+                normalized_participant = self._normalize_language_code(participant_target_lang)
+                normalized_target = self._normalize_language_code(target_language)
+                if normalized_participant == normalized_target:
+                    # Same language (including regional variants) - assistant should NOT listen to this participant
                     # (They speak the same language, so no translation needed)
                     participants_to_ignore.append(participant.identity)
                 else:
@@ -911,13 +934,16 @@ class SimpleTranslationAgent:
                         audio_tracks_found += 1
                         logger.info(f"    🎤 Found audio track: {publication.name}, subscribed={publication.subscribed}, participant={participant.identity}, target_lang={participant_target_lang}")
                         
-                        if participant_target_lang == target_language:
-                            # Same language - UNSUBSCRIBE to prevent assistant from hearing it
-                            # This prevents feedback: English speakers shouldn't hear English assistant's output
+                        # Normalize both languages to handle regional variants (e.g., es-CO == es)
+                        normalized_participant = self._normalize_language_code(participant_target_lang)
+                        normalized_target = self._normalize_language_code(target_language)
+                        if normalized_participant == normalized_target:
+                            # Same language (including regional variants) - UNSUBSCRIBE to prevent assistant from hearing it
+                            # This prevents feedback: Spanish speakers shouldn't hear Spanish assistant's output
                             if publication.subscribed:
                                 try:
                                     publication.set_subscribed(False)
-                                    logger.info(f"  🚫 Unsubscribed {target_language} assistant from {participant.identity} (same language: {participant_target_lang})")
+                                    logger.info(f"  🚫 Unsubscribed {target_language} assistant from {participant.identity} (same language: {participant_target_lang}, normalized: {normalized_participant})")
                                 except Exception as e:
                                     logger.warning(f"  ⚠️ Could not unsubscribe from {participant.identity}: {e}")
                         else:
