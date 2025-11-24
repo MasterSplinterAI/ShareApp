@@ -329,10 +329,21 @@ class SimpleTranslationAgent:
         try:
             # Language name mapping for instructions
             language_names = {
-                'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German',
-                'it': 'Italian', 'pt': 'Portuguese', 'ru': 'Russian',
-                'ja': 'Japanese', 'ko': 'Korean', 'zh': 'Chinese',
-                'ar': 'Arabic', 'hi': 'Hindi', 'tiv': 'Tiv'
+                'en': 'English', 
+                'es': 'Spanish', 
+                'es-CO': 'Colombian Spanish',
+                'es-col': 'Colombian Spanish',  # Alternative code support
+                'fr': 'French', 
+                'de': 'German',
+                'it': 'Italian', 
+                'pt': 'Portuguese', 
+                'ru': 'Russian',
+                'ja': 'Japanese', 
+                'ko': 'Korean', 
+                'zh': 'Chinese',
+                'ar': 'Arabic', 
+                'hi': 'Hindi', 
+                'tiv': 'Tiv'
             }
             target_lang_name = language_names.get(target_language, target_language)
             

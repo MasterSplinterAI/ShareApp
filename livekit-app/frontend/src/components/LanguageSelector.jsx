@@ -4,6 +4,7 @@ import { Globe, Check, ChevronDown } from 'lucide-react';
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇬🇧' },
   { code: 'es', name: 'Spanish', flag: '🇪🇸' },
+  { code: 'es-CO', name: 'Colombian Spanish', flag: '🇨🇴' },
   { code: 'fr', name: 'French', flag: '🇫🇷' },
   { code: 'de', name: 'German', flag: '🇩🇪' },
   { code: 'it', name: 'Italian', flag: '🇮🇹' },
