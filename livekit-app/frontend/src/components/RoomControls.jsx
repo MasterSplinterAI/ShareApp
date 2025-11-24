@@ -7,6 +7,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
   const [vadSensitivity, setVadSensitivity] = useState('medium'); // 'low', 'medium', 'high'
+  const [selectedVoice, setSelectedVoice] = useState('alloy'); // Default voice
   const [showVadControls, setShowVadControls] = useState(false);
 
   // Send language preference updates when they change
@@ -93,6 +94,37 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     }
   };
 
+  // Send voice setting when host changes it
+  const sendVoiceSetting = async (voice) => {
+    if (!isHost || !room || !localParticipant?.localParticipant) return;
+    
+    if (room.state !== 'connected') {
+      console.log('Room not connected, skipping voice setting send');
+      return;
+    }
+
+    try {
+      const data = {
+        type: 'host_voice_setting',
+        voice: voice, // e.g., 'alloy', 'nova', 'shimmer', etc.
+      };
+
+      const encoder = new TextEncoder();
+      const encodedData = encoder.encode(JSON.stringify(data));
+
+      await localParticipant.localParticipant.publishData(
+        encodedData,
+        DataPacket_Kind.RELIABLE,
+        { topic: 'host-control' }
+      );
+
+      console.log('Sent voice setting:', data);
+      setSelectedVoice(voice);
+    } catch (error) {
+      console.error('Error sending voice setting:', error);
+    }
+  };
+
   // Listen for transcriptions and other data
   useEffect(() => {
     if (!room) return;
@@ -118,7 +150,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     };
   }, [room]);
 
-  // Expose VAD functions via window for MeetingRoom to access
+  // Expose VAD and voice functions via window for MeetingRoom to access
   // This is a simple way to share functions between components
   useEffect(() => {
     if (isHost) {
@@ -126,12 +158,15 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
         vadSensitivity,
         setVadSensitivity,
         sendVadSetting,
+        selectedVoice,
+        setSelectedVoice,
+        sendVoiceSetting,
       };
     }
     return () => {
       delete window.__roomControls;
     };
-  }, [isHost, vadSensitivity, sendVadSetting]);
+  }, [isHost, vadSensitivity, sendVadSetting, selectedVoice, sendVoiceSetting]);
 
   return null; // This component doesn't render anything, just handles data
 }

@@ -1049,13 +1049,33 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 // VAD Sensitivity Controls Component - Rendered in bottom control bar for host
 export function VADSensitivityControls() {
   const [vadSensitivity, setVadSensitivity] = useState('medium');
+  const [selectedVoice, setSelectedVoice] = useState('alloy');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [activeTab, setActiveTab] = useState('sensitivity'); // 'sensitivity' or 'voice'
+
+  // Voice options
+  const VOICE_OPTIONS = [
+    { value: 'alloy', name: 'Alloy', description: 'Neutral, balanced' },
+    { value: 'echo', name: 'Echo', description: 'Warm, engaging' },
+    { value: 'shimmer', name: 'Shimmer', description: 'Energetic, expressive' },
+    { value: 'marin', name: 'Marin', description: 'Professional, clear' },
+    { value: 'cedar', name: 'Cedar', description: 'Natural, conversational' },
+    { value: 'nova', name: 'Nova', description: 'Natural, conversational (female)' },
+    { value: 'fable', name: 'Fable', description: 'Warm, expressive (male)' },
+    { value: 'onyx', name: 'Onyx', description: 'Strong, authoritative (male)' },
+  ];
 
   const handleVadChange = (level) => {
     if (window.__roomControls?.sendVadSetting) {
       window.__roomControls.sendVadSetting(level);
       setVadSensitivity(level);
-      setShowDropdown(false);
+    }
+  };
+
+  const handleVoiceChange = (voice) => {
+    if (window.__roomControls?.sendVoiceSetting) {
+      window.__roomControls.sendVoiceSetting(voice);
+      setSelectedVoice(voice);
     }
   };
 
@@ -1064,6 +1084,9 @@ export function VADSensitivityControls() {
     const interval = setInterval(() => {
       if (window.__roomControls?.vadSensitivity) {
         setVadSensitivity(window.__roomControls.vadSensitivity);
+      }
+      if (window.__roomControls?.selectedVoice) {
+        setSelectedVoice(window.__roomControls.selectedVoice);
       }
     }, 500);
     return () => clearInterval(interval);
@@ -1092,63 +1115,124 @@ export function VADSensitivityControls() {
       <button
         onClick={() => setShowDropdown(!showDropdown)}
         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
-        title="Translation Sensitivity"
-        aria-label="Translation Sensitivity"
+        title="Translation Settings"
+        aria-label="Translation Settings"
       >
         <Settings className="w-5 h-5" />
-        <span className="text-sm font-medium hidden sm:inline">
-          {vadSensitivity === 'low' ? 'Low' : vadSensitivity === 'high' ? 'High' : 'Medium'}
-        </span>
+        <span className="text-sm font-medium hidden sm:inline">Settings</span>
       </button>
 
       {showDropdown && (
-        <div className="absolute bottom-full right-0 mb-2 w-64 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] backdrop-blur-sm max-w-[calc(100vw-2rem)]">
+        <div className="absolute bottom-full right-0 mb-2 w-80 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] backdrop-blur-sm max-w-[calc(100vw-2rem)]">
           <div className="p-3">
-            <div className="text-xs text-gray-400 mb-3 font-medium">Translation Sensitivity</div>
-            
-            <div className="space-y-2">
+            {/* Tab buttons */}
+            <div className="flex gap-2 mb-3 border-b border-gray-700">
               <button
-                onClick={() => handleVadChange('low')}
-                className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                  vadSensitivity === 'low' 
-                    ? 'bg-blue-900/50 border-2 border-blue-500' 
-                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                onClick={() => setActiveTab('sensitivity')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeTab === 'sensitivity'
+                    ? 'text-blue-400 border-b-2 border-blue-400'
+                    : 'text-gray-400 hover:text-gray-300'
                 }`}
               >
-                <div className="font-semibold text-sm text-white mb-1">Low Sensitivity</div>
-                <div className="text-xs text-gray-400 leading-relaxed">
-                  Forgiving - ignores coughs, "umm", background noise
-                </div>
+                Sensitivity
               </button>
-              
               <button
-                onClick={() => handleVadChange('medium')}
-                className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                  vadSensitivity === 'medium' 
-                    ? 'bg-blue-900/50 border-2 border-blue-500' 
-                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                onClick={() => setActiveTab('voice')}
+                className={`px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activeTab === 'voice'
+                    ? 'text-blue-400 border-b-2 border-blue-400'
+                    : 'text-gray-400 hover:text-gray-300'
                 }`}
               >
-                <div className="font-semibold text-sm text-white mb-1">Medium Sensitivity</div>
-                <div className="text-xs text-gray-400 leading-relaxed">
-                  Balanced - good for most conversations (default)
-                </div>
-              </button>
-              
-              <button
-                onClick={() => handleVadChange('high')}
-                className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                  vadSensitivity === 'high' 
-                    ? 'bg-blue-900/50 border-2 border-blue-500' 
-                    : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                }`}
-              >
-                <div className="font-semibold text-sm text-white mb-1">High Sensitivity</div>
-                <div className="text-xs text-gray-400 leading-relaxed">
-                  Very responsive - fast interruptions, good for debates
-                </div>
+                Voice
               </button>
             </div>
+
+            {/* Sensitivity Tab */}
+            {activeTab === 'sensitivity' && (
+              <div>
+                <div className="text-xs text-gray-400 mb-3 font-medium">Translation Sensitivity</div>
+                <div className="space-y-2">
+                  <button
+                    onClick={() => {
+                      handleVadChange('low');
+                      setShowDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                      vadSensitivity === 'low' 
+                        ? 'bg-blue-900/50 border-2 border-blue-500' 
+                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm text-white mb-1">Low Sensitivity</div>
+                    <div className="text-xs text-gray-400 leading-relaxed">
+                      Forgiving - ignores coughs, "umm", background noise
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      handleVadChange('medium');
+                      setShowDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                      vadSensitivity === 'medium' 
+                        ? 'bg-blue-900/50 border-2 border-blue-500' 
+                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm text-white mb-1">Medium Sensitivity</div>
+                    <div className="text-xs text-gray-400 leading-relaxed">
+                      Balanced - good for most conversations (default)
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      handleVadChange('high');
+                      setShowDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                      vadSensitivity === 'high' 
+                        ? 'bg-blue-900/50 border-2 border-blue-500' 
+                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm text-white mb-1">High Sensitivity</div>
+                    <div className="text-xs text-gray-400 leading-relaxed">
+                      Very responsive - fast interruptions, good for debates
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Voice Tab */}
+            {activeTab === 'voice' && (
+              <div>
+                <div className="text-xs text-gray-400 mb-3 font-medium">Translation Voice</div>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {VOICE_OPTIONS.map((voice) => (
+                    <button
+                      key={voice.value}
+                      onClick={() => {
+                        handleVoiceChange(voice.value);
+                        setShowDropdown(false);
+                      }}
+                      className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                        selectedVoice === voice.value
+                          ? 'bg-blue-900/50 border-2 border-blue-500'
+                          : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                      }`}
+                    >
+                      <div className="font-semibold text-sm text-white mb-1">{voice.name}</div>
+                      <div className="text-xs text-gray-400 leading-relaxed">{voice.description}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

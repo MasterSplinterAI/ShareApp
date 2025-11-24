@@ -62,6 +62,7 @@ class SimpleTranslationAgent:
         self.assistants: Dict[str, AgentSession] = {}  # "{speaker_id}:{target_language}" -> AgentSession
         
         self.host_vad_setting: str = "medium"
+        self.host_voice_setting: str = "alloy"  # Default voice
         self.host_participant_id: Optional[str] = None
 
         logger.info("✅ Simple Translation Agent initialized (ONE assistant per speaker-target pair)")
@@ -134,6 +135,22 @@ class SimpleTranslationAgent:
                         
                         # Restart all assistants with new VAD settings
                         asyncio.create_task(self._restart_all_assistants_for_vad_change(ctx))
+                    return
+                
+                # Handle host voice setting changes
+                if message_type == 'host_voice_setting':
+                    new_voice = message.get('voice', 'alloy')
+                    valid_voices = ['alloy', 'echo', 'shimmer', 'marin', 'cedar', 'nova', 'fable', 'onyx']
+                    if new_voice in valid_voices:
+                        old_voice = self.host_voice_setting
+                        self.host_voice_setting = new_voice
+                        self.host_participant_id = participant_id
+                        logger.info(f"🎤 Host changed voice: {old_voice} → {new_voice} (from {participant_id})")
+                        
+                        # Restart all assistants with new voice
+                        asyncio.create_task(self._restart_all_assistants_for_voice_change(ctx))
+                    else:
+                        logger.warning(f"⚠️ Invalid voice setting received: {new_voice}, ignoring")
                     return
                 
                 # Handle language preference updates
@@ -377,7 +394,7 @@ class SimpleTranslationAgent:
             # CRITICAL: text FIRST in modalities ensures events fire reliably
             # turn_detection enables server_vad which fires transcription events properly
             realtime_model = RealtimeModel(
-                voice="alloy",
+                voice=self.host_voice_setting,  # Use host-selected voice
                 modalities=["text", "audio"],  # text FIRST ensures events fire reliably
                 temperature=0.7,
                 turn_detection=vad_config,  # REQUIRED for transcription events to fire
@@ -1001,6 +1018,31 @@ class SimpleTranslationAgent:
             logger.info(f"✅ All assistants restarted with VAD setting: {self.host_vad_setting}")
         except Exception as e:
             logger.error(f"Error restarting assistants for VAD change: {e}", exc_info=True)
+    
+    async def _restart_all_assistants_for_voice_change(self, ctx: JobContext):
+        """Restart all assistants when voice setting changes to apply new voice"""
+        try:
+            logger.info(f"🔄 Restarting all assistants with new voice: {self.host_voice_setting}")
+            
+            # Store current state
+            current_participants = dict(self.participant_languages)
+            current_enabled = dict(self.translation_enabled)
+            
+            # Stop all existing assistants
+            for key in list(self.assistants.keys()):
+                assistant = self.assistants.pop(key)
+                await assistant.aclose()
+            
+            # Small delay to let audio drain
+            await asyncio.sleep(0.5)
+            
+            # Recreate assistants using the new pattern: assistants per (speaker, target_language) pair
+            # Get all speakers and recreate assistants FROM each speaker TO each target language
+            await self._update_assistants_for_all_languages(ctx)
+            
+            logger.info(f"✅ All assistants restarted with voice: {self.host_voice_setting}")
+        except Exception as e:
+            logger.error(f"Error restarting assistants for voice change: {e}", exc_info=True)
 
 
 async def main(ctx: JobContext):
