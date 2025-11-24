@@ -770,6 +770,25 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
     // This ensures we only subscribe to ONE track per target language
     const subscribedTracksByLanguage = new Map(); // Map<targetLanguage, trackName>
 
+    // Helper function to extract language code from track name
+    // Format: translation-{language_code}-{speaker_id}
+    // Examples: translation-es-CO-speaker123 → "es-CO", translation-es-speaker123 → "es"
+    const extractLanguageFromTrackName = (trackName) => {
+      if (!trackName.startsWith('translation-')) {
+        return null;
+      }
+      // Remove "translation-" prefix
+      const withoutPrefix = trackName.substring('translation-'.length);
+      // Find the last hyphen (separates language_code from speaker_id)
+      const lastHyphenIndex = withoutPrefix.lastIndexOf('-');
+      if (lastHyphenIndex === -1) {
+        // No speaker_id part, just language (old format)
+        return withoutPrefix;
+      }
+      // Extract language code (everything before the last hyphen)
+      return withoutPrefix.substring(0, lastHyphenIndex);
+    };
+
     const unsubscribeFromOtherTracksForLanguage = (targetLanguage, currentTrackName) => {
       // Find and unsubscribe from any other tracks for this target language
       room.remoteParticipants.forEach((participant) => {
@@ -777,8 +796,8 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
           const trackName = publication.trackName || '';
           if (trackName.startsWith('translation-') && 
               !trackName.startsWith('translation-unified')) {
-            const parts = trackName.split('-');
-            if (parts.length >= 3 && parts[1] === targetLanguage && trackName !== currentTrackName) {
+            const trackLanguage = extractLanguageFromTrackName(trackName);
+            if (trackLanguage === targetLanguage && trackName !== currentTrackName) {
               if (publication.isSubscribed) {
                 console.log('🔄 Unsubscribing from other track for same language:', trackName, '(keeping:', currentTrackName + ')');
                 publication.setSubscribed(false);
@@ -828,9 +847,9 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       }
 
       // NORMAL MODE: Subscribe based on selected language
-      // Track format: translation-{target_language}
-      // Example: translation-es → parts = ["translation", "es"]
-      // Example: translation-en → parts = ["translation", "en"]
+      // Track format: translation-{target_language}-{speaker_id}
+      // Example: translation-es-CO-speaker123 → language = "es-CO"
+      // Example: translation-es-speaker123 → language = "es"
       
       // Skip unified tracks in normal mode
       if (trackName.startsWith('translation-unified')) {
@@ -842,13 +861,11 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         return;
       }
 
-      const parts = trackName.split('-');
-      if (parts.length < 2) {
+      const targetLanguage = extractLanguageFromTrackName(trackName);
+      if (!targetLanguage) {
         console.warn('Invalid translation track name format:', trackName);
         return;
       }
-
-      const targetLanguage = parts[1]; // The target language (e.g., "es", "fr", "en")
 
       if (targetLanguage === selectedLanguage) {
         // This translation matches my selected language → subscribe
@@ -903,16 +920,15 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         }
 
         // NORMAL MODE: Subscribe based on selected language
-        // Track format: translation-{target_language} (NEW: one track per language)
+        // Track format: translation-{target_language}-{speaker_id}
         // Skip unified tracks in normal mode
         if (trackName.startsWith('translation-unified')) {
           console.log('🚫 Normal mode: Skipping unified track:', trackName);
           return;
         }
 
-        const parts = trackName.split('-');
-        if (parts.length >= 2) {
-          const targetLanguage = parts[1];
+        const targetLanguage = extractLanguageFromTrackName(trackName);
+        if (targetLanguage) {
           if (targetLanguage === selectedLanguage) {
             // IMPORTANT: Only subscribe to ONE track per target language
             const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
@@ -966,9 +982,8 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
                     console.log('🚫 Normal mode: Unsubscribed from unified track:', trackName);
                   }
                 } else {
-                  const parts = trackName.split('-');
-                  if (parts.length >= 2) {
-                    const targetLanguage = parts[1];
+                  const targetLanguage = extractLanguageFromTrackName(trackName);
+                  if (targetLanguage) {
                     if (targetLanguage === selectedLanguage) {
                       // Only subscribe to ONE track per target language
                       const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
@@ -1013,9 +1028,8 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       const trackName = publication.trackName || '';
       
       if (trackName.startsWith('translation-') && !trackName.startsWith('translation-unified')) {
-        const parts = trackName.split('-');
-        if (parts.length >= 2) {  // Changed from 3 to 2 for simplified track format
-          const targetLanguage = parts[1];
+        const targetLanguage = extractLanguageFromTrackName(trackName);
+        if (targetLanguage) {
           const currentSubscribedTrack = subscribedTracksByLanguage.get(targetLanguage);
           
           // If this was the track we were tracking, remove it from the map
