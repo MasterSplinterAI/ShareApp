@@ -6,10 +6,8 @@ import { Settings } from 'lucide-react';
 function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
-  const [vadSensitivity, setVadSensitivity] = useState(50); // 0-100 slider value (0=most sensitive, 100=least sensitive)
+  const [vadSensitivity, setVadSensitivity] = useState('medium'); // 'low', 'medium', 'high'
   const [selectedVoice, setSelectedVoice] = useState('alloy'); // Default voice
-  const [silenceDuration, setSilenceDuration] = useState(1500); // Default 1500ms (1.5 seconds)
-  const [allowInterruptions, setAllowInterruptions] = useState(true); // Default: allow interruptions
   const [showVadControls, setShowVadControls] = useState(false);
 
   // Send language preference updates when they change
@@ -66,7 +64,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
   }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
 
   // Send VAD setting when host changes it
-  const sendVadSetting = async (value) => {
+  const sendVadSetting = async (level) => {
     if (!isHost || !room || !localParticipant?.localParticipant) return;
     
     if (room.state !== 'connected') {
@@ -77,7 +75,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     try {
       const data = {
         type: 'host_vad_setting',
-        value: value, // 0-100 numeric value
+        level: level, // 'low', 'medium', 'high'
       };
 
       const encoder = new TextEncoder();
@@ -90,7 +88,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
       );
 
       console.log('Sent VAD setting:', data);
-      setVadSensitivity(value);
+      setVadSensitivity(level);
     } catch (error) {
       console.error('Error sending VAD setting:', error);
     }
@@ -127,68 +125,6 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     }
   };
 
-  // Send silence duration setting when host changes it
-  const sendSilenceDurationSetting = async (duration) => {
-    if (!isHost || !room || !localParticipant?.localParticipant) return;
-    
-    if (room.state !== 'connected') {
-      console.log('Room not connected, skipping silence duration setting send');
-      return;
-    }
-
-    try {
-      const data = {
-        type: 'host_silence_duration_setting',
-        duration: duration, // milliseconds
-      };
-
-      const encoder = new TextEncoder();
-      const encodedData = encoder.encode(JSON.stringify(data));
-
-      await localParticipant.localParticipant.publishData(
-        encodedData,
-        DataPacket_Kind.RELIABLE,
-        { topic: 'host-control' }
-      );
-
-      console.log('Sent silence duration setting:', data);
-      setSilenceDuration(duration);
-    } catch (error) {
-      console.error('Error sending silence duration setting:', error);
-    }
-  };
-
-  // Send allow interruptions setting when host changes it
-  const sendAllowInterruptionsSetting = async (allow) => {
-    if (!isHost || !room || !localParticipant?.localParticipant) return;
-    
-    if (room.state !== 'connected') {
-      console.log('Room not connected, skipping allow interruptions setting send');
-      return;
-    }
-
-    try {
-      const data = {
-        type: 'host_allow_interruptions_setting',
-        allow: allow, // boolean
-      };
-
-      const encoder = new TextEncoder();
-      const encodedData = encoder.encode(JSON.stringify(data));
-
-      await localParticipant.localParticipant.publishData(
-        encodedData,
-        DataPacket_Kind.RELIABLE,
-        { topic: 'host-control' }
-      );
-
-      console.log('Sent allow interruptions setting:', data);
-      setAllowInterruptions(allow);
-    } catch (error) {
-      console.error('Error sending allow interruptions setting:', error);
-    }
-  };
-
   // Listen for transcriptions and other data
   useEffect(() => {
     if (!room) return;
@@ -214,7 +150,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     };
   }, [room]);
 
-  // Expose VAD, voice, silence duration, and interruptions functions via window for MeetingRoom to access
+  // Expose VAD and voice functions via window for MeetingRoom to access
   // This is a simple way to share functions between components
   useEffect(() => {
     if (isHost) {
@@ -225,18 +161,12 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
         selectedVoice,
         setSelectedVoice,
         sendVoiceSetting,
-        silenceDuration,
-        setSilenceDuration,
-        sendSilenceDurationSetting,
-        allowInterruptions,
-        setAllowInterruptions,
-        sendAllowInterruptionsSetting,
       };
     }
     return () => {
       delete window.__roomControls;
     };
-  }, [isHost, vadSensitivity, sendVadSetting, selectedVoice, sendVoiceSetting, silenceDuration, sendSilenceDurationSetting, allowInterruptions, sendAllowInterruptionsSetting]);
+  }, [isHost, vadSensitivity, sendVadSetting, selectedVoice, sendVoiceSetting]);
 
   return null; // This component doesn't render anything, just handles data
 }
