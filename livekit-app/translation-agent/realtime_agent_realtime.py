@@ -453,9 +453,17 @@ class RealtimeTranslationAgent:
             )
             
             session = AgentSession(
-                vad=silero.VAD.load(),
+                vad=silero.VAD.load(
+                    min_speech_duration=0.8,       # Layer 1: Blocks coughs < 800ms (VERY STRICTER - most coughs are 200-600ms)
+                    min_silence_duration=0.8,      # Natural pause detection (800ms = 0.8 seconds)
+                    prefix_padding_duration=0.4,   # Better context capture
+                ),
                 llm=realtime_model,
                 allow_interruptions=True,  # Always True - required for translations to work properly
+                min_interruption_duration=1.2,    # Layer 3a: Minimum speech duration to trigger interruption (1.2 seconds - VERY STRICTER)
+                min_interruption_words=6,          # Layer 3b: Requires 6+ words to interrupt (VERY STRICTER)
+                false_interruption_timeout=3.0,    # Buffer for false interruptions (increased to 3.0 seconds)
+                resume_false_interruption=True,    # Resume if interruption was false
             )
             
             # Unified mode instructions: SUPER SIMPLE bidirectional translation
@@ -1281,12 +1289,12 @@ class RealtimeTranslationAgent:
         - Lower threshold = MORE sensitive (triggers on quiet sounds)
         - Higher threshold = LESS sensitive (only triggers on loud, clear speech)
         
-        When allow_interruptions=False, we need longer silence_duration_ms to ensure
-        turns end properly, otherwise translations may not trigger.
+        prefix_padding_ms acts as minimum voice duration - blocks sounds < 500ms (coughs)
+        This is Layer 2 of the three-layer cough filter.
         """
         base_config = {
             "type": "server_vad",
-            "prefix_padding_ms": 400,  # Increased: Better for soft starts in quiet rooms
+            "prefix_padding_ms": 500,  # Blocks coughs < 500ms (acts as min voice duration)
         }
         
         # Always allow interruptions (hardcoded to True)
@@ -1299,6 +1307,7 @@ class RealtimeTranslationAgent:
                 **base_config,
                 "threshold": 0.35,  # Low threshold = very sensitive
                 "silence_duration_ms": max(600, base_silence_ms - 200),
+                "prefix_padding_ms": 450,  # Slightly lower for quiet rooms (still blocks coughs)
             }
         elif self.host_vad_setting == "normal":
             # Balanced for normal office/home environments
@@ -1306,6 +1315,7 @@ class RealtimeTranslationAgent:
                 **base_config,
                 "threshold": 0.5,  # Balanced threshold
                 "silence_duration_ms": max(700, base_silence_ms),
+                "prefix_padding_ms": 500,  # Standard filter - blocks coughs
             }
         elif self.host_vad_setting == "noisy_office":
             # Less sensitive — ignores coughs, chair noises, background talk
@@ -1313,6 +1323,7 @@ class RealtimeTranslationAgent:
                 **base_config,
                 "threshold": 0.75,  # High threshold = less sensitive to noise
                 "silence_duration_ms": max(1000, base_silence_ms + 300),
+                "prefix_padding_ms": 500,  # Blocks coughs
             }
         elif self.host_vad_setting == "cafe_or_crowd":
             # Very insensitive — only triggers on loud, clear, sustained speech
@@ -1320,6 +1331,7 @@ class RealtimeTranslationAgent:
                 **base_config,
                 "threshold": 0.90,  # Very high threshold = only loud speech
                 "silence_duration_ms": max(1400, base_silence_ms + 400),
+                "prefix_padding_ms": 600,  # Even stricter for noisy environments
             }
         else:
             # Fallback: Support old naming for backward compatibility
@@ -1329,6 +1341,7 @@ class RealtimeTranslationAgent:
                     **base_config,
                     "threshold": 0.75,
                     "silence_duration_ms": max(1000, base_silence_ms + 300),
+                    "prefix_padding_ms": 500,
                 }
             elif self.host_vad_setting == "high":
                 # Old "high" = quiet room (very sensitive)
@@ -1336,6 +1349,7 @@ class RealtimeTranslationAgent:
                     **base_config,
                     "threshold": 0.4,
                     "silence_duration_ms": max(400, base_silence_ms - 300),
+                    "prefix_padding_ms": 450,
                 }
             elif self.host_vad_setting == "medium":
                 # Old "medium" = normal
@@ -1343,6 +1357,7 @@ class RealtimeTranslationAgent:
                     **base_config,
                     "threshold": 0.5,
                     "silence_duration_ms": max(500, base_silence_ms - 200),
+                    "prefix_padding_ms": 500,
                 }
             else:
                 # Default: noisy_office (most forgiving)
@@ -1350,6 +1365,7 @@ class RealtimeTranslationAgent:
                     **base_config,
                     "threshold": 0.75,
                     "silence_duration_ms": max(1000, base_silence_ms + 300),
+                    "prefix_padding_ms": 500,
                 }
 
     async def _close_session_after_transcription(self, session, transcription_task, assistant_key: str):

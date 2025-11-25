@@ -1,13 +1,16 @@
 # LiveKit Agents requirements with Python 3.13 compatible versions
 # Core LiveKit packages
 livekit>=1.0.0
-livekit-agents>=0.6.0
+livekit-agents>=1.2.0
 
 # OpenAI plugin for LiveKit (includes STT/TTS)
 livekit-plugins-openai>=0.6.0
 
 # Silero VAD plugin for VoiceAssistant (voice activity detection)
 livekit-plugins-silero>=0.6.0
+
+# Noise cancellation plugin for LiveKit Cloud (BVC - Background Voice Cancellation)
+livekit-plugins-noise-cancellation>=0.1.0
 
 # Core dependencies with updated versions for Python 3.13
 openai>=1.0.0

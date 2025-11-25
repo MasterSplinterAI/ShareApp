@@ -47,6 +47,10 @@ router.post('/create', async (req, res) => {
     // This prevents cloud-deployed unnamed agents from auto-joining
     // Default to 'translation-bot-dev' for local dev, 'translation-agent-production' for production
     const agentName = process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-agent-production' : 'translation-bot-dev');
+    
+    // Debug logging
+    console.log(`[DEBUG] Agent dispatch - AGENT_NAME env: ${process.env.AGENT_NAME}, NODE_ENV: ${process.env.NODE_ENV}, Using agent: ${agentName}`);
+    
     try {
       const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
       const agentDispatch = new AgentDispatchClient(
@@ -59,7 +63,7 @@ router.post('/create', async (req, res) => {
       // Signature: createDispatch(roomName, agentName, options)
       await agentDispatch.createDispatch(roomName, agentName);
       
-      console.log(`Agent "${agentName}" dispatched to room ${roomName}`);
+      console.log(`✅ Agent "${agentName}" dispatched to room ${roomName}`);
     } catch (agentError) {
       console.warn(`Could not dispatch agent "${agentName}":`, agentError.message);
       // Continue anyway - room creation succeeded

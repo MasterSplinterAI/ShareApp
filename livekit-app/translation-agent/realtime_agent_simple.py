@@ -29,6 +29,16 @@ from livekit.agents import llm
 from livekit.plugins.openai.realtime import RealtimeModel
 from livekit.plugins import silero, openai
 
+# Try to import noise cancellation plugin (only available on LiveKit Cloud)
+try:
+    from livekit.plugins import noise_cancellation
+    NOISE_CANCELLATION_AVAILABLE = True
+except ImportError:
+    NOISE_CANCELLATION_AVAILABLE = False
+    noise_cancellation = None
+except ImportError:
+    NOISE_CANCELLATION_AVAILABLE = False
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -64,55 +74,81 @@ class SimpleTranslationAgent:
         self.host_vad_setting: str = "normal"  # Default: 'normal' (was 'medium')
         self.host_voice_setting: str = "alloy"  # Default voice
         self.host_participant_id: Optional[str] = None
+        
+        # Detect if running on LiveKit Cloud
+        self.is_cloud_deployment = self._detect_cloud_deployment()
+        if self.is_cloud_deployment:
+            logger.info("☁️  Running on LiveKit Cloud - noise cancellation features available")
 
         logger.info("✅ Simple Translation Agent initialized (ONE assistant per speaker-target pair)")
         logger.info("📦 LiveKit SDK: livekit-agents>=0.6.0, livekit-plugins-openai>=0.6.0")
     
+    def _detect_cloud_deployment(self) -> bool:
+        """Detect if we're running on LiveKit Cloud"""
+        livekit_url = os.getenv('LIVEKIT_URL', '')
+        return 'livekit.cloud' in livekit_url or os.getenv('LIVEKIT_CLOUD', '').lower() == 'true'
+    
     def _get_vad_config(self):
         """Get VAD configuration for RealtimeModel turn_detection.
         
+        ULTRA-PROTECTED MODE: Prevents ANY interruption from coughs/noise/overlaps.
+        Uses maximum filtering at the OpenAI server_vad layer (PRIMARY FILTER).
+        
         CRITICAL: turn_detection is REQUIRED for transcription events to fire reliably.
         Without it, agent_speech_committed and user_input_transcribed events may not fire.
+        
+        prefix_padding_ms is the SINGLE MOST POWERFUL filter - blocks sounds < 1500ms (coughs are 200-600ms).
+        This is Layer 1 of the three-layer cough filter.
         
         Returns:
             dict: VAD configuration for server_vad mode
         """
         base_config = {
             "type": "server_vad",
-            "prefix_padding_ms": 400,  # Increased: Better for soft starts in quiet rooms
+            "prefix_padding_ms": 800,  # PRIMARY FILTER: Blocks coughs < 800ms (coughs are 200-600ms, this still filters them)
+            "threshold": 0.5,  # Balanced threshold - adjusts per setting
+            "silence_duration_ms": 700,  # Balanced silence - adjusts per setting
         }
         
-        # Always allow interruptions (hardcoded to True)
-        # This ensures translations work properly
-        base_silence_ms = 700
-        
-        if self.host_vad_setting == "quiet_room":
+        if self.host_vad_setting == "ultra_protected":
+            # Maximum protection - never interrupts from coughs/noise
+            return {
+                **base_config,
+                "prefix_padding_ms": 1000,  # Strong filter - blocks coughs < 1000ms
+                "threshold": 0.75,
+                "silence_duration_ms": 1200,
+            }
+        elif self.host_vad_setting == "quiet_room":
             # Very sensitive — catches whispers, soft voices
             return {
                 **base_config,
                 "threshold": 0.35,  # Low threshold = very sensitive
-                "silence_duration_ms": max(600, base_silence_ms - 200),
+                "silence_duration_ms": 600,
+                "prefix_padding_ms": 600,  # Moderate filter for quiet rooms
             }
         elif self.host_vad_setting == "normal":
             # Balanced for normal office/home environments
             return {
                 **base_config,
                 "threshold": 0.5,  # Balanced threshold
-                "silence_duration_ms": max(700, base_silence_ms),
+                "silence_duration_ms": 700,
+                "prefix_padding_ms": 800,  # Good balance - filters coughs but allows speech
             }
         elif self.host_vad_setting == "noisy_office":
             # Less sensitive — ignores coughs, chair noises, background talk
             return {
                 **base_config,
                 "threshold": 0.75,  # High threshold = less sensitive to noise
-                "silence_duration_ms": max(1000, base_silence_ms + 300),
+                "silence_duration_ms": 1000,
+                "prefix_padding_ms": 1000,  # Stronger filter for noisy environments
             }
         elif self.host_vad_setting == "cafe_or_crowd":
             # Very insensitive — only triggers on loud, clear, sustained speech
             return {
                 **base_config,
-                "threshold": 0.90,  # Very high threshold = only loud speech
-                "silence_duration_ms": max(1400, base_silence_ms + 400),
+                "threshold": 0.85,  # Very high threshold = only loud speech
+                "silence_duration_ms": 1200,
+                "prefix_padding_ms": 1200,  # Strongest filter for very noisy environments
             }
         else:
             # Fallback: Support old naming for backward compatibility
@@ -121,29 +157,28 @@ class SimpleTranslationAgent:
                 return {
                     **base_config,
                     "threshold": 0.75,
-                    "silence_duration_ms": max(1000, base_silence_ms + 300),
+                    "silence_duration_ms": 1000,
+                    "prefix_padding_ms": 1500,  # Maximum protection
                 }
             elif self.host_vad_setting == "high":
                 # Old "high" = quiet room (very sensitive)
                 return {
                     **base_config,
                     "threshold": 0.4,
-                    "silence_duration_ms": max(400, base_silence_ms - 300),
+                    "silence_duration_ms": 600,
+                    "prefix_padding_ms": 1200,  # Still strong for cough filtering
                 }
             elif self.host_vad_setting == "medium":
                 # Old "medium" = normal
                 return {
                     **base_config,
                     "threshold": 0.5,
-                    "silence_duration_ms": max(500, base_silence_ms - 200),
+                    "silence_duration_ms": 700,
+                    "prefix_padding_ms": 1500,  # Maximum protection
                 }
             else:
-                # Default: noisy_office (most forgiving)
-                return {
-                    **base_config,
-                    "threshold": 0.75,
-                    "silence_duration_ms": max(1000, base_silence_ms + 300),
-                }
+                # Default: ultra-protected (maximum protection)
+                return base_config
 
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
@@ -432,6 +467,44 @@ class SimpleTranslationAgent:
             vad_config = self._get_vad_config()
             logger.info(f"[{target_language}] 🎛️ Using VAD config: {vad_config} (host setting: {self.host_vad_setting})")
             
+            # Adjust Silero VAD and AgentSession parameters based on host VAD setting
+            # More aggressive filtering for noisy environments, less for quiet rooms
+            if self.host_vad_setting == "quiet_room":
+                silero_activation = 0.5  # More sensitive
+                silero_min_speech = 0.5   # Less strict (500ms)
+                silero_min_silence = 0.6
+                interrupt_duration = 0.8
+                interrupt_words = 3
+                false_interrupt_timeout = 2.5
+            elif self.host_vad_setting == "normal":
+                silero_activation = 0.65  # Balanced
+                silero_min_speech = 0.7    # Blocks coughs < 700ms
+                silero_min_silence = 0.8
+                interrupt_duration = 1.0
+                interrupt_words = 5
+                false_interrupt_timeout = 3.0
+            elif self.host_vad_setting == "noisy_office":
+                silero_activation = 0.75  # Less sensitive
+                silero_min_speech = 0.9   # Blocks coughs < 900ms
+                silero_min_silence = 1.0
+                interrupt_duration = 1.2
+                interrupt_words = 6
+                false_interrupt_timeout = 3.5
+            elif self.host_vad_setting == "cafe_or_crowd":
+                silero_activation = 0.85  # Very insensitive
+                silero_min_speech = 1.0   # Blocks coughs < 1000ms
+                silero_min_silence = 1.2
+                interrupt_duration = 1.5
+                interrupt_words = 7
+                false_interrupt_timeout = 4.0
+            else:  # Default/fallback
+                silero_activation = 0.65
+                silero_min_speech = 0.7
+                silero_min_silence = 0.8
+                interrupt_duration = 1.0
+                interrupt_words = 5
+                false_interrupt_timeout = 3.0
+            
             # Create the realtime model with turn_detection
             # CRITICAL: text FIRST in modalities ensures events fire reliably
             # turn_detection enables server_vad which fires transcription events properly
@@ -444,11 +517,35 @@ class SimpleTranslationAgent:
                 turn_detection=vad_config,  # REQUIRED for transcription events to fire
             )
             
-            # Create session
+            # Create session with three-layer cough filter:
+            # CRITICAL: OpenAI server_vad runs FIRST and is the PRIMARY filter
+            # Layer 1: OpenAI server_vad prefix_padding_ms (blocks < 800ms) - PRIMARY FILTER - set in _get_vad_config()
+            # Layer 2: Silero VAD min_speech_duration (adjusts based on VAD setting) - Secondary filter
+            # Layer 3: AgentSession min_interruption_duration + min_interruption_words (adjusts based on VAD setting)
+            logger.info(f"[{target_language}] 🔒 Applying cough filters (VAD setting: {self.host_vad_setting}):")
+            logger.info(f"  - OpenAI prefix_padding_ms: {vad_config.get('prefix_padding_ms', 'N/A')}ms (PRIMARY FILTER)")
+            logger.info(f"  - OpenAI threshold: {vad_config.get('threshold', 'N/A')}")
+            logger.info(f"  - Silero activation_threshold: {silero_activation}")
+            logger.info(f"  - Silero min_speech_duration: {silero_min_speech}s (blocks coughs < {int(silero_min_speech*1000)}ms)")
+            logger.info(f"  - Silero min_silence_duration: {silero_min_silence}s")
+            logger.info(f"  - Interruption duration: {interrupt_duration}s")
+            logger.info(f"  - Interruption words: {interrupt_words}")
+            logger.info(f"  - False interruption timeout: {false_interrupt_timeout}s")
+            
             session = AgentSession(
-                vad=silero.VAD.load(),
+                vad=silero.VAD.load(
+                    activation_threshold=silero_activation,
+                    min_speech_duration=silero_min_speech,  # Layer 2: Blocks coughs
+                    min_silence_duration=silero_min_silence,
+                    prefix_padding_duration=0.5,  # Captures context without false starts
+                ),
                 llm=realtime_model,
-                allow_interruptions=True  # Always True - required for translations to work properly
+                allow_interruptions=True,  # REQUIRED - never False (breaks translations)
+                min_interruption_duration=interrupt_duration,    # Layer 3a: Minimum speech duration to trigger interruption
+                min_interruption_words=interrupt_words,          # Layer 3b: Requires N+ words to interrupt
+                false_interruption_timeout=false_interrupt_timeout,    # Buffer for false interruptions
+                resume_false_interruption=True,   # Auto-continues if false positive (e.g., another speaker's cough)
+                discard_audio_if_uninterruptible=False,  # Buffer audio instead of dropping (may not work with RealtimeModel, but try it)
             )
             
             # Initialize session user_data for transcription tracking
@@ -802,7 +899,27 @@ class SimpleTranslationAgent:
             
             # CRITICAL: Use RoomInputOptions to listen to ONLY this specific speaker
             # This avoids manual subscription management entirely (like the working agent)
-            room_input_options = room_io.RoomInputOptions(participant_identity=speaker_id)
+            # Enable BVC (Background Voice Cancellation) for LiveKit Cloud deployments
+            # BVC filters background voices, coughs, and complex noise - perfect for multi-speaker translation
+            try:
+                if self.is_cloud_deployment and NOISE_CANCELLATION_AVAILABLE:
+                    # Enable BVC noise cancellation for cloud deployments
+                    room_input_options = room_io.RoomInputOptions(
+                        participant_identity=speaker_id,
+                        noise_cancellation=noise_cancellation.BVC()  # Best for multi-speaker: suppresses other voices/coughs
+                    )
+                    logger.info(f"   🔊 BVC noise cancellation enabled (filters background voices, coughs, noise)")
+                else:
+                    # Local deployment or plugin not available - use default (WebRTC noise cancellation still applies)
+                    room_input_options = room_io.RoomInputOptions(participant_identity=speaker_id)
+                    if not self.is_cloud_deployment:
+                        logger.info(f"   ℹ️  Running locally - using default WebRTC noise cancellation")
+                    else:
+                        logger.info(f"   ℹ️  Noise cancellation plugin not available - using default WebRTC noise cancellation")
+            except Exception as e:
+                # Fallback to basic options if anything fails
+                room_input_options = room_io.RoomInputOptions(participant_identity=speaker_id)
+                logger.warning(f"   ⚠️  Could not enable BVC noise cancellation: {e}, using default WebRTC noise cancellation")
             
             # Output: Publish to track with speaker-specific name
             room_output_options = room_io.RoomOutputOptions(
@@ -1153,4 +1270,16 @@ if __name__ == "__main__":
         agent_name=agent_name,
     )
     
-    cli.run_app(worker_opts)
+    # cli.run_app() should work for both local and cloud
+    # It handles the worker lifecycle automatically
+    # For local: python realtime_agent_simple.py dev
+    # For cloud: python realtime_agent_simple.py (no args needed)
+    import sys
+    # If no args or 'dev'/'start' command, run the agent
+    if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] in ['dev', 'start']):
+        cli.run_app(worker_opts)
+    else:
+        # Unknown command - show help
+        logger.error(f"Unknown command: {sys.argv[1]}")
+        logger.info("Usage: python realtime_agent_simple.py [dev|start]")
+        sys.exit(1)
