@@ -1062,7 +1062,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 
 // VAD Sensitivity Controls Component - Rendered in bottom control bar for host
 export function VADSensitivityControls() {
-  const [vadSensitivity, setVadSensitivity] = useState('medium');
+  const [vadSensitivity, setVadSensitivity] = useState(50); // 0-100 slider value
   const [selectedVoice, setSelectedVoice] = useState('alloy');
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState('sensitivity'); // 'sensitivity' or 'voice'
@@ -1079,11 +1079,20 @@ export function VADSensitivityControls() {
     { value: 'onyx', name: 'Onyx', description: 'Strong, authoritative (male)' },
   ];
 
-  const handleVadChange = (level) => {
+  const handleVadChange = (value) => {
     if (window.__roomControls?.sendVadSetting) {
-      window.__roomControls.sendVadSetting(level);
-      setVadSensitivity(level);
+      window.__roomControls.sendVadSetting(value);
+      setVadSensitivity(value);
     }
+  };
+
+  // Convert slider value (0-100) to descriptive text
+  const getVadLabel = (value) => {
+    if (value <= 20) return 'Very High Sensitivity';
+    if (value <= 40) return 'High Sensitivity';
+    if (value <= 60) return 'Medium Sensitivity';
+    if (value <= 80) return 'Low Sensitivity';
+    return 'Very Low Sensitivity';
   };
 
   const handleVoiceChange = (voice) => {
@@ -1208,57 +1217,57 @@ export function VADSensitivityControls() {
             {activeTab === 'sensitivity' && (
               <div>
                 <div className="text-xs text-gray-400 mb-3 font-medium">Translation Sensitivity</div>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => {
-                      handleVadChange('low');
-                      setShowDropdown(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                      vadSensitivity === 'low' 
-                        ? 'bg-blue-900/50 border-2 border-blue-500' 
-                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                    }`}
-                  >
-                    <div className="font-semibold text-sm text-white mb-1">Low Sensitivity</div>
-                    <div className="text-xs text-gray-400 leading-relaxed">
-                      Forgiving - ignores coughs, "umm", background noise
+                <div className="space-y-3">
+                  {/* Current value display */}
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-white mb-1">
+                      {getVadLabel(vadSensitivity)}
                     </div>
-                  </button>
+                    <div className="text-xs text-gray-400">
+                      Value: {vadSensitivity} / 100
+                    </div>
+                  </div>
                   
-                  <button
-                    onClick={() => {
-                      handleVadChange('medium');
-                      setShowDropdown(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                      vadSensitivity === 'medium' 
-                        ? 'bg-blue-900/50 border-2 border-blue-500' 
-                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                    }`}
-                  >
-                    <div className="font-semibold text-sm text-white mb-1">Medium Sensitivity</div>
-                    <div className="text-xs text-gray-400 leading-relaxed">
-                      Balanced - good for most conversations (default)
+                  {/* Slider */}
+                  <div className="px-2">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={vadSensitivity}
+                      onChange={(e) => {
+                        const newValue = parseInt(e.target.value);
+                        handleVadChange(newValue);
+                      }}
+                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                      style={{
+                        background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${vadSensitivity}%, #374151 ${vadSensitivity}%, #374151 100%)`
+                      }}
+                    />
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>Most Sensitive</span>
+                      <span>Least Sensitive</span>
                     </div>
-                  </button>
+                  </div>
                   
-                  <button
-                    onClick={() => {
-                      handleVadChange('high');
-                      setShowDropdown(false);
-                    }}
-                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                      vadSensitivity === 'high' 
-                        ? 'bg-blue-900/50 border-2 border-blue-500' 
-                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
-                    }`}
-                  >
-                    <div className="font-semibold text-sm text-white mb-1">High Sensitivity</div>
-                    <div className="text-xs text-gray-400 leading-relaxed">
-                      Very responsive - fast interruptions, good for debates
-                    </div>
-                  </button>
+                  {/* Description */}
+                  <div className="text-xs text-gray-400 leading-relaxed px-2">
+                    {vadSensitivity <= 20 && (
+                      <span>Very responsive - fast interruptions, good for debates and quick exchanges</span>
+                    )}
+                    {vadSensitivity > 20 && vadSensitivity <= 40 && (
+                      <span>High sensitivity - catches most speech quickly, good for active conversations</span>
+                    )}
+                    {vadSensitivity > 40 && vadSensitivity <= 60 && (
+                      <span>Balanced - good for most conversations (default setting)</span>
+                    )}
+                    {vadSensitivity > 60 && vadSensitivity <= 80 && (
+                      <span>Low sensitivity - forgiving, ignores coughs, "umm", background noise</span>
+                    )}
+                    {vadSensitivity > 80 && (
+                      <span>Very low sensitivity - only captures clear, deliberate speech. Ignores most background noise and filler words</span>
+                    )}
+                  </div>
                 </div>
               </div>
             )}

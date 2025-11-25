@@ -6,7 +6,7 @@ import { Settings } from 'lucide-react';
 function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
-  const [vadSensitivity, setVadSensitivity] = useState('medium'); // 'low', 'medium', 'high'
+  const [vadSensitivity, setVadSensitivity] = useState(50); // 0-100 slider value (0=most sensitive, 100=least sensitive)
   const [selectedVoice, setSelectedVoice] = useState('alloy'); // Default voice
   const [showVadControls, setShowVadControls] = useState(false);
 
@@ -64,7 +64,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
   }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
 
   // Send VAD setting when host changes it
-  const sendVadSetting = async (level) => {
+  const sendVadSetting = async (value) => {
     if (!isHost || !room || !localParticipant?.localParticipant) return;
     
     if (room.state !== 'connected') {
@@ -75,7 +75,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     try {
       const data = {
         type: 'host_vad_setting',
-        level: level, // 'low', 'medium', 'high'
+        value: value, // 0-100 numeric value
       };
 
       const encoder = new TextEncoder();
@@ -88,7 +88,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
       );
 
       console.log('Sent VAD setting:', data);
-      setVadSensitivity(level);
+      setVadSensitivity(value);
     } catch (error) {
       console.error('Error sending VAD setting:', error);
     }

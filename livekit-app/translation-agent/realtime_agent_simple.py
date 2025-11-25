@@ -61,7 +61,7 @@ class SimpleTranslationAgent:
         # KEY CHANGE: assistants keyed by "{speaker_id}:{target_language}" (like working agent)
         self.assistants: Dict[str, AgentSession] = {}  # "{speaker_id}:{target_language}" -> AgentSession
         
-        self.host_vad_setting: str = "medium"
+        self.host_vad_setting: int = 50  # 0-100 slider value (0=most sensitive, 100=least sensitive)
         self.host_voice_setting: str = "alloy"  # Default voice
         self.host_participant_id: Optional[str] = None
 
@@ -74,6 +74,11 @@ class SimpleTranslationAgent:
         CRITICAL: turn_detection is REQUIRED for transcription events to fire reliably.
         Without it, agent_speech_committed and user_input_transcribed events may not fire.
         
+        Maps slider value (0-100) to VAD parameters:
+        - 0 = most sensitive (threshold=0.3, silence=300ms)
+        - 50 = medium (threshold=0.5, silence=500ms)
+        - 100 = least sensitive (threshold=0.9, silence=1500ms)
+        
         Returns:
             dict: VAD configuration for server_vad mode
         """
@@ -82,27 +87,22 @@ class SimpleTranslationAgent:
             "prefix_padding_ms": 300,  # Capture audio before speech starts
         }
         
-        if self.host_vad_setting == "low":
-            # Low sensitivity: more forgiving, ignores small noises
-            return {
-                **base_config,
-                "threshold": 0.75,  # Higher threshold = less sensitive
-                "silence_duration_ms": 1000,  # Longer silence before ending turn
-            }
-        elif self.host_vad_setting == "high":
-            # High sensitivity: very responsive, fast interruptions
-            return {
-                **base_config,
-                "threshold": 0.4,  # Lower threshold = more sensitive
-                "silence_duration_ms": 400,  # Shorter silence before ending turn
-            }
-        else:
-            # Medium sensitivity: balanced (default)
-            return {
-                **base_config,
-                "threshold": 0.5,  # Balanced threshold
-                "silence_duration_ms": 500,  # Balanced silence duration
-            }
+        # Ensure value is in valid range
+        vad_value = max(0, min(100, self.host_vad_setting))
+        
+        # Map slider value (0-100) to threshold (0.3-0.9)
+        # Lower slider = lower threshold = more sensitive
+        threshold = 0.3 + (vad_value / 100) * 0.6  # Range: 0.3 to 0.9
+        
+        # Map slider value (0-100) to silence duration (300-1500ms)
+        # Lower slider = shorter silence = more sensitive
+        silence_duration_ms = int(300 + (vad_value / 100) * 1200)  # Range: 300ms to 1500ms
+        
+        return {
+            **base_config,
+            "threshold": round(threshold, 2),  # Round to 2 decimal places
+            "silence_duration_ms": silence_duration_ms,
+        }
 
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
@@ -126,15 +126,23 @@ class SimpleTranslationAgent:
                 
                 # Handle host VAD setting changes
                 if message_type == 'host_vad_setting':
-                    new_setting = message.get('level', 'medium')
-                    if new_setting in ['low', 'medium', 'high']:
-                        old_setting = self.host_vad_setting
-                        self.host_vad_setting = new_setting
-                        self.host_participant_id = participant_id
-                        logger.info(f"🎛️ Host changed VAD sensitivity: {old_setting} → {new_setting} (from {participant_id})")
-                        
-                        # Restart all assistants with new VAD settings
-                        asyncio.create_task(self._restart_all_assistants_for_vad_change(ctx))
+                    new_value = message.get('value', 50)
+                    # Validate value is numeric and in range
+                    try:
+                        new_value = int(new_value)
+                        if 0 <= new_value <= 100:
+                            old_value = self.host_vad_setting
+                            self.host_vad_setting = new_value
+                            self.host_participant_id = participant_id
+                            vad_config = self._get_vad_config()
+                            logger.info(f"🎛️ Host changed VAD sensitivity: {old_value} → {new_value} (threshold: {vad_config['threshold']}, silence: {vad_config['silence_duration_ms']}ms) (from {participant_id})")
+                            
+                            # Restart all assistants with new VAD settings
+                            asyncio.create_task(self._restart_all_assistants_for_vad_change(ctx))
+                        else:
+                            logger.warning(f"⚠️ Invalid VAD value received: {new_value} (must be 0-100)")
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️ Invalid VAD value type received: {new_value}")
                     return
                 
                 # Handle host voice setting changes
