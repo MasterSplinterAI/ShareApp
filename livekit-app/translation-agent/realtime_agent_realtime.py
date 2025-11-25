@@ -54,7 +54,7 @@ class RealtimeTranslationAgent:
         self.participant_languages: Dict[str, str] = {}
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, AgentSession] = {}
-        self.host_vad_setting: str = "medium"  # 'low', 'medium', 'high'
+        self.host_vad_setting: str = "normal"  # Default: 'normal' (was 'medium')
         self.host_participant_id: Optional[str] = None  # Track who the host is
         self.unified_mode_active: bool = False  # Track if unified mode is active
         self.unified_assistant_key: str = "unified:all"  # Key for unified assistant
@@ -95,6 +95,7 @@ class RealtimeTranslationAgent:
                         # Restart all assistants with new VAD settings
                         asyncio.create_task(self._restart_all_assistants_for_vad_change(ctx))
                     return
+                
                 
                 # Handle both message formats from frontend
                 # RoomControls.jsx sends: type='language_update', language, enabled
@@ -444,6 +445,7 @@ class RealtimeTranslationAgent:
             
             # Create RealtimeModel
             realtime_model = RealtimeModel(
+                model="gpt-realtime",  # Latest GA model (Aug 2025) - better multilingual support
                 voice="alloy",
                 modalities=["text", "audio"],
                 temperature=0.7,
@@ -453,7 +455,7 @@ class RealtimeTranslationAgent:
             session = AgentSession(
                 vad=silero.VAD.load(),
                 llm=realtime_model,
-                allow_interruptions=True,
+                allow_interruptions=True,  # Always True - required for translations to work properly
             )
             
             # Unified mode instructions: SUPER SIMPLE bidirectional translation
@@ -771,6 +773,7 @@ class RealtimeTranslationAgent:
             # ServerVadOptions enables agent_speech_delta events (word-by-word streaming)
             # turn_detection=None causes delays because it never ends turns automatically
             realtime_model = RealtimeModel(
+                model="gpt-realtime",  # Latest GA model (Aug 2025) - better multilingual support
                 voice="alloy",  # Choose voice for target language
                 modalities=["text", "audio"],  # ← text FIRST ensures events fire reliably
                 temperature=0.7,  # Balanced for natural translations
@@ -780,7 +783,7 @@ class RealtimeTranslationAgent:
             session = AgentSession(
                 vad=silero.VAD.load(),  # Voice Activity Detection - auto-detects pauses
                 llm=realtime_model,
-                allow_interruptions=True,  # RealtimeModel handles interruptions beautifully
+                allow_interruptions=True,  # Always True - required for translations to work properly
             )
             
             # CORRECT: All instructions go in Agent() - this is the ONLY supported way (Nov 2025)
@@ -1272,33 +1275,82 @@ class RealtimeTranslationAgent:
             logger.error(f"❌ Failed to send transcription: {e}", exc_info=True)
 
     def _get_vad_config(self):
-        """Get VAD configuration based on host setting"""
+        """Get VAD configuration based on host setting.
+        
+        CORRECTED NAMING (was backwards):
+        - Lower threshold = MORE sensitive (triggers on quiet sounds)
+        - Higher threshold = LESS sensitive (only triggers on loud, clear speech)
+        
+        When allow_interruptions=False, we need longer silence_duration_ms to ensure
+        turns end properly, otherwise translations may not trigger.
+        """
         base_config = {
             "type": "server_vad",
-            "prefix_padding_ms": 300,
+            "prefix_padding_ms": 400,  # Increased: Better for soft starts in quiet rooms
         }
         
-        if self.host_vad_setting == "low":
-            # Low sensitivity: more forgiving, ignores small noises
+        # Always allow interruptions (hardcoded to True)
+        # This ensures translations work properly
+        base_silence_ms = 700
+        
+        if self.host_vad_setting == "quiet_room":
+            # Very sensitive — catches whispers, soft voices
             return {
                 **base_config,
-                "threshold": 0.75,  # Higher threshold = less sensitive
-                "silence_duration_ms": 1000,  # Longer silence before ending turn
+                "threshold": 0.35,  # Low threshold = very sensitive
+                "silence_duration_ms": max(600, base_silence_ms - 200),
             }
-        elif self.host_vad_setting == "high":
-            # High sensitivity: very responsive, fast interruptions
-            return {
-                **base_config,
-                "threshold": 0.4,  # Lower threshold = more sensitive
-                "silence_duration_ms": 400,  # Shorter silence before ending turn
-            }
-        else:
-            # Medium sensitivity: balanced (default)
+        elif self.host_vad_setting == "normal":
+            # Balanced for normal office/home environments
             return {
                 **base_config,
                 "threshold": 0.5,  # Balanced threshold
-                "silence_duration_ms": 500,  # Balanced silence duration
+                "silence_duration_ms": max(700, base_silence_ms),
             }
+        elif self.host_vad_setting == "noisy_office":
+            # Less sensitive — ignores coughs, chair noises, background talk
+            return {
+                **base_config,
+                "threshold": 0.75,  # High threshold = less sensitive to noise
+                "silence_duration_ms": max(1000, base_silence_ms + 300),
+            }
+        elif self.host_vad_setting == "cafe_or_crowd":
+            # Very insensitive — only triggers on loud, clear, sustained speech
+            return {
+                **base_config,
+                "threshold": 0.90,  # Very high threshold = only loud speech
+                "silence_duration_ms": max(1400, base_silence_ms + 400),
+            }
+        else:
+            # Fallback: Support old naming for backward compatibility
+            if self.host_vad_setting == "low":
+                # Old "low" = noisy environment (less sensitive)
+                return {
+                    **base_config,
+                    "threshold": 0.75,
+                    "silence_duration_ms": max(1000, base_silence_ms + 300),
+                }
+            elif self.host_vad_setting == "high":
+                # Old "high" = quiet room (very sensitive)
+                return {
+                    **base_config,
+                    "threshold": 0.4,
+                    "silence_duration_ms": max(400, base_silence_ms - 300),
+                }
+            elif self.host_vad_setting == "medium":
+                # Old "medium" = normal
+                return {
+                    **base_config,
+                    "threshold": 0.5,
+                    "silence_duration_ms": max(500, base_silence_ms - 200),
+                }
+            else:
+                # Default: noisy_office (most forgiving)
+                return {
+                    **base_config,
+                    "threshold": 0.75,
+                    "silence_duration_ms": max(1000, base_silence_ms + 300),
+                }
 
     async def _close_session_after_transcription(self, session, transcription_task, assistant_key: str):
         """Close session after transcription has been sent (with timeout)"""
@@ -1347,6 +1399,7 @@ class RealtimeTranslationAgent:
             logger.info(f"✅ All assistants restarted with VAD setting: {self.host_vad_setting}")
         except Exception as e:
             logger.error(f"Error restarting assistants for VAD change: {e}", exc_info=True)
+
 
 
 async def main(ctx: JobContext):

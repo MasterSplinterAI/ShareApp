@@ -61,7 +61,7 @@ class SimpleTranslationAgent:
         # KEY CHANGE: assistants keyed by "{speaker_id}:{target_language}" (like working agent)
         self.assistants: Dict[str, AgentSession] = {}  # "{speaker_id}:{target_language}" -> AgentSession
         
-        self.host_vad_setting: str = "medium"
+        self.host_vad_setting: str = "normal"  # Default: 'normal' (was 'medium')
         self.host_voice_setting: str = "alloy"  # Default voice
         self.host_participant_id: Optional[str] = None
 
@@ -79,30 +79,71 @@ class SimpleTranslationAgent:
         """
         base_config = {
             "type": "server_vad",
-            "prefix_padding_ms": 300,  # Capture audio before speech starts
+            "prefix_padding_ms": 400,  # Increased: Better for soft starts in quiet rooms
         }
         
-        if self.host_vad_setting == "low":
-            # Low sensitivity: more forgiving, ignores small noises
+        # Always allow interruptions (hardcoded to True)
+        # This ensures translations work properly
+        base_silence_ms = 700
+        
+        if self.host_vad_setting == "quiet_room":
+            # Very sensitive — catches whispers, soft voices
             return {
                 **base_config,
-                "threshold": 0.75,  # Higher threshold = less sensitive
-                "silence_duration_ms": 1000,  # Longer silence before ending turn
+                "threshold": 0.35,  # Low threshold = very sensitive
+                "silence_duration_ms": max(600, base_silence_ms - 200),
             }
-        elif self.host_vad_setting == "high":
-            # High sensitivity: very responsive, fast interruptions
-            return {
-                **base_config,
-                "threshold": 0.4,  # Lower threshold = more sensitive
-                "silence_duration_ms": 400,  # Shorter silence before ending turn
-            }
-        else:
-            # Medium sensitivity: balanced (default)
+        elif self.host_vad_setting == "normal":
+            # Balanced for normal office/home environments
             return {
                 **base_config,
                 "threshold": 0.5,  # Balanced threshold
-                "silence_duration_ms": 500,  # Balanced silence duration
+                "silence_duration_ms": max(700, base_silence_ms),
             }
+        elif self.host_vad_setting == "noisy_office":
+            # Less sensitive — ignores coughs, chair noises, background talk
+            return {
+                **base_config,
+                "threshold": 0.75,  # High threshold = less sensitive to noise
+                "silence_duration_ms": max(1000, base_silence_ms + 300),
+            }
+        elif self.host_vad_setting == "cafe_or_crowd":
+            # Very insensitive — only triggers on loud, clear, sustained speech
+            return {
+                **base_config,
+                "threshold": 0.90,  # Very high threshold = only loud speech
+                "silence_duration_ms": max(1400, base_silence_ms + 400),
+            }
+        else:
+            # Fallback: Support old naming for backward compatibility
+            if self.host_vad_setting == "low":
+                # Old "low" = noisy environment (less sensitive)
+                return {
+                    **base_config,
+                    "threshold": 0.75,
+                    "silence_duration_ms": max(1000, base_silence_ms + 300),
+                }
+            elif self.host_vad_setting == "high":
+                # Old "high" = quiet room (very sensitive)
+                return {
+                    **base_config,
+                    "threshold": 0.4,
+                    "silence_duration_ms": max(400, base_silence_ms - 300),
+                }
+            elif self.host_vad_setting == "medium":
+                # Old "medium" = normal
+                return {
+                    **base_config,
+                    "threshold": 0.5,
+                    "silence_duration_ms": max(500, base_silence_ms - 200),
+                }
+            else:
+                # Default: noisy_office (most forgiving)
+                return {
+                    **base_config,
+                    "threshold": 0.75,
+                    "silence_duration_ms": max(1000, base_silence_ms + 300),
+                }
 
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
@@ -152,6 +193,7 @@ class SimpleTranslationAgent:
                     else:
                         logger.warning(f"⚠️ Invalid voice setting received: {new_voice}, ignoring")
                     return
+                
                 
                 # Handle language preference updates
                 # Handle both message formats from frontend:
@@ -393,7 +435,9 @@ class SimpleTranslationAgent:
             # Create the realtime model with turn_detection
             # CRITICAL: text FIRST in modalities ensures events fire reliably
             # turn_detection enables server_vad which fires transcription events properly
+            # Using gpt-realtime model (GA as of Aug 2025) for better performance
             realtime_model = RealtimeModel(
+                model="gpt-realtime",  # Latest GA model (Aug 2025) - better multilingual support
                 voice=self.host_voice_setting,  # Use host-selected voice
                 modalities=["text", "audio"],  # text FIRST ensures events fire reliably
                 temperature=0.7,
@@ -404,7 +448,7 @@ class SimpleTranslationAgent:
             session = AgentSession(
                 vad=silero.VAD.load(),
                 llm=realtime_model,
-                allow_interruptions=True
+                allow_interruptions=True  # Always True - required for translations to work properly
             )
             
             # Initialize session user_data for transcription tracking
@@ -1043,6 +1087,40 @@ class SimpleTranslationAgent:
             logger.info(f"✅ All assistants restarted with voice: {self.host_voice_setting}")
         except Exception as e:
             logger.error(f"Error restarting assistants for voice change: {e}", exc_info=True)
+
+    async def _restart_all_assistants_for_interruption_change(self, ctx: JobContext):
+        """Restart all assistants when interruption setting changes"""
+        try:
+            logger.info(f"🔄 Restarting all assistants with new interruption setting: {self.host_allow_interruptions}")
+            
+            # Store current state
+            current_speakers = set()
+            current_target_languages = set()
+            for key in self.assistants.keys():
+                # Key format: "{speaker_id}:{target_language}"
+                parts = key.split(':')
+                if len(parts) == 2:
+                    speaker_id, target_language = parts
+                    current_speakers.add(speaker_id)
+                    current_target_languages.add(target_language)
+            
+            # Stop all existing assistants
+            for key in list(self.assistants.keys()):
+                assistant = self.assistants.pop(key)
+                await assistant.aclose()
+            
+            # Small delay to let audio drain
+            await asyncio.sleep(0.5)
+            
+            # Recreate assistants for all speaker-target pairs
+            for speaker_id in current_speakers:
+                for target_language in current_target_languages:
+                    logger.info(f"🔄 Recreating assistant for {speaker_id} -> {target_language} with interruptions: {self.host_allow_interruptions}")
+                    await self._create_assistant_for_pair(ctx, speaker_id, target_language)
+            
+            logger.info(f"✅ All assistants restarted with interruption setting: {self.host_allow_interruptions}")
+        except Exception as e:
+            logger.error(f"Error restarting assistants for interruption change: {e}", exc_info=True)
 
 
 async def main(ctx: JobContext):

@@ -1062,7 +1062,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 
 // VAD Sensitivity Controls Component - Rendered in bottom control bar for host
 export function VADSensitivityControls() {
-  const [vadSensitivity, setVadSensitivity] = useState('medium');
+  const [vadSensitivity, setVadSensitivity] = useState('normal');
   const [selectedVoice, setSelectedVoice] = useState('alloy');
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState('sensitivity'); // 'sensitivity' or 'voice'
@@ -1097,6 +1097,7 @@ export function VADSensitivityControls() {
       console.error('sendVoiceSetting not available on window.__roomControls');
     }
   };
+
 
   // Sync with RoomControls state
   useEffect(() => {
@@ -1208,36 +1209,36 @@ export function VADSensitivityControls() {
             {activeTab === 'sensitivity' && (
               <div>
                 <div className="text-xs text-gray-400 mb-3 font-medium">Translation Sensitivity</div>
-                <div className="space-y-2">
+                <div className="space-y-2 max-h-64 overflow-y-auto">
                   <button
                     onClick={() => {
-                      handleVadChange('low');
+                      handleVadChange('quiet_room');
                       setShowDropdown(false);
                     }}
                     className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                      vadSensitivity === 'low' 
+                      vadSensitivity === 'quiet_room' 
                         ? 'bg-blue-900/50 border-2 border-blue-500' 
                         : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
                     }`}
                   >
-                    <div className="font-semibold text-sm text-white mb-1">Low Sensitivity</div>
+                    <div className="font-semibold text-sm text-white mb-1">Quiet Room</div>
                     <div className="text-xs text-gray-400 leading-relaxed">
-                      Forgiving - ignores coughs, "umm", background noise
+                      Very sensitive - catches whispers, soft voices, headsets
                     </div>
                   </button>
                   
                   <button
                     onClick={() => {
-                      handleVadChange('medium');
+                      handleVadChange('normal');
                       setShowDropdown(false);
                     }}
                     className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                      vadSensitivity === 'medium' 
+                      vadSensitivity === 'normal' 
                         ? 'bg-blue-900/50 border-2 border-blue-500' 
                         : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
                     }`}
                   >
-                    <div className="font-semibold text-sm text-white mb-1">Medium Sensitivity</div>
+                    <div className="font-semibold text-sm text-white mb-1">Normal</div>
                     <div className="text-xs text-gray-400 leading-relaxed">
                       Balanced - good for most conversations (default)
                     </div>
@@ -1245,18 +1246,35 @@ export function VADSensitivityControls() {
                   
                   <button
                     onClick={() => {
-                      handleVadChange('high');
+                      handleVadChange('noisy_office');
                       setShowDropdown(false);
                     }}
                     className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
-                      vadSensitivity === 'high' 
+                      vadSensitivity === 'noisy_office' 
                         ? 'bg-blue-900/50 border-2 border-blue-500' 
                         : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
                     }`}
                   >
-                    <div className="font-semibold text-sm text-white mb-1">High Sensitivity</div>
+                    <div className="font-semibold text-sm text-white mb-1">Noisy Office</div>
                     <div className="text-xs text-gray-400 leading-relaxed">
-                      Very responsive - fast interruptions, good for debates
+                      Less sensitive - ignores coughs, "umm", background noise
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      handleVadChange('cafe_or_crowd');
+                      setShowDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                      vadSensitivity === 'cafe_or_crowd' 
+                        ? 'bg-blue-900/50 border-2 border-blue-500' 
+                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm text-white mb-1">Café or Crowd</div>
+                    <div className="text-xs text-gray-400 leading-relaxed">
+                      Very insensitive - only loud, clear speech triggers
                     </div>
                   </button>
                 </div>
@@ -1290,6 +1308,7 @@ export function VADSensitivityControls() {
                 </div>
               </div>
             )}
+
           </div>
         </div>
       )}
