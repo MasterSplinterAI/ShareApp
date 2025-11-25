@@ -216,7 +216,7 @@ export default function CustomControlBar({
   }, []);
 
   return (
-    <div className="w-full bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 px-4 py-3 flex-shrink-0">
+    <div className="w-full bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 px-4 py-3 flex-shrink-0" style={{ zIndex: 10000, position: 'relative' }}>
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
         {/* Left side - Standard controls */}
         <div className="flex items-center gap-2 flex-wrap">
@@ -364,7 +364,7 @@ export default function CustomControlBar({
           
           {/* VAD Sensitivity Controls - Host Only */}
           {isHost && (
-            <div className="relative">
+            <div className="relative" style={{ zIndex: 10001 }}>
               <VADSensitivityControls />
             </div>
           )}

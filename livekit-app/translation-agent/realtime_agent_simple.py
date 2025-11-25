@@ -63,6 +63,8 @@ class SimpleTranslationAgent:
         
         self.host_vad_setting: int = 50  # 0-100 slider value (0=most sensitive, 100=least sensitive)
         self.host_voice_setting: str = "alloy"  # Default voice
+        self.host_silence_duration_setting: int = 1500  # Default 1500ms (1.5 seconds)
+        self.host_allow_interruptions_setting: bool = True  # Default: allow interruptions
         self.host_participant_id: Optional[str] = None
 
         logger.info("✅ Simple Translation Agent initialized (ONE assistant per speaker-target pair)")
@@ -94,9 +96,9 @@ class SimpleTranslationAgent:
         # Lower slider = lower threshold = more sensitive
         threshold = 0.3 + (vad_value / 100) * 0.6  # Range: 0.3 to 0.9
         
-        # Map slider value (0-100) to silence duration (300-1500ms)
-        # Lower slider = shorter silence = more sensitive
-        silence_duration_ms = int(300 + (vad_value / 100) * 1200)  # Range: 300ms to 1500ms
+        # Use the separate silence_duration setting instead of calculating from VAD
+        # Clamp to valid range (300-5000ms)
+        silence_duration_ms = max(300, min(5000, self.host_silence_duration_setting))
         
         return {
             **base_config,
@@ -159,6 +161,40 @@ class SimpleTranslationAgent:
                         asyncio.create_task(self._restart_all_assistants_for_voice_change(ctx))
                     else:
                         logger.warning(f"⚠️ Invalid voice setting received: {new_voice}, ignoring")
+                    return
+                
+                # Handle host silence duration setting changes
+                if message_type == 'host_silence_duration_setting':
+                    new_duration = message.get('duration', 1500)
+                    try:
+                        new_duration = int(new_duration)
+                        if 300 <= new_duration <= 5000:
+                            old_duration = self.host_silence_duration_setting
+                            self.host_silence_duration_setting = new_duration
+                            self.host_participant_id = participant_id
+                            logger.info(f"⏱️ Host changed silence duration: {old_duration}ms → {new_duration}ms (from {participant_id})")
+                            
+                            # Restart all assistants with new silence duration
+                            asyncio.create_task(self._restart_all_assistants_for_vad_change(ctx))
+                        else:
+                            logger.warning(f"⚠️ Invalid silence duration received: {new_duration} (must be 300-5000ms)")
+                    except (ValueError, TypeError):
+                        logger.warning(f"⚠️ Invalid silence duration type received: {new_duration}")
+                    return
+                
+                # Handle host allow interruptions setting changes
+                if message_type == 'host_allow_interruptions_setting':
+                    new_allow = message.get('allow', True)
+                    if isinstance(new_allow, bool):
+                        old_allow = self.host_allow_interruptions_setting
+                        self.host_allow_interruptions_setting = new_allow
+                        self.host_participant_id = participant_id
+                        logger.info(f"🔄 Host changed allow interruptions: {old_allow} → {new_allow} (from {participant_id})")
+                        
+                        # Restart all assistants with new interruption setting
+                        asyncio.create_task(self._restart_all_assistants_for_interruptions_change(ctx))
+                    else:
+                        logger.warning(f"⚠️ Invalid allow_interruptions value received: {new_allow}")
                     return
                 
                 # Handle language preference updates
@@ -290,7 +326,7 @@ class SimpleTranslationAgent:
         # if language_code.startswith('pt-') or language_code.startswith('pt_'):
         #     return 'pt'  # Portuguese variants
         return language_code
-    
+
     async def _update_assistants_for_all_languages(self, ctx: JobContext):
         """
         Core logic: Create/update assistants per (speaker, target_language) pair.
@@ -345,8 +381,11 @@ class SimpleTranslationAgent:
                 
                 if assistant_key not in self.assistants:
                     logger.info(f"🚀 Creating NEW assistant: {speaker_id} → {target_language} (for listeners: {listeners})")
-                    await self._create_assistant_for_pair(ctx, speaker_id, target_language)
-                else:
+                    try:
+                        await self._create_assistant_for_pair(ctx, speaker_id, target_language)
+                    except Exception as e:
+                        logger.error(f"❌ Failed to create assistant {assistant_key}: {e}", exc_info=True)
+            else:
                     logger.debug(f"  ✅ Assistant {assistant_key} already exists")
         
         # Stop assistants that are no longer needed
@@ -355,7 +394,7 @@ class SimpleTranslationAgent:
                 logger.info(f"🛑 Stopping assistant {assistant_key} (no longer needed)")
                 assistant = self.assistants.pop(assistant_key)
                 await assistant.aclose()
-        
+            
         logger.info(f"   Final assistants: {list(self.assistants.keys())}")
 
     async def _create_assistant_for_pair(self, ctx: JobContext, speaker_id: str, target_language: str):
@@ -412,7 +451,7 @@ class SimpleTranslationAgent:
             session = AgentSession(
                 vad=silero.VAD.load(),
                 llm=realtime_model,
-                allow_interruptions=True
+                allow_interruptions=self.host_allow_interruptions_setting  # Use setting instead of hardcoded True
             )
             
             # Initialize session user_data for transcription tracking
@@ -839,7 +878,7 @@ class SimpleTranslationAgent:
             "final": not partial,  # Indicates if this is the final version
             "timestamp": asyncio.get_event_loop().time()  # Use same timestamp method as original
         })
-        
+            
         # Broadcast to ALL participants so everyone can see both original and translated text
         # This helps speakers verify accuracy and enables better cross-language communication
         try:
@@ -1006,51 +1045,129 @@ class SimpleTranslationAgent:
         """Restart all assistants when VAD setting changes to apply new sensitivity"""
         try:
             logger.info(f"🔄 Restarting all assistants with new VAD setting: {self.host_vad_setting}")
+            logger.info(f"   Current assistants before restart: {list(self.assistants.keys())}")
+            logger.info(f"   Room connected: {ctx.room is not None}, Room name: {ctx.room.name if ctx.room else 'N/A'}")
             
             # Store current state
             current_participants = dict(self.participant_languages)
             current_enabled = dict(self.translation_enabled)
+            logger.info(f"   Participants: {current_participants}")
+            logger.info(f"   Enabled: {current_enabled}")
             
             # Stop all existing assistants
-            for key in list(self.assistants.keys()):
-                assistant = self.assistants.pop(key)
-                await assistant.aclose()
+            assistants_to_close = list(self.assistants.keys())
+            logger.info(f"   Closing {len(assistants_to_close)} assistants: {assistants_to_close}")
+            for key in assistants_to_close:
+                try:
+                    assistant = self.assistants.pop(key, None)
+                    if assistant:
+                        await assistant.aclose()
+                        logger.debug(f"   Closed assistant: {key}")
+                except Exception as e:
+                    logger.error(f"   Error closing assistant {key}: {e}", exc_info=True)
             
             # Small delay to let audio drain
             await asyncio.sleep(0.5)
             
+            # Verify room is still connected
+            if not ctx.room:
+                logger.error("❌ Room is None after closing assistants!")
+                return
+            
             # Recreate assistants using the new pattern: assistants per (speaker, target_language) pair
             # Get all speakers and recreate assistants FROM each speaker TO each target language
+            logger.info(f"   Recreating assistants...")
             await self._update_assistants_for_all_languages(ctx)
             
             logger.info(f"✅ All assistants restarted with VAD setting: {self.host_vad_setting}")
+            logger.info(f"   Final assistants: {list(self.assistants.keys())}")
         except Exception as e:
-            logger.error(f"Error restarting assistants for VAD change: {e}", exc_info=True)
+            logger.error(f"❌ Error restarting assistants for VAD change: {e}", exc_info=True)
     
     async def _restart_all_assistants_for_voice_change(self, ctx: JobContext):
         """Restart all assistants when voice setting changes to apply new voice"""
         try:
             logger.info(f"🔄 Restarting all assistants with new voice: {self.host_voice_setting}")
+            logger.info(f"   Current assistants before restart: {list(self.assistants.keys())}")
+            logger.info(f"   Room connected: {ctx.room is not None}, Room name: {ctx.room.name if ctx.room else 'N/A'}")
             
             # Store current state
             current_participants = dict(self.participant_languages)
             current_enabled = dict(self.translation_enabled)
+            logger.info(f"   Participants: {current_participants}")
+            logger.info(f"   Enabled: {current_enabled}")
             
             # Stop all existing assistants
-            for key in list(self.assistants.keys()):
-                assistant = self.assistants.pop(key)
-                await assistant.aclose()
+            assistants_to_close = list(self.assistants.keys())
+            logger.info(f"   Closing {len(assistants_to_close)} assistants: {assistants_to_close}")
+            for key in assistants_to_close:
+                try:
+                    assistant = self.assistants.pop(key, None)
+                    if assistant:
+                        await assistant.aclose()
+                        logger.debug(f"   Closed assistant: {key}")
+                except Exception as e:
+                    logger.error(f"   Error closing assistant {key}: {e}", exc_info=True)
             
             # Small delay to let audio drain
             await asyncio.sleep(0.5)
             
+            # Verify room is still connected
+            if not ctx.room:
+                logger.error("❌ Room is None after closing assistants!")
+                return
+            
             # Recreate assistants using the new pattern: assistants per (speaker, target_language) pair
             # Get all speakers and recreate assistants FROM each speaker TO each target language
+            logger.info(f"   Recreating assistants...")
             await self._update_assistants_for_all_languages(ctx)
             
             logger.info(f"✅ All assistants restarted with voice: {self.host_voice_setting}")
+            logger.info(f"   Final assistants: {list(self.assistants.keys())}")
         except Exception as e:
-            logger.error(f"Error restarting assistants for voice change: {e}", exc_info=True)
+            logger.error(f"❌ Error restarting assistants for voice change: {e}", exc_info=True)
+    
+    async def _restart_all_assistants_for_interruptions_change(self, ctx: JobContext):
+        """Restart all assistants when interruption setting changes"""
+        try:
+            logger.info(f"🔄 Restarting all assistants with allow_interruptions: {self.host_allow_interruptions_setting}")
+            logger.info(f"   Current assistants before restart: {list(self.assistants.keys())}")
+            logger.info(f"   Room connected: {ctx.room is not None}, Room name: {ctx.room.name if ctx.room else 'N/A'}")
+            
+            # Store current state
+            current_participants = dict(self.participant_languages)
+            current_enabled = dict(self.translation_enabled)
+            logger.info(f"   Participants: {current_participants}")
+            logger.info(f"   Enabled: {current_enabled}")
+            
+            # Stop all existing assistants
+            assistants_to_close = list(self.assistants.keys())
+            logger.info(f"   Closing {len(assistants_to_close)} assistants: {assistants_to_close}")
+            for key in assistants_to_close:
+                try:
+                    assistant = self.assistants.pop(key, None)
+                    if assistant:
+                        await assistant.aclose()
+                        logger.debug(f"   Closed assistant: {key}")
+                except Exception as e:
+                    logger.error(f"   Error closing assistant {key}: {e}", exc_info=True)
+            
+            # Small delay to let audio drain
+            await asyncio.sleep(0.5)
+            
+            # Verify room is still connected
+            if not ctx.room:
+                logger.error("❌ Room is None after closing assistants!")
+                return
+            
+            # Recreate assistants
+            logger.info(f"   Recreating assistants...")
+            await self._update_assistants_for_all_languages(ctx)
+            
+            logger.info(f"✅ All assistants restarted with allow_interruptions: {self.host_allow_interruptions_setting}")
+            logger.info(f"   Final assistants: {list(self.assistants.keys())}")
+        except Exception as e:
+            logger.error(f"❌ Error restarting assistants for interruptions change: {e}", exc_info=True)
 
 
 async def main(ctx: JobContext):

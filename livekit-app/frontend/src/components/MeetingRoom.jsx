@@ -505,7 +505,7 @@ function AgentTileCustomizer() {
               // Make owl 40% of the smaller tile dimension, but with min/max constraints
               const owlSize = Math.max(160, Math.min(300, tileSize * 0.4));
               
-              avatarImg.setAttribute('style', `position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; width: ${owlSize}px !important; height: ${owlSize}px !important; max-width: 50% !important; max-height: 50% !important; object-fit: contain !important; opacity: 0.9 !important; z-index: 1000 !important; pointer-events: none !important; display: block !important; visibility: visible !important;`);
+              avatarImg.setAttribute('style', `position: absolute !important; top: 50% !important; left: 50% !important; transform: translate(-50%, -50%) !important; width: ${owlSize}px !important; height: ${owlSize}px !important; max-width: 50% !important; max-height: 50% !important; object-fit: contain !important; opacity: 0.9 !important; z-index: 1 !important; pointer-events: none !important; display: block !important; visibility: visible !important;`);
               
               // Add event handlers for debugging
               avatarImg.onload = () => {
@@ -1064,6 +1064,8 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 export function VADSensitivityControls() {
   const [vadSensitivity, setVadSensitivity] = useState(50); // 0-100 slider value
   const [selectedVoice, setSelectedVoice] = useState('alloy');
+  const [silenceDuration, setSilenceDuration] = useState(1500);
+  const [allowInterruptions, setAllowInterruptions] = useState(true);
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState('sensitivity'); // 'sensitivity' or 'voice'
 
@@ -1107,6 +1109,20 @@ export function VADSensitivityControls() {
     }
   };
 
+  const handleSilenceDurationChange = (duration) => {
+    if (window.__roomControls?.sendSilenceDurationSetting) {
+      window.__roomControls.sendSilenceDurationSetting(duration);
+      setSilenceDuration(duration);
+    }
+  };
+
+  const handleAllowInterruptionsChange = (allow) => {
+    if (window.__roomControls?.sendAllowInterruptionsSetting) {
+      window.__roomControls.sendAllowInterruptionsSetting(allow);
+      setAllowInterruptions(allow);
+    }
+  };
+
   // Sync with RoomControls state
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1116,11 +1132,19 @@ export function VADSensitivityControls() {
       if (window.__roomControls?.selectedVoice) {
         setSelectedVoice(window.__roomControls.selectedVoice);
       }
+      if (window.__roomControls?.silenceDuration) {
+        setSilenceDuration(window.__roomControls.silenceDuration);
+      }
+      if (window.__roomControls?.allowInterruptions !== undefined) {
+        setAllowInterruptions(window.__roomControls.allowInterruptions);
+      }
     }, 500);
     return () => clearInterval(interval);
   }, []);
 
   // Close dropdown when clicking outside
+  const dropdownRef = useRef(null);
+  
   useEffect(() => {
     if (!showDropdown) return;
     
@@ -1128,20 +1152,19 @@ export function VADSensitivityControls() {
       const target = event.target;
       console.log('Click outside handler triggered, target:', target);
       
-      // Find the dropdown container (the .relative div)
-      const dropdownContainer = target.closest('.relative');
-      console.log('Dropdown container found:', !!dropdownContainer);
+      // Check if click is inside the dropdown menu or its container
+      if (dropdownRef.current && dropdownRef.current.contains(target)) {
+        // Clicked inside dropdown menu, don't close
+        console.log('Click inside dropdown, keeping open');
+        return;
+      }
       
-      if (dropdownContainer) {
-        // Check if click is inside the dropdown menu div
-        const dropdownMenu = dropdownContainer.querySelector('div.absolute.bottom-full');
-        console.log('Dropdown menu found:', !!dropdownMenu, 'contains target:', dropdownMenu?.contains(target));
-        
-        if (dropdownMenu && dropdownMenu.contains(target)) {
-          // Clicked inside dropdown menu, don't close
-          console.log('Click inside dropdown, keeping open');
-          return;
-        }
+      // Also check if clicking the settings button itself (to toggle)
+      const settingsButton = target.closest('button[aria-label="Translation Settings"]');
+      if (settingsButton) {
+        // Clicked the settings button, let it handle the toggle
+        console.log('Clicked settings button, letting it handle toggle');
+        return;
       }
       
       // Clicked outside, close dropdown
@@ -1161,7 +1184,7 @@ export function VADSensitivityControls() {
   }, [showDropdown]);
 
   return (
-    <div className="relative">
+    <div className="relative" style={{ zIndex: 10000 }}>
       <button
         onClick={() => setShowDropdown(!showDropdown)}
         className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
@@ -1174,10 +1197,15 @@ export function VADSensitivityControls() {
 
       {showDropdown && (
         <div 
-          className="absolute bottom-full right-0 mb-2 w-80 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] backdrop-blur-sm max-w-[calc(100vw-2rem)]"
+          ref={dropdownRef}
+          className="absolute bottom-full right-0 mb-2 w-80 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[99999] backdrop-blur-sm max-w-[calc(100vw-2rem)]"
+          style={{ zIndex: 99999 }}
           onClick={(e) => {
             e.stopPropagation();
             console.log('Dropdown menu clicked');
+          }}
+          onMouseDown={(e) => {
+            e.stopPropagation();
           }}
         >
           <div className="p-3">
@@ -1217,56 +1245,142 @@ export function VADSensitivityControls() {
             {activeTab === 'sensitivity' && (
               <div>
                 <div className="text-xs text-gray-400 mb-3 font-medium">Translation Sensitivity</div>
-                <div className="space-y-3">
-                  {/* Current value display */}
-                  <div className="text-center">
-                    <div className="text-lg font-semibold text-white mb-1">
-                      {getVadLabel(vadSensitivity)}
+                <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+                  {/* VAD Sensitivity Slider */}
+                  <div>
+                    <div className="text-center mb-2">
+                      <div className="text-lg font-semibold text-white mb-1">
+                        {getVadLabel(vadSensitivity)}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Value: {vadSensitivity} / 100
+                      </div>
                     </div>
-                    <div className="text-xs text-gray-400">
-                      Value: {vadSensitivity} / 100
+                    
+                    <div className="px-2">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={vadSensitivity}
+                        onChange={(e) => {
+                          const newValue = parseInt(e.target.value);
+                          handleVadChange(newValue);
+                        }}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                        style={{
+                          background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${vadSensitivity}%, #374151 ${vadSensitivity}%, #374151 100%)`
+                        }}
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>Most Sensitive</span>
+                        <span>Least Sensitive</span>
+                      </div>
+                    </div>
+                    
+                    <div className="text-xs text-gray-400 leading-relaxed px-2 mt-2">
+                      {vadSensitivity <= 20 && (
+                        <span>Very responsive - fast interruptions, good for debates and quick exchanges</span>
+                      )}
+                      {vadSensitivity > 20 && vadSensitivity <= 40 && (
+                        <span>High sensitivity - catches most speech quickly, good for active conversations</span>
+                      )}
+                      {vadSensitivity > 40 && vadSensitivity <= 60 && (
+                        <span>Balanced - good for most conversations (default setting)</span>
+                      )}
+                      {vadSensitivity > 60 && vadSensitivity <= 80 && (
+                        <span>Low sensitivity - forgiving, ignores coughs, "umm", background noise</span>
+                      )}
+                      {vadSensitivity > 80 && (
+                        <span>Very low sensitivity - only captures clear, deliberate speech. Ignores most background noise and filler words</span>
+                      )}
                     </div>
                   </div>
-                  
-                  {/* Slider */}
-                  <div className="px-2">
-                    <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={vadSensitivity}
-                      onChange={(e) => {
-                        const newValue = parseInt(e.target.value);
-                        handleVadChange(newValue);
-                      }}
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
-                      style={{
-                        background: `linear-gradient(to right, #3b82f6 0%, #3b82f6 ${vadSensitivity}%, #374151 ${vadSensitivity}%, #374151 100%)`
-                      }}
-                    />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1">
-                      <span>Most Sensitive</span>
-                      <span>Least Sensitive</span>
+
+                  {/* Divider */}
+                  <div className="border-t border-gray-700 my-3"></div>
+
+                  {/* Max Silence Duration Slider */}
+                  <div>
+                    <div className="text-sm font-medium text-white mb-2">Max Silence Duration</div>
+                    <div className="text-center mb-2">
+                      <div className="text-lg font-semibold text-white">
+                        {(silenceDuration / 1000).toFixed(1)}s
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {silenceDuration}ms
+                      </div>
+                    </div>
+                    
+                    <div className="px-2">
+                      <input
+                        type="range"
+                        min="300"
+                        max="5000"
+                        step="100"
+                        value={silenceDuration}
+                        onChange={(e) => {
+                          const newValue = parseInt(e.target.value);
+                          handleSilenceDurationChange(newValue);
+                        }}
+                        className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-green-500"
+                        style={{
+                          background: `linear-gradient(to right, #10b981 0%, #10b981 ${((silenceDuration - 300) / 4700) * 100}%, #374151 ${((silenceDuration - 300) / 4700) * 100}%, #374151 100%)`
+                        }}
+                      />
+                      <div className="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>0.3s</span>
+                        <span>5.0s</span>
+                      </div>
+                    </div>
+                    
+                    <div className="text-xs text-gray-400 leading-relaxed px-2 mt-2">
+                      How long to wait after speech stops before ending the turn. Higher values allow longer pauses for thinking.
                     </div>
                   </div>
-                  
-                  {/* Description */}
-                  <div className="text-xs text-gray-400 leading-relaxed px-2">
-                    {vadSensitivity <= 20 && (
-                      <span>Very responsive - fast interruptions, good for debates and quick exchanges</span>
-                    )}
-                    {vadSensitivity > 20 && vadSensitivity <= 40 && (
-                      <span>High sensitivity - catches most speech quickly, good for active conversations</span>
-                    )}
-                    {vadSensitivity > 40 && vadSensitivity <= 60 && (
-                      <span>Balanced - good for most conversations (default setting)</span>
-                    )}
-                    {vadSensitivity > 60 && vadSensitivity <= 80 && (
-                      <span>Low sensitivity - forgiving, ignores coughs, "umm", background noise</span>
-                    )}
-                    {vadSensitivity > 80 && (
-                      <span>Very low sensitivity - only captures clear, deliberate speech. Ignores most background noise and filler words</span>
-                    )}
+
+                  {/* Divider */}
+                  <div className="border-t border-gray-700 my-3"></div>
+
+                  {/* Allow Interruptions Toggle */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="text-sm font-medium text-white">Allow Interruptions</div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {allowInterruptions 
+                            ? "Translations will stop when someone interrupts"
+                            : "Translations will always finish, even if interrupted"}
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          handleAllowInterruptionsChange(!allowInterruptions);
+                        }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                          allowInterruptions ? 'bg-blue-500' : 'bg-gray-600'
+                        }`}
+                      >
+                        <span
+                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                            allowInterruptions ? 'translate-x-6' : 'translate-x-1'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="text-xs text-gray-400 leading-relaxed px-2 mt-2">
+                      {allowInterruptions ? (
+                        <span className="text-yellow-400">⚠️ When disabled, translations will overlap if someone interrupts. This helps users understand when to wait.</span>
+                      ) : (
+                        <span>✅ Full translations will always be captured, even if audio overlaps. Users will see complete transcriptions.</span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

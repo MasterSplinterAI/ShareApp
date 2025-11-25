@@ -13,6 +13,8 @@
 /* Only override what's absolutely necessary */
 .lk-participant-tile {
   @apply rounded-lg overflow-hidden;
+  position: relative;
+  z-index: 1; /* Lower z-index so tiles don't overlap control bar dropdowns */
 }
 
 /* Hide scrollbar for control bar */
@@ -329,7 +331,7 @@
   min-height: 160px !important;
   object-fit: contain !important;
   opacity: 0.9 !important;
-  z-index: 100 !important;
+  z-index: 1 !important; /* Lower z-index so it doesn't overlap dropdowns */
   pointer-events: none !important;
   display: block !important;
 }
