@@ -2,7 +2,7 @@
   subdomain = "production-uiycx4ku"
 
 [agent]
-  id = "CA_tANMidm4MnDA"
+  id = "CA_NRP3H4y5nPPZ"
   name = "translation-dev-cloud"
   # Auto-join rooms matching this pattern
   room_pattern = "room-*"

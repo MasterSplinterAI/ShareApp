@@ -159,7 +159,7 @@ export function useTranslation() {
       }
     }
     
-    console.log('❌ No translation activity found. Map size:', translationActivity.size);
+    // No translation activity found
     return false;
   }, [translationActivity, targetLanguage, isEnabled, localParticipant]);
 

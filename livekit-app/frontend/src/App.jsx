@@ -10,9 +10,7 @@ function App() {
   const location = useLocation();
   
   useEffect(() => {
-    console.log('App: Route changed to:', location.pathname);
-    console.log('App: Route state:', location.state);
-    console.log('App: SessionStorage:', sessionStorage.getItem('participantInfo'));
+    // Route tracking removed for cleaner console
   }, [location]);
   
   return (

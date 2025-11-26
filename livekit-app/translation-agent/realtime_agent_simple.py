@@ -75,6 +75,12 @@ class SimpleTranslationAgent:
         self.host_voice_setting: str = "alloy"  # Default voice
         self.host_participant_id: Optional[str] = None
         
+        # Cooldown tracking: prevent same-speaker interruptions during/after translation
+        # Key: "{speaker_id}:{target_language}", Value: timestamp when translation ended
+        self.translation_end_times: Dict[str, float] = {}
+        # Cooldown period in seconds - ignore new speech from same speaker for this duration after translation ends
+        self.speaker_cooldown_period = 3.0  # 3 seconds cooldown after translation ends
+        
         # Detect if running on LiveKit Cloud
         self.is_cloud_deployment = self._detect_cloud_deployment()
         if self.is_cloud_deployment:
@@ -124,7 +130,7 @@ class SimpleTranslationAgent:
                 **base_config,
                 "threshold": 0.35,  # Low threshold = very sensitive
                 "silence_duration_ms": 600,
-                "prefix_padding_ms": 600,  # Moderate filter for quiet rooms
+                "prefix_padding_ms": 1000,  # Increased from 600ms - stronger filter to prevent cough interruptions
             }
         elif self.host_vad_setting == "normal":
             # Balanced for normal office/home environments
@@ -132,7 +138,7 @@ class SimpleTranslationAgent:
                 **base_config,
                 "threshold": 0.5,  # Balanced threshold
                 "silence_duration_ms": 700,
-                "prefix_padding_ms": 800,  # Good balance - filters coughs but allows speech
+                "prefix_padding_ms": 1500,  # Increased from 1200ms - very strong filter to prevent cough interruptions
             }
         elif self.host_vad_setting == "noisy_office":
             # Less sensitive — ignores coughs, chair noises, background talk
@@ -140,7 +146,7 @@ class SimpleTranslationAgent:
                 **base_config,
                 "threshold": 0.75,  # High threshold = less sensitive to noise
                 "silence_duration_ms": 1000,
-                "prefix_padding_ms": 1000,  # Stronger filter for noisy environments
+                "prefix_padding_ms": 1500,  # Increased from 1000ms - very strong filter for noisy environments
             }
         elif self.host_vad_setting == "cafe_or_crowd":
             # Very insensitive — only triggers on loud, clear, sustained speech
@@ -148,7 +154,7 @@ class SimpleTranslationAgent:
                 **base_config,
                 "threshold": 0.85,  # Very high threshold = only loud speech
                 "silence_duration_ms": 1200,
-                "prefix_padding_ms": 1200,  # Strongest filter for very noisy environments
+                "prefix_padding_ms": 1800,  # Increased from 1200ms - strongest filter to prevent interruptions
             }
         else:
             # Fallback: Support old naming for backward compatibility
@@ -468,42 +474,43 @@ class SimpleTranslationAgent:
             logger.info(f"[{target_language}] 🎛️ Using VAD config: {vad_config} (host setting: {self.host_vad_setting})")
             
             # Adjust Silero VAD and AgentSession parameters based on host VAD setting
-            # More aggressive filtering for noisy environments, less for quiet rooms
+            # CRITICAL: Interruption parameters are set HIGHER to prevent coughs/noise from interrupting ongoing translations
+            # These values ensure coughs (< 1s, 0 words) cannot interrupt translations in progress
             if self.host_vad_setting == "quiet_room":
                 silero_activation = 0.5  # More sensitive
-                silero_min_speech = 0.5   # Less strict (500ms)
+                silero_min_speech = 0.8   # Increased from 0.5s to block coughs better
                 silero_min_silence = 0.6
-                interrupt_duration = 0.8
-                interrupt_words = 3
-                false_interrupt_timeout = 2.5
+                interrupt_duration = 2.0  # Increased from 0.8s - requires 2s of speech to interrupt
+                interrupt_words = 6       # Increased from 3 - requires 6+ words to interrupt
+                false_interrupt_timeout = 4.0  # Increased from 2.5s - more time to detect false positives
             elif self.host_vad_setting == "normal":
                 silero_activation = 0.65  # Balanced
-                silero_min_speech = 0.7    # Blocks coughs < 700ms
+                silero_min_speech = 1.0    # Increased from 0.7s - blocks coughs < 1000ms
                 silero_min_silence = 0.8
-                interrupt_duration = 1.0
-                interrupt_words = 5
-                false_interrupt_timeout = 3.0
+                interrupt_duration = 2.5  # Increased from 1.0s - requires 2.5s of speech to interrupt
+                interrupt_words = 8       # Increased from 5 - requires 8+ words to interrupt (coughs have 0)
+                false_interrupt_timeout = 5.0  # Increased from 3.0s - more time to detect false positives
             elif self.host_vad_setting == "noisy_office":
                 silero_activation = 0.75  # Less sensitive
-                silero_min_speech = 0.9   # Blocks coughs < 900ms
+                silero_min_speech = 1.2   # Increased from 0.9s - blocks coughs < 1200ms
                 silero_min_silence = 1.0
-                interrupt_duration = 1.2
-                interrupt_words = 6
-                false_interrupt_timeout = 3.5
+                interrupt_duration = 3.0  # Increased from 1.2s - requires 3s of speech to interrupt
+                interrupt_words = 10      # Increased from 6 - requires 10+ words to interrupt
+                false_interrupt_timeout = 5.5  # Increased from 3.5s
             elif self.host_vad_setting == "cafe_or_crowd":
                 silero_activation = 0.85  # Very insensitive
-                silero_min_speech = 1.0   # Blocks coughs < 1000ms
+                silero_min_speech = 1.5   # Increased from 1.0s - blocks coughs < 1500ms
                 silero_min_silence = 1.2
-                interrupt_duration = 1.5
-                interrupt_words = 7
-                false_interrupt_timeout = 4.0
+                interrupt_duration = 3.5  # Increased from 1.5s - requires 3.5s of speech to interrupt
+                interrupt_words = 12      # Increased from 7 - requires 12+ words to interrupt
+                false_interrupt_timeout = 6.0  # Increased from 4.0s
             else:  # Default/fallback
                 silero_activation = 0.65
-                silero_min_speech = 0.7
+                silero_min_speech = 1.0   # Increased from 0.7s
                 silero_min_silence = 0.8
-                interrupt_duration = 1.0
-                interrupt_words = 5
-                false_interrupt_timeout = 3.0
+                interrupt_duration = 2.5  # Increased from 1.0s
+                interrupt_words = 8       # Increased from 5
+                false_interrupt_timeout = 5.0  # Increased from 3.0s
             
             # Create the realtime model with turn_detection
             # CRITICAL: text FIRST in modalities ensures events fire reliably
@@ -555,7 +562,8 @@ class SimpleTranslationAgent:
                 "sent_final": False,
                 "target_language": target_language,
                 "target_lang_name": target_lang_name,
-                "source_speaker_id": speaker_id  # Track who actually spoke (this assistant listens to this speaker)
+                "source_speaker_id": speaker_id,  # Track who actually spoke (this assistant listens to this speaker)
+                "agent_is_speaking": False  # Flag to block input while agent is speaking
             }
             
             # Helper function to detect meta-commentary
@@ -605,6 +613,11 @@ class SimpleTranslationAgent:
             @session.on("user_input_transcribed")
             def on_original_transcribed(event):
                 """Handle when user speech is transcribed (original text) - capture ALL transcriptions"""
+                # CRITICAL: Block ALL input while agent is speaking to prevent interruptions
+                if session.user_data.get("agent_is_speaking", False):
+                    logger.info(f"[{target_language}] 🚫 Blocking input from {speaker_id} - agent is currently speaking (translation in progress)")
+                    return  # Exit early - don't process this input
+                
                 # Get transcript and is_final flag (matching original agent pattern)
                 data = event.model_dump() if hasattr(event, "model_dump") else {}
                 transcript = data.get("transcript", "") or data.get("text", "")
@@ -619,7 +632,40 @@ class SimpleTranslationAgent:
                 # This assistant listens to speaker_id (set in session.user_data)
                 source_speaker_id = speaker_id
                 
+                # CRITICAL: Check cooldown period to prevent same-speaker interruptions
+                # If speaker just finished translating, ignore new speech for a short period
+                # This prevents coughs/short sounds from interrupting ongoing translations
+                cooldown_key = f"{speaker_id}:{target_language}"
+                current_time = time.time()
+                if cooldown_key in self.translation_end_times:
+                    time_since_end = current_time - self.translation_end_times[cooldown_key]
+                    if time_since_end < self.speaker_cooldown_period:
+                        # Still in cooldown - check if this is legitimate speech or just noise
+                        # If transcript is very short (< 3 words or < 20 chars), likely a cough/noise
+                        transcript_words = len(transcript.split()) if transcript else 0
+                        transcript_length = len(transcript) if transcript else 0
+                        
+                        if transcript_words < 3 and transcript_length < 20:
+                            # Very short - likely a cough/noise, ignore during cooldown
+                            logger.info(f"[{target_language}] 🚫 Ignoring short speech from {speaker_id} during cooldown ({time_since_end:.2f}s/{self.speaker_cooldown_period}s): '{transcript[:50]}' (words: {transcript_words}, length: {transcript_length})")
+                            return
+                        else:
+                            # Longer speech - might be legitimate, but still respect cooldown for very recent ends
+                            if time_since_end < 1.5:  # First 1.5 seconds are strict
+                                logger.info(f"[{target_language}] 🚫 Ignoring speech from {speaker_id} during strict cooldown ({time_since_end:.2f}s < 1.5s): '{transcript[:50]}'")
+                                return
+                            # After 1.5s, allow longer speech through (user might be continuing)
+                            logger.info(f"[{target_language}] ⚠️ Allowing longer speech from {speaker_id} after cooldown ({time_since_end:.2f}s): '{transcript[:50]}'")
+                
                 if transcript := transcript.strip():
+                    # Clear cooldown when new legitimate speech starts
+                    self.translation_end_times.pop(cooldown_key, None)
+                    
+                    # CRITICAL: Set blocking flag immediately when user speech is detected
+                    # This prevents any new input from being processed while translation is starting/active
+                    session.user_data["agent_is_speaking"] = True
+                    logger.info(f"[{target_language}] 🎤 User speech detected from {speaker_id} - BLOCKING input (translation starting)")
+                    
                     # Send translation activity START when we first detect user speech
                     # This ensures the UI shows the indicator even if agent_speech_started doesn't fire
                     if not session.user_data.get("translation_active_sent", False):
@@ -648,8 +694,39 @@ class SimpleTranslationAgent:
             @session.on("user_speech_committed")
             def on_user_speech_committed(event):
                 """Capture original speech text (fallback)"""
+                # CRITICAL: Block ALL input while agent is speaking to prevent interruptions
+                if session.user_data.get("agent_is_speaking", False):
+                    logger.info(f"[{target_language}] 🚫 Blocking input from {speaker_id} - agent is currently speaking (translation in progress)")
+                    return  # Exit early - don't process this input
+                
                 original = getattr(event, "text", None) or ""
                 if original:
+                    # CRITICAL: Check cooldown period to prevent same-speaker interruptions
+                    cooldown_key = f"{speaker_id}:{target_language}"
+                    current_time = time.time()
+                    if cooldown_key in self.translation_end_times:
+                        time_since_end = current_time - self.translation_end_times[cooldown_key]
+                        if time_since_end < self.speaker_cooldown_period:
+                            # Still in cooldown - check if this is legitimate speech or just noise
+                            original_words = len(original.split())
+                            original_length = len(original)
+                            
+                            if original_words < 3 and original_length < 20:
+                                # Very short - likely a cough/noise, ignore during cooldown
+                                logger.info(f"[{target_language}] 🚫 Ignoring short speech from {speaker_id} during cooldown ({time_since_end:.2f}s/{self.speaker_cooldown_period}s): '{original[:50]}' (words: {original_words}, length: {original_length})")
+                                return
+                            elif time_since_end < 1.5:  # First 1.5 seconds are strict
+                                logger.info(f"[{target_language}] 🚫 Ignoring speech from {speaker_id} during strict cooldown ({time_since_end:.2f}s < 1.5s): '{original[:50]}'")
+                                return
+                    
+                    # Clear cooldown when new legitimate speech starts
+                    self.translation_end_times.pop(cooldown_key, None)
+                    
+                    # CRITICAL: Set blocking flag immediately when user speech is detected
+                    # This prevents any new input from being processed while translation is starting/active
+                    session.user_data["agent_is_speaking"] = True
+                    logger.info(f"[{target_language}] 🎤 User speech detected from {speaker_id} - BLOCKING input (translation starting)")
+                    
                     # Send translation activity START when we detect user speech
                     # This ensures the UI shows the indicator even if agent_speech_started doesn't fire
                     if not session.user_data.get("translation_active_sent", False):
@@ -675,9 +752,11 @@ class SimpleTranslationAgent:
             @session.on("agent_speech_started")
             def on_agent_speech_started(_):
                 """Reset translation accumulator on new speech start"""
+                # CRITICAL: Set flag to block input while agent is speaking
+                session.user_data["agent_is_speaking"] = True
                 session.user_data["current_translation"] = ""
                 session.user_data["sent_final"] = False  # CRITICAL: Reset flag so we can send transcriptions for this turn
-                logger.info(f"[{target_language}] 🎤 Agent speech started - reset sent_final flag")
+                logger.info(f"[{target_language}] 🎤 Agent speech started - BLOCKING input from {speaker_id} (translation in progress)")
                 # Notify that translation is active (for UI indicators)
                 # Also reset the flag so we can send activity again for next turn
                 session.user_data["translation_active_sent"] = False
@@ -775,12 +854,37 @@ class SimpleTranslationAgent:
                     # Reset flag on error so we can retry
                     session.user_data["sent_final"] = False
                 
+                # CRITICAL: Keep input blocked - don't clear flag yet!
+                # The flag will be cleared after a fixed delay to ensure audio finishes playing
+                # This prevents ANY input (coughs, speech, etc.) from interrupting the translation
+                logger.info(f"[{target_language}] 📤 Transcription sent, keeping input BLOCKED until audio finishes")
+                
                 # Notify that translation stopped (for UI indicators)
+                # Note: This is just for UI - input remains blocked until audio finishes
                 asyncio.create_task(
                     self._send_translation_activity(ctx, speaker_id, target_language, is_active=False)
                 )
                 # Reset flag so we can send activity again for next turn
                 session.user_data["translation_active_sent"] = False
+                
+                # CRITICAL: Keep input blocked for fixed duration to ensure audio finishes
+                # Use a generous delay (5 seconds) to cover even long translations
+                # This is much cleaner than estimating - just block until we're sure audio is done
+                async def clear_blocking_flag_after_audio():
+                    """Clear blocking flag after audio finishes playing"""
+                    await asyncio.sleep(5.0)  # Fixed 5 second delay - covers most translations
+                    # Double-check flag is still set (might have been cleared by new speech)
+                    if session.user_data.get("agent_is_speaking", False):
+                        session.user_data["agent_is_speaking"] = False
+                        logger.info(f"[{target_language}] ✅ Audio finished - RESUMING input from {speaker_id}")
+                        
+                        # CRITICAL: Set cooldown timestamp to prevent same-speaker interruptions
+                        # This prevents coughs/short sounds from immediately triggering a new translation
+                        cooldown_key = f"{speaker_id}:{target_language}"
+                        self.translation_end_times[cooldown_key] = time.time()
+                        logger.info(f"[{target_language}] ⏱️ Cooldown started for {speaker_id} (will ignore short sounds for {self.speaker_cooldown_period}s)")
+                
+                asyncio.create_task(clear_blocking_flag_after_audio())
             
             # conversation_item_added as fallback - but prefer agent_speech_committed for full text
             # Only use this if agent_speech_committed didn't fire (shouldn't happen with server_vad)
@@ -868,12 +972,35 @@ class SimpleTranslationAgent:
                                     ctx, original, text, target_language, partial=False, source_speaker_id=source_speaker
                                 )
                             )
+                            # CRITICAL: Keep input blocked - don't clear flag yet!
+                            # The flag will be cleared after a fixed delay to ensure audio finishes playing
+                            logger.info(f"[{target_language}] 📤 Transcription sent (conversation_item), keeping input BLOCKED until audio finishes")
+                            
                             # Notify that translation stopped (for UI indicators)
+                            # Note: This is just for UI - input remains blocked until audio finishes
                             asyncio.create_task(
                                 self._send_translation_activity(ctx, source_speaker, target_language, is_active=False)
                             )
                             # Reset flag so we can send activity again for next turn
                             session.user_data["translation_active_sent"] = False
+                            
+                            # CRITICAL: Keep input blocked for fixed duration to ensure audio finishes
+                            # Use a generous delay (5 seconds) to cover even long translations
+                            async def clear_blocking_flag_after_audio():
+                                """Clear blocking flag after audio finishes playing"""
+                                await asyncio.sleep(5.0)  # Fixed 5 second delay - covers most translations
+                                # Double-check flag is still set (might have been cleared by new speech)
+                                if session.user_data.get("agent_is_speaking", False):
+                                    session.user_data["agent_is_speaking"] = False
+                                    logger.info(f"[{target_language}] ✅ Audio finished (conversation_item) - RESUMING input from {source_speaker}")
+                                    
+                                    # CRITICAL: Set cooldown timestamp to prevent same-speaker interruptions
+                                    # This prevents coughs/short sounds from immediately triggering a new translation
+                                    cooldown_key = f"{source_speaker}:{target_language}"
+                                    self.translation_end_times[cooldown_key] = time.time()
+                                    logger.info(f"[{target_language}] ⏱️ Cooldown started for {source_speaker} (will ignore short sounds for {self.speaker_cooldown_period}s)")
+                            
+                            asyncio.create_task(clear_blocking_flag_after_audio())
                         except RuntimeError as e:
                             logger.error(f"[{target_language}] ❌ Failed to create task: {e}")
                         except Exception as e:

@@ -14,15 +14,9 @@ import { useTranslation } from '../hooks/useTranslation';
 // Will use public folder path - no import needed
 
 function MeetingRoom() {
-  console.log('MeetingRoom: Component function called');
-  
   const { roomName } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  
-  console.log('MeetingRoom: roomName from useParams:', roomName);
-  console.log('MeetingRoom: location.pathname:', location.pathname);
-  console.log('MeetingRoom: location.state:', location.state);
   
   const [token, setToken] = useState(null);
   const [livekitUrl, setLivekitUrl] = useState(null);
@@ -33,8 +27,6 @@ function MeetingRoom() {
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  
-  console.log('MeetingRoom: State initialized, isInitialized:', isInitialized, 'participantInfo:', participantInfo);
 
   // Initialize participant info on mount
   useEffect(() => {
@@ -48,10 +40,8 @@ function MeetingRoom() {
     
     try {
       const sessionData = sessionStorage.getItem('participantInfo');
-      console.log('MeetingRoom: Raw sessionStorage data:', sessionData);
       if (sessionData) {
         sessionInfo = JSON.parse(sessionData);
-        console.log('MeetingRoom: Parsed sessionStorage info:', sessionInfo);
       }
     } catch (e) {
       console.error('MeetingRoom: Error parsing sessionStorage:', e);
@@ -72,18 +62,13 @@ function MeetingRoom() {
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
     
-    console.log('MeetingRoom: Resolved participantName:', participantName);
-    console.log('MeetingRoom: isHost:', isHost);
-    
     if (!participantName) {
       // No name provided, redirect to join page
-      console.log('MeetingRoom: No participant name found, redirecting to join page');
       navigate(`/join/${roomName}`, { replace: true });
       return;
     }
     
     // Set participant info
-    console.log('MeetingRoom: Setting participant info...');
     setParticipantInfo({
       participantName,
       isHost,
@@ -93,7 +78,6 @@ function MeetingRoom() {
     });
     setIsInitialized(true);
     
-    console.log('MeetingRoom: Participant info set, ready to connect');
   }, [roomName, navigate]); // Removed location.state from deps to prevent re-runs
 
   // Handle orientation changes to prevent layout jitter
@@ -123,11 +107,8 @@ function MeetingRoom() {
   // Connect to room once initialized
   useEffect(() => {
     if (!isInitialized || !participantInfo) {
-      console.log('MeetingRoom: Not yet initialized or no participant info');
       return;
     }
-    
-    console.log('MeetingRoom: Connecting to room with participant:', participantInfo.participantName);
     connectToRoom();
   }, [isInitialized, participantInfo]);
 
@@ -146,9 +127,6 @@ function MeetingRoom() {
         participantInfo.participantName, 
         participantInfo.isHost
       );
-      console.log('Token data received:', tokenData);
-      console.log('Token type:', typeof tokenData.token);
-      console.log('Token value:', tokenData.token);
       
       if (!tokenData.token || typeof tokenData.token !== 'string') {
         throw new Error('Invalid token received from server');
@@ -267,6 +245,7 @@ function MeetingRoom() {
         data-lk-theme="default"
         className="h-full flex flex-col"
       >
+        <AutoMuteOnTranslation />
         <TrackFilter 
           selectedLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
@@ -461,10 +440,7 @@ function AgentTileCustomizer() {
           
           const hasVideo = hasVideoTrack || hasVideoInDOM;
           
-          // Debug logging
-          if (matchingParticipant.identity.startsWith('agent-')) {
-            console.log(`🦉 Agent ${matchingParticipant.identity}: hasVideoTrack=${hasVideoTrack}, hasVideoInDOM=${hasVideoInDOM}, hasVideo=${hasVideo}`);
-          }
+          // Debug logging removed for cleaner console
           
           if (hasVideo) {
             tile.removeAttribute('data-no-video');
@@ -509,9 +485,7 @@ function AgentTileCustomizer() {
               
               // Add event handlers for debugging
               avatarImg.onload = () => {
-                console.log('🦉 Owl image loaded successfully:', avatarImg.src);
-                console.log('🦉 Image dimensions:', avatarImg.naturalWidth, 'x', avatarImg.naturalHeight);
-                console.log('🦉 Image computed style:', window.getComputedStyle(avatarImg).display);
+                // Owl avatar image loaded successfully
                 avatarImg.style.opacity = '0.9';
               };
               avatarImg.onerror = (e) => {
@@ -520,7 +494,7 @@ function AgentTileCustomizer() {
                 // Try fallback path
                 const fallbackPath = '/translator-owl.jpg';
                 if (avatarImg.src !== `${window.location.origin}${fallbackPath}`) {
-                  console.log('🦉 Trying fallback path:', fallbackPath);
+                  // Trying fallback image path
                   avatarImg.src = fallbackPath;
                 } else {
                   console.error('🦉 All image paths failed. Check Network tab for details.');
@@ -533,9 +507,7 @@ function AgentTileCustomizer() {
               // Use requestAnimationFrame to ensure DOM is ready
               requestAnimationFrame(() => {
                 tile.appendChild(avatarImg);
-                console.log('🦉 Added owl avatar to agent tile:', matchingParticipant.identity);
-                console.log('🦉 Image source:', avatarImg.src);
-                console.log('🦉 Avatar element:', avatarImg);
+                // Owl avatar added to agent tile
                 
                 // Force a reflow to ensure rendering
                 void avatarImg.offsetHeight;
@@ -695,6 +667,76 @@ function AgentTileCustomizer() {
   return null;
 }
 
+// Component to automatically mute microphone when translation audio is playing
+// Uses the same detection logic as the audio wave bar (isTranslationActive)
+function AutoMuteOnTranslation() {
+  const room = useRoomContext();
+  const { localParticipant } = useLocalParticipant();
+  const { isTranslationActive } = useTranslation();
+  const autoMutedRef = useRef(false); // Track if WE auto-muted (so we can unmute later)
+  const wasEnabledBeforeAutoMuteRef = useRef(true); // Track mic state before auto-mute
+
+  useEffect(() => {
+    if (!room || !localParticipant) return;
+
+    const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
+    if (!micPub) return;
+
+    // Use the same detection logic as audio wave bar - check if translation is active
+    const translationIsActive = isTranslationActive();
+
+    if (translationIsActive) {
+      // Translation is active - mute microphone if not already muted
+      if (!micPub.isMuted) {
+        // Save current state before muting
+        wasEnabledBeforeAutoMuteRef.current = true;
+        autoMutedRef.current = true;
+        localParticipant.setMicrophoneEnabled(false).catch(err => {
+          console.error('Error muting microphone during translation:', err);
+          autoMutedRef.current = false; // Reset on error
+        });
+      }
+    } else {
+      // Translation is not active - unmute if WE auto-muted it (not if user manually muted)
+      if (micPub.isMuted && autoMutedRef.current && wasEnabledBeforeAutoMuteRef.current) {
+        // We auto-muted it and it was enabled before, so restore it
+        localParticipant.setMicrophoneEnabled(true).catch(err => {
+          console.error('Error unmuting microphone after translation:', err);
+        });
+        autoMutedRef.current = false; // Reset flag
+      }
+    }
+  }, [room, localParticipant, isTranslationActive]);
+
+  // Track if user manually mutes/unmutes (so we don't override their choice)
+  useEffect(() => {
+    if (!localParticipant) return;
+
+    const handleMicMuted = () => {
+      const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
+      if (micPub?.isMuted && !autoMutedRef.current) {
+        // User manually muted - don't auto-unmute
+        wasEnabledBeforeAutoMuteRef.current = false;
+      } else if (!micPub?.isMuted && !autoMutedRef.current) {
+        // User manually unmuted - update our tracking
+        wasEnabledBeforeAutoMuteRef.current = true;
+      }
+    };
+
+    localParticipant.on('trackMuted', handleMicMuted);
+    localParticipant.on('trackUnmuted', handleMicMuted);
+
+    return () => {
+      if (localParticipant) {
+        localParticipant.off('trackMuted', handleMicMuted);
+        localParticipant.off('trackUnmuted', handleMicMuted);
+      }
+    };
+  }, [localParticipant]);
+
+  return null;
+}
+
 // Component to filter translation tracks based on selected language
 // Always subscribes to tracks matching your selected language (unified optimized mode)
 // Track format: translation-{target_language}
@@ -715,7 +757,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       const identity = room.localParticipant?.identity;
       if (identity) {
         setMyIdentity(identity);
-        console.log('✅ TrackFilter: My identity is:', identity, '(this will not change during the session)');
+        // TrackFilter: Identity set (will not change during session)
       }
     };
 
@@ -764,7 +806,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
   useEffect(() => {
     if (!room) return;
 
-    console.log('🎯 TrackFilter: Setting up track handlers, selectedLanguage:', selectedLanguage, 'translationEnabled:', translationEnabled, 'roomMode:', roomMode);
+    // TrackFilter: Setting up track handlers
 
     // Track which translation track we're subscribed to for each target language
     // This ensures we only subscribe to ONE track per target language
@@ -799,7 +841,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
             const trackLanguage = extractLanguageFromTrackName(trackName);
             if (trackLanguage === targetLanguage && trackName !== currentTrackName) {
               if (publication.isSubscribed) {
-                console.log('🔄 Unsubscribing from other track for same language:', trackName, '(keeping:', currentTrackName + ')');
+                // Unsubscribing from other track for same language
                 publication.setSubscribed(false);
                 if (publication.track) {
                   publication.track.detach();
@@ -816,7 +858,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       if (track.kind !== 'audio') return;
 
       const trackName = publication.trackName || '';
-      console.log('📡 Track subscribed:', trackName, 'from participant:', participant?.identity);
+      // Track subscribed
 
       // Normal microphone tracks from humans → always play (VideoConference handles these)
       if (!trackName.startsWith('translation-')) {
@@ -824,12 +866,12 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       }
 
       // This is a translation track
-      console.log('🔊 Translation track subscribed:', trackName);
+        // Translation track subscribed
       
       // Check if this is unified mode or normal mode
       if (!translationEnabled) {
         // Translation disabled → unsubscribe from all translation tracks
-        console.log('🚫 Translation disabled, unsubscribing from:', trackName);
+        // Translation disabled, unsubscribing
         if (publication.isSubscribed) {
           publication.setSubscribed(false);
         }
@@ -839,7 +881,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 
       // UNIFIED MODE: Subscribe to unified tracks
       if (roomMode === 'unified' && trackName.startsWith('translation-unified')) {
-        console.log('✅ UNIFIED MODE: Subscribing to unified track:', trackName);
+        // UNIFIED MODE: Subscribing to unified track
         if (!publication.isSubscribed) {
           publication.setSubscribed(true);
         }
@@ -853,7 +895,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       
       // Skip unified tracks in normal mode
       if (trackName.startsWith('translation-unified')) {
-        console.log('🚫 Normal mode: Skipping unified track:', trackName);
+        // Normal mode: Skipping unified track
         if (publication.isSubscribed) {
           publication.setSubscribed(false);
         }
@@ -874,19 +916,19 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         
         if (currentSubscribedTrack && currentSubscribedTrack !== trackName) {
           // We already have a track subscribed for this language → unsubscribe from the old one
-          console.log('🔄 Already subscribed to track for', targetLanguage + ':', currentSubscribedTrack, '- unsubscribing before subscribing to:', trackName);
+          // Already subscribed to track, unsubscribing before subscribing to new one
           unsubscribeFromOtherTracksForLanguage(targetLanguage, trackName);
         }
         
         // Subscribe to this track
-        console.log('✅ Subscribing to my language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+        // Subscribing to language track
         if (!publication.isSubscribed) {
           publication.setSubscribed(true);
         }
         subscribedTracksByLanguage.set(targetLanguage, trackName);
       } else {
         // This is a different language → unsubscribe to save bandwidth
-        console.log('🚫 Ignoring foreign language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+        // Ignoring foreign language track
         if (publication.isSubscribed) {
           publication.setSubscribed(false);
         }
@@ -899,20 +941,20 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
       if (publication.kind !== 'audio') return;
       const trackName = publication.trackName || '';
       
-      console.log('📢 Track published:', trackName, 'from participant:', participant?.identity);
+      // Track published
       
       if (trackName.startsWith('translation-')) {
-        console.log('🔊 Translation track published:', trackName);
+        // Translation track published
         
         // Check mode and subscribe accordingly
         if (!translationEnabled) {
-          console.log('🚫 Translation disabled, not subscribing to:', trackName);
+          // Translation disabled, not subscribing
           return;
         }
 
         // UNIFIED MODE: Subscribe to unified tracks
         if (roomMode === 'unified' && trackName.startsWith('translation-unified')) {
-          console.log('✅ UNIFIED MODE: Subscribing to unified track:', trackName);
+          // UNIFIED MODE: Subscribing to unified track
           if (!publication.isSubscribed) {
             publication.setSubscribed(true);
           }
@@ -923,7 +965,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
         // Track format: translation-{target_language}-{speaker_id}
         // Skip unified tracks in normal mode
         if (trackName.startsWith('translation-unified')) {
-          console.log('🚫 Normal mode: Skipping unified track:', trackName);
+          // Normal mode: Skipping unified track
           return;
         }
 
@@ -935,18 +977,18 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
             
             if (currentSubscribedTrack && currentSubscribedTrack !== trackName) {
               // Unsubscribe from the old track first
-              console.log('🔄 Switching translation track for', targetLanguage + ':', currentSubscribedTrack, '→', trackName);
+              // Switching translation track
               unsubscribeFromOtherTracksForLanguage(targetLanguage, trackName);
             }
             
             // Subscribe to this track
-            console.log('✅ Subscribing to my language track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+            // Subscribing to language track
             if (!publication.isSubscribed) {
               publication.setSubscribed(true);
             }
             subscribedTracksByLanguage.set(targetLanguage, trackName);
           } else {
-            console.log('🚫 Not subscribing to foreign language track:', trackName);
+            // Not subscribing to foreign language track
           }
         }
       }
@@ -954,7 +996,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
 
     // Check for existing tracks when component mounts (in case tracks were published before we set up listeners)
     const checkExistingTracks = () => {
-      console.log('🔍 Checking existing tracks...');
+      // Checking existing tracks
       room.remoteParticipants.forEach((participant) => {
         participant.audioTrackPublications.forEach((publication) => {
           const trackName = publication.trackName || '';
@@ -965,13 +1007,13 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
               if (!translationEnabled) {
                 if (publication.isSubscribed) {
                   publication.setSubscribed(false);
-                  console.log('🚫 Unsubscribed from translation track (disabled):', trackName);
+                  // Unsubscribed from translation track (disabled)
                 }
               } else if (roomMode === 'unified' && trackName.startsWith('translation-unified')) {
                 // UNIFIED MODE: Subscribe to unified tracks
                 if (!publication.isSubscribed) {
                   publication.setSubscribed(true);
-                  console.log('✅ UNIFIED MODE: Subscribed to unified track:', trackName);
+                  // UNIFIED MODE: Subscribed to unified track
                 }
               } else if (roomMode === 'normal') {
                 // NORMAL MODE: Subscribe based on selected language
@@ -979,7 +1021,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
                 if (trackName.startsWith('translation-unified')) {
                   if (publication.isSubscribed) {
                     publication.setSubscribed(false);
-                    console.log('🚫 Normal mode: Unsubscribed from unified track:', trackName);
+                    // Normal mode: Unsubscribed from unified track
                   }
                 } else {
                   const targetLanguage = extractLanguageFromTrackName(trackName);
@@ -992,26 +1034,26 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
                         // No track subscribed yet for this language → subscribe to this one
                         if (!publication.isSubscribed) {
                           publication.setSubscribed(true);
-                          console.log('✅ Subscribed to existing translation track:', trackName, '(target:', targetLanguage, 'selected:', selectedLanguage + ')');
+                          // Subscribed to existing translation track
                           subscribedTracksByLanguage.set(targetLanguage, trackName);
                         }
                       } else if (currentSubscribedTrack === trackName) {
                         // This is the track we're already subscribed to → keep it
                         if (!publication.isSubscribed) {
                           publication.setSubscribed(true);
-                          console.log('✅ Re-subscribed to existing translation track:', trackName);
+                          // Re-subscribed to existing translation track
                         }
                       } else {
                         // Another track is already subscribed → unsubscribe from this one
                         if (publication.isSubscribed) {
                           publication.setSubscribed(false);
-                          console.log('🚫 Unsubscribed from duplicate track:', trackName, '(already subscribed to:', currentSubscribedTrack + ')');
+                          // Unsubscribed from duplicate track
                         }
                       }
                     } else {
                       if (publication.isSubscribed) {
                         publication.setSubscribed(false);
-                        console.log('🚫 Unsubscribed from foreign language track:', trackName);
+                        // Unsubscribed from foreign language track
                       }
                     }
                   }
@@ -1034,7 +1076,7 @@ function TrackFilter({ selectedLanguage = 'en', translationEnabled = false }) {
           
           // If this was the track we were tracking, remove it from the map
           if (currentSubscribedTrack === trackName) {
-            console.log('🧹 Track unsubscribed, removing from tracking:', trackName);
+            // Track unsubscribed, removing from tracking
             subscribedTracksByLanguage.delete(targetLanguage);
           }
         }

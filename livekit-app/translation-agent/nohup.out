@@ -1,0 +1,44 @@
+2025-11-26 10:26:20,236 - __main__ - INFO - Starting Simple Translation Agent: 'translation-bot-dev'
+2025-11-26 10:26:20,236 - __main__ - INFO - Environment: DEVELOPMENT
+2025-11-26 10:26:20,236 - __main__ - INFO - LiveKit URL: wss://production-uiycx4ku.livekit.cloud
+2025-11-26 10:26:20,239 - livekit - INFO - livekit_ffi::server:139:livekit_ffi::server - initializing ffi server v0.12.39
+2025-11-26 10:26:20,239 - livekit - INFO - livekit_ffi::cabi:50:livekit_ffi::cabi - initializing ffi server v0.12.39
+2025-11-26 10:26:20,242 - asyncio - DEBUG - Using selector: KqueueSelector
+    10:26:20 DEBUG  asyncio          Using selector: KqueueSelector  
+2025-11-26 10:26:20,243 - livekit.agents - DEV - Watching /Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent
+             DEV    livekit.agents   Watching                                   
+                                     /Users/rhule/Documents/ShareApp/share-app  
+                                     /livekit-app/translation-agent             
+2025-11-26 10:26:20,812 - livekit - INFO - livekit_ffi::server:139:livekit_ffi::server - initializing ffi server v0.12.39
+2025-11-26 10:26:20,812 - livekit - INFO - livekit_ffi::cabi:50:livekit_ffi::cabi - initializing ffi server v0.12.39
+2025-11-26 10:26:20,813 - asyncio - DEBUG - Using selector: KqueueSelector
+    10:26:20 DEBUG  asyncio          Using selector: KqueueSelector  
+2025-11-26 10:26:20,816 - livekit.agents - INFO - starting worker
+             INFO   livekit.agents   starting worker {"version": "1.3.2",       
+                                                     "rtc-version": "1.0.19"}   
+2025-11-26 10:26:21,079 - livekit.agents - INFO - registered worker
+    10:26:21 INFO   livekit.agents   registered worker {"agent_name":           
+                                                       "translation-bot-dev",   
+                                                       "id": "AW_kWqKdjtiWpP6", 
+                                                       "url":                   
+                                                       "wss://production-uiycx4…
+                                                       "region": "US East B",   
+                                                       "protocol": 16}          
+2025-11-26 10:26:32,876 - livekit.agents - INFO - shutting down worker
+    10:26:32 INFO   livekit.agents   shutting down worker {"id":                
+                                                          "AW_kWqKdjtiWpP6"}    
+2025-11-26 10:26:33,677 - livekit - INFO - livekit_ffi::server:139:livekit_ffi::server - initializing ffi server v0.12.39
+2025-11-26 10:26:33,677 - livekit - INFO - livekit_ffi::cabi:50:livekit_ffi::cabi - initializing ffi server v0.12.39
+2025-11-26 10:26:33,677 - asyncio - DEBUG - Using selector: KqueueSelector
+    10:26:33 DEBUG  asyncio          Using selector: KqueueSelector  
+2025-11-26 10:26:33,681 - livekit.agents - INFO - starting worker
+             INFO   livekit.agents   starting worker {"version": "1.3.2",       
+                                                     "rtc-version": "1.0.19"}   
+2025-11-26 10:26:34,075 - livekit.agents - INFO - registered worker
+    10:26:34 INFO   livekit.agents   registered worker {"agent_name":           
+                                                       "translation-bot-dev",   
+                                                       "id": "AW_DjxJJJeSJVd6", 
+                                                       "url":                   
+                                                       "wss://production-uiycx4…
+                                                       "region": "US East B",   
+                                                       "protocol": 16}          

@@ -17,7 +17,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
 
     // Check if room is connected before sending data
     if (room.state !== 'connected') {
-      console.log('Room not connected, skipping language preference send. State:', room.state);
+      // Room not connected, skipping language preference send
       return;
     }
 
@@ -46,7 +46,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
           { topic: 'language_preference' }
         );
 
-        console.log('Sent language preference:', data);
+        // Language preference sent
       } catch (error) {
         // Suppress "PC manager is closed" errors - they're harmless during disconnect
         if (error.message?.includes('PC manager is closed') || 
@@ -68,7 +68,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     if (!isHost || !room || !localParticipant?.localParticipant) return;
     
     if (room.state !== 'connected') {
-      console.log('Room not connected, skipping VAD setting send');
+      // Room not connected, skipping VAD setting send
       return;
     }
 
@@ -87,7 +87,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
         { topic: 'host-control' }
       );
 
-      console.log('Sent VAD setting:', data);
+      // VAD setting sent
       setVadSensitivity(level);
     } catch (error) {
       console.error('Error sending VAD setting:', error);
@@ -99,7 +99,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     if (!isHost || !room || !localParticipant?.localParticipant) return;
     
     if (room.state !== 'connected') {
-      console.log('Room not connected, skipping voice setting send');
+      // Room not connected, skipping voice setting send
       return;
     }
 
@@ -118,7 +118,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
         { topic: 'host-control' }
       );
 
-      console.log('Sent voice setting:', data);
+      // Voice setting sent
       setSelectedVoice(voice);
     } catch (error) {
       console.error('Error sending voice setting:', error);
