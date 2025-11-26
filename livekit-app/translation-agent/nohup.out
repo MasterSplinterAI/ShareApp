@@ -42,3 +42,92 @@
                                                        "wss://production-uiycx4…
                                                        "region": "US East B",   
                                                        "protocol": 16}          
+2025-11-26 11:29:17,699 - watchfiles.main - WARNING - received signal 15, raising KeyboardInterrupt
+    11:29:17 WARNI… watchfiles.main  received signal 15, raising                
+                                     KeyboardInterrupt                          
+2025-11-26 11:48:50,453 - livekit.agents - WARNING - unexpected message type: 258
+    11:48:50 WARNI… livekit.agents   unexpected message type: 258  
+2025-11-26 11:48:50,492 - livekit.agents - WARNING - failed to connect to livekit, retrying in 0s
+Traceback (most recent call last):
+  File "/Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent/venv/lib/python3.13/site-packages/livekit/agents/worker.py", line 972, in _connection_task
+    await self._run_ws(ws)
+  File "/Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent/venv/lib/python3.13/site-packages/livekit/agents/worker.py", line 1053, in _run_ws
+    await asyncio.gather(*tasks)
+  File "/Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent/venv/lib/python3.13/site-packages/livekit/agents/worker.py", line 1025, in _recv_task
+    raise Exception("worker connection closed unexpectedly")
+Exception: worker connection closed unexpectedly
+             WARNI… livekit.agents   failed to connect to livekit, retrying in  
+                                     0s                                         
+                                     Traceback (most recent call last):         
+                                       File                                     
+                                     "/Users/rhule/Documents/ShareApp/share-ap  
+                                     p/livekit-app/translation-agent/venv/lib/  
+                                     python3.13/site-packages/livekit/agents/w  
+                                     orker.py", line 972, in _connection_task   
+                                         await self._run_ws(ws)                 
+                                       File                                     
+                                     "/Users/rhule/Documents/ShareApp/share-ap  
+                                     p/livekit-app/translation-agent/venv/lib/  
+                                     python3.13/site-packages/livekit/agents/w  
+                                     orker.py", line 1053, in _run_ws           
+                                         await asyncio.gather(*tasks)           
+                                       File                                     
+                                     "/Users/rhule/Documents/ShareApp/share-ap  
+                                     p/livekit-app/translation-agent/venv/lib/  
+                                     python3.13/site-packages/livekit/agents/w  
+                                     orker.py", line 1025, in _recv_task        
+                                         raise Exception("worker connection     
+                                     closed unexpectedly")                      
+                                     Exception: worker connection closed        
+                                     unexpectedly                               
+2025-11-26 11:48:50,698 - livekit.agents - INFO - registered worker
+             INFO   livekit.agents   registered worker {"agent_name":           
+                                                       "translation-bot-dev",   
+                                                       "id": "AW_2HZ65g8EmEk4", 
+                                                       "url":                   
+                                                       "wss://production-uiycx4…
+                                                       "region": "US East B",   
+                                                       "protocol": 16}          
+6 11:48:50,456 - livekit.agents - WARNING - unexpected message type: 258
+    11:48:50 WARNI… livekit.agents   unexpected message type: 258  
+2025-11-26 11:48:50,493 - livekit.agents - WARNING - failed to connect to livekit, retrying in 0s
+Traceback (most recent call last):
+  File "/Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent/venv/lib/python3.13/site-packages/livekit/agents/worker.py", line 972, in _connection_task
+    await self._run_ws(ws)
+  File "/Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent/venv/lib/python3.13/site-packages/livekit/agents/worker.py", line 1053, in _run_ws
+    await asyncio.gather(*tasks)
+  File "/Users/rhule/Documents/ShareApp/share-app/livekit-app/translation-agent/venv/lib/python3.13/site-packages/livekit/agents/worker.py", line 1025, in _recv_task
+    raise Exception("worker connection closed unexpectedly")
+Exception: worker connection closed unexpectedly
+             WARNI… livekit.agents   failed to connect to livekit, retrying in  
+                                     0s                                         
+                                     Traceback (most recent call last):         
+                                       File                                     
+                                     "/Users/rhule/Documents/ShareApp/share-ap  
+                                     p/livekit-app/translation-agent/venv/lib/  
+                                     python3.13/site-packages/livekit/agents/w  
+                                     orker.py", line 972, in _connection_task   
+                                         await self._run_ws(ws)                 
+                                       File                                     
+                                     "/Users/rhule/Documents/ShareApp/share-ap  
+                                     p/livekit-app/translation-agent/venv/lib/  
+                                     python3.13/site-packages/livekit/agents/w  
+                                     orker.py", line 1053, in _run_ws           
+                                         await asyncio.gather(*tasks)           
+                                       File                                     
+                                     "/Users/rhule/Documents/ShareApp/share-ap  
+                                     p/livekit-app/translation-agent/venv/lib/  
+                                     python3.13/site-packages/livekit/agents/w  
+                                     orker.py", line 1025, in _recv_task        
+                                         raise Exception("worker connection     
+                                     closed unexpectedly")                      
+                                     Exception: worker connection closed        
+                                     unexpectedly                               
+2025-11-26 11:48:50,692 - livekit.agents - INFO - registered worker
+             INFO   livekit.agents   registered worker {"agent_name":           
+                                                       "translation-bot-dev",   
+                                                       "id": "AW_qtYuLSDxdvLA", 
+                                                       "url":                   
+                                                       "wss://production-uiycx4…
+                                                       "region": "US East B",   
+                                                       "protocol": 16}          
