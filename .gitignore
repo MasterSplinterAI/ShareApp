@@ -35,6 +35,10 @@ translation-agent/__pycache__/
 translation-agent/*.pyc
 translation-agent/.venv/
 translation-agent/venv/
+livekit-app/translation-agent/__pycache__/
+livekit-app/translation-agent/*.pyc
+livekit-app/translation-agent/.venv/
+livekit-app/translation-agent/venv/
 
 # Backup
 backup/
