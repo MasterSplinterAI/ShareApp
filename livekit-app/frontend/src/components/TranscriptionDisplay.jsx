@@ -117,7 +117,8 @@ function TranscriptionDisplay({ participantId, isVisible = true }) {
   
   return (
     <div 
-      className={`fixed bottom-20 right-2 sm:right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl transition-all z-40 ${
+      data-no-translate="true"
+      className={`notranslate fixed bottom-20 right-2 sm:right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl transition-all z-40 ${
         isMinimized ? 'w-56 sm:w-64' : 'w-[calc(100vw-1rem)] sm:w-[28rem] max-w-[28rem]'
       }`}
     >

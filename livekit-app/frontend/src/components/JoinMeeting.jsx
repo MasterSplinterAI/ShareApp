@@ -42,8 +42,8 @@ function JoinMeeting() {
     }
   };
 
-  const handleNameSubmit = (name) => {
-    console.log('JoinMeeting: handleNameSubmit called with name:', name, 'roomName:', roomName);
+  const handleNameSubmit = (name, selectedLanguage = 'en') => {
+    console.log('JoinMeeting: handleNameSubmit called with name:', name, 'language:', selectedLanguage, 'roomName:', roomName);
     
     // Store participant info in sessionStorage to persist across navigation
     // Include roomMode from roomInfo if available
@@ -51,7 +51,8 @@ function JoinMeeting() {
       participantName: name,
       isHost: false,
       roomName: roomName,
-      roomMode: roomInfo?.roomMode || 'multi-language' // Get room mode from room info
+      roomMode: roomInfo?.roomMode || 'multi-language', // Get room mode from room info
+      selectedLanguage: selectedLanguage // Store selected language for DOM translator
     };
     
     sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
@@ -121,7 +122,9 @@ function JoinMeeting() {
           }}
           onSubmit={handleNameSubmit}
           title="Join Meeting"
-          subtitle="Enter your name to join the conference"
+          subtitle="Enter your name and select your preferred translation language"
+          showLanguageSelector={true}
+          defaultLanguage="en"
         />
       )}
     </div>

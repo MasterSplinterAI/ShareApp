@@ -28,7 +28,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2" data-no-translate="true">
       {/* Translation Toggle */}
       <button
         onClick={onTranslationToggle}
@@ -39,13 +39,14 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
         }`}
         title={translationEnabled ? 'Translation ON' : 'Translation OFF'}
         aria-label={translationEnabled ? 'Disable translation' : 'Enable translation'}
+        data-no-translate="true"
       >
         <Globe className="w-5 h-5" />
-        <span className="text-sm font-medium hidden sm:inline">Translation</span>
+        <span className="text-sm font-medium hidden sm:inline" data-no-translate="true">Translation</span>
       </button>
 
       {/* Language Selector */}
-      <div className="relative">
+      <div className="relative" data-no-translate="true">
         <button
           onClick={() => translationEnabled && setIsOpen(!isOpen)}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
@@ -55,9 +56,10 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
           }`}
           disabled={!translationEnabled}
           aria-label="Select language"
+          data-no-translate="true"
         >
-          <span className="text-base">{selectedLanguage.flag}</span>
-          <span className="text-sm font-medium hidden sm:inline">{selectedLanguage.name}</span>
+          <span className="text-base" data-no-translate="true">{selectedLanguage.flag}</span>
+          <span className="text-sm font-medium hidden sm:inline" data-no-translate="true">{selectedLanguage.name}</span>
           {translationEnabled && (
             <ChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
           )}
@@ -65,7 +67,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
 
         {/* Dropdown Menu - Positioned above button */}
         {isOpen && translationEnabled && (
-          <div className="absolute bottom-full right-0 mb-2 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] max-h-80 overflow-y-auto">
+          <div className="absolute bottom-full right-0 mb-2 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] max-h-80 overflow-y-auto" data-no-translate="true">
             {SUPPORTED_LANGUAGES.map((language) => (
               <button
                 key={language.code}
@@ -73,10 +75,11 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
                 className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center justify-between ${
                   language.code === value ? 'bg-gray-700' : ''
                 }`}
+                data-no-translate="true"
               >
-                <span className="flex items-center gap-2">
-                  <span className="text-base">{language.flag}</span>
-                  <span className="text-sm text-white">{language.name}</span>
+                <span className="flex items-center gap-2" data-no-translate="true">
+                  <span className="text-base" data-no-translate="true">{language.flag}</span>
+                  <span className="text-sm text-white" data-no-translate="true">{language.name}</span>
                 </span>
                 {language.code === value && (
                   <Check className="w-4 h-4 text-green-400" />

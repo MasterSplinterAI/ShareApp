@@ -11,6 +11,8 @@ import TranscriptionDisplay from './TranscriptionDisplay';
 import RoomControls from './RoomControls';
 import CustomControlBar from './CustomControlBar';
 import { useTranslation } from '../hooks/useTranslation';
+// Autopilot Translator SDK
+import { AutopilotTranslator } from '../lib/autopilot-translator';
 // Will use public folder path - no import needed
 
 function MeetingRoom() {
@@ -27,6 +29,250 @@ function MeetingRoom() {
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const translatorRef = useRef(null);
+  const initTimeoutRef = useRef(null); // Track pending translator initialization
+  const selectedLanguageRef = useRef('en'); // Track current language for timeout checks
+  const isRestoringToEnglishRef = useRef(false); // Track if we're currently restoring to English
+  
+  // Update selected language when participant info changes
+  useEffect(() => {
+    if (participantInfo?.selectedLanguage) {
+      setSelectedLanguage(participantInfo.selectedLanguage);
+      selectedLanguageRef.current = participantInfo.selectedLanguage; // Update ref
+    }
+  }, [participantInfo]);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    selectedLanguageRef.current = selectedLanguage;
+  }, [selectedLanguage]);
+  
+  // Initialize Autopilot Translator SDK
+  useEffect(() => {
+    if (!isInitialized) {
+      console.log('⏳ Translator init: Waiting for isInitialized...');
+      return;
+    }
+    if (!selectedLanguage) {
+      console.log('⏳ Translator init: Waiting for selectedLanguage...');
+      return; // Wait for language to be set
+    }
+    
+    console.log('🌐 Translator init effect: selectedLanguage =', selectedLanguage, 'isInitialized =', isInitialized);
+    
+    // CRITICAL: If we're restoring to English, don't do anything
+    // This prevents creating a translator when switching to English
+    if (isRestoringToEnglishRef.current && selectedLanguage === 'en') {
+      console.log('🚩 Effect blocked: Currently restoring to English');
+      return;
+    }
+    
+    // Get API endpoint (same logic as api.js)
+    const isNgrok = window.location.hostname.includes('ngrok.app') || 
+                     window.location.hostname.includes('ngrok-free.app') ||
+                     window.location.hostname.includes('ngrok.io');
+    const isNetworkAccess = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+    const isHTTPS = window.location.protocol === 'https:';
+    
+    let API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+    
+    if (isNgrok) {
+      API_BASE_URL = '/api';
+    } else if (isNetworkAccess && isHTTPS) {
+      API_BASE_URL = '/api';
+    } else if (isNetworkAccess) {
+      API_BASE_URL = `http://${window.location.hostname}:3001/api`;
+    } else {
+      API_BASE_URL = '/api';
+    }
+    
+    // Handle language changes
+    if (translatorRef.current) {
+      // Translator already exists - use setLanguage to change language
+      if (selectedLanguage === 'en') {
+        // Switching to English - restore original text first, then destroy
+        const currentTranslator = translatorRef.current;
+        
+        // Set flag to prevent new translator creation during restoration
+        isRestoringToEnglishRef.current = true;
+        console.log('🚩 Flag set: isRestoringToEnglishRef = true');
+        
+        console.log('🔄 Switching to English - restoring original text...');
+        console.log(`📊 Current language before switch: ${currentTranslator.currentLanguageValue || 'unknown'}`);
+        
+        // CRITICAL: Restore synchronously, then destroy immediately
+        // setLanguage('en') calls restoreOriginalText() synchronously and returns immediately
+        currentTranslator.setLanguage('en').then(() => {
+          console.log('✅ setLanguage("en") promise resolved');
+          
+          // Verify restoration worked by checking a few elements
+          const elementsWithOriginal = document.querySelectorAll('[data-original-text]');
+          console.log(`📊 After restoration: ${elementsWithOriginal.length} elements still have data-original-text`);
+          
+          // Sample check - see if text was restored
+          if (elementsWithOriginal.length > 0) {
+            const sampleElement = elementsWithOriginal[0];
+            const originalText = sampleElement.getAttribute('data-original-text');
+            const currentText = sampleElement.textContent?.trim();
+            console.log(`📊 Sample element - Original: "${originalText?.substring(0, 30)}..." Current: "${currentText?.substring(0, 30)}..."`);
+          }
+          
+          // Clear flag after a short delay to allow React to finish updates
+          setTimeout(() => {
+            isRestoringToEnglishRef.current = false;
+            console.log('✅ Restoration flag cleared');
+          }, 500);
+        }).catch(err => {
+          console.error('❌ Error in setLanguage("en"):', err);
+          isRestoringToEnglishRef.current = false;
+        });
+        
+        // Destroy translator immediately after calling setLanguage
+        // setLanguage('en') already stopped the observer and restored text synchronously
+        console.log('🧹 Destroying translator instance...');
+        currentTranslator.destroy();
+        translatorRef.current = null;
+        localStorage.removeItem('app_language');
+        console.log('🌐 English selected - translator destroyed, restoration should be complete');
+        
+        // CRITICAL: Keep flag set longer to prevent any new translator creation
+        // The flag will be cleared in the promise callback after 500ms
+        
+        return; // Don't create new translator
+      } else {
+        // Switching to a different language - use setLanguage
+        translatorRef.current.setLanguage(selectedLanguage).then(() => {
+          console.log(`🌐 Language changed to: ${selectedLanguage}`);
+        }).catch(err => {
+          console.error('Error changing language:', err);
+        });
+      }
+      return; // Don't create new translator, we're using existing one
+    }
+    
+    // No translator exists yet - create one ONLY if language is not English
+    // CRITICAL: Double-check selectedLanguage to prevent race conditions
+    // Also check if we're currently restoring to English
+    if (selectedLanguage && selectedLanguage !== 'en' && !isRestoringToEnglishRef.current) {
+      // Cancel any pending initialization
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
+      
+      // CRITICAL: Wait a moment for React to finish rendering English content
+      // This ensures the page is fully rendered in English before we translate
+      // The translator's ensureEnglishState() will handle restoring English if needed
+      const currentLanguage = selectedLanguage;
+      
+      initTimeoutRef.current = setTimeout(() => {
+        // CRITICAL: Check if timeout was cancelled (initTimeoutRef.current would be null)
+        if (!initTimeoutRef.current) {
+          console.log('⚠️ Initialization timeout was cancelled');
+          return;
+        }
+        
+        // CRITICAL: Check if we're restoring to English (prevent creating translator)
+        if (isRestoringToEnglishRef.current) {
+          console.log('🚩 Currently restoring to English, skipping translator initialization');
+          initTimeoutRef.current = null;
+          return;
+        }
+        
+        // Double-check that we still need a translator (language might have changed)
+        // Check both translatorRef and current selectedLanguage state using ref
+        if (translatorRef.current) {
+          console.log('⚠️ Translator already exists, skipping initialization');
+          initTimeoutRef.current = null;
+          return;
+        }
+        
+        // CRITICAL: Check the CURRENT language from ref (not captured value)
+        // This ensures we don't create a translator if language changed to English
+        const currentLang = selectedLanguageRef.current;
+        if (currentLang === 'en') {
+          console.log('⚠️ Language changed to English during delay, skipping initialization');
+          initTimeoutRef.current = null;
+          return;
+        }
+        
+        // Verify translatorRef is still null (double-check for race conditions)
+        if (translatorRef.current) {
+          console.log('⚠️ Translator was created by another effect, skipping');
+          initTimeoutRef.current = null;
+          return;
+        }
+        
+        // FINAL CHECK: Make absolutely sure we're not restoring to English
+        if (isRestoringToEnglishRef.current) {
+          console.log('🚩 FINAL CHECK: Flag is still set, aborting translator creation');
+          initTimeoutRef.current = null;
+          return;
+        }
+        
+        // Initialize translator with current language from ref
+        const translator = new AutopilotTranslator({
+          apiEndpoint: API_BASE_URL,
+          language: currentLang, // Use current language from ref
+          enabledPages: [] // Empty array = all pages enabled
+        });
+        
+        translatorRef.current = translator;
+        
+        // Initialize with selected language
+        // This will store original text first, then translate
+        translator.init(currentLang, []);
+        
+        console.log(`🌐 Translator initialized for language: ${currentLang}`);
+        initTimeoutRef.current = null;
+      }, 100); // Small delay to ensure DOM is ready
+    } else if (selectedLanguage === 'en') {
+      // Language is English - cancel any pending initialization and set flag
+      isRestoringToEnglishRef.current = true; // Set flag to prevent any new translators
+      
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+        console.log('🛑 Cancelled pending translator initialization (English selected)');
+      }
+      
+      // Clear flag after a delay to allow React to finish updates
+      setTimeout(() => {
+        isRestoringToEnglishRef.current = false;
+        console.log('✅ English flag cleared (no translator should be created)');
+      }, 1000); // Longer delay to ensure all effects have run
+      // Language is English - ensure no translator exists
+      // This handles the case where useEffect runs multiple times
+      if (translatorRef.current) {
+        // Shouldn't happen, but clean up just in case
+        translatorRef.current.destroy();
+        translatorRef.current = null;
+      }
+      localStorage.removeItem('app_language');
+      console.log('🌐 English selected - translation disabled (no translator created)');
+    }
+    
+    // Cleanup on unmount or when dependencies change
+    return () => {
+      // Cancel any pending initialization
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+        console.log('🧹 Cleanup: Cancelled pending translator initialization');
+      }
+      
+      // Only destroy translator if language changed to English or component unmounting
+      // Don't destroy if just switching between non-English languages
+      if (translatorRef.current && selectedLanguage === 'en') {
+        console.log('🧹 Cleanup: Destroying translator (English selected)');
+        translatorRef.current.destroy();
+        translatorRef.current = null;
+      }
+    };
+  }, [isInitialized, selectedLanguage]);
+  
+  // Update translator when language changes (handled in initialization useEffect above)
+  // This effect is no longer needed as initialization handles language changes
 
   // Initialize participant info on mount
   useEffect(() => {
@@ -61,6 +307,7 @@ function MeetingRoom() {
     const hostCode = stateInfo.hostCode || sessionInfo.hostCode;
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
+    const selectedLanguage = stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en';
     
     if (!participantName) {
       // No name provided, redirect to join page
@@ -74,8 +321,16 @@ function MeetingRoom() {
       isHost,
       hostCode,
       shareableLink,
-      shareableLinkNetwork
+      shareableLinkNetwork,
+      selectedLanguage
     });
+    
+    // CRITICAL: Set selectedLanguage state IMMEDIATELY before setIsInitialized
+    // This ensures the translator initializes with the correct language
+    console.log('MeetingRoom: Setting selectedLanguage state to:', selectedLanguage);
+    setSelectedLanguage(selectedLanguage);
+    selectedLanguageRef.current = selectedLanguage; // Also update ref immediately
+    
     setIsInitialized(true);
     
   }, [roomName, navigate]); // Removed location.state from deps to prevent re-runs
@@ -341,9 +596,26 @@ function AgentTileCustomizer() {
       
       // Process each tile
       tiles.forEach(tile => {
+        // CRITICAL: Mark entire tile as non-translatable FIRST to prevent any translation
+        tile.setAttribute('data-no-translate', 'true');
+        
         // Try to find participant identity from tile
         const nameElement = tile.querySelector('[class*="name"], .lk-participant-name, [data-participant-name], [class*="ParticipantName"]');
         if (!nameElement) return;
+        
+        // CRITICAL: Mark all participant names as non-translatable IMMEDIATELY
+        // This prevents the DOM translator from translating user names and "Translator" text
+        // Set attribute BEFORE any text changes to prevent race conditions
+        nameElement.setAttribute('data-no-translate', 'true');
+        
+        // Also mark parent elements to ensure exclusion
+        let parent = nameElement.parentElement;
+        let depth = 0;
+        while (parent && parent !== tile && depth < 3) {
+          parent.setAttribute('data-no-translate', 'true');
+          parent = parent.parentElement;
+          depth++;
+        }
 
         // Get the ORIGINAL name (before our modifications)
         // CRITICAL: Check data-original-name first, then current text
@@ -384,6 +656,7 @@ function AgentTileCustomizer() {
               const restoreName = nameElement.getAttribute('data-original-name');
               console.log(`🔄 AgentTileCustomizer: Restoring tile name from "Translator" to "${restoreName}" (could not match)`);
               nameElement.textContent = restoreName;
+              nameElement.setAttribute('data-no-translate', 'true'); // Prevent translation
               nameElement.removeAttribute('data-original-name');
               tile.setAttribute('data-is-agent', 'false');
             }
@@ -400,11 +673,13 @@ function AgentTileCustomizer() {
           if (nameElement.hasAttribute('data-original-name')) {
             const restoreName = nameElement.getAttribute('data-original-name');
             nameElement.textContent = restoreName;
+            nameElement.setAttribute('data-no-translate', 'true'); // Prevent translation
             nameElement.removeAttribute('data-original-name');
             tile.setAttribute('data-is-agent', 'false');
           } else {
             // Fallback: restore to participant name or identity
             nameElement.textContent = matchingParticipant.name || matchingParticipant.identity || originalName;
+            nameElement.setAttribute('data-no-translate', 'true'); // Prevent translation
             tile.setAttribute('data-is-agent', 'false');
           }
           return;
@@ -420,11 +695,16 @@ function AgentTileCustomizer() {
             const originalText = originalName || matchingParticipant.identity || '';
             if (originalText && originalText !== 'Translator') {
               nameElement.setAttribute('data-original-name', originalText);
+              nameElement.setAttribute('data-no-translate', 'true'); // Prevent translation of "Translator"
               nameElement.textContent = 'Translator';
             }
           } else if (nameElement.textContent !== 'Translator') {
-            // Ensure it says "Translator"
+            // Ensure it says "Translator" and prevent translation
+            nameElement.setAttribute('data-no-translate', 'true');
             nameElement.textContent = 'Translator';
+          } else {
+            // Already says "Translator" - ensure it's marked as non-translatable
+            nameElement.setAttribute('data-no-translate', 'true');
           }
 
           // Check if agent has video track - set data attribute for avatar display
@@ -588,7 +868,7 @@ function AgentTileCustomizer() {
             if (soundwave) soundwave.remove();
           }
         } else {
-          // This is NOT an agent tile
+          // This is NOT an agent tile (regular user tile)
           tile.setAttribute('data-is-agent', 'false');
           
           // Restore original name if it was changed
@@ -597,6 +877,9 @@ function AgentTileCustomizer() {
             nameElement.textContent = originalNameToRestore;
             nameElement.removeAttribute('data-original-name');
           }
+          
+          // Ensure user names are not translated
+          nameElement.setAttribute('data-no-translate', 'true');
           
           // Remove any soundwave indicators
           const soundwave = tile.querySelector('.soundwave-indicator');
@@ -1283,6 +1566,23 @@ export function VADSensitivityControls() {
                     <div className="font-semibold text-sm text-white mb-1">Normal</div>
                     <div className="text-xs text-gray-400 leading-relaxed">
                       Balanced - good for most conversations (default)
+                    </div>
+                  </button>
+                  
+                  <button
+                    onClick={() => {
+                      handleVadChange('slow_speaker');
+                      setShowDropdown(false);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 rounded-md transition-all ${
+                      vadSensitivity === 'slow_speaker' 
+                        ? 'bg-blue-900/50 border-2 border-blue-500' 
+                        : 'bg-gray-700/50 border border-gray-600 hover:bg-gray-700'
+                    }`}
+                  >
+                    <div className="font-semibold text-sm text-white mb-1">Slow Speaker</div>
+                    <div className="text-xs text-gray-400 leading-relaxed">
+                      Longer pauses - waits for slow speakers' natural pauses (normal sensitivity)
                     </div>
                   </button>
                   

@@ -63,9 +63,11 @@ app.use(express.json());
 // Routes
 const authRoutes = require('./routes/auth');
 const roomsRoutes = require('./routes/rooms');
+const translateRoutes = require('./routes/translate');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomsRoutes);
+app.use('/api/translate', translateRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

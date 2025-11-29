@@ -156,6 +156,14 @@ class SimpleTranslationAgent:
                 "silence_duration_ms": 1200,
                 "prefix_padding_ms": 1800,  # Increased from 1200ms - strongest filter to prevent interruptions
             }
+        elif self.host_vad_setting == "slow_speaker":
+            # Optimized for slow speakers — longer pauses, normal sensitivity
+            return {
+                **base_config,
+                "threshold": 0.5,  # Normal sensitivity - still detects speech well
+                "silence_duration_ms": 1500,  # Longer pause - waits for slow speakers' natural pauses
+                "prefix_padding_ms": 1500,  # Same as normal - good cough filtering
+            }
         else:
             # Fallback: Support old naming for backward compatibility
             if self.host_vad_setting == "low":
@@ -504,6 +512,13 @@ class SimpleTranslationAgent:
                 interrupt_duration = 3.5  # Increased from 1.5s - requires 3.5s of speech to interrupt
                 interrupt_words = 12      # Increased from 7 - requires 12+ words to interrupt
                 false_interrupt_timeout = 6.0  # Increased from 4.0s
+            elif self.host_vad_setting == "slow_speaker":
+                silero_activation = 0.6   # Normal sensitivity - slightly more sensitive than normal
+                silero_min_speech = 1.0  # Same as normal - blocks coughs < 1000ms
+                silero_min_silence = 1.5  # Longer silence - waits for slow speakers' pauses
+                interrupt_duration = 2.5  # Same as normal - requires 2.5s of speech to interrupt
+                interrupt_words = 8       # Same as normal - requires 8+ words to interrupt
+                false_interrupt_timeout = 5.0  # Same as normal - good buffer for false positives
             else:  # Default/fallback
                 silero_activation = 0.65
                 silero_min_speech = 1.0   # Increased from 0.7s

@@ -6,7 +6,7 @@ import { Settings } from 'lucide-react';
 function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
-  const [vadSensitivity, setVadSensitivity] = useState('normal'); // 'quiet_room', 'normal', 'noisy_office', 'cafe_or_crowd' (backward compat: 'low', 'medium', 'high')
+  const [vadSensitivity, setVadSensitivity] = useState('normal'); // 'quiet_room', 'normal', 'slow_speaker', 'noisy_office', 'cafe_or_crowd', 'ultra_protected' (backward compat: 'low', 'medium', 'high')
   const [selectedVoice, setSelectedVoice] = useState('alloy'); // Default voice
   const [showVadControls, setShowVadControls] = useState(false);
 

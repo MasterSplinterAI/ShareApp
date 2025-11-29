@@ -27,7 +27,7 @@ function HomeScreen() {
     }
   };
 
-  const handleNameSubmit = (name) => {
+  const handleNameSubmit = (name, selectedLanguage = 'en') => {
     if (roomData) {
       // Store info in sessionStorage as backup
       const participantInfo = {
@@ -37,6 +37,7 @@ function HomeScreen() {
         shareableLink: roomData.shareableLink,
         shareableLinkNetwork: roomData.shareableLinkNetwork,
         roomName: roomData.roomName,
+        selectedLanguage: selectedLanguage // Store selected language for DOM translator
       };
       
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
@@ -96,7 +97,9 @@ function HomeScreen() {
           onClose={() => setShowNameModal(false)}
           onSubmit={handleNameSubmit}
           title="Enter Your Name"
-          subtitle="This is how other participants will see you"
+          subtitle="This is how other participants will see you. Select your preferred translation language."
+          showLanguageSelector={true}
+          defaultLanguage="en"
         />
       )}
     </div>
