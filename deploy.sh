@@ -104,35 +104,7 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   
   # Copy other files
   echo "Copying other files..."
-  # Copy translation-agent directory (preserve venv if it exists)
-  if [ -d "\$TEMP_DIR/livekit-app/translation-agent" ]; then
-    echo "Copying translation-agent directory..."
-    # Backup venv if it exists
-    if [ -d "$AGENT_DIR/venv" ]; then
-      echo "Backing up existing venv..."
-      sudo mv $AGENT_DIR/venv $AGENT_DIR/venv.backup 2>/dev/null || true
-    fi
-    # Remove old translation-agent (but preserve .env if it exists)
-    if [ -f "$AGENT_DIR/.env" ]; then
-      sudo cp $AGENT_DIR/.env /tmp/translation-agent-env.backup 2>/dev/null || true
-    fi
-    sudo rm -rf $AGENT_DIR 2>/dev/null || true
-    sudo mkdir -p $AGENT_DIR
-    sudo cp -R "\$TEMP_DIR/livekit-app/translation-agent"/* $AGENT_DIR/
-    # Restore venv if backup exists
-    if [ -d "$AGENT_DIR/venv.backup" ]; then
-      echo "Restoring venv..."
-      sudo mv $AGENT_DIR/venv.backup $AGENT_DIR/venv 2>/dev/null || true
-    fi
-    # Restore .env if backup exists
-    if [ -f "/tmp/translation-agent-env.backup" ]; then
-      sudo cp /tmp/translation-agent-env.backup $AGENT_DIR/.env 2>/dev/null || true
-      sudo rm /tmp/translation-agent-env.backup 2>/dev/null || true
-    fi
-    echo "Translation-agent copied successfully"
-  else
-    echo "Warning: translation-agent directory not found in repo"
-  fi
+  # Note: Translation agent is now deployed to LiveKit Cloud, not run locally
   sudo cp "\$TEMP_DIR"/*.md $APP_DIR/ 2>/dev/null || true
   
   # Copy .env files if they exist in the repo
@@ -144,12 +116,7 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
     echo "Warning: backend/.env not found in repo. Create it manually on server."
   fi
   
-  if [ -f "\$TEMP_DIR/livekit-app/translation-agent/.env" ]; then
-    sudo cp "\$TEMP_DIR/livekit-app/translation-agent/.env" $AGENT_DIR/.env
-    echo "Copied translation-agent/.env"
-  else
-    echo "Warning: translation-agent/.env not found in repo. Create it manually on server."
-  fi
+  # Note: Translation agent is now deployed to LiveKit Cloud, no local .env needed
   
   # Set proper permissions
   echo "Setting permissions..."
@@ -165,41 +132,7 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
     echo "Using existing backend node_modules (package.json unchanged)"
   fi
   
-  # Install Python dependencies for translation agent (only if requirements changed)
-  echo "Installing Python dependencies for translation agent..."
-  cd $AGENT_DIR
-  if [ ! -d "venv" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install --upgrade pip --quiet --disable-pip-version-check
-    if [ -f "requirements_livekit.txt" ]; then
-      pip install -r requirements_livekit.txt --quiet --disable-pip-version-check
-    elif [ -f "requirements.txt" ]; then
-      pip install -r requirements.txt --quiet --disable-pip-version-check
-    else
-      echo "Warning: requirements file not found, installing basic dependencies..."
-      pip install livekit-agents livekit-plugins-openai livekit-plugins-silero openai python-dotenv numpy aiohttp websockets --quiet --disable-pip-version-check
-    fi
-    deactivate
-  else
-    # Only reinstall if requirements file changed
-    source venv/bin/activate
-    if [ -f "requirements_livekit.txt" ] && [ "requirements_livekit.txt" -nt "venv/.requirements-installed" ] 2>/dev/null; then
-      pip install --upgrade pip --quiet --disable-pip-version-check
-      pip install -r requirements_livekit.txt --quiet --disable-pip-version-check
-      touch venv/.requirements-installed
-      echo "Python dependencies updated"
-    elif [ -f "requirements.txt" ] && [ "requirements.txt" -nt "venv/.requirements-installed" ] 2>/dev/null; then
-      pip install --upgrade pip --quiet --disable-pip-version-check
-      pip install -r requirements.txt --quiet --disable-pip-version-check
-      touch venv/.requirements-installed
-      echo "Python dependencies updated"
-    else
-      echo "Using existing Python dependencies (requirements unchanged)"
-    fi
-    deactivate
-  fi
+  # Note: Translation agent is now deployed to LiveKit Cloud, no local Python setup needed
   
   # Install PM2 if not installed
   if ! command -v pm2 &> /dev/null; then
@@ -215,27 +148,8 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   pm2 start server.js --name livekit-backend --update-env
   pm2 save
   
-  # Start translation agent with PM2 (if not already running)
-  echo "Starting translation agent..."
-  pm2 delete livekit-agent 2>/dev/null || true
-  cd $AGENT_DIR
-  source venv/bin/activate
-  # Use simplified agent (realtime_agent_simple.py) for better architecture
-  # Note: PM2 will load .env file automatically when started from the directory containing it
-  # The 'dev' command is required by LiveKit CLI framework
-  if [ -f "realtime_agent_simple.py" ]; then
-    echo "Starting SIMPLIFIED agent with one-per-language architecture..."
-    pm2 start realtime_agent_simple.py --name livekit-agent --interpreter venv/bin/python --update-env -- dev
-  elif [ -f "realtime_agent_realtime.py" ]; then
-    pm2 start realtime_agent_realtime.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
-  elif [ -f "realtime_agent.py" ]; then
-    pm2 start realtime_agent.py --name livekit-agent --interpreter venv/bin/python --update-env -- production
-  else
-    echo "ERROR: No agent file found"
-    exit 1
-  fi
-  pm2 save
-  deactivate
+  # Note: Translation agent is now deployed to LiveKit Cloud, not run locally
+  # To update the cloud agent, use: cd translation-agent && lk agent deploy
   
   # Clean up old files to free space
   echo "Cleaning up old files..."
@@ -260,10 +174,11 @@ ssh -i "$PEM_KEY" $REMOTE_USER@$REMOTE_HOST << EOF
   df -h $APP_DIR | tail -1
   
   echo "=== Deployment completed successfully! ==="
-  echo "Backend running on port 3000"
+  echo "Backend running on port 3001"
   echo "Frontend built in $FRONTEND_DIR"
+  echo "Translation agent: Deployed to LiveKit Cloud (not run locally)"
   echo "Make sure to:"
-  echo "  1. Set up .env files in backend/ and translation-agent/"
+  echo "  1. Set up .env file in backend/ with translation API keys"
   echo "  2. Configure Nginx to serve the frontend"
   echo "  3. Set up SSL certificates for HTTPS (required for WebRTC)"
 EOF
@@ -271,10 +186,10 @@ EOF
 echo ""
 echo "=== Local deployment completed! ==="
 echo "Next steps on server:"
-echo "  1. SSH to server and set up .env files:"
-echo "     - $BACKEND_DIR/.env (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, PORT)"
-echo "     - $AGENT_DIR/.env (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, OPENAI_API_KEY, AGENT_NAME)"
+echo "  1. SSH to server and set up .env file:"
+echo "     - $BACKEND_DIR/.env (LIVEKIT_API_KEY, LIVEKIT_API_SECRET, LIVEKIT_URL, PORT, TRANSLATION_API_*)"
 echo "  2. Configure Nginx to serve frontend and proxy /api to backend"
 echo "  3. Set up SSL certificates (Let's Encrypt) for HTTPS"
 echo "  4. Check services: pm2 status"
-echo "  5. View logs: pm2 logs livekit-backend or pm2 logs livekit-agent" 
+echo "  5. View logs: pm2 logs livekit-backend"
+echo "  6. Translation agent: Deployed to LiveKit Cloud (update with: lk agent deploy)" 
