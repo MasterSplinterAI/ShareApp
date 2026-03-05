@@ -79,9 +79,9 @@ class TranscriptionOnlyAgent:
     def _vad_params(self) -> dict:
         return {
             "activation_threshold": 0.7,
-            "min_speech_duration": 1.0,
-            "min_silence_duration": 1.3,
-            "prefix_padding_duration": 0.5,
+            "min_speech_duration": 0.4,   # Lower: capture start of sentence ("Is there...")
+            "min_silence_duration": 2.0,  # Longer: don't cut off mid-sentence on brief pause
+            "prefix_padding_duration": 0.8,  # More prefix: capture words before VAD activated
         }
 
     async def entrypoint(self, ctx: JobContext):
@@ -192,8 +192,10 @@ class TranscriptionOnlyAgent:
             llm=llm_provider,
             tts=tts_provider,
             vad=vad_instance,
-            allow_interruptions=False,
+            allow_interruptions=True,  # CRITICAL: With NoOpTTS, must allow so agent doesn't block next input
             preemptive_generation=False,
+            min_endpointing_delay=0.5,
+            max_endpointing_delay=3.0,
         )
 
         session.user_data = {
