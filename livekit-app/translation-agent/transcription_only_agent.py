@@ -1,0 +1,349 @@
+#!/usr/bin/env python3
+"""
+Transcription-Only Translation Agent - STT → LLM → Publish (no TTS)
+
+No spoken translation - transcriptions only. Nothing is lost on interruptions.
+Uses same architecture as pipeline agent: one assistant per (speaker, target_language) pair.
+Publishes partial (live) and final (original + translated) to data channel.
+"""
+
+import os
+import json
+import asyncio
+import logging
+import sys
+from typing import Dict
+
+from livekit import agents, rtc
+from livekit.agents import JobContext, WorkerOptions, cli, room_io, AutoSubscribe
+from livekit.agents.voice import AgentSession, Agent
+from livekit.plugins import silero
+
+try:
+    from livekit.plugins import deepgram, openai
+    PLUGINS_AVAILABLE = True
+except ImportError:
+    PLUGINS_AVAILABLE = False
+    deepgram = None
+    openai = None
+
+try:
+    from livekit.plugins import noise_cancellation
+    NOISE_CANCELLATION_AVAILABLE = True
+except ImportError:
+    NOISE_CANCELLATION_AVAILABLE = False
+    noise_cancellation = None
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    force=True
+)
+logger = logging.getLogger(__name__)
+logger.info("=" * 60)
+logger.info("📝 TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)")
+logger.info("=" * 60)
+
+
+class NoOpTTS:
+    """TTS that yields no audio - satisfies AgentSession without publishing audio."""
+
+    async def synthesize(self, text: str, **kwargs):
+        """Empty async generator - no audio output."""
+        if False:
+            yield
+
+
+class TranslatorAgent(Agent):
+    """Agent that translates user speech to target language. Output goes to data channel, not TTS."""
+    def __init__(self, target_lang: str, target_lang_name: str):
+        instructions = f"""You are a translator. Translate the user's speech into {target_lang_name} ({target_lang}).
+Output ONLY the translation. No explanations, greetings, or meta-commentary."""
+        super().__init__(instructions=instructions)
+        self.target_lang = target_lang
+        self.target_lang_name = target_lang_name
+
+
+class TranscriptionOnlyAgent:
+    def __init__(self):
+        self.participant_languages: Dict[str, str] = {}
+        self.translation_enabled: Dict[str, bool] = {}
+        self.assistants: Dict[str, agents.voice.AgentSession] = {}
+        self.host_vad_sensitivity = "normal"
+
+    def _normalize_language_code(self, lang: str) -> str:
+        if not lang:
+            return "en"
+        return lang.split("-")[0].lower()
+
+    def _vad_params(self) -> dict:
+        return {
+            "activation_threshold": 0.7,
+            "min_speech_duration": 1.0,
+            "min_silence_duration": 1.3,
+            "prefix_padding_duration": 0.5,
+        }
+
+    async def entrypoint(self, ctx: JobContext):
+        await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
+        logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
+
+        async def handle_data(data: rtc.DataPacket):
+            try:
+                msg = json.loads(data.data.decode("utf-8"))
+                participant_id = data.participant.identity
+                msg_type = msg.get("type")
+
+                if msg_type == "language_update":
+                    lang = msg.get("language", "en")
+                    enabled = msg.get("enabled", False)
+                elif msg_type == "language_preference":
+                    lang = msg.get("target_language") or msg.get("language", "en")
+                    enabled = msg.get("translation_enabled", msg.get("enabled", False))
+                else:
+                    return
+
+                self.participant_languages[participant_id] = lang
+                self.translation_enabled[participant_id] = bool(enabled)
+
+                if enabled:
+                    await self.update_assistants(ctx)
+                else:
+                    keys_to_remove = [k for k in self.assistants if k.startswith(f"{participant_id}:")]
+                    for key in keys_to_remove:
+                        session = self.assistants.pop(key)
+                        await session.aclose()
+                    await self.update_assistants(ctx)
+            except Exception as e:
+                logger.error(f"Data error: {e}", exc_info=True)
+
+        def on_data(data: rtc.DataPacket):
+            asyncio.create_task(handle_data(data))
+
+        async def on_connected(participant: rtc.RemoteParticipant):
+            await self.update_assistants(ctx)
+
+        async def on_track_published(pub: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
+            if pub.kind == rtc.TrackKind.KIND_AUDIO:
+                await self.update_assistants(ctx)
+
+        async def on_disconnected(participant: rtc.RemoteParticipant):
+            pid = participant.identity
+            self.participant_languages.pop(pid, None)
+            self.translation_enabled.pop(pid, None)
+            await self.update_assistants(ctx)
+
+        ctx.room.on("data_received", on_data)
+        ctx.room.on("participant_connected", lambda p: asyncio.create_task(on_connected(p)))
+        ctx.room.on("track_published", lambda pub, p: asyncio.create_task(on_track_published(pub, p)))
+        ctx.room.on("participant_disconnected", lambda p: asyncio.create_task(on_disconnected(p)))
+
+        await asyncio.Event().wait()
+
+    async def update_assistants(self, ctx: JobContext):
+        speakers = [
+            p.identity for p in ctx.room.remote_participants.values()
+            if any(pub.kind == rtc.TrackKind.KIND_AUDIO for pub in p.track_publications.values())
+            and not p.identity.startswith("agent-")
+        ]
+        targets = {
+            lang for pid, lang in self.participant_languages.items()
+            if self.translation_enabled.get(pid, False)
+        }
+
+        expected = set()
+        for speaker in speakers:
+            speaker_lang = self.participant_languages.get(speaker, "en")
+            for target in targets:
+                if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
+                    continue
+                key = f"{speaker}:{target}"
+                expected.add(key)
+                if key not in self.assistants:
+                    await self.create_assistant(ctx, speaker, target)
+
+        for key in list(self.assistants.keys()):
+            if key not in expected:
+                session = self.assistants.pop(key)
+                await session.aclose()
+
+    async def create_assistant(self, ctx: JobContext, speaker_id: str, target_lang: str):
+        speaker_lang = self.participant_languages.get(speaker_id, "en")
+        lang_names = {"es": "Spanish", "en": "English", "fr": "French", "de": "German"}
+        target_lang_name = lang_names.get(target_lang, target_lang)
+
+        is_local = os.getenv('LIVEKIT_CLOUD', '').lower() != 'true'
+        if is_local and PLUGINS_AVAILABLE and openai and os.getenv('OPENAI_API_KEY'):
+            stt_provider = openai.STT(model="whisper-1", language=speaker_lang.split("-")[0] if speaker_lang else "en")
+            llm_provider = openai.LLM()
+        else:
+            stt_provider = "openai/whisper-1"
+            llm_provider = "openai/gpt-4o-mini"
+
+        vad_params = self._vad_params()
+        vad_instance = silero.VAD.load(**vad_params)
+
+        # NoOpTTS - no audio output; we publish transcriptions to data channel only
+        tts_provider = NoOpTTS()
+
+        session = AgentSession(
+            turn_detection="vad",
+            stt=stt_provider,
+            llm=llm_provider,
+            tts=tts_provider,
+            vad=vad_instance,
+            allow_interruptions=False,
+            preemptive_generation=False,
+        )
+
+        session.user_data = {
+            "source_speaker_id": speaker_id,
+            "pending_transcription_id": None,
+            "pending_original": None,
+            "current_partial": "",
+            "published_transcription_ids": set(),
+        }
+
+        @session.on("user_input_transcribed")
+        def on_transcribed(evt):
+            transcript = (getattr(evt, "text", "") or getattr(evt, "transcript", "") or "").strip()
+            if not transcript:
+                return
+
+            is_final = getattr(evt, "is_final", None)
+            if is_final is None and hasattr(evt, "model_dump"):
+                is_final = bool(evt.model_dump().get("is_final", False))
+            is_final = is_final or False
+
+            if not is_final:
+                # Partial - publish for live caption
+                async def pub_partial():
+                    msg = json.dumps({
+                        "type": "transcription",
+                        "originalText": transcript,
+                        "text": transcript,
+                        "language": target_lang,
+                        "participant_id": speaker_id,
+                        "partial": True,
+                        "final": False,
+                        "timestamp": asyncio.get_event_loop().time(),
+                    })
+                    await ctx.room.local_participant.publish_data(msg.encode("utf-8"), topic="transcription", reliable=False)
+                asyncio.create_task(pub_partial())
+                return
+
+            # Final - store for conversation_item_added; agent will translate
+            if len(transcript.split()) < 2:
+                return
+
+            now = asyncio.get_event_loop().time()
+            trans_id = f"{speaker_id}-{target_lang}-{int(now * 1000)}"
+            session.user_data["pending_original"] = transcript
+            session.user_data["pending_transcription_id"] = trans_id
+
+        @session.on("conversation_item_added")
+        def on_conversation_item_added(evt):
+            item = getattr(evt, "item", None)
+            if item is None:
+                return
+            role = getattr(item, "role", None)
+            if role == "user":
+                return
+            if role != "assistant":
+                return
+
+            original = session.user_data.get("pending_original")
+            trans_id = session.user_data.get("pending_transcription_id")
+            if not original or not trans_id:
+                return
+
+            translated_parts = []
+            try:
+                content = getattr(item, "content", []) or []
+                for c in content:
+                    if isinstance(c, str) and c.strip():
+                        translated_parts.append(c.strip())
+                    else:
+                        t = getattr(c, "transcript", None)
+                        if isinstance(t, str) and t.strip():
+                            translated_parts.append(t.strip())
+            except Exception as e:
+                logger.error(f"[{target_lang}] Failed to parse assistant content: {e}")
+                return
+
+            translated = " ".join(translated_parts).strip()
+            if not translated:
+                return
+
+            has_translation = original.strip().lower() != translated.strip().lower()
+            published = session.user_data.get("published_transcription_ids") or set()
+            if trans_id in published:
+                return
+            session.user_data["published_transcription_ids"] = published | {trans_id}
+
+            async def publish():
+                msg_data = {
+                    "type": "transcription",
+                    "text": translated,
+                    "originalText": original,
+                    "language": target_lang,
+                    "participant_id": speaker_id,
+                    "partial": False,
+                    "final": True,
+                    "timestamp": asyncio.get_event_loop().time(),
+                    "hasTranslation": has_translation,
+                    "transcriptionId": trans_id,
+                }
+                await ctx.room.local_participant.publish_data(
+                    json.dumps(msg_data).encode("utf-8"),
+                    topic="transcription",
+                    reliable=True,
+                )
+                logger.info(f"[{target_lang}] ✅ Published: '{original[:50]}...' → '{translated[:50]}...'")
+                session.user_data["pending_transcription_id"] = None
+                session.user_data["pending_original"] = None
+
+            asyncio.create_task(publish())
+
+        room_input_opts = room_io.RoomInputOptions(participant_identity=speaker_id)
+        if NOISE_CANCELLATION_AVAILABLE and noise_cancellation:
+            room_input_opts = room_io.RoomInputOptions(
+                participant_identity=speaker_id,
+                noise_cancellation=noise_cancellation.BVC(),
+            )
+
+        # No room_output_options - transcription only, no audio track published
+        translator_agent = TranslatorAgent(target_lang=target_lang, target_lang_name=target_lang_name)
+        await session.start(
+            agent=translator_agent,
+            room=ctx.room,
+            room_input_options=room_input_opts,
+        )
+
+        self.assistants[f"{speaker_id}:{target_lang}"] = session
+        logger.info(f"✅ Transcription assistant: {speaker_id} → {target_lang}")
+
+
+async def main(ctx: JobContext):
+    agent = TranscriptionOnlyAgent()
+    await agent.entrypoint(ctx)
+
+
+if __name__ == "__main__":
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    agent_name = os.getenv('AGENT_NAME', 'translation-cloud-prod')
+    worker_opts = WorkerOptions(
+        entrypoint_fnc=main,
+        api_key=os.getenv('LIVEKIT_API_KEY'),
+        api_secret=os.getenv('LIVEKIT_API_SECRET'),
+        ws_url=os.getenv('LIVEKIT_URL', 'wss://production-uiycx4ku.livekit.cloud'),
+        agent_name=agent_name,
+    )
+
+    if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] in ['dev', 'start']):
+        cli.run_app(worker_opts)
+    else:
+        logger.error(f"Unknown command: {sys.argv[1]}")
+        sys.exit(1)

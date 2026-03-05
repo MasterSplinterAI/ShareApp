@@ -534,6 +534,7 @@ function MeetingRoom() {
         {translationEnabled && (
           <TranscriptionDisplay
             participantId={participantInfo?.participantName || ''}
+            selectedLanguage={selectedLanguage}
             isVisible={true}
           />
         )}

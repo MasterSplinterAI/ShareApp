@@ -23,4 +23,5 @@ ENV PYTHONUNBUFFERED=1
 
 # Run the agent (LiveKit Cloud will handle the entrypoint)
 # Use python -u for unbuffered output and pass 'start' command for cli.run_app()
-CMD ["python", "-u", "realtime_agent_simple.py", "start"]
+# Transcription-only agent (no TTS) - see DEPLOYMENT.md for rollback to realtime_agent_simple.py
+CMD ["python", "-u", "transcription_only_agent.py", "start"]

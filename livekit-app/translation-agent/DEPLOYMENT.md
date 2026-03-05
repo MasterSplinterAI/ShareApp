@@ -216,3 +216,22 @@ pm2 restart livekit-backend      # If needed
 | Backend       | `./deploy.sh`                     | Production server (PM2)     |
 | Frontend      | `./deploy.sh`                     | Production server (static)  |
 | Translation Agent | `cd livekit-app/translation-agent && lk agent deploy` | LiveKit Cloud |
+
+---
+
+## Rollback to Realtime Agent (TTS)
+
+If you need to revert from the transcription-only agent back to the Realtime agent (with TTS):
+
+1. Edit `livekit-app/translation-agent/Dockerfile`
+2. Change the CMD line from:
+   ```dockerfile
+   CMD ["python", "-u", "transcription_only_agent.py", "start"]
+   ```
+   to:
+   ```dockerfile
+   CMD ["python", "-u", "realtime_agent_simple.py", "start"]
+   ```
+3. Commit, push, and run `lk agent deploy`
+
+The backup file `realtime_agent_simple_backup.py` is a copy of the Realtime agent for reference; the primary `realtime_agent_simple.py` remains in the repo.
