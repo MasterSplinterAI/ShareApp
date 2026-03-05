@@ -23,12 +23,13 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
 
     const handleDataReceived = (payload, participant, kind, topic) => {
       try {
-        if (topic !== 'transcription') return;
-
         const decoder = new TextDecoder();
         const message = JSON.parse(decoder.decode(payload));
 
+        // Accept: topic === 'transcription' OR (topic undefined and message.type === 'transcription')
+        // LiveKit may not forward topic in all environments; fall back to message.type
         if (message.type !== 'transcription') return;
+        if (topic != null && topic !== 'transcription') return;
 
         const speakerId = message.participant_id || participant?.identity || 'Unknown';
         const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : Date.now();
