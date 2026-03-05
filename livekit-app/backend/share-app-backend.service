@@ -1,0 +1,20 @@
+[Unit]
+Description=Share App LiveKit Backend Server
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/var/www/share-app/livekit-app/backend
+Environment=NODE_ENV=production
+EnvironmentFile=/var/www/share-app/livekit-app/backend/.env
+ExecStart=/usr/bin/node /var/www/share-app/livekit-app/backend/server.js
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=share-app-backend
+
+[Install]
+WantedBy=multi-user.target
+

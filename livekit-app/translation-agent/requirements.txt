@@ -2,7 +2,8 @@
 livekit
 livekit-agents>=1.2.0
 livekit-plugins-openai>=0.6.0
-livekit-plugins-deepgram>=0.6.0
+livekit-plugins-deepgram>=0.6.0  # Required for contextual turn detector
+livekit-plugins-turn-detector>=0.1.0  # Contextual turn detector (Dec 2025 enhancement)
 livekit-plugins-google>=0.6.0
 livekit-plugins-elevenlabs>=0.6.0
 

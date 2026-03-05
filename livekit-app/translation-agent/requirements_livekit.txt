@@ -9,6 +9,12 @@ livekit-plugins-openai>=0.6.0
 # Silero VAD plugin for VoiceAssistant (voice activity detection)
 livekit-plugins-silero>=0.6.0
 
+# Deepgram plugin (required for contextual turn detector)
+livekit-plugins-deepgram>=0.6.0
+
+# Contextual Turn Detector plugin (Dec 2025 enhancement - semantic understanding)
+livekit-plugins-turn-detector>=0.1.0
+
 # Noise cancellation plugin for LiveKit Cloud (BVC - Background Voice Cancellation)
 livekit-plugins-noise-cancellation>=0.1.0
 
