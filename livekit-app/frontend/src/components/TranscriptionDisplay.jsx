@@ -139,18 +139,31 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
 
       {!isMinimized && (
         <div ref={scrollRef} className="max-h-[60vh] sm:max-h-96 overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3">
-          {Object.entries(liveCaptions).map(([speakerId, caption]) => (
-            <div key={`live-${speakerId}`} className="space-y-1 opacity-75">
-              <div className="flex items-baseline gap-2">
-                <span className="text-xs font-medium text-blue-400">{speakerId}</span>
-                <span className="text-xs text-gray-500">Live...</span>
+          {Object.entries(liveCaptions).map(([speakerId, caption]) => {
+            const hasTranslation = caption.originalText && caption.text && caption.originalText !== caption.text;
+            return (
+              <div key={`live-${speakerId}`} className="space-y-1 opacity-75">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-medium text-blue-400">{speakerId}</span>
+                  <span className="text-xs text-gray-500">Live...</span>
+                </div>
+                {hasTranslation && selectedLanguage !== 'en' ? (
+                  <div className="space-y-1">
+                    <p className="text-xs text-gray-500 break-words">{caption.originalText}</p>
+                    <p className="text-xs sm:text-sm text-green-300 break-words whitespace-normal leading-relaxed">
+                      {caption.text}
+                      <span className="inline-block w-2 h-4 bg-green-400 ml-1 animate-pulse">|</span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
+                    {caption.text}
+                    <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
+                  </p>
+                )}
               </div>
-              <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
-                {caption.text}
-                <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
-              </p>
-            </div>
-          ))}
+            );
+          })}
 
           {transcriptions.length === 0 && Object.keys(liveCaptions).length === 0 ? (
             <p className="text-gray-500 text-xs sm:text-sm text-center py-8">Waiting for speech...</p>

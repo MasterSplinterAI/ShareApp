@@ -202,12 +202,14 @@ class TranscriptionOnlyAgent:
             "pending_original": None,
             "current_partial": "",
             "published_transcription_ids": set(),
+            "current_translation": "",  # For streaming accumulation
         }
 
         @session.on("user_input_transcribed")
         def on_transcribed(evt):
             transcript = (getattr(evt, "text", "") or getattr(evt, "transcript", "") or "").strip()
             if not transcript:
+                logger.debug(f"[{target_lang}] user_input_transcribed: empty transcript")
                 return
 
             is_final = getattr(evt, "is_final", None)
@@ -216,30 +218,113 @@ class TranscriptionOnlyAgent:
             is_final = is_final or False
 
             if not is_final:
-                # Partial - publish for live caption
+                # Partial - stream live caption (stable ID so frontend updates same block)
+                trans_id = session.user_data.get("pending_transcription_id")
+                if not trans_id:
+                    now = asyncio.get_event_loop().time()
+                    trans_id = f"{speaker_id}-{target_lang}-{int(now * 1000)}"
+                    session.user_data["pending_transcription_id"] = trans_id
+                session.user_data["current_partial"] = transcript
+
                 async def pub_partial():
+                    partial_text = session.user_data.get("current_partial", transcript)
                     msg = json.dumps({
                         "type": "transcription",
-                        "originalText": transcript,
-                        "text": transcript,
+                        "originalText": partial_text,
+                        "text": partial_text,
                         "language": target_lang,
                         "participant_id": speaker_id,
                         "partial": True,
                         "final": False,
                         "timestamp": asyncio.get_event_loop().time(),
+                        "transcriptionId": trans_id,
                     })
                     await ctx.room.local_participant.publish_data(msg.encode("utf-8"), topic="transcription", reliable=False)
                 asyncio.create_task(pub_partial())
+                logger.debug(f"[{target_lang}] 📝 Partial from {speaker_id}: '{transcript[:60]}...'")
                 return
 
-            # Final - store for conversation_item_added; agent will translate
-            if len(transcript.split()) < 2:
-                return
-
+            # Final - store for translation; accept single words too
+            logger.info(f"[{target_lang}] 📝 STT final from {speaker_id}: '{transcript[:80]}...'")
             now = asyncio.get_event_loop().time()
             trans_id = f"{speaker_id}-{target_lang}-{int(now * 1000)}"
             session.user_data["pending_original"] = transcript
             session.user_data["pending_transcription_id"] = trans_id
+            session.user_data["current_translation"] = ""
+            # Clear partial caption after a short delay (final will replace it)
+            session.user_data["current_partial"] = ""
+
+        @session.on("agent_speech_delta")
+        def on_agent_speech_delta(evt):
+            """Stream LLM translation chunks (may not fire with NoOpTTS, but try)."""
+            delta = getattr(evt, "delta", None) or getattr(evt, "text", "") or ""
+            if not delta:
+                return
+            session.user_data["current_translation"] = session.user_data.get("current_translation", "") + delta
+            accumulated = session.user_data["current_translation"]
+            original = session.user_data.get("pending_original", "")
+            if original and (len(accumulated.split()) >= 2 or len(accumulated) >= 15):
+                async def pub_stream():
+                    msg = json.dumps({
+                        "type": "transcription",
+                        "originalText": original,
+                        "text": accumulated,
+                        "language": target_lang,
+                        "participant_id": speaker_id,
+                        "partial": True,
+                        "final": False,
+                        "timestamp": asyncio.get_event_loop().time(),
+                        "transcriptionId": session.user_data.get("pending_transcription_id"),
+                    })
+                    await ctx.room.local_participant.publish_data(msg.encode("utf-8"), topic="transcription", reliable=False)
+                asyncio.create_task(pub_stream())
+                logger.debug(f"[{target_lang}] 📤 Streaming translation: '{accumulated[:60]}...'")
+
+        @session.on("agent_speech_committed")
+        def on_agent_speech_committed(evt):
+            """Final translation from LLM (may fire even with NoOpTTS when text is generated)."""
+            final = getattr(evt, "text", "") or session.user_data.get("current_translation", "")
+            if hasattr(evt, "model_dump"):
+                d = evt.model_dump()
+                final = final or d.get("text", "") or d.get("content", "")
+            final = str(final or "").strip()
+            if not final:
+                logger.debug(f"[{target_lang}] agent_speech_committed: no text")
+                return
+            original = session.user_data.get("pending_original", "")
+            trans_id = session.user_data.get("pending_transcription_id")
+            if not original or not trans_id:
+                logger.info(f"[{target_lang}] agent_speech_committed: no pending (original={bool(original)}, trans_id={bool(trans_id)})")
+                return
+            published = session.user_data.get("published_transcription_ids") or set()
+            if trans_id in published:
+                return
+            session.user_data["published_transcription_ids"] = published | {trans_id}
+
+            async def publish():
+                msg_data = {
+                    "type": "transcription",
+                    "text": final,
+                    "originalText": original,
+                    "language": target_lang,
+                    "participant_id": speaker_id,
+                    "partial": False,
+                    "final": True,
+                    "timestamp": asyncio.get_event_loop().time(),
+                    "hasTranslation": original.strip().lower() != final.strip().lower(),
+                    "transcriptionId": trans_id,
+                }
+                await ctx.room.local_participant.publish_data(
+                    json.dumps(msg_data).encode("utf-8"),
+                    topic="transcription",
+                    reliable=True,
+                )
+                logger.info(f"[{target_lang}] ✅ Published (agent_speech_committed): '{original[:50]}...' → '{final[:50]}...'")
+                session.user_data["pending_transcription_id"] = None
+                session.user_data["pending_original"] = None
+                session.user_data["current_translation"] = ""
+
+            asyncio.create_task(publish())
 
         @session.on("conversation_item_added")
         def on_conversation_item_added(evt):
@@ -248,13 +333,21 @@ class TranscriptionOnlyAgent:
                 return
             role = getattr(item, "role", None)
             if role == "user":
+                logger.debug(f"[{target_lang}] conversation_item_added: user role, skipping")
                 return
             if role != "assistant":
+                logger.debug(f"[{target_lang}] conversation_item_added: role={role}, skipping")
                 return
 
             original = session.user_data.get("pending_original")
             trans_id = session.user_data.get("pending_transcription_id")
             if not original or not trans_id:
+                logger.info(f"[{target_lang}] conversation_item_added: no pending (original={bool(original)}, trans_id={bool(trans_id)}) - may be out of order")
+                return
+
+            published = session.user_data.get("published_transcription_ids") or set()
+            if trans_id in published:
+                logger.debug(f"[{target_lang}] conversation_item_added: already published {trans_id}")
                 return
 
             translated_parts = []
@@ -273,12 +366,10 @@ class TranscriptionOnlyAgent:
 
             translated = " ".join(translated_parts).strip()
             if not translated:
+                logger.info(f"[{target_lang}] conversation_item_added: empty translated content, parts={translated_parts}")
                 return
 
             has_translation = original.strip().lower() != translated.strip().lower()
-            published = session.user_data.get("published_transcription_ids") or set()
-            if trans_id in published:
-                return
             session.user_data["published_transcription_ids"] = published | {trans_id}
 
             async def publish():
@@ -299,7 +390,7 @@ class TranscriptionOnlyAgent:
                     topic="transcription",
                     reliable=True,
                 )
-                logger.info(f"[{target_lang}] ✅ Published: '{original[:50]}...' → '{translated[:50]}...'")
+                logger.info(f"[{target_lang}] ✅ Published (conversation_item_added): '{original[:50]}...' → '{translated[:50]}...'")
                 session.user_data["pending_transcription_id"] = None
                 session.user_data["pending_original"] = None
 
