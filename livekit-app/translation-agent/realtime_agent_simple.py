@@ -6,13 +6,20 @@ Fixes the duplicate audio stream issue when multiple users have the same target 
 LiveKit SDK Versions:
 - livekit-agents>=0.6.0
 - livekit-plugins-openai>=0.6.0
+- livekit-plugins-turn-detector>=0.1.0 (optional - for contextual turn detection)
+- livekit-plugins-deepgram>=0.6.0 (optional - required for turn detector)
 - Uses OpenAI Realtime API (GPT-4o) via LiveKit's RealtimeModel
 
 Architecture:
-- ONE assistant per target language (e.g., one for English, one for Spanish)
-- All listeners of the same language share the same audio track
+- ONE assistant per (speaker, target_language) pair
+- Per-speaker isolation via RoomInputOptions
 - Transcriptions broadcast to ALL participants (everyone sees original + all translations)
-- Uses turn_detection (server_vad) for reliable transcription event firing
+- Multi-layer filtering: OpenAI Semantic VAD + Silero VAD + Contextual Turn Detector (optional) + high interruption thresholds
+
+Features:
+- Contextual Turn Detector (Dec 2025): Semantic understanding reduces false interruptions by ~39%
+- Backward compatible: Falls back to Semantic VAD + Silero if turn detector unavailable
+- BVC noise cancellation on LiveKit Cloud deployments
 """
 
 import os
@@ -28,6 +35,22 @@ from livekit.agents.voice import AgentSession, Agent
 from livekit.agents import llm
 from livekit.plugins.openai.realtime import RealtimeModel
 from livekit.plugins import silero, openai
+
+# Try to import turn detector plugin (new feature - Dec 2025)
+try:
+    from livekit.plugins.turn_detector.multilingual import MultilingualModel
+    TURN_DETECTOR_AVAILABLE = True
+except ImportError:
+    TURN_DETECTOR_AVAILABLE = False
+    MultilingualModel = None
+
+# Try to import Deepgram STT (required for turn detector with RealtimeModel)
+try:
+    from livekit.plugins import deepgram
+    DEEPGRAM_AVAILABLE = True
+except ImportError:
+    DEEPGRAM_AVAILABLE = False
+    deepgram = None
 
 # Try to import noise cancellation plugin (only available on LiveKit Cloud)
 try:
@@ -96,103 +119,40 @@ class SimpleTranslationAgent:
     
     def _get_vad_config(self):
         """Get VAD configuration for RealtimeModel turn_detection.
-        
-        ULTRA-PROTECTED MODE: Prevents ANY interruption from coughs/noise/overlaps.
-        Uses maximum filtering at the OpenAI server_vad layer (PRIMARY FILTER).
-        
+
+        Uses Semantic VAD (Layer 1) - semantic classifier detects when user finished
+        speaking based on words, not just silence. Reduces false interruptions from
+        coughs, filler words ("um...", "uh..."), and natural pauses.
+
         CRITICAL: turn_detection is REQUIRED for transcription events to fire reliably.
         Without it, agent_speech_committed and user_input_transcribed events may not fire.
-        
-        prefix_padding_ms is the SINGLE MOST POWERFUL filter - blocks sounds < 1500ms (coughs are 200-600ms).
-        This is Layer 1 of the three-layer cough filter.
-        
+
+        eagerness: low = lets user take their time (fewer false turn commits),
+                   medium = balanced, high = chunks as soon as possible.
+
         Returns:
-            dict: VAD configuration for server_vad mode
+            dict: VAD configuration for semantic_vad mode
         """
-        base_config = {
-            "type": "server_vad",
-            "prefix_padding_ms": 800,  # PRIMARY FILTER: Blocks coughs < 800ms (coughs are 200-600ms, this still filters them)
-            "threshold": 0.5,  # Balanced threshold - adjusts per setting
-            "silence_duration_ms": 700,  # Balanced silence - adjusts per setting
-        }
-        
-        if self.host_vad_setting == "ultra_protected":
-            # Maximum protection - never interrupts from coughs/noise
-            return {
-                **base_config,
-                "prefix_padding_ms": 1000,  # Strong filter - blocks coughs < 1000ms
-                "threshold": 0.75,
-                "silence_duration_ms": 1200,
-            }
-        elif self.host_vad_setting == "quiet_room":
-            # Very sensitive — catches whispers, soft voices
-            return {
-                **base_config,
-                "threshold": 0.35,  # Low threshold = very sensitive
-                "silence_duration_ms": 600,
-                "prefix_padding_ms": 1000,  # Increased from 600ms - stronger filter to prevent cough interruptions
-            }
-        elif self.host_vad_setting == "normal":
-            # Balanced for normal office/home environments
-            return {
-                **base_config,
-                "threshold": 0.5,  # Balanced threshold
-                "silence_duration_ms": 700,
-                "prefix_padding_ms": 1500,  # Increased from 1200ms - very strong filter to prevent cough interruptions
-            }
-        elif self.host_vad_setting == "noisy_office":
-            # Less sensitive — ignores coughs, chair noises, background talk
-            return {
-                **base_config,
-                "threshold": 0.75,  # High threshold = less sensitive to noise
-                "silence_duration_ms": 1000,
-                "prefix_padding_ms": 1500,  # Increased from 1000ms - very strong filter for noisy environments
-            }
-        elif self.host_vad_setting == "cafe_or_crowd":
-            # Very insensitive — only triggers on loud, clear, sustained speech
-            return {
-                **base_config,
-                "threshold": 0.85,  # Very high threshold = only loud speech
-                "silence_duration_ms": 1200,
-                "prefix_padding_ms": 1800,  # Increased from 1200ms - strongest filter to prevent interruptions
-            }
-        elif self.host_vad_setting == "slow_speaker":
-            # Optimized for slow speakers — longer pauses, normal sensitivity
-            return {
-                **base_config,
-                "threshold": 0.5,  # Normal sensitivity - still detects speech well
-                "silence_duration_ms": 1500,  # Longer pause - waits for slow speakers' natural pauses
-                "prefix_padding_ms": 1500,  # Same as normal - good cough filtering
-            }
+        # Map host_vad_setting to eagerness for semantic_vad
+        if self.host_vad_setting == "quiet_room":
+            eagerness = "medium"  # More responsive for soft voices
+        elif self.host_vad_setting in ("normal", "noisy_office", "cafe_or_crowd", "slow_speaker", "ultra_protected"):
+            eagerness = "low"  # Reduce false interruptions
+        elif self.host_vad_setting == "low":
+            eagerness = "low"  # Legacy: noisy environment
+        elif self.host_vad_setting == "high":
+            eagerness = "high"  # Legacy: quiet room, more responsive
+        elif self.host_vad_setting == "medium":
+            eagerness = "medium"  # Legacy: balanced
         else:
-            # Fallback: Support old naming for backward compatibility
-            if self.host_vad_setting == "low":
-                # Old "low" = noisy environment (less sensitive)
-                return {
-                    **base_config,
-                    "threshold": 0.75,
-                    "silence_duration_ms": 1000,
-                    "prefix_padding_ms": 1500,  # Maximum protection
-                }
-            elif self.host_vad_setting == "high":
-                # Old "high" = quiet room (very sensitive)
-                return {
-                    **base_config,
-                    "threshold": 0.4,
-                    "silence_duration_ms": 600,
-                    "prefix_padding_ms": 1200,  # Still strong for cough filtering
-                }
-            elif self.host_vad_setting == "medium":
-                # Old "medium" = normal
-                return {
-                    **base_config,
-                    "threshold": 0.5,
-                    "silence_duration_ms": 700,
-                    "prefix_padding_ms": 1500,  # Maximum protection
-                }
-            else:
-                # Default: ultra-protected (maximum protection)
-                return base_config
+            eagerness = "low"  # Default: maximum protection against false interruptions
+
+        return {
+            "type": "semantic_vad",
+            "eagerness": eagerness,
+            "create_response": True,
+            "interrupt_response": True,
+        }
 
     async def entrypoint(self, ctx: JobContext):
         """Main entry point for the agent"""
@@ -529,7 +489,7 @@ class SimpleTranslationAgent:
             
             # Create the realtime model with turn_detection
             # CRITICAL: text FIRST in modalities ensures events fire reliably
-            # turn_detection enables server_vad which fires transcription events properly
+            # turn_detection enables Semantic VAD which fires transcription events properly
             # Using gpt-realtime model (GA as of Aug 2025) for better performance
             realtime_model = RealtimeModel(
                 model="gpt-realtime",  # Latest GA model (Aug 2025) - better multilingual support
@@ -539,36 +499,85 @@ class SimpleTranslationAgent:
                 turn_detection=vad_config,  # REQUIRED for transcription events to fire
             )
             
-            # Create session with three-layer cough filter:
-            # CRITICAL: OpenAI server_vad runs FIRST and is the PRIMARY filter
-            # Layer 1: OpenAI server_vad prefix_padding_ms (blocks < 800ms) - PRIMARY FILTER - set in _get_vad_config()
+            # Create session with multi-layer cough filter + contextual turn detector:
+            # CRITICAL: OpenAI Semantic VAD runs FIRST and is the PRIMARY filter
+            # Layer 1: OpenAI semantic_vad (eagerness) - reduces false interruptions from coughs, filler words
             # Layer 2: Silero VAD min_speech_duration (adjusts based on VAD setting) - Secondary filter
-            # Layer 3: AgentSession min_interruption_duration + min_interruption_words (adjusts based on VAD setting)
-            logger.info(f"[{target_language}] 🔒 Applying cough filters (VAD setting: {self.host_vad_setting}):")
-            logger.info(f"  - OpenAI prefix_padding_ms: {vad_config.get('prefix_padding_ms', 'N/A')}ms (PRIMARY FILTER)")
-            logger.info(f"  - OpenAI threshold: {vad_config.get('threshold', 'N/A')}")
+            # Layer 3: Contextual Turn Detector (semantic understanding) - NEW: Dec 2025 enhancement
+            # Layer 4: AgentSession min_interruption_duration + min_interruption_words (adjusts based on VAD setting)
+            
+            # Try to enable contextual turn detector (requires Deepgram STT)
+            turn_detector = None
+            stt_provider = None
+            use_turn_detector = False
+            
+            if TURN_DETECTOR_AVAILABLE and DEEPGRAM_AVAILABLE and MultilingualModel:
+                try:
+                    # Check if Deepgram API key is available (or if using LiveKit Inference)
+                    deepgram_api_key = os.getenv('DEEPGRAM_API_KEY')
+                    is_cloud = self.is_cloud_deployment
+                    
+                    if deepgram_api_key or is_cloud:
+                        # Use Deepgram STT for turn detector (required because OpenAI transcripts arrive post-turn)
+                        # On LiveKit Cloud, Deepgram can route through LiveKit Inference (no API key needed)
+                        stt_provider = deepgram.STT(
+                            model="nova-3",
+                            language="multi",  # Multilingual support
+                        )
+                        turn_detector = MultilingualModel()
+                        use_turn_detector = True
+                        logger.info(f"[{target_language}] ✅ Contextual Turn Detector enabled (semantic understanding)")
+                        logger.info(f"[{target_language}]   - Deepgram STT: {'API key available' if deepgram_api_key else 'LiveKit Inference routing'}")
+                    else:
+                        logger.info(f"[{target_language}] ⚠️ Turn detector available but no Deepgram API key - using fallback (Semantic VAD only)")
+                except Exception as e:
+                    logger.warning(f"[{target_language}] ⚠️ Failed to initialize turn detector: {e}, using fallback")
+                    use_turn_detector = False
+            else:
+                if not TURN_DETECTOR_AVAILABLE:
+                    logger.info(f"[{target_language}] ℹ️ Turn detector plugin not installed - using fallback (Semantic VAD only)")
+                elif not DEEPGRAM_AVAILABLE:
+                    logger.info(f"[{target_language}] ℹ️ Deepgram plugin not installed - using fallback (Semantic VAD only)")
+            
+            logger.info(f"[{target_language}] 🔒 Applying multi-layer filters (VAD setting: {self.host_vad_setting}):")
+            logger.info(f"  - OpenAI Semantic VAD (eagerness={vad_config.get('eagerness', 'N/A')}) - reduces false interruptions")
             logger.info(f"  - Silero activation_threshold: {silero_activation}")
             logger.info(f"  - Silero min_speech_duration: {silero_min_speech}s (blocks coughs < {int(silero_min_speech*1000)}ms)")
             logger.info(f"  - Silero min_silence_duration: {silero_min_silence}s")
+            if use_turn_detector:
+                logger.info(f"  - Contextual Turn Detector: ✅ ENABLED (semantic understanding)")
+            else:
+                logger.info(f"  - Contextual Turn Detector: ❌ Disabled (using fallback)")
             logger.info(f"  - Interruption duration: {interrupt_duration}s")
             logger.info(f"  - Interruption words: {interrupt_words}")
             logger.info(f"  - False interruption timeout: {false_interrupt_timeout}s")
             
-            session = AgentSession(
-                vad=silero.VAD.load(
+            # Build AgentSession with optional turn detector
+            session_kwargs = {
+                "vad": silero.VAD.load(
                     activation_threshold=silero_activation,
                     min_speech_duration=silero_min_speech,  # Layer 2: Blocks coughs
                     min_silence_duration=silero_min_silence,
                     prefix_padding_duration=0.5,  # Captures context without false starts
                 ),
-                llm=realtime_model,
-                allow_interruptions=True,  # REQUIRED - never False (breaks translations)
-                min_interruption_duration=interrupt_duration,    # Layer 3a: Minimum speech duration to trigger interruption
-                min_interruption_words=interrupt_words,          # Layer 3b: Requires N+ words to interrupt
-                false_interruption_timeout=false_interrupt_timeout,    # Buffer for false interruptions
-                resume_false_interruption=True,   # Auto-continues if false positive (e.g., another speaker's cough)
-                discard_audio_if_uninterruptible=False,  # Buffer audio instead of dropping (may not work with RealtimeModel, but try it)
-            )
+                "llm": realtime_model,
+                "allow_interruptions": True,  # REQUIRED - never False (breaks translations)
+                "min_interruption_duration": interrupt_duration,    # Layer 4a: Minimum speech duration to trigger interruption
+                "min_interruption_words": interrupt_words,          # Layer 4b: Requires N+ words to interrupt
+                "false_interruption_timeout": false_interrupt_timeout,    # Buffer for false interruptions
+                "resume_false_interruption": True,   # Auto-continues if false positive (e.g., another speaker's cough)
+                "discard_audio_if_uninterruptible": False,  # Buffer audio instead of dropping (may not work with RealtimeModel, but try it)
+            }
+            
+            # Add STT and turn detector if available
+            if use_turn_detector and stt_provider and turn_detector:
+                session_kwargs["stt"] = stt_provider
+                session_kwargs["turn_detection"] = turn_detector
+                logger.info(f"[{target_language}] 🚀 Using hybrid architecture: OpenAI Semantic VAD + Silero VAD + Contextual Turn Detector")
+            else:
+                logger.info(f"[{target_language}] 🚀 Using standard architecture: OpenAI Semantic VAD + Silero VAD")
+            
+            session = AgentSession(**session_kwargs)
             
             # Initialize session user_data for transcription tracking
             session.user_data = {
@@ -902,7 +911,7 @@ class SimpleTranslationAgent:
                 asyncio.create_task(clear_blocking_flag_after_audio())
             
             # conversation_item_added as fallback - but prefer agent_speech_committed for full text
-            # Only use this if agent_speech_committed didn't fire (shouldn't happen with server_vad)
+            # Only use this if agent_speech_committed didn't fire (shouldn't happen with Semantic VAD)
             @session.on("conversation_item_added")
             def on_conversation_item_added(event):
                 """Handle when conversation item is added - fallback for full text capture"""
