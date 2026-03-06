@@ -37,8 +37,8 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
   const spokenLang = SUPPORTED_LANGUAGES.find(lang => lang.code === spokenLanguage) || SUPPORTED_LANGUAGES[0];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" data-no-translate="true">
-      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6" data-no-translate="true">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" data-no-translate="true">
+      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto my-auto" data-no-translate="true">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-white">{title}</h2>
           <button
