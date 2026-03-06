@@ -12,6 +12,7 @@ import json
 import asyncio
 import logging
 import sys
+import time
 from typing import Dict
 
 from livekit import agents, rtc
@@ -66,7 +67,8 @@ Output ONLY the translation. No explanations, greetings, or meta-commentary."""
 
 class TranscriptionOnlyAgent:
     def __init__(self):
-        self.participant_languages: Dict[str, str] = {}
+        self.participant_languages: Dict[str, str] = {}  # What each wants to HEAR (target)
+        self.participant_spoken_languages: Dict[str, str] = {}  # What each SPEAKS (for assistant routing)
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, agents.voice.AgentSession] = {}
         self.host_vad_sensitivity = "normal"
@@ -91,20 +93,26 @@ class TranscriptionOnlyAgent:
         async def handle_data(data: rtc.DataPacket):
             try:
                 msg = json.loads(data.data.decode("utf-8"))
-                participant_id = data.participant.identity
+                participant_id = data.participant.identity if data.participant else msg.get("participantName", "unknown")
                 msg_type = msg.get("type")
 
                 if msg_type == "language_update":
                     lang = msg.get("language", "en")
+                    spoken = msg.get("spoken_language") or msg.get("language", "en")
                     enabled = msg.get("enabled", False)
                 elif msg_type == "language_preference":
                     lang = msg.get("target_language") or msg.get("language", "en")
+                    spoken = msg.get("spoken_language") or msg.get("target_language") or msg.get("language", "en")
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
                 else:
+                    logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
 
-                self.participant_languages[participant_id] = lang
+                self.participant_languages[participant_id] = lang  # What they want to hear
+                self.participant_spoken_languages[participant_id] = spoken  # What they speak
                 self.translation_enabled[participant_id] = bool(enabled)
+
+                logger.info(f"📥 Language update: {participant_id} → hear={lang}, speak={spoken}, enabled={enabled}")
 
                 if enabled:
                     await self.update_assistants(ctx)
@@ -130,6 +138,7 @@ class TranscriptionOnlyAgent:
         async def on_disconnected(participant: rtc.RemoteParticipant):
             pid = participant.identity
             self.participant_languages.pop(pid, None)
+            self.participant_spoken_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             await self.update_assistants(ctx)
 
@@ -151,9 +160,12 @@ class TranscriptionOnlyAgent:
             if self.translation_enabled.get(pid, False)
         }
 
+        logger.info(f"📊 update_assistants: speakers={speakers}, targets={targets}, participant_langs={dict(self.participant_languages)}, enabled={dict(self.translation_enabled)}")
+
         expected = set()
         for speaker in speakers:
-            speaker_lang = self.participant_languages.get(speaker, "en")
+            # Use spoken language (what they speak), not target (what they want to hear)
+            speaker_lang = self.participant_spoken_languages.get(speaker) or self.participant_languages.get(speaker, "en")
             for target in targets:
                 if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
                     continue
@@ -168,17 +180,19 @@ class TranscriptionOnlyAgent:
                 await session.aclose()
 
     async def create_assistant(self, ctx: JobContext, speaker_id: str, target_lang: str):
-        speaker_lang = self.participant_languages.get(speaker_id, "en")
+        speaker_lang = self.participant_spoken_languages.get(speaker_id) or self.participant_languages.get(speaker_id, "en")
         lang_names = {"es": "Spanish", "en": "English", "fr": "French", "de": "German"}
         target_lang_name = lang_names.get(target_lang, target_lang)
 
         is_local = os.getenv('LIVEKIT_CLOUD', '').lower() != 'true'
         if is_local and PLUGINS_AVAILABLE and openai and os.getenv('OPENAI_API_KEY'):
-            stt_provider = openai.STT(model="whisper-1", language=speaker_lang.split("-")[0] if speaker_lang else "en")
+            stt_provider = openai.STT(model="gpt-4o-transcribe", language=speaker_lang.split("-")[0] if speaker_lang else "en")
             llm_provider = openai.LLM()
+            logger.info(f"[{speaker_id}→{target_lang}] Using local OpenAI plugins")
         else:
-            stt_provider = "openai/whisper-1"
+            stt_provider = "openai/gpt-4o-transcribe"
             llm_provider = "openai/gpt-4o-mini"
+            logger.info(f"[{speaker_id}→{target_lang}] Using LiveKit Inference: STT=gpt-4o-transcribe, LLM=gpt-4o-mini")
 
         vad_params = self._vad_params()
         vad_instance = silero.VAD.load(**vad_params)
@@ -221,6 +235,7 @@ class TranscriptionOnlyAgent:
 
             if not is_final:
                 # Partial - stream live caption (stable ID so frontend updates same block)
+                t0 = time.perf_counter()
                 trans_id = session.user_data.get("pending_transcription_id")
                 if not trans_id:
                     now = asyncio.get_event_loop().time()
@@ -243,10 +258,11 @@ class TranscriptionOnlyAgent:
                     })
                     await ctx.room.local_participant.publish_data(msg.encode("utf-8"), topic="transcription", reliable=False)
                 asyncio.create_task(pub_partial())
-                logger.debug(f"[{target_lang}] 📝 Partial from {speaker_id}: '{transcript[:60]}...'")
+                logger.debug(f"[{target_lang}] 📝 Partial from {speaker_id} (+{(time.perf_counter()-t0)*1000:.0f}ms): '{transcript[:60]}...'")
                 return
 
             # Final - store for translation; accept single words too
+            session.user_data["_t_stt_final"] = time.perf_counter()
             logger.info(f"[{target_lang}] 📝 STT final from {speaker_id}: '{transcript[:80]}...'")
             now = asyncio.get_event_loop().time()
             trans_id = f"{speaker_id}-{target_lang}-{int(now * 1000)}"
@@ -321,7 +337,9 @@ class TranscriptionOnlyAgent:
                     topic="transcription",
                     reliable=True,
                 )
-                logger.info(f"[{target_lang}] ✅ Published (agent_speech_committed): '{original[:50]}...' → '{final[:50]}...'")
+                t0 = session.user_data.get("_t_stt_final")
+                elapsed = (time.perf_counter() - t0) * 1000 if t0 else 0
+                logger.info(f"[{target_lang}] ✅ Published (agent_speech_committed, +{elapsed:.0f}ms): '{original[:50]}...' → '{final[:50]}...'")
                 session.user_data["pending_transcription_id"] = None
                 session.user_data["pending_original"] = None
                 session.user_data["current_translation"] = ""
@@ -392,7 +410,9 @@ class TranscriptionOnlyAgent:
                     topic="transcription",
                     reliable=True,
                 )
-                logger.info(f"[{target_lang}] ✅ Published (conversation_item_added): '{original[:50]}...' → '{translated[:50]}...'")
+                t0 = session.user_data.get("_t_stt_final")
+                elapsed = (time.perf_counter() - t0) * 1000 if t0 else 0
+                logger.info(f"[{target_lang}] ✅ Published (conversation_item_added, +{elapsed:.0f}ms): '{original[:50]}...' → '{translated[:50]}...'")
                 session.user_data["pending_transcription_id"] = None
                 session.user_data["pending_original"] = None
 

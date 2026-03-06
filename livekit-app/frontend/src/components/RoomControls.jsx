@@ -3,7 +3,7 @@ import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { DataPacket_Kind } from 'livekit-client';
 import { Settings } from 'lucide-react';
 
-function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
+function RoomControls({ selectedLanguage, spokenLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
   const [vadSensitivity, setVadSensitivity] = useState('normal'); // 'quiet_room', 'normal', 'slow_speaker', 'noisy_office', 'cafe_or_crowd', 'ultra_protected' (backward compat: 'low', 'medium', 'high')
@@ -32,7 +32,8 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
         const data = {
           type: 'language_update', // Match what agent expects
           participantName: participantName,
-          language: selectedLanguage, // Match what agent expects
+          language: selectedLanguage, // What I want to hear
+          spoken_language: spokenLanguage ?? selectedLanguage, // What I speak (fixes Spanish->English)
           enabled: translationEnabled // Match what agent expects - CRITICAL: Send false when disabled!
         };
 
@@ -61,7 +62,7 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     // ALWAYS send preference updates - including when disabled (enabled: false)
     // This ensures backend stops assistants when translation is turned off
     sendLanguagePreference();
-  }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
+  }, [room, localParticipant, selectedLanguage, spokenLanguage, translationEnabled, participantName]);
 
   // Send VAD setting when host changes it
   const sendVadSetting = async (level) => {

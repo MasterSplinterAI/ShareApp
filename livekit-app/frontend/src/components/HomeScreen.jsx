@@ -27,8 +27,9 @@ function HomeScreen() {
     }
   };
 
-  const handleNameSubmit = (name, selectedLanguage = 'en') => {
+  const handleNameSubmit = (name, selectedLanguage = 'en', spokenLanguage = null) => {
     if (roomData) {
+      const spoken = spokenLanguage ?? selectedLanguage;
       // Store info in sessionStorage as backup
       const participantInfo = {
         isHost: true, 
@@ -37,7 +38,8 @@ function HomeScreen() {
         shareableLink: roomData.shareableLink,
         shareableLinkNetwork: roomData.shareableLinkNetwork,
         roomName: roomData.roomName,
-        selectedLanguage: selectedLanguage // Store selected language for DOM translator
+        selectedLanguage: selectedLanguage,
+        spokenLanguage: spoken
       };
       
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));

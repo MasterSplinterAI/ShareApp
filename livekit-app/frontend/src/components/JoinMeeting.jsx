@@ -42,8 +42,9 @@ function JoinMeeting() {
     }
   };
 
-  const handleNameSubmit = (name, selectedLanguage = 'en') => {
-    console.log('JoinMeeting: handleNameSubmit called with name:', name, 'language:', selectedLanguage, 'roomName:', roomName);
+  const handleNameSubmit = (name, selectedLanguage = 'en', spokenLanguage = null) => {
+    const spoken = spokenLanguage ?? selectedLanguage;
+    console.log('JoinMeeting: handleNameSubmit called with name:', name, 'language:', selectedLanguage, 'spoken:', spoken, 'roomName:', roomName);
     
     // Store participant info in sessionStorage to persist across navigation
     // Include roomMode from roomInfo if available
@@ -52,7 +53,8 @@ function JoinMeeting() {
       isHost: false,
       roomName: roomName,
       roomMode: roomInfo?.roomMode || 'multi-language', // Get room mode from room info
-      selectedLanguage: selectedLanguage // Store selected language for DOM translator
+      selectedLanguage: selectedLanguage,
+      spokenLanguage: spoken
     };
     
     sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));

@@ -5,8 +5,8 @@ import { useTranslation } from '../hooks/useTranslation';
 
 /**
  * TranscriptionDisplay - Chronological timeline with speaker labels.
- * Shows original + user's chosen language only (filter by selectedLanguage).
- * Aggregates messages: one row per speaker turn; multiple target languages merged.
+ * Shows original + ALL translations (everyone sees all languages in the room).
+ * iOS-dictation style: stream partials, update block on final.
  */
 function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisible = true }) {
   const room = useRoomContext();
@@ -23,65 +23,87 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
 
     const handleDataReceived = (payload, participant, kind, topic) => {
       try {
+        // LiveKit passes (payload: Uint8Array, participant?, kind?, topic?)
+        const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
+        if (!raw) return;
         const decoder = new TextDecoder();
-        const message = JSON.parse(decoder.decode(payload));
+        const message = JSON.parse(decoder.decode(raw));
 
-        // Accept: topic === 'transcription' OR (topic undefined and message.type === 'transcription')
-        // LiveKit may not forward topic in all environments; fall back to message.type
         if (message.type !== 'transcription') return;
         if (topic != null && topic !== 'transcription') return;
 
         const speakerId = message.participant_id || participant?.identity || 'Unknown';
         const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : Date.now();
         const targetLang = message.language || 'en';
-
-        // Filter: only show messages for user's selected language. When "en", accept any (display original only).
-        if (selectedLanguage !== 'en' && targetLang !== selectedLanguage) return;
+        const originalText = message.originalText || message.text || '';
+        const text = message.text || '';
+        const transcriptionId = message.transcriptionId;
 
         if (message.partial) {
-          setLiveCaptions(prev => ({
-            ...prev,
-            [speakerId]: {
-              text: message.text || message.originalText || '',
-              originalText: message.originalText || message.text || '',
-              language: targetLang,
-              timestamp: messageTimestamp
-            }
-          }));
+          if (import.meta.env.DEV) {
+            console.log('📝 Partial received:', { speakerId, targetLang, text: text?.slice(0, 40), transcriptionId });
+          }
+          setLiveCaptions(prev => {
+            const existing = prev[speakerId] || { originalText: '', translations: {}, timestamp: messageTimestamp, transcriptionId: null };
+            const isTranslationPartial = originalText && text && originalText !== text;
+            return {
+              ...prev,
+              [speakerId]: {
+                originalText: isTranslationPartial ? originalText : (text || existing.originalText),
+                translations: isTranslationPartial
+                  ? { ...existing.translations, [targetLang]: text }
+                  : existing.translations,
+                timestamp: messageTimestamp,
+                transcriptionId: transcriptionId ?? existing.transcriptionId
+              }
+            };
+          });
         } else {
           setTranscriptions(prev => {
-            const originalText = message.originalText || message.text || '';
-            const translatedText = message.text || '';
-
-            const isDuplicate = prev.some(t =>
-              t.originalText === originalText &&
+            const existingIdx = prev.findIndex(t =>
               t.speaker === speakerId &&
-              Math.abs(t.timestamp - messageTimestamp) < 2000
+              t.originalText === originalText &&
+              Math.abs(t.timestamp - messageTimestamp) < 3000
             );
 
-            if (isDuplicate) return prev;
+            if (existingIdx >= 0) {
+              const existing = prev[existingIdx];
+              const newTranslations = { ...existing.translations };
+              if (originalText && text && originalText !== text) {
+                newTranslations[targetLang] = text;
+              }
+              const next = [...prev];
+              next[existingIdx] = { ...existing, translations: newTranslations };
+              return next;
+            }
 
             transcriptionIdRef.current += 1;
-            const transcription = {
+            const translations = {};
+            if (originalText && text && originalText !== text) {
+              translations[targetLang] = text;
+            }
+            return [...prev, {
               id: transcriptionIdRef.current,
               speaker: speakerId,
-              text: translatedText,
               originalText,
-              language: targetLang,
-              timestamp: messageTimestamp,
-              hasTranslation: originalText && translatedText && originalText !== translatedText
-            };
-
-            return [...prev, transcription];
+              translations,
+              timestamp: messageTimestamp
+            }];
           });
 
+          // Only clear live caption when this final's transcriptionId matches (avoid clearing a new partial)
+          const finalTranscriptionId = transcriptionId;
           setTimeout(() => {
             setLiveCaptions(prev => {
+              const current = prev[speakerId];
+              if (!current || (finalTranscriptionId && current.transcriptionId !== finalTranscriptionId)) {
+                return prev; // Don't clear - either gone or a new utterance started
+              }
               const next = { ...prev };
               delete next[speakerId];
               return next;
             });
-          }, 2000);
+          }, 500);
         }
       } catch (error) {
         console.error('TranscriptionDisplay: Error parsing data message:', error);
@@ -90,7 +112,7 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
 
     room.on('dataReceived', handleDataReceived);
     return () => room.off('dataReceived', handleDataReceived);
-  }, [room, selectedLanguage]);
+  }, [room]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -99,7 +121,7 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
   }, [transcriptions, liveCaptions]);
 
   const getLanguageLabel = (code) => {
-    const labels = { es: 'Spanish', fr: 'French', de: 'German', en: 'English' };
+    const labels = { es: 'Spanish', fr: 'French', de: 'German', en: 'English', it: 'Italian', pt: 'Portuguese', ru: 'Russian', zh: 'Chinese', ja: 'Japanese', ko: 'Korean', ar: 'Arabic', hi: 'Hindi', tiv: 'Tiv', 'es-CO': 'Colombian Spanish' };
     return labels[code] || code;
   };
 
@@ -140,27 +162,35 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
       {!isMinimized && (
         <div ref={scrollRef} className="max-h-[60vh] sm:max-h-96 overflow-y-auto p-3 sm:p-4 space-y-2 sm:space-y-3">
           {Object.entries(liveCaptions).map(([speakerId, caption]) => {
-            const hasTranslation = caption.originalText && caption.text && caption.originalText !== caption.text;
+            const hasTranslations = Object.keys(caption.translations || {}).length > 0;
             return (
               <div key={`live-${speakerId}`} className="space-y-1 opacity-75">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs font-medium text-blue-400">{speakerId}</span>
                   <span className="text-xs text-gray-500">Live...</span>
                 </div>
-                {hasTranslation && selectedLanguage !== 'en' ? (
-                  <div className="space-y-1">
+                <div className="space-y-1">
+                  {caption.originalText && (
                     <p className="text-xs text-gray-500 break-words">{caption.originalText}</p>
-                    <p className="text-xs sm:text-sm text-green-300 break-words whitespace-normal leading-relaxed">
-                      {caption.text}
-                      <span className="inline-block w-2 h-4 bg-green-400 ml-1 animate-pulse">|</span>
+                  )}
+                  {hasTranslations && (
+                    <div className="space-y-1">
+                      {Object.entries(caption.translations).map(([lang, txt]) => (
+                        <p key={lang} className="text-xs sm:text-sm text-green-300 break-words whitespace-normal leading-relaxed">
+                          <span className="text-gray-500 text-xs mr-1">[{getLanguageLabel(lang)}]</span>
+                          {txt}
+                          <span className="inline-block w-2 h-4 bg-green-400 ml-1 animate-pulse">|</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {!hasTranslations && caption.originalText && (
+                    <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
+                      {caption.originalText}
+                      <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
                     </p>
-                  </div>
-                ) : (
-                  <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
-                    {caption.text}
-                    <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
-                  </p>
-                )}
+                  )}
+                </div>
               </div>
             );
           })}
@@ -184,21 +214,19 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
                   </div>
                 )}
 
-                {item.hasTranslation && item.text && selectedLanguage !== 'en' && (
-                  <div className="space-y-1">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">
-                      Your translation ({getLanguageLabel(item.language)})
-                    </span>
-                    <p className="text-xs sm:text-sm text-green-300 break-words whitespace-normal bg-green-900/20 rounded px-2 py-1.5 border-l-2 border-green-500 pl-2 leading-relaxed">
-                      {item.text}
-                    </p>
+                {item.translations && Object.keys(item.translations).length > 0 && (
+                  <div className="space-y-2">
+                    {Object.entries(item.translations).map(([lang, txt]) => (
+                      <div key={lang} className="space-y-1">
+                        <span className="text-xs text-gray-500 uppercase tracking-wide">
+                          {getLanguageLabel(lang)}
+                        </span>
+                        <p className="text-xs sm:text-sm text-green-300 break-words whitespace-normal bg-green-900/20 rounded px-2 py-1.5 border-l-2 border-green-500 pl-2 leading-relaxed">
+                          {txt}
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                )}
-
-                {!item.hasTranslation && item.text && (
-                  <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
-                    {item.text}
-                  </p>
                 )}
               </div>
             ))

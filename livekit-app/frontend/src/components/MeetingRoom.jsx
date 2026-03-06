@@ -9,6 +9,7 @@ import ShareModal from './ShareModal';
 import LanguageSelector from './LanguageSelector';
 import TranscriptionDisplay from './TranscriptionDisplay';
 import RoomControls from './RoomControls';
+import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
 import { useTranslation } from '../hooks/useTranslation';
 // Autopilot Translator SDK
@@ -25,7 +26,7 @@ function MeetingRoom() {
   const [isConnecting, setIsConnecting] = useState(true);
   const [showShareModal, setShowShareModal] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
-  const [translationEnabled, setTranslationEnabled] = useState(false);
+  const [translationEnabled, setTranslationEnabled] = useState(true); // Default ON so English speakers receive Spanish→English
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -308,6 +309,7 @@ function MeetingRoom() {
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
     const selectedLanguage = stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en';
+    const spokenLanguage = stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage;
     
     if (!participantName) {
       // No name provided, redirect to join page
@@ -322,7 +324,8 @@ function MeetingRoom() {
       hostCode,
       shareableLink,
       shareableLinkNetwork,
-      selectedLanguage
+      selectedLanguage,
+      spokenLanguage
     });
     
     // CRITICAL: Set selectedLanguage state IMMEDIATELY before setIsInitialized
@@ -512,8 +515,9 @@ function MeetingRoom() {
         </div>
         
         {/* Room controls for handling translation data */}
-        <RoomControls 
+        <RoomControls
           selectedLanguage={selectedLanguage}
+          spokenLanguage={participantInfo?.spokenLanguage || selectedLanguage}
           translationEnabled={translationEnabled}
           participantName={participantInfo?.participantName || ''}
           isHost={participantInfo?.isHost || false}
@@ -530,14 +534,19 @@ function MeetingRoom() {
           onDisconnect={handleDisconnected}
         />
         
-        {/* Transcription Display */}
-        {translationEnabled && (
-          <TranscriptionDisplay
-            participantId={participantInfo?.participantName || ''}
-            selectedLanguage={selectedLanguage}
-            isVisible={true}
-          />
-        )}
+        {/* Debug panel - add ?debug=1 to URL to troubleshoot translation */}
+        <TranslationDebugPanel
+          selectedLanguage={selectedLanguage}
+          spokenLanguage={participantInfo?.spokenLanguage || selectedLanguage}
+          translationEnabled={translationEnabled}
+          participantName={participantInfo?.participantName || ''}
+        />
+        {/* Transcription Display - always visible so everyone sees transcriptions (EN/ES speakers) */}
+        <TranscriptionDisplay
+          participantId={participantInfo?.participantName || ''}
+          selectedLanguage={selectedLanguage}
+          isVisible={true}
+        />
         
         {/* Agent Tile Customization */}
         <AgentTileCustomizer />

@@ -85,8 +85,10 @@ export function useTranslation() {
 
     // Use the same pattern as TranscriptionDisplay - room.on('dataReceived') with topic parameter
     const handleData = (payload, participant, kind, topic) => {
-      // Debug: log all data received to see what topics are coming through
-      console.log('📡 Data received - topic:', topic, 'participant:', participant?.identity, 'kind:', kind);
+      // Only log when ?debug=1 (reduces console spam)
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1') {
+        console.log('📡 Data received - topic:', topic, 'participant:', participant?.identity, 'kind:', kind);
+      }
       
       // Check topic if provided, otherwise check message type
       if (topic && topic !== 'translation_activity') return;

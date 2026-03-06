@@ -21,17 +21,20 @@ const SUPPORTED_LANGUAGES = [
 function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = "", showLanguageSelector = false, defaultLanguage = 'en' }) {
   const [name, setName] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState(defaultLanguage);
+  const [spokenLanguage, setSpokenLanguage] = useState(defaultLanguage);
   const [isLanguageOpen, setIsLanguageOpen] = useState(false);
+  const [isSpokenOpen, setIsSpokenOpen] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (name.trim()) {
-      onSubmit(name.trim(), selectedLanguage);
+      onSubmit(name.trim(), selectedLanguage, spokenLanguage);
       onClose();
     }
   };
 
   const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage) || SUPPORTED_LANGUAGES[0];
+  const spokenLang = SUPPORTED_LANGUAGES.find(lang => lang.code === spokenLanguage) || SUPPORTED_LANGUAGES[0];
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4" data-no-translate="true">
@@ -62,49 +65,95 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
           />
 
           {showLanguageSelector && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                <Globe className="w-4 h-4 inline mr-1" />
-                Translation Language
-              </label>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => setIsLanguageOpen(!isLanguageOpen)}
-                  className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between hover:bg-gray-600 transition-colors"
-                >
-                  <span className="flex items-center gap-2">
-                    <span className="text-base">{selectedLang.flag}</span>
-                    <span className="text-sm">{selectedLang.name}</span>
-                  </span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${isLanguageOpen ? 'rotate-180' : ''}`} />
-                </button>
+            <div className="mb-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Globe className="w-4 h-4 inline mr-1" />
+                  I speak
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => { setIsSpokenOpen(!isSpokenOpen); setIsLanguageOpen(false); }}
+                    className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between hover:bg-gray-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-base">{spokenLang.flag}</span>
+                      <span className="text-sm">{spokenLang.name}</span>
+                    </span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${isSpokenOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isSpokenOpen && (
+                    <div className="absolute z-50 w-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
+                      {SUPPORTED_LANGUAGES.map((language) => (
+                        <button
+                          key={language.code}
+                          type="button"
+                          onClick={() => {
+                            setSpokenLanguage(language.code);
+                            setIsSpokenOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                            language.code === spokenLanguage ? 'bg-gray-700' : ''
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-base">{language.flag}</span>
+                            <span className="text-sm text-white">{language.name}</span>
+                          </span>
+                          {language.code === spokenLanguage && (
+                            <Check className="w-4 h-4 text-green-400" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Globe className="w-4 h-4 inline mr-1" />
+                  Translation language (what I want to hear)
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => { setIsLanguageOpen(!isLanguageOpen); setIsSpokenOpen(false); }}
+                    className="w-full bg-gray-700 text-white px-4 py-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center justify-between hover:bg-gray-600 transition-colors"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-base">{selectedLang.flag}</span>
+                      <span className="text-sm">{selectedLang.name}</span>
+                    </span>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${isLanguageOpen ? 'rotate-180' : ''}`} />
+                  </button>
 
-                {isLanguageOpen && (
-                  <div className="absolute z-50 w-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
-                    {SUPPORTED_LANGUAGES.map((language) => (
-                      <button
-                        key={language.code}
-                        type="button"
-                        onClick={() => {
-                          setSelectedLanguage(language.code);
-                          setIsLanguageOpen(false);
-                        }}
-                        className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                          language.code === selectedLanguage ? 'bg-gray-700' : ''
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <span className="text-base">{language.flag}</span>
-                          <span className="text-sm text-white">{language.name}</span>
-                        </span>
-                        {language.code === selectedLanguage && (
-                          <Check className="w-4 h-4 text-green-400" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                  {isLanguageOpen && (
+                    <div className="absolute z-50 w-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
+                      {SUPPORTED_LANGUAGES.map((language) => (
+                        <button
+                          key={language.code}
+                          type="button"
+                          onClick={() => {
+                            setSelectedLanguage(language.code);
+                            setIsLanguageOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                            language.code === selectedLanguage ? 'bg-gray-700' : ''
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className="text-base">{language.flag}</span>
+                            <span className="text-sm text-white">{language.name}</span>
+                          </span>
+                          {language.code === selectedLanguage && (
+                            <Check className="w-4 h-4 text-green-400" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
