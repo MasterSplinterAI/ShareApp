@@ -4,6 +4,7 @@ import { DataPacket_Kind } from 'livekit-client';
 import { Settings } from 'lucide-react';
 
 function RoomControls({ selectedLanguage, spokenLanguage, translationEnabled, participantName, isHost = false }) {
+  // spokenLanguage kept for backward compat; unified model uses selectedLanguage for both
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
   const [vadSensitivity, setVadSensitivity] = useState('normal'); // 'quiet_room', 'normal', 'slow_speaker', 'noisy_office', 'cafe_or_crowd', 'ultra_protected' (backward compat: 'low', 'medium', 'high')
@@ -30,11 +31,10 @@ function RoomControls({ selectedLanguage, spokenLanguage, translationEnabled, pa
         }
 
         const data = {
-          type: 'language_update', // Match what agent expects
+          type: 'language_update',
           participantName: participantName,
-          language: selectedLanguage, // What I want to hear
-          spoken_language: spokenLanguage ?? selectedLanguage, // What I speak (fixes Spanish->English)
-          enabled: translationEnabled // Match what agent expects - CRITICAL: Send false when disabled!
+          language: selectedLanguage, // Single language = both speak & hear
+          enabled: translationEnabled
         };
 
         const encoder = new TextEncoder();

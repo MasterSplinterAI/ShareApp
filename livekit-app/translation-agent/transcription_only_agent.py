@@ -67,8 +67,7 @@ Output ONLY the translation. No explanations, greetings, or meta-commentary."""
 
 class TranscriptionOnlyAgent:
     def __init__(self):
-        self.participant_languages: Dict[str, str] = {}  # What each wants to HEAR (target)
-        self.participant_spoken_languages: Dict[str, str] = {}  # What each SPEAKS (for assistant routing)
+        self.participant_languages: Dict[str, str] = {}  # Single language = both speak & hear
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, agents.voice.AgentSession] = {}
         self.host_vad_sensitivity = "normal"
@@ -81,9 +80,9 @@ class TranscriptionOnlyAgent:
     def _vad_params(self) -> dict:
         return {
             "activation_threshold": 0.7,
-            "min_speech_duration": 0.4,   # Lower: capture start of sentence ("Is there...")
-            "min_silence_duration": 2.0,  # Longer: don't cut off mid-sentence on brief pause
-            "prefix_padding_duration": 0.8,  # More prefix: capture words before VAD activated
+            "min_speech_duration": 0.3,   # Lower: capture start of sentence faster
+            "min_silence_duration": 0.9,  # Shorter: faster turn end, more live feel (was 2.0)
+            "prefix_padding_duration": 0.5,  # Slightly less prefix for lower latency
         }
 
     async def entrypoint(self, ctx: JobContext):
@@ -98,21 +97,19 @@ class TranscriptionOnlyAgent:
 
                 if msg_type == "language_update":
                     lang = msg.get("language", "en")
-                    spoken = msg.get("spoken_language") or msg.get("language", "en")
                     enabled = msg.get("enabled", False)
                 elif msg_type == "language_preference":
                     lang = msg.get("target_language") or msg.get("language", "en")
-                    spoken = msg.get("spoken_language") or msg.get("target_language") or msg.get("language", "en")
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
 
-                self.participant_languages[participant_id] = lang  # What they want to hear
-                self.participant_spoken_languages[participant_id] = spoken  # What they speak
+                # Single language = both speak and hear
+                self.participant_languages[participant_id] = lang
                 self.translation_enabled[participant_id] = bool(enabled)
 
-                logger.info(f"📥 Language update: {participant_id} → hear={lang}, speak={spoken}, enabled={enabled}")
+                logger.info(f"📥 Language update: {participant_id} → {lang}, enabled={enabled}")
 
                 if enabled:
                     await self.update_assistants(ctx)
@@ -138,7 +135,6 @@ class TranscriptionOnlyAgent:
         async def on_disconnected(participant: rtc.RemoteParticipant):
             pid = participant.identity
             self.participant_languages.pop(pid, None)
-            self.participant_spoken_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             await self.update_assistants(ctx)
 
@@ -165,7 +161,7 @@ class TranscriptionOnlyAgent:
         expected = set()
         for speaker in speakers:
             # Use spoken language (what they speak), not target (what they want to hear)
-            speaker_lang = self.participant_spoken_languages.get(speaker) or self.participant_languages.get(speaker, "en")
+            speaker_lang = self.participant_languages.get(speaker, "en")
             for target in targets:
                 if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
                     continue
@@ -180,7 +176,7 @@ class TranscriptionOnlyAgent:
                 await session.aclose()
 
     async def create_assistant(self, ctx: JobContext, speaker_id: str, target_lang: str):
-        speaker_lang = self.participant_spoken_languages.get(speaker_id) or self.participant_languages.get(speaker_id, "en")
+        speaker_lang = self.participant_languages.get(speaker_id, "en")
         lang_names = {"es": "Spanish", "en": "English", "fr": "French", "de": "German"}
         target_lang_name = lang_names.get(target_lang, target_lang)
 
@@ -208,8 +204,8 @@ class TranscriptionOnlyAgent:
             vad=vad_instance,
             allow_interruptions=True,  # CRITICAL: With NoOpTTS, must allow so agent doesn't block next input
             preemptive_generation=False,
-            min_endpointing_delay=0.5,
-            max_endpointing_delay=3.0,
+            min_endpointing_delay=0.2,  # Lower: faster finalization (was 0.5)
+            max_endpointing_delay=1.5,  # Lower: don't wait 3s for next word (was 3.0)
         )
 
         session.user_data = {

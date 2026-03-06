@@ -43,8 +43,8 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
 
   useEffect(() => {
     if (!showDebug) return;
-    setLastLangSent({ lang: selectedLanguage, spoken: spokenLanguage, enabled: translationEnabled, name: participantName });
-  }, [selectedLanguage, spokenLanguage, translationEnabled, participantName, showDebug]);
+    setLastLangSent({ lang: selectedLanguage, enabled: translationEnabled, name: participantName });
+  }, [selectedLanguage, translationEnabled, participantName, showDebug]);
 
   useEffect(() => {
     if (!showDebug || !participants) return;
@@ -68,7 +68,7 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
         <div className="mt-2 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs font-mono max-w-xs shadow-xl">
           <div className="text-gray-400 mb-2 font-semibold">Translation Debug</div>
           <div className="space-y-1.5 text-gray-300">
-            <div><span className="text-gray-500">You:</span> {participantName} | hear={selectedLanguage} | speak={spokenLanguage} | enabled={String(translationEnabled)}</div>
+            <div><span className="text-gray-500">You:</span> {participantName} | language={selectedLanguage} | enabled={String(translationEnabled)}</div>
             <div><span className="text-gray-500">Agent:</span> {agentInRoom ? '✅ In room' : '❌ Not in room'}</div>
             <div><span className="text-gray-500">Transcriptions:</span> {transcriptionCount} received</div>
             {lastTranscriptions.length > 0 && (
