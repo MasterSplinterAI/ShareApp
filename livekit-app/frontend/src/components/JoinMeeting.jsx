@@ -64,9 +64,10 @@ function JoinMeeting() {
     // Use replace: false to ensure proper navigation
     // Use a small delay to ensure sessionStorage is written
     setTimeout(() => {
-      console.log('JoinMeeting: Navigating to:', `/room/${roomName}`);
+      const search = window.location.search; // Preserve ?debug=1
+      console.log('JoinMeeting: Navigating to:', `/room/${roomName}${search}`);
       console.log('JoinMeeting: SessionStorage before nav:', sessionStorage.getItem('participantInfo'));
-      navigate(`/room/${roomName}`, { 
+      navigate(`/room/${roomName}${search}`, { 
         state: participantInfo,
         replace: false
       });

@@ -44,8 +44,9 @@ function HomeScreen() {
       
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       
-      // Navigate to the room as host
-      navigate(`/room/${roomData.roomName}`, { 
+      // Preserve ?debug=1 when navigating to room
+      const search = window.location.search;
+      navigate(`/room/${roomData.roomName}${search}`, { 
         state: participantInfo
       });
     }

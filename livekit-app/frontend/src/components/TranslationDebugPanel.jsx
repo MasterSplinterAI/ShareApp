@@ -26,6 +26,10 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
         const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
         if (!raw) return;
         const msg = JSON.parse(new TextDecoder().decode(raw));
+        // Log ALL data when debug (helps trace transcription flow)
+        if (msg.type === 'transcription') {
+          console.log('📡 Transcription received:', { topic, partial: msg.partial, speaker: msg.participant_id, text: msg.text?.slice(0, 30) });
+        }
         if (msg.type !== 'transcription') return;
 
         countRef.current += 1;
