@@ -25,8 +25,8 @@ router.post('/create', async (req, res) => {
     // Get room mode from request (default: 'multi-language')
     const roomMode = req.body.roomMode || 'multi-language';
     
-    // Generate unique room name
-    const roomName = `room-${Math.random().toString(36).substring(2, 15)}-${Date.now().toString(36)}`;
+    // Use provided roomName (from invite link) or generate a new one
+    const roomName = req.body.roomName || `room-${Math.random().toString(36).substring(2, 15)}-${Date.now().toString(36)}`;
     
     // Create room options
     const createOptions = {
@@ -208,6 +208,37 @@ router.delete('/:roomName', async (req, res) => {
     console.error('Room deletion error:', error);
     res.status(500).json({
       error: 'Failed to delete room',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Generate an invite link (no LiveKit room created yet -- room is created on-demand when someone joins)
+router.post('/invite', async (req, res) => {
+  try {
+    const slug = `invite-${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
+
+    const origin = req.headers.origin || req.headers.referer || '';
+    const isNgrok = origin.includes('ngrok.app') || origin.includes('ngrok.io');
+
+    let inviteLink;
+    if (isNgrok) {
+      const ngrokUrl = origin.replace(/\/$/, '');
+      inviteLink = `${ngrokUrl}/join/${slug}`;
+    } else if (process.env.PRODUCTION_URL) {
+      inviteLink = `${process.env.PRODUCTION_URL}/join/${slug}`;
+    } else {
+      const localhostUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
+      inviteLink = `${localhostUrl}/join/${slug}`;
+    }
+
+    console.log('Created invite link:', inviteLink, 'slug:', slug);
+
+    res.json({ slug, inviteLink });
+  } catch (error) {
+    console.error('Invite link error:', error);
+    res.status(500).json({
+      error: 'Failed to create invite link',
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }

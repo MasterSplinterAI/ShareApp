@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Video, Users, Globe, Loader2 } from 'lucide-react';
+import { Video, Users, Globe, Loader2, Link2, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService } from '../services/api';
 import NameModal from './NameModal';
@@ -8,6 +8,8 @@ import NameModal from './NameModal';
 function HomeScreen() {
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState(false);
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [roomData, setRoomData] = useState(null);
 
@@ -24,6 +26,22 @@ function HomeScreen() {
       toast.error(error.response?.data?.error || 'Failed to create meeting room');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleCreateInvite = async () => {
+    setIsCreatingInvite(true);
+    try {
+      const response = await roomService.createInvite();
+      await navigator.clipboard.writeText(response.inviteLink);
+      setInviteCopied(true);
+      toast.success('Invite link copied to clipboard!');
+      setTimeout(() => setInviteCopied(false), 3000);
+    } catch (error) {
+      console.error('Failed to create invite:', error);
+      toast.error('Failed to create invite link');
+    } finally {
+      setIsCreatingInvite(false);
     }
   };
 
@@ -90,6 +108,28 @@ function HomeScreen() {
           >
             <Users className="w-5 h-5" />
             <span>Join Meeting</span>
+          </button>
+          <button
+            onClick={handleCreateInvite}
+            disabled={isCreatingInvite}
+            className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 border border-gray-700"
+          >
+            {isCreatingInvite ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Creating...</span>
+              </>
+            ) : inviteCopied ? (
+              <>
+                <Check className="w-5 h-5 text-green-400" />
+                <span className="text-green-400">Link Copied!</span>
+              </>
+            ) : (
+              <>
+                <Link2 className="w-5 h-5" />
+                <span>Create Invite Link</span>
+              </>
+            )}
           </button>
         </div>
       </div>

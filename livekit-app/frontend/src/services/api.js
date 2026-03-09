@@ -38,10 +38,15 @@ const api = axios.create({
 
 // Room management
 export const roomService = {
-  // Create a new room
-  create: async () => {
-    // No roomMode needed - agent uses unified optimized mode automatically
-    const response = await api.post('/rooms/create', {});
+  // Create a new room (optionally with a specific name from an invite slug)
+  create: async (roomName = null) => {
+    const response = await api.post('/rooms/create', roomName ? { roomName } : {});
+    return response.data;
+  },
+
+  // Generate an invite link (no room created yet -- room created on-demand)
+  createInvite: async () => {
+    const response = await api.post('/rooms/invite', {});
     return response.data;
   },
 

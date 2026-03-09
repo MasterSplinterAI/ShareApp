@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Globe, ChevronDown, Check } from 'lucide-react';
 
 const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇬🇧' },
+  { code: 'en', name: 'English', flag: '🇺🇸' },
   { code: 'es', name: 'Spanish', flag: '🇪🇸' },
   { code: 'es-CO', name: 'Colombian Spanish', flag: '🇨🇴' },
   { code: 'fr', name: 'French', flag: '🇫🇷' },
