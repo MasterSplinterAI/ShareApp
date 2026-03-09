@@ -188,7 +188,7 @@ function ParticipantTile({ participant, tracks, compact = false }) {
   return (
     <div
       className={`relative rounded-lg overflow-hidden bg-gray-800 min-h-0 ${
-        compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : 'sm:aspect-video h-full'
+        compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : 'w-full h-full'
       } ${isSpeaking ? 'ring-2 ring-green-400' : ''}`}
     >
       {hasVideo ? (
