@@ -1,22 +1,35 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTracks, useParticipants, useLocalParticipant, VideoTrack, ParticipantContext } from '@livekit/components-react';
-import { Track } from 'livekit-client';
+import { Track, RoomEvent } from 'livekit-client';
 import { Maximize, Minimize, User, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
+
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isMobile;
+}
 
 function VideoGrid() {
   const participants = useParticipants();
+  const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
   const { isFullScreen, setIsFullScreen } = useMeeting();
   const fullScreenRef = useRef(null);
-  const [focusedScreenShare, setFocusedScreenShare] = useState(null);
+  const isMobile = useIsMobile();
+  const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState(null);
 
   const tracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Microphone],
     { onlySubscribed: false }
   );
 
-  // Filter out agent participants — they have no video to show
   const humanParticipants = participants.filter(p => {
     const identity = p.identity || '';
     return !identity.startsWith('agent-') &&
@@ -24,14 +37,24 @@ function VideoGrid() {
            p.metadata?.role !== 'agent';
   });
 
-  // Find screen share tracks
   const screenShareTracks = tracks.filter(t => t.source === Track.Source.ScreenShare);
   const activeScreenShare = screenShareTracks.length > 0 ? screenShareTracks[0] : null;
 
-  // Handle full screen toggle
+  // Track active speaker for mobile prominence layout
+  useEffect(() => {
+    if (!room) return;
+    const handleSpeakers = (speakers) => {
+      const human = speakers.find(s =>
+        !s.identity?.startsWith('agent-') && !s.identity?.includes('translation-bot')
+      );
+      if (human) setActiveSpeakerIdentity(human.identity);
+    };
+    room.on(RoomEvent.ActiveSpeakersChanged, handleSpeakers);
+    return () => room.off(RoomEvent.ActiveSpeakersChanged, handleSpeakers);
+  }, [room]);
+
   const toggleFullScreen = useCallback(async () => {
     if (!fullScreenRef.current) return;
-
     try {
       if (!document.fullscreenElement) {
         await fullScreenRef.current.requestFullscreen();
@@ -45,7 +68,6 @@ function VideoGrid() {
     }
   }, [setIsFullScreen]);
 
-  // Listen for fullscreen changes (user pressing Escape, etc.)
   useEffect(() => {
     const handleFullScreenChange = () => {
       setIsFullScreen(!!document.fullscreenElement);
@@ -54,7 +76,6 @@ function VideoGrid() {
     return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
   }, [setIsFullScreen]);
 
-  // Determine grid columns based on participant count
   const getGridClass = (count) => {
     if (count <= 1) return 'grid-cols-1';
     if (count <= 2) return 'grid-cols-1 sm:grid-cols-2';
@@ -63,11 +84,10 @@ function VideoGrid() {
     return 'grid-cols-3 sm:grid-cols-4';
   };
 
-  // If there's an active screen share, use focus layout
+  // Screen share layout
   if (activeScreenShare) {
     return (
       <div ref={fullScreenRef} className="flex flex-col h-full w-full bg-gray-900">
-        {/* Screen share - main area */}
         <div className="flex-1 min-h-0 relative">
           <VideoTrackRenderer
             track={activeScreenShare}
@@ -81,10 +101,8 @@ function VideoGrid() {
             {isFullScreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
           </button>
         </div>
-
-        {/* Participant strip - bottom */}
         {!isFullScreen && (
-          <div className="h-28 sm:h-36 flex gap-2 p-2 overflow-x-auto bg-gray-900/95">
+          <div className="h-20 sm:h-36 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto bg-gray-900/95">
             {humanParticipants.map(participant => (
               <ParticipantTile
                 key={participant.identity}
@@ -99,10 +117,39 @@ function VideoGrid() {
     );
   }
 
+  // Mobile: active speaker layout for 3+ participants
+  if (isMobile && humanParticipants.length >= 3) {
+    const speaker = humanParticipants.find(p => p.identity === activeSpeakerIdentity)
+      || humanParticipants.find(p => p.identity !== localParticipant?.identity)
+      || humanParticipants[0];
+    const others = humanParticipants.filter(p => p.identity !== speaker.identity);
+
+    return (
+      <div ref={fullScreenRef} className="flex flex-col h-full w-full bg-gray-900 p-1.5 gap-1.5">
+        <div className="flex-1 min-h-0">
+          <ParticipantTile
+            participant={speaker}
+            tracks={tracks}
+          />
+        </div>
+        <div className="h-20 flex gap-1.5 overflow-x-auto flex-shrink-0">
+          {others.map(participant => (
+            <ParticipantTile
+              key={participant.identity}
+              participant={participant}
+              tracks={tracks}
+              compact
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   // Normal grid layout
   return (
-    <div ref={fullScreenRef} className="h-full w-full p-2 sm:p-3 bg-gray-900">
-      <div className={`grid ${getGridClass(humanParticipants.length)} gap-2 sm:gap-3 h-full auto-rows-fr`}>
+    <div ref={fullScreenRef} className="h-full w-full p-1.5 sm:p-3 bg-gray-900">
+      <div className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full auto-rows-fr`}>
         {humanParticipants.map(participant => (
           <ParticipantTile
             key={participant.identity}
@@ -140,8 +187,8 @@ function ParticipantTile({ participant, tracks, compact = false }) {
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden bg-gray-800 aspect-video min-h-0 ${
-        compact ? 'w-36 sm:w-44 flex-shrink-0' : ''
+      className={`relative rounded-lg overflow-hidden bg-gray-800 min-h-0 ${
+        compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : 'sm:aspect-video h-full'
       } ${isSpeaking ? 'ring-2 ring-green-400' : ''}`}
     >
       {hasVideo ? (
@@ -155,48 +202,42 @@ function ParticipantTile({ participant, tracks, compact = false }) {
         </ParticipantContext.Provider>
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-gray-800">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gray-700 flex items-center justify-center">
-              <User className="w-8 h-8 sm:w-10 sm:h-10 text-gray-400" />
-            </div>
+          <div className={`rounded-full bg-gray-700 flex items-center justify-center ${
+            compact ? 'w-10 h-10' : 'w-14 h-14 sm:w-20 sm:h-20'
+          }`}>
+            <User className={`text-gray-400 ${compact ? 'w-5 h-5' : 'w-7 h-7 sm:w-10 sm:h-10'}`} />
           </div>
         </div>
       )}
 
       {/* Name label */}
-      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 py-2">
-        <span className="text-white text-sm font-medium truncate block" data-no-translate="true">
+      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent ${compact ? 'px-1.5 py-1' : 'px-3 py-2'}`}>
+        <span className={`text-white font-medium truncate block ${compact ? 'text-[10px]' : 'text-xs sm:text-sm'}`} data-no-translate="true">
           {displayName}
           {isLocal && ' (You)'}
         </span>
       </div>
 
-      {/* Mic/camera status indicators */}
-      <div className="absolute top-2 left-2 flex items-center gap-1">
-        {isMicMuted ? (
-          <span className="p-1 rounded bg-red-500/80" title="Microphone off">
-            <MicOff className="w-3.5 h-3.5 text-white" />
-          </span>
-        ) : (
-          <span className="p-1 rounded bg-green-500/80" title="Microphone on">
-            <Mic className="w-3.5 h-3.5 text-white" />
-          </span>
-        )}
-        {isCameraOff ? (
-          <span className="p-1 rounded bg-red-500/80" title="Camera off">
-            <VideoOff className="w-3.5 h-3.5 text-white" />
-          </span>
-        ) : (
-          <span className="p-1 rounded bg-green-500/80" title="Camera on">
-            <Video className="w-3.5 h-3.5 text-white" />
-          </span>
-        )}
-      </div>
+      {/* Mic/camera status indicators -- hidden on compact to save space */}
+      {!compact && (
+        <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2 flex items-center gap-1">
+          {isMicMuted && (
+            <span className="p-0.5 sm:p-1 rounded bg-red-500/80" title="Microphone off">
+              <MicOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white" />
+            </span>
+          )}
+          {isCameraOff && (
+            <span className="p-0.5 sm:p-1 rounded bg-red-500/80" title="Camera off">
+              <VideoOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white" />
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Speaking indicator */}
       {isSpeaking && (
-        <div className="absolute top-2 right-2">
-          <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse" />
+        <div className={`absolute ${compact ? 'top-1 right-1' : 'top-1.5 sm:top-2 right-1.5 sm:right-2'}`}>
+          <div className={`bg-green-400 rounded-full animate-pulse ${compact ? 'w-2 h-2' : 'w-3 h-3'}`} />
         </div>
       )}
     </div>

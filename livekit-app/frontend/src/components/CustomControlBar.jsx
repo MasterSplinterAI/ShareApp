@@ -201,15 +201,15 @@ export default function CustomControlBar({
   }, []);
 
   return (
-    <div className="w-full bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 px-4 py-3 flex-shrink-0">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap">
+    <div className="w-full bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 px-2 sm:px-4 py-2 sm:py-3 flex-shrink-0">
+      <div className="max-w-7xl mx-auto flex items-center justify-between gap-1 sm:gap-4">
         {/* Left side - Standard controls */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 sm:gap-2">
           {/* Microphone Toggle */}
           <div className="flex items-center gap-1">
             <button
               onClick={toggleMic}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex items-center gap-2 px-2 sm:px-4 py-2 rounded-lg transition-all ${
                 isMicEnabled
                   ? 'bg-white/10 hover:bg-white/15 text-white'
                   : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
@@ -221,7 +221,7 @@ export default function CustomControlBar({
             </button>
 
             {micDevices.length > 1 && (
-              <div className="relative" ref={micMenuRef}>
+              <div className="relative hidden sm:block" ref={micMenuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); }}
                   className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
@@ -256,7 +256,7 @@ export default function CustomControlBar({
           <div className="flex items-center gap-1">
             <button
               onClick={toggleCamera}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex items-center gap-2 px-2 sm:px-4 py-2 rounded-lg transition-all ${
                 isCameraEnabled
                   ? 'bg-white/10 hover:bg-white/15 text-white'
                   : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
@@ -268,7 +268,7 @@ export default function CustomControlBar({
             </button>
 
             {cameraDevices.length > 1 && (
-              <div className="relative" ref={cameraMenuRef}>
+              <div className="relative hidden sm:block" ref={cameraMenuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowCameraMenu(!showCameraMenu); }}
                   className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
@@ -299,10 +299,10 @@ export default function CustomControlBar({
             )}
           </div>
 
-          {/* Screen Share - click to start or stop sharing */}
+          {/* Screen Share - hidden on mobile */}
           <button
             onClick={toggleScreenShare}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+            className={`hidden sm:flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
               isScreenSharing
                 ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
                 : 'bg-white/10 hover:bg-white/15 text-white'
@@ -315,7 +315,7 @@ export default function CustomControlBar({
         </div>
 
         {/* Right side - Language, panel toggle, share, leave */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1 sm:gap-2">
           {/* Language Selector */}
           <LanguageSelector
             value={selectedLanguage}
@@ -328,7 +328,7 @@ export default function CustomControlBar({
           {translationEnabled && (
             <button
               onClick={togglePanel}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+              className={`flex items-center gap-2 px-2 sm:px-4 py-2 rounded-lg transition-all ${
                 isPanelOpen
                   ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
                   : 'bg-white/10 hover:bg-white/15 text-white'
@@ -345,7 +345,7 @@ export default function CustomControlBar({
           {isHost && (
             <button
               onClick={onShareClick}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
+              className="flex items-center gap-2 px-2 sm:px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
               aria-label="Share meeting"
             >
               <Share2 className="w-5 h-5" />
@@ -356,7 +356,7 @@ export default function CustomControlBar({
           {/* Leave Button */}
           <button
             onClick={onDisconnect}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-all"
+            className="flex items-center gap-2 px-2 sm:px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-all"
             aria-label="Leave meeting"
           >
             <PhoneOff className="w-5 h-5" />

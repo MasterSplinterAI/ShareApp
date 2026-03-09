@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, X, ChevronDown, GripVertical } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { MessageSquare, X, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 
@@ -18,6 +18,7 @@ function TranscriptionPanel() {
   const room = useRoomContext();
   const { isPanelOpen, togglePanel, isFullScreen, selectedLanguage, translationEnabled } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
+  const [mobileExpanded, setMobileExpanded] = useState(false);
 
   const [transcriptions, setTranscriptions] = useState([]);
   const [liveCaptions, setLiveCaptions] = useState({});
@@ -145,6 +146,21 @@ function TranscriptionPanel() {
     }
   };
 
+  const latestCaptionText = useMemo(() => {
+    const entries = Object.entries(liveCaptions);
+    if (entries.length > 0) {
+      const [speaker, caption] = entries[entries.length - 1];
+      const { dominant } = getDominantAndSecondary(caption.originalText, caption.translations, selectedLanguage);
+      return dominant ? `${speaker}: ${dominant}` : null;
+    }
+    if (transcriptions.length > 0) {
+      const last = transcriptions[transcriptions.length - 1];
+      const { dominant } = getDominantAndSecondary(last.originalText, last.translations, selectedLanguage);
+      return dominant ? `${last.speaker}: ${dominant}` : null;
+    }
+    return null;
+  }, [liveCaptions, transcriptions, selectedLanguage]);
+
   // If translation is not enabled, don't show the panel at all
   if (!translationEnabled) return null;
 
@@ -194,24 +210,45 @@ function TranscriptionPanel() {
         )}
       </div>
 
-      {/* Mobile: bottom sheet */}
-      <div
-        className="sm:hidden fixed bottom-16 left-0 right-0 bg-gray-900 border-t border-gray-700 rounded-t-xl z-40 flex flex-col"
-        style={{ maxHeight: '50vh' }}
-        data-no-translate="true"
-      >
-        <PanelHeader onClose={togglePanel} />
-        <PanelContent
-          transcriptions={transcriptions}
-          liveCaptions={liveCaptions}
-          scrollRef={scrollRef}
-          onScroll={handleScroll}
-          selectedLanguage={selectedLanguage}
+      {/* Mobile: collapsed caption bar or expanded bottom sheet */}
+      {!mobileExpanded ? (
+        <MobileCaptionBar
+          text={latestCaptionText}
+          onExpand={() => setMobileExpanded(true)}
+          hasContent={Object.keys(liveCaptions).length > 0 || transcriptions.length > 0}
         />
-        {!isAtBottom && (
-          <JumpToLatest onClick={scrollToBottom} />
-        )}
-      </div>
+      ) : (
+        <div
+          className="sm:hidden fixed bottom-12 left-0 right-0 bg-gray-900 border-t border-gray-700 rounded-t-xl z-40 flex flex-col"
+          style={{ maxHeight: '35vh' }}
+          data-no-translate="true"
+        >
+          <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 rounded-t-xl flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
+              <span className="text-xs font-medium text-white">Live Transcriptions</span>
+            </div>
+            <button
+              onClick={() => setMobileExpanded(false)}
+              className="text-gray-400 hover:text-white transition-colors p-1"
+              aria-label="Collapse transcriptions"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </div>
+          <PanelContent
+            transcriptions={transcriptions}
+            liveCaptions={liveCaptions}
+            scrollRef={scrollRef}
+            onScroll={handleScroll}
+            selectedLanguage={selectedLanguage}
+            compact
+          />
+          {!isAtBottom && (
+            <JumpToLatest onClick={scrollToBottom} />
+          )}
+        </div>
+      )}
     </>
   );
 }
@@ -352,6 +389,30 @@ function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selec
           />
         );
       })}
+    </div>
+  );
+}
+
+function MobileCaptionBar({ text, onExpand, hasContent }) {
+  return (
+    <div
+      className="sm:hidden fixed bottom-12 left-0 right-0 z-40"
+      data-no-translate="true"
+    >
+      <button
+        onClick={onExpand}
+        className="w-full flex items-center gap-2 px-3 py-2 bg-gray-800/95 backdrop-blur-sm border-t border-gray-700 text-left"
+      >
+        <MessageSquare className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+        {text ? (
+          <span className="text-xs text-gray-200 truncate flex-1">{text}</span>
+        ) : (
+          <span className="text-xs text-gray-500 truncate flex-1">
+            {hasContent ? 'Tap to view transcriptions' : 'Waiting for speech...'}
+          </span>
+        )}
+        <ChevronUp className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+      </button>
     </div>
   );
 }
