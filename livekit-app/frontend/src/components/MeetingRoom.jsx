@@ -277,9 +277,9 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         className="h-full flex flex-col"
       >
         {/* Main content area: video grid + optional transcription panel */}
-        <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-h-0 flex overflow-hidden">
           {/* Video grid takes remaining space */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 overflow-hidden">
             <VideoGrid />
           </div>
 

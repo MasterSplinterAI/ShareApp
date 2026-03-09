@@ -148,7 +148,7 @@ function VideoGrid() {
 
   // Normal grid layout
   return (
-    <div ref={fullScreenRef} className="h-full w-full p-1.5 sm:p-3 bg-gray-900">
+    <div ref={fullScreenRef} className="h-full w-full p-1.5 sm:p-3 bg-gray-900 overflow-hidden">
       <div className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full auto-rows-fr`}>
         {humanParticipants.map(participant => (
           <ParticipantTile
