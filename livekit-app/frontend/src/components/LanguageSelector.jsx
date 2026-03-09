@@ -1,5 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Globe, Check, ChevronDown } from 'lucide-react';
+
+function useIsCompact() {
+  const [isCompact, setIsCompact] = useState(false);
+  useEffect(() => {
+    const check = () => setIsCompact(window.innerWidth < 640 || window.innerHeight < 500);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isCompact;
+}
 
 const SUPPORTED_LANGUAGES = [
   { code: 'en', name: 'English', flag: '🇺🇸' },
@@ -20,6 +31,7 @@ const SUPPORTED_LANGUAGES = [
 
 function LanguageSelector({ value, onChange, onTranslationToggle, translationEnabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
+  const isCompact = useIsCompact();
   const selectedLanguage = SUPPORTED_LANGUAGES.find(lang => lang.code === value) || SUPPORTED_LANGUAGES[0];
 
   const handleLanguageSelect = (language) => {
@@ -30,7 +42,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
   return (
     <div data-no-translate="true">
       {/* Desktop: separate toggle + selector */}
-      <div className="hidden sm:flex items-center gap-2">
+      {!isCompact && <div className="flex items-center gap-2">
         <button
           onClick={onTranslationToggle}
           className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
@@ -88,10 +100,10 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
             </div>
           )}
         </div>
-      </div>
+      </div>}
 
-      {/* Mobile: single compact button with combined popover */}
-      <div className="sm:hidden relative" data-no-translate="true">
+      {/* Compact: single button with combined popover (mobile portrait + landscape) */}
+      {isCompact && <div className="relative" data-no-translate="true">
         <button
           onClick={() => setIsOpen(!isOpen)}
           className={`flex items-center gap-1 px-2 py-2 rounded-lg transition-all ${
@@ -144,7 +156,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
             </div>
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
