@@ -64,7 +64,14 @@ export default function CustomControlBar({
     if (!localParticipant) return;
     try {
       const enabled = !isMicEnabled;
-      await localParticipant.setMicrophoneEnabled(enabled);
+      // When re-enabling after a device switch, use the selected device
+      if (enabled && selectedMicId) {
+        await localParticipant.setMicrophoneEnabled(true, {
+          deviceId: { exact: selectedMicId },
+        });
+      } else {
+        await localParticipant.setMicrophoneEnabled(enabled);
+      }
       setIsMicEnabled(enabled);
     } catch (error) {
       console.error('Error toggling microphone:', error);
@@ -76,7 +83,14 @@ export default function CustomControlBar({
     if (!localParticipant) return;
     try {
       const enabled = !isCameraEnabled;
-      await localParticipant.setCameraEnabled(enabled);
+      // When re-enabling after a device switch, use the selected device
+      if (enabled && selectedCameraId) {
+        await localParticipant.setCameraEnabled(true, {
+          deviceId: { exact: selectedCameraId },
+        });
+      } else {
+        await localParticipant.setCameraEnabled(enabled);
+      }
       setIsCameraEnabled(enabled);
     } catch (error) {
       console.error('Error toggling camera:', error);
@@ -129,11 +143,14 @@ export default function CustomControlBar({
   const handleMicDeviceChange = async (deviceId) => {
     if (!localParticipant) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId } });
-      const audioTrack = stream.getAudioTracks()[0];
+      // Use LiveKit's API with device constraints — it handles track
+      // lifecycle internally so mute/unmute stays in sync
       await localParticipant.setMicrophoneEnabled(false);
-      await localParticipant.setMicrophoneEnabled(true, audioTrack);
+      await localParticipant.setMicrophoneEnabled(true, {
+        deviceId: { exact: deviceId },
+      });
       setSelectedMicId(deviceId);
+      setIsMicEnabled(true);
       setShowMicMenu(false);
     } catch (error) {
       console.error('Error changing microphone:', error);
@@ -143,11 +160,12 @@ export default function CustomControlBar({
   const handleCameraDeviceChange = async (deviceId) => {
     if (!localParticipant) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId } });
-      const videoTrack = stream.getVideoTracks()[0];
       await localParticipant.setCameraEnabled(false);
-      await localParticipant.setCameraEnabled(true, videoTrack);
+      await localParticipant.setCameraEnabled(true, {
+        deviceId: { exact: deviceId },
+      });
       setSelectedCameraId(deviceId);
+      setIsCameraEnabled(true);
       setShowCameraMenu(false);
     } catch (error) {
       console.error('Error changing camera:', error);
