@@ -36,27 +36,29 @@ export default function CustomControlBar({
   const micMenuRef = useRef(null);
   const cameraMenuRef = useRef(null);
 
-  // Sync state with tracks
+  // Sync state with tracks (TrackReference uses publication.track)
   useEffect(() => {
-    if (micTrack?.track) {
-      setIsMicEnabled(!micTrack.track.isMuted);
+    const track = micTrack?.publication?.track ?? micTrack?.track;
+    if (track) {
+      setIsMicEnabled(!track.isMuted);
     } else if (localParticipant) {
       const micPub = localParticipant.getTrackPublication(Track.Source.Microphone);
       setIsMicEnabled(micPub ? !micPub.isMuted : true);
     }
-  }, [micTrack?.track?.isMuted, localParticipant]);
+  }, [micTrack?.publication?.track?.isMuted, micTrack?.track?.isMuted, localParticipant]);
 
   useEffect(() => {
-    if (cameraTrack?.track) {
-      setIsCameraEnabled(cameraTrack.track.isEnabled);
+    const track = cameraTrack?.publication?.track ?? cameraTrack?.track;
+    if (track) {
+      setIsCameraEnabled(track.isEnabled);
     } else if (localParticipant) {
       const camPub = localParticipant.getTrackPublication(Track.Source.Camera);
       setIsCameraEnabled(camPub ? camPub.isSubscribed && camPub.track?.isEnabled : true);
     }
-  }, [cameraTrack?.track?.isEnabled, localParticipant]);
+  }, [cameraTrack?.publication?.track?.isEnabled, cameraTrack?.track?.isEnabled, localParticipant]);
 
   useEffect(() => {
-    setIsScreenSharing(!!screenShareTrack?.track);
+    setIsScreenSharing(!!screenShareTrack?.publication?.track);
   }, [screenShareTrack]);
 
   const toggleMic = async (e) => {
@@ -119,15 +121,17 @@ export default function CustomControlBar({
         setMicDevices(devices.filter(d => d.kind === 'audioinput'));
         setCameraDevices(devices.filter(d => d.kind === 'videoinput'));
 
-        if (micTrack?.track) {
+        const micT = micTrack?.publication?.track ?? micTrack?.track;
+        if (micT) {
           try {
-            const settings = micTrack.track.mediaStreamTrack?.getSettings();
+            const settings = micT.mediaStreamTrack?.getSettings();
             if (settings?.deviceId) setSelectedMicId(settings.deviceId);
           } catch (e) {}
         }
-        if (cameraTrack?.track) {
+        const camT = cameraTrack?.publication?.track ?? cameraTrack?.track;
+        if (camT) {
           try {
-            const settings = cameraTrack.track.mediaStreamTrack?.getSettings();
+            const settings = camT.mediaStreamTrack?.getSettings();
             if (settings?.deviceId) setSelectedCameraId(settings.deviceId);
           } catch (e) {}
         }
@@ -138,7 +142,7 @@ export default function CustomControlBar({
     const handleDeviceChange = () => getDevices();
     navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
     return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
-  }, [micTrack?.track, cameraTrack?.track]);
+  }, [micTrack?.publication?.track, micTrack?.track, cameraTrack?.publication?.track, cameraTrack?.track]);
 
   const handleMicDeviceChange = async (deviceId) => {
     if (!localParticipant) return;
@@ -295,7 +299,7 @@ export default function CustomControlBar({
             )}
           </div>
 
-          {/* Screen Share */}
+          {/* Screen Share - click to start or stop sharing */}
           <button
             onClick={toggleScreenShare}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
@@ -303,10 +307,10 @@ export default function CustomControlBar({
                 ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
                 : 'bg-white/10 hover:bg-white/15 text-white'
             }`}
-            aria-label="Share screen"
+            aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
           >
             <Monitor className="w-5 h-5" />
-            <span className="text-sm font-medium hidden sm:inline">Share screen</span>
+            <span className="text-sm font-medium hidden sm:inline">{isScreenSharing ? 'Stop sharing' : 'Share screen'}</span>
           </button>
         </div>
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useTracks, useParticipants, useLocalParticipant } from '@livekit/components-react';
+import { useTracks, useParticipants, useLocalParticipant, VideoTrack, ParticipantContext } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Maximize, Minimize, User } from 'lucide-react';
+import { Maximize, Minimize, User, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 
 function VideoGrid() {
@@ -13,7 +13,7 @@ function VideoGrid() {
 
   const tracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Microphone],
-    { onlySubscribed: true }
+    { onlySubscribed: false }
   );
 
   // Filter out agent participants — they have no video to show
@@ -116,51 +116,43 @@ function VideoGrid() {
 }
 
 function ParticipantTile({ participant, tracks, compact = false }) {
-  const videoRef = useRef(null);
-  const { localParticipant } = useLocalParticipant();
+  const { localParticipant, cameraTrack: localCameraPub, microphoneTrack: localMicPub, isCameraEnabled: localCameraEnabled } = useLocalParticipant();
   const isLocal = participant.identity === localParticipant?.identity;
 
-  // Find this participant's camera track
-  const cameraTrack = tracks.find(
-    t => t.participant?.identity === participant.identity && t.source === Track.Source.Camera
-  );
+  // For local participant: use useLocalParticipant's cameraTrack directly (useTracks can lag)
+  // For remote: find in tracks from useTracks
+  const cameraTrackRef = isLocal && localCameraPub
+    ? { participant: localParticipant, publication: localCameraPub, source: Track.Source.Camera }
+    : tracks.find(
+        t => t.participant?.identity === participant.identity && t.source === Track.Source.Camera
+      );
 
-  // Find this participant's mic track for speaking indicator
-  const micTrack = tracks.find(
-    t => t.participant?.identity === participant.identity && t.source === Track.Source.Microphone
-  );
+  const micPub = participant.getTrackPublication?.(Track.Source.Microphone) ?? (isLocal ? localMicPub : tracks.find(t => t.participant?.identity === participant.identity && t.source === Track.Source.Microphone)?.publication);
+  const camPub = cameraTrackRef?.publication ?? participant.getTrackPublication?.(Track.Source.Camera);
 
-  const hasVideo = cameraTrack?.track && !cameraTrack.track.isMuted;
+  const hasVideo = !!(cameraTrackRef?.publication?.track);
+  const isMicMuted = micPub?.isMuted ?? true;
+  // Camera: local uses isCameraEnabled; remote uses hasVideo (no track = off)
+  const isCameraOff = isLocal ? !localCameraEnabled : !hasVideo;
   const isSpeaking = participant.isSpeaking;
-
-  // Attach video track to element
-  useEffect(() => {
-    if (!videoRef.current || !cameraTrack?.track) return;
-
-    const track = cameraTrack.track;
-    track.attach(videoRef.current);
-
-    return () => {
-      track.detach(videoRef.current);
-    };
-  }, [cameraTrack?.track]);
 
   const displayName = participant.name || participant.identity || 'Unknown';
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden bg-gray-800 ${
+      className={`relative rounded-lg overflow-hidden bg-gray-800 aspect-video min-h-0 ${
         compact ? 'w-36 sm:w-44 flex-shrink-0' : ''
       } ${isSpeaking ? 'ring-2 ring-green-400' : ''}`}
     >
       {hasVideo ? (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted={isLocal}
-          className={`w-full h-full object-cover ${isLocal ? '-scale-x-100' : ''}`}
-        />
+        <ParticipantContext.Provider value={participant}>
+          <VideoTrack
+            trackRef={cameraTrackRef}
+            muted={isLocal}
+            playsInline
+            className={`w-full h-full min-h-0 object-cover ${isLocal ? '-scale-x-100' : ''}`}
+          />
+        </ParticipantContext.Provider>
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-gray-800">
           <div className="flex flex-col items-center gap-2">
@@ -179,6 +171,28 @@ function ParticipantTile({ participant, tracks, compact = false }) {
         </span>
       </div>
 
+      {/* Mic/camera status indicators */}
+      <div className="absolute top-2 left-2 flex items-center gap-1">
+        {isMicMuted ? (
+          <span className="p-1 rounded bg-red-500/80" title="Microphone off">
+            <MicOff className="w-3.5 h-3.5 text-white" />
+          </span>
+        ) : (
+          <span className="p-1 rounded bg-green-500/80" title="Microphone on">
+            <Mic className="w-3.5 h-3.5 text-white" />
+          </span>
+        )}
+        {isCameraOff ? (
+          <span className="p-1 rounded bg-red-500/80" title="Camera off">
+            <VideoOff className="w-3.5 h-3.5 text-white" />
+          </span>
+        ) : (
+          <span className="p-1 rounded bg-green-500/80" title="Camera on">
+            <Video className="w-3.5 h-3.5 text-white" />
+          </span>
+        )}
+      </div>
+
       {/* Speaking indicator */}
       {isSpeaking && (
         <div className="absolute top-2 right-2">
@@ -191,17 +205,17 @@ function ParticipantTile({ participant, tracks, compact = false }) {
 
 function VideoTrackRenderer({ track, className = '' }) {
   const videoRef = useRef(null);
+  const mediaTrack = track?.publication?.track;
 
   useEffect(() => {
-    if (!videoRef.current || !track?.track) return;
+    if (!videoRef.current || !mediaTrack) return;
 
-    const mediaTrack = track.track;
     mediaTrack.attach(videoRef.current);
 
     return () => {
       mediaTrack.detach(videoRef.current);
     };
-  }, [track?.track]);
+  }, [mediaTrack]);
 
   return (
     <video

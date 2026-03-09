@@ -40,18 +40,18 @@ echo "Frontend PID: $FRONTEND_PID"
 cd ..
 
 # Start Agent
-echo -e "${GREEN}Starting Translation Agent (Simple Model - ONE assistant per language)...${NC}"
+echo -e "${GREEN}Starting Transcription-Only Agent (transcriptions only, no TTS)...${NC}"
 cd translation-agent
 source venv/bin/activate
-# Use realtime_agent_simple.py - ONE assistant per target language (prevents duplicate audio tracks)
+# Use transcription_only_agent.py - transcription-only translation (no TTS)
 # Set AGENT_NAME explicitly for local development to avoid conflicts with production
 export AGENT_NAME="${AGENT_NAME:-translation-bot-dev}"
 # Run with 'dev' command for local development
-python realtime_agent_simple.py dev > ../agent.log 2>&1 &
+python transcription_only_agent.py dev > ../agent.log 2>&1 &
 AGENT_PID=$!
 echo "Agent PID: $AGENT_PID"
 echo "Agent Name: ${AGENT_NAME:-translation-bot-dev}"
-echo "Agent File: realtime_agent_simple.py (ONE assistant per language)"
+echo "Agent File: transcription_only_agent.py (transcriptions only, no TTS)"
 deactivate
 cd ..
 

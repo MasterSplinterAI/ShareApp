@@ -17,6 +17,8 @@ function getLanguageLabel(code) {
 function TranscriptionPanel() {
   const room = useRoomContext();
   const { isPanelOpen, togglePanel, isFullScreen, selectedLanguage, translationEnabled } = useMeeting();
+  const usePipMode = isFullScreen && isPanelOpen;
+
   const [transcriptions, setTranscriptions] = useState([]);
   const [liveCaptions, setLiveCaptions] = useState({});
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -36,6 +38,10 @@ function TranscriptionPanel() {
 
         if (message.type !== 'transcription') return;
         if (topic != null && topic !== 'transcription') return;
+
+        if (import.meta.env.DEV) {
+          console.log('📝 Transcription received:', { speaker: message.participant_id, partial: message.partial, orig: message.originalText?.slice(0, 40), text: message.text?.slice(0, 40) });
+        }
 
         const speakerId = message.participant_id || participant?.identity || 'Unknown';
         const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : Date.now();
@@ -142,11 +148,11 @@ function TranscriptionPanel() {
   // If translation is not enabled, don't show the panel at all
   if (!translationEnabled) return null;
 
-  // Floating PIP mode when in full screen
-  if (isFullScreen && isPanelOpen) {
+  // Floating PIP mode when in full screen or during screen share
+  if (usePipMode) {
     return (
       <div
-        className="fixed bottom-4 right-4 w-80 max-h-64 bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9999] flex flex-col"
+        className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9999] flex flex-col"
         data-no-translate="true"
       >
         <PanelHeader onClose={togglePanel} compact />
@@ -155,6 +161,7 @@ function TranscriptionPanel() {
           liveCaptions={liveCaptions}
           scrollRef={scrollRef}
           onScroll={handleScroll}
+          selectedLanguage={selectedLanguage}
           compact
         />
         {!isAtBottom && (
@@ -180,6 +187,7 @@ function TranscriptionPanel() {
           liveCaptions={liveCaptions}
           scrollRef={scrollRef}
           onScroll={handleScroll}
+          selectedLanguage={selectedLanguage}
         />
         {!isAtBottom && (
           <JumpToLatest onClick={scrollToBottom} />
@@ -198,6 +206,7 @@ function TranscriptionPanel() {
           liveCaptions={liveCaptions}
           scrollRef={scrollRef}
           onScroll={handleScroll}
+          selectedLanguage={selectedLanguage}
         />
         {!isAtBottom && (
           <JumpToLatest onClick={scrollToBottom} />
@@ -227,7 +236,72 @@ function PanelHeader({ onClose, compact = false }) {
   );
 }
 
-function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, compact = false }) {
+function getDominantAndSecondary(originalText, translations, selectedLanguage) {
+  const translationEntries = Object.entries(translations || {});
+  const hasTranslation = translationEntries.length > 0;
+
+  if (!hasTranslation) {
+    return { dominant: originalText, secondary: null, dominantLang: null, secondaryLang: null };
+  }
+
+  const matchingEntry = translationEntries.find(([lang]) => lang === selectedLanguage);
+
+  if (matchingEntry) {
+    return {
+      dominant: matchingEntry[1],
+      secondary: originalText,
+      dominantLang: matchingEntry[0],
+      secondaryLang: null,
+    };
+  }
+
+  const firstEntry = translationEntries[0];
+  return {
+    dominant: originalText,
+    secondary: firstEntry[1],
+    dominantLang: null,
+    secondaryLang: firstEntry[0],
+  };
+}
+
+function TranscriptionBubble({ speaker, dominant, secondary, dominantLang, secondaryLang, timestamp, isLive = false, compact = false }) {
+  return (
+    <div className={`${compact ? 'pb-1.5' : 'pb-3'} ${!isLive ? 'border-b border-gray-700/50 last:border-b-0' : ''}`}>
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className={`font-medium text-blue-400 ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
+        {isLive && <span className="text-xs text-gray-500">speaking...</span>}
+        {!isLive && timestamp && (
+          <span className="text-xs text-gray-500">
+            {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+      </div>
+
+      {dominant && (
+        <p className={`text-gray-100 break-words leading-relaxed bg-gray-800/50 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} ${isLive ? 'opacity-80' : ''}`}>
+          {dominant}
+          {isLive && (
+            <span className="inline-block w-1.5 h-4 bg-blue-400 ml-1 animate-pulse rounded-sm align-middle" />
+          )}
+        </p>
+      )}
+
+      {secondary && (
+        <p className={`text-gray-400 break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} ${isLive ? 'opacity-60' : 'opacity-70'}`}>
+          {secondaryLang && (
+            <span className="text-gray-500 mr-1">[{getLanguageLabel(secondaryLang)}]</span>
+          )}
+          {secondary}
+          {isLive && (
+            <span className="inline-block w-1 h-3 bg-gray-500 ml-1 animate-pulse rounded-sm align-middle" />
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selectedLanguage, compact = false }) {
   const hasContent = transcriptions.length > 0 || Object.keys(liveCaptions).length > 0;
 
   return (
@@ -236,77 +310,48 @@ function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, compa
       onScroll={onScroll}
       className={`flex-1 overflow-y-auto ${compact ? 'p-2 space-y-1.5' : 'p-4 space-y-3'}`}
     >
-      {/* Live captions */}
-      {Object.entries(liveCaptions).map(([speakerId, caption]) => {
-        const hasTranslations = Object.keys(caption.translations || {}).length > 0;
-        return (
-          <div key={`live-${speakerId}`} className="space-y-1 opacity-75">
-            <div className="flex items-baseline gap-2">
-              <span className={`font-medium text-blue-400 ${compact ? 'text-xs' : 'text-xs'}`}>{speakerId}</span>
-              <span className="text-xs text-gray-500">speaking...</span>
-            </div>
-            {caption.originalText && (
-              <p className={`text-gray-300 break-words leading-relaxed ${compact ? 'text-xs' : 'text-sm'}`}>
-                {caption.originalText}
-                {!hasTranslations && (
-                  <span className="inline-block w-1.5 h-4 bg-blue-400 ml-1 animate-pulse rounded-sm" />
-                )}
-              </p>
-            )}
-            {hasTranslations && (
-              <div className="space-y-1">
-                {Object.entries(caption.translations).map(([lang, txt]) => (
-                  <p key={lang} className={`text-green-300 break-words leading-relaxed ${compact ? 'text-xs' : 'text-sm'}`}>
-                    <span className="text-gray-500 text-xs mr-1">[{getLanguageLabel(lang)}]</span>
-                    {txt}
-                    <span className="inline-block w-1.5 h-4 bg-green-400 ml-1 animate-pulse rounded-sm" />
-                  </p>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Final transcriptions */}
-      {!hasContent ? (
+      {!hasContent && (
         <div className="flex flex-col items-center justify-center py-12 text-gray-500">
           <MessageSquare className="w-8 h-8 mb-3 opacity-50" />
           <p className={`text-center ${compact ? 'text-xs' : 'text-sm'}`}>Waiting for speech...</p>
         </div>
-      ) : (
-        transcriptions.map((item) => (
-          <div key={item.id} className={`space-y-1.5 border-b border-gray-700/50 last:border-b-0 ${compact ? 'pb-1.5' : 'pb-3'}`}>
-            <div className="flex items-baseline gap-2">
-              <span className="text-xs font-medium text-blue-400">{item.speaker}</span>
-              <span className="text-xs text-gray-500">
-                {new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-
-            {item.originalText && (
-              <p className={`text-gray-300 break-words leading-relaxed bg-gray-800/50 rounded px-2 py-1.5 ${compact ? 'text-xs' : 'text-sm'}`}>
-                {item.originalText}
-              </p>
-            )}
-
-            {item.translations && Object.keys(item.translations).length > 0 && (
-              <div className="space-y-1">
-                {Object.entries(item.translations).map(([lang, txt]) => (
-                  <div key={lang}>
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">
-                      {getLanguageLabel(lang)}
-                    </span>
-                    <p className={`text-green-300 break-words leading-relaxed bg-green-900/20 rounded px-2 py-1.5 border-l-2 border-green-500 ${compact ? 'text-xs' : 'text-sm'}`}>
-                      {txt}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ))
       )}
+
+      {transcriptions.map((item) => {
+        const { dominant, secondary, dominantLang, secondaryLang } = getDominantAndSecondary(
+          item.originalText, item.translations, selectedLanguage
+        );
+        return (
+          <TranscriptionBubble
+            key={item.id}
+            speaker={item.speaker}
+            dominant={dominant}
+            secondary={secondary}
+            dominantLang={dominantLang}
+            secondaryLang={secondaryLang}
+            timestamp={item.timestamp}
+            compact={compact}
+          />
+        );
+      })}
+
+      {Object.entries(liveCaptions).map(([speakerId, caption]) => {
+        const { dominant, secondary, dominantLang, secondaryLang } = getDominantAndSecondary(
+          caption.originalText, caption.translations, selectedLanguage
+        );
+        return (
+          <TranscriptionBubble
+            key={`live-${speakerId}`}
+            speaker={speakerId}
+            dominant={dominant}
+            secondary={secondary}
+            dominantLang={dominantLang}
+            secondaryLang={secondaryLang}
+            isLive
+            compact={compact}
+          />
+        );
+      })}
     </div>
   );
 }

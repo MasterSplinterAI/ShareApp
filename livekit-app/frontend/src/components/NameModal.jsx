@@ -83,7 +83,7 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
                   </button>
 
                   {isLanguageOpen && (
-                    <div className="absolute z-50 w-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
+                    <div className="absolute z-50 w-full bottom-full mb-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
                       {SUPPORTED_LANGUAGES.map((language) => (
                         <button
                           key={language.code}
