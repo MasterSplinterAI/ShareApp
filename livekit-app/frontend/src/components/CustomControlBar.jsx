@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageSquare } from 'lucide-react';
 import LanguageSelector from './LanguageSelector';
-import { VADSensitivityControls } from './MeetingRoom';
+import { useMeeting } from '../context/MeetingContext';
 
 export default function CustomControlBar({
   selectedLanguage,
@@ -17,11 +17,12 @@ export default function CustomControlBar({
   const localParticipantHook = useLocalParticipant();
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
-  
+  const { isPanelOpen, togglePanel } = useMeeting();
+
   const cameraTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Camera);
   const micTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Microphone);
   const screenShareTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.ScreenShare);
-  
+
   const [isMicEnabled, setIsMicEnabled] = useState(true);
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -60,10 +61,7 @@ export default function CustomControlBar({
 
   const toggleMic = async (e) => {
     e?.stopPropagation();
-    if (!localParticipant) {
-      console.error('Local participant not available');
-      return;
-    }
+    if (!localParticipant) return;
     try {
       const enabled = !isMicEnabled;
       await localParticipant.setMicrophoneEnabled(enabled);
@@ -75,10 +73,7 @@ export default function CustomControlBar({
 
   const toggleCamera = async (e) => {
     e?.stopPropagation();
-    if (!localParticipant) {
-      console.error('Local participant not available');
-      return;
-    }
+    if (!localParticipant) return;
     try {
       const enabled = !isCameraEnabled;
       await localParticipant.setCameraEnabled(enabled);
@@ -90,22 +85,13 @@ export default function CustomControlBar({
 
   const toggleScreenShare = async (e) => {
     e?.stopPropagation();
-    if (!localParticipant) {
-      console.error('Local participant not available');
-      return;
-    }
+    if (!localParticipant) return;
     try {
-      if (isScreenSharing) {
-        await localParticipant.setScreenShareEnabled(false);
-        setIsScreenSharing(false);
-      } else {
-        await localParticipant.setScreenShareEnabled(true);
-        setIsScreenSharing(true);
-      }
+      await localParticipant.setScreenShareEnabled(!isScreenSharing);
+      setIsScreenSharing(!isScreenSharing);
     } catch (error) {
-      console.error('Error toggling screen share:', error);
-      // User might have cancelled the screen share dialog
       if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') {
+        console.error('Error toggling screen share:', error);
         setIsScreenSharing(false);
       }
     }
@@ -118,36 +104,22 @@ export default function CustomControlBar({
         const devices = await navigator.mediaDevices.enumerateDevices();
         setMicDevices(devices.filter(d => d.kind === 'audioinput'));
         setCameraDevices(devices.filter(d => d.kind === 'videoinput'));
-        
-        // Get current device IDs from tracks
-        // useTracks returns track references, not publications
+
         if (micTrack?.track) {
           try {
-            const mediaStreamTrack = micTrack.track.mediaStreamTrack;
-            if (mediaStreamTrack) {
-              const settings = mediaStreamTrack.getSettings();
-              if (settings.deviceId) setSelectedMicId(settings.deviceId);
-            }
-          } catch (e) {
-            // Track might not have mediaStreamTrack yet
-          }
+            const settings = micTrack.track.mediaStreamTrack?.getSettings();
+            if (settings?.deviceId) setSelectedMicId(settings.deviceId);
+          } catch (e) {}
         }
         if (cameraTrack?.track) {
           try {
-            const mediaStreamTrack = cameraTrack.track.mediaStreamTrack;
-            if (mediaStreamTrack) {
-              const settings = mediaStreamTrack.getSettings();
-              if (settings.deviceId) setSelectedCameraId(settings.deviceId);
-            }
-          } catch (e) {
-            // Track might not have mediaStreamTrack yet
-          }
+            const settings = cameraTrack.track.mediaStreamTrack?.getSettings();
+            if (settings?.deviceId) setSelectedCameraId(settings.deviceId);
+          } catch (e) {}
         }
-      } catch (error) {
-        // Silently fail - device enumeration might not be available
-      }
+      } catch (error) {}
     };
-    
+
     getDevices();
     const handleDeviceChange = () => getDevices();
     navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
@@ -155,10 +127,7 @@ export default function CustomControlBar({
   }, [micTrack?.track, cameraTrack?.track]);
 
   const handleMicDeviceChange = async (deviceId) => {
-    if (!localParticipant) {
-      console.error('Local participant not available');
-      return;
-    }
+    if (!localParticipant) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId } });
       const audioTrack = stream.getAudioTracks()[0];
@@ -172,10 +141,7 @@ export default function CustomControlBar({
   };
 
   const handleCameraDeviceChange = async (deviceId) => {
-    if (!localParticipant) {
-      console.error('Local participant not available');
-      return;
-    }
+    if (!localParticipant) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId } });
       const videoTrack = stream.getVideoTracks()[0];
@@ -202,17 +168,14 @@ export default function CustomControlBar({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Close menus on orientation change to prevent UI issues
+  // Close menus on orientation change
   useEffect(() => {
     const handleOrientationChange = () => {
       setShowMicMenu(false);
       setShowCameraMenu(false);
     };
-
     window.addEventListener('orientationchange', handleOrientationChange);
-    return () => {
-      window.removeEventListener('orientationchange', handleOrientationChange);
-    };
+    return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
 
   return (
@@ -231,29 +194,20 @@ export default function CustomControlBar({
               }`}
               aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
-              {isMicEnabled ? (
-                <Mic className="w-5 h-5" />
-              ) : (
-                <MicOff className="w-5 h-5" />
-              )}
+              {isMicEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
               <span className="text-sm font-medium hidden sm:inline">Microphone</span>
             </button>
-            
-            {/* Device Selector Toggle */}
+
             {micDevices.length > 1 && (
               <div className="relative" ref={micMenuRef}>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowMicMenu(!showMicMenu);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); }}
                   className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
                   aria-label="Select microphone device"
                 >
                   <ChevronDown className={`w-4 h-4 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
                 </button>
-                
-                {/* Device Selection Dropdown */}
+
                 {showMicMenu && (
                   <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999]">
                     <div className="p-2">
@@ -266,9 +220,7 @@ export default function CustomControlBar({
                           }`}
                         >
                           <span className="text-sm text-white truncate">{device.label || device.deviceId}</span>
-                          {selectedMicId === device.deviceId && (
-                            <span className="text-green-400 text-xs">✓</span>
-                          )}
+                          {selectedMicId === device.deviceId && <span className="text-green-400 text-xs">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -289,29 +241,20 @@ export default function CustomControlBar({
               }`}
               aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
-              {isCameraEnabled ? (
-                <Video className="w-5 h-5" />
-              ) : (
-                <VideoOff className="w-5 h-5" />
-              )}
+              {isCameraEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
               <span className="text-sm font-medium hidden sm:inline">Camera</span>
             </button>
-            
-            {/* Device Selector Toggle */}
+
             {cameraDevices.length > 1 && (
               <div className="relative" ref={cameraMenuRef}>
                 <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowCameraMenu(!showCameraMenu);
-                  }}
+                  onClick={(e) => { e.stopPropagation(); setShowCameraMenu(!showCameraMenu); }}
                   className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
                   aria-label="Select camera device"
                 >
                   <ChevronDown className={`w-4 h-4 transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
                 </button>
-                
-                {/* Device Selection Dropdown */}
+
                 {showCameraMenu && (
                   <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999]">
                     <div className="p-2">
@@ -324,9 +267,7 @@ export default function CustomControlBar({
                           }`}
                         >
                           <span className="text-sm text-white truncate">{device.label || device.deviceId}</span>
-                          {selectedCameraId === device.deviceId && (
-                            <span className="text-green-400 text-xs">✓</span>
-                          )}
+                          {selectedCameraId === device.deviceId && <span className="text-green-400 text-xs">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -349,10 +290,9 @@ export default function CustomControlBar({
             <Monitor className="w-5 h-5" />
             <span className="text-sm font-medium hidden sm:inline">Share screen</span>
           </button>
-
         </div>
 
-        {/* Right side - Custom controls */}
+        {/* Right side - Language, panel toggle, share, leave */}
         <div className="flex items-center gap-2 flex-wrap">
           {/* Language Selector */}
           <LanguageSelector
@@ -361,14 +301,24 @@ export default function CustomControlBar({
             onTranslationToggle={() => setTranslationEnabled(!translationEnabled)}
             translationEnabled={translationEnabled}
           />
-          
-          {/* VAD Sensitivity Controls - Host Only */}
-          {isHost && (
-            <div className="relative">
-              <VADSensitivityControls />
-            </div>
+
+          {/* Transcription Panel Toggle */}
+          {translationEnabled && (
+            <button
+              onClick={togglePanel}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
+                isPanelOpen
+                  ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
+                  : 'bg-white/10 hover:bg-white/15 text-white'
+              }`}
+              aria-label={isPanelOpen ? 'Hide transcriptions' : 'Show transcriptions'}
+              title={isPanelOpen ? 'Hide transcriptions' : 'Show transcriptions'}
+            >
+              <MessageSquare className="w-5 h-5" />
+              <span className="text-sm font-medium hidden sm:inline">Captions</span>
+            </button>
           )}
-          
+
           {/* Share Button - Host Only */}
           {isHost && (
             <button

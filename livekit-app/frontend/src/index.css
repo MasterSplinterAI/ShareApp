@@ -2,20 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Hide LiveKit's default control bar */
+/* Hide LiveKit's default control bar — we use our own */
 .lk-control-bar,
 [class*="ControlBar"],
 [class*="control-bar"]:not(.custom-control-bar) {
   display: none !important;
 }
 
-/* Minimal custom styles - let LiveKit handle layout */
-/* Only override what's absolutely necessary */
-.lk-participant-tile {
-  @apply rounded-lg overflow-hidden;
-}
-
-/* Hide scrollbar for control bar */
+/* Hide scrollbar utility */
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
@@ -27,8 +21,8 @@
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -43,110 +37,15 @@
   @apply bg-gray-500;
 }
 
-/* Custom Control Bar - Positioned ABOVE LiveKit's control bar to avoid overlap */
-/* LiveKit's control bar is typically ~80px tall, so we position above it */
-.lk-custom-control-bar {
-  position: fixed;
-  bottom: 5.5rem; /* Above LiveKit's control bar (~80px) + some spacing */
-  right: 1rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  z-index: 100;
-  pointer-events: none;
-  /* Prevent overflow */
-  max-width: calc(100vw - 2rem);
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  /* Ensure visibility */
-  visibility: visible !important;
-  opacity: 1 !important;
-}
-
-.lk-custom-control-bar > * {
-  pointer-events: auto;
-  flex-shrink: 0; /* Prevent buttons from shrinking */
-}
-
-/* Desktop: Position controls above LiveKit's control bar */
-@media (min-width: 769px) {
-  .lk-custom-control-bar {
-    bottom: 5.5rem;
-    right: 1rem;
-    max-width: none; /* No max-width constraint on desktop */
-  }
-}
-
-/* Tablet: Adjust positioning */
-@media (max-width: 768px) {
-  .lk-custom-control-bar {
-    bottom: 5rem;
-    right: 0.75rem;
-    gap: 0.5rem;
-    max-width: calc(100vw - 1.5rem);
-  }
-}
-
-/* Mobile: Ensure controls are accessible and don't overflow */
-@media (max-width: 640px) {
-  .lk-custom-control-bar {
-    bottom: 4.5rem;
-    right: 0.5rem;
-    left: 0.5rem; /* Add left constraint to prevent overflow */
-    gap: 0.375rem;
-    max-width: calc(100vw - 1rem);
-    justify-content: center; /* Center on mobile for better UX */
-  }
-}
-
-/* Very small screens - ensure controls are accessible */
-@media (max-width: 480px) {
-  .lk-custom-control-bar {
-    bottom: 4rem;
-    right: 0.5rem;
-    left: 0.5rem;
-    gap: 0.25rem;
-    max-width: calc(100vw - 1rem);
-  }
-}
-
-/* Ensure our controls match LiveKit's button styling */
-.lk-custom-control-bar button {
-  height: 44px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0; /* Prevent buttons from shrinking */
-}
-
-@media (max-width: 640px) {
-  .lk-custom-control-bar button {
-    height: 40px;
-    min-width: 40px;
-    max-width: 100%; /* Prevent buttons from overflowing */
-  }
-}
-
-/* Prevent horizontal overflow */
-.lk-custom-control-bar {
-  overflow-x: visible;
-  overflow-y: visible;
-}
-
-/* Ensure LanguageSelector container doesn't overflow */
-.lk-custom-control-bar > div {
-  flex-shrink: 0;
-  max-width: 100%;
-}
-
-/* Language Selector Styling */
+/* Language Selector */
 .lk-language-selector {
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+  position: relative;
 }
 
 .lk-translation-toggle {
-  /* Match LiveKit control button styling exactly */
   background-color: rgba(255, 255, 255, 0.1);
   color: white;
   border: none;
@@ -174,7 +73,6 @@
 }
 
 .lk-language-button {
-  /* Match LiveKit control button styling exactly */
   background-color: rgba(255, 255, 255, 0.1);
   color: white;
   border: none;
@@ -203,29 +101,7 @@
   cursor: not-allowed;
 }
 
-@media (max-width: 640px) {
-  .lk-language-button {
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0.5rem;
-    font-size: 0.75rem;
-    white-space: nowrap;
-  }
-  
-  .lk-language-button span:last-child {
-    display: none; /* Hide language name on mobile */
-  }
-}
-
-/* Ensure LanguageSelector container handles overflow */
-.lk-language-selector {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  position: relative;
-}
-
-/* Language Dropdown - appears above button */
+/* Language Dropdown */
 .lk-language-dropdown {
   position: absolute;
   bottom: 100%;
@@ -235,327 +111,28 @@
   max-height: 60vh;
   backdrop-filter: blur(8px);
   overflow-y: auto;
-  /* Prevent horizontal overflow */
   max-width: min(48rem, calc(100vw - 2rem));
 }
 
 @media (max-width: 640px) {
-  .lk-language-dropdown {
-    max-width: calc(100vw - 1rem);
-    right: 0;
-    left: auto;
-    max-height: 50vh;
-  }
-}
-
-/* Very small screens */
-@media (max-width: 480px) {
-  .lk-language-dropdown {
-    max-width: calc(100vw - 0.5rem);
-    right: 0;
-  }
-}
-
-/* Agent Participant Customization */
-/* Change agent display name to "Translator" - CSS is handled by JavaScript */
-/* Only apply visual indicators via CSS */
-
-/* Removed green dot indicator - only using soundwave bars */
-
-/* Soundwave bars for active translation */
-.soundwave-indicator {
-  position: absolute;
-  bottom: 0.75rem;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  height: 20px;
-  z-index: 30;
-  pointer-events: none;
-}
-
-.soundwave-bar {
-  width: 3px;
-  background: rgba(34, 197, 94, 0.9);
-  border-radius: 2px;
-  animation: soundwaveBar 0.6s ease-in-out infinite;
-}
-
-.soundwave-bar:nth-child(1) { animation-delay: 0s; }
-.soundwave-bar:nth-child(2) { animation-delay: 0.1s; }
-.soundwave-bar:nth-child(3) { animation-delay: 0.2s; }
-.soundwave-bar:nth-child(4) { animation-delay: 0.3s; }
-.soundwave-bar:nth-child(5) { animation-delay: 0.4s; }
-
-@keyframes soundwaveBar {
-  0%, 100% {
-    height: 30%;
-    opacity: 0.5;
-  }
-  50% {
-    height: 100%;
-    opacity: 1;
-  }
-}
-
-/* Translator avatar placeholder for agent tiles */
-.lk-participant-tile[data-is-agent="true"] {
-  position: relative !important;
-  overflow: visible !important;
-}
-
-/* Hide LiveKit's default placeholder for agent tiles without video */
-.lk-participant-tile[data-is-agent="true"][data-no-video="true"] svg,
-.lk-participant-tile[data-is-agent="true"][data-no-video="true"] [class*="placeholder"],
-.lk-participant-tile[data-is-agent="true"][data-no-video="true"] [class*="avatar"]:not(.translator-owl-avatar) {
-  display: none !important;
-}
-
-/* Ensure our owl avatar is visible and properly positioned - responsive sizing */
-.lk-participant-tile[data-is-agent="true"] .translator-owl-avatar {
-  position: absolute !important;
-  top: 50% !important;
-  left: 50% !important;
-  transform: translate(-50%, -50%) !important;
-  /* Responsive sizing - scales with tile size */
-  width: min(40vw, 300px) !important;
-  height: min(40vw, 300px) !important;
-  max-width: 50% !important;
-  max-height: 50% !important;
-  min-width: 160px !important;
-  min-height: 160px !important;
-  object-fit: contain !important;
-  opacity: 0.9 !important;
-  z-index: 100 !important;
-  pointer-events: none !important;
-  display: block !important;
-}
-
-/* Responsive adjustments for different screen sizes */
-@media (max-width: 640px) {
-  .lk-participant-tile[data-is-agent="true"] .translator-owl-avatar {
-    width: min(35vw, 200px) !important;
-    height: min(35vw, 200px) !important;
-    min-width: 140px !important;
-    min-height: 140px !important;
-  }
-}
-
-@media (min-width: 1920px) {
-  .lk-participant-tile[data-is-agent="true"] .translator-owl-avatar {
-    width: 300px !important;
-    height: 300px !important;
-  }
-}
-
-/* CSS background fallback removed - using img element instead */
-
-/* VAD Button - Match LiveKit styling exactly */
-.lk-vad-button {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.lk-vad-button:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-@media (max-width: 640px) {
-  .lk-vad-button {
+  .lk-language-button {
     min-width: 40px;
     min-height: 40px;
     padding: 0.5rem;
     font-size: 0.75rem;
   }
-  
-  .lk-vad-button span:last-child {
-    display: none; /* Hide text on mobile, show only icon */
+
+  .lk-language-button span:last-child {
+    display: none;
   }
-}
 
-/* VAD Dropdown - prevent overflow */
-.lk-vad-dropdown {
-  position: absolute;
-  bottom: 100%;
-  right: 0;
-  margin-bottom: 0.5rem;
-  width: 16rem;
-  background-color: rgb(31, 41, 55);
-  border-radius: 0.5rem;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgb(55, 65, 81);
-  z-index: 150;
-  backdrop-filter: blur(4px);
-  max-width: min(16rem, calc(100vw - 2rem));
-  overflow-y: auto;
-}
-
-@media (max-width: 640px) {
-  .lk-vad-dropdown {
+  .lk-language-dropdown {
     max-width: calc(100vw - 1rem);
-    width: auto;
-    right: 0;
-    left: auto;
-  }
-}
-
-@media (max-width: 480px) {
-  .lk-vad-dropdown {
-    max-width: calc(100vw - 0.5rem);
-  }
-}
-
-.lk-share-button {
-  /* Match LiveKit control button styling exactly */
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.5rem 0.75rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-  font-size: 0.875rem;
-  font-weight: 500;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.lk-share-button:hover {
-  background-color: rgba(255, 255, 255, 0.15);
-}
-
-.lk-share-button-text {
-  display: none;
-}
-
-@media (min-width: 640px) {
-  .lk-share-button-text {
-    display: inline;
-  }
-}
-
-@media (max-width: 640px) {
-  .lk-share-button {
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0.5rem;
-  }
-  
-  .lk-share-button-text {
-    display: none; /* Always hide text on mobile */
-  }
-}
-
-.lk-share-button-text {
-  font-size: 0.875rem;
-  font-weight: 500;
-  display: none;
-}
-
-@media (min-width: 640px) {
-  .lk-share-button {
-    padding: 0.5rem 1rem;
-  }
-  
-  .lk-share-button-text {
-    display: inline;
-  }
-}
-
-/* Mobile: Adjust positioning and sizing */
-@media (max-width: 640px) {
-  .lk-control-bar-custom {
-    bottom: 0.75rem;
-    right: 0.5rem;
-    gap: 0.5rem;
-  }
-  
-  .lk-share-button {
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0.5rem;
-  }
-  
-  .lk-share-button svg {
-    width: 1.25rem;
-    height: 1.25rem;
-  }
-  
-  .lk-translation-toggle {
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0.5rem;
-  }
-  
-  .lk-language-button {
-    min-height: 40px;
-    padding: 0.5rem;
-  }
-  
-  .lk-language-dropdown {
-    /* On mobile, ensure dropdown doesn't go off screen */
-    max-width: calc(100vw - 2rem);
-    right: 0;
-  }
-}
-
-/* On larger screens, position it to the right side, aligned with control bar */
-@media (min-width: 1024px) {
-  .lk-control-bar-custom {
-    /* Keep it at bottom-right, but ensure proper spacing */
-    right: 1.5rem;
-  }
-}
-
-/* Adjust for very small screens */
-@media (max-width: 480px) {
-  .lk-control-bar-custom {
-    bottom: 0.5rem;
-    right: 0.25rem;
-    gap: 0.375rem;
-  }
-  
-  .lk-share-button {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0.375rem;
-  }
-  
-  .lk-translation-toggle {
-    min-width: 36px;
-    min-height: 36px;
-    padding: 0.375rem;
-  }
-  
-  .lk-language-button {
-    min-height: 36px;
-    padding: 0.375rem 0.5rem;
-  }
-  
-  .lk-language-dropdown {
-    width: 200px;
     max-height: 50vh;
+  }
+
+  .lk-translation-toggle {
+    min-width: 40px;
+    min-height: 40px;
   }
 }

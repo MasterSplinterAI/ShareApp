@@ -3,39 +3,34 @@ import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { DataPacket_Kind, RoomEvent } from 'livekit-client';
 import toast from 'react-hot-toast';
 
-/**
- * Custom hook for managing translation preferences and state
- */
 export function useTranslation() {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
-  
+
   const [isEnabled, setIsEnabled] = useState(false);
   const [targetLanguage, setTargetLanguage] = useState('en');
   const [transcriptions, setTranscriptions] = useState([]);
   const [isAgentConnected, setIsAgentConnected] = useState(false);
-  const [translationActivity, setTranslationActivity] = useState(new Map()); // Map of "speaker-targetLang" -> isActive
 
   // Check if translation agent is in the room
   useEffect(() => {
     if (!room) return;
 
     const checkAgent = () => {
-      // Check if room.participants exists before accessing it
       if (!room.participants) {
         setIsAgentConnected(false);
         return;
       }
-      
+
       const participants = Array.from(room.participants.values());
-      const agent = participants.find(p => 
-        p.identity.includes('translation-bot') || 
+      const agent = participants.find(p =>
+        p.identity.includes('translation-bot') ||
+        p.identity.startsWith('agent-') ||
         p.metadata?.role === 'agent'
       );
       setIsAgentConnected(!!agent);
     };
 
-    // Check on mount and participant changes
     checkAgent();
     room.on(RoomEvent.ParticipantConnected, checkAgent);
     room.on(RoomEvent.ParticipantDisconnected, checkAgent);
@@ -45,125 +40,6 @@ export function useTranslation() {
       room.off(RoomEvent.ParticipantDisconnected, checkAgent);
     };
   }, [room]);
-
-  // Listen for transcription data
-  useEffect(() => {
-    if (!room) return;
-
-    const handleDataReceived = (payload, participant) => {
-      try {
-        const decoder = new TextDecoder();
-        const message = JSON.parse(decoder.decode(payload));
-
-        // Handle transcription messages
-        if (message.type === 'transcription' && message.participantId === localParticipant.sid) {
-          setTranscriptions(prev => [...prev, {
-            id: Date.now(),
-            speaker: message.speakerName || 'Unknown',
-            speakerId: message.speakerId,
-            text: message.originalText,
-            translated: message.translatedText,
-            timestamp: message.timestamp || Date.now(),
-            language: message.language
-          }]);
-        }
-      } catch (error) {
-        console.error('Error parsing data message:', error);
-      }
-    };
-
-    room.on(RoomEvent.DataReceived, handleDataReceived);
-
-    return () => {
-      room.off(RoomEvent.DataReceived, handleDataReceived);
-    };
-  }, [room, localParticipant]);
-
-  // Listen for translation activity events
-  useEffect(() => {
-    if (!room) return;
-
-    // Use the same pattern as TranscriptionDisplay - room.on('dataReceived') with topic parameter
-    const handleData = (payload, participant, kind, topic) => {
-      // Only log when ?debug=1 (reduces console spam)
-      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1') {
-        console.log('📡 Data received - topic:', topic, 'participant:', participant?.identity, 'kind:', kind);
-      }
-      
-      // Check topic if provided, otherwise check message type
-      if (topic && topic !== 'translation_activity') return;
-      
-      try {
-        const decoder = new TextDecoder();
-        const data = JSON.parse(decoder.decode(payload));
-        
-        // If no topic was provided, check the message type
-        if (!topic && data.type !== 'translation_activity') return;
-        
-        console.log('📡 Translation activity event received:', data);
-        
-        if (data.type === 'translation_activity') {
-          const key = `${data.source_speaker_id}-${data.target_language}`;
-          console.log('📡 Setting translation activity:', key, '=', data.is_active);
-          setTranslationActivity(prev => {
-            const next = new Map(prev);
-            next.set(key, data.is_active);
-            
-            // Auto-clear after 3 seconds if still active (in case stop event is missed)
-            if (data.is_active) {
-              setTimeout(() => {
-                setTranslationActivity(current => {
-                  const updated = new Map(current);
-                  if (updated.get(key) === true) {
-                    updated.set(key, false);
-                    return updated;
-                  }
-                  return current;
-                });
-              }, 3000);
-            }
-            
-            return next;
-          });
-        }
-      } catch (error) {
-        console.error('Error parsing translation_activity:', error);
-      }
-    };
-
-    // Use room.on('dataReceived') instead of RoomEvent.DataReceived to get topic parameter
-    room.on('dataReceived', handleData);
-    
-    return () => {
-      room.off('dataReceived', handleData);
-    };
-  }, [room]);
-
-  // Helper to check if translation is active for current user's target language
-  // OR if ANY translation is active (for showing indicators to all users)
-  const isTranslationActive = useCallback(() => {
-    // CRITICAL: Check if ANY translation is active (for showing indicators to ALL users)
-    // This ensures everyone sees the indicator, even if they don't have translation enabled
-    for (const [key, isActive] of translationActivity.entries()) {
-      if (isActive) {
-        console.log('✅ Translation is active:', key, '=', isActive);
-        return true;
-      }
-    }
-    
-    // Also check for user's specific target language if enabled
-    if (isEnabled && localParticipant) {
-      for (const [key, isActive] of translationActivity.entries()) {
-        if (isActive && key.endsWith(`-${targetLanguage}`)) {
-          console.log('✅ Translation is active for user language:', key);
-          return true;
-        }
-      }
-    }
-    
-    // No translation activity found
-    return false;
-  }, [translationActivity, targetLanguage, isEnabled, localParticipant]);
 
   // Send language preference update to agent
   const updateLanguagePreference = useCallback(async (enabled, language) => {
@@ -175,20 +51,18 @@ export function useTranslation() {
         participant_id: localParticipant.sid,
         participant_name: localParticipant.identity,
         target_language: language,
-        translation_enabled: enabled
+        translation_enabled: enabled,
       };
 
       const encoder = new TextEncoder();
       const encodedData = encoder.encode(JSON.stringify(data));
 
-      // Send via data channel to all participants (agent will receive it)
       await localParticipant.publishData(
         encodedData,
         DataPacket_Kind.RELIABLE,
         { topic: 'language_preference' }
       );
 
-      // Update local state
       setIsEnabled(enabled);
       setTargetLanguage(language);
 
@@ -203,12 +77,10 @@ export function useTranslation() {
     }
   }, [room, localParticipant]);
 
-  // Toggle translation
   const toggleTranslation = useCallback(() => {
     updateLanguagePreference(!isEnabled, targetLanguage);
   }, [isEnabled, targetLanguage, updateLanguagePreference]);
 
-  // Change target language
   const changeLanguage = useCallback((newLanguage) => {
     if (isEnabled) {
       updateLanguagePreference(true, newLanguage);
@@ -217,21 +89,16 @@ export function useTranslation() {
     }
   }, [isEnabled, updateLanguagePreference]);
 
-  // Clear transcriptions
   const clearTranscriptions = useCallback(() => {
     setTranscriptions([]);
   }, []);
 
   return {
-    // State
     isEnabled,
     targetLanguage,
     transcriptions,
     isAgentConnected,
-    isTranslationActive,
-    translationActivity,
-    
-    // Actions
+
     toggleTranslation,
     changeLanguage,
     clearTranscriptions,
