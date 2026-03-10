@@ -4,5 +4,3 @@
 [agent]
   id = "CA_kB6CS2YTqS56"
   name = "translation-cloud-prod"
-  # Auto-join rooms matching this pattern
-  room_pattern = "room-*"
