@@ -68,10 +68,10 @@ class TranscriptionOnlyAgent:
 
     def _vad_params(self) -> dict:
         return {
-            "activation_threshold": 0.7,
-            "min_speech_duration": 0.3,   # Lower: capture start of sentence faster
-            "min_silence_duration": 0.9,  # Shorter: faster turn end, more live feel (was 2.0)
-            "prefix_padding_duration": 0.5,  # Slightly less prefix for lower latency
+            "activation_threshold": 0.5,
+            "min_speech_duration": 0.15,
+            "min_silence_duration": 0.9,
+            "prefix_padding_duration": 0.8,
         }
 
     async def entrypoint(self, ctx: JobContext):
@@ -344,7 +344,7 @@ class TranscriptionOnlyAgent:
                 turn_start_time[0] = asyncio.get_event_loop().time()
 
             from collections import deque
-            PRE_SPEECH_BUFFER_FRAMES = 15  # ~0.5s at 30fps — captures word onset before VAD fires
+            PRE_SPEECH_BUFFER_FRAMES = 50  # ~1.5s at 30fps — captures first words before VAD fires
             pre_speech_buffer = deque(maxlen=PRE_SPEECH_BUFFER_FRAMES)
 
             async def _feed_audio():
