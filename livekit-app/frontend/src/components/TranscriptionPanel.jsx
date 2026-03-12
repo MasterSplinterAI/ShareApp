@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { MessageSquare, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { MessageSquare, X, ChevronUp, ChevronDown, Download } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 
@@ -16,7 +16,7 @@ function getLanguageLabel(code) {
 
 function TranscriptionPanel() {
   const room = useRoomContext();
-  const { isPanelOpen, togglePanel, isFullScreen, selectedLanguage, translationEnabled } = useMeeting();
+  const { isPanelOpen, togglePanel, isFullScreen, selectedLanguage, translationEnabled, roomName } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
@@ -146,6 +146,27 @@ function TranscriptionPanel() {
     }
   };
 
+  const handleDownload = () => {
+    const exportData = transcriptions.map((t) => ({
+      timestamp: new Date(t.timestamp).toISOString(),
+      speaker: t.speaker,
+      originalText: t.originalText,
+      translations: t.translations || {},
+      roomName: roomName || 'unknown',
+    }));
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const filename = `ShareApp-Transcript-${dateStr}-${timeStr}.json`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const latestCaptionText = useMemo(() => {
     const entries = Object.entries(liveCaptions);
     if (entries.length > 0) {
@@ -171,7 +192,7 @@ function TranscriptionPanel() {
         className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9999] flex flex-col"
         data-no-translate="true"
       >
-        <PanelHeader onClose={togglePanel} compact />
+        <PanelHeader onClose={togglePanel} onDownload={handleDownload} canDownload={transcriptions.length > 0} compact />
         <PanelContent
           transcriptions={transcriptions}
           liveCaptions={liveCaptions}
@@ -197,7 +218,7 @@ function TranscriptionPanel() {
         className="hidden sm:flex flex-col w-[350px] lg:w-[400px] bg-gray-900 border-l border-gray-700 h-full flex-shrink-0"
         data-no-translate="true"
       >
-        <PanelHeader onClose={togglePanel} />
+        <PanelHeader onClose={togglePanel} onDownload={handleDownload} canDownload={transcriptions.length > 0} />
         <PanelContent
           transcriptions={transcriptions}
           liveCaptions={liveCaptions}
@@ -228,13 +249,23 @@ function TranscriptionPanel() {
               <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
               <span className="text-xs font-medium text-white">Live Transcriptions</span>
             </div>
-            <button
-              onClick={() => setMobileExpanded(false)}
-              className="text-gray-400 hover:text-white transition-colors p-1"
-              aria-label="Collapse transcriptions"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleDownload}
+                disabled={transcriptions.length === 0}
+                className="text-gray-400 hover:text-white transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                aria-label="Download transcript"
+              >
+                <Download className="w-3.5 h-3.5" />
+              </button>
+              <button
+                onClick={() => setMobileExpanded(false)}
+                className="text-gray-400 hover:text-white transition-colors p-1"
+                aria-label="Collapse transcriptions"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
           </div>
           <PanelContent
             transcriptions={transcriptions}
@@ -253,7 +284,7 @@ function TranscriptionPanel() {
   );
 }
 
-function PanelHeader({ onClose, compact = false }) {
+function PanelHeader({ onClose, onDownload, canDownload, compact = false }) {
   return (
     <div className={`flex items-center justify-between ${compact ? 'px-3 py-2' : 'px-4 py-3'} bg-gray-800 border-b border-gray-700 flex-shrink-0 ${compact ? '' : 'rounded-t-xl sm:rounded-none'}`}>
       <div className="flex items-center gap-2">
@@ -262,13 +293,25 @@ function PanelHeader({ onClose, compact = false }) {
           Live Transcriptions
         </h3>
       </div>
-      <button
-        onClick={onClose}
-        className="text-gray-400 hover:text-white transition-colors p-1"
-        aria-label="Close transcription panel"
-      >
-        <X className="w-4 h-4" />
-      </button>
+      <div className="flex items-center gap-1">
+        {onDownload && (
+          <button
+            onClick={onDownload}
+            disabled={!canDownload}
+            className="text-gray-400 hover:text-white transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            aria-label="Download transcript"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        )}
+        <button
+          onClick={onClose}
+          className="text-gray-400 hover:text-white transition-colors p-1"
+          aria-label="Close transcription panel"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
     </div>
   );
 }
