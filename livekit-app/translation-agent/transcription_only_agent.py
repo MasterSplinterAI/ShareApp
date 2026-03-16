@@ -256,7 +256,9 @@ class TranscriptionOnlyAgent:
 
             async def _translate_segment(original: str, seg_idx: int):
                 """Translate one segment and store result in turn_translated_parts."""
-                if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target_lang):
+                # Only skip LLM when we have explicit speaker language AND it matches target.
+                # If speaker hasn't sent preference (default "en"), always use LLM to avoid wrong pass-through.
+                if speaker_id in self.participant_languages and self._normalize_language_code(speaker_lang) == self._normalize_language_code(target_lang):
                     while len(turn_translated_parts) <= seg_idx:
                         turn_translated_parts.append("")
                     turn_translated_parts[seg_idx] = original
