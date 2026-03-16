@@ -155,6 +155,8 @@ class TranscriptionOnlyAgent:
             # Use spoken language (what they speak), not target (what they want to hear)
             speaker_lang = self.participant_languages.get(speaker, "en")
             for target in targets:
+                if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
+                    continue
                 key = f"{speaker}:{target}"
                 expected.add(key)
                 if key not in self.assistants:
@@ -256,13 +258,6 @@ class TranscriptionOnlyAgent:
 
             async def _translate_segment(original: str, seg_idx: int):
                 """Translate one segment and store result in turn_translated_parts."""
-                # Only skip LLM when we have explicit speaker language AND it matches target.
-                # If speaker hasn't sent preference (default "en"), always use LLM to avoid wrong pass-through.
-                if speaker_id in self.participant_languages and self._normalize_language_code(speaker_lang) == self._normalize_language_code(target_lang):
-                    while len(turn_translated_parts) <= seg_idx:
-                        turn_translated_parts.append("")
-                    turn_translated_parts[seg_idx] = original
-                    return
                 try:
                     chat_ctx = ChatContext()
                     chat_ctx.add_message(
