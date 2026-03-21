@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageSquare } from 'lucide-react';
+import toast from 'react-hot-toast';
 import LanguageSelector from './LanguageSelector';
 import { useMeeting } from '../context/MeetingContext';
 
@@ -28,7 +29,7 @@ export default function CustomControlBar({
   const localParticipantHook = useLocalParticipant();
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
-  const { isPanelOpen, togglePanel } = useMeeting();
+  const { isPanelOpen, setIsPanelOpen, togglePanel } = useMeeting();
   const isCompact = useIsCompact();
 
   const cameraTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Camera);
@@ -334,24 +335,29 @@ export default function CustomControlBar({
           <LanguageSelector
             value={selectedLanguage}
             onChange={setSelectedLanguage}
-            onTranslationToggle={() => setTranslationEnabled(!translationEnabled)}
+            onTranslationToggle={() => {
+              const next = !translationEnabled;
+              setTranslationEnabled(next);
+              setIsPanelOpen(next); // Option D: when Captions ON, auto-open panel; when OFF, close
+              if (next) {
+                toast.success('Captions enabled');
+              } else {
+                toast('Captions disabled');
+              }
+            }}
             translationEnabled={translationEnabled}
           />
 
-          {/* Transcription Panel Toggle */}
-          {translationEnabled && (
+          {/* Show captions button - only when captions on but panel closed (Option D) */}
+          {translationEnabled && !isPanelOpen && (
             <button
               onClick={togglePanel}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-                isPanelOpen
-                  ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
-                  : 'bg-white/10 hover:bg-white/15 text-white'
-              }`}
-              aria-label={isPanelOpen ? 'Hide transcriptions' : 'Show transcriptions'}
-              title={isPanelOpen ? 'Hide transcriptions' : 'Show transcriptions'}
+              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all bg-white/10 hover:bg-white/15 text-white`}
+              aria-label="Show captions"
+              title="Show captions"
             >
               <MessageSquare className="w-5 h-5" />
-              {!isCompact && <span className="text-sm font-medium">Captions</span>}
+              {!isCompact && <span className="text-sm font-medium">Show captions</span>}
             </button>
           )}
 

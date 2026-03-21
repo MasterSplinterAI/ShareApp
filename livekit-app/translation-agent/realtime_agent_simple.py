@@ -337,9 +337,10 @@ class SimpleTranslationAgent:
     async def _update_assistants_for_all_languages(self, ctx: JobContext):
         """
         Core logic: Create/update assistants per (speaker, target_language) pair.
-        CRITICAL: Skip creating assistants where speaker_language == target_language.
+        - Cross-language pairs: create assistant for translation (speaker_lang != target_lang)
+        - Same-language pairs: create caption-only assistant ONLY when speaker has no cross-language
+          assistant (mono-lingual room). Prevents redundant transcriptions when room becomes bilingual.
         Regional variants (e.g., es-CO) are treated as the same as their base language (es).
-        This prevents unnecessary assistants and OpenAI commentary.
         """
         logger.info(f"📊 Updating assistants for all speaker-target pairs")
         logger.info(f"   Current assistants: {list(self.assistants.keys())}")
@@ -365,9 +366,9 @@ class SimpleTranslationAgent:
         logger.info(f"   Speakers: {speakers}")
         logger.info(f"   Target languages: {list(target_languages.keys())}")
         
-        # Create assistants FROM each speaker TO each target language
-        # BUT skip if speaker's language == target_language (no same-language pairs)
         expected_assistants = set()
+        
+        # Pass 1: Cross-language assistants (existing behavior)
         for speaker_id in speakers:
             speaker_language = self.participant_languages.get(speaker_id)
             if not speaker_language:
@@ -375,22 +376,42 @@ class SimpleTranslationAgent:
                 continue
             
             for target_language, listeners in target_languages.items():
-                # CRITICAL: Skip same-language pairs (no English→English, etc.)
-                # Normalize both languages to handle regional variants (e.g., es-CO == es)
                 normalized_speaker = self._normalize_language_code(speaker_language)
                 normalized_target = self._normalize_language_code(target_language)
+                if normalized_speaker != normalized_target:
+                    assistant_key = f"{speaker_id}:{target_language}"
+                    expected_assistants.add(assistant_key)
+                    if assistant_key not in self.assistants:
+                        logger.info(f"🚀 Creating NEW assistant: {speaker_id} → {target_language} (for listeners: {listeners})")
+                        await self._create_assistant_for_pair(ctx, speaker_id, target_language, is_same_language=False)
+                    else:
+                        logger.debug(f"  ✅ Assistant {assistant_key} already exists")
+        
+        # Pass 2: Same-language assistants (caption-only) - ONLY when speaker has NO cross-language assistant
+        # This enables mono-lingual captions; avoids redundant transcriptions when room is bilingual
+        for speaker_id in speakers:
+            speaker_language = self.participant_languages.get(speaker_id)
+            if not speaker_language:
+                continue
+            normalized_speaker = self._normalize_language_code(speaker_language)
+            # Check if speaker has any cross-language assistant (room is bilingual for this speaker)
+            has_cross_language = any(
+                normalized_speaker != self._normalize_language_code(t)
+                for t in target_languages.keys()
+            )
+            if has_cross_language:
+                continue  # Skip same-language - cross-language already publishes original for caption listeners
+            
+            for target_language, listeners in target_languages.items():
+                normalized_target = self._normalize_language_code(target_language)
                 if normalized_speaker == normalized_target:
-                    logger.debug(f"  ⏭️ Skipping {speaker_id} → {target_language}: same language ({speaker_language} == {target_language}, normalized: {normalized_speaker})")
-                    continue
-                
-                assistant_key = f"{speaker_id}:{target_language}"
-                expected_assistants.add(assistant_key)
-                
-                if assistant_key not in self.assistants:
-                    logger.info(f"🚀 Creating NEW assistant: {speaker_id} → {target_language} (for listeners: {listeners})")
-                    await self._create_assistant_for_pair(ctx, speaker_id, target_language)
-                else:
-                    logger.debug(f"  ✅ Assistant {assistant_key} already exists")
+                    assistant_key = f"{speaker_id}:{target_language}"
+                    expected_assistants.add(assistant_key)
+                    if assistant_key not in self.assistants:
+                        logger.info(f"📝 Creating caption-only assistant: {speaker_id} → {target_language} (mono-lingual)")
+                        await self._create_assistant_for_pair(ctx, speaker_id, target_language, is_same_language=True)
+                    else:
+                        logger.debug(f"  ✅ Assistant {assistant_key} already exists")
         
         # Stop assistants that are no longer needed
         for assistant_key in list(self.assistants.keys()):
@@ -401,16 +422,17 @@ class SimpleTranslationAgent:
         
         logger.info(f"   Final assistants: {list(self.assistants.keys())}")
 
-    async def _create_assistant_for_pair(self, ctx: JobContext, speaker_id: str, target_language: str):
+    async def _create_assistant_for_pair(self, ctx: JobContext, speaker_id: str, target_language: str, is_same_language: bool = False):
         """
         Create ONE assistant FROM a specific speaker TO a target language.
+        - Cross-language (is_same_language=False): STT + LLM translation, publish original + translated
+        - Same-language (is_same_language=True): STT only, publish caption (original) immediately from user_input_transcribed
         This assistant will:
         1. Listen to ONLY the specified speaker (using RoomInputOptions)
         2. Auto-detect what language they're speaking
-        3. Translate to target_language if different
-        4. Stay silent if same language (but we skip creating these assistants)
-        5. Publish track: translation-{target_language}-{speaker_id}
-        6. Send transcriptions via data channel
+        3. Translate to target_language if different (or publish STT only if same)
+        4. Publish track: translation-{target_language}-{speaker_id}
+        5. Send transcriptions via data channel
         
         CRITICAL: This assistant only listens to ONE speaker, avoiding manual subscription management.
         """
@@ -587,7 +609,8 @@ class SimpleTranslationAgent:
                 "target_language": target_language,
                 "target_lang_name": target_lang_name,
                 "source_speaker_id": speaker_id,  # Track who actually spoke (this assistant listens to this speaker)
-                "agent_is_speaking": False  # Flag to block input while agent is speaking
+                "agent_is_speaking": False,  # Flag to block input while agent is speaking
+                "is_same_language": is_same_language,  # Caption-only: publish STT immediately, no LLM wait
             }
             
             # Helper function to detect meta-commentary
@@ -637,11 +660,6 @@ class SimpleTranslationAgent:
             @session.on("user_input_transcribed")
             def on_original_transcribed(event):
                 """Handle when user speech is transcribed (original text) - capture ALL transcriptions"""
-                # CRITICAL: Block ALL input while agent is speaking to prevent interruptions
-                if session.user_data.get("agent_is_speaking", False):
-                    logger.info(f"[{target_language}] 🚫 Blocking input from {speaker_id} - agent is currently speaking (translation in progress)")
-                    return  # Exit early - don't process this input
-                
                 # Get transcript and is_final flag (matching original agent pattern)
                 data = event.model_dump() if hasattr(event, "model_dump") else {}
                 transcript = data.get("transcript", "") or data.get("text", "")
@@ -652,6 +670,26 @@ class SimpleTranslationAgent:
                     transcript = getattr(event, "text", "") or getattr(event, "transcript", "")
                 if not is_final:
                     is_final = getattr(event, "is_final", True)
+                
+                # Same-language (caption-only): publish STT immediately, no LLM wait
+                if session.user_data.get("is_same_language", False):
+                    if transcript := transcript.strip():
+                        try:
+                            asyncio.create_task(
+                                self._send_transcription_data(
+                                    ctx, transcript, transcript, target_language,
+                                    partial=not is_final, source_speaker_id=speaker_id
+                                )
+                            )
+                            logger.debug(f"[{target_language}] 📝 Caption-only: {speaker_id} -> {transcript[:50]}... (partial={not is_final})")
+                        except Exception as e:
+                            logger.error(f"[{target_language}] Error sending caption: {e}")
+                    return
+                
+                # CRITICAL: Block ALL input while agent is speaking to prevent interruptions
+                if session.user_data.get("agent_is_speaking", False):
+                    logger.info(f"[{target_language}] 🚫 Blocking input from {speaker_id} - agent is currently speaking (translation in progress)")
+                    return  # Exit early - don't process this input
                 
                 # This assistant listens to speaker_id (set in session.user_data)
                 source_speaker_id = speaker_id
@@ -718,12 +756,31 @@ class SimpleTranslationAgent:
             @session.on("user_speech_committed")
             def on_user_speech_committed(event):
                 """Capture original speech text (fallback)"""
+                original = getattr(event, "text", None) or ""
+                if not original:
+                    logger.warning(f"[{target_language}] ⚠️ user_speech_committed event received but no text found")
+                    return
+                
+                # Same-language (caption-only): publish STT immediately
+                if session.user_data.get("is_same_language", False):
+                    if original := original.strip():
+                        try:
+                            asyncio.create_task(
+                                self._send_transcription_data(
+                                    ctx, original, original, target_language,
+                                    partial=False, source_speaker_id=speaker_id
+                                )
+                            )
+                            logger.debug(f"[{target_language}] 📝 Caption-only (fallback): {speaker_id} -> {original[:50]}...")
+                        except Exception as e:
+                            logger.error(f"[{target_language}] Error sending caption: {e}")
+                    return
+                
                 # CRITICAL: Block ALL input while agent is speaking to prevent interruptions
                 if session.user_data.get("agent_is_speaking", False):
                     logger.info(f"[{target_language}] 🚫 Blocking input from {speaker_id} - agent is currently speaking (translation in progress)")
                     return  # Exit early - don't process this input
                 
-                original = getattr(event, "text", None) or ""
                 if original:
                     # CRITICAL: Check cooldown period to prevent same-speaker interruptions
                     cooldown_key = f"{speaker_id}:{target_language}"
@@ -764,8 +821,6 @@ class SimpleTranslationAgent:
                     session.user_data["source_speaker_id"] = speaker_id  # This assistant listens to this speaker
                     session.user_data["sent_final"] = False
                     logger.info(f"[{target_language}] 🎤 ✅ AUDIO RECEIVED! Original speech from {speaker_id}: {original[:100]}...")
-                else:
-                    logger.warning(f"[{target_language}] ⚠️ user_speech_committed event received but no text found")
             
             # Add handler to detect when audio starts flowing
             @session.on("user_speech_started")

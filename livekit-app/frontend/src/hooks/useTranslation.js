@@ -67,13 +67,13 @@ export function useTranslation() {
       setTargetLanguage(language);
 
       if (enabled) {
-        toast.success(`Translation enabled: ${language.toUpperCase()}`);
+        toast.success(`Captions enabled: ${language.toUpperCase()}`);
       } else {
-        toast('Translation disabled');
+        toast('Captions disabled');
       }
     } catch (error) {
       console.error('Error updating language preference:', error);
-      toast.error('Failed to update translation settings');
+      toast.error('Failed to update caption settings');
     }
   }, [room, localParticipant]);
 

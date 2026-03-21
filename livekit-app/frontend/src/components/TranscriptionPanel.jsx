@@ -182,7 +182,7 @@ function TranscriptionPanel() {
     return null;
   }, [liveCaptions, transcriptions, selectedLanguage]);
 
-  // If translation is not enabled, don't show the panel at all
+  // If captions are not enabled, don't show the panel at all
   if (!translationEnabled) return null;
 
   // Floating PIP mode when in full screen or during screen share
@@ -247,7 +247,7 @@ function TranscriptionPanel() {
           <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 rounded-t-xl flex-shrink-0">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-xs font-medium text-white">Live Transcriptions</span>
+              <span className="text-xs font-medium text-white">Live Captions</span>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -261,7 +261,7 @@ function TranscriptionPanel() {
               <button
                 onClick={() => setMobileExpanded(false)}
                 className="text-gray-400 hover:text-white transition-colors p-1"
-                aria-label="Collapse transcriptions"
+                aria-label="Collapse captions"
               >
                 <ChevronDown className="w-4 h-4" />
               </button>
@@ -290,7 +290,7 @@ function PanelHeader({ onClose, onDownload, canDownload, compact = false }) {
       <div className="flex items-center gap-2">
         <MessageSquare className="w-4 h-4 text-blue-400" />
         <h3 className={`font-medium text-white ${compact ? 'text-xs' : 'text-sm'}`}>
-          Live Transcriptions
+          Live Captions
         </h3>
       </div>
       <div className="flex items-center gap-1">
@@ -307,7 +307,7 @@ function PanelHeader({ onClose, onDownload, canDownload, compact = false }) {
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-white transition-colors p-1"
-          aria-label="Close transcription panel"
+          aria-label="Close captions panel"
         >
           <X className="w-4 h-4" />
         </button>
@@ -451,7 +451,7 @@ function MobileCaptionBar({ text, onExpand, hasContent }) {
           <span className="text-xs text-gray-200 truncate flex-1">{text}</span>
         ) : (
           <span className="text-xs text-gray-500 truncate flex-1">
-            {hasContent ? 'Tap to view transcriptions' : 'Waiting for speech...'}
+            {hasContent ? 'Tap to view captions' : 'Waiting for speech...'}
           </span>
         )}
         <ChevronUp className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />

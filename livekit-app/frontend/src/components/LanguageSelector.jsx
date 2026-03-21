@@ -50,12 +50,12 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
               ? 'bg-green-600 hover:bg-green-700 text-white'
               : 'bg-white/10 hover:bg-white/15 text-white'
           }`}
-          title={translationEnabled ? 'Translation ON' : 'Translation OFF'}
-          aria-label={translationEnabled ? 'Disable translation' : 'Enable translation'}
+          title={translationEnabled ? 'Captions ON' : 'Captions OFF'}
+          aria-label={translationEnabled ? 'Disable captions' : 'Enable captions'}
           data-no-translate="true"
         >
           <Globe className="w-5 h-5" />
-          <span className="text-sm font-medium" data-no-translate="true">Translation</span>
+          <span className="text-sm font-medium" data-no-translate="true">Captions</span>
         </button>
 
         <div className="relative" data-no-translate="true">
@@ -111,7 +111,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
               ? 'bg-green-600 hover:bg-green-700 text-white'
               : 'bg-white/10 hover:bg-white/15 text-white'
           }`}
-          aria-label="Translation settings"
+          aria-label="Captions settings"
           data-no-translate="true"
         >
           <span className="text-sm" data-no-translate="true">{selectedLanguage.flag}</span>
@@ -128,7 +128,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
               data-no-translate="true"
             >
               <Globe className="w-4 h-4" />
-              <span className="text-sm text-white flex-1" data-no-translate="true">Translation</span>
+              <span className="text-sm text-white flex-1" data-no-translate="true">Captions</span>
               <span className={`text-xs px-1.5 py-0.5 rounded ${translationEnabled ? 'bg-green-500 text-white' : 'bg-gray-600 text-gray-300'}`}>
                 {translationEnabled ? 'ON' : 'OFF'}
               </span>
