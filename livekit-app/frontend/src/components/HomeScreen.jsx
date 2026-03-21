@@ -75,7 +75,7 @@ function HomeScreen() {
         {/* Minimal Hero Section */}
         <div className="text-center mb-10">
           <h1 className="text-4xl md:text-5xl font-semibold text-white mb-3">
-            Video Conference
+            JarMetals Conference
           </h1>
           <p className="text-gray-400 text-sm">
             Connect with real-time translation
