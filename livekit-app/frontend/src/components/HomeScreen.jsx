@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Video, Users, Globe, Loader2, Link2, Check } from 'lucide-react';
+import { Video, Users, Loader2, Link2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService } from '../services/api';
 import NameModal from './NameModal';
+import InviteLinkModal from './InviteLinkModal';
 
 function HomeScreen() {
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState(false);
   const [isCreatingInvite, setIsCreatingInvite] = useState(false);
-  const [inviteCopied, setInviteCopied] = useState(false);
+  const [inviteLink, setInviteLink] = useState(null);
   const [showNameModal, setShowNameModal] = useState(false);
   const [roomData, setRoomData] = useState(null);
 
@@ -33,13 +34,11 @@ function HomeScreen() {
     setIsCreatingInvite(true);
     try {
       const response = await roomService.createInvite();
-      await navigator.clipboard.writeText(response.inviteLink);
-      setInviteCopied(true);
-      toast.success('Invite link copied to clipboard!');
-      setTimeout(() => setInviteCopied(false), 3000);
+      setInviteLink(response.inviteLink);
+      toast.success('Invite link created!');
     } catch (error) {
       console.error('Failed to create invite:', error);
-      toast.error('Failed to create invite link');
+      toast.error(error.response?.data?.error || 'Failed to create invite link');
     } finally {
       setIsCreatingInvite(false);
     }
@@ -119,11 +118,6 @@ function HomeScreen() {
                 <Loader2 className="w-5 h-5 animate-spin" />
                 <span>Creating...</span>
               </>
-            ) : inviteCopied ? (
-              <>
-                <Check className="w-5 h-5 text-green-400" />
-                <span className="text-green-400">Link Copied!</span>
-              </>
             ) : (
               <>
                 <Link2 className="w-5 h-5" />
@@ -133,6 +127,14 @@ function HomeScreen() {
           </button>
         </div>
       </div>
+
+      {/* Invite Link Modal - Copy/Share use direct user gesture (fixes mobile Safari clipboard) */}
+      {inviteLink && (
+        <InviteLinkModal
+          inviteLink={inviteLink}
+          onClose={() => setInviteLink(null)}
+        />
+      )}
 
       {/* Name Modal */}
       {showNameModal && (
