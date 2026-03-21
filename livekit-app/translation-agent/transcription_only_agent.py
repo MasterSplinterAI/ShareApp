@@ -202,16 +202,40 @@ class TranscriptionOnlyAgent:
         # STT: Deepgram nova-3 preferred (real-time interim results)
         # Cloud: LiveKit Inference routes Deepgram automatically (no API key needed)
         # Local: needs DEEPGRAM_API_KEY, falls back to OpenAI gpt-4o-transcribe
+        # Keyterms: minerals, metals trading, tech, finance (JarMetals: minerals co + intl trading + tech + finance)
+        # e.g. Cassiterite→considerate. Override via DEEPGRAM_KEYTERMS. Limit ~500 tokens.
+        _default_keyterms = (
+            # Minerals & ores (geology/mining)
+            "Cassiterite,Rutile,Ilmenite,Bauxite,Chalcopyrite,Galena,Sphalerite,Pentlandite,"
+            "Magnetite,Hematite,Chromite,Molybdenite,Scheelite,Wolframite,Coltan,Monazite,"
+            "Sperrylite,Cooperite,Laurite,Braggite,Kimberlite,Zircon,Xenotime,"
+            # Base & precious metals, PGMs
+            "Tin ore,Copper,Aluminum,Zinc,Lead,Nickel,Cobalt,Molybdenum,Tungsten,Lithium,"
+            "Gold,Silver,Platinum,Palladium,Rhodium,Iridium,Ruthenium,Osmium,"
+            "PGM,Platinum Group Metals,Rare earth,"
+            # Trading & commodities (LME, physical)
+            "LME,London Metal Exchange,Backwardation,Contango,Spot price,Futures,Arbitrage,"
+            "Assay,Concentrate,Cathode,Anode,Bullion,Ingot,Dore,Refining,Smelting,Warehousing,Hedging,"
+            # Finance
+            "Liquidity,Volatility,Leverage,Margin,Settlement,Collateral,Escrow,KYC,AML,Compliance,Derivatives,"
+            # Tech
+            "SaaS,API,Fintech,BaaS,FaaS"
+        )
+        keyterms_raw = os.getenv("DEEPGRAM_KEYTERMS", _default_keyterms)
+        keyterms = [t.strip() for t in keyterms_raw.split(",") if t.strip()]
         stt_instance = None
         if PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv('DEEPGRAM_API_KEY')):
-            stt_instance = deepgram.STT(
+            stt_kwargs = dict(
                 model="nova-3",
                 language=stt_lang,
                 interim_results=True,
                 punctuate=True,
                 smart_format=True,
             )
-            logger.info(f"[{speaker_id}→{target_lang}] STT: Deepgram nova-3 (interim_results=True)")
+            if keyterms:
+                stt_kwargs["keyterm"] = keyterms
+            stt_instance = deepgram.STT(**stt_kwargs)
+            logger.info(f"[{speaker_id}→{target_lang}] STT: Deepgram nova-3 (interim_results=True, keyterms={len(keyterms)})")
         elif PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY')):
             stt_instance = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
             logger.info(f"[{speaker_id}→{target_lang}] STT: OpenAI gpt-4o-transcribe (no interim results)")
