@@ -56,10 +56,13 @@ LANG_NAMES = {
 
 class TranscriptionOnlyAgent:
     def __init__(self):
-        self.participant_languages: Dict[str, str] = {}  # Single language = both speak & hear
+        self.participant_languages: Dict[str, str] = {}  # Target language (captions/display)
+        self.participant_spoken_languages: Dict[str, str] = {}  # What participant actually speaks (for STT)
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, agents.voice.AgentSession] = {}
         self.host_vad_sensitivity = "normal"
+        self._update_debounce_task: asyncio.Task | None = None
+        self._update_debounce_sec = 0.4  # Coalesce rapid language switches
 
     def _normalize_language_code(self, lang: str) -> str:
         if not lang:
@@ -78,6 +81,18 @@ class TranscriptionOnlyAgent:
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
 
+        def _schedule_update():
+            """Debounce update_assistants for language switches to avoid rapid teardown/create."""
+            if self._update_debounce_task and not self._update_debounce_task.done():
+                self._update_debounce_task.cancel()
+            async def _run_later():
+                try:
+                    await asyncio.sleep(self._update_debounce_sec)
+                except asyncio.CancelledError:
+                    return
+                await self.update_assistants(ctx)
+            self._update_debounce_task = asyncio.create_task(_run_later())
+
         async def handle_data(data: rtc.DataPacket):
             try:
                 msg = json.loads(data.data.decode("utf-8"))
@@ -87,29 +102,37 @@ class TranscriptionOnlyAgent:
                 if msg_type == "language_update":
                     lang = msg.get("language", "en")
                     enabled = msg.get("enabled", False)
+                    spoken = msg.get("spoken_language") or lang
                 elif msg_type == "language_preference":
                     lang = msg.get("target_language") or msg.get("language", "en")
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
+                    spoken = msg.get("spoken_language") or lang
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
 
-                # Single language = both speak and hear
+                # Target language (display/captions) and spoken language (for STT) - may differ in bilingual mode
                 self.participant_languages[participant_id] = lang
+                self.participant_spoken_languages[participant_id] = spoken
                 self.translation_enabled[participant_id] = bool(enabled)
 
                 logger.info(f"📥 Language update: {participant_id} → {lang}, enabled={enabled}")
 
                 if enabled:
-                    await self.update_assistants(ctx)
+                    # Debounce: rapid switches (es→en→es) coalesce into one update
+                    _schedule_update()
                 else:
-                    keys_to_remove = [k for k in self.assistants if k.startswith(f"{participant_id}:")]
+                    keys_to_remove = [k for k in list(self.assistants.keys()) if k.startswith(f"{participant_id}:")]
+                    tasks_to_await = []
                     for key in keys_to_remove:
                         task_or_session = self.assistants.pop(key)
                         if isinstance(task_or_session, asyncio.Task):
                             task_or_session.cancel()
+                            tasks_to_await.append(task_or_session)
                         elif hasattr(task_or_session, 'aclose'):
                             await task_or_session.aclose()
+                    if tasks_to_await:
+                        await asyncio.gather(*tasks_to_await, return_exceptions=True)
                     await self.update_assistants(ctx)
             except Exception as e:
                 logger.error(f"Data error: {e}", exc_info=True)
@@ -127,6 +150,7 @@ class TranscriptionOnlyAgent:
         async def on_disconnected(participant: rtc.RemoteParticipant):
             pid = participant.identity
             self.participant_languages.pop(pid, None)
+            self.participant_spoken_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             await self.update_assistants(ctx)
 
@@ -152,17 +176,45 @@ class TranscriptionOnlyAgent:
 
         expected = set()
 
-        # Pass 1: Cross-language assistants (translation)
+        # Build expected set
+        for speaker in speakers:
+            speaker_lang = self.participant_languages.get(speaker, "en")
+            for target in targets:
+                if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
+                    expected.add(f"{speaker}:{target}")
+        for speaker in speakers:
+            speaker_lang = self.participant_languages.get(speaker, "en")
+            has_cross_language = any(
+                self._normalize_language_code(speaker_lang) != self._normalize_language_code(t)
+                for t in targets
+            )
+            if has_cross_language:
+                continue
+            for target in targets:
+                if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
+                    expected.add(f"{speaker}:{target}")
+
+        # Remove obsolete assistants FIRST and await shutdown (avoids overlapping pipelines)
+        tasks_to_await = []
+        for key in list(self.assistants.keys()):
+            if key not in expected:
+                task_or_session = self.assistants.pop(key)
+                if isinstance(task_or_session, asyncio.Task):
+                    task_or_session.cancel()
+                    tasks_to_await.append(task_or_session)
+                elif hasattr(task_or_session, 'aclose'):
+                    await task_or_session.aclose()
+        if tasks_to_await:
+            await asyncio.gather(*tasks_to_await, return_exceptions=True)
+
+        # Create new assistants
         for speaker in speakers:
             speaker_lang = self.participant_languages.get(speaker, "en")
             for target in targets:
                 if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
                     key = f"{speaker}:{target}"
-                    expected.add(key)
                     if key not in self.assistants:
                         await self.create_assistant(ctx, speaker, target, is_same_language=False)
-
-        # Pass 2: Same-language assistants (caption-only) - ONLY when speaker has NO cross-language
         for speaker in speakers:
             speaker_lang = self.participant_languages.get(speaker, "en")
             has_cross_language = any(
@@ -174,18 +226,9 @@ class TranscriptionOnlyAgent:
             for target in targets:
                 if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
                     key = f"{speaker}:{target}"
-                    expected.add(key)
                     if key not in self.assistants:
                         logger.info(f"📝 Creating caption-only assistant: {speaker} → {target} (mono-lingual)")
                         await self.create_assistant(ctx, speaker, target, is_same_language=True)
-
-        for key in list(self.assistants.keys()):
-            if key not in expected:
-                task_or_session = self.assistants.pop(key)
-                if isinstance(task_or_session, asyncio.Task):
-                    task_or_session.cancel()
-                elif hasattr(task_or_session, 'aclose'):
-                    await task_or_session.aclose()
 
     async def create_assistant(self, ctx: JobContext, speaker_id: str, target_lang: str, is_same_language: bool = False):
         """Direct STT + LLM streaming pipeline (no AgentSession).
@@ -193,11 +236,13 @@ class TranscriptionOnlyAgent:
         - Cross-language (is_same_language=False): STT + LLM translation
         - Same-language (is_same_language=True): STT only, no LLM (caption-only)
         """
+        # Use spoken language for STT; fallback to target if not set (legacy messages)
+        speaker_spoken = self.participant_spoken_languages.get(speaker_id) or self.participant_languages.get(speaker_id, "en")
         speaker_lang = self.participant_languages.get(speaker_id, "en")
         target_lang_name = LANG_NAMES.get(target_lang, target_lang)
 
         is_cloud = os.getenv('LIVEKIT_CLOUD', '').lower() == 'true'
-        stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
+        stt_lang = speaker_spoken.split("-")[0] if speaker_spoken else "en"
 
         # STT: Deepgram nova-3 preferred (real-time interim results)
         # Cloud: LiveKit Inference routes Deepgram automatically (no API key needed)
