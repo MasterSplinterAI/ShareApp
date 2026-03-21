@@ -290,7 +290,7 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         {/* Room controls for broadcasting language preferences */}
         <RoomControls
           selectedLanguage={selectedLanguage}
-          spokenLanguage={participantInfo?.spokenLanguage || selectedLanguage}
+          spokenLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
           participantName={participantInfo?.participantName || ''}
           isHost={participantInfo?.isHost || false}
