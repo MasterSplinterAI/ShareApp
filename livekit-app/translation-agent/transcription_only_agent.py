@@ -151,16 +151,33 @@ class TranscriptionOnlyAgent:
         logger.info(f"📊 update_assistants: speakers={speakers}, targets={targets}, participant_langs={dict(self.participant_languages)}, enabled={dict(self.translation_enabled)}")
 
         expected = set()
+
+        # Pass 1: Cross-language assistants (translation)
         for speaker in speakers:
-            # Use spoken language (what they speak), not target (what they want to hear)
             speaker_lang = self.participant_languages.get(speaker, "en")
             for target in targets:
+                if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
+                    key = f"{speaker}:{target}"
+                    expected.add(key)
+                    if key not in self.assistants:
+                        await self.create_assistant(ctx, speaker, target, is_same_language=False)
+
+        # Pass 2: Same-language assistants (caption-only) - ONLY when speaker has NO cross-language
+        for speaker in speakers:
+            speaker_lang = self.participant_languages.get(speaker, "en")
+            has_cross_language = any(
+                self._normalize_language_code(speaker_lang) != self._normalize_language_code(t)
+                for t in targets
+            )
+            if has_cross_language:
+                continue
+            for target in targets:
                 if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
-                    continue
-                key = f"{speaker}:{target}"
-                expected.add(key)
-                if key not in self.assistants:
-                    await self.create_assistant(ctx, speaker, target)
+                    key = f"{speaker}:{target}"
+                    expected.add(key)
+                    if key not in self.assistants:
+                        logger.info(f"📝 Creating caption-only assistant: {speaker} → {target} (mono-lingual)")
+                        await self.create_assistant(ctx, speaker, target, is_same_language=True)
 
         for key in list(self.assistants.keys()):
             if key not in expected:
@@ -170,12 +187,11 @@ class TranscriptionOnlyAgent:
                 elif hasattr(task_or_session, 'aclose'):
                     await task_or_session.aclose()
 
-    async def create_assistant(self, ctx: JobContext, speaker_id: str, target_lang: str):
+    async def create_assistant(self, ctx: JobContext, speaker_id: str, target_lang: str, is_same_language: bool = False):
         """Direct STT + LLM streaming pipeline (no AgentSession).
 
-        Subscribes to the speaker's audio track, runs VAD + STT to get
-        sentence-level segments with interim partials, then streams the
-        LLM translation for each final segment.
+        - Cross-language (is_same_language=False): STT + LLM translation
+        - Same-language (is_same_language=True): STT only, no LLM (caption-only)
         """
         speaker_lang = self.participant_languages.get(speaker_id, "en")
         target_lang_name = LANG_NAMES.get(target_lang, target_lang)
@@ -204,14 +220,14 @@ class TranscriptionOnlyAgent:
             logger.error(f"[{speaker_id}→{target_lang}] No STT provider available")
             return
 
-        # LLM: OpenAI for translation
-        # Cloud: LiveKit Inference routes automatically; Local: needs OPENAI_API_KEY
+        # LLM: OpenAI for translation (skip for same-language caption-only)
         llm_instance = None
-        if PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY')):
-            llm_instance = openai.LLM()
-        if llm_instance is None:
-            logger.error(f"[{speaker_id}→{target_lang}] No LLM available")
-            return
+        if not is_same_language:
+            if PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY')):
+                llm_instance = openai.LLM()
+            if llm_instance is None:
+                logger.error(f"[{speaker_id}→{target_lang}] No LLM available")
+                return
 
         vad_instance = silero.VAD.load(**self._vad_params())
         key = f"{speaker_id}:{target_lang}"
@@ -418,7 +434,15 @@ class TranscriptionOnlyAgent:
 
                         # Publish updated original immediately
                         full_original = " ".join(turn_original_parts)
-                        full_translated = " ".join(p for p in turn_translated_parts if p)
+                        if is_same_language:
+                            # Caption-only: use original as "translated" (no LLM)
+                            while len(turn_translated_parts) <= seg_idx:
+                                turn_translated_parts.append("")
+                            turn_translated_parts[seg_idx] = text
+                            full_translated = " ".join(p for p in turn_translated_parts if p)
+                        else:
+                            full_translated = " ".join(p for p in turn_translated_parts if p)
+
                         await _publish({
                             "type": "transcription",
                             "originalText": full_original,
@@ -431,8 +455,9 @@ class TranscriptionOnlyAgent:
                             "transcriptionId": turn_id[0],
                         })
 
-                        task = asyncio.create_task(_translate_segment(text, seg_idx))
-                        pending_translate_tasks.append(task)
+                        if not is_same_language:
+                            task = asyncio.create_task(_translate_segment(text, seg_idx))
+                            pending_translate_tasks.append(task)
 
             try:
                 await asyncio.gather(_feed_audio(), _process_vad(), _process_stt())
