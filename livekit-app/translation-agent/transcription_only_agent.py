@@ -56,8 +56,7 @@ LANG_NAMES = {
 
 class TranscriptionOnlyAgent:
     def __init__(self):
-        self.participant_languages: Dict[str, str] = {}  # Target language (captions/display)
-        self.participant_spoken_languages: Dict[str, str] = {}  # What participant actually speaks (for STT)
+        self.participant_languages: Dict[str, str] = {}  # Language (captions + spoken - same per user)
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, agents.voice.AgentSession] = {}
         self.host_vad_sensitivity = "normal"
@@ -102,18 +101,14 @@ class TranscriptionOnlyAgent:
                 if msg_type == "language_update":
                     lang = msg.get("language", "en")
                     enabled = msg.get("enabled", False)
-                    spoken = msg.get("spoken_language") or lang
                 elif msg_type == "language_preference":
                     lang = msg.get("target_language") or msg.get("language", "en")
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
-                    spoken = msg.get("spoken_language") or lang
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
 
-                # Target language (display/captions) and spoken language (for STT) - may differ in bilingual mode
                 self.participant_languages[participant_id] = lang
-                self.participant_spoken_languages[participant_id] = spoken
                 self.translation_enabled[participant_id] = bool(enabled)
 
                 logger.info(f"📥 Language update: {participant_id} → {lang}, enabled={enabled}")
@@ -150,7 +145,6 @@ class TranscriptionOnlyAgent:
         async def on_disconnected(participant: rtc.RemoteParticipant):
             pid = participant.identity
             self.participant_languages.pop(pid, None)
-            self.participant_spoken_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             await self.update_assistants(ctx)
 
@@ -207,6 +201,24 @@ class TranscriptionOnlyAgent:
         if tasks_to_await:
             await asyncio.gather(*tasks_to_await, return_exceptions=True)
 
+        # Recycle pipelines that already exited (e.g. participant not found at start, runtime error).
+        # Otherwise we keep a "done" task in self.assistants and never recreate — common when a
+        # late joiner's pipeline starts before their RemoteParticipant is visible.
+        for key in list(self.assistants.keys()):
+            if key not in expected:
+                continue
+            t = self.assistants.get(key)
+            if isinstance(t, asyncio.Task) and t.done():
+                try:
+                    exc = t.exception()
+                except asyncio.InvalidStateError:
+                    exc = None
+                if exc is not None and not isinstance(exc, asyncio.CancelledError):
+                    logger.warning(f"🔁 Recycling dead pipeline {key}: {exc}")
+                else:
+                    logger.info(f"🔁 Recycling finished pipeline {key} (recreate)")
+                self.assistants.pop(key, None)
+
         # Create new assistants
         for speaker in speakers:
             speaker_lang = self.participant_languages.get(speaker, "en")
@@ -236,13 +248,11 @@ class TranscriptionOnlyAgent:
         - Cross-language (is_same_language=False): STT + LLM translation
         - Same-language (is_same_language=True): STT only, no LLM (caption-only)
         """
-        # Use spoken language for STT; fallback to target if not set (legacy messages)
-        speaker_spoken = self.participant_spoken_languages.get(speaker_id) or self.participant_languages.get(speaker_id, "en")
         speaker_lang = self.participant_languages.get(speaker_id, "en")
         target_lang_name = LANG_NAMES.get(target_lang, target_lang)
 
         is_cloud = os.getenv('LIVEKIT_CLOUD', '').lower() == 'true'
-        stt_lang = speaker_spoken.split("-")[0] if speaker_spoken else "en"
+        stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
 
         # STT: Deepgram nova-3 preferred (real-time interim results)
         # Cloud: LiveKit Inference routes Deepgram automatically (no API key needed)
@@ -277,10 +287,12 @@ class TranscriptionOnlyAgent:
                 punctuate=True,
                 smart_format=True,
             )
-            if keyterms:
+            # English-only keyterms: long English domain lists can hurt non-English STT quality
+            if keyterms and self._normalize_language_code(stt_lang) == "en":
                 stt_kwargs["keyterm"] = keyterms
             stt_instance = deepgram.STT(**stt_kwargs)
-            logger.info(f"[{speaker_id}→{target_lang}] STT: Deepgram nova-3 (interim_results=True, keyterms={len(keyterms)})")
+            kt = len(keyterms) if stt_kwargs.get("keyterm") else 0
+            logger.info(f"[{speaker_id}→{target_lang}] STT: Deepgram nova-3 lang={stt_lang} keyterms={kt}")
         elif PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY')):
             stt_instance = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
             logger.info(f"[{speaker_id}→{target_lang}] STT: OpenAI gpt-4o-transcribe (no interim results)")
@@ -306,12 +318,16 @@ class TranscriptionOnlyAgent:
             from livekit.agents.llm import ChatContext
 
             participant = None
-            for p in ctx.room.remote_participants.values():
-                if p.identity == speaker_id:
-                    participant = p
+            for attempt in range(30):  # ~3s — participant may not be visible the instant pipeline starts
+                for p in ctx.room.remote_participants.values():
+                    if p.identity == speaker_id:
+                        participant = p
+                        break
+                if participant:
                     break
+                await asyncio.sleep(0.1)
             if not participant:
-                logger.warning(f"[{key}] Participant {speaker_id} not found")
+                logger.warning(f"[{key}] Participant {speaker_id} not found after wait")
                 return
 
             from livekit.agents.stt import SpeechEventType

@@ -2,7 +2,7 @@ import { useEffect, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { DataPacket_Kind, RoomEvent } from 'livekit-client';
 
-function RoomControls({ selectedLanguage, spokenLanguage, translationEnabled, participantName, isHost = false }) {
+function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
 
@@ -15,7 +15,6 @@ function RoomControls({ selectedLanguage, spokenLanguage, translationEnabled, pa
         type: 'language_update',
         participantName: participantName,
         language: selectedLanguage,
-        spoken_language: spokenLanguage ?? selectedLanguage,
         enabled: translationEnabled,
       };
 
@@ -34,12 +33,21 @@ function RoomControls({ selectedLanguage, spokenLanguage, translationEnabled, pa
       }
       console.error('Error sending language preference:', error);
     }
-  }, [room, localParticipant, selectedLanguage, spokenLanguage, translationEnabled, participantName]);
+  }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
 
   // Send when language/prefs change
   useEffect(() => {
     sendLanguagePreference();
   }, [sendLanguagePreference]);
+
+  // Delayed resend after connect — beats race where agent runs update_assistants before our language packet is applied
+  useEffect(() => {
+    if (!room || room.state !== 'connected') return;
+    const id = setTimeout(() => {
+      sendLanguagePreference();
+    }, 800);
+    return () => clearTimeout(id);
+  }, [room?.state, sendLanguagePreference]);
 
   // Resend when agent joins (agent may join after us, so it needs our language)
   useEffect(() => {
