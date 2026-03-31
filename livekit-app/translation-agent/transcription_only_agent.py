@@ -56,10 +56,8 @@ LANG_NAMES = {
 
 class TranscriptionOnlyAgent:
     def __init__(self):
-        # Caption/receive language (control bar): which translation streams this user needs.
-        self.participant_caption: Dict[str, str] = {}
-        # Spoken language (join / "I speak"): STT model language — can differ from caption.
-        self.participant_spoken: Dict[str, str] = {}
+        # One language per user: STT when they speak + translation target for what they read.
+        self.participant_languages: Dict[str, str] = {}
         self.translation_enabled: Dict[str, bool] = {}
         self.assistants: Dict[str, agents.voice.AgentSession] = {}
         self.host_vad_sensitivity = "normal"
@@ -108,24 +106,30 @@ class TranscriptionOnlyAgent:
                 msg_type = msg.get("type")
 
                 if msg_type == "language_update":
-                    caption = msg.get("language", "en")
-                    spoken = msg.get("spoken_language") or msg.get("spokenLanguage") or caption
+                    lang = (
+                        msg.get("language")
+                        or msg.get("spoken_language")
+                        or msg.get("spokenLanguage")
+                        or "en"
+                    )
                     enabled = msg.get("enabled", False)
                 elif msg_type == "language_preference":
-                    caption = msg.get("target_language") or msg.get("language", "en")
-                    spoken = msg.get("spoken_language") or msg.get("spokenLanguage") or caption
+                    lang = (
+                        msg.get("target_language")
+                        or msg.get("language")
+                        or msg.get("spoken_language")
+                        or msg.get("spokenLanguage")
+                        or "en"
+                    )
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
 
-                self.participant_caption[participant_id] = caption
-                self.participant_spoken[participant_id] = spoken
+                self.participant_languages[participant_id] = lang
                 self.translation_enabled[participant_id] = bool(enabled)
 
-                logger.info(
-                    f"📥 Language update: {participant_id} → caption={caption}, spoken={spoken}, enabled={enabled}"
-                )
+                logger.info(f"📥 Language update: {participant_id} → {lang}, enabled={enabled}")
 
                 if enabled:
                     # Debounce: rapid switches (es→en→es) coalesce into one update
@@ -158,8 +162,7 @@ class TranscriptionOnlyAgent:
 
         async def on_disconnected(participant: rtc.RemoteParticipant):
             pid = participant.identity
-            self.participant_caption.pop(pid, None)
-            self.participant_spoken.pop(pid, None)
+            self.participant_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             await self.update_assistants(ctx)
 
@@ -177,15 +180,13 @@ class TranscriptionOnlyAgent:
             and not p.identity.startswith("agent-")
         ]
         targets = {
-            self.participant_caption[pid]
-            for pid in self.participant_caption
+            lang for pid, lang in self.participant_languages.items()
             if self.translation_enabled.get(pid, False)
         }
 
         logger.info(
             f"📊 update_assistants: speakers={speakers}, targets={targets}, "
-            f"caption={dict(self.participant_caption)}, spoken={dict(self.participant_spoken)}, "
-            f"enabled={dict(self.translation_enabled)}"
+            f"participant_langs={dict(self.participant_languages)}, enabled={dict(self.translation_enabled)}"
         )
 
         expected = set()
@@ -193,7 +194,7 @@ class TranscriptionOnlyAgent:
         # Never default speaker language to "en" — late joiners would get English STT for Spanish speech.
         # Skip until we have an explicit language_update from that participant.
         def _speaker_lang(speaker_id: str):
-            return self.participant_spoken.get(speaker_id)
+            return self.participant_languages.get(speaker_id)
 
         # Build expected set
         for speaker in speakers:
@@ -282,9 +283,9 @@ class TranscriptionOnlyAgent:
         - Cross-language (is_same_language=False): STT + LLM translation
         - Same-language (is_same_language=True): STT only, no LLM (caption-only)
         """
-        speaker_lang = self.participant_spoken.get(speaker_id)
+        speaker_lang = self.participant_languages.get(speaker_id)
         if not speaker_lang:
-            logger.error(f"[{speaker_id}→{target_lang}] create_assistant called without spoken language for speaker")
+            logger.error(f"[{speaker_id}→{target_lang}] create_assistant called without language for speaker")
             return
         target_lang_name = LANG_NAMES.get(target_lang, target_lang)
 

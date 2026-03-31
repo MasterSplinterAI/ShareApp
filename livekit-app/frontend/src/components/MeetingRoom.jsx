@@ -192,7 +192,6 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
   const {
     selectedLanguage,
     setSelectedLanguage,
-    spokenLanguage,
     translationEnabled,
     setTranslationEnabled,
     isPanelOpen,
@@ -291,7 +290,6 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         {/* Room controls for broadcasting language preferences */}
         <RoomControls
           selectedLanguage={selectedLanguage}
-          spokenLanguage={spokenLanguage}
           translationEnabled={translationEnabled}
           participantName={participantInfo?.participantName || ''}
           isHost={participantInfo?.isHost || false}
@@ -311,7 +309,7 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         {/* Debug panel — add ?debug=1 to URL */}
         <TranslationDebugPanel
           selectedLanguage={selectedLanguage}
-          spokenLanguage={participantInfo?.spokenLanguage || selectedLanguage}
+          spokenLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
           participantName={participantInfo?.participantName || ''}
         />

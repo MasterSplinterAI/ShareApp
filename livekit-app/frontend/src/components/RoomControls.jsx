@@ -2,13 +2,7 @@ import { useEffect, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { DataPacket_Kind, RoomEvent } from 'livekit-client';
 
-function RoomControls({
-  selectedLanguage,
-  spokenLanguage,
-  translationEnabled,
-  participantName,
-  isHost = false,
-}) {
+function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
 
@@ -17,7 +11,6 @@ function RoomControls({
     if (room.state !== 'connected') return;
 
     const lp = localParticipant.localParticipant;
-    const speak = spokenLanguage || selectedLanguage;
 
     try {
       const data = {
@@ -25,7 +18,6 @@ function RoomControls({
         participantName: participantName,
         participantIdentity: lp?.identity,
         language: selectedLanguage,
-        spoken_language: speak,
         enabled: translationEnabled,
       };
 
@@ -44,7 +36,7 @@ function RoomControls({
       }
       console.error('Error sending language preference:', error);
     }
-  }, [room, localParticipant, selectedLanguage, spokenLanguage, translationEnabled, participantName]);
+  }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
 
   // Send when language/prefs change
   useEffect(() => {

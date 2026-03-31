@@ -17,7 +17,8 @@ export function MeetingProvider({ children, initialState = {} }) {
     roomName: initialState.roomName || '',
     isHost: initialState.isHost || false,
     participantName: initialState.participantName || '',
-    spokenLanguage: initialState.spokenLanguage || selectedLanguage,
+    // Same as selectedLanguage: one user language for STT (speak) and captions (read).
+    spokenLanguage: selectedLanguage,
 
     // Language
     selectedLanguage,
