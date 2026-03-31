@@ -170,14 +170,24 @@ class TranscriptionOnlyAgent:
 
         expected = set()
 
+        # Never default speaker language to "en" — late joiners would get English STT for Spanish speech.
+        # Skip until we have an explicit language_update from that participant.
+        def _speaker_lang(speaker_id: str):
+            return self.participant_languages.get(speaker_id)
+
         # Build expected set
         for speaker in speakers:
-            speaker_lang = self.participant_languages.get(speaker, "en")
+            speaker_lang = _speaker_lang(speaker)
+            if speaker_lang is None:
+                logger.info(f"⏳ No language yet for speaker {speaker!r} — skip STT until they send preferences")
+                continue
             for target in targets:
                 if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
                     expected.add(f"{speaker}:{target}")
         for speaker in speakers:
-            speaker_lang = self.participant_languages.get(speaker, "en")
+            speaker_lang = _speaker_lang(speaker)
+            if speaker_lang is None:
+                continue
             has_cross_language = any(
                 self._normalize_language_code(speaker_lang) != self._normalize_language_code(t)
                 for t in targets
@@ -221,14 +231,18 @@ class TranscriptionOnlyAgent:
 
         # Create new assistants
         for speaker in speakers:
-            speaker_lang = self.participant_languages.get(speaker, "en")
+            speaker_lang = _speaker_lang(speaker)
+            if speaker_lang is None:
+                continue
             for target in targets:
                 if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
                     key = f"{speaker}:{target}"
                     if key not in self.assistants:
                         await self.create_assistant(ctx, speaker, target, is_same_language=False)
         for speaker in speakers:
-            speaker_lang = self.participant_languages.get(speaker, "en")
+            speaker_lang = _speaker_lang(speaker)
+            if speaker_lang is None:
+                continue
             has_cross_language = any(
                 self._normalize_language_code(speaker_lang) != self._normalize_language_code(t)
                 for t in targets
@@ -248,7 +262,10 @@ class TranscriptionOnlyAgent:
         - Cross-language (is_same_language=False): STT + LLM translation
         - Same-language (is_same_language=True): STT only, no LLM (caption-only)
         """
-        speaker_lang = self.participant_languages.get(speaker_id, "en")
+        speaker_lang = self.participant_languages.get(speaker_id)
+        if not speaker_lang:
+            logger.error(f"[{speaker_id}→{target_lang}] create_assistant called without language for speaker")
+            return
         target_lang_name = LANG_NAMES.get(target_lang, target_lang)
 
         is_cloud = os.getenv('LIVEKIT_CLOUD', '').lower() == 'true'
