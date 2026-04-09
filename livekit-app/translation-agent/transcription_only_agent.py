@@ -81,6 +81,23 @@ class TranscriptionOnlyAgent:
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
 
+        # Broadcast to existing participants so they re-send their language preferences.
+        # This handles agent restarts / redeployments mid-call where participants are
+        # already in the room and will never fire a fresh language_update otherwise.
+        async def _broadcast_agent_ready():
+            await asyncio.sleep(1.5)  # let the room settle before announcing
+            try:
+                await ctx.room.local_participant.publish_data(
+                    json.dumps({"type": "agent_ready"}).encode("utf-8"),
+                    topic="agent",
+                    reliable=True,
+                )
+                logger.info("📢 Broadcast agent_ready — waiting for participant language sync")
+            except Exception as e:
+                logger.warning(f"agent_ready broadcast failed: {e}")
+
+        asyncio.create_task(_broadcast_agent_ready())
+
         def _schedule_update():
             """Debounce update_assistants for language switches to avoid rapid teardown/create."""
             if self._update_debounce_task and not self._update_debounce_task.done():

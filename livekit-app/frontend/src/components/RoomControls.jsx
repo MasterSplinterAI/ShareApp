@@ -52,13 +52,19 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
     return () => clearTimeout(id);
   }, [room?.state, sendLanguagePreference]);
 
-  // Resend when agent joins (agent may join after us, so it needs our language)
+  // Resend when agent joins (agent may join after us, so it needs our language).
+  // Covers identities like: agent-*, translation-cloud-prod, translation-bot, *-agent-*
   useEffect(() => {
     if (!room) return;
 
     const handleParticipantConnected = (participant) => {
-      const identity = participant?.identity || '';
-      const isAgent = identity.startsWith('agent-') || identity.includes('translation-bot');
+      const identity = (participant?.identity || '').toLowerCase();
+      const isAgent = (
+        identity.startsWith('agent-') ||
+        identity.includes('translation') ||
+        identity.includes('-agent') ||
+        identity.includes('agent_')
+      );
       if (isAgent) {
         sendLanguagePreference();
       }
@@ -66,6 +72,27 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
 
     room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
     return () => room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
+  }, [room, sendLanguagePreference]);
+
+  // Resend when the agent broadcasts "agent_ready" — handles redeploy/restart mid-call
+  // where ParticipantConnected already fired and participants won't rejoin.
+  useEffect(() => {
+    if (!room) return;
+
+    const handleDataReceived = (payload) => {
+      try {
+        const msg = JSON.parse(new TextDecoder().decode(payload));
+        if (msg?.type === 'agent_ready') {
+          console.log('[RoomControls] agent_ready received — re-syncing language preferences');
+          sendLanguagePreference();
+        }
+      } catch {
+        // ignore non-JSON packets
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, handleDataReceived);
+    return () => room.off(RoomEvent.DataReceived, handleDataReceived);
   }, [room, sendLanguagePreference]);
 
   return null;
