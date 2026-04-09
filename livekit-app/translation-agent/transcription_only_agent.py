@@ -126,10 +126,36 @@ class TranscriptionOnlyAgent:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
 
+                # Detect language change BEFORE updating stored value.
+                # The STT language is baked into each pipeline at creation time.
+                # The same key (e.g. "alice:en") can mean "caption-only English STT"
+                # OR "translate Spanish→English" — different STT, same dict key.
+                # update_assistants won't remove it because the key stays in `expected`,
+                # so we must explicitly tear down the speaker's old pipelines here.
+                old_lang = self.participant_languages.get(participant_id)
+                lang_changed = old_lang is not None and old_lang != lang
+
                 self.participant_languages[participant_id] = lang
                 self.translation_enabled[participant_id] = bool(enabled)
 
-                logger.info(f"📥 Language update: {participant_id} → {lang}, enabled={enabled}")
+                logger.info(f"📥 Language update: {participant_id} → {lang} (was {old_lang!r}), enabled={enabled}")
+
+                if lang_changed:
+                    speaker_keys = [k for k in list(self.assistants.keys()) if k.startswith(f"{participant_id}:")]
+                    stale_tasks = []
+                    for key in speaker_keys:
+                        task_or_session = self.assistants.pop(key)
+                        if isinstance(task_or_session, asyncio.Task):
+                            task_or_session.cancel()
+                            stale_tasks.append(task_or_session)
+                        elif hasattr(task_or_session, 'aclose'):
+                            await task_or_session.aclose()
+                    if stale_tasks:
+                        await asyncio.gather(*stale_tasks, return_exceptions=True)
+                    logger.info(
+                        f"🔄 Tore down {len(speaker_keys)} stale pipeline(s) for {participant_id!r}: "
+                        f"{old_lang!r} → {lang!r} (STT language changed)"
+                    )
 
                 if enabled:
                     # Debounce: rapid switches (es→en→es) coalesce into one update
