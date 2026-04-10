@@ -28,6 +28,8 @@ export const SUPPORTED_LANGUAGES: Language[] = [
     { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '中文 (繁體)', flag: '🇹🇼' },
     { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
     { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦' },
+    { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳' },
+    { code: 'tiv', name: 'Tiv', nativeName: 'Tiv', flag: '🇳🇬' },
     { code: 'ru', name: 'Russian', nativeName: 'Русский', flag: '🇷🇺' },
     { code: 'nl', name: 'Dutch', nativeName: 'Nederlands', flag: '🇳🇱' },
     { code: 'pl', name: 'Polish', nativeName: 'Polski', flag: '🇵🇱' },
