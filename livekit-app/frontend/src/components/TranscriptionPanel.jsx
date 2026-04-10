@@ -6,7 +6,8 @@ import { useMeeting } from '../context/MeetingContext';
 const LANGUAGE_LABELS = {
   en: 'English', es: 'Spanish', 'es-CO': 'Colombian Spanish',
   fr: 'French', de: 'German', it: 'Italian', pt: 'Portuguese',
-  ru: 'Russian', zh: 'Chinese', ja: 'Japanese', ko: 'Korean',
+  ru: 'Russian', zh: 'Chinese', 'zh-CN': 'Mandarin Chinese', 'zh-TW': 'Chinese (Traditional)',
+  ja: 'Japanese', ko: 'Korean',
   ar: 'Arabic', hi: 'Hindi', tiv: 'Tiv',
 };
 

@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Globe, Check, ChevronDown } from 'lucide-react';
+import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../lib/languages';
+
+const MEETING_LANGUAGES = getMeetingLanguages();
 
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false);
@@ -12,27 +15,11 @@ function useIsCompact() {
   return isCompact;
 }
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Spanish', flag: '🇪🇸' },
-  { code: 'es-CO', name: 'Colombian Spanish', flag: '🇨🇴' },
-  { code: 'fr', name: 'French', flag: '🇫🇷' },
-  { code: 'de', name: 'German', flag: '🇩🇪' },
-  { code: 'it', name: 'Italian', flag: '🇮🇹' },
-  { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
-  { code: 'ru', name: 'Russian', flag: '🇷🇺' },
-  { code: 'zh', name: 'Chinese', flag: '🇨🇳' },
-  { code: 'ja', name: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', flag: '🇰🇷' },
-  { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
-  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
-  { code: 'tiv', name: 'Tiv', flag: '🇳🇬' },
-];
-
 function LanguageSelector({ value, onChange, onTranslationToggle, translationEnabled = false }) {
   const [isOpen, setIsOpen] = useState(false);
   const isCompact = useIsCompact();
-  const selectedLanguage = SUPPORTED_LANGUAGES.find(lang => lang.code === value) || SUPPORTED_LANGUAGES[0];
+  const normalizedValue = normalizeMeetingLanguageCode(value);
+  const selectedLanguage = MEETING_LANGUAGES.find(lang => lang.code === normalizedValue) || MEETING_LANGUAGES[0];
 
   const handleLanguageSelect = (language) => {
     onChange(language.code);
@@ -79,12 +66,12 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
 
           {isOpen && translationEnabled && (
             <div className="absolute bottom-full right-0 mb-2 w-48 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999] max-h-80 overflow-y-auto" data-no-translate="true">
-              {SUPPORTED_LANGUAGES.map((language) => (
+              {MEETING_LANGUAGES.map((language) => (
                 <button
                   key={language.code}
                   onClick={() => handleLanguageSelect(language)}
                   className={`w-full text-left px-4 py-2 hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                    language.code === value ? 'bg-gray-700' : ''
+                    language.code === normalizedValue ? 'bg-gray-700' : ''
                   }`}
                   data-no-translate="true"
                 >
@@ -92,7 +79,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
                     <span className="text-base" data-no-translate="true">{language.flag}</span>
                     <span className="text-sm text-white" data-no-translate="true">{language.name}</span>
                   </span>
-                  {language.code === value && (
+                  {language.code === normalizedValue && (
                     <Check className="w-4 h-4 text-green-400" />
                   )}
                 </button>
@@ -134,12 +121,12 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
               </span>
             </button>
             <div className="max-h-56 overflow-y-auto">
-              {SUPPORTED_LANGUAGES.map((language) => (
+              {MEETING_LANGUAGES.map((language) => (
                 <button
                   key={language.code}
                   onClick={() => handleLanguageSelect(language)}
                   className={`w-full text-left px-3 py-2 hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                    language.code === value ? 'bg-gray-700' : ''
+                    language.code === normalizedValue ? 'bg-gray-700' : ''
                   } ${!translationEnabled ? 'opacity-50' : ''}`}
                   disabled={!translationEnabled}
                   data-no-translate="true"
@@ -148,7 +135,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
                     <span className="text-sm" data-no-translate="true">{language.flag}</span>
                     <span className="text-xs text-white" data-no-translate="true">{language.name}</span>
                   </span>
-                  {language.code === value && (
+                  {language.code === normalizedValue && (
                     <Check className="w-3.5 h-3.5 text-green-400" />
                   )}
                 </button>

@@ -1,9 +1,16 @@
 import { createContext, useContext, useState, useCallback } from 'react';
+import { normalizeMeetingLanguageCode } from '../lib/languages';
 
 const MeetingContext = createContext(null);
 
 export function MeetingProvider({ children, initialState = {} }) {
-  const [selectedLanguage, setSelectedLanguage] = useState(initialState.selectedLanguage || 'en');
+  const [selectedLanguage, setSelectedLanguageState] = useState(() =>
+    normalizeMeetingLanguageCode(initialState.selectedLanguage || 'en')
+  );
+
+  const setSelectedLanguage = useCallback((code) => {
+    setSelectedLanguageState(normalizeMeetingLanguageCode(code || 'en'));
+  }, []);
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);
   const [isPanelOpen, setIsPanelOpen] = useState(initialState.translationEnabled ?? true);
   const [isFullScreen, setIsFullScreen] = useState(false);

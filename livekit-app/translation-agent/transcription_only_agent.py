@@ -48,7 +48,9 @@ logger.info("=" * 60)
 
 LANG_NAMES = {
     "es": "Spanish", "en": "English", "fr": "French", "de": "German",
-    "it": "Italian", "pt": "Portuguese", "zh": "Chinese", "ja": "Japanese",
+    "it": "Italian", "pt": "Portuguese",
+    "zh": "Chinese", "zh-CN": "Mandarin Chinese", "zh-TW": "Traditional Chinese",
+    "ja": "Japanese",
     "ko": "Korean", "ru": "Russian", "ar": "Arabic", "hi": "Hindi",
     "tiv": "Tiv",
 }

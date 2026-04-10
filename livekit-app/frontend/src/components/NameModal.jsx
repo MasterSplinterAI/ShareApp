@@ -1,26 +1,14 @@
 import { useState } from 'react';
 import { X, Globe, ChevronDown, Check } from 'lucide-react';
+import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../lib/languages';
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Spanish', flag: '🇪🇸' },
-  { code: 'es-CO', name: 'Colombian Spanish', flag: '🇨🇴' },
-  { code: 'fr', name: 'French', flag: '🇫🇷' },
-  { code: 'de', name: 'German', flag: '🇩🇪' },
-  { code: 'it', name: 'Italian', flag: '🇮🇹' },
-  { code: 'pt', name: 'Portuguese', flag: '🇵🇹' },
-  { code: 'ru', name: 'Russian', flag: '🇷🇺' },
-  { code: 'zh', name: 'Chinese', flag: '🇨🇳' },
-  { code: 'ja', name: 'Japanese', flag: '🇯🇵' },
-  { code: 'ko', name: 'Korean', flag: '🇰🇷' },
-  { code: 'ar', name: 'Arabic', flag: '🇸🇦' },
-  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
-  { code: 'tiv', name: 'Tiv', flag: '🇳🇬' },
-];
+const MEETING_LANGUAGES = getMeetingLanguages();
 
 function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = "", showLanguageSelector = false, defaultLanguage = 'en' }) {
   const [name, setName] = useState('');
-  const [selectedLanguage, setSelectedLanguage] = useState(defaultLanguage);
+  const [selectedLanguage, setSelectedLanguage] = useState(() =>
+    normalizeMeetingLanguageCode(defaultLanguage)
+  );
   const [isLanguageOpen, setIsLanguageOpen] = useState(false);
 
   const handleSubmit = (e) => {
@@ -32,7 +20,7 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
     }
   };
 
-  const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.code === selectedLanguage) || SUPPORTED_LANGUAGES[0];
+  const selectedLang = MEETING_LANGUAGES.find(lang => lang.code === selectedLanguage) || MEETING_LANGUAGES[0];
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" data-no-translate="true">
@@ -84,7 +72,7 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
 
                   {isLanguageOpen && (
                     <div className="absolute z-50 w-full bottom-full mb-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
-                      {SUPPORTED_LANGUAGES.map((language) => (
+                      {MEETING_LANGUAGES.map((language) => (
                         <button
                           key={language.code}
                           type="button"

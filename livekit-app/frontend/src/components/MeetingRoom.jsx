@@ -11,6 +11,7 @@ import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
 import VideoGrid from './VideoGrid';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
+import { normalizeMeetingLanguageCode } from '../lib/languages';
 // Autopilot Translator SDK — for DOM/UI translation (navigation, buttons, labels)
 import { AutopilotTranslator } from '../lib/autopilot-translator';
 
@@ -51,8 +52,12 @@ function MeetingRoom() {
     const hostCode = stateInfo.hostCode || sessionInfo.hostCode;
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
-    const selectedLanguage = stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en';
-    const spokenLanguage = stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage;
+    const selectedLanguage = normalizeMeetingLanguageCode(
+      stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en'
+    );
+    const spokenLanguage = normalizeMeetingLanguageCode(
+      stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage
+    );
 
     if (!participantName) {
       navigate(`/join/${roomName}`, { replace: true });
