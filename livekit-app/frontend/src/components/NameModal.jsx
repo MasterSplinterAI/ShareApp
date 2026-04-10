@@ -23,8 +23,9 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
   const selectedLang = MEETING_LANGUAGES.find(lang => lang.code === selectedLanguage) || MEETING_LANGUAGES[0];
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto" data-no-translate="true">
-      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto my-auto" data-no-translate="true">
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto overflow-x-hidden" data-no-translate="true">
+      {/* overflow-visible on card so the language popover is not clipped; outer layer scrolls if needed */}
+      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-visible my-auto shrink-0" data-no-translate="true">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-white">{title}</h2>
           <button
@@ -57,7 +58,7 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
                   <Globe className="w-4 h-4 inline mr-1" />
                   My language (speak & hear)
                 </label>
-                <div className="relative">
+                <div className="relative z-10">
                   <button
                     type="button"
                     onClick={() => setIsLanguageOpen(!isLanguageOpen)}
@@ -71,7 +72,7 @@ function NameModal({ onClose, onSubmit, title = "Enter Your Name", subtitle = ""
                   </button>
 
                   {isLanguageOpen && (
-                    <div className="absolute z-50 w-full bottom-full mb-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-64 overflow-y-auto">
+                    <div className="absolute z-[100] left-0 right-0 top-full mt-2 bg-gray-800 rounded-lg shadow-xl border border-gray-700 max-h-[min(16rem,45dvh)] overflow-y-auto overscroll-contain">
                       {MEETING_LANGUAGES.map((language) => (
                         <button
                           key={language.code}
