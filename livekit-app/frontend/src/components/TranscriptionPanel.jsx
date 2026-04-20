@@ -48,13 +48,14 @@ function TranscriptionPanel() {
         const speakerId = message.participant_id || participant?.identity || 'Unknown';
         const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : Date.now();
         const targetLang = message.language || 'en';
+        const sourceLanguage = message.sourceLanguage || null;
         const originalText = message.originalText || message.text || '';
         const text = message.text || '';
         const transcriptionId = message.transcriptionId;
 
         if (message.partial) {
           setLiveCaptions(prev => {
-            const existing = prev[speakerId] || { originalText: '', translations: {}, timestamp: messageTimestamp, transcriptionId: null };
+            const existing = prev[speakerId] || { originalText: '', translations: {}, sourceLanguage: null, timestamp: messageTimestamp, transcriptionId: null };
             const isTranslation = originalText && text && originalText !== text;
             return {
               ...prev,
@@ -63,6 +64,7 @@ function TranscriptionPanel() {
                 translations: isTranslation
                   ? { ...existing.translations, [targetLang]: text }
                   : existing.translations,
+                sourceLanguage: sourceLanguage || existing.sourceLanguage,
                 timestamp: messageTimestamp,
                 transcriptionId: transcriptionId ?? existing.transcriptionId,
               }
@@ -84,7 +86,11 @@ function TranscriptionPanel() {
                 newTranslations[targetLang] = text;
               }
               const next = [...prev];
-              next[existingIdx] = { ...existing, translations: newTranslations };
+              next[existingIdx] = {
+                ...existing,
+                translations: newTranslations,
+                sourceLanguage: existing.sourceLanguage || sourceLanguage,
+              };
               return next;
             }
 
@@ -98,6 +104,7 @@ function TranscriptionPanel() {
               speaker: speakerId,
               originalText,
               translations,
+              sourceLanguage,
               timestamp: messageTimestamp,
               isFinal: true,
             }];
@@ -345,12 +352,37 @@ function getDominantAndSecondary(originalText, translations, selectedLanguage) {
   };
 }
 
-function TranscriptionBubble({ speaker, dominant, secondary, dominantLang, secondaryLang, timestamp, isLive = false, compact = false }) {
+function TranscriptionBubble({
+  speaker,
+  dominant,
+  secondary,
+  dominantLang,
+  secondaryLang,
+  sourceLanguage,
+  selectedLanguage,
+  timestamp,
+  isLive = false,
+  compact = false,
+}) {
+  // "Translating..." state: live caption, user's selected language differs from the speaker's
+  // source language, and no matching translation has arrived yet — we're showing the original.
+  const normalize = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
+  const isPendingTranslation =
+    isLive &&
+    !dominantLang &&
+    selectedLanguage &&
+    sourceLanguage &&
+    normalize(sourceLanguage) !== normalize(selectedLanguage);
+
   return (
     <div className={`${compact ? 'pb-1.5' : 'pb-3'} ${!isLive ? 'border-b border-gray-700/50 last:border-b-0' : ''}`}>
       <div className="flex items-baseline gap-2 mb-1">
         <span className={`font-medium text-blue-400 ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
-        {isLive && <span className="text-xs text-gray-500">speaking...</span>}
+        {isLive && (
+          <span className="text-xs text-gray-500">
+            {isPendingTranslation ? 'translating…' : 'speaking...'}
+          </span>
+        )}
         {!isLive && timestamp && (
           <span className="text-xs text-gray-500">
             {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -359,7 +391,16 @@ function TranscriptionBubble({ speaker, dominant, secondary, dominantLang, secon
       </div>
 
       {dominant && (
-        <p className={`text-gray-100 break-words leading-relaxed bg-gray-800/50 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} ${isLive ? 'opacity-80' : ''}`}>
+        <p
+          className={`break-words leading-relaxed bg-gray-800/50 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} ${
+            isPendingTranslation
+              ? 'text-gray-400 italic opacity-60'
+              : `text-gray-100 ${isLive ? 'opacity-80' : ''}`
+          }`}
+        >
+          {isPendingTranslation && sourceLanguage && (
+            <span className="text-gray-500 not-italic mr-1">[{getLanguageLabel(sourceLanguage)}]</span>
+          )}
           {dominant}
           {isLive && (
             <span className="inline-block w-1.5 h-4 bg-blue-400 ml-1 animate-pulse rounded-sm align-middle" />
@@ -410,6 +451,8 @@ function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selec
             secondary={secondary}
             dominantLang={dominantLang}
             secondaryLang={secondaryLang}
+            sourceLanguage={item.sourceLanguage}
+            selectedLanguage={selectedLanguage}
             timestamp={item.timestamp}
             compact={compact}
           />
@@ -428,6 +471,8 @@ function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selec
             secondary={secondary}
             dominantLang={dominantLang}
             secondaryLang={secondaryLang}
+            sourceLanguage={caption.sourceLanguage}
+            selectedLanguage={selectedLanguage}
             isLive
             compact={compact}
           />
