@@ -28,12 +28,29 @@ except ImportError:
     deepgram = None
     openai = None
 
+# xAI is imported separately so a missing plugin doesn't disable Deepgram/OpenAI
+try:
+    from livekit.plugins import xai as xai_plugin
+    XAI_AVAILABLE = True
+except ImportError:
+    XAI_AVAILABLE = False
+    xai_plugin = None
+
 try:
     from livekit.plugins import noise_cancellation
     NOISE_CANCELLATION_AVAILABLE = True
 except ImportError:
     NOISE_CANCELLATION_AVAILABLE = False
     noise_cancellation = None
+
+# xAI STT supported languages (BCP-47 primary subtags, as of April 2026).
+# Anything outside this set falls back to Deepgram/OpenAI even when STT_PROVIDER=xai.
+# Notably MISSING: zh (Chinese), he (Hebrew), tiv — keep these on Deepgram.
+XAI_SUPPORTED_LANGS = {
+    "ar", "cs", "da", "nl", "en", "fil", "fr", "de", "hi", "id",
+    "it", "ja", "ko", "mk", "ms", "fa", "pl", "pt", "ro", "ru",
+    "es", "sv", "th", "tr", "vi",
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -361,8 +378,36 @@ class TranscriptionOnlyAgent:
         )
         keyterms_raw = os.getenv("DEEPGRAM_KEYTERMS", _default_keyterms)
         keyterms = [t.strip() for t in keyterms_raw.split(",") if t.strip()]
+
+        # Provider selection: STT_PROVIDER env var ("xai" | "deepgram" | "openai"). Default: deepgram.
+        # xAI will auto-fall back to Deepgram for languages it doesn't support (zh-*, tiv, …).
+        stt_provider = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
         stt_instance = None
-        if PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv('DEEPGRAM_API_KEY')):
+        normalized_lang = self._normalize_language_code(stt_lang)
+
+        def _try_xai():
+            if stt_provider != "xai":
+                return None
+            if not XAI_AVAILABLE or xai_plugin is None:
+                logger.warning(f"[{speaker_id}→{target_lang}] STT_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
+                return None
+            if not os.getenv("XAI_API_KEY"):
+                logger.warning(f"[{speaker_id}→{target_lang}] STT_PROVIDER=xai but XAI_API_KEY not set — falling back")
+                return None
+            if normalized_lang not in XAI_SUPPORTED_LANGS:
+                logger.info(f"[{speaker_id}→{target_lang}] xAI does not support lang={stt_lang!r} — falling back to Deepgram")
+                return None
+            try:
+                inst = xai_plugin.STT(language=normalized_lang, enable_interim_results=True)
+                logger.info(f"[{speaker_id}→{target_lang}] STT: xAI grok-stt lang={normalized_lang}")
+                return inst
+            except Exception as e:
+                logger.warning(f"[{speaker_id}→{target_lang}] xAI STT init failed ({e}) — falling back")
+                return None
+
+        def _try_deepgram():
+            if not (PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv('DEEPGRAM_API_KEY'))):
+                return None
             stt_kwargs = dict(
                 model="nova-3",
                 language=stt_lang,
@@ -371,17 +416,34 @@ class TranscriptionOnlyAgent:
                 smart_format=True,
             )
             # English-only keyterms: long English domain lists can hurt non-English STT quality
-            if keyterms and self._normalize_language_code(stt_lang) == "en":
+            if keyterms and normalized_lang == "en":
                 stt_kwargs["keyterm"] = keyterms
-            stt_instance = deepgram.STT(**stt_kwargs)
+            inst = deepgram.STT(**stt_kwargs)
             kt = len(keyterms) if stt_kwargs.get("keyterm") else 0
             logger.info(f"[{speaker_id}→{target_lang}] STT: Deepgram nova-3 lang={stt_lang} keyterms={kt}")
-        elif PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY')):
-            stt_instance = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
+            return inst
+
+        def _try_openai():
+            if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY'))):
+                return None
+            inst = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
             logger.info(f"[{speaker_id}→{target_lang}] STT: OpenAI gpt-4o-transcribe (no interim results)")
+            return inst
+
+        # Try configured provider first, then fall through in preference order.
+        provider_order = {
+            "xai":      [_try_xai,      _try_deepgram, _try_openai],
+            "deepgram": [_try_deepgram, _try_openai],
+            "openai":   [_try_openai,   _try_deepgram],
+        }.get(stt_provider, [_try_deepgram, _try_openai])
+
+        for attempt in provider_order:
+            stt_instance = attempt()
+            if stt_instance is not None:
+                break
 
         if stt_instance is None:
-            logger.error(f"[{speaker_id}→{target_lang}] No STT provider available")
+            logger.error(f"[{speaker_id}→{target_lang}] No STT provider available (STT_PROVIDER={stt_provider})")
             return
 
         # LLM: OpenAI for translation (skip for same-language caption-only)
