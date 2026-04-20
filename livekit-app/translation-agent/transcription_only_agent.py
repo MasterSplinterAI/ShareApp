@@ -13,7 +13,7 @@ import asyncio
 import logging
 import sys
 import time
-from typing import Dict
+from typing import Dict, List
 
 from livekit import agents, rtc
 from livekit.agents import JobContext, WorkerOptions, cli, room_io, AutoSubscribe
@@ -87,6 +87,32 @@ class TranscriptionOnlyAgent:
         if not lang:
             return "en"
         return lang.split("-")[0].lower()
+
+    def _listener_identities_for_target_lang(self, target_lang: str) -> List[str]:
+        """Participants who want to read captions in this language (translation on)."""
+        norm_t = self._normalize_language_code(target_lang)
+        out: List[str] = []
+        for pid, lang in self.participant_languages.items():
+            if not self.translation_enabled.get(pid, False):
+                continue
+            if self._normalize_language_code(lang) == norm_t:
+                out.append(pid)
+        return out
+
+    async def _shutdown_all_assistants(self, ctx: JobContext) -> None:
+        """Cancel every pipeline task on agent shutdown (SIGTERM / room end)."""
+        keys = list(self.assistants.keys())
+        tasks: list[asyncio.Task] = []
+        for k in keys:
+            tok = self.assistants.pop(k, None)
+            if isinstance(tok, asyncio.Task):
+                tok.cancel()
+                tasks.append(tok)
+            elif hasattr(tok, "aclose"):
+                await tok.aclose()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info(f"🛑 Shutdown: cancelled {len(tasks)} pipeline task(s)")
 
     def _vad_params(self) -> dict:
         # activation_threshold: lower = more sensitive to quiet speech (fewer first-word clips),
@@ -219,14 +245,25 @@ class TranscriptionOnlyAgent:
             asyncio.create_task(handle_data(data))
 
         async def on_connected(participant: rtc.RemoteParticipant):
-            await self.update_assistants(ctx)
+            _schedule_update()
 
         async def on_track_published(pub: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
             if pub.kind == rtc.TrackKind.KIND_AUDIO:
-                await self.update_assistants(ctx)
+                _schedule_update()
 
         async def on_disconnected(participant: rtc.RemoteParticipant):
             pid = participant.identity
+            keys = [k for k in list(self.assistants.keys()) if k.startswith(f"{pid}:")]
+            tasks_to_await: list[asyncio.Task] = []
+            for key in keys:
+                tok = self.assistants.pop(key, None)
+                if isinstance(tok, asyncio.Task):
+                    tok.cancel()
+                    tasks_to_await.append(tok)
+                elif hasattr(tok, "aclose"):
+                    await tok.aclose()
+            if tasks_to_await:
+                await asyncio.gather(*tasks_to_await, return_exceptions=True)
             self.participant_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             await self.update_assistants(ctx)
@@ -236,7 +273,10 @@ class TranscriptionOnlyAgent:
         ctx.room.on("track_published", lambda pub, p: asyncio.create_task(on_track_published(pub, p)))
         ctx.room.on("participant_disconnected", lambda p: asyncio.create_task(on_disconnected(p)))
 
-        await asyncio.Event().wait()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            await self._shutdown_all_assistants(ctx)
 
     async def update_assistants(self, ctx: JobContext):
         speakers = [
@@ -547,11 +587,13 @@ class TranscriptionOnlyAgent:
             pending_translate_tasks = []
 
             async def _publish(msg_dict, reliable=False):
-                await ctx.room.local_participant.publish_data(
-                    json.dumps(msg_dict).encode("utf-8"),
-                    topic="transcription",
-                    reliable=reliable,
-                )
+                payload = json.dumps(msg_dict).encode("utf-8")
+                dest = self._listener_identities_for_target_lang(target_lang)
+                # Empty destination_identities = broadcast to whole room (timing edge: no prefs yet).
+                kwargs: dict = {"topic": "transcription", "reliable": reliable}
+                if dest:
+                    kwargs["destination_identities"] = dest
+                await ctx.room.local_participant.publish_data(payload, **kwargs)
 
             async def _translate_segment(original: str, seg_idx: int):
                 """Translate one segment and store result in turn_translated_parts."""
@@ -632,12 +674,16 @@ class TranscriptionOnlyAgent:
                 turn_translated_parts.clear()
                 turn_id[0] = None
 
-            def _start_new_turn():
+            async def _start_new_turn():
+                for t in list(pending_translate_tasks):
+                    t.cancel()
+                if pending_translate_tasks:
+                    await asyncio.gather(*pending_translate_tasks, return_exceptions=True)
+                pending_translate_tasks.clear()
                 seg_counter[0] += 1
                 turn_id[0] = f"{speaker_id}-{target_lang}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time()*1000)}"
                 turn_original_parts.clear()
                 turn_translated_parts.clear()
-                pending_translate_tasks.clear()
                 turn_start_time[0] = asyncio.get_event_loop().time()
 
             from collections import deque
@@ -695,7 +741,7 @@ class TranscriptionOnlyAgent:
                             stt_stream.push_frame(frame)
                         pre_speech_buffer.clear()
                         if not turn_id[0]:
-                            _start_new_turn()
+                            await _start_new_turn()
                         logger.debug(f"[{key}] 🎙️ Speech started")
                     elif vad_event.type == VADEventType.END_OF_SPEECH:
                         speech_active[0] = False
@@ -720,7 +766,7 @@ class TranscriptionOnlyAgent:
 
                     if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                         if not turn_id[0]:
-                            _start_new_turn()
+                            await _start_new_turn()
                         # Publish the full turn so far + this interim
                         full_so_far = " ".join(turn_original_parts)
                         display_text = (full_so_far + " " + text).strip() if full_so_far else text
@@ -740,7 +786,7 @@ class TranscriptionOnlyAgent:
 
                     elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                         if not turn_id[0]:
-                            _start_new_turn()
+                            await _start_new_turn()
                         seg_idx = len(turn_original_parts)
                         turn_original_parts.append(text)
                         logger.info(f"[{key}] 📝 Segment {seg_idx}: '{text[:60]}...'")
