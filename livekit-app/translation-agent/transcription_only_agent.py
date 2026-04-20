@@ -134,13 +134,14 @@ class TranscriptionOnlyAgent:
         async def handle_data(data: rtc.DataPacket):
             try:
                 msg = json.loads(data.data.decode("utf-8"))
-                participant_id = (
-                    (data.participant.identity if data.participant else None)
-                    or msg.get("participantIdentity")
-                    or msg.get("participant_name")
-                    or msg.get("participantName")
-                    or "unknown"
-                )
+                # Trust only LiveKit-bound identity (JWT). Never accept client JSON identity fields —
+                # they would allow spoofing another participant's language settings.
+                if not data.participant or not getattr(data.participant, "identity", None):
+                    logger.warning(
+                        "language message ignored: missing authenticated participant on data packet"
+                    )
+                    return
+                participant_id = data.participant.identity
                 msg_type = msg.get("type")
 
                 if msg_type == "language_update":
