@@ -547,13 +547,25 @@ class TranscriptionOnlyAgent:
                     target_lang_name=LANG_NAMES.get(tgt, tgt),
                 )
 
-        async def publish_lane(msg_dict: dict, tgt_lang: str, reliable: bool = False) -> None:
+        async def publish_lane(
+            msg_dict: dict,
+            tgt_lang: str,
+            is_same_language_lane: bool,
+            reliable: bool = False,
+        ) -> None:
             payload = json.dumps(msg_dict).encode("utf-8")
             dest = self._listener_identities_for_target_lang(tgt_lang)
-            # Always include the speaker so they see their own captions (originalText + any
-            # translations). Without this the speaker is excluded when their selected language
-            # differs from this lane's target and they'd see nothing of their own speech.
-            if dest and speaker_id not in dest:
+            # Speaker self-feedback rules:
+            #  - Cross-language lane: always include the speaker so they see their own
+            #    originalText plus the translation underneath (pre-refactor behavior).
+            #  - Same-language lane: include the speaker ONLY when they have no
+            #    cross-language lane — otherwise we'd set translations[own_lang] on the
+            #    frontend and hide the translation secondary line for them.
+            include_speaker = True
+            if is_same_language_lane:
+                has_cross_lane = any(not l.is_same_language for l in lanes.values())
+                include_speaker = not has_cross_lane
+            if dest and include_speaker and speaker_id not in dest:
                 dest = dest + [speaker_id]
             kwargs: dict = {"topic": "transcription", "reliable": reliable}
             if dest:
@@ -639,6 +651,7 @@ class TranscriptionOnlyAgent:
                             "transcriptionId": turn_id[0],
                         },
                         tgt_lang,
+                        is_same_language_lane=lane.is_same_language,
                     )
                 await stream.aclose()
                 while len(lane.turn_translated_parts) <= seg_idx:
@@ -683,6 +696,7 @@ class TranscriptionOnlyAgent:
                         "transcriptionId": tid,
                     },
                     tgt,
+                    is_same_language_lane=lane.is_same_language,
                     reliable=True,
                 )
                 logger.info(
@@ -793,6 +807,7 @@ class TranscriptionOnlyAgent:
                                 "transcriptionId": turn_id[0],
                             },
                             tgt,
+                            is_same_language_lane=lane.is_same_language,
                         )
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
@@ -823,6 +838,7 @@ class TranscriptionOnlyAgent:
                                 "transcriptionId": turn_id[0],
                             },
                             tgt,
+                            is_same_language_lane=lane.is_same_language,
                         )
                         if not lane.is_same_language:
                             task = asyncio.create_task(
