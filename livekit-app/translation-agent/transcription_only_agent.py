@@ -311,28 +311,16 @@ class TranscriptionOnlyAgent:
         def _speaker_lang(speaker_id: str):
             return self.participant_languages.get(speaker_id)
 
-        # Build expected set
+        # One lane per (speaker, listener-target). Same-language lanes are caption-only (no LLM)
+        # and are cheap; without them, listeners who speak the same language as the speaker
+        # would miss their captions now that publishes are destination-filtered.
         for speaker in speakers:
             speaker_lang = _speaker_lang(speaker)
             if speaker_lang is None:
                 logger.info(f"⏳ No language yet for speaker {speaker!r} — skip STT until they send preferences")
                 continue
             for target in targets:
-                if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
-                    expected.add(f"{speaker}:{target}")
-        for speaker in speakers:
-            speaker_lang = _speaker_lang(speaker)
-            if speaker_lang is None:
-                continue
-            has_cross_language = any(
-                self._normalize_language_code(speaker_lang) != self._normalize_language_code(t)
-                for t in targets
-            )
-            if has_cross_language:
-                continue
-            for target in targets:
-                if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
-                    expected.add(f"{speaker}:{target}")
+                expected.add(f"{speaker}:{target}")
 
         # Map expected "speaker:target" pairs → one shared STT pipeline per speaker, N translation lanes.
         expected_speakers: Set[str] = set()
@@ -562,6 +550,11 @@ class TranscriptionOnlyAgent:
         async def publish_lane(msg_dict: dict, tgt_lang: str, reliable: bool = False) -> None:
             payload = json.dumps(msg_dict).encode("utf-8")
             dest = self._listener_identities_for_target_lang(tgt_lang)
+            # Always include the speaker so they see their own captions (originalText + any
+            # translations). Without this the speaker is excluded when their selected language
+            # differs from this lane's target and they'd see nothing of their own speech.
+            if dest and speaker_id not in dest:
+                dest = dest + [speaker_id]
             kwargs: dict = {"topic": "transcription", "reliable": reliable}
             if dest:
                 kwargs["destination_identities"] = dest
