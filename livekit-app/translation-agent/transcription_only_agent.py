@@ -446,13 +446,49 @@ class TranscriptionOnlyAgent:
             logger.error(f"[{speaker_id}→{target_lang}] No STT provider available (STT_PROVIDER={stt_provider})")
             return
 
-        # LLM: OpenAI for translation (skip for same-language caption-only)
+        # LLM: translation provider — LLM_PROVIDER env var ("xai" | "openai"). Default: openai.
+        # Skip entirely for same-language caption-only pipelines.
         llm_instance = None
         if not is_same_language:
-            if PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY')):
-                llm_instance = openai.LLM()
+            llm_provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+
+            def _try_xai_llm():
+                if llm_provider != "xai":
+                    return None
+                if not XAI_AVAILABLE or xai_plugin is None:
+                    logger.warning(f"[{speaker_id}→{target_lang}] LLM_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
+                    return None
+                if not os.getenv("XAI_API_KEY"):
+                    logger.warning(f"[{speaker_id}→{target_lang}] LLM_PROVIDER=xai but XAI_API_KEY not set — falling back")
+                    return None
+                try:
+                    model = os.getenv("XAI_LLM_MODEL", "grok-4-1-fast-non-reasoning")
+                    inst = xai_plugin.responses.LLM(model=model)
+                    logger.info(f"[{speaker_id}→{target_lang}] LLM: xAI {model}")
+                    return inst
+                except Exception as e:
+                    logger.warning(f"[{speaker_id}→{target_lang}] xAI LLM init failed ({e}) — falling back")
+                    return None
+
+            def _try_openai_llm():
+                if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv('OPENAI_API_KEY'))):
+                    return None
+                inst = openai.LLM()
+                logger.info(f"[{speaker_id}→{target_lang}] LLM: OpenAI (default gpt-4o-mini)")
+                return inst
+
+            llm_order = {
+                "xai":    [_try_xai_llm, _try_openai_llm],
+                "openai": [_try_openai_llm, _try_xai_llm],
+            }.get(llm_provider, [_try_openai_llm])
+
+            for attempt in llm_order:
+                llm_instance = attempt()
+                if llm_instance is not None:
+                    break
+
             if llm_instance is None:
-                logger.error(f"[{speaker_id}→{target_lang}] No LLM available")
+                logger.error(f"[{speaker_id}→{target_lang}] No LLM available (LLM_PROVIDER={llm_provider})")
                 return
 
         vad_instance = silero.VAD.load(**self._vad_params())
