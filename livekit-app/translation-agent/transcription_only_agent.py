@@ -311,16 +311,34 @@ class TranscriptionOnlyAgent:
         def _speaker_lang(speaker_id: str):
             return self.participant_languages.get(speaker_id)
 
-        # One lane per (speaker, listener-target). Same-language lanes are caption-only (no LLM)
-        # and are cheap; without them, listeners who speak the same language as the speaker
-        # would miss their captions now that publishes are destination-filtered.
+        # Cross-language lanes first (STT + LLM translation).
         for speaker in speakers:
             speaker_lang = _speaker_lang(speaker)
             if speaker_lang is None:
                 logger.info(f"⏳ No language yet for speaker {speaker!r} — skip STT until they send preferences")
                 continue
             for target in targets:
-                expected.add(f"{speaker}:{target}")
+                if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
+                    expected.add(f"{speaker}:{target}")
+
+        # Same-language caption-only lane ONLY when speaker has no cross-language lane.
+        # Rationale: cross-language lanes already publish `originalText` in the speaker's language,
+        # and all packets are broadcast to every participant — so same-language listeners render the
+        # original text as their dominant caption without needing a dedicated lane. When there are
+        # no cross-language targets, we still need one lane to produce captions.
+        for speaker in speakers:
+            speaker_lang = _speaker_lang(speaker)
+            if speaker_lang is None:
+                continue
+            has_cross_language = any(
+                self._normalize_language_code(speaker_lang) != self._normalize_language_code(t)
+                for t in targets
+            )
+            if has_cross_language:
+                continue
+            for target in targets:
+                if self._normalize_language_code(speaker_lang) == self._normalize_language_code(target):
+                    expected.add(f"{speaker}:{target}")
 
         # Map expected "speaker:target" pairs → one shared STT pipeline per speaker, N translation lanes.
         expected_speakers: Set[str] = set()
@@ -553,24 +571,17 @@ class TranscriptionOnlyAgent:
             is_same_language_lane: bool,
             reliable: bool = False,
         ) -> None:
+            # Broadcast every transcription to all participants. This supports the
+            # room-wide captions log (every client keeps a full transcript) and lets each
+            # frontend render the dominant line in its own selected language while still
+            # seeing translations underneath. is_same_language_lane is kept for future
+            # targeted-delivery options but is unused on the broadcast path.
             payload = json.dumps(msg_dict).encode("utf-8")
-            dest = self._listener_identities_for_target_lang(tgt_lang)
-            # Speaker self-feedback rules:
-            #  - Cross-language lane: always include the speaker so they see their own
-            #    originalText plus the translation underneath (pre-refactor behavior).
-            #  - Same-language lane: include the speaker ONLY when they have no
-            #    cross-language lane — otherwise we'd set translations[own_lang] on the
-            #    frontend and hide the translation secondary line for them.
-            include_speaker = True
-            if is_same_language_lane:
-                has_cross_lane = any(not l.is_same_language for l in lanes.values())
-                include_speaker = not has_cross_lane
-            if dest and include_speaker and speaker_id not in dest:
-                dest = dest + [speaker_id]
-            kwargs: dict = {"topic": "transcription", "reliable": reliable}
-            if dest:
-                kwargs["destination_identities"] = dest
-            await job_ctx.room.local_participant.publish_data(payload, **kwargs)
+            await job_ctx.room.local_participant.publish_data(
+                payload,
+                topic="transcription",
+                reliable=reliable,
+            )
 
         speaker_lang = self.participant_languages.get(speaker_id)
         if not speaker_lang:
