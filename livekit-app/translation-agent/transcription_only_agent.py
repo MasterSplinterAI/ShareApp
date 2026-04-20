@@ -398,8 +398,20 @@ class TranscriptionOnlyAgent:
                 logger.info(f"[{speaker_id}→{target_lang}] xAI does not support lang={stt_lang!r} — falling back to Deepgram")
                 return None
             try:
-                inst = xai_plugin.STT(language=normalized_lang, enable_interim_results=True)
-                logger.info(f"[{speaker_id}→{target_lang}] STT: xAI grok-stt lang={normalized_lang}")
+                # endpointing = silence ms before utterance-final. Plugin default (100ms) is
+                # aggressive enough that mid-sentence pauses get cut off and trailing syllables
+                # disappear. Silero VAD owns turn boundaries (900ms silence), so xAI should
+                # wait longer than that before declaring the utterance done.
+                xai_endpointing = int(os.getenv("XAI_STT_ENDPOINTING_MS", "1000"))
+                inst = xai_plugin.STT(
+                    language=normalized_lang,
+                    enable_interim_results=True,
+                    endpointing=xai_endpointing,
+                )
+                logger.info(
+                    f"[{speaker_id}→{target_lang}] STT: xAI grok-stt "
+                    f"lang={normalized_lang} endpointing={xai_endpointing}ms"
+                )
                 return inst
             except Exception as e:
                 logger.warning(f"[{speaker_id}→{target_lang}] xAI STT init failed ({e}) — falling back")
