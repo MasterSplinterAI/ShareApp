@@ -89,8 +89,10 @@ class TranscriptionOnlyAgent:
         return lang.split("-")[0].lower()
 
     def _vad_params(self) -> dict:
+        # activation_threshold: lower = more sensitive to quiet speech (fewer first-word clips),
+        # higher = fewer false positives from background noise. 0.4 is a good middle ground.
         return {
-            "activation_threshold": 0.5,
+            "activation_threshold": float(os.getenv("VAD_ACTIVATION_THRESHOLD", "0.4")),
             "min_speech_duration": 0.15,
             "min_silence_duration": 0.9,
             "prefix_padding_duration": 0.8,
@@ -641,6 +643,11 @@ class TranscriptionOnlyAgent:
             PRE_SPEECH_BUFFER_FRAMES = 50  # ~1.5s at 30fps — captures first words before VAD fires
             pre_speech_buffer = deque(maxlen=PRE_SPEECH_BUFFER_FRAMES)
 
+            # Pending turn-finalization task. Runs separately from the VAD loop so that a
+            # START_OF_SPEECH arriving during the post-silence wait can cancel it and
+            # resume the same turn instead of being blocked behind asyncio.sleep.
+            finalization_task = [None]
+
             async def _feed_audio():
                 async for ev in audio_stream:
                     vad_stream.push_frame(ev.frame)
@@ -649,11 +656,38 @@ class TranscriptionOnlyAgent:
                     else:
                         pre_speech_buffer.append(ev.frame)
 
+            async def _schedule_finalization():
+                """Wait for silence to persist, then flush STT and close the turn.
+                Cancelled by a new START_OF_SPEECH to preserve turn continuity."""
+                try:
+                    await asyncio.sleep(1.5)
+                    if speech_active[0] or not turn_id[0]:
+                        return
+                    stt_stream.flush()
+                    await asyncio.sleep(0.5)
+                    if speech_active[0] or not turn_id[0]:
+                        return
+                    await _finalize_turn()
+                except asyncio.CancelledError:
+                    # User resumed speaking — do not finalize, keep the current turn open
+                    logger.debug(f"[{key}] ↩️ Finalization cancelled (speech resumed)")
+                    raise
+
             async def _process_vad():
                 """Use VAD to detect turn boundaries (start/end of speech)."""
                 from livekit.agents.vad import VADEventType
                 async for vad_event in vad_stream:
                     if vad_event.type == VADEventType.START_OF_SPEECH:
+                        # Cancel any pending finalization so resumed speech joins the same turn
+                        pending = finalization_task[0]
+                        if pending and not pending.done():
+                            pending.cancel()
+                            try:
+                                await pending
+                            except (asyncio.CancelledError, Exception):
+                                pass
+                        finalization_task[0] = None
+
                         speech_active[0] = True
                         # Flush buffered pre-speech frames so the first word isn't clipped
                         for frame in pre_speech_buffer:
@@ -665,12 +699,12 @@ class TranscriptionOnlyAgent:
                     elif vad_event.type == VADEventType.END_OF_SPEECH:
                         speech_active[0] = False
                         logger.debug(f"[{key}] 🔇 Speech ended")
-                        # Give STT a moment to finalize, then close the turn
-                        await asyncio.sleep(1.5)
-                        if not speech_active[0] and turn_id[0]:
-                            stt_stream.flush()
-                            await asyncio.sleep(0.5)
-                            await _finalize_turn()
+                        # Schedule finalization as a separate task so the VAD loop remains
+                        # responsive — a fresh START_OF_SPEECH can cancel this mid-wait.
+                        pending = finalization_task[0]
+                        if pending and not pending.done():
+                            pending.cancel()
+                        finalization_task[0] = asyncio.create_task(_schedule_finalization())
 
             async def _process_stt():
                 async for stt_event in stt_stream:
