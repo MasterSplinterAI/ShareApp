@@ -53,7 +53,18 @@ function TranscriptionPanel() {
         const originalText = message.originalText || message.text || '';
         const text = message.text || '';
         const transcriptionId = message.transcriptionId;
-        const isTranslation = !!(originalText && text && originalText !== text);
+        // Only treat the packet as a translation when the agent explicitly says so
+        // (source language differs from target language). Text differences driven by
+        // STT interim/commit timing on same-language lanes are NOT translations.
+        const normalizeLang = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
+        const isTranslation = !!(
+          sourceLanguage &&
+          targetLang &&
+          normalizeLang(sourceLanguage) !== normalizeLang(targetLang) &&
+          originalText &&
+          text &&
+          originalText !== text
+        );
 
         const buildNew = (isPartial) => {
           msgCounterRef.current += 1;
