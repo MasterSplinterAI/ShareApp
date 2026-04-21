@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageSquare, MessageCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LanguageSelector from './LanguageSelector';
 import { useMeeting } from '../context/MeetingContext';
@@ -30,13 +30,11 @@ export default function CustomControlBar({
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
   const {
-    isPanelOpen,
-    setIsPanelOpen,
-    togglePanel,
-    isChatOpen,
-    toggleChat,
+    sidePanelOpen,
+    sidePanelTab,
+    openSidePanel,
+    closeSidePanel,
     unreadCount,
-    setIsChatOpen,
   } = useMeeting();
   const isCompact = useIsCompact();
 
@@ -346,50 +344,45 @@ export default function CustomControlBar({
             onTranslationToggle={() => {
               const next = !translationEnabled;
               setTranslationEnabled(next);
-              setIsPanelOpen(next); // Option D: when Captions ON, auto-open panel; when OFF, close
+              // When enabling, open panel on Captions tab; when disabling, close panel.
               if (next) {
-                setIsChatOpen(false);
+                openSidePanel('captions');
                 toast.success('Captions enabled');
               } else {
+                closeSidePanel();
                 toast('Captions disabled');
               }
             }}
             translationEnabled={translationEnabled}
           />
 
-          {/* Chat — mutually exclusive with captions panel */}
+          {/* Single side-panel toggle. Opens the panel on the Chat tab (and clears unread).
+              In-panel tabs let users switch between Captions and Chat. */}
           <button
             type="button"
-            onClick={toggleChat}
+            onClick={() => {
+              if (sidePanelOpen && sidePanelTab === 'chat') {
+                closeSidePanel();
+              } else {
+                openSidePanel('chat');
+              }
+            }}
             className={`relative flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-              isChatOpen
+              sidePanelOpen && sidePanelTab === 'chat'
                 ? 'bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200'
                 : 'bg-white/10 hover:bg-white/15 text-white'
             }`}
-            aria-label={isChatOpen ? 'Close chat' : 'Open chat'}
+            aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
             title="Chat"
           >
             <MessageCircle className="w-5 h-5" />
             {!isCompact && <span className="text-sm font-medium">Chat</span>}
-            {!isChatOpen && unreadCount > 0 && (
+            {!(sidePanelOpen && sidePanelTab === 'chat') && unreadCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
-
-          {/* Show captions button - only when captions on but panel closed (Option D) */}
-          {translationEnabled && !isPanelOpen && (
-            <button
-              onClick={togglePanel}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all bg-white/10 hover:bg-white/15 text-white`}
-              aria-label="Show captions"
-              title="Show captions"
-            >
-              <MessageSquare className="w-5 h-5" />
-              {!isCompact && <span className="text-sm font-medium">Show captions</span>}
-            </button>
-          )}
 
           {/* Share Button - Host Only */}
           {isHost && (

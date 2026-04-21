@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
-import { MessageCircle, X, Send, Loader2 } from 'lucide-react';
+import { MessageCircle, Send, Loader2 } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 import { chatService } from '../services/api';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
+import PanelTabs from './PanelTabs';
 
 const MAX_CHARS = 2000;
 const URL_RE = /\bhttps?:\/\/\S+/gi;
@@ -46,7 +47,6 @@ function ChatPanel() {
     selectedLanguage,
     participantName,
     isChatOpen,
-    toggleChat,
     incrementChatUnread,
     isFullScreen,
   } = useMeeting();
@@ -355,20 +355,7 @@ function ChatPanel() {
         className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9998] flex flex-col"
         data-no-translate="true"
       >
-        <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700 flex-shrink-0 rounded-t-lg">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="w-4 h-4 text-emerald-400" />
-            <h3 className="font-medium text-white text-sm">Chat</h3>
-          </div>
-          <button
-            type="button"
-            onClick={toggleChat}
-            className="text-gray-400 hover:text-white transition-colors p-1"
-            aria-label="Close chat"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+        <PanelTabs compact />
         {panelBody}
       </div>
     );
@@ -376,26 +363,13 @@ function ChatPanel() {
 
   return (
     <div
-      className="flex flex-col flex-shrink-0 bg-gray-900 border-gray-700 z-40 data-no-translate
+      className="flex flex-col flex-shrink-0 bg-gray-900 border-gray-700 z-40
         fixed bottom-12 left-0 right-0 max-h-[45vh] rounded-t-xl border-t shadow-2xl
         sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full
         sm:w-[350px] lg:w-[400px] sm:border-l sm:border-t-0 sm:rounded-none sm:shadow-none"
       data-no-translate="true"
     >
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700 flex-shrink-0 rounded-t-xl sm:rounded-none">
-        <div className="flex items-center gap-2">
-          <MessageCircle className="w-4 h-4 text-emerald-400" />
-          <h3 className="font-medium text-white text-sm">Chat</h3>
-        </div>
-        <button
-          type="button"
-          onClick={toggleChat}
-          className="text-gray-400 hover:text-white transition-colors p-1"
-          aria-label="Close chat"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
+      <PanelTabs />
       {panelBody}
     </div>
   );

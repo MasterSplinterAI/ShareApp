@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { MessageSquare, X, ChevronUp, ChevronDown, Download } from 'lucide-react';
+import { MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
+import PanelTabs from './PanelTabs';
 
 const LANGUAGE_LABELS = {
   en: 'English', es: 'Spanish', 'es-CO': 'Colombian Spanish',
@@ -200,7 +201,7 @@ function TranscriptionPanel() {
         className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9999] flex flex-col"
         data-no-translate="true"
       >
-        <PanelHeader onClose={togglePanel} onDownload={handleDownload} canDownload={transcriptions.length > 0} compact />
+        <PanelTabs onDownload={handleDownload} canDownload={transcriptions.length > 0} compact />
         <PanelContent
           transcriptions={transcriptions}
           liveCaptions={liveCaptions}
@@ -226,7 +227,7 @@ function TranscriptionPanel() {
         className="hidden sm:flex flex-col w-[350px] lg:w-[400px] bg-gray-900 border-l border-gray-700 h-full flex-shrink-0"
         data-no-translate="true"
       >
-        <PanelHeader onClose={togglePanel} onDownload={handleDownload} canDownload={transcriptions.length > 0} />
+        <PanelTabs onDownload={handleDownload} canDownload={transcriptions.length > 0} />
         <PanelContent
           transcriptions={transcriptions}
           liveCaptions={liveCaptions}
@@ -249,32 +250,10 @@ function TranscriptionPanel() {
       ) : (
         <div
           className="sm:hidden fixed bottom-12 left-0 right-0 bg-gray-900 border-t border-gray-700 rounded-t-xl z-40 flex flex-col"
-          style={{ maxHeight: '35vh' }}
+          style={{ maxHeight: '45vh' }}
           data-no-translate="true"
         >
-          <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 rounded-t-xl flex-shrink-0">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-              <span className="text-xs font-medium text-white">Live Captions</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={handleDownload}
-                disabled={transcriptions.length === 0}
-                className="text-gray-400 hover:text-white transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
-                aria-label="Download transcript"
-              >
-                <Download className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setMobileExpanded(false)}
-                className="text-gray-400 hover:text-white transition-colors p-1"
-                aria-label="Collapse captions"
-              >
-                <ChevronDown className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <PanelTabs onDownload={handleDownload} canDownload={transcriptions.length > 0} compact />
           <PanelContent
             transcriptions={transcriptions}
             liveCaptions={liveCaptions}
@@ -289,38 +268,6 @@ function TranscriptionPanel() {
         </div>
       )}
     </>
-  );
-}
-
-function PanelHeader({ onClose, onDownload, canDownload, compact = false }) {
-  return (
-    <div className={`flex items-center justify-between ${compact ? 'px-3 py-2' : 'px-4 py-3'} bg-gray-800 border-b border-gray-700 flex-shrink-0 ${compact ? '' : 'rounded-t-xl sm:rounded-none'}`}>
-      <div className="flex items-center gap-2">
-        <MessageSquare className="w-4 h-4 text-blue-400" />
-        <h3 className={`font-medium text-white ${compact ? 'text-xs' : 'text-sm'}`}>
-          Live Captions
-        </h3>
-      </div>
-      <div className="flex items-center gap-1">
-        {onDownload && (
-          <button
-            onClick={onDownload}
-            disabled={!canDownload}
-            className="text-gray-400 hover:text-white transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
-            aria-label="Download transcript"
-          >
-            <Download className="w-4 h-4" />
-          </button>
-        )}
-        <button
-          onClick={onClose}
-          className="text-gray-400 hover:text-white transition-colors p-1"
-          aria-label="Close captions panel"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-    </div>
   );
 }
 

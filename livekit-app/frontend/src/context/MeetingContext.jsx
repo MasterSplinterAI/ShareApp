@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 
 const MeetingContext = createContext(null);
@@ -11,30 +11,78 @@ export function MeetingProvider({ children, initialState = {} }) {
   const setSelectedLanguage = useCallback((code) => {
     setSelectedLanguageState(normalizeMeetingLanguageCode(code || 'en'));
   }, []);
+
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);
-  const [isPanelOpen, setIsPanelOpen] = useState(initialState.translationEnabled ?? true);
-  const [isChatOpen, setIsChatOpen] = useState(false);
+
+  // Unified side panel: one panel, two tabs.
+  const [sidePanelOpen, setSidePanelOpen] = useState(initialState.translationEnabled ?? true);
+  const [sidePanelTab, setSidePanelTabState] = useState('captions'); // 'captions' | 'chat'
   const [unreadCount, setUnreadCount] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
-  const togglePanel = useCallback(() => {
-    setIsPanelOpen((prev) => {
-      const next = !prev;
-      if (next) setIsChatOpen(false);
-      return next;
-    });
+  const setSidePanelTab = useCallback((tab) => {
+    setSidePanelTabState(tab);
+    if (tab === 'chat') setUnreadCount(0);
   }, []);
 
-  const toggleChat = useCallback(() => {
-    setIsChatOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        setIsPanelOpen(false);
-        setUnreadCount(0);
-      }
-      return next;
-    });
+  const openSidePanel = useCallback((tab) => {
+    setSidePanelOpen(true);
+    if (tab) {
+      setSidePanelTabState(tab);
+      if (tab === 'chat') setUnreadCount(0);
+    }
   }, []);
+
+  const closeSidePanel = useCallback(() => {
+    setSidePanelOpen(false);
+  }, []);
+
+  const toggleSidePanel = useCallback(() => {
+    setSidePanelOpen((prev) => !prev);
+  }, []);
+
+  // Legacy API kept so existing panels keep working without rewrites.
+  const isPanelOpen = sidePanelOpen && sidePanelTab === 'captions';
+  const isChatOpen = sidePanelOpen && sidePanelTab === 'chat';
+
+  const setIsPanelOpen = useCallback((val) => {
+    if (val) {
+      setSidePanelOpen(true);
+      setSidePanelTabState('captions');
+    } else {
+      setSidePanelOpen(false);
+    }
+  }, []);
+
+  const setIsChatOpen = useCallback((val) => {
+    if (val) {
+      setSidePanelOpen(true);
+      setSidePanelTabState('chat');
+      setUnreadCount(0);
+    } else {
+      setSidePanelOpen(false);
+    }
+  }, []);
+
+  const togglePanel = useCallback(() => {
+    // Clicking the captions entry point: go to captions tab; if already there, close.
+    if (sidePanelOpen && sidePanelTab === 'captions') {
+      setSidePanelOpen(false);
+    } else {
+      setSidePanelOpen(true);
+      setSidePanelTabState('captions');
+    }
+  }, [sidePanelOpen, sidePanelTab]);
+
+  const toggleChat = useCallback(() => {
+    if (sidePanelOpen && sidePanelTab === 'chat') {
+      setSidePanelOpen(false);
+    } else {
+      setSidePanelOpen(true);
+      setSidePanelTabState('chat');
+      setUnreadCount(0);
+    }
+  }, [sidePanelOpen, sidePanelTab]);
 
   const markChatRead = useCallback(() => {
     setUnreadCount(0);
@@ -44,12 +92,11 @@ export function MeetingProvider({ children, initialState = {} }) {
     setUnreadCount((c) => c + 1);
   }, []);
 
-  const value = {
+  const value = useMemo(() => ({
     // Room info
     roomName: initialState.roomName || '',
     isHost: initialState.isHost || false,
     participantName: initialState.participantName || '',
-    // Same as selectedLanguage: one user language for STT (speak) and captions (read).
     spokenLanguage: selectedLanguage,
 
     // Language
@@ -58,15 +105,23 @@ export function MeetingProvider({ children, initialState = {} }) {
     translationEnabled,
     setTranslationEnabled,
 
-    // Panel
+    // Unified side panel
+    sidePanelOpen,
+    sidePanelTab,
+    setSidePanelTab,
+    openSidePanel,
+    closeSidePanel,
+    toggleSidePanel,
+
+    // Legacy-compatible flags derived from the unified state
     isPanelOpen,
     setIsPanelOpen,
     togglePanel,
-
-    // Chat
     isChatOpen,
     setIsChatOpen,
     toggleChat,
+
+    // Chat unread
     unreadCount,
     markChatRead,
     incrementChatUnread,
@@ -75,9 +130,33 @@ export function MeetingProvider({ children, initialState = {} }) {
     isFullScreen,
     setIsFullScreen,
 
-    // Future: meeting mode
-    meetingMode: initialState.meetingMode || 'translation', // 'translation' | 'transcription-only'
-  };
+    // Mode
+    meetingMode: initialState.meetingMode || 'translation',
+  }), [
+    initialState.roomName,
+    initialState.isHost,
+    initialState.participantName,
+    initialState.meetingMode,
+    selectedLanguage,
+    setSelectedLanguage,
+    translationEnabled,
+    sidePanelOpen,
+    sidePanelTab,
+    setSidePanelTab,
+    openSidePanel,
+    closeSidePanel,
+    toggleSidePanel,
+    isPanelOpen,
+    setIsPanelOpen,
+    togglePanel,
+    isChatOpen,
+    setIsChatOpen,
+    toggleChat,
+    unreadCount,
+    markChatRead,
+    incrementChatUnread,
+    isFullScreen,
+  ]);
 
   return (
     <MeetingContext.Provider value={value}>
