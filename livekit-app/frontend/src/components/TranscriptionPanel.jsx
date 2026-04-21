@@ -22,13 +22,13 @@ function TranscriptionPanel() {
   const usePipMode = isFullScreen && isPanelOpen;
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
-  const [transcriptions, setTranscriptions] = useState([]);
-  const [liveCaptions, setLiveCaptions] = useState({});
+  // Unified flow: one bubble per speaker turn. Partials update in place;
+  // the same bubble firms up when the final arrives. No separate live section.
+  const [messages, setMessages] = useState([]);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef(null);
-  const transcriptionIdRef = useRef(0);
+  const msgCounterRef = useRef(0);
 
-  // Listen for transcription data
   useEffect(() => {
     if (!room) return;
 
@@ -53,41 +53,95 @@ function TranscriptionPanel() {
         const originalText = message.originalText || message.text || '';
         const text = message.text || '';
         const transcriptionId = message.transcriptionId;
+        const isTranslation = !!(originalText && text && originalText !== text);
+
+        const buildNew = (isPartial) => {
+          msgCounterRef.current += 1;
+          return {
+            id: `m${msgCounterRef.current}`,
+            speaker: speakerId,
+            originalText: isTranslation ? originalText : text,
+            translations: isTranslation ? { [targetLang]: text } : {},
+            sourceLanguage,
+            timestamp: messageTimestamp,
+            transcriptionId: transcriptionId ?? null,
+            isPartial,
+          };
+        };
 
         if (message.partial) {
-          setLiveCaptions(prev => {
-            const existing = prev[speakerId] || { originalText: '', translations: {}, sourceLanguage: null, timestamp: messageTimestamp, transcriptionId: null };
-            const isTranslation = originalText && text && originalText !== text;
-            return {
-              ...prev,
-              [speakerId]: {
-                originalText: isTranslation ? originalText : (text || existing.originalText),
+          setMessages((prev) => {
+            // Same bubble while this speaker's turn is still in progress.
+            const idx = prev.findIndex(
+              (m) => m.speaker === speakerId && m.isPartial,
+            );
+            if (idx >= 0) {
+              const existing = prev[idx];
+              const next = [...prev];
+              next[idx] = {
+                ...existing,
+                originalText: isTranslation
+                  ? existing.originalText || originalText
+                  : text || existing.originalText,
                 translations: isTranslation
                   ? { ...existing.translations, [targetLang]: text }
                   : existing.translations,
-                sourceLanguage: sourceLanguage || existing.sourceLanguage,
+                sourceLanguage: existing.sourceLanguage || sourceLanguage,
                 timestamp: messageTimestamp,
                 transcriptionId: transcriptionId ?? existing.transcriptionId,
-              }
-            };
+              };
+              return next;
+            }
+            return [...prev, buildNew(true)];
           });
         } else {
-          // Final transcription
-          setTranscriptions(prev => {
-            const existingIdx = prev.findIndex(t =>
-              t.speaker === speakerId &&
-              t.originalText === originalText &&
-              Math.abs(t.timestamp - messageTimestamp) < 3000
-            );
+          setMessages((prev) => {
+            // Prefer to finalize the speaker's in-progress bubble in place.
+            let idx = -1;
+            if (transcriptionId != null) {
+              idx = prev.findIndex(
+                (m) => m.isPartial && m.transcriptionId === transcriptionId,
+              );
+            }
+            if (idx < 0) {
+              idx = prev.findIndex(
+                (m) => m.speaker === speakerId && m.isPartial,
+              );
+            }
 
-            if (existingIdx >= 0) {
-              const existing = prev[existingIdx];
+            if (idx >= 0) {
+              const existing = prev[idx];
               const newTranslations = { ...existing.translations };
-              if (originalText && text && originalText !== text) {
-                newTranslations[targetLang] = text;
-              }
+              if (isTranslation) newTranslations[targetLang] = text;
               const next = [...prev];
-              next[existingIdx] = {
+              next[idx] = {
+                ...existing,
+                originalText: isTranslation
+                  ? originalText || existing.originalText
+                  : text || existing.originalText,
+                translations: newTranslations,
+                sourceLanguage: existing.sourceLanguage || sourceLanguage,
+                timestamp: messageTimestamp,
+                transcriptionId: transcriptionId ?? existing.transcriptionId,
+                isPartial: false,
+              };
+              return next;
+            }
+
+            // Late-arriving translation for an already-finalized bubble.
+            const finalIdx = prev.findIndex(
+              (m) =>
+                !m.isPartial &&
+                m.speaker === speakerId &&
+                m.originalText === originalText &&
+                Math.abs(m.timestamp - messageTimestamp) < 3000,
+            );
+            if (finalIdx >= 0) {
+              const existing = prev[finalIdx];
+              const newTranslations = { ...existing.translations };
+              if (isTranslation) newTranslations[targetLang] = text;
+              const next = [...prev];
+              next[finalIdx] = {
                 ...existing,
                 translations: newTranslations,
                 sourceLanguage: existing.sourceLanguage || sourceLanguage,
@@ -95,35 +149,8 @@ function TranscriptionPanel() {
               return next;
             }
 
-            transcriptionIdRef.current += 1;
-            const translations = {};
-            if (originalText && text && originalText !== text) {
-              translations[targetLang] = text;
-            }
-            return [...prev, {
-              id: transcriptionIdRef.current,
-              speaker: speakerId,
-              originalText,
-              translations,
-              sourceLanguage,
-              timestamp: messageTimestamp,
-              isFinal: true,
-            }];
+            return [...prev, buildNew(false)];
           });
-
-          // Clear live caption after final
-          const finalTranscriptionId = transcriptionId;
-          setTimeout(() => {
-            setLiveCaptions(prev => {
-              const current = prev[speakerId];
-              if (!current || (finalTranscriptionId && current.transcriptionId !== finalTranscriptionId)) {
-                return prev;
-              }
-              const next = { ...prev };
-              delete next[speakerId];
-              return next;
-            });
-          }, 500);
         }
       } catch (error) {
         console.error('TranscriptionPanel: Error parsing data message:', error);
@@ -139,7 +166,7 @@ function TranscriptionPanel() {
     if (isAtBottom && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [transcriptions, liveCaptions, isAtBottom]);
+  }, [messages, isAtBottom]);
 
   // Track scroll position
   const handleScroll = () => {
@@ -155,8 +182,10 @@ function TranscriptionPanel() {
     }
   };
 
+  const finalMessages = useMemo(() => messages.filter((m) => !m.isPartial), [messages]);
+
   const handleDownload = () => {
-    const exportData = transcriptions.map((t) => ({
+    const exportData = finalMessages.map((t) => ({
       timestamp: new Date(t.timestamp).toISOString(),
       speaker: t.speaker,
       originalText: t.originalText,
@@ -177,19 +206,11 @@ function TranscriptionPanel() {
   };
 
   const latestCaptionText = useMemo(() => {
-    const entries = Object.entries(liveCaptions);
-    if (entries.length > 0) {
-      const [speaker, caption] = entries[entries.length - 1];
-      const { dominant } = getDominantAndSecondary(caption.originalText, caption.translations, selectedLanguage);
-      return dominant ? `${speaker}: ${dominant}` : null;
-    }
-    if (transcriptions.length > 0) {
-      const last = transcriptions[transcriptions.length - 1];
-      const { dominant } = getDominantAndSecondary(last.originalText, last.translations, selectedLanguage);
-      return dominant ? `${last.speaker}: ${dominant}` : null;
-    }
-    return null;
-  }, [liveCaptions, transcriptions, selectedLanguage]);
+    if (messages.length === 0) return null;
+    const last = messages[messages.length - 1];
+    const { dominant } = getDominantAndSecondary(last.originalText, last.translations, selectedLanguage);
+    return dominant ? `${last.speaker}: ${dominant}` : null;
+  }, [messages, selectedLanguage]);
 
   // If captions are not enabled, don't show the panel at all
   if (!translationEnabled) return null;
@@ -201,10 +222,9 @@ function TranscriptionPanel() {
         className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9999] flex flex-col"
         data-no-translate="true"
       >
-        <PanelTabs onDownload={handleDownload} canDownload={transcriptions.length > 0} compact />
+        <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
         <PanelContent
-          transcriptions={transcriptions}
-          liveCaptions={liveCaptions}
+          messages={messages}
           scrollRef={scrollRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
@@ -227,10 +247,9 @@ function TranscriptionPanel() {
         className="hidden sm:flex flex-col w-[350px] lg:w-[400px] bg-gray-900 border-l border-gray-700 h-full flex-shrink-0"
         data-no-translate="true"
       >
-        <PanelTabs onDownload={handleDownload} canDownload={transcriptions.length > 0} />
+        <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
         <PanelContent
-          transcriptions={transcriptions}
-          liveCaptions={liveCaptions}
+          messages={messages}
           scrollRef={scrollRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
@@ -245,7 +264,7 @@ function TranscriptionPanel() {
         <MobileCaptionBar
           text={latestCaptionText}
           onExpand={() => setMobileExpanded(true)}
-          hasContent={Object.keys(liveCaptions).length > 0 || transcriptions.length > 0}
+          hasContent={messages.length > 0}
         />
       ) : (
         <div
@@ -253,10 +272,9 @@ function TranscriptionPanel() {
           style={{ maxHeight: '45vh' }}
           data-no-translate="true"
         >
-          <PanelTabs onDownload={handleDownload} canDownload={transcriptions.length > 0} compact />
+          <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
           <PanelContent
-            transcriptions={transcriptions}
-            liveCaptions={liveCaptions}
+            messages={messages}
             scrollRef={scrollRef}
             onScroll={handleScroll}
             selectedLanguage={selectedLanguage}
@@ -308,70 +326,67 @@ function TranscriptionBubble({
   sourceLanguage,
   selectedLanguage,
   timestamp,
-  isLive = false,
+  isPartial = false,
   compact = false,
 }) {
-  // "Translating..." state: live caption, user's selected language differs from the speaker's
-  // source language, and no matching translation has arrived yet — we're showing the original.
+  // If we're showing the speaker's original while the reader's selected language
+  // has no translation yet, hint that a translation is still pending.
   const normalize = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
   const isPendingTranslation =
-    isLive &&
+    isPartial &&
     !dominantLang &&
     selectedLanguage &&
     sourceLanguage &&
     normalize(sourceLanguage) !== normalize(selectedLanguage);
 
   return (
-    <div className={`${compact ? 'pb-1.5' : 'pb-3'} ${!isLive ? 'border-b border-gray-700/50 last:border-b-0' : ''}`}>
+    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-gray-700/50 last:border-b-0`}>
       <div className="flex items-baseline gap-2 mb-1">
         <span className={`font-medium text-blue-400 ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
-        {isLive && (
-          <span className="text-xs text-gray-500">
-            {isPendingTranslation ? 'translating…' : 'speaking...'}
+        {isPartial ? (
+          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500">
+            <span className="inline-block w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+            {isPendingTranslation ? 'translating' : 'live'}
           </span>
-        )}
-        {!isLive && timestamp && (
-          <span className="text-xs text-gray-500">
-            {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
+        ) : (
+          timestamp && (
+            <span className="text-xs text-gray-500">
+              {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
+          )
         )}
       </div>
 
       {dominant && (
         <p
-          className={`break-words leading-relaxed bg-gray-800/50 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} ${
-            isPendingTranslation
-              ? 'text-gray-400 italic opacity-60'
-              : `text-gray-100 ${isLive ? 'opacity-80' : ''}`
+          className={`break-words leading-relaxed bg-gray-800/50 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-gray-100 ${
+            isPendingTranslation ? 'italic text-gray-400' : ''
           }`}
         >
           {isPendingTranslation && sourceLanguage && (
             <span className="text-gray-500 not-italic mr-1">[{getLanguageLabel(sourceLanguage)}]</span>
           )}
           {dominant}
-          {isLive && (
+          {isPartial && (
             <span className="inline-block w-1.5 h-4 bg-blue-400 ml-1 animate-pulse rounded-sm align-middle" />
           )}
         </p>
       )}
 
       {secondary && (
-        <p className={`text-gray-400 break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} ${isLive ? 'opacity-60' : 'opacity-70'}`}>
+        <p className={`text-gray-400 break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} opacity-70`}>
           {secondaryLang && (
             <span className="text-gray-500 mr-1">[{getLanguageLabel(secondaryLang)}]</span>
           )}
           {secondary}
-          {isLive && (
-            <span className="inline-block w-1 h-3 bg-gray-500 ml-1 animate-pulse rounded-sm align-middle" />
-          )}
         </p>
       )}
     </div>
   );
 }
 
-function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selectedLanguage, compact = false }) {
-  const hasContent = transcriptions.length > 0 || Object.keys(liveCaptions).length > 0;
+function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact = false }) {
+  const hasContent = messages.length > 0;
 
   return (
     <div
@@ -386,7 +401,7 @@ function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selec
         </div>
       )}
 
-      {transcriptions.map((item) => {
+      {messages.map((item) => {
         const { dominant, secondary, dominantLang, secondaryLang } = getDominantAndSecondary(
           item.originalText, item.translations, selectedLanguage
         );
@@ -401,26 +416,7 @@ function PanelContent({ transcriptions, liveCaptions, scrollRef, onScroll, selec
             sourceLanguage={item.sourceLanguage}
             selectedLanguage={selectedLanguage}
             timestamp={item.timestamp}
-            compact={compact}
-          />
-        );
-      })}
-
-      {Object.entries(liveCaptions).map(([speakerId, caption]) => {
-        const { dominant, secondary, dominantLang, secondaryLang } = getDominantAndSecondary(
-          caption.originalText, caption.translations, selectedLanguage
-        );
-        return (
-          <TranscriptionBubble
-            key={`live-${speakerId}`}
-            speaker={speakerId}
-            dominant={dominant}
-            secondary={secondary}
-            dominantLang={dominantLang}
-            secondaryLang={secondaryLang}
-            sourceLanguage={caption.sourceLanguage}
-            selectedLanguage={selectedLanguage}
-            isLive
+            isPartial={item.isPartial}
             compact={compact}
           />
         );
