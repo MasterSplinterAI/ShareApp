@@ -13,10 +13,35 @@ export function MeetingProvider({ children, initialState = {} }) {
   }, []);
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);
   const [isPanelOpen, setIsPanelOpen] = useState(initialState.translationEnabled ?? true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
   const togglePanel = useCallback(() => {
-    setIsPanelOpen(prev => !prev);
+    setIsPanelOpen((prev) => {
+      const next = !prev;
+      if (next) setIsChatOpen(false);
+      return next;
+    });
+  }, []);
+
+  const toggleChat = useCallback(() => {
+    setIsChatOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsPanelOpen(false);
+        setUnreadCount(0);
+      }
+      return next;
+    });
+  }, []);
+
+  const markChatRead = useCallback(() => {
+    setUnreadCount(0);
+  }, []);
+
+  const incrementChatUnread = useCallback(() => {
+    setUnreadCount((c) => c + 1);
   }, []);
 
   const value = {
@@ -37,6 +62,14 @@ export function MeetingProvider({ children, initialState = {} }) {
     isPanelOpen,
     setIsPanelOpen,
     togglePanel,
+
+    // Chat
+    isChatOpen,
+    setIsChatOpen,
+    toggleChat,
+    unreadCount,
+    markChatRead,
+    incrementChatUnread,
 
     // Full screen
     isFullScreen,

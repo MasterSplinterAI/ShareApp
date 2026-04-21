@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageSquare } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageSquare, MessageCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LanguageSelector from './LanguageSelector';
 import { useMeeting } from '../context/MeetingContext';
@@ -29,7 +29,15 @@ export default function CustomControlBar({
   const localParticipantHook = useLocalParticipant();
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
-  const { isPanelOpen, setIsPanelOpen, togglePanel } = useMeeting();
+  const {
+    isPanelOpen,
+    setIsPanelOpen,
+    togglePanel,
+    isChatOpen,
+    toggleChat,
+    unreadCount,
+    setIsChatOpen,
+  } = useMeeting();
   const isCompact = useIsCompact();
 
   const cameraTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Camera);
@@ -340,6 +348,7 @@ export default function CustomControlBar({
               setTranslationEnabled(next);
               setIsPanelOpen(next); // Option D: when Captions ON, auto-open panel; when OFF, close
               if (next) {
+                setIsChatOpen(false);
                 toast.success('Captions enabled');
               } else {
                 toast('Captions disabled');
@@ -347,6 +356,27 @@ export default function CustomControlBar({
             }}
             translationEnabled={translationEnabled}
           />
+
+          {/* Chat — mutually exclusive with captions panel */}
+          <button
+            type="button"
+            onClick={toggleChat}
+            className={`relative flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
+              isChatOpen
+                ? 'bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200'
+                : 'bg-white/10 hover:bg-white/15 text-white'
+            }`}
+            aria-label={isChatOpen ? 'Close chat' : 'Open chat'}
+            title="Chat"
+          >
+            <MessageCircle className="w-5 h-5" />
+            {!isCompact && <span className="text-sm font-medium">Chat</span>}
+            {!isChatOpen && unreadCount > 0 && (
+              <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
 
           {/* Show captions button - only when captions on but panel closed (Option D) */}
           {translationEnabled && !isPanelOpen && (

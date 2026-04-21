@@ -263,9 +263,10 @@ function trim(str) {
  */
 router.post('/', async (req, res) => {
   try {
-    const { text, target_language, source_language } = req.body;
+    const { text, target_language, source_language, no_cache } = req.body;
     const targetLanguage = target_language || req.body.targetLanguage || 'en';
     const sourceLanguage = source_language || req.body.sourceLanguage || 'en';
+    const noCache = Boolean(no_cache || req.body.noCache);
 
     if (!text || typeof text !== 'string') {
       return res.status(400).json({
@@ -273,8 +274,8 @@ router.post('/', async (req, res) => {
       });
     }
 
-    // If target language is English, return original text
-    if (targetLanguage === 'en' || targetLanguage === sourceLanguage) {
+    // No-op when source and target are the same (e.g. both English for DOM strings)
+    if (targetLanguage === sourceLanguage) {
       return res.json({
         original: text,
         translated: text,
@@ -287,14 +288,16 @@ router.post('/', async (req, res) => {
       .update(text.toLowerCase().trim() + '|' + sourceLanguage)
       .digest('hex');
 
-    // Check database cache first
-    const cached = await getCachedTranslation(sourceHash, targetLanguage);
-    if (cached) {
-      return res.json({
-        original: text,
-        translated: cached,
-        target_language: targetLanguage
-      });
+    // Check database cache first (skipped for ephemeral chat — no_cache: true)
+    if (!noCache) {
+      const cached = await getCachedTranslation(sourceHash, targetLanguage);
+      if (cached) {
+        return res.json({
+          original: text,
+          translated: cached,
+          target_language: targetLanguage
+        });
+      }
     }
 
     // Translate via API
@@ -309,8 +312,10 @@ router.post('/', async (req, res) => {
         translatedText = await translateWithGrok(text, targetLanguage, sourceLanguage);
       }
 
-      // Save to database cache
-      saveTranslation(text, sourceHash, targetLanguage, translatedText, provider);
+      // Save to database cache (skipped for ephemeral chat)
+      if (!noCache) {
+        saveTranslation(text, sourceHash, targetLanguage, translatedText, provider);
+      }
 
       res.json({
         original: text,
@@ -355,8 +360,8 @@ router.post('/batch', async (req, res) => {
       });
     }
 
-    // If target language is English, return original texts
-    if (targetLanguage === 'en' || targetLanguage === sourceLanguage) {
+    // No-op when source and target match
+    if (targetLanguage === sourceLanguage) {
       return res.json({
         translations: texts,
         target_language: targetLanguage

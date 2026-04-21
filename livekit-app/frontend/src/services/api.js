@@ -103,4 +103,23 @@ export const translationService = {
   },
 };
 
+/** Ephemeral in-meeting chat — bypasses SQLite cache (no_cache: true) */
+export const chatService = {
+  translate: async (text, sourceLanguage, targetLanguage) => {
+    if (!text || typeof text !== 'string') return text;
+    if (sourceLanguage === targetLanguage) return text;
+    try {
+      const { data } = await api.post('/translate', {
+        text,
+        source_language: sourceLanguage,
+        target_language: targetLanguage,
+        no_cache: true,
+      });
+      return data?.translated ?? text;
+    } catch {
+      return text;
+    }
+  },
+};
+
 export default api;

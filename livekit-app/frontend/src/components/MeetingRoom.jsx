@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react';
 import { authService } from '../services/api';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
+import ChatPanel from './ChatPanel';
 import RoomControls from './RoomControls';
 import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
@@ -290,6 +291,9 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
 
           {/* Transcription panel — side panel on desktop, bottom sheet on mobile */}
           <TranscriptionPanel />
+
+          {/* In-meeting chat (LiveKit data channel; mutually exclusive with captions panel via context) */}
+          <ChatPanel />
         </div>
 
         {/* Room controls for broadcasting language preferences */}
