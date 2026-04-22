@@ -45,8 +45,9 @@ router.post('/create', async (req, res) => {
     
     // Dispatch agent to room explicitly - ONLY to our named agent
     // This prevents cloud-deployed unnamed agents from auto-joining
-    // Default to 'translation-bot-dev' for local dev, 'translation-agent-production' for production
-    const agentName = process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-agent-production' : 'translation-bot-dev');
+    // Default must match the worker name in livekit-app/translation-agent/livekit.toml
+    // ('translation-cloud-prod' on LiveKit Cloud; override with AGENT_NAME in backend .env)
+    const agentName = process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev');
     
     // Debug logging
     console.log(`[DEBUG] Agent dispatch - AGENT_NAME env: ${process.env.AGENT_NAME}, NODE_ENV: ${process.env.NODE_ENV}, Using agent: ${agentName}`);
