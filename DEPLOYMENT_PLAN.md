@@ -28,7 +28,7 @@ The backend `.env` file on the server needs these new variables:
 TRANSLATION_API_PROVIDER=grok  # or 'openai'
 TRANSLATION_API_KEY=your_grok_or_openai_api_key
 TRANSLATION_API_URL=https://api.x.ai/v1/chat/completions  # Only if using Grok
-TRANSLATION_MODEL=grok-4-1-fast-non-reasoning  # Only if using Grok
+TRANSLATION_MODEL=grok-4.20-non-reasoning  # Only if using Grok (grok-4-1-* retired May 2026)
 USE_DATABASE_CACHE=true  # Enable SQLite caching (recommended)
 ```
 
@@ -127,7 +127,7 @@ Add these lines:
 TRANSLATION_API_PROVIDER=grok
 TRANSLATION_API_KEY=your_actual_api_key_here
 TRANSLATION_API_URL=https://api.x.ai/v1/chat/completions
-TRANSLATION_MODEL=grok-4-1-fast-non-reasoning
+TRANSLATION_MODEL=grok-4.20-non-reasoning
 USE_DATABASE_CACHE=true
 ```
 

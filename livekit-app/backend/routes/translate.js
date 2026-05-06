@@ -13,7 +13,7 @@ const crypto = require('crypto');
  * - TRANSLATION_API_PROVIDER: 'grok' or 'openai' (default: 'grok')
  * - TRANSLATION_API_KEY: Your Grok/OpenAI API key
  * - TRANSLATION_API_URL: API endpoint (default: https://api.x.ai/v1/chat/completions)
- * - TRANSLATION_MODEL: Model name (default: grok-4-1-fast-non-reasoning)
+ * - TRANSLATION_MODEL: Grok model (default: grok-4.20-non-reasoning; xAI retired grok-4-1-* May 2026)
  * - USE_DATABASE_CACHE: 'true' to enable SQLite caching (default: 'false')
  */
 
@@ -156,7 +156,7 @@ function saveTranslation(sourceText, sourceHash, targetLanguage, translatedText,
 async function translateWithGrok(text, targetLanguage, sourceLanguage = 'en') {
   const apiKey = process.env.TRANSLATION_API_KEY;
   const apiUrl = process.env.TRANSLATION_API_URL || 'https://api.x.ai/v1/chat/completions';
-  const model = process.env.TRANSLATION_MODEL || 'grok-4-1-fast-non-reasoning';
+  const model = process.env.TRANSLATION_MODEL || 'grok-4.20-non-reasoning';
   
   if (!apiKey) {
     throw new Error('TRANSLATION_API_KEY not configured');

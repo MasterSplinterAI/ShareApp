@@ -59,7 +59,7 @@ Add to your `.env` file:
 TRANSLATION_API_PROVIDER=grok
 TRANSLATION_API_KEY=your-grok-api-key-here
 TRANSLATION_API_URL=https://api.x.ai/v1/chat/completions
-TRANSLATION_MODEL=grok-4-1-fast-non-reasoning
+TRANSLATION_MODEL=grok-4.20-non-reasoning
 
 # Database Caching (OPTIONAL but recommended)
 # Set to 'true' to enable SQLite database caching

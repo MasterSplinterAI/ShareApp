@@ -498,7 +498,7 @@ class TranscriptionOnlyAgent:
                 logger.warning(f"{L} LLM_PROVIDER=xai but XAI_API_KEY not set — falling back")
                 return None
             try:
-                model = os.getenv("XAI_LLM_MODEL", "grok-4-1-fast-non-reasoning")
+                model = os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning")
                 inst = xai_plugin.responses.LLM(model=model)
                 logger.info(f"{L} LLM: xAI {model}")
                 return inst
