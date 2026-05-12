@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Video, Users, Loader2, Link2 } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
+import { Video, Users, Loader2, Link2, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService } from '../services/api';
 import NameModal from './NameModal';
 import InviteLinkModal from './InviteLinkModal';
+import { isV2EntryEnabled } from '../lib/featureFlags';
 
 function HomeScreen() {
   const navigate = useNavigate();
@@ -125,6 +126,15 @@ function HomeScreen() {
               </>
             )}
           </button>
+          {isV2EntryEnabled() && (
+            <Link
+              to="/v2/login"
+              className="w-full bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-200 font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 border border-indigo-800/60"
+            >
+              <Sparkles className="w-5 h-5" />
+              <span>Try V2 workspace</span>
+            </Link>
+          )}
         </div>
       </div>
 

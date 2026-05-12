@@ -13,6 +13,9 @@ const PORT = process.env.PORT || 3001;
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.NETWORK_URL,
+  process.env.STAGING_FRONTEND_URL,
+  'https://staging.jarmetals.com',
+  'https://share.jarmetals.com',
   'https://cockatoo-easy-similarly.ngrok.app', // Your custom ngrok domain
   'https://45304f934cbd.ngrok.app', // Previous ngrok URL
   'https://f46bc88e5f4e.ngrok.app', // Previous ngrok URL
@@ -65,9 +68,13 @@ const authRoutes = require('./routes/auth');
 const roomsRoutes = require('./routes/rooms');
 const translateRoutes = require('./routes/translate');
 
+const v2Routes = require('./routes/v2');
+const v2Database = require('./db/v2Database');
+
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateRoutes);
+app.use('/api/v2', v2Routes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -83,10 +90,17 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`LiveKit backend server running on port ${PORT}`);
-  console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
-  console.log(`Network URL: ${process.env.NETWORK_URL}`);
-  console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
-  console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
-});
+(async function start() {
+  try {
+    await v2Database.initDatabase();
+  } catch (e) {
+    console.error('[v2Database] init failed:', e.message);
+  }
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`LiveKit backend server running on port ${PORT}`);
+    console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
+    console.log(`Network URL: ${process.env.NETWORK_URL}`);
+    console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
+    console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
+  });
+})();

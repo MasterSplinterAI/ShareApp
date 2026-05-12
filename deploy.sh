@@ -112,6 +112,8 @@ if [ "$NEED_BACKEND_INSTALL" = true ] || [ ! -d "$BACKEND_DIR/node_modules" ]; t
     --exclude '.env.*' \
     --exclude 'node_modules' \
     --exclude 'translations.db' \
+    --exclude 'v2-platform.db' \
+    --exclude 'uploads' \
     "$TEMP_DIR/livekit-app/backend/" "$BACKEND_DIR/"
   cd "$BACKEND_DIR"
   npm install --production --prefer-offline --no-audit --silent
@@ -122,6 +124,8 @@ else
     --exclude '.env.*' \
     --exclude 'node_modules' \
     --exclude 'translations.db' \
+    --exclude 'v2-platform.db' \
+    --exclude 'uploads' \
     "$TEMP_DIR/livekit-app/backend/" "$BACKEND_DIR/"
 fi
 

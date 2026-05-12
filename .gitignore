@@ -42,3 +42,7 @@ livekit-app/translation-agent/venv/
 
 # Backup
 backup/
+
+# V2 SaaS local data (server may keep these outside git)
+livekit-app/backend/v2-platform.db
+livekit-app/backend/uploads/
