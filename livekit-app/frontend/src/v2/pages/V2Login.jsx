@@ -16,7 +16,7 @@ export default function V2Login() {
       const data = await v2Auth.login({ email, password });
       localStorage.setItem('v2_token', data.token);
       toast.success('Signed in');
-      navigate('/v2/app/meetings', { replace: true });
+      navigate('/v2/app', { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Login failed');
     } finally {

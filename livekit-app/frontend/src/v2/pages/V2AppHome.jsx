@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
+import toast from 'react-hot-toast';
 import { v2Orgs, v2Billing } from '../../services/apiV2';
 
 export default function V2AppHome() {
@@ -12,7 +13,9 @@ export default function V2AppHome() {
         setData(o);
         setSub(s);
       })
-      .catch(() => {});
+      .catch((e) => {
+        toast.error(e.response?.data?.error || 'Could not load workspace');
+      });
   }, []);
 
   return (
@@ -55,6 +58,13 @@ export default function V2AppHome() {
         >
           <h2 className="font-medium text-white mb-1">Files</h2>
           <p className="text-sm text-gray-500">Upload and download org-scoped attachments.</p>
+        </Link>
+        <Link
+          to="/v2/app/settings"
+          className="block rounded-xl border border-gray-800 bg-gray-800/40 p-5 hover:border-blue-500/50 transition-colors"
+        >
+          <h2 className="font-medium text-white mb-1">Settings</h2>
+          <p className="text-sm text-gray-500">Members and organization access.</p>
         </Link>
       </div>
       <div className="mt-8 rounded-xl border border-gray-800 bg-gray-800/20 p-5">

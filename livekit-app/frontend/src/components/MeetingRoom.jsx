@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LiveKitRoom, useRoomContext, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
+import { LiveKitRoom, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
-import { authService } from '../services/api';
+import { authService, joinPublicService } from '../services/api';
+import { v2Meetings, v2Usage } from '../services/apiV2';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
 import ChatPanel from './ChatPanel';
@@ -15,6 +16,31 @@ import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 // Autopilot Translator SDK — for DOM/UI translation (navigation, buttons, labels)
 import { AutopilotTranslator } from '../lib/autopilot-translator';
+
+function HostUsageReporter({ meetingId, isHost }) {
+  useEffect(() => {
+    if (!isHost || !meetingId || typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) {
+      return undefined;
+    }
+    const tick = () => {
+      v2Usage
+        .recordEvent({
+          event_type: 'meeting_participant_minute',
+          quantity: 1,
+          unit: 'minute',
+          meeting_id: meetingId,
+        })
+        .catch(() => {});
+    };
+    const initial = setTimeout(tick, 8000);
+    const id = setInterval(tick, 60000);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(id);
+    };
+  }, [meetingId, isHost]);
+  return null;
+}
 
 function MeetingRoom() {
   const { roomName } = useParams();
@@ -53,6 +79,8 @@ function MeetingRoom() {
     const hostCode = stateInfo.hostCode || sessionInfo.hostCode;
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
+    const meetingId = stateInfo.meetingId || sessionInfo.meetingId;
+    const inviteToken = stateInfo.inviteToken || sessionInfo.inviteToken;
     const selectedLanguage = normalizeMeetingLanguageCode(
       stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en'
     );
@@ -71,6 +99,8 @@ function MeetingRoom() {
       hostCode,
       shareableLink,
       shareableLinkNetwork,
+      meetingId,
+      inviteToken,
       selectedLanguage,
       spokenLanguage,
     });
@@ -88,11 +118,33 @@ function MeetingRoom() {
     if (!participantInfo) return;
 
     try {
-      const tokenData = await authService.getToken(
-        roomName,
-        participantInfo.participantName,
-        participantInfo.isHost
-      );
+      let tokenData;
+      const v2Tok = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
+      if (participantInfo.meetingId) {
+        if (participantInfo.isHost) {
+          if (!v2Tok) {
+            setError('Open the V2 app and sign in to host this meeting.');
+            toast.error('Sign in required for host');
+            return;
+          }
+          tokenData = await v2Meetings.token(participantInfo.meetingId, {
+            participantName: participantInfo.participantName,
+            isHost: true,
+          });
+        } else {
+          tokenData = await joinPublicService.guestToken({
+            roomName,
+            participantName: participantInfo.participantName,
+            inviteToken: participantInfo.inviteToken || '',
+          });
+        }
+      } else {
+        tokenData = await authService.getToken(
+          roomName,
+          participantInfo.participantName,
+          participantInfo.isHost
+        );
+      }
 
       if (!tokenData.token || typeof tokenData.token !== 'string') {
         throw new Error('Invalid token received from server');
@@ -189,12 +241,13 @@ function MeetingRoom() {
         participantInfo={participantInfo}
         roomName={roomName}
         onDisconnected={handleDisconnected}
+        meetingId={participantInfo.meetingId}
       />
     </MeetingProvider>
   );
 }
 
-function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisconnected }) {
+function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisconnected, meetingId }) {
   const {
     selectedLanguage,
     setSelectedLanguage,
@@ -282,6 +335,7 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         }}
         className="h-full flex flex-col"
       >
+        <HostUsageReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content area: video grid + optional transcription panel */}
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {/* Video grid takes remaining space */}

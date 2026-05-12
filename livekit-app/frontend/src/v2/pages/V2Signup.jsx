@@ -18,7 +18,7 @@ export default function V2Signup() {
       const data = await v2Auth.signup({ email, password, orgName, displayName: displayName || undefined });
       localStorage.setItem('v2_token', data.token);
       toast.success('Account created');
-      navigate('/v2/app/meetings', { replace: true });
+      navigate('/v2/app', { replace: true });
     } catch (err) {
       toast.error(err.response?.data?.error || 'Signup failed');
     } finally {

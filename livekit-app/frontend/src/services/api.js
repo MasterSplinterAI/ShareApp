@@ -103,6 +103,12 @@ export const translationService = {
   },
 };
 
+/** V2 public join preview + guest LiveKit token (no auth). */
+export const joinPublicService = {
+  joinInfo: (roomName, i) => api.get('/v2/join-info', { params: { roomName, i } }).then((r) => r.data),
+  guestToken: (body) => api.post('/v2/guest-token', body).then((r) => r.data),
+};
+
 /** Ephemeral in-meeting chat — bypasses SQLite cache (no_cache: true) */
 export const chatService = {
   translate: async (text, sourceLanguage, targetLanguage) => {

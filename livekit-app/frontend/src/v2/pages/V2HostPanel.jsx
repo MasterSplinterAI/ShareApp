@@ -7,6 +7,7 @@ export default function V2HostPanel() {
   const [selectedId, setSelectedId] = useState('');
   const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [exceptMuteIdentity, setExceptMuteIdentity] = useState('');
 
   useEffect(() => {
     v2Meetings
@@ -44,6 +45,27 @@ export default function V2HostPanel() {
     }
   };
 
+  const muteOne = async (identity) => {
+    try {
+      await v2Host.muteParticipant(selectedId, identity);
+      toast.success('Muted (server-side)');
+      refreshParticipants();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Mute failed');
+    }
+  };
+
+  const muteAll = async () => {
+    if (!selectedId) return;
+    try {
+      await v2Host.muteAll(selectedId, exceptMuteIdentity.trim() || undefined);
+      toast.success('Mute all sent');
+      refreshParticipants();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Mute all failed');
+    }
+  };
+
   const endMeeting = async () => {
     if (!selectedId) return;
     try {
@@ -75,6 +97,22 @@ export default function V2HostPanel() {
               </option>
             ))}
           </select>
+          <div className="mt-3 space-y-2">
+            <label className="block text-xs text-gray-500">Mute all except identity (optional)</label>
+            <input
+              value={exceptMuteIdentity}
+              onChange={(e) => setExceptMuteIdentity(e.target.value)}
+              placeholder="Your LiveKit display name / identity"
+              className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white text-sm"
+            />
+            <button
+              type="button"
+              onClick={muteAll}
+              className="w-full py-2 rounded-lg border border-amber-900/50 text-amber-400 hover:bg-amber-950/30 text-sm"
+            >
+              Mute all microphones
+            </button>
+          </div>
           <button
             type="button"
             onClick={endMeeting}
@@ -99,16 +137,17 @@ export default function V2HostPanel() {
               {participants.map((p) => (
                 <li
                   key={p.sid || p.identity}
-                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/30 px-3 py-2"
+                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/30 px-3 py-2 gap-2"
                 >
                   <span className="text-sm text-gray-200 truncate">{p.name || p.identity}</span>
-                  <button
-                    type="button"
-                    onClick={() => remove(p.identity)}
-                    className="text-xs text-red-400 hover:text-red-300 shrink-0 ml-2"
-                  >
-                    Remove
-                  </button>
+                  <div className="flex shrink-0 gap-2">
+                    <button type="button" onClick={() => muteOne(p.identity)} className="text-xs text-amber-400 hover:text-amber-300">
+                      Mute
+                    </button>
+                    <button type="button" onClick={() => remove(p.identity)} className="text-xs text-red-400 hover:text-red-300">
+                      Remove
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

@@ -1,24 +1,47 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Loader2, AlertCircle, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { roomService } from '../services/api';
+import { roomService, joinPublicService } from '../services/api';
 import NameModal from './NameModal';
 
 function JoinMeeting() {
   const { roomName } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const inviteFromUrl = searchParams.get('i') || '';
+  const pollRef = useRef(null);
+
   const [isLoading, setIsLoading] = useState(true);
   const [roomInfo, setRoomInfo] = useState(null);
   const [error, setError] = useState(null);
   const [showNameModal, setShowNameModal] = useState(false);
   const [isInviteLink, setIsInviteLink] = useState(false);
   const [isStartingRoom, setIsStartingRoom] = useState(false);
+  const [v2Context, setV2Context] = useState(null);
+  const [waitingHost, setWaitingHost] = useState(false);
 
   useEffect(() => {
-    console.log('JoinMeeting: Component mounted with roomName:', roomName);
     checkRoom();
-  }, [roomName]);
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomName, inviteFromUrl]);
+
+  const proceedAfterV2Allowed = async () => {
+    try {
+      const info = await roomService.getInfo(roomName);
+      setRoomInfo(info);
+      setShowNameModal(true);
+    } catch (e) {
+      if (e.response?.status === 404) {
+        setError('Meeting room is not available yet. Ask the host to start the meeting from the dashboard.');
+      } else {
+        setError('Failed to connect to the meeting.');
+      }
+    }
+  };
 
   const checkRoom = async () => {
     if (!roomName || roomName === 'room') {
@@ -28,13 +51,53 @@ function JoinMeeting() {
     }
 
     try {
+      const joinPreview = await joinPublicService.joinInfo(roomName, inviteFromUrl);
+      if (joinPreview.mode === 'v2') {
+        if (!joinPreview.allowed && joinPreview.reason === 'waiting_for_host') {
+          setWaitingHost(true);
+          setV2Context({ meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl });
+          setIsLoading(false);
+          if (!pollRef.current) {
+            pollRef.current = setInterval(async () => {
+              try {
+                const j = await joinPublicService.joinInfo(roomName, inviteFromUrl);
+                if (j.allowed) {
+                  clearInterval(pollRef.current);
+                  pollRef.current = null;
+                  setWaitingHost(false);
+                  await proceedAfterV2Allowed();
+                }
+              } catch {
+                /* ignore */
+              }
+            }, 4000);
+          }
+          return;
+        }
+        if (!joinPreview.allowed) {
+          const msg =
+            joinPreview.reason === 'invite_required'
+              ? 'This meeting requires a full invite link (with ?i= token).'
+              : joinPreview.reason === 'invalid_invite' || joinPreview.reason === 'invite_expired'
+                ? 'This invite link is invalid or has expired.'
+                : joinPreview.reason === 'meeting_ended'
+                  ? 'This meeting has ended.'
+                  : 'You cannot join this meeting.';
+          setError(msg);
+          setIsLoading(false);
+          return;
+        }
+        setV2Context({ meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl });
+        await proceedAfterV2Allowed();
+        return;
+      }
+
       const info = await roomService.getInfo(roomName);
       setRoomInfo(info);
       setShowNameModal(true);
-    } catch (error) {
-      console.error('Failed to check room:', error);
-      if (error.response?.status === 404) {
-        // Room doesn't exist yet -- could be an invite link
+    } catch (err) {
+      console.error('Failed to check room:', err);
+      if (err.response?.status === 404) {
         setIsInviteLink(true);
       } else {
         setError('Failed to connect to the meeting. Please try again.');
@@ -61,10 +124,6 @@ function JoinMeeting() {
 
   const handleNameSubmit = (name, selectedLanguage = 'en', spokenLanguage = null) => {
     const spoken = spokenLanguage ?? selectedLanguage;
-    console.log('JoinMeeting: handleNameSubmit called with name:', name, 'language:', selectedLanguage, 'spoken:', spoken, 'roomName:', roomName);
-    
-    // Store participant info in sessionStorage to persist across navigation
-    // Include roomMode from roomInfo if available
     const isHost = !!roomInfo?.hostCode;
     const participantInfo = {
       participantName: name,
@@ -72,25 +131,21 @@ function JoinMeeting() {
       hostCode: roomInfo?.hostCode,
       shareableLink: roomInfo?.shareableLink,
       shareableLinkNetwork: roomInfo?.shareableLinkNetwork,
-      roomName: roomName,
+      roomName,
       roomMode: roomInfo?.roomMode || 'multi-language',
-      selectedLanguage: selectedLanguage,
-      spokenLanguage: spoken
+      selectedLanguage,
+      spokenLanguage: spoken,
+      meetingId: v2Context?.meetingId,
+      inviteToken: v2Context?.inviteToken || inviteFromUrl,
     };
-    
+
     sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-    console.log('JoinMeeting: Saved to sessionStorage:', participantInfo);
-    console.log('JoinMeeting: Verifying sessionStorage:', sessionStorage.getItem('participantInfo'));
-    
-    // Use replace: false to ensure proper navigation
-    // Use a small delay to ensure sessionStorage is written
+
     setTimeout(() => {
-      const search = window.location.search; // Preserve ?debug=1
-      console.log('JoinMeeting: Navigating to:', `/room/${roomName}${search}`);
-      console.log('JoinMeeting: SessionStorage before nav:', sessionStorage.getItem('participantInfo'));
-      navigate(`/room/${roomName}${search}`, { 
+      const search = window.location.search;
+      navigate(`/room/${roomName}${search}`, {
         state: participantInfo,
-        replace: false
+        replace: false,
       });
     }, 10);
   };
@@ -106,17 +161,37 @@ function JoinMeeting() {
     );
   }
 
+  if (waitingHost) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-lg p-8 text-center">
+          <Users className="w-16 h-16 text-amber-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-semibold text-white mb-2">Waiting for host</h2>
+          <p className="text-gray-400 mb-6">
+            The organizer has not opened this meeting yet. This page will refresh automatically.
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-6 rounded-lg transition-colors"
+          >
+            Go to Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (isInviteLink) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
         <div className="max-w-md w-full bg-gray-800 rounded-lg p-8 text-center">
           <Video className="w-16 h-16 text-blue-400 mx-auto mb-4" />
           <h2 className="text-2xl font-semibold text-white mb-2">Meeting Invite</h2>
-          <p className="text-gray-400 mb-6">
-            This meeting hasn't started yet. Start it now?
-          </p>
+          <p className="text-gray-400 mb-6">This meeting hasn&apos;t started yet. Start it now?</p>
           <div className="space-y-3">
             <button
+              type="button"
               onClick={handleStartInviteRoom}
               disabled={isStartingRoom}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
@@ -134,6 +209,7 @@ function JoinMeeting() {
               )}
             </button>
             <button
+              type="button"
               onClick={() => navigate('/')}
               className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-6 rounded-lg transition-colors"
             >
@@ -153,6 +229,7 @@ function JoinMeeting() {
           <h2 className="text-2xl font-semibold text-white mb-2">Unable to Join</h2>
           <p className="text-gray-400 mb-6">{error}</p>
           <button
+            type="button"
             onClick={() => navigate('/')}
             className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors"
           >

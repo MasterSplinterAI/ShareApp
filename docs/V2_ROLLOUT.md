@@ -26,6 +26,14 @@
 | `VITE_V2_ENTRY_ENABLED` | When `true`, classic home shows **Try V2 workspace** (default omit/`false` in prod until ready) |
 | `VITE_API_URL` | Optional override for API base (usually leave default `/api` behind nginx) |
 
+### Backend feature flags (runtime)
+
+| Variable | Purpose |
+|----------|---------|
+| `V2_DEFAULT_REQUIRE_INVITE` | When not `0`, new meetings require `?i=` invite token for guests (default on). Set to `0` to allow room-name-only guest links for new meetings. |
+| `V2_DEFAULT_INVITE_TTL_DAYS` | Default expiry for auto-created “Default guest link” (default `7`). |
+| `V2_SUPERADMIN_EMAILS` | Comma-separated emails allowed to call `GET /api/v2/orgs/admin/*` platform routes. |
+
 ## Rollout checklist
 
 1. Deploy backend with new dependencies: `npm install` in `livekit-app/backend` (includes `bcryptjs`, `multer`, `jsonwebtoken` already).
@@ -39,6 +47,13 @@
 
 - `v2-platform.db` (SQLite) and `uploads/v2/` are **excluded from rsync delete** in `deploy.sh` / `deploy-staging.sh` so deploys do not wipe tenant data.
 - Back up `v2-platform.db` with your normal server backup policy.
+- **Scale note:** SQLite is appropriate for early SaaS; for larger multi-tenant admin workloads plan a managed PostgreSQL migration (schema mirrors `v2_*` tables).
+
+## Meeting policies and invite links
+
+- New meetings (after this release) get a `v2_meeting_policies` row and, when `V2_DEFAULT_REQUIRE_INVITE` is on, a **Default guest link** with expiry.
+- Public join preview: `GET /api/v2/join-info?roomName=&i=` (no auth). Guest LiveKit token: `POST /api/v2/guest-token` with `{ roomName, participantName, inviteToken }`.
+- Org members: `GET/POST/PATCH/DELETE /api/v2/orgs/members*`. Platform admin: `GET /api/v2/orgs/admin/ping`, `GET /api/v2/orgs/admin/orgs`, `PATCH /api/v2/orgs/admin/orgs/:orgId` (superadmin emails only).
 
 ## Auto-charge (later)
 

@@ -7,6 +7,7 @@ export default function V2Schedule() {
   const navigate = useNavigate();
   const [title, setTitle] = useState('');
   const [start, setStart] = useState('');
+  const [hostRequired, setHostRequired] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const submit = async (e) => {
@@ -17,6 +18,7 @@ export default function V2Schedule() {
       const m = await v2Meetings.create({
         title: title || 'Scheduled meeting',
         scheduled_start: iso,
+        host_required_to_start: hostRequired,
       });
       toast.success(m.status === 'scheduled' ? 'Scheduled' : 'Meeting created');
       navigate(`/v2/app/meetings/${m.id}`);
@@ -50,6 +52,10 @@ export default function V2Schedule() {
             className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white"
           />
         </div>
+        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+          <input type="checkbox" checked={hostRequired} onChange={(e) => setHostRequired(e.target.checked)} />
+          Guests wait until host joins first
+        </label>
         <button
           type="submit"
           disabled={loading}

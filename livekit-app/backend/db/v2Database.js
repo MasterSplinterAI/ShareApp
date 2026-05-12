@@ -183,6 +183,38 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_files_org ON v2_files(org_id)`);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_policies (
+      meeting_id TEXT PRIMARY KEY,
+      host_required_to_start INTEGER NOT NULL DEFAULT 0,
+      require_invite_token INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_invite_links (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      label TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      reusable INTEGER NOT NULL DEFAULT 0,
+      use_count INTEGER NOT NULL DEFAULT 0,
+      max_uses INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_invite_meeting ON v2_meeting_invite_links(meeting_id)`);
+
+  const cols = await all(`PRAGMA table_info(v2_meetings)`);
+  const colNames = new Set((cols || []).map((c) => c.name));
+  if (!colNames.has('host_present')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN host_present INTEGER NOT NULL DEFAULT 1`);
+  }
+
   const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);
   if (!planCount || planCount.c === 0) {
     await run(
