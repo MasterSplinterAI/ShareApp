@@ -25,20 +25,22 @@ export default function V2MeetingDetail() {
       toast.error('Enter display name');
       return;
     }
+    if (!meeting) return;
+    const share = `${window.location.origin}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
     try {
       const tok = await v2Meetings.token(id, { participantName: name.trim(), isHost: true });
       const participantInfo = {
         isHost: true,
         participantName: name.trim(),
         hostCode: meeting.host_code,
-        shareableLink: meeting.joinUrl,
-        shareableLinkNetwork: meeting.joinUrl,
+        shareableLink: share,
+        shareableLinkNetwork: share,
         roomName: meeting.livekit_room_name,
         selectedLanguage: 'en',
         spokenLanguage: 'en',
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      navigate(`/room/${meeting.livekit_room_name}${window.location.search || ''}`);
+      navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${window.location.search || ''}`);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Token failed');
     }
@@ -47,6 +49,8 @@ export default function V2MeetingDetail() {
   if (!meeting) {
     return <p className="text-gray-500 text-sm">Loading…</p>;
   }
+
+  const guestJoinUrl = `${window.location.origin}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
 
   return (
     <div className="max-w-xl">
@@ -61,12 +65,12 @@ export default function V2MeetingDetail() {
       <div className="rounded-lg border border-gray-800 bg-gray-800/30 p-4 mb-6">
         <p className="text-xs text-gray-500 mb-2">Guest join URL</p>
         <a
-          href={meeting.joinUrl}
+          href={guestJoinUrl}
           target="_blank"
           rel="noreferrer"
           className="text-blue-400 text-sm break-all inline-flex items-center gap-1 hover:text-blue-300"
         >
-          {meeting.joinUrl}
+          {guestJoinUrl}
           <ExternalLink className="w-3 h-3 shrink-0" />
         </a>
       </div>

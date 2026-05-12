@@ -5,14 +5,7 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { createLiveKitConferenceRoom } = require('../../lib/livekitService');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
-
-function shareBaseUrl(req) {
-  const origin = req.headers.origin || req.headers.referer || '';
-  if (origin && !origin.includes('localhost')) {
-    return origin.replace(/\/$/, '');
-  }
-  return (process.env.FRONTEND_URL || 'http://localhost:5174').replace(/\/$/, '');
-}
+const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 
 router.post('/', requireV2Auth, async (req, res) => {
   try {
@@ -48,13 +41,13 @@ router.post('/', requireV2Auth, async (req, res) => {
         JSON.stringify({ source: 'v2' }),
       ]
     );
-    const base = shareBaseUrl(req);
+    const base = publicFrontendBaseUrl(req);
     res.status(201).json({
       id: meetingId,
       livekitRoomName: roomName,
       hostCode,
       status,
-      joinUrl: `${base}/join/${roomName}`,
+      joinUrl: `${base}/join/${encodeURIComponent(roomName)}`,
       title: title || 'Meeting',
     });
   } catch (e) {
@@ -83,10 +76,10 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       [req.params.id, req.v2Auth.orgId]
     );
     if (!row) return res.status(404).json({ error: 'Not found' });
-    const base = shareBaseUrl(req);
+    const base = publicFrontendBaseUrl(req);
     res.json({
       ...row,
-      joinUrl: `${base}/join/${row.livekit_room_name}`,
+      joinUrl: `${base}/join/${encodeURIComponent(row.livekit_room_name)}`,
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });

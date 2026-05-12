@@ -1,5 +1,6 @@
 const express = require('express');
 const { createLiveKitConferenceRoom, getRoomService } = require('../lib/livekitService');
+const { publicFrontendBaseUrl } = require('../lib/publicFrontendBaseUrl');
 const router = express.Router();
 
 // Create a new room
@@ -12,26 +13,16 @@ router.post('/create', async (req, res) => {
     // Generate host code for easy rejoin
     const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     
-    // Generate shareable links based on request origin
-    const origin = req.headers.origin || req.headers.referer || '';
-    const isNgrok = origin.includes('ngrok.app') || origin.includes('ngrok.io');
-    
-    let shareableLink, shareableLinkNetwork;
-    
-    if (isNgrok) {
-      // Extract ngrok domain from origin
-      const ngrokUrl = origin.replace(/\/$/, ''); // Remove trailing slash
-      shareableLink = `${ngrokUrl}/join/${roomName}`;
-      shareableLinkNetwork = `${ngrokUrl}/join/${roomName}`;
-    } else {
-      const localhostUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-      const networkUrl = process.env.NETWORK_URL || 'http://192.168.1.83:5174';
-      shareableLink = `${localhostUrl}/join/${roomName}`;
-      shareableLinkNetwork = `${networkUrl}/join/${roomName}`;
+    const base = publicFrontendBaseUrl(req);
+    const shareableLink = `${base}/join/${encodeURIComponent(roomName)}`;
+    let shareableLinkNetwork = shareableLink;
+    if (base.includes('localhost') || base.includes('127.0.0.1')) {
+      const networkUrl = (process.env.NETWORK_URL || 'http://192.168.1.83:5174').replace(/\/$/, '');
+      shareableLinkNetwork = `${networkUrl}/join/${encodeURIComponent(roomName)}`;
     }
-    
+
     console.log('Created LiveKit room:', roomName);
-    console.log('Request origin:', origin);
+    console.log('Share base URL:', base);
     console.log('Shareable link:', shareableLink);
     
     // Parse metadata to include roomMode
@@ -157,19 +148,8 @@ router.post('/invite', async (req, res) => {
   try {
     const slug = `invite-${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
 
-    const origin = req.headers.origin || req.headers.referer || '';
-    const isNgrok = origin.includes('ngrok.app') || origin.includes('ngrok.io');
-
-    let inviteLink;
-    if (isNgrok) {
-      const ngrokUrl = origin.replace(/\/$/, '');
-      inviteLink = `${ngrokUrl}/join/${slug}`;
-    } else if (process.env.PRODUCTION_URL) {
-      inviteLink = `${process.env.PRODUCTION_URL}/join/${slug}`;
-    } else {
-      const localhostUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-      inviteLink = `${localhostUrl}/join/${slug}`;
-    }
+    const base = publicFrontendBaseUrl(req);
+    const inviteLink = `${base}/join/${encodeURIComponent(slug)}`;
 
     console.log('Created invite link:', inviteLink, 'slug:', slug);
 
