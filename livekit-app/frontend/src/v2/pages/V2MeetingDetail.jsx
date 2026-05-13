@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
 import { getMeetingUiState } from '../lib/meetingState';
@@ -29,9 +29,12 @@ const MEETING_LANGUAGES = getMeetingLanguages();
 export default function V2MeetingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const autoJoinIntent = searchParams.get('join') === '1';
   const [meeting, setMeeting] = useState(null);
   const [me, setMe] = useState(null);
   const [name, setName] = useState('');
+  const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(() => normalizeMeetingLanguageCode('en'));
   const [langOpen, setLangOpen] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
@@ -60,9 +63,31 @@ export default function V2MeetingDetail() {
   useEffect(() => {
     v2Auth
       .me()
-      .then((r) => setMe(r))
+      .then((r) => {
+        setMe(r);
+        if (!name) {
+          const fallback = r?.user?.display_name || r?.user?.displayName || r?.user?.email?.split('@')[0] || '';
+          if (fallback) setName(fallback);
+        }
+      })
       .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const hostShareUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}/v2/app/meetings/${id}?join=1`;
+  }, [id]);
+
+  const copyHostLink = async () => {
+    if (!hostShareUrl) return;
+    try {
+      await navigator.clipboard.writeText(hostShareUrl);
+      toast.success('Copied host link — only meeting hosts can use it');
+    } catch {
+      toast.error('Could not copy host link');
+    }
+  };
 
   useEffect(() => {
     if (!meeting?.inviteMaxTtlHours) return;
@@ -193,11 +218,31 @@ export default function V2MeetingDetail() {
         spokenLanguage: selectedLanguage,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${window.location.search || ''}`);
+      const next = new URLSearchParams(window.location.search);
+      next.delete('join');
+      const qs = next.toString();
+      navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${qs ? `?${qs}` : ''}`);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Token failed');
     }
   };
+
+  useEffect(() => {
+    if (!autoJoinIntent) return;
+    if (autoJoinTriggered) return;
+    if (!meeting || !me) return;
+    if (!name.trim()) return;
+    if (meeting.host_user_id && me?.user?.id && meeting.host_user_id !== me.user.id) {
+      toast.error('This host link only works for the meeting host');
+      const next = new URLSearchParams(searchParams);
+      next.delete('join');
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    setAutoJoinTriggered(true);
+    joinAsHost();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoJoinIntent, autoJoinTriggered, meeting?.host_user_id, me?.user?.id, name]);
 
   const downloadTranscriptJson = async () => {
     try {
@@ -277,6 +322,8 @@ export default function V2MeetingDetail() {
       langOpen={langOpen}
       setLangOpen={setLangOpen}
       onJoinAsHost={joinAsHost}
+      hostShareUrl={hostShareUrl}
+      onCopyHostLink={copyHostLink}
     />
   );
 

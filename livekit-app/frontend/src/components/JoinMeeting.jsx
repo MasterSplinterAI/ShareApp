@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Loader2, AlertCircle, Video } from 'lucide-react';
+import { Users, Loader2, AlertCircle, Video, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService, joinPublicService } from '../services/api';
 import NameModal from './NameModal';
@@ -175,17 +175,25 @@ function JoinMeeting() {
       <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <Card className="w-full max-w-md text-center">
           <CardHeader>
-            <Users className="mx-auto mb-2 h-16 w-16 text-amber-500" />
-            <CardTitle>Waiting for host</CardTitle>
-            <CardDescription>
-              The organizer has not opened this meeting yet. This page will refresh automatically.
+            <div className="relative mx-auto mb-2 inline-flex h-16 w-16 items-center justify-center">
+              <Clock className="h-12 w-12 text-amber-500" />
+              <Loader2 className="absolute -right-1 -top-1 h-5 w-5 animate-spin text-primary" />
+            </div>
+            <CardTitle>Waiting for the host</CardTitle>
+            <CardDescription className="space-y-2">
+              <span className="block">
+                You&apos;re in the queue — this page checks every few seconds and will let you in as soon as the host opens the room.
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                Stay on this page; you don&apos;t need to refresh manually.
+              </span>
             </CardDescription>
           </CardHeader>
           <CardFooter className="justify-center">
-            <Button type="button" variant="secondary" className="w-full" onClick={goHome}>
+            <Button type="button" variant="ghost" className="w-full" onClick={goHome}>
               {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
-                ? 'Open workspace'
-                : 'Back to home'}
+                ? 'Cancel and open workspace'
+                : 'Cancel and go home'}
             </Button>
           </CardFooter>
         </Card>
