@@ -14,13 +14,13 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
   const tabBtn = (active) =>
     `flex items-center gap-1.5 ${compact ? 'px-2 py-1' : 'px-3 py-1.5'} rounded-md transition-colors ${tabText} font-medium ${
       active
-        ? 'bg-gray-700 text-white'
-        : 'text-gray-400 hover:text-white hover:bg-gray-700/50'
+        ? 'bg-muted text-foreground'
+        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
     }`;
 
   return (
     <div
-      className={`flex items-center justify-between ${padding} bg-gray-800 border-b border-gray-700 flex-shrink-0 rounded-t-xl sm:rounded-none`}
+      className={`flex items-center justify-between ${padding} border-b border-border bg-muted/30 flex-shrink-0 rounded-t-xl sm:rounded-none`}
     >
       <div className="flex items-center gap-1">
         <button
@@ -70,7 +70,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             type="button"
             onClick={onDownload}
             disabled={!canDownload}
-            className="text-gray-400 hover:text-white transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label="Download transcript"
             title="Download transcript"
           >
@@ -80,7 +80,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
         <button
           type="button"
           onClick={closeSidePanel}
-          className="text-gray-400 hover:text-white transition-colors p-1"
+          className="text-muted-foreground hover:text-foreground transition-colors p-1"
           aria-label="Close panel"
         >
           <X className="w-4 h-4" />

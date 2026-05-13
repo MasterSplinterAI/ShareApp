@@ -302,7 +302,7 @@ function TranscriptionPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/90 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9999] flex flex-col"
+        className="fixed bottom-20 right-4 w-96 max-h-80 border border-border bg-card/95 backdrop-blur-md rounded-xl shadow-2xl z-[9999] flex flex-col"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
@@ -327,7 +327,7 @@ function TranscriptionPanel() {
     <>
       {/* Desktop: right side panel */}
       <div
-        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] bg-gray-900 border-l border-gray-700 h-full flex-shrink-0"
+        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] bg-card border-l border-border h-full flex-shrink-0"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
@@ -351,7 +351,7 @@ function TranscriptionPanel() {
         />
       ) : (
         <div
-          className="sm:hidden fixed bottom-12 left-0 right-0 bg-gray-900 border-t border-gray-700 rounded-t-xl z-40 flex flex-col"
+          className="sm:hidden fixed bottom-12 left-0 right-0 bg-card border-t border-border rounded-t-xl z-40 flex flex-col"
           style={{ maxHeight: '45vh' }}
           data-no-translate="true"
         >
@@ -423,17 +423,17 @@ function TranscriptionBubble({
     normalize(sourceLanguage) !== normalize(selectedLanguage);
 
   return (
-    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-gray-700/50 last:border-b-0`}>
+    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0`}>
       <div className="flex items-baseline gap-2 mb-1">
-        <span className={`font-medium text-blue-400 ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
+        <span className={`font-medium text-primary ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
         {isPartial ? (
-          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500">
-            <span className="inline-block w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
+          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
             {isPendingTranslation ? 'translating' : 'live'}
           </span>
         ) : (
           timestamp && (
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-muted-foreground">
               {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )
@@ -442,24 +442,24 @@ function TranscriptionBubble({
 
       {dominant && (
         <p
-          className={`break-words leading-relaxed bg-gray-800/50 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-gray-100 ${
-            isPendingTranslation ? 'italic text-gray-400' : ''
+          className={`break-words leading-relaxed bg-muted/40 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-foreground ${
+            isPendingTranslation ? 'italic text-muted-foreground' : ''
           }`}
         >
           {isPendingTranslation && sourceLanguage && (
-            <span className="text-gray-500 not-italic mr-1">[{getLanguageLabel(sourceLanguage)}]</span>
+            <span className="text-muted-foreground not-italic mr-1">[{getLanguageLabel(sourceLanguage)}]</span>
           )}
           {dominant}
           {isPartial && (
-            <span className="inline-block w-1.5 h-4 bg-blue-400 ml-1 animate-pulse rounded-sm align-middle" />
+            <span className="inline-block w-1.5 h-4 bg-primary ml-1 animate-pulse rounded-sm align-middle" />
           )}
         </p>
       )}
 
       {secondary && (
-        <p className={`text-gray-400 break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} opacity-70`}>
+        <p className={`text-muted-foreground break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} opacity-70`}>
           {secondaryLang && (
-            <span className="text-gray-500 mr-1">[{getLanguageLabel(secondaryLang)}]</span>
+            <span className="text-muted-foreground mr-1">[{getLanguageLabel(secondaryLang)}]</span>
           )}
           {secondary}
         </p>
@@ -478,7 +478,7 @@ function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact
       className={`flex-1 overflow-y-auto ${compact ? 'p-2 space-y-1.5' : 'p-4 space-y-3'}`}
     >
       {!hasContent && (
-        <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+        <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
           <MessageSquare className="w-8 h-8 mb-3 opacity-50" />
           <p className={`text-center ${compact ? 'text-xs' : 'text-sm'}`}>Waiting for speech...</p>
         </div>
@@ -516,17 +516,17 @@ function MobileCaptionBar({ text, onExpand, hasContent }) {
     >
       <button
         onClick={onExpand}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-gray-800/95 backdrop-blur-sm border-t border-gray-700 text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 bg-card/95 backdrop-blur-sm border-t border-border text-left"
       >
-        <MessageSquare className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+        <MessageSquare className="w-3.5 h-3.5 text-primary flex-shrink-0" />
         {text ? (
-          <span className="text-xs text-gray-200 truncate flex-1">{text}</span>
+          <span className="text-xs text-foreground truncate flex-1">{text}</span>
         ) : (
-          <span className="text-xs text-gray-500 truncate flex-1">
+          <span className="text-xs text-muted-foreground truncate flex-1">
             {hasContent ? 'Tap to view captions' : 'Waiting for speech...'}
           </span>
         )}
-        <ChevronUp className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+        <ChevronUp className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
       </button>
     </div>
   );
@@ -534,10 +534,10 @@ function MobileCaptionBar({ text, onExpand, hasContent }) {
 
 function JumpToLatest({ onClick }) {
   return (
-    <div className="flex justify-center py-1 border-t border-gray-700/50">
+    <div className="flex justify-center py-1 border-t border-border/50">
       <button
         onClick={onClick}
-        className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors px-3 py-1"
+        className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors px-3 py-1"
       >
         <ChevronDown className="w-3 h-3" />
         Jump to latest

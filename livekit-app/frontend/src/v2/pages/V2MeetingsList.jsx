@@ -4,6 +4,20 @@ import toast from 'react-hot-toast';
 import { Plus } from 'lucide-react';
 import { v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent } from '../../components/ui/card';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Switch } from '../../components/ui/switch';
+import { DatetimePicker } from '../../components/ui/datetime-picker';
 
 export default function V2MeetingsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -13,7 +27,7 @@ export default function V2MeetingsList() {
   const [newTitle, setNewTitle] = useState('Instant meeting');
   const [hostRequired, setHostRequired] = useState(false);
   const [storeTranscripts, setStoreTranscripts] = useState(false);
-  const [scheduledStart, setScheduledStart] = useState('');
+  const [scheduledDate, setScheduledDate] = useState(undefined);
 
   const load = () => {
     v2Meetings
@@ -32,7 +46,7 @@ export default function V2MeetingsList() {
       setNewTitle('Instant meeting');
       setHostRequired(false);
       setStoreTranscripts(false);
-      setScheduledStart('');
+      setScheduledDate(undefined);
       setShowCreate(true);
       const next = new URLSearchParams(searchParams);
       next.delete('create');
@@ -44,13 +58,14 @@ export default function V2MeetingsList() {
     setNewTitle('Instant meeting');
     setHostRequired(false);
     setStoreTranscripts(false);
-    setScheduledStart('');
+    setScheduledDate(undefined);
     setShowCreate(true);
   };
 
   const createNow = async () => {
     try {
-      const iso = scheduledStart.trim() ? new Date(scheduledStart).toISOString() : null;
+      const iso =
+        scheduledDate instanceof Date && !Number.isNaN(scheduledDate.getTime()) ? scheduledDate.toISOString() : null;
       const m = await v2Meetings.create({
         title: newTitle.trim() || 'Meeting',
         host_required_to_start: hostRequired,
@@ -66,83 +81,94 @@ export default function V2MeetingsList() {
   };
 
   return (
-    <div>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+    <div className="space-y-8">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-semibold text-white">Meetings</h1>
-          <p className="text-gray-500 text-sm mt-1">Create instant or scheduled meetings, invite guests, join as host.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Meetings</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Create instant or scheduled meetings, invite guests, join as host.</p>
         </div>
-        <button
-          type="button"
-          onClick={openCreateModal}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" />
+        <Button onClick={openCreateModal} className="gap-2 shrink-0">
+          <Plus className="h-4 w-4" />
           New meeting
-        </button>
+        </Button>
       </div>
 
-      {showCreate && (
-        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl max-h-[90vh] overflow-y-auto">
-            <h2 className="text-lg font-medium text-white mb-4">Create meeting</h2>
-            <label className="block text-xs text-gray-500 mb-1">Title</label>
-            <input
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-white mb-4"
-            />
-            <label className="block text-xs text-gray-500 mb-1">Start time (optional)</label>
-            <p className="text-xs text-gray-600 mb-1">Leave empty for an instant meeting. Set a future time to schedule.</p>
-            <input
-              type="datetime-local"
-              value={scheduledStart}
-              onChange={(e) => setScheduledStart(e.target.value)}
-              className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-white mb-4"
-            />
-            <label className="flex items-center gap-2 text-sm text-gray-300 mb-3 cursor-pointer">
-              <input type="checkbox" checked={hostRequired} onChange={(e) => setHostRequired(e.target.checked)} />
-              Guests wait until you join first
-            </label>
-            <label className="flex items-center gap-2 text-sm text-gray-300 mb-6 cursor-pointer">
-              <input type="checkbox" checked={storeTranscripts} onChange={(e) => setStoreTranscripts(e.target.checked)} />
-              Save transcript on server (host uploads finalized captions during the meeting)
-            </label>
-            <div className="flex gap-2 justify-end">
-              <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">
-                Cancel
-              </button>
-              <button type="button" onClick={createNow} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium">
-                Create
-              </button>
+      <Dialog open={showCreate} onOpenChange={setShowCreate}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create meeting</DialogTitle>
+            <DialogDescription>Optional schedule, host gate, and transcript storage.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="mtitle">Title</Label>
+              <Input id="mtitle" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <Label>Start time (optional)</Label>
+              <p className="text-xs text-muted-foreground">Leave unset for an instant meeting.</p>
+              <DatetimePicker value={scheduledDate} onChange={setScheduledDate} placeholder="Instant — add date & time to schedule" />
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="host-wait" className="text-sm">
+                  Guests wait for host
+                </Label>
+                <p className="text-xs text-muted-foreground">Guests enter only after you open the session.</p>
+              </div>
+              <Switch id="host-wait" checked={hostRequired} onCheckedChange={setHostRequired} />
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+              <div className="space-y-0.5">
+                <Label htmlFor="store-tr" className="text-sm">
+                  Save transcript on server
+                </Label>
+                <p className="text-xs text-muted-foreground">Host uploads finalized captions during the meeting.</p>
+              </div>
+              <Switch id="store-tr" checked={storeTranscripts} onCheckedChange={setStoreTranscripts} />
             </div>
           </div>
-        </div>
-      )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={createNow}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {loading ? (
-        <p className="text-gray-500 text-sm">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : meetings.length === 0 ? (
-        <p className="text-gray-500 text-sm">No meetings yet. Use &quot;New meeting&quot; above to create one.</p>
+        <Card className="border-dashed border-border/80 bg-muted/10">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No meetings yet. Use &quot;New meeting&quot; above to create one.
+          </CardContent>
+        </Card>
       ) : (
         <ul className="space-y-2">
           {meetings.map((m) => {
             const ui = getMeetingUiState(m);
             return (
               <li key={m.id}>
-                <Link
-                  to={`/v2/app/meetings/${m.id}`}
-                  className="flex items-center justify-between rounded-lg border border-gray-800 bg-gray-800/30 px-4 py-3 hover:border-gray-600 transition-colors gap-3"
-                >
-                  <div className="min-w-0">
-                    <span className="text-white font-medium block truncate">{m.title || m.livekit_room_name}</span>
-                    {m.scheduled_start && (
-                      <span className="text-xs text-gray-500 block mt-0.5">
-                        {new Date(m.scheduled_start).toLocaleString()}
+                <Link to={`/v2/app/meetings/${m.id}`}>
+                  <Card className="border-border/80 transition-colors hover:border-primary/25 hover:bg-muted/15">
+                    <CardContent className="flex items-center justify-between gap-3 p-4">
+                      <div className="min-w-0">
+                        <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>
+                        {m.scheduled_start && (
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {new Date(m.scheduled_start).toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <span className={`shrink-0 rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
+                        {ui.label}
                       </span>
-                    )}
-                  </div>
-                  <span className={`text-xs uppercase shrink-0 rounded border px-2 py-0.5 ${toneClasses(ui.tone)}`}>{ui.label}</span>
+                    </CardContent>
+                  </Card>
                 </Link>
               </li>
             );

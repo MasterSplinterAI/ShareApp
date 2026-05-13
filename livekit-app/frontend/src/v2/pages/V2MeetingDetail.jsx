@@ -5,6 +5,22 @@ import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check, PhoneOff,
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
 import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Switch } from '../../components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../components/ui/alert-dialog';
 
 const MEETING_LANGUAGES = getMeetingLanguages();
 
@@ -20,6 +36,8 @@ export default function V2MeetingDetail() {
   const [newInviteHours, setNewInviteHours] = useState(72);
   const [newInviteReusable, setNewInviteReusable] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const load = () =>
     v2Meetings
@@ -86,23 +104,23 @@ export default function V2MeetingDetail() {
     }
   };
 
-  const archiveMeeting = async () => {
-    if (!window.confirm('Archive this meeting? It will stay in your list as archived.')) return;
+  const runArchive = async () => {
     try {
       await v2Meetings.patch(id, { status: 'archived' });
       toast.success('Archived');
+      setArchiveOpen(false);
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
     }
   };
 
-  const endMeeting = async () => {
-    if (!window.confirm('End this meeting for everyone? The LiveKit room will be closed and invite links revoked.')) return;
+  const runEndMeeting = async () => {
     setEnding(true);
     try {
       await v2Host.endMeeting(id);
       toast.success('Meeting ended');
+      setEndOpen(false);
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Could not end meeting');
@@ -209,7 +227,7 @@ export default function V2MeetingDetail() {
   };
 
   if (!meeting) {
-    return <p className="text-gray-500 text-sm">Loading…</p>;
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
 
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false, store_transcripts: false };
@@ -221,341 +239,342 @@ export default function V2MeetingDetail() {
 
   return (
     <div className="max-w-3xl space-y-8">
-      <Link to="/v2/app/meetings" className="text-sm text-blue-400 hover:text-blue-300 inline-block">
+      <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
         ← Meetings
       </Link>
 
       <header className="space-y-2">
-        <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">{meeting.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{meeting.title}</h1>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {ui && (
             <span className={`rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
               {ui.label}
             </span>
           )}
-          <span className="text-gray-500">
-            Room <code className="text-gray-400 text-xs bg-gray-800/80 px-1.5 py-0.5 rounded">{meeting.livekit_room_name}</code>
+          <span className="text-muted-foreground">
+            Room{' '}
+            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">{meeting.livekit_room_name}</code>
           </span>
         </div>
         {meeting.scheduled_start && (
-          <p className="text-sm text-gray-400">
-            Scheduled: <span className="text-gray-200">{new Date(meeting.scheduled_start).toLocaleString()}</span>
+          <p className="text-sm text-muted-foreground">
+            Scheduled: <span className="text-foreground">{new Date(meeting.scheduled_start).toLocaleString()}</span>
           </p>
         )}
       </header>
 
       {['live', 'scheduled'].includes(meeting.status) && (
-        <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-3">
-          <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
-            <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
-            In the room
-          </h2>
-          <p className="text-xs text-gray-500">
-            LiveKit snapshot (refreshes about every 12s while this meeting is scheduled or live). Agents are not listed.
-          </p>
-          {presence.humanCount === 0 ? (
-            <p className="text-sm text-gray-400">No participants connected right now.</p>
-          ) : (
-            <ul className="space-y-2 text-sm">
-              {(presence.participants || []).map((p) => (
-                <li key={p.identity} className="flex flex-wrap items-baseline gap-2 text-gray-200 border border-gray-700/50 rounded-lg px-3 py-2 bg-gray-900/40">
-                  <span className="font-mono text-xs text-gray-300">{p.identity}</span>
-                  {p.name && p.name !== p.identity && <span className="text-gray-400 text-xs">({p.name})</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
-
-      <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
-          <Shield className="w-4 h-4 text-blue-400 shrink-0" />
-          Details &amp; access
-        </h2>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            value={titleEdit}
-            onChange={(e) => setTitleEdit(e.target.value)}
-            className="flex-1 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white text-sm"
-          />
-          <button type="button" onClick={saveTitle} className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-white shrink-0">
-            Save title
-          </button>
-        </div>
-        <div className="flex flex-col gap-2 text-sm">
-          <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!policy.host_required_to_start}
-              onChange={(e) => patchPolicy({ host_required_to_start: e.target.checked })}
-            />
-            Require host to join before guests can enter
-          </label>
-          <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={!!policy.require_invite_token}
-              onChange={(e) => patchPolicy({ require_invite_token: e.target.checked })}
-            />
-            Require invite token in URL for guests (?i=)
-          </label>
-          {canManageTranscriptPolicy && (
-            <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={!!policy.store_transcripts}
-                onChange={(e) => patchPolicy({ store_transcripts: e.target.checked })}
-              />
-              Save meeting transcript on server (host session uploads finalized captions when enabled)
-            </label>
-          )}
-        </div>
-        {Number(meeting.transcriptLineCount || 0) > 0 && (
-          <div className="rounded-lg border border-gray-700/80 bg-gray-900/30 px-3 py-3 space-y-2">
-            <p className="text-xs text-gray-400">
-              Saved transcript lines: <span className="text-gray-200 font-medium">{meeting.transcriptLineCount}</span>
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={downloadTranscriptJson}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                Download JSON
-              </button>
-              <button
-                type="button"
-                onClick={downloadTranscriptTxt}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700"
-              >
-                <FileDown className="w-3.5 h-3.5" />
-                Download .txt
-              </button>
-            </div>
-          </div>
-        )}
-        <div>
-          <p className="text-xs text-gray-500 mb-2">Guest join URL (full link — scroll or select to verify)</p>
-          <p className="text-xs text-gray-600 mb-2">
-            Anyone with this link can join (plus <code className="text-gray-500">?i=</code> when invite tokens are on). Expiry is counted from when each invite is created, not from the scheduled start time.
-          </p>
-          {guestUrlNeedsToken && (
-            <p className="text-xs text-amber-400 mb-2 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1.5">
-              Invite tokens are required, but no active invite link was found. Create a new invite below so guests get a valid URL with <code className="text-amber-200/90">?i=</code>.
-            </p>
-          )}
-          <textarea
-            readOnly
-            rows={4}
-            value={meeting.joinUrl || ''}
-            spellCheck={false}
-            className="w-full rounded-lg bg-gray-950 border border-gray-700 px-3 py-2 text-xs font-mono text-gray-200 break-all resize-y min-h-[5.5rem]"
-          />
-          <div className="flex flex-wrap gap-2 mt-2">
-            <button
-              type="button"
-              onClick={copyGuestUrl}
-              className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 shrink-0"
-            >
-              <Copy className="w-4 h-4" />
-              Copy
-            </button>
-            {meeting.joinUrl && (
-              <a
-                href={meeting.joinUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700"
-              >
-                <ExternalLink className="w-4 h-4" />
-                Open
-              </a>
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
-          <Users className="w-4 h-4 text-blue-400 shrink-0" />
-          Invite links
-        </h2>
-        <div className="flex flex-wrap gap-2 items-end text-sm">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Expires in (hours)</label>
-            <input
-              type="number"
-              min={1}
-              max={maxInviteHours}
-              value={newInviteHours}
-              onChange={(e) =>
-                setNewInviteHours(Math.min(maxInviteHours, Math.max(1, Number(e.target.value) || 24)))
-              }
-              className="w-28 rounded-lg bg-gray-900 border border-gray-700 px-2 py-1.5 text-white"
-            />
-          </div>
-          <label className="flex items-center gap-2 text-gray-300 pb-1">
-            <input type="checkbox" checked={newInviteReusable} onChange={(e) => setNewInviteReusable(e.target.checked)} />
-            Reusable
-          </label>
-          <button
-            type="button"
-            onClick={() => setNewInviteHours(maxInviteHours)}
-            className="rounded-lg border border-gray-600 px-2 py-2 text-xs text-gray-300 hover:bg-gray-700"
-            title={`${maxInviteHours}h (~${Math.round(maxInviteHours / 24)} days) from link creation`}
-          >
-            Max length
-          </button>
-          <button type="button" onClick={createInvite} className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 text-sm">
-            New invite link
-          </button>
-        </div>
-        <p className="text-xs text-gray-600">
-          Longest allowed without a shorter custom value: {Math.round(maxInviteHours / 24)} days from when the link is created (server cap — set{' '}
-          <code className="text-gray-500">V2_MAX_INVITE_TTL_DAYS</code> to change).
-        </p>
-        <ul className="space-y-3 text-sm">
-          {(meeting.invites || []).map((inv) => (
-            <li key={inv.id} className="border border-gray-700/60 rounded-lg px-3 py-3 bg-gray-900/40 space-y-2">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <div className="text-gray-200">{inv.label || 'Link'}</div>
-                  <div className="text-xs text-gray-500">
-                    {inv.revoked_at ? (
-                      <span className="text-red-400">Revoked</span>
-                    ) : (
-                      <>
-                        Expires {new Date(inv.expires_at).toLocaleString()} · uses {inv.use_count}
-                        {inv.reusable ? ' · reusable' : ''}
-                      </>
-                    )}
-                  </div>
-                </div>
-                {!inv.revoked_at && (
-                  <button type="button" onClick={() => revokeInvite(inv.id)} className="text-xs text-red-400 hover:text-red-300 shrink-0">
-                    Revoke
-                  </button>
-                )}
-              </div>
-              {inv.joinUrl ? (
-                <>
-                  <textarea
-                    readOnly
-                    rows={4}
-                    value={inv.joinUrl}
-                    spellCheck={false}
-                    className="w-full rounded-lg bg-gray-950 border border-gray-600/80 px-2 py-1.5 text-xs font-mono text-gray-200 break-all resize-y min-h-[5rem]"
-                  />
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => copyInviteUrl(inv.joinUrl)}
-                      className="inline-flex items-center gap-1 rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy URL
-                    </button>
-                    <a
-                      href={inv.joinUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      Open
-                    </a>
-                  </div>
-                </>
-              ) : (
-                !inv.revoked_at && (
-                  <p className="text-xs text-amber-500/90">No guest URL — expired or use limit reached.</p>
-                )
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
-        <h2 className="text-sm font-semibold text-white border-b border-gray-700/80 pb-3">Join as host</h2>
-        <p className="text-xs text-gray-500">
-          In the meeting, use the <strong className="text-gray-400">People</strong> button in the bottom bar to mute or remove participants.
-        </p>
-        <label className="block text-xs text-gray-500">Your name</label>
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          className="w-full rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white"
-          placeholder="Host display name"
-        />
-
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">
-            <Globe className="w-3.5 h-3.5 inline mr-1" />
-            My language (speak &amp; hear)
-          </label>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setLangOpen(!langOpen)}
-              className="w-full flex items-center justify-between rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white text-sm"
-            >
-              <span>{MEETING_LANGUAGES.find((l) => l.code === selectedLanguage)?.name || selectedLanguage}</span>
-              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${langOpen ? 'rotate-180' : ''}`} />
-            </button>
-            {langOpen && (
-              <div className="absolute bottom-full left-0 mb-1 w-full max-h-52 overflow-y-auto rounded-lg bg-gray-900 border border-gray-700 shadow-xl z-30">
-                {MEETING_LANGUAGES.map((lang) => (
-                  <button
-                    key={lang.code}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLanguage(lang.code);
-                      setLangOpen(false);
-                    }}
-                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                      selectedLanguage === lang.code ? 'bg-gray-700 text-white' : 'text-gray-300'
-                    }`}
+        <Card className="border-border/80">
+          <CardHeader className="border-b border-border/60 pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Radio className="h-4 w-4 shrink-0 text-emerald-500" />
+              In the room
+            </CardTitle>
+            <CardDescription>
+              LiveKit snapshot (refreshes about every 12s while this meeting is scheduled or live). Agents are not listed.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-4">
+            {presence.humanCount === 0 ? (
+              <p className="text-sm text-muted-foreground">No participants connected right now.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {(presence.participants || []).map((p) => (
+                  <span
+                    key={p.identity}
+                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-foreground"
                   >
-                    <span>{lang.name}</span>
-                    {selectedLanguage === lang.code && <Check className="w-4 h-4 text-green-400" />}
-                  </button>
+                    <span className="truncate font-mono text-muted-foreground">{p.identity}</span>
+                    {p.name && p.name !== p.identity && <span className="truncate text-muted-foreground">· {p.name}</span>}
+                  </span>
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="border-border/80">
+        <CardHeader className="border-b border-border/60 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Shield className="h-4 w-4 shrink-0 text-primary" />
+            Details &amp; access
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6 pt-6">
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Input value={titleEdit} onChange={(e) => setTitleEdit(e.target.value)} className="flex-1" />
+            <Button type="button" variant="secondary" onClick={saveTitle} className="shrink-0">
+              Save title
+            </Button>
           </div>
-        </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
+              <div>
+                <Label className="text-sm">Require host before guests enter</Label>
+                <p className="text-xs text-muted-foreground">Guests wait in the lobby until you join.</p>
+              </div>
+              <Switch checked={!!policy.host_required_to_start} onCheckedChange={(v) => patchPolicy({ host_required_to_start: v })} />
+            </div>
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
+              <div>
+                <Label className="text-sm">Require invite token (?i=)</Label>
+                <p className="text-xs text-muted-foreground">Guests need a full invite URL when enabled.</p>
+              </div>
+              <Switch checked={!!policy.require_invite_token} onCheckedChange={(v) => patchPolicy({ require_invite_token: v })} />
+            </div>
+            {canManageTranscriptPolicy && (
+              <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
+                <div>
+                  <Label className="text-sm">Save transcript on server</Label>
+                  <p className="text-xs text-muted-foreground">Host session uploads finalized captions when enabled.</p>
+                </div>
+                <Switch checked={!!policy.store_transcripts} onCheckedChange={(v) => patchPolicy({ store_transcripts: v })} />
+              </div>
+            )}
+          </div>
+          {Number(meeting.transcriptLineCount || 0) > 0 && (
+            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4">
+              <p className="text-xs text-muted-foreground">
+                Saved lines: <span className="font-medium text-foreground">{meeting.transcriptLineCount}</span>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={downloadTranscriptJson}>
+                  <FileDown className="h-3.5 w-3.5" />
+                  Download JSON
+                </Button>
+                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={downloadTranscriptTxt}>
+                  <FileDown className="h-3.5 w-3.5" />
+                  Download .txt
+                </Button>
+              </div>
+            </div>
+          )}
+          <div>
+            <Label className="text-xs text-muted-foreground">Guest join URL</Label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Anyone with this link can join (plus <code className="text-foreground/80">?i=</code> when invite tokens are on).
+            </p>
+            {guestUrlNeedsToken && (
+              <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-2 text-xs text-amber-200">
+                Invite tokens are required, but no active invite link was found. Create a new invite below.
+              </p>
+            )}
+            <textarea
+              readOnly
+              rows={4}
+              value={meeting.joinUrl || ''}
+              spellCheck={false}
+              className="mt-2 w-full min-h-[5.5rem] resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs break-all text-foreground"
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button type="button" variant="outline" size="sm" className="gap-1" onClick={copyGuestUrl}>
+                <Copy className="h-4 w-4" />
+                Copy
+              </Button>
+              {meeting.joinUrl && (
+                <Button variant="outline" size="sm" className="gap-1" asChild>
+                  <a href={meeting.joinUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                    Open
+                  </a>
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-        <button
-          type="button"
-          onClick={joinAsHost}
-          className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
-        >
-          Join as host
-        </button>
-      </section>
+      <Card className="border-border/80">
+        <CardHeader className="border-b border-border/60 pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Users className="h-4 w-4 shrink-0 text-primary" />
+            Invite links
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-6">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Expires in (hours)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={maxInviteHours}
+                className="w-28"
+                value={newInviteHours}
+                onChange={(e) =>
+                  setNewInviteHours(Math.min(maxInviteHours, Math.max(1, Number(e.target.value) || 24)))
+                }
+              />
+            </div>
+            <div className="flex items-center gap-2 pb-2">
+              <Switch id="reusable" checked={newInviteReusable} onCheckedChange={setNewInviteReusable} />
+              <Label htmlFor="reusable" className="text-sm font-normal">
+                Reusable
+              </Label>
+            </div>
+            <Button type="button" variant="outline" size="sm" onClick={() => setNewInviteHours(maxInviteHours)}>
+              Max length
+            </Button>
+            <Button type="button" onClick={createInvite}>
+              New invite link
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Longest cap: {Math.round(maxInviteHours / 24)} days from link creation (<code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>).
+          </p>
+          <ul className="space-y-3 text-sm">
+            {(meeting.invites || []).map((inv) => (
+              <li key={inv.id} className="space-y-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-medium text-foreground">{inv.label || 'Link'}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {inv.revoked_at ? (
+                        <span className="text-destructive">Revoked</span>
+                      ) : (
+                        <>
+                          Expires {new Date(inv.expires_at).toLocaleString()} · uses {inv.use_count}
+                          {inv.reusable ? ' · reusable' : ''}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {!inv.revoked_at && (
+                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => revokeInvite(inv.id)}>
+                      Revoke
+                    </Button>
+                  )}
+                </div>
+                {inv.joinUrl ? (
+                  <>
+                    <textarea
+                      readOnly
+                      rows={4}
+                      value={inv.joinUrl}
+                      spellCheck={false}
+                      className="w-full min-h-[5rem] resize-y rounded-md border border-input bg-background px-2 py-2 font-mono text-xs break-all"
+                    />
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => copyInviteUrl(inv.joinUrl)}>
+                        <Copy className="h-3.5 w-3.5" />
+                        Copy URL
+                      </Button>
+                      <Button variant="outline" size="sm" className="gap-1" asChild>
+                        <a href={inv.joinUrl} target="_blank" rel="noreferrer">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Open
+                        </a>
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  !inv.revoked_at && <p className="text-xs text-amber-600 dark:text-amber-400">No guest URL — expired or use limit reached.</p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
 
-      <section className="rounded-xl border border-red-900/30 bg-red-950/10 p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-red-300">Meeting actions</h2>
-        {canEndMeeting && (
-          <button
-            type="button"
-            disabled={ending}
-            onClick={endMeeting}
-            className="inline-flex items-center gap-2 rounded-lg border border-red-800/60 bg-red-950/40 px-4 py-2 text-sm text-red-200 hover:bg-red-950/60 disabled:opacity-50"
-          >
-            <PhoneOff className="w-4 h-4" />
-            {ending ? 'Ending…' : 'End meeting for everyone'}
-          </button>
-        )}
-        <div>
-          <button type="button" onClick={archiveMeeting} className="text-xs text-amber-500 hover:text-amber-400">
-            Archive meeting (keep in list, no new joins)
-          </button>
-        </div>
-      </section>
+      <Card className="border-border/80">
+        <CardHeader>
+          <CardTitle className="text-base">Join as host</CardTitle>
+          <CardDescription>
+            In the meeting, use the <strong className="text-foreground">People</strong> button in the bottom bar to mute or remove participants.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="host-name">Your name</Label>
+            <Input id="host-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Host display name" />
+          </div>
+          <div className="space-y-2">
+            <Label className="flex items-center gap-1">
+              <Globe className="h-3.5 w-3.5" />
+              My language (speak &amp; hear)
+            </Label>
+            <Popover open={langOpen} onOpenChange={setLangOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="w-full justify-between font-normal">
+                  <span>{MEETING_LANGUAGES.find((l) => l.code === selectedLanguage)?.name || selectedLanguage}</span>
+                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <div className="max-h-52 overflow-y-auto py-1">
+                  {MEETING_LANGUAGES.map((lang) => (
+                    <button
+                      key={lang.code}
+                      type="button"
+                      onClick={() => {
+                        setSelectedLanguage(lang.code);
+                        setLangOpen(false);
+                      }}
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                    >
+                      <span>{lang.name}</span>
+                      {selectedLanguage === lang.code && <Check className="h-4 w-4 text-primary" />}
+                    </button>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <Button type="button" className="w-full" onClick={joinAsHost}>
+            Join as host
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card className="border-destructive/30 bg-destructive/5">
+        <CardHeader>
+          <CardTitle className="text-base text-destructive">Meeting actions</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {canEndMeeting && (
+            <Button type="button" variant="destructive" className="gap-2" disabled={ending} onClick={() => setEndOpen(true)}>
+              <PhoneOff className="h-4 w-4" />
+              {ending ? 'Ending…' : 'End meeting for everyone'}
+            </Button>
+          )}
+          <div>
+            <Button type="button" variant="link" className="h-auto p-0 text-amber-600 dark:text-amber-400" onClick={() => setArchiveOpen(true)}>
+              Archive meeting (no new joins)
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>End meeting for everyone?</AlertDialogTitle>
+            <AlertDialogDescription>
+              The LiveKit room will be closed and invite links revoked. Participants will be disconnected.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={runEndMeeting}>
+              End meeting
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive this meeting?</AlertDialogTitle>
+            <AlertDialogDescription>It will be hidden from the main list. No new joins will be allowed.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={runArchive}>Archive</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

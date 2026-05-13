@@ -1,13 +1,23 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth } from '../../services/apiV2';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 
 export default function V2Login() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
+      navigate('/v2/app', { replace: true });
+    }
+  }, [navigate]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -25,51 +35,53 @@ export default function V2Login() {
   };
 
   return (
-    <div className="max-w-md mx-auto">
-      <h1 className="text-2xl font-semibold text-white mb-1">Sign in</h1>
-      <p className="text-gray-500 text-sm mb-8">V2 workspace — same dark theme, SaaS controls.</p>
-      <form onSubmit={submit} className="space-y-4">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required
-            autoComplete="email"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            required
-            autoComplete="current-password"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium transition-colors"
-        >
-          {loading ? 'Signing in…' : 'Sign in'}
-        </button>
-      </form>
-      <p className="mt-6 text-center text-sm text-gray-500">
-        No account?{' '}
-        <Link to="/v2/signup" className="text-blue-400 hover:text-blue-300">
-          Create organization
-        </Link>
-      </p>
-      <p className="mt-4 text-center">
-        <Link to="/" className="text-sm text-gray-600 hover:text-gray-400">
-          Back to classic home
-        </Link>
-      </p>
+    <div className="mx-auto max-w-md">
+      <Card className="border-border/80 shadow-lg">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl">Sign in</CardTitle>
+          <CardDescription>Workspace — meetings, members, and billing in one place.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            No account?{' '}
+            <Link to="/v2/signup" className="font-medium text-primary hover:underline">
+              Create organization
+            </Link>
+          </p>
+          <p className="mt-4 text-center">
+            <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
+              Back to home
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

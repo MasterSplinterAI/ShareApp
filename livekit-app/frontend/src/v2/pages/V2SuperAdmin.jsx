@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Orgs } from '../../services/apiV2';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
 
 export default function V2SuperAdmin() {
   const [allowed, setAllowed] = useState(null);
@@ -37,65 +40,72 @@ export default function V2SuperAdmin() {
   };
 
   if (allowed === null) {
-    return <p className="text-gray-500 text-sm">Checking access…</p>;
+    return <p className="text-sm text-muted-foreground">Checking access…</p>;
   }
   if (!allowed) {
     return (
-      <div>
-        <Link to="/v2/app" className="text-sm text-blue-400 hover:text-blue-300 mb-4 inline-block">
-          ← Workspace
-        </Link>
-        <p className="text-gray-400">Superadmin is restricted. Set <code className="text-gray-300">V2_SUPERADMIN_EMAILS</code> on the server to include your account email.</p>
-      </div>
+      <Card className="max-w-xl border-border/80">
+        <CardHeader>
+          <CardTitle>Restricted</CardTitle>
+          <CardDescription>
+            Superadmin is restricted. Set <code className="rounded bg-muted px-1 py-0.5 text-foreground">V2_SUPERADMIN_EMAILS</code> on the server to include your account email.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" asChild>
+            <Link to="/v2/app">← Workspace</Link>
+          </Button>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div>
-      <Link to="/v2/app" className="text-sm text-blue-400 hover:text-blue-300 mb-4 inline-block">
-        ← Workspace
-      </Link>
-      <h1 className="text-2xl font-semibold text-white mb-2">Platform admin</h1>
-      <p className="text-gray-500 text-sm mb-8">Cross-tenant overview (SQLite MVP).</p>
-      <div className="overflow-x-auto rounded-lg border border-gray-800">
-        <table className="w-full text-sm text-left">
-          <thead className="bg-gray-950 text-gray-400">
-            <tr>
-              <th className="px-3 py-2">Organization</th>
-              <th className="px-3 py-2">Billing</th>
-              <th className="px-3 py-2">Members</th>
-              <th className="px-3 py-2">Meetings</th>
-              <th className="px-3 py-2">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {orgs.map((o) => (
-              <tr key={o.id} className="border-t border-gray-800">
-                <td className="px-3 py-2 text-gray-200">{o.name}</td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    defaultValue={o.billing_status}
-                    onChange={(e) => setBillingEdit((prev) => ({ ...prev, [o.id]: e.target.value }))}
-                    className="w-full max-w-[140px] rounded bg-gray-900 border border-gray-700 px-2 py-1 text-gray-200"
-                  />
-                </td>
-                <td className="px-3 py-2 text-gray-400">{o.member_count}</td>
-                <td className="px-3 py-2 text-gray-400">{o.meeting_count}</td>
-                <td className="px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => saveOrg(o.id)}
-                    className="text-xs text-blue-400 hover:text-blue-300"
-                  >
-                    Save billing
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="space-y-6">
+      <Button variant="link" className="h-auto p-0 text-primary" asChild>
+        <Link to="/v2/app">← Workspace</Link>
+      </Button>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Platform admin</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Cross-tenant overview (SQLite MVP).</p>
       </div>
+      <Card className="overflow-hidden border-border/80">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 font-medium">Organization</th>
+                <th className="px-4 py-3 font-medium">Billing</th>
+                <th className="px-4 py-3 font-medium">Members</th>
+                <th className="px-4 py-3 font-medium">Meetings</th>
+                <th className="px-4 py-3 font-medium">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {orgs.map((o) => (
+                <tr key={o.id} className="border-b border-border/60 last:border-0">
+                  <td className="px-4 py-3 font-medium text-foreground">{o.name}</td>
+                  <td className="px-4 py-3">
+                    <Input
+                      type="text"
+                      defaultValue={o.billing_status}
+                      onChange={(e) => setBillingEdit((prev) => ({ ...prev, [o.id]: e.target.value }))}
+                      className="h-9 max-w-[160px]"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{o.member_count}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{o.meeting_count}</td>
+                  <td className="px-4 py-3">
+                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => saveOrg(o.id)}>
+                      Save billing
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }

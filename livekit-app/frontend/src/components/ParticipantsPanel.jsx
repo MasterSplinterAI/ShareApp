@@ -60,15 +60,15 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
   if (isAgent) return null;
 
   return (
-    <div className="group flex items-center justify-between px-3 py-2 hover:bg-gray-700/40 rounded-lg transition-colors">
-      <div className="flex items-center gap-2 min-w-0">
-        <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center text-xs font-semibold text-white flex-shrink-0">
+    <div className="group flex items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-muted/40">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground">
           {(name[0] || '?').toUpperCase()}
         </div>
         <div className="min-w-0">
-          <p className="text-sm text-white truncate">
+          <p className="truncate text-sm text-foreground">
             {name}
-            {isSelf && <span className="text-gray-400 text-xs ml-1">(you)</span>}
+            {isSelf && <span className="ml-1 text-xs text-muted-foreground">(you)</span>}
           </p>
         </div>
       </div>
@@ -84,7 +84,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
                 type="button"
                 onClick={() => setRemoteMicMuted(false)}
                 disabled={!!busy}
-                className="p-1.5 rounded-md bg-gray-600 hover:bg-gray-500 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
+                className="rounded-md bg-secondary p-1.5 text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
                 title={`Unmute ${name}`}
               >
                 {busy === 'unmute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
@@ -94,7 +94,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
                 type="button"
                 onClick={() => setRemoteMicMuted(true)}
                 disabled={!!busy}
-                className="p-1.5 rounded-md bg-gray-600 hover:bg-gray-500 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
+                className="rounded-md bg-secondary p-1.5 text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
                 title={`Mute ${name}`}
               >
                 {busy === 'mute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <VolumeX className="w-3.5 h-3.5" />}
@@ -104,7 +104,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
               type="button"
               onClick={handleRemove}
               disabled={!!busy}
-              className="p-1.5 rounded-md bg-red-600/60 hover:bg-red-600 text-gray-200 hover:text-white transition-colors disabled:opacity-50"
+              className="rounded-md bg-destructive/80 p-1.5 text-destructive-foreground transition-colors hover:bg-destructive disabled:opacity-50"
               title={`Remove ${name}`}
             >
               {busy === 'remove' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
@@ -143,11 +143,11 @@ export default function ParticipantsPanel({ meetingId }) {
   if (!isVisible) return null;
 
   return (
-    <div className="w-80 sm:w-96 h-full flex flex-col bg-gray-800 border-l border-gray-700 flex-shrink-0">
+    <div className="flex h-full w-80 flex-shrink-0 flex-col border-l border-border bg-card sm:w-96">
       <PanelTabs />
 
-      <div className="px-3 py-2 border-b border-gray-700/50 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-gray-300">
+      <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Users className="w-4 h-4" />
           <span className="text-sm font-medium">
             {humanParticipants.length} participant{humanParticipants.length !== 1 ? 's' : ''}
@@ -166,17 +166,17 @@ export default function ParticipantsPanel({ meetingId }) {
           />
         ))}
         {humanParticipants.length === 0 && (
-          <p className="text-center text-gray-500 text-sm py-8">No participants yet</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">No participants yet</p>
         )}
       </div>
 
       {isHost && humanParticipants.length > 1 && (
-        <div className="px-3 py-2 border-t border-gray-700">
+        <div className="border-t border-border px-3 py-2">
           <button
             type="button"
             onClick={handleMuteAll}
             disabled={muteAllBusy}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium transition-colors disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
           >
             {muteAllBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <VolumeX className="w-4 h-4" />}
             Mute all

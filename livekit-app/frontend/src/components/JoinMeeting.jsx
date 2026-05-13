@@ -1,9 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Loader2, AlertCircle, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService, joinPublicService } from '../services/api';
 import NameModal from './NameModal';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
+
+function homePath() {
+  if (typeof localStorage === 'undefined') return '/';
+  return localStorage.getItem('v2_token') ? '/v2/app' : '/';
+}
 
 function JoinMeeting() {
   const { roomName } = useParams();
@@ -20,6 +27,8 @@ function JoinMeeting() {
   const [isStartingRoom, setIsStartingRoom] = useState(false);
   const [v2Context, setV2Context] = useState(null);
   const [waitingHost, setWaitingHost] = useState(false);
+
+  const goHome = useCallback(() => navigate(homePath()), [navigate]);
 
   useEffect(() => {
     checkRoom();
@@ -152,10 +161,10 @@ function JoinMeeting() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
-          <p className="text-gray-300">Checking meeting room...</p>
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Checking meeting room…</p>
         </div>
       </div>
     );
@@ -163,102 +172,106 @@ function JoinMeeting() {
 
   if (waitingHost) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-gray-800 rounded-lg p-8 text-center">
-          <Users className="w-16 h-16 text-amber-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-semibold text-white mb-2">Waiting for host</h2>
-          <p className="text-gray-400 mb-6">
-            The organizer has not opened this meeting yet. This page will refresh automatically.
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-6 rounded-lg transition-colors"
-          >
-            Go to Home
-          </button>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <Users className="mx-auto mb-2 h-16 w-16 text-amber-500" />
+            <CardTitle>Waiting for host</CardTitle>
+            <CardDescription>
+              The organizer has not opened this meeting yet. This page will refresh automatically.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter className="justify-center">
+            <Button type="button" variant="secondary" className="w-full" onClick={goHome}>
+              {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
+                ? 'Open workspace'
+                : 'Back to home'}
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     );
   }
 
   if (isInviteLink) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-gray-800 rounded-lg p-8 text-center">
-          <Video className="w-16 h-16 text-blue-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-semibold text-white mb-2">Meeting Invite</h2>
-          <p className="text-gray-400 mb-6">This meeting hasn&apos;t started yet. Start it now?</p>
-          <div className="space-y-3">
-            <button
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <Video className="mx-auto mb-2 h-16 w-16 text-primary" />
+            <CardTitle>Meeting invite</CardTitle>
+            <CardDescription>This meeting hasn&apos;t started yet. Start it now?</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <Button
               type="button"
               onClick={handleStartInviteRoom}
               disabled={isStartingRoom}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full gap-2"
             >
               {isStartingRoom ? (
                 <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  <span>Starting...</span>
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                  <span>Starting…</span>
                 </>
               ) : (
                 <>
-                  <Video className="w-5 h-5" />
-                  <span>Start Meeting</span>
+                  <Video className="h-5 w-5" />
+                  <span>Start meeting</span>
                 </>
               )}
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate('/')}
-              className="w-full bg-gray-700 hover:bg-gray-600 text-white font-medium py-2 px-6 rounded-lg transition-colors"
-            >
-              Go to Home
-            </button>
-          </div>
-        </div>
+            </Button>
+            <Button type="button" variant="secondary" className="w-full" onClick={goHome}>
+              {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
+                ? 'Open workspace'
+                : 'Back to home'}
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-gray-800 rounded-lg p-8 text-center">
-          <AlertCircle className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-semibold text-white mb-2">Unable to Join</h2>
-          <p className="text-gray-400 mb-6">{error}</p>
-          <button
-            type="button"
-            onClick={() => navigate('/')}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg transition-colors"
-          >
-            Go to Home
-          </button>
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md text-center">
+          <CardHeader>
+            <AlertCircle className="mx-auto mb-2 h-16 w-16 text-destructive" />
+            <CardTitle>Unable to join</CardTitle>
+            <CardDescription>{error}</CardDescription>
+          </CardHeader>
+          <CardFooter className="justify-center">
+            <Button type="button" className="w-full" onClick={goHome}>
+              {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
+                ? 'Open workspace'
+                : 'Back to home'}
+            </Button>
+          </CardFooter>
+        </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4">
-      <div className="max-w-md w-full bg-gray-800 rounded-lg p-8">
-        <div className="text-center mb-6">
-          <Users className="w-16 h-16 text-blue-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-semibold text-white mb-2">Join Meeting</h2>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-md">
+        <CardHeader className="text-center">
+          <Users className="mx-auto mb-2 h-16 w-16 text-primary" />
+          <CardTitle>Join meeting</CardTitle>
           {roomInfo && roomInfo.numParticipants > 0 && (
-            <p className="text-gray-400">
+            <CardDescription>
               {roomInfo.numParticipants} participant{roomInfo.numParticipants !== 1 ? 's' : ''} in room
-            </p>
+            </CardDescription>
           )}
-        </div>
-      </div>
+        </CardHeader>
+      </Card>
 
       {showNameModal && (
         <NameModal
           onClose={() => {
             setShowNameModal(false);
-            navigate('/');
+            goHome();
           }}
           onSubmit={handleNameSubmit}
           title="Join Meeting"

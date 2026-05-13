@@ -1,164 +1,23 @@
-import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Video, Users, Loader2, Link2, Sparkles } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { roomService } from '../services/api';
-import NameModal from './NameModal';
-import InviteLinkModal from './InviteLinkModal';
-import { isV2EntryEnabled } from '../lib/featureFlags';
+import { MarketingNav } from './marketing/MarketingNav';
+import { Hero } from './marketing/Hero';
+import { FeatureGrid } from './marketing/FeatureGrid';
+import { HowItWorks } from './marketing/HowItWorks';
+import { PricingTable } from './marketing/PricingTable';
+import { FAQ } from './marketing/FAQ';
+import { MarketingFooter } from './marketing/MarketingFooter';
 
-function HomeScreen() {
-  const navigate = useNavigate();
-  const [isCreating, setIsCreating] = useState(false);
-  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
-  const [inviteLink, setInviteLink] = useState(null);
-  const [showNameModal, setShowNameModal] = useState(false);
-  const [roomData, setRoomData] = useState(null);
-
-  const handleHostMeeting = async () => {
-    setIsCreating(true);
-    try {
-      // No roomMode needed - agent uses unified optimized mode automatically
-      const response = await roomService.create();
-      console.log('Room created:', response);
-      setRoomData(response);
-      setShowNameModal(true);
-    } catch (error) {
-      console.error('Failed to create room:', error);
-      toast.error(error.response?.data?.error || 'Failed to create meeting room');
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
-  const handleCreateInvite = async () => {
-    setIsCreatingInvite(true);
-    try {
-      const response = await roomService.createInvite();
-      setInviteLink(response.inviteLink);
-      toast.success('Invite link created!');
-    } catch (error) {
-      console.error('Failed to create invite:', error);
-      toast.error(error.response?.data?.error || 'Failed to create invite link');
-    } finally {
-      setIsCreatingInvite(false);
-    }
-  };
-
-  const handleNameSubmit = (name, selectedLanguage = 'en', spokenLanguage = null) => {
-    if (roomData) {
-      const spoken = spokenLanguage ?? selectedLanguage;
-      // Store info in sessionStorage as backup
-      const participantInfo = {
-        isHost: true, 
-        participantName: name,
-        hostCode: roomData.hostCode,
-        shareableLink: roomData.shareableLink,
-        shareableLinkNetwork: roomData.shareableLinkNetwork,
-        roomName: roomData.roomName,
-        selectedLanguage: selectedLanguage,
-        spokenLanguage: spoken
-      };
-      
-      sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      
-      // Preserve ?debug=1 when navigating to room
-      const search = window.location.search;
-      navigate(`/room/${roomData.roomName}${search}`, { 
-        state: participantInfo
-      });
-    }
-  };
-
+export default function HomeScreen() {
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center px-4 py-12">
-      <div className="max-w-md w-full">
-        {/* Minimal Hero Section */}
-        <div className="text-center mb-10">
-          <h1 className="text-4xl md:text-5xl font-semibold text-white mb-3">
-            JarMetals Conference
-          </h1>
-          <p className="text-gray-400 text-sm">
-            Connect with real-time translation
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="space-y-3">
-          <button
-            onClick={handleHostMeeting}
-            disabled={isCreating}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:opacity-50 text-white font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl"
-          >
-            {isCreating ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Creating...</span>
-              </>
-            ) : (
-              <>
-                <Video className="w-5 h-5" />
-                <span>Start Meeting</span>
-              </>
-            )}
-          </button>
-          <button
-            onClick={() => navigate('/join/room')}
-            className="w-full bg-gray-800 hover:bg-gray-700 text-white font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 border border-gray-700"
-          >
-            <Users className="w-5 h-5" />
-            <span>Join Meeting</span>
-          </button>
-          <button
-            onClick={handleCreateInvite}
-            disabled={isCreatingInvite}
-            className="w-full bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 border border-gray-700"
-          >
-            {isCreatingInvite ? (
-              <>
-                <Loader2 className="w-5 h-5 animate-spin" />
-                <span>Creating...</span>
-              </>
-            ) : (
-              <>
-                <Link2 className="w-5 h-5" />
-                <span>Create Invite Link</span>
-              </>
-            )}
-          </button>
-          {isV2EntryEnabled() && (
-            <Link
-              to="/v2/login"
-              className="w-full bg-indigo-950/50 hover:bg-indigo-900/50 text-indigo-200 font-medium py-3 px-6 rounded-lg transition-all duration-200 flex items-center justify-center gap-2 border border-indigo-800/60"
-            >
-              <Sparkles className="w-5 h-5" />
-              <span>Try V2 workspace</span>
-            </Link>
-          )}
-        </div>
-      </div>
-
-      {/* Invite Link Modal - Copy/Share use direct user gesture (fixes mobile Safari clipboard) */}
-      {inviteLink && (
-        <InviteLinkModal
-          inviteLink={inviteLink}
-          onClose={() => setInviteLink(null)}
-        />
-      )}
-
-      {/* Name Modal */}
-      {showNameModal && (
-        <NameModal
-          onClose={() => setShowNameModal(false)}
-          onSubmit={handleNameSubmit}
-          title="Enter Your Name"
-          subtitle="This is how other participants will see you. Select your preferred translation language."
-          showLanguageSelector={true}
-          defaultLanguage="en"
-        />
-      )}
+    <div className="min-h-screen bg-background text-foreground">
+      <MarketingNav />
+      <main>
+        <Hero />
+        <FeatureGrid />
+        <HowItWorks />
+        <PricingTable />
+        <FAQ />
+      </main>
+      <MarketingFooter />
     </div>
   );
 }
-
-export default HomeScreen;

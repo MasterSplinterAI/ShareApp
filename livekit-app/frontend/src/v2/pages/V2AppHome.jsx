@@ -4,6 +4,9 @@ import toast from 'react-hot-toast';
 import { Plus, Users, Video, Settings } from 'lucide-react';
 import { v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
+import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 
 export default function V2AppHome() {
   const [orgData, setOrgData] = useState(null);
@@ -25,102 +28,114 @@ export default function V2AppHome() {
   }, []);
 
   const recentMeetings = useMemo(() => meetings.slice(0, 5), [meetings]);
-
   const activeLive = useMemo(() => meetings.filter((m) => m.status === 'live').length, [meetings]);
 
   return (
     <div className="space-y-10">
-      <section className="rounded-2xl border border-gray-800 bg-gradient-to-br from-gray-900 via-gray-900 to-blue-950/40 p-8 sm:p-10">
-        <p className="text-sm text-blue-400 font-medium mb-1">Workspace</p>
-        <h1 className="text-3xl sm:text-4xl font-semibold text-white tracking-tight mb-2">
-          {orgData?.org?.name || 'Your organization'}
-        </h1>
-        <p className="text-gray-400 text-sm max-w-xl mb-6">
-          Host translated meetings with screen share and live captions. Manage meetings and members from here.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            to="/v2/app/meetings?create=1"
-            className="inline-flex items-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white px-5 py-2.5 text-sm font-semibold shadow-lg shadow-blue-900/30 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New meeting
-          </Link>
-          <Link
-            to="/v2/app/meetings"
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-600 bg-gray-800/80 hover:bg-gray-800 text-gray-200 px-5 py-2.5 text-sm font-medium transition-colors"
-          >
-            <Video className="w-4 h-4" />
-            All meetings
-          </Link>
-          <Link
-            to="/v2/app/settings"
-            className="inline-flex items-center gap-2 rounded-xl border border-gray-600 bg-gray-800/80 hover:bg-gray-800 text-gray-200 px-5 py-2.5 text-sm font-medium transition-colors"
-          >
-            <Settings className="w-4 h-4" />
-            Settings
-          </Link>
+      <Card className="overflow-hidden border-border/80 bg-gradient-to-br from-card via-card to-primary/5">
+        <CardHeader className="space-y-2 pb-2 sm:pb-4">
+          <Badge variant="secondary" className="w-fit text-xs font-normal">
+            Workspace
+          </Badge>
+          <CardTitle className="text-3xl font-semibold tracking-tight sm:text-4xl">
+            {orgData?.org?.name || 'Your organization'}
+          </CardTitle>
+          <CardDescription className="max-w-xl text-base">
+            Host translated meetings with screen share and live captions. Manage meetings and members from here.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-3 pb-8">
+          <Button asChild size="lg" className="gap-2">
+            <Link to="/v2/app/meetings?create=1">
+              <Plus className="h-4 w-4" />
+              New meeting
+            </Link>
+          </Button>
+          <Button variant="outline" size="lg" asChild className="gap-2">
+            <Link to="/v2/app/meetings">
+              <Video className="h-4 w-4" />
+              All meetings
+            </Link>
+          </Button>
+          <Button variant="outline" size="lg" asChild className="gap-2">
+            <Link to="/v2/app/settings">
+              <Settings className="h-4 w-4" />
+              Settings
+            </Link>
+          </Button>
+        </CardContent>
+      </Card>
+
+      <section>
+        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">At a glance</h2>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Card className="border-border/80">
+            <CardHeader className="pb-2">
+              <CardDescription>Meetings</CardDescription>
+              <CardTitle className="text-3xl font-semibold tabular-nums">{meetings.length}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">In this workspace</CardContent>
+          </Card>
+          <Card className="border-border/80">
+            <CardHeader className="pb-2">
+              <CardDescription>Live now</CardDescription>
+              <CardTitle className="text-3xl font-semibold tabular-nums text-emerald-500">{activeLive}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">Status &quot;live&quot;</CardContent>
+          </Card>
+          <Card className="border-border/80">
+            <CardHeader className="pb-2">
+              <CardDescription className="flex items-center gap-1">
+                <Users className="h-3 w-3" /> Members
+              </CardDescription>
+              <CardTitle className="text-3xl font-semibold tabular-nums">{membersCount}</CardTitle>
+            </CardHeader>
+            <CardContent className="text-xs text-muted-foreground">Organization</CardContent>
+          </Card>
         </div>
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3">At a glance</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="rounded-xl border border-gray-800 bg-gray-800/30 px-5 py-4">
-            <p className="text-xs text-gray-500 mb-1">Meetings</p>
-            <p className="text-2xl font-semibold text-white">{meetings.length}</p>
-            <p className="text-xs text-gray-500 mt-1">in this workspace</p>
-          </div>
-          <div className="rounded-xl border border-gray-800 bg-gray-800/30 px-5 py-4">
-            <p className="text-xs text-gray-500 mb-1">Live now</p>
-            <p className="text-2xl font-semibold text-emerald-400">{activeLive}</p>
-            <p className="text-xs text-gray-500 mt-1">status &quot;live&quot;</p>
-          </div>
-          <div className="rounded-xl border border-gray-800 bg-gray-800/30 px-5 py-4">
-            <p className="text-xs text-gray-500 mb-1 flex items-center gap-1">
-              <Users className="w-3 h-3" /> Members
-            </p>
-            <p className="text-2xl font-semibold text-white">{membersCount}</p>
-            <p className="text-xs text-gray-500 mt-1">organization</p>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <div className="flex items-center justify-between gap-4 mb-3">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">Recent meetings</h2>
-          <Link to="/v2/app/meetings" className="text-xs text-blue-400 hover:text-blue-300">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent meetings</h2>
+          <Link to="/v2/app/meetings" className="text-xs font-medium text-primary hover:underline">
             View all
           </Link>
         </div>
         {recentMeetings.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-700 bg-gray-800/20 px-6 py-10 text-center">
-            <p className="text-gray-400 text-sm mb-4">No meetings yet.</p>
-            <Link
-              to="/v2/app/meetings?create=1"
-              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
-            >
-              <Plus className="w-4 h-4" />
-              Create your first meeting
-            </Link>
-          </div>
+          <Card className="border-dashed border-border/80 bg-muted/10">
+            <CardContent className="flex flex-col items-center py-12 text-center">
+              <p className="text-sm text-muted-foreground">No meetings yet.</p>
+              <Button asChild className="mt-4 gap-2">
+                <Link to="/v2/app/meetings?create=1">
+                  <Plus className="h-4 w-4" />
+                  Create your first meeting
+                </Link>
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <ul className="space-y-2">
             {recentMeetings.map((m) => {
               const ui = getMeetingUiState(m);
               return (
                 <li key={m.id}>
-                  <Link
-                    to={`/v2/app/meetings/${m.id}`}
-                    className="flex items-center justify-between rounded-xl border border-gray-800 bg-gray-800/30 px-4 py-3 hover:border-gray-600 transition-colors gap-3"
-                  >
-                    <div className="min-w-0">
-                      <span className="text-white font-medium block truncate">{m.title || m.livekit_room_name}</span>
-                      {m.scheduled_start && (
-                        <span className="text-xs text-gray-500">{new Date(m.scheduled_start).toLocaleString()}</span>
-                      )}
-                    </div>
-                    <span className={`text-xs uppercase shrink-0 rounded border px-2 py-0.5 ${toneClasses(ui.tone)}`}>{ui.label}</span>
+                  <Link to={`/v2/app/meetings/${m.id}`}>
+                    <Card className="border-border/80 transition-colors hover:border-primary/30 hover:bg-muted/20">
+                      <CardContent className="flex items-center justify-between gap-3 p-4">
+                        <div className="min-w-0">
+                          <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>
+                          {m.scheduled_start && (
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {new Date(m.scheduled_start).toLocaleString()}
+                            </span>
+                          )}
+                        </div>
+                        <span className={`shrink-0 rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
+                          {ui.label}
+                        </span>
+                      </CardContent>
+                    </Card>
                   </Link>
                 </li>
               );
@@ -129,14 +144,16 @@ export default function V2AppHome() {
         )}
       </section>
 
-      <section className="rounded-xl border border-gray-800 bg-gray-800/20 p-6">
-        <h2 className="font-medium text-white mb-2">Subscription</h2>
-        <p className="text-sm text-gray-500">
-          Plan: <span className="text-gray-300">{sub?.plan?.name || '—'}</span>
-          <span className="mx-2 text-gray-600">·</span>
-          Status: <span className="text-gray-300">{sub?.subscription?.status || '—'}</span>
-        </p>
-      </section>
+      <Card className="border-border/80 bg-muted/10">
+        <CardHeader>
+          <CardTitle className="text-lg">Subscription</CardTitle>
+          <CardDescription>
+            Plan: <span className="text-foreground">{sub?.plan?.name || '—'}</span>
+            <span className="mx-2 text-muted-foreground">·</span>
+            Status: <span className="text-foreground">{sub?.subscription?.status || '—'}</span>
+          </CardDescription>
+        </CardHeader>
+      </Card>
     </div>
   );
 }

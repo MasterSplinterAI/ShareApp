@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth } from '../../services/apiV2';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 
 export default function V2Signup() {
   const navigate = useNavigate();
@@ -10,6 +14,12 @@ export default function V2Signup() {
   const [orgName, setOrgName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
+      navigate('/v2/app', { replace: true });
+    }
+  }, [navigate]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -27,67 +37,50 @@ export default function V2Signup() {
   };
 
   return (
-    <div className="max-w-md mx-auto">
-      <h1 className="text-2xl font-semibold text-white mb-1">Create account</h1>
-      <p className="text-gray-500 text-sm mb-8">Start an organization on V2.</p>
-      <form onSubmit={submit} className="space-y-4">
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Organization name</label>
-          <input
-            type="text"
-            value={orgName}
-            onChange={(e) => setOrgName(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500"
-            placeholder="Acme Inc"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Your name</label>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500"
-            placeholder="Jane Doe"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500"
-            required
-            autoComplete="email"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Password (min 8 characters)</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white focus:ring-2 focus:ring-blue-500"
-            required
-            minLength={8}
-            autoComplete="new-password"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium"
-        >
-          {loading ? 'Creating…' : 'Create account'}
-        </button>
-      </form>
-      <p className="mt-6 text-center text-sm text-gray-500">
-        Already have an account?{' '}
-        <Link to="/v2/login" className="text-blue-400 hover:text-blue-300">
-          Sign in
-        </Link>
-      </p>
+    <div className="mx-auto max-w-md">
+      <Card className="border-border/80 shadow-lg">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl">Create account</CardTitle>
+          <CardDescription>Start an organization and invite your team.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={submit} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="org">Organization name</Label>
+              <Input id="org" type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Acme Inc" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="display">Your name</Label>
+              <Input id="display" type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Jane Doe" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password">Password (min 8 characters)</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                minLength={8}
+                autoComplete="new-password"
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? 'Creating…' : 'Create account'}
+            </Button>
+          </form>
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            Already have an account?{' '}
+            <Link to="/v2/login" className="font-medium text-primary hover:underline">
+              Sign in
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

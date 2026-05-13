@@ -28,7 +28,7 @@
 
 | Variable | Purpose |
 |----------|---------|
-| `VITE_V2_ENTRY_ENABLED` | When `true`, classic home shows **Try V2 workspace** (default omit/`false` in prod until ready) |
+| `VITE_V2_ENTRY_ENABLED` | **Deprecated / unused.** Classic home is marketing + V2 is default; the flag is no longer read by the app. |
 | `VITE_API_URL` | Optional override for API base (usually leave default `/api` behind nginx) |
 
 ### Backend feature flags (runtime)
@@ -44,9 +44,9 @@
 1. Deploy backend with new dependencies: `npm install` in `livekit-app/backend` (includes `bcryptjs`, `multer`, `jsonwebtoken` already).
 2. Ensure `JWT_SECRET_V2` is set on the server before accepting real users.
 3. Run staging deploy; verify `GET /api/v2/health` and `GET /api/health`.
-4. Smoke test: signup → create meeting → host join → classic `/room/:name` still works.
-5. Enable `VITE_V2_ENTRY_ENABLED=true` on staging build only; verify classic home unchanged when flag off.
-6. For production: merge `v2-foundation` when ready, deploy `main`, then set `VITE_V2_ENTRY_ENABLED=true` after internal validation.
+4. Smoke test: signup → create meeting → host join → `/room/:name` still works; `/` shows marketing landing.
+5. ~~Enable `VITE_V2_ENTRY_ENABLED`~~ (removed): staging uses the same SPA as production for V2 paths.
+6. For production: merge `v2-foundation` when ready and deploy `main` per `deploy.sh`.
 
 ## Persistence
 
@@ -69,5 +69,5 @@
 
 ## Rollback
 
-- Disable V2 entry: remove or set `VITE_V2_ENTRY_ENABLED=false` and redeploy frontend only.
+- **Hide marketing / V2 UI:** not applicable via this flag anymore; use auth + routing or a separate deploy if needed.
 - Disable V2 API: remove `app.use('/api/v2', ...)` from `server.js` and redeploy backend (classic `/api/*` unaffected).

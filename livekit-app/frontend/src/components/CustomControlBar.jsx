@@ -220,7 +220,7 @@ export default function CustomControlBar({
   }, []);
 
   return (
-    <div className={`w-full bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`}>
+    <div className={`w-full border-t border-border bg-background/95 backdrop-blur-sm ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`}>
       <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
         {/* Left side - Standard controls */}
         <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
@@ -230,8 +230,8 @@ export default function CustomControlBar({
               onClick={toggleMic}
               className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
                 isMicEnabled
-                  ? 'bg-white/10 hover:bg-white/15 text-white'
-                  : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
+                  ? 'bg-muted/50 text-foreground hover:bg-muted/70'
+                  : 'bg-destructive/20 text-destructive-foreground hover:bg-destructive/30'
               }`}
               aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
@@ -243,25 +243,25 @@ export default function CustomControlBar({
               <div className="relative" ref={micMenuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
+                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50 hover:bg-muted/70 text-foreground transition-all"
                   aria-label="Select microphone device"
                 >
                   <ChevronDown className={`w-4 h-4 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showMicMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999]">
+                  <div className="absolute bottom-full left-0 z-[9999] mb-2 w-56 rounded-lg border border-border bg-popover shadow-xl">
                     <div className="p-2">
                       {micDevices.map((device) => (
                         <button
                           key={device.deviceId}
                           onClick={() => handleMicDeviceChange(device.deviceId)}
-                          className={`w-full text-left px-3 py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                            selectedMicId === device.deviceId ? 'bg-gray-700' : ''
+                          className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
+                            selectedMicId === device.deviceId ? 'bg-accent' : ''
                           }`}
                         >
-                          <span className="text-sm text-white truncate">{device.label || device.deviceId}</span>
-                          {selectedMicId === device.deviceId && <span className="text-green-400 text-xs">✓</span>}
+                          <span className="truncate text-sm text-popover-foreground">{device.label || device.deviceId}</span>
+                          {selectedMicId === device.deviceId && <span className="text-xs text-primary">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -277,7 +277,7 @@ export default function CustomControlBar({
               onClick={toggleCamera}
               className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
                 isCameraEnabled
-                  ? 'bg-white/10 hover:bg-white/15 text-white'
+                  ? 'bg-muted/50 hover:bg-muted/70 text-foreground'
                   : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
               }`}
               aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
@@ -290,25 +290,25 @@ export default function CustomControlBar({
               <div className="relative" ref={cameraMenuRef}>
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowCameraMenu(!showCameraMenu); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
+                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50 hover:bg-muted/70 text-foreground transition-all"
                   aria-label="Select camera device"
                 >
                   <ChevronDown className={`w-4 h-4 transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
                 </button>
 
                 {showCameraMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999]">
+                  <div className="absolute bottom-full left-0 z-[9999] mb-2 w-56 rounded-lg border border-border bg-popover shadow-xl">
                     <div className="p-2">
                       {cameraDevices.map((device) => (
                         <button
                           key={device.deviceId}
                           onClick={() => handleCameraDeviceChange(device.deviceId)}
-                          className={`w-full text-left px-3 py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                            selectedCameraId === device.deviceId ? 'bg-gray-700' : ''
+                          className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
+                            selectedCameraId === device.deviceId ? 'bg-accent' : ''
                           }`}
                         >
-                          <span className="text-sm text-white truncate">{device.label || device.deviceId}</span>
-                          {selectedCameraId === device.deviceId && <span className="text-green-400 text-xs">✓</span>}
+                          <span className="truncate text-sm text-popover-foreground">{device.label || device.deviceId}</span>
+                          {selectedCameraId === device.deviceId && <span className="text-xs text-primary">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -325,7 +325,7 @@ export default function CustomControlBar({
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
                 isScreenSharing
                   ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
-                  : 'bg-white/10 hover:bg-white/15 text-white'
+                  : 'bg-muted/50 hover:bg-muted/70 text-foreground'
               }`}
               aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             >
@@ -370,7 +370,7 @@ export default function CustomControlBar({
             className={`relative flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
               sidePanelOpen && sidePanelTab === 'chat'
                 ? 'bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200'
-                : 'bg-white/10 hover:bg-white/15 text-white'
+                : 'bg-muted/50 hover:bg-muted/70 text-foreground'
             }`}
             aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
             title="Chat"
@@ -397,7 +397,7 @@ export default function CustomControlBar({
               className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
                 sidePanelOpen && sidePanelTab === 'participants'
                   ? 'bg-blue-600/30 hover:bg-blue-600/40 text-blue-200'
-                  : 'bg-white/10 hover:bg-white/15 text-white'
+                  : 'bg-muted/50 hover:bg-muted/70 text-foreground'
               }`}
               aria-label={sidePanelOpen && sidePanelTab === 'participants' ? 'Close participants' : 'Open participants'}
               title="Participants"
@@ -411,7 +411,7 @@ export default function CustomControlBar({
           {isHost && (
             <button
               onClick={onShareClick}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all`}
+              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg bg-muted/50 hover:bg-muted/70 text-foreground transition-all`}
               aria-label="Share meeting"
             >
               <Share2 className="w-5 h-5" />

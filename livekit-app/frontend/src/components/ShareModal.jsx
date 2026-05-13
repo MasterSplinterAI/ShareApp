@@ -1,7 +1,10 @@
 import { useState } from 'react';
-import { X, Copy, Check, Smartphone, Laptop } from 'lucide-react';
+import { Copy, Check, Smartphone, Laptop } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
 
 function ShareModal({ shareableLink, shareableLinkNetwork, hostCode, onClose }) {
   const [copiedLink, setCopiedLink] = useState(null);
@@ -24,99 +27,55 @@ function ShareModal({ shareableLink, shareableLinkNetwork, hostCode, onClose }) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold text-white">Share Meeting</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* QR Code */}
-        <div className="bg-white p-4 rounded-lg mb-6 flex justify-center">
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md border-border/80 bg-card">
+        <DialogHeader>
+          <DialogTitle>Share meeting</DialogTitle>
+        </DialogHeader>
+        <div className="flex justify-center rounded-lg bg-white p-4">
           <QRCodeSVG value={shareableLink} size={200} />
         </div>
-
-        {/* Shareable Links */}
-        <div className="space-y-3 mb-6">
+        <div className="space-y-3">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Laptop className="w-4 h-4 text-gray-400" />
-              <span className="text-sm text-gray-400">Direct Link</span>
+            <div className="mb-1 flex items-center gap-2">
+              <Laptop className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Direct link</span>
             </div>
             <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={shareableLink}
-                readOnly
-                className="flex-1 bg-gray-700 text-gray-300 px-3 py-2 rounded text-sm font-mono"
-              />
-              <button
-                onClick={() => copyToClipboard(shareableLink, 'direct')}
-                className="bg-gray-700 hover:bg-gray-600 p-2 rounded transition-colors"
-              >
-                {copiedLink === 'direct' ? (
-                  <Check className="w-4 h-4 text-green-400" />
-                ) : (
-                  <Copy className="w-4 h-4 text-gray-300" />
-                )}
-              </button>
+              <Input type="text" value={shareableLink} readOnly className="font-mono text-xs" />
+              <Button type="button" variant="secondary" size="icon" onClick={() => copyToClipboard(shareableLink, 'direct')}>
+                {copiedLink === 'direct' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+              </Button>
             </div>
           </div>
-
           {shareableLinkNetwork && (
             <div>
-              <div className="flex items-center gap-2 mb-1">
-                <Smartphone className="w-4 h-4 text-gray-400" />
-                <span className="text-sm text-gray-400">Network Link (Same WiFi)</span>
+              <div className="mb-1 flex items-center gap-2">
+                <Smartphone className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Network link (same Wi‑Fi)</span>
               </div>
               <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={shareableLinkNetwork}
-                  readOnly
-                  className="flex-1 bg-gray-700 text-gray-300 px-3 py-2 rounded text-sm font-mono"
-                />
-                <button
-                  onClick={() => copyToClipboard(shareableLinkNetwork, 'network')}
-                  className="bg-gray-700 hover:bg-gray-600 p-2 rounded transition-colors"
-                >
-                  {copiedLink === 'network' ? (
-                    <Check className="w-4 h-4 text-green-400" />
-                  ) : (
-                    <Copy className="w-4 h-4 text-gray-300" />
-                  )}
-                </button>
+                <Input type="text" value={shareableLinkNetwork} readOnly className="font-mono text-xs" />
+                <Button type="button" variant="secondary" size="icon" onClick={() => copyToClipboard(shareableLinkNetwork, 'network')}>
+                  {copiedLink === 'network' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+                </Button>
               </div>
             </div>
           )}
         </div>
-
-        {/* Host Code */}
         {hostCode && (
-          <div className="bg-gray-700 rounded-lg p-4">
-            <p className="text-sm text-gray-300 mb-2">Your host code (for rejoining):</p>
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="mb-2 text-sm text-muted-foreground">Host code (rejoining)</p>
             <div className="flex items-center gap-2">
-              <span className="text-2xl font-mono font-bold text-blue-400">{hostCode}</span>
-              <button
-                onClick={() => copyToClipboard(hostCode, 'code')}
-                className="ml-auto bg-gray-600 hover:bg-gray-500 p-2 rounded transition-colors"
-              >
-                {copiedCode ? (
-                  <Check className="w-4 h-4 text-green-400" />
-                ) : (
-                  <Copy className="w-4 h-4 text-gray-300" />
-                )}
-              </button>
+              <span className="font-mono text-2xl font-bold text-primary">{hostCode}</span>
+              <Button type="button" variant="secondary" size="icon" className="ml-auto" onClick={() => copyToClipboard(hostCode, 'code')}>
+                {copiedCode ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
+              </Button>
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -5,6 +5,7 @@ import { useMeeting } from '../context/MeetingContext';
 import { chatService } from '../services/api';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import PanelTabs from './PanelTabs';
+import { Button } from './ui/button';
 
 const MAX_CHARS = 2000;
 const URL_RE = /\bhttps?:\/\/\S+/gi;
@@ -27,7 +28,7 @@ function linkifyText(text) {
         href={url}
         target="_blank"
         rel="noopener noreferrer nofollow"
-        className="text-blue-400 underline break-all hover:text-blue-300"
+        className="text-primary underline break-all hover:text-primary/80"
       >
         {url}
       </a>
@@ -275,7 +276,7 @@ function ChatPanel() {
         className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
       >
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <MessageCircle className="w-8 h-8 mb-3 opacity-50" />
             <p className="text-center text-sm">No messages yet. Say hi.</p>
           </div>
@@ -292,7 +293,7 @@ function ChatPanel() {
                 <span className="text-xs font-medium text-emerald-400 truncate">
                   {msg.isOwn ? 'You' : msg.senderName}
                 </span>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-muted-foreground">
                   {new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -300,14 +301,14 @@ function ChatPanel() {
                 </span>
               </div>
               <div
-                className={`rounded-lg px-3 py-2 max-w-[95%] break-words text-sm ${
+                className={`max-w-[95%] break-words rounded-lg border px-3 py-2 text-sm ${
                   msg.isOwn
-                    ? 'bg-blue-600/25 text-gray-100 border border-blue-500/30'
-                    : 'bg-gray-800/80 text-gray-100 border border-gray-700/80'
+                    ? 'border-primary/30 bg-primary/15 text-foreground'
+                    : 'border-border bg-muted/60 text-foreground'
                 }`}
               >
                 {msg.translating && !msg.isOwn ? (
-                  <span className="inline-flex items-center gap-2 text-gray-400">
+                  <span className="inline-flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
                     Translating…
                   </span>
@@ -315,7 +316,7 @@ function ChatPanel() {
                   <>
                     <div className="leading-relaxed">{linkifyText(primary)}</div>
                     {secondary && (
-                      <div className="mt-1 text-xs text-gray-400 leading-relaxed border-t border-gray-700/50 pt-1">
+                      <div className="mt-1 text-xs text-muted-foreground leading-relaxed border-t border-border/50 pt-1">
                         {linkifyText(secondary)}
                       </div>
                     )}
@@ -326,25 +327,26 @@ function ChatPanel() {
           );
         })}
       </div>
-      <div className="p-3 border-t border-gray-700 bg-gray-900/95 flex-shrink-0 flex gap-2">
+      <div className="flex flex-shrink-0 gap-2 border-t border-border bg-card/95 p-3">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_CHARS))}
           onKeyDown={onKeyDown}
           placeholder="Message…"
           rows={2}
-          className="flex-1 resize-none rounded-lg bg-gray-800 border border-gray-600 text-white text-sm px-3 py-2 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           maxLength={MAX_CHARS}
         />
-        <button
+        <Button
           type="button"
+          size="icon"
+          className="self-end shrink-0"
           onClick={sendMessage}
           disabled={!draft.trim()}
-          className="self-end px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white"
           aria-label="Send message"
         >
-          <Send className="w-5 h-5" />
-        </button>
+          <Send className="h-5 w-5" />
+        </Button>
       </div>
     </>
   );
@@ -352,7 +354,7 @@ function ChatPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9998] flex flex-col"
+        className="fixed bottom-20 right-4 z-[9998] flex max-h-80 w-96 flex-col rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-md"
         data-no-translate="true"
       >
         <PanelTabs compact />
@@ -363,10 +365,7 @@ function ChatPanel() {
 
   return (
     <div
-      className="flex flex-col flex-shrink-0 bg-gray-900 border-gray-700 z-40
-        fixed bottom-12 left-0 right-0 max-h-[45vh] rounded-t-xl border-t shadow-2xl
-        sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full
-        sm:w-[350px] lg:w-[400px] sm:border-l sm:border-t-0 sm:rounded-none sm:shadow-none"
+      className="z-40 flex h-full w-80 max-h-[45vh] flex-shrink-0 flex-col rounded-t-xl border border-border bg-card shadow-2xl fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-[350px] lg:w-[400px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
       data-no-translate="true"
     >
       <PanelTabs />

@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
 import HomeScreen from './components/HomeScreen'
@@ -6,6 +6,7 @@ import MeetingRoom from './components/MeetingRoom'
 import JoinMeeting from './components/JoinMeeting'
 import ErrorBoundary from './components/ErrorBoundary'
 import V2Layout from './v2/V2Layout'
+import V2RootRedirect from './v2/V2RootRedirect'
 import V2RequireAuth from './v2/V2RequireAuth'
 import V2Login from './v2/pages/V2Login'
 import V2Signup from './v2/pages/V2Signup'
@@ -24,18 +25,19 @@ function App() {
   
   return (
     <>
-      <Toaster 
+      <Toaster
         position="top-right"
         toastOptions={{
           style: {
-            background: '#1f2937',
-            color: '#f3f4f6',
+            background: 'hsl(var(--card))',
+            color: 'hsl(var(--card-foreground))',
+            border: '1px solid hsl(var(--border))',
           },
         }}
       />
       <Routes>
         <Route path="/v2" element={<V2Layout />}>
-          <Route index element={<Navigate to="login" replace />} />
+          <Route index element={<V2RootRedirect />} />
           <Route path="login" element={<V2Login />} />
           <Route path="signup" element={<V2Signup />} />
           <Route path="app" element={<V2RequireAuth />}>
@@ -54,10 +56,10 @@ function App() {
         } />
         <Route path="/join/:roomName" element={<JoinMeeting />} />
         <Route path="*" element={
-          <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-            <div className="text-white">
-              <h1>404 - Page not found</h1>
-              <p>Current path: {location.pathname}</p>
+          <div className="flex min-h-screen items-center justify-center bg-background px-4">
+            <div className="text-center text-foreground">
+              <h1 className="text-xl font-semibold">404 — Page not found</h1>
+              <p className="mt-2 text-sm text-muted-foreground">Current path: {location.pathname}</p>
             </div>
           </div>
         } />

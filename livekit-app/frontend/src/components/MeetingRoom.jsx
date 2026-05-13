@@ -173,6 +173,30 @@ function MeetingRoom() {
 
   const handleDisconnected = () => {
     toast('Disconnected from room');
+    const hasV2 = typeof localStorage !== 'undefined' && localStorage.getItem('v2_token');
+    const mid = participantInfo?.meetingId;
+    if (hasV2 && mid) {
+      navigate(`/v2/app/meetings/${mid}`);
+      return;
+    }
+    if (hasV2) {
+      navigate('/v2/app');
+      return;
+    }
+    navigate('/');
+  };
+
+  const navigateAfterLeave = () => {
+    const hasV2 = typeof localStorage !== 'undefined' && localStorage.getItem('v2_token');
+    const mid = participantInfo?.meetingId;
+    if (hasV2 && mid) {
+      navigate(`/v2/app/meetings/${mid}`);
+      return;
+    }
+    if (hasV2) {
+      navigate('/v2/app');
+      return;
+    }
     navigate('/');
   };
 
@@ -195,14 +219,17 @@ function MeetingRoom() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
+          <p className="mb-4 text-destructive">{error}</p>
           <button
-            onClick={() => navigate('/')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+            type="button"
+            onClick={navigateAfterLeave}
+            className="rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go Home
+            {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
+              ? 'Back to workspace'
+              : 'Back to home'}
           </button>
         </div>
       </div>
@@ -211,10 +238,10 @@ function MeetingRoom() {
 
   if (!isInitialized || !participantInfo) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
-          <p className="text-gray-300">Loading participant info...</p>
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading participant info…</p>
         </div>
       </div>
     );
@@ -222,10 +249,10 @@ function MeetingRoom() {
 
   if (isConnecting || !token) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
-          <p className="text-gray-300">Connecting to room...</p>
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Connecting to room…</p>
         </div>
       </div>
     );
@@ -328,7 +355,7 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
   }, []);
 
   return (
-    <div className="h-[100dvh] bg-gray-900 relative overflow-hidden w-full">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-background">
       <LiveKitRoom
         video={true}
         audio={true}

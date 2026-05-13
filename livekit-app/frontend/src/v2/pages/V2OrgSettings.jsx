@@ -2,6 +2,20 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth, v2Orgs } from '../../services/apiV2';
+import { Button } from '../../components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../components/ui/alert-dialog';
 
 export default function V2OrgSettings() {
   const [role, setRole] = useState('');
@@ -9,6 +23,7 @@ export default function V2OrgSettings() {
   const [email, setEmail] = useState('');
   const [memberRole, setMemberRole] = useState('member');
   const [loading, setLoading] = useState(true);
+  const [removeTarget, setRemoveTarget] = useState(null);
 
   const load = () => {
     Promise.all([v2Auth.me(), v2Orgs.listMembers()])
@@ -39,11 +54,12 @@ export default function V2OrgSettings() {
     }
   };
 
-  const remove = async (userId) => {
-    if (!window.confirm('Remove this member from the organization?')) return;
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
     try {
-      await v2Orgs.removeMember(userId);
+      await v2Orgs.removeMember(removeTarget);
       toast.success('Removed');
+      setRemoveTarget(null);
       load();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Remove failed');
@@ -51,64 +67,92 @@ export default function V2OrgSettings() {
   };
 
   if (loading) {
-    return <p className="text-gray-500 text-sm">Loading…</p>;
+    return <p className="text-sm text-muted-foreground">Loading…</p>;
   }
 
   return (
-    <div className="max-w-2xl">
-      <Link to="/v2/app" className="text-sm text-blue-400 hover:text-blue-300 mb-4 inline-block">
+    <div className="max-w-2xl space-y-6">
+      <Link to="/v2/app" className="text-sm font-medium text-primary hover:underline">
         ← Workspace
       </Link>
-      <h1 className="text-2xl font-semibold text-white mb-2">Organization</h1>
-      <p className="text-gray-500 text-sm mb-8">Your role: <span className="text-gray-300">{role}</span></p>
-
-      <div className="rounded-lg border border-gray-800 bg-gray-800/30 p-5 mb-8">
-        <h2 className="text-white font-medium mb-4">Members</h2>
-        {!canManage && <p className="text-sm text-gray-500">Only owners and admins can manage members.</p>}
-        {canManage && (
-          <form onSubmit={addMember} className="flex flex-col sm:flex-row gap-2 mb-6">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="colleague@company.com"
-              className="flex-1 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white text-sm"
-            />
-            <select
-              value={memberRole}
-              onChange={(e) => setMemberRole(e.target.value)}
-              className="rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white text-sm"
-            >
-              <option value="member">Member</option>
-              {role === 'owner' && <option value="admin">Admin</option>}
-            </select>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2"
-            >
-              Add
-            </button>
-          </form>
-        )}
-        <ul className="space-y-2">
-          {members.map((m) => (
-            <li
-              key={m.id}
-              className="flex items-center justify-between rounded-lg border border-gray-700/80 bg-gray-900/40 px-3 py-2 text-sm"
-            >
-              <div>
-                <div className="text-gray-200">{m.email}</div>
-                <div className="text-xs text-gray-500">{m.display_name || '—'} · {m.role}</div>
-              </div>
-              {canManage && m.role !== 'owner' && (
-                <button type="button" onClick={() => remove(m.id)} className="text-xs text-red-400 hover:text-red-300">
-                  Remove
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Organization</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Your role: <span className="text-foreground">{role}</span>
+        </p>
       </div>
+
+      <Card className="border-border/80">
+        <CardHeader>
+          <CardTitle>Members</CardTitle>
+          <CardDescription>Invite colleagues and manage access.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {!canManage && <p className="text-sm text-muted-foreground">Only owners and admins can manage members.</p>}
+          {canManage && (
+            <form onSubmit={addMember} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="invite-email">Email</Label>
+                <Input
+                  id="invite-email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="colleague@company.com"
+                />
+              </div>
+              <div className="space-y-2 sm:w-36">
+                <Label htmlFor="invite-role">Role</Label>
+                <select
+                  id="invite-role"
+                  value={memberRole}
+                  onChange={(e) => setMemberRole(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="member">Member</option>
+                  {role === 'owner' && <option value="admin">Admin</option>}
+                </select>
+              </div>
+              <Button type="submit">Add</Button>
+            </form>
+          )}
+          <ul className="space-y-2">
+            {members.map((m) => (
+              <li
+                key={m.id}
+                className="flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-muted/20 px-3 py-3 text-sm"
+              >
+                <div>
+                  <div className="font-medium text-foreground">{m.email}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {m.display_name || '—'} · {m.role}
+                  </div>
+                </div>
+                {canManage && m.role !== 'owner' && (
+                  <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setRemoveTarget(m.id)}>
+                    Remove
+                  </Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </CardContent>
+      </Card>
+
+      <AlertDialog open={!!removeTarget} onOpenChange={(open) => !open && setRemoveTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove member?</AlertDialogTitle>
+            <AlertDialogDescription>This revokes their access to this organization.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={confirmRemove}>
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
