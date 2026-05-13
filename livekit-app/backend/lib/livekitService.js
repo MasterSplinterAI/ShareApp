@@ -32,6 +32,18 @@ function defaultAgentName() {
   return process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev');
 }
 
+/** Match frontend RoomControls / host heuristics so we do not count the bot as a human speaker. */
+function looksLikeAgentIdentity(identity) {
+  if (!identity) return false;
+  const s = String(identity).toLowerCase();
+  return (
+    s.startsWith('agent-') ||
+    s.includes('translation') ||
+    s.includes('-agent') ||
+    s.includes('agent_')
+  );
+}
+
 async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language') {
   const roomService = getRoomService();
   const createOptions = {
@@ -75,13 +87,40 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language') {
   });
 
   const agentName = defaultAgentName();
+  let participants = [];
+  try {
+    participants = await roomService.listParticipants(roomName);
+  } catch (e) {
+    console.warn(`[livekitService] listParticipants(${roomName}):`, e.message);
+  }
+  const agentParticipantPresent = participants.some((p) => looksLikeAgentIdentity(p.identity));
+
   try {
     const dispatch = getAgentDispatch();
     const existing = await dispatch.listDispatch(roomName);
-    const hasAgent = existing && existing.length > 0;
-    if (!hasAgent) {
+    const dispatchRows = Array.isArray(existing) ? existing : [];
+
+    // listDispatch can still return rows after the worker exited or the room was empty.
+    // In that case LiveKit will not join a new agent unless we remove stale dispatches and create a fresh one.
+    if (!agentParticipantPresent && dispatchRows.length > 0) {
+      for (const row of dispatchRows) {
+        const dispatchId = row && row.id;
+        if (!dispatchId) continue;
+        try {
+          await dispatch.deleteDispatch(dispatchId, roomName);
+          console.log(`[livekitService] Removed stale agent dispatch ${dispatchId} for ${roomName}`);
+        } catch (delErr) {
+          console.warn(`[livekitService] deleteDispatch ${dispatchId}:`, delErr.message);
+        }
+      }
+    }
+
+    if (!agentParticipantPresent) {
       await dispatch.createDispatch(roomName, agentName);
-      console.log(`[livekitService] Agent dispatched to ${roomName}`);
+      console.log(`[livekitService] Agent dispatched to ${roomName} (no agent participant in room)`);
+    } else if (dispatchRows.length === 0) {
+      await dispatch.createDispatch(roomName, agentName);
+      console.log(`[livekitService] Agent dispatched to ${roomName} (participant present but no dispatch rows)`);
     }
   } catch (e) {
     console.warn(`[livekitService] ensureRoomAndAgent dispatch check for ${roomName}:`, e.message);

@@ -73,6 +73,19 @@ LANG_NAMES = {
 }
 
 
+def is_likely_agent_identity(identity: str) -> bool:
+    """Aligned with frontend RoomControls — cloud agents may not use agent-* prefix."""
+    if not identity:
+        return False
+    s = identity.lower()
+    return (
+        s.startswith("agent-")
+        or "translation" in s
+        or "-agent" in s
+        or "agent_" in s
+    )
+
+
 class SpeakerRunContext:
     """Mutable target-language set for one speaker pipeline (listener-only changes update this)."""
 
@@ -111,6 +124,7 @@ class TranscriptionOnlyAgent:
         self.host_vad_sensitivity = "normal"
         self._update_debounce_task: asyncio.Task | None = None
         self._update_debounce_sec = 0.4  # Coalesce rapid language switches
+        self._agent_ready_ping_task: asyncio.Task | None = None
 
     def _normalize_language_code(self, lang: str) -> str:
         if not lang:
@@ -265,6 +279,30 @@ class TranscriptionOnlyAgent:
             asyncio.create_task(handle_data(data))
 
         async def on_connected(participant: rtc.RemoteParticipant):
+            ident = participant.identity or ""
+            if not is_likely_agent_identity(ident):
+                t = self._agent_ready_ping_task
+                if t is not None and not t.done():
+                    t.cancel()
+
+                async def _ping_agent_ready():
+                    try:
+                        await asyncio.sleep(1.2)
+                        await ctx.room.local_participant.publish_data(
+                            json.dumps({"type": "agent_ready"}).encode("utf-8"),
+                            topic="agent",
+                            reliable=True,
+                        )
+                        logger.info(
+                            "📢 agent_ready re-broadcast after human participant_connected "
+                            "(rejoin / missed first broadcast)"
+                        )
+                    except asyncio.CancelledError:
+                        return
+                    except Exception as e:
+                        logger.warning(f"agent_ready re-broadcast failed: {e}")
+
+                self._agent_ready_ping_task = asyncio.create_task(_ping_agent_ready())
             _schedule_update()
 
         async def on_track_published(pub: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
@@ -286,13 +324,17 @@ class TranscriptionOnlyAgent:
         try:
             await asyncio.Event().wait()
         finally:
+            t = self._agent_ready_ping_task
+            if t is not None and not t.done():
+                t.cancel()
+                await asyncio.gather(t, return_exceptions=True)
             await self._shutdown_all_assistants(ctx)
 
     async def update_assistants(self, ctx: JobContext):
         speakers = [
             p.identity for p in ctx.room.remote_participants.values()
             if any(pub.kind == rtc.TrackKind.KIND_AUDIO for pub in p.track_publications.values())
-            and not p.identity.startswith("agent-")
+            and not is_likely_agent_identity(p.identity)
         ]
         targets = {
             lang for pid, lang in self.participant_languages.items()
