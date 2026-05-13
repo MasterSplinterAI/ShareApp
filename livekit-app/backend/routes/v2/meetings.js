@@ -17,6 +17,23 @@ function defaultRequireInvite() {
   return process.env.V2_DEFAULT_REQUIRE_INVITE !== '0';
 }
 
+function inviteIsUsable(inv) {
+  if (inv.revoked_at) return false;
+  const exp = new Date(inv.expires_at).getTime();
+  if (Number.isNaN(exp) || exp < Date.now()) return false;
+  if (inv.max_uses != null && inv.use_count >= inv.max_uses) return false;
+  if (!inv.reusable && inv.use_count >= 1) return false;
+  return true;
+}
+
+function enrichInvitesWithJoinUrls(invites, guestJoinBase) {
+  return invites.map((inv) => {
+    const usable = inviteIsUsable(inv);
+    const joinUrl = usable ? `${guestJoinBase}?i=${encodeURIComponent(inv.token)}` : null;
+    return { ...inv, joinUrl, usable };
+  });
+}
+
 async function assertMeetingAccess(row, auth) {
   if (!row) return false;
   if (row.host_user_id === auth.userId) return true;
@@ -222,17 +239,22 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       require_invite_token: row.require_invite_token === 1,
     };
     const guestJoinBase = `${base}/join/${encodeURIComponent(row.livekit_room_name)}`;
+    const invitesEnriched = enrichInvitesWithJoinUrls(invites, guestJoinBase);
     let joinUrl = guestJoinBase;
-    const activeDefault = invites.find((l) => l.label === 'Default guest link' && !l.revoked_at);
-    if (policy.require_invite_token && activeDefault) {
-      joinUrl = `${guestJoinBase}?i=${encodeURIComponent(activeDefault.token)}`;
+    if (policy.require_invite_token) {
+      const primary =
+        invitesEnriched.find((l) => l.label === 'Default guest link' && l.usable) ||
+        invitesEnriched.find((l) => l.usable);
+      if (primary?.joinUrl) {
+        joinUrl = primary.joinUrl;
+      }
     }
     const { host_required_to_start, require_invite_token, ...meetingRow } = row;
     res.json({
       ...meetingRow,
       policy,
       joinUrl,
-      invites,
+      invites: invitesEnriched,
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });

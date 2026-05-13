@@ -130,6 +130,12 @@ export default function V2MeetingDetail() {
     toast.success('Copied guest URL');
   };
 
+  const copyInviteUrl = async (url) => {
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    toast.success('Copied invite URL');
+  };
+
   const joinAsHost = async () => {
     if (!name.trim()) {
       toast.error('Enter display name');
@@ -164,6 +170,7 @@ export default function V2MeetingDetail() {
   }
 
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false };
+  const guestUrlNeedsToken = policy.require_invite_token && meeting.joinUrl && !meeting.joinUrl.includes('?i=');
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -224,17 +231,20 @@ export default function V2MeetingDetail() {
           </label>
         </div>
         <div>
-          <p className="text-xs text-gray-500 mb-2">Guest join URL</p>
-          <div className="flex flex-col sm:flex-row gap-2">
-            <a
-              href={meeting.joinUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-blue-400 text-sm break-all inline-flex items-center gap-1 hover:text-blue-300 flex-1 min-w-0"
-            >
-              {meeting.joinUrl}
-              <ExternalLink className="w-3 h-3 shrink-0" />
-            </a>
+          <p className="text-xs text-gray-500 mb-2">Guest join URL (full link — scroll or select to verify)</p>
+          {guestUrlNeedsToken && (
+            <p className="text-xs text-amber-400 mb-2 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1.5">
+              Invite tokens are required, but no active invite link was found. Create a new invite below so guests get a valid URL with <code className="text-amber-200/90">?i=</code>.
+            </p>
+          )}
+          <textarea
+            readOnly
+            rows={4}
+            value={meeting.joinUrl || ''}
+            spellCheck={false}
+            className="w-full rounded-lg bg-gray-950 border border-gray-700 px-3 py-2 text-xs font-mono text-gray-200 break-all resize-y min-h-[5.5rem]"
+          />
+          <div className="flex flex-wrap gap-2 mt-2">
             <button
               type="button"
               onClick={copyGuestUrl}
@@ -243,6 +253,17 @@ export default function V2MeetingDetail() {
               <Copy className="w-4 h-4" />
               Copy
             </button>
+            {meeting.joinUrl && (
+              <a
+                href={meeting.joinUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open
+              </a>
+            )}
           </div>
         </div>
       </section>
@@ -271,26 +292,62 @@ export default function V2MeetingDetail() {
             New invite link
           </button>
         </div>
-        <ul className="space-y-2 text-sm">
+        <ul className="space-y-3 text-sm">
           {(meeting.invites || []).map((inv) => (
-            <li key={inv.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-700/60 rounded-lg px-3 py-2 bg-gray-900/40">
-              <div>
-                <div className="text-gray-200">{inv.label || 'Link'}</div>
-                <div className="text-xs text-gray-500">
-                  {inv.revoked_at ? (
-                    <span className="text-red-400">Revoked</span>
-                  ) : (
-                    <>
-                      Expires {new Date(inv.expires_at).toLocaleString()} · uses {inv.use_count}
-                      {inv.reusable ? ' · reusable' : ''}
-                    </>
-                  )}
+            <li key={inv.id} className="border border-gray-700/60 rounded-lg px-3 py-3 bg-gray-900/40 space-y-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <div className="text-gray-200">{inv.label || 'Link'}</div>
+                  <div className="text-xs text-gray-500">
+                    {inv.revoked_at ? (
+                      <span className="text-red-400">Revoked</span>
+                    ) : (
+                      <>
+                        Expires {new Date(inv.expires_at).toLocaleString()} · uses {inv.use_count}
+                        {inv.reusable ? ' · reusable' : ''}
+                      </>
+                    )}
+                  </div>
                 </div>
+                {!inv.revoked_at && (
+                  <button type="button" onClick={() => revokeInvite(inv.id)} className="text-xs text-red-400 hover:text-red-300 shrink-0">
+                    Revoke
+                  </button>
+                )}
               </div>
-              {!inv.revoked_at && (
-                <button type="button" onClick={() => revokeInvite(inv.id)} className="text-xs text-red-400 hover:text-red-300">
-                  Revoke
-                </button>
+              {inv.joinUrl ? (
+                <>
+                  <textarea
+                    readOnly
+                    rows={4}
+                    value={inv.joinUrl}
+                    spellCheck={false}
+                    className="w-full rounded-lg bg-gray-950 border border-gray-600/80 px-2 py-1.5 text-xs font-mono text-gray-200 break-all resize-y min-h-[5rem]"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => copyInviteUrl(inv.joinUrl)}
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy URL
+                    </button>
+                    <a
+                      href={inv.joinUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 rounded-md border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open
+                    </a>
+                  </div>
+                </>
+              ) : (
+                !inv.revoked_at && (
+                  <p className="text-xs text-amber-500/90">No guest URL — expired or use limit reached.</p>
+                )
               )}
             </li>
           ))}
