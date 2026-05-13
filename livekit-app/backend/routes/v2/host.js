@@ -1,4 +1,5 @@
 const express = require('express');
+const { TrackType } = require('@livekit/protocol');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
@@ -6,13 +7,34 @@ const { getRoomService } = require('../../lib/livekitService');
 
 async function muteParticipantAudio(roomName, identity, muted = true) {
   const roomService = getRoomService();
-  const participant = await roomService.getParticipant(roomName, identity);
-  const tracks = participant.tracks || [];
-  for (const t of tracks) {
-    if (t.type === 0 && t.sid) {
-      await roomService.mutePublishedTrack(roomName, identity, t.sid, Boolean(muted));
-    }
+  let participant;
+  try {
+    participant = await roomService.getParticipant(roomName, identity);
+  } catch (e) {
+    const err = new Error(e.message || 'Participant not found in room');
+    err.code = 'PARTICIPANT_NOT_FOUND';
+    throw err;
   }
+  const tracks = participant.tracks || [];
+  const audioTracks = tracks.filter((t) => {
+    if (!t || !t.sid) return false;
+    const ty = Number(t.type);
+    return Number.isFinite(ty) && ty === TrackType.AUDIO;
+  });
+  if (audioTracks.length === 0) {
+    const err = new Error('No microphone track published for this participant');
+    err.code = 'NO_AUDIO_TRACK';
+    throw err;
+  }
+  for (const t of audioTracks) {
+    await roomService.mutePublishedTrack(roomName, identity, String(t.sid), Boolean(muted));
+  }
+}
+
+function livekitErrorMessage(e) {
+  if (!e) return '';
+  if (typeof e.message === 'string') return e.message;
+  return String(e);
 }
 
 router.get('/:id/participants', requireV2Auth, async (req, res) => {
@@ -104,7 +126,23 @@ router.post('/:id/participants/:identity/mute', requireV2Auth, async (req, res) 
     await muteParticipantAudio(row.livekit_room_name, identity, muted);
     res.json({ ok: true, muted });
   } catch (e) {
-    console.error('[v2/host mute]', e);
+    const msg = livekitErrorMessage(e);
+    console.error('[v2/host mute]', msg, e);
+    if (msg.toLowerCase().includes('remote unmute is disabled')) {
+      return res.status(403).json({
+        error: 'Remote unmute is disabled for this LiveKit project.',
+        code: 'remote_unmute_disabled',
+        hint:
+          'LiveKit Cloud: open https://cloud.livekit.io → your project → Settings → enable ' +
+          '"Admins can remotely unmute tracks" (required for host unmute from the dashboard).',
+      });
+    }
+    if (e.code === 'NO_AUDIO_TRACK') {
+      return res.status(409).json({ error: msg, code: 'no_audio_track' });
+    }
+    if (e.code === 'PARTICIPANT_NOT_FOUND') {
+      return res.status(404).json({ error: msg, code: 'participant_not_found' });
+    }
     res.status(500).json({ error: 'Mute failed' });
   }
 });

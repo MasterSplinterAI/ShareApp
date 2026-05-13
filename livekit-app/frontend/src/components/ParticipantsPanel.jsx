@@ -35,7 +35,8 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
         await v2Host.muteParticipant(meetingId, identity, muted);
         toast.success(muted ? `Muted ${name}` : `Unmuted ${name}`);
       } catch (e) {
-        toast.error(e?.response?.data?.error || (muted ? 'Failed to mute' : 'Failed to unmute'));
+        const d = e?.response?.data;
+        toast.error(d?.hint || d?.error || (muted ? 'Failed to mute' : 'Failed to unmute'));
       } finally {
         setBusy(null);
       }
