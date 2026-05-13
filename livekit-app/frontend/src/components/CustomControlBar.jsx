@@ -5,6 +5,8 @@ import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, M
 import toast from 'react-hot-toast';
 import LanguageSelector from './LanguageSelector';
 import { useMeeting } from '../context/MeetingContext';
+import { Button } from './ui/button';
+import { cn } from '../lib/utils';
 
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false);
@@ -219,6 +221,12 @@ export default function CustomControlBar({
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
 
+  const barBtn = (compact) =>
+    cn(
+      'rounded-full transition-transform duration-150 hover:-translate-y-0.5',
+      compact ? 'h-11 w-11 shrink-0 px-0' : 'h-11 gap-2 px-5'
+    );
+
   return (
     <div className={`w-full border-t border-border bg-background/95 backdrop-blur-sm ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`}>
       <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
@@ -226,28 +234,35 @@ export default function CustomControlBar({
         <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
           {/* Microphone Toggle */}
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              type="button"
+              variant={isMicEnabled ? 'success' : 'secondary'}
               onClick={toggleMic}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-                isMicEnabled
-                  ? 'bg-muted/50 text-foreground hover:bg-muted/70'
-                  : 'bg-destructive/20 text-destructive-foreground hover:bg-destructive/30'
-              }`}
+              className={cn(
+                barBtn(isCompact),
+                !isMicEnabled && 'border border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
+              )}
               aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
-              {isMicEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
               {!isCompact && <span className="text-sm font-medium">Microphone</span>}
-            </button>
+            </Button>
 
             {micDevices.length > 1 && !isCompact && (
               <div className="relative" ref={micMenuRef}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50 hover:bg-muted/70 text-foreground transition-all"
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMicMenu(!showMicMenu);
+                  }}
                   aria-label="Select microphone device"
                 >
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
-                </button>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
+                </Button>
 
                 {showMicMenu && (
                   <div className="absolute bottom-full left-0 z-[9999] mb-2 w-56 rounded-lg border border-border bg-popover shadow-xl">
@@ -255,6 +270,7 @@ export default function CustomControlBar({
                       {micDevices.map((device) => (
                         <button
                           key={device.deviceId}
+                          type="button"
                           onClick={() => handleMicDeviceChange(device.deviceId)}
                           className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
                             selectedMicId === device.deviceId ? 'bg-accent' : ''
@@ -273,28 +289,35 @@ export default function CustomControlBar({
 
           {/* Camera Toggle */}
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              type="button"
+              variant={isCameraEnabled ? 'success' : 'secondary'}
               onClick={toggleCamera}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-                isCameraEnabled
-                  ? 'bg-muted/50 hover:bg-muted/70 text-foreground'
-                  : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
-              }`}
+              className={cn(
+                barBtn(isCompact),
+                !isCameraEnabled && 'border border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
+              )}
               aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
-              {isCameraEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+              {isCameraEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
               {!isCompact && <span className="text-sm font-medium">Camera</span>}
-            </button>
+            </Button>
 
             {cameraDevices.length > 1 && !isCompact && (
               <div className="relative" ref={cameraMenuRef}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowCameraMenu(!showCameraMenu); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50 hover:bg-muted/70 text-foreground transition-all"
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowCameraMenu(!showCameraMenu);
+                  }}
                   aria-label="Select camera device"
                 >
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
-                </button>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
+                </Button>
 
                 {showCameraMenu && (
                   <div className="absolute bottom-full left-0 z-[9999] mb-2 w-56 rounded-lg border border-border bg-popover shadow-xl">
@@ -302,6 +325,7 @@ export default function CustomControlBar({
                       {cameraDevices.map((device) => (
                         <button
                           key={device.deviceId}
+                          type="button"
                           onClick={() => handleCameraDeviceChange(device.deviceId)}
                           className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
                             selectedCameraId === device.deviceId ? 'bg-accent' : ''
@@ -320,18 +344,20 @@ export default function CustomControlBar({
 
           {/* Screen Share - hidden in compact mode */}
           {!isCompact && (
-            <button
+            <Button
+              type="button"
+              variant={isScreenSharing ? 'success' : 'secondary'}
               onClick={toggleScreenShare}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                isScreenSharing
-                  ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-800 dark:text-blue-200'
-                  : 'bg-muted/50 hover:bg-muted/70 text-foreground'
-              }`}
+              className={cn(
+                barBtn(false),
+                isScreenSharing && 'ring-2 ring-emerald-500/40',
+                !isScreenSharing && 'text-foreground'
+              )}
               aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             >
-              <Monitor className="w-5 h-5" />
+              <Monitor className="h-5 w-5" />
               <span className="text-sm font-medium">{isScreenSharing ? 'Stop sharing' : 'Share screen'}</span>
-            </button>
+            </Button>
           )}
         </div>
 
@@ -358,8 +384,9 @@ export default function CustomControlBar({
 
           {/* Single side-panel toggle. Opens the panel on the Chat tab (and clears unread).
               In-panel tabs let users switch between Captions and Chat. */}
-          <button
+          <Button
             type="button"
+            variant={sidePanelOpen && sidePanelTab === 'chat' ? 'success' : 'secondary'}
             onClick={() => {
               if (sidePanelOpen && sidePanelTab === 'chat') {
                 closeSidePanel();
@@ -367,26 +394,24 @@ export default function CustomControlBar({
                 openSidePanel('chat');
               }
             }}
-            className={`relative flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-              sidePanelOpen && sidePanelTab === 'chat'
-                ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-900 dark:text-emerald-200'
-                : 'bg-muted/50 hover:bg-muted/70 text-foreground'
-            }`}
+            className={cn(barBtn(isCompact), 'relative')}
             aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
             title="Chat"
           >
-            <MessageCircle className="w-5 h-5" />
+            <MessageCircle className="h-5 w-5" />
             {!isCompact && <span className="text-sm font-medium">Chat</span>}
             {!(sidePanelOpen && sidePanelTab === 'chat') && unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold">
+              <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
-          </button>
+          </Button>
 
           {/* Share Button - Host Only */}
           {isHost && (
-            <button
+            <Button
+              type="button"
+              variant={sidePanelOpen && sidePanelTab === 'participants' ? 'success' : 'secondary'}
               onClick={() => {
                 if (sidePanelOpen && sidePanelTab === 'participants') {
                   closeSidePanel();
@@ -394,40 +419,28 @@ export default function CustomControlBar({
                   openSidePanel('participants');
                 }
               }}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-                sidePanelOpen && sidePanelTab === 'participants'
-                  ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-900 dark:text-blue-200'
-                  : 'bg-muted/50 hover:bg-muted/70 text-foreground'
-              }`}
+              className={barBtn(isCompact)}
               aria-label={sidePanelOpen && sidePanelTab === 'participants' ? 'Close participants' : 'Open participants'}
               title="Participants"
             >
-              <Users className="w-5 h-5" />
+              <Users className="h-5 w-5" />
               {!isCompact && <span className="text-sm font-medium">People</span>}
-            </button>
+            </Button>
           )}
 
           {/* Share Link - Host Only */}
           {isHost && (
-            <button
-              onClick={onShareClick}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg bg-muted/50 hover:bg-muted/70 text-foreground transition-all`}
-              aria-label="Share meeting"
-            >
-              <Share2 className="w-5 h-5" />
+            <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting">
+              <Share2 className="h-5 w-5" />
               {!isCompact && <span className="text-sm font-medium">Share</span>}
-            </button>
+            </Button>
           )}
 
           {/* Leave Button */}
-          <button
-            onClick={onDisconnect}
-            className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-all`}
-            aria-label="Leave meeting"
-          >
-            <PhoneOff className="w-5 h-5" />
+          <Button type="button" variant="destructive" onClick={onDisconnect} className={barBtn(isCompact)} aria-label="Leave meeting">
+            <PhoneOff className="h-5 w-5" />
             {!isCompact && <span className="text-sm font-medium">Leave</span>}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

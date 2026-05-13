@@ -75,8 +75,14 @@ export default function V2SuperAdmin() {
         <h1 className="text-2xl font-semibold tracking-tight">Platform admin</h1>
         <p className="mt-1 text-sm text-muted-foreground">Cross-tenant overview (SQLite MVP).</p>
       </div>
-      <Card className="overflow-hidden border-border/80">
-        <div className="overflow-x-auto">
+      <Card className="app-card overflow-hidden border-border/60 shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">Organizations</CardTitle>
+          <CardDescription>
+            {orgs.length} workspace{orgs.length === 1 ? '' : 's'} on this instance.
+          </CardDescription>
+        </CardHeader>
+        <div className="overflow-x-auto border-t border-border/60">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-border bg-muted/30 text-muted-foreground">
               <tr>
@@ -88,26 +94,34 @@ export default function V2SuperAdmin() {
               </tr>
             </thead>
             <tbody>
-              {orgs.map((o) => (
-                <tr key={o.id} className="border-b border-border/60 last:border-0">
-                  <td className="px-4 py-3 font-medium text-foreground">{o.name}</td>
-                  <td className="px-4 py-3">
-                    <Input
-                      type="text"
-                      defaultValue={o.billing_status}
-                      onChange={(e) => setBillingEdit((prev) => ({ ...prev, [o.id]: e.target.value }))}
-                      className="h-9 max-w-[160px]"
-                    />
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{o.member_count}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{o.meeting_count}</td>
-                  <td className="px-4 py-3">
-                    <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => saveOrg(o.id)}>
-                      Save billing
-                    </Button>
+              {orgs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No organizations yet.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                orgs.map((o) => (
+                  <tr key={o.id} className="border-b border-border/60 last:border-0">
+                    <td className="px-4 py-3 font-medium text-foreground">{o.name}</td>
+                    <td className="px-4 py-3">
+                      <Input
+                        type="text"
+                        defaultValue={o.billing_status}
+                        onChange={(e) => setBillingEdit((prev) => ({ ...prev, [o.id]: e.target.value }))}
+                        className="h-9 max-w-[160px]"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{o.member_count}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{o.meeting_count}</td>
+                    <td className="px-4 py-3">
+                      <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => saveOrg(o.id)}>
+                        Save billing
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

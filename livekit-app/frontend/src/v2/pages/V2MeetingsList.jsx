@@ -3,7 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus } from 'lucide-react';
 import { v2Meetings } from '../../services/apiV2';
-import { getMeetingUiState, toneClasses } from '../lib/meetingState';
+import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
+import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import {
@@ -164,9 +165,9 @@ export default function V2MeetingsList() {
                           </span>
                         )}
                       </div>
-                      <span className={`shrink-0 rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
+                      <Badge variant={toneToBadgeVariant(ui.tone)} className="shrink-0 text-xs uppercase tracking-wide">
                         {ui.label}
-                      </span>
+                      </Badge>
                     </CardContent>
                   </Card>
                 </Link>

@@ -8,12 +8,14 @@ export function MarketingFooter() {
           <p className="font-medium text-foreground">JarMetals Conference</p>
           <p className="mt-1">Video with translation, captions, and workspace controls.</p>
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
+        <nav className="flex flex-col gap-2 sm:items-end" aria-label="Footer">
           <Link to="/v2/login" className="text-primary hover:underline">
             Sign in to workspace
           </Link>
-          <p className="text-xs">Support: <span className="text-foreground">hello@jarmetals.com</span> (placeholder)</p>
-        </div>
+          <p className="text-xs">
+            Support: <span className="text-foreground">hello@jarmetals.com</span> (placeholder)
+          </p>
+        </nav>
       </div>
     </footer>
   );

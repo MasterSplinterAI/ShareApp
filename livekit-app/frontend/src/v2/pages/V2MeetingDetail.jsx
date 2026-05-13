@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams, Link } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check, PhoneOff, Radio, FileDown } from 'lucide-react';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
-import { getMeetingUiState, toneClasses } from '../lib/meetingState';
+import { getMeetingUiState } from '../lib/meetingState';
 import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
-import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
-import { Input } from '../../components/ui/input';
-import { Label } from '../../components/ui/label';
-import { Switch } from '../../components/ui/switch';
-import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,6 +15,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../../components/ui/accordion';
+import MeetingHeader from '../components/MeetingHeader';
+import MeetingJoinCard from '../components/MeetingJoinCard';
+import MeetingPresenceCard from '../components/MeetingPresenceCard';
+import MeetingAccessPanel from '../components/MeetingAccessPanel';
+import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
+import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
+import MeetingDangerPanel from '../components/MeetingDangerPanel';
 
 const MEETING_LANGUAGES = getMeetingLanguages();
 
@@ -83,14 +85,16 @@ export default function V2MeetingDetail() {
     me &&
     (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
 
-  const saveTitle = async () => {
+  const onTitleBlur = async () => {
     if (!meeting || !titleEdit.trim()) return;
+    if (titleEdit.trim() === (meeting.title || '').trim()) return;
     try {
       await v2Meetings.patch(id, { title: titleEdit.trim() });
       toast.success('Title saved');
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Save failed');
+      setTitleEdit(meeting.title || '');
     }
   };
 
@@ -236,316 +240,48 @@ export default function V2MeetingDetail() {
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
   const canManageTranscriptPolicy =
     me && (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
+  const isScheduled = Boolean(meeting.scheduled_start);
+  const showPresence = ['live', 'scheduled'].includes(meeting.status);
 
-  return (
-    <div className="max-w-3xl space-y-8">
-      <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
-        ← Meetings
-      </Link>
+  const accessPanelProps = {
+    meeting,
+    titleEdit,
+    setTitleEdit,
+    onTitleBlur,
+    policy,
+    onPatchPolicy: patchPolicy,
+    canManageTranscriptPolicy,
+    guestUrlNeedsToken,
+    onCopyGuestUrl: copyGuestUrl,
+  };
 
-      <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{meeting.title}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          {ui && (
-            <span className={`rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
-              {ui.label}
-            </span>
-          )}
-          <span className="text-muted-foreground">
-            Room{' '}
-            <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground">{meeting.livekit_room_name}</code>
-          </span>
-        </div>
-        {meeting.scheduled_start && (
-          <p className="text-sm text-muted-foreground">
-            Scheduled: <span className="text-foreground">{new Date(meeting.scheduled_start).toLocaleString()}</span>
-          </p>
-        )}
-      </header>
+  const invitesPanelProps = {
+    meeting,
+    newInviteHours,
+    setNewInviteHours,
+    newInviteReusable,
+    setNewInviteReusable,
+    maxInviteHours,
+    onCreateInvite: createInvite,
+    onRevokeInvite: revokeInvite,
+    onCopyInviteUrl: copyInviteUrl,
+  };
 
-      {['live', 'scheduled'].includes(meeting.status) && (
-        <Card className="border-border/80">
-          <CardHeader className="border-b border-border/60 pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Radio className="h-4 w-4 shrink-0 text-emerald-500" />
-              In the room
-            </CardTitle>
-            <CardDescription>
-              LiveKit snapshot (refreshes about every 12s while this meeting is scheduled or live). Agents are not listed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            {presence.humanCount === 0 ? (
-              <p className="text-sm text-muted-foreground">No participants connected right now.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {(presence.participants || []).map((p) => (
-                  <span
-                    key={p.identity}
-                    className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-foreground"
-                  >
-                    <span className="truncate font-mono text-muted-foreground">{p.identity}</span>
-                    {p.name && p.name !== p.identity && <span className="truncate text-muted-foreground">· {p.name}</span>}
-                  </span>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+  const joinCard = (
+    <MeetingJoinCard
+      meetingLanguages={MEETING_LANGUAGES}
+      name={name}
+      setName={setName}
+      selectedLanguage={selectedLanguage}
+      setSelectedLanguage={setSelectedLanguage}
+      langOpen={langOpen}
+      setLangOpen={setLangOpen}
+      onJoinAsHost={joinAsHost}
+    />
+  );
 
-      <Card className="border-border/80">
-        <CardHeader className="border-b border-border/60 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Shield className="h-4 w-4 shrink-0 text-primary" />
-            Details &amp; access
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6 pt-6">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input value={titleEdit} onChange={(e) => setTitleEdit(e.target.value)} className="flex-1" />
-            <Button type="button" variant="secondary" onClick={saveTitle} className="shrink-0">
-              Save title
-            </Button>
-          </div>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
-              <div>
-                <Label className="text-sm">Require host before guests enter</Label>
-                <p className="text-xs text-muted-foreground">Guests wait in the lobby until you join.</p>
-              </div>
-              <Switch checked={!!policy.host_required_to_start} onCheckedChange={(v) => patchPolicy({ host_required_to_start: v })} />
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
-              <div>
-                <Label className="text-sm">Require invite token (?i=)</Label>
-                <p className="text-xs text-muted-foreground">Guests need a full invite URL when enabled.</p>
-              </div>
-              <Switch checked={!!policy.require_invite_token} onCheckedChange={(v) => patchPolicy({ require_invite_token: v })} />
-            </div>
-            {canManageTranscriptPolicy && (
-              <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
-                <div>
-                  <Label className="text-sm">Save transcript on server</Label>
-                  <p className="text-xs text-muted-foreground">Host session uploads finalized captions when enabled.</p>
-                </div>
-                <Switch checked={!!policy.store_transcripts} onCheckedChange={(v) => patchPolicy({ store_transcripts: v })} />
-              </div>
-            )}
-          </div>
-          {Number(meeting.transcriptLineCount || 0) > 0 && (
-            <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4">
-              <p className="text-xs text-muted-foreground">
-                Saved lines: <span className="font-medium text-foreground">{meeting.transcriptLineCount}</span>
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={downloadTranscriptJson}>
-                  <FileDown className="h-3.5 w-3.5" />
-                  Download JSON
-                </Button>
-                <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={downloadTranscriptTxt}>
-                  <FileDown className="h-3.5 w-3.5" />
-                  Download .txt
-                </Button>
-              </div>
-            </div>
-          )}
-          <div>
-            <Label className="text-xs text-muted-foreground">Guest join URL</Label>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Anyone with this link can join (plus <code className="text-foreground/80">?i=</code> when invite tokens are on).
-            </p>
-            {guestUrlNeedsToken && (
-              <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-2 text-xs text-amber-200">
-                Invite tokens are required, but no active invite link was found. Create a new invite below.
-              </p>
-            )}
-            <textarea
-              readOnly
-              rows={4}
-              value={meeting.joinUrl || ''}
-              spellCheck={false}
-              className="mt-2 w-full min-h-[5.5rem] resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs break-all text-foreground"
-            />
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" className="gap-1" onClick={copyGuestUrl}>
-                <Copy className="h-4 w-4" />
-                Copy
-              </Button>
-              {meeting.joinUrl && (
-                <Button variant="outline" size="sm" className="gap-1" asChild>
-                  <a href={meeting.joinUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-4 w-4" />
-                    Open
-                  </a>
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/80">
-        <CardHeader className="border-b border-border/60 pb-3">
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4 shrink-0 text-primary" />
-            Invite links
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4 pt-6">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Expires in (hours)</Label>
-              <Input
-                type="number"
-                min={1}
-                max={maxInviteHours}
-                className="w-28"
-                value={newInviteHours}
-                onChange={(e) =>
-                  setNewInviteHours(Math.min(maxInviteHours, Math.max(1, Number(e.target.value) || 24)))
-                }
-              />
-            </div>
-            <div className="flex items-center gap-2 pb-2">
-              <Switch id="reusable" checked={newInviteReusable} onCheckedChange={setNewInviteReusable} />
-              <Label htmlFor="reusable" className="text-sm font-normal">
-                Reusable
-              </Label>
-            </div>
-            <Button type="button" variant="outline" size="sm" onClick={() => setNewInviteHours(maxInviteHours)}>
-              Max length
-            </Button>
-            <Button type="button" onClick={createInvite}>
-              New invite link
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Longest cap: {Math.round(maxInviteHours / 24)} days from link creation (<code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>).
-          </p>
-          <ul className="space-y-3 text-sm">
-            {(meeting.invites || []).map((inv) => (
-              <li key={inv.id} className="space-y-2 rounded-lg border border-border/60 bg-muted/10 p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="font-medium text-foreground">{inv.label || 'Link'}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {inv.revoked_at ? (
-                        <span className="text-destructive">Revoked</span>
-                      ) : (
-                        <>
-                          Expires {new Date(inv.expires_at).toLocaleString()} · uses {inv.use_count}
-                          {inv.reusable ? ' · reusable' : ''}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  {!inv.revoked_at && (
-                    <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => revokeInvite(inv.id)}>
-                      Revoke
-                    </Button>
-                  )}
-                </div>
-                {inv.joinUrl ? (
-                  <>
-                    <textarea
-                      readOnly
-                      rows={4}
-                      value={inv.joinUrl}
-                      spellCheck={false}
-                      className="w-full min-h-[5rem] resize-y rounded-md border border-input bg-background px-2 py-2 font-mono text-xs break-all"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => copyInviteUrl(inv.joinUrl)}>
-                        <Copy className="h-3.5 w-3.5" />
-                        Copy URL
-                      </Button>
-                      <Button variant="outline" size="sm" className="gap-1" asChild>
-                        <a href={inv.joinUrl} target="_blank" rel="noreferrer">
-                          <ExternalLink className="h-3.5 w-3.5" />
-                          Open
-                        </a>
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  !inv.revoked_at && <p className="text-xs text-amber-600 dark:text-amber-400">No guest URL — expired or use limit reached.</p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </CardContent>
-      </Card>
-
-      <Card className="border-border/80">
-        <CardHeader>
-          <CardTitle className="text-base">Join as host</CardTitle>
-          <CardDescription>
-            In the meeting, use the <strong className="text-foreground">People</strong> button in the bottom bar to mute or remove participants.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="host-name">Your name</Label>
-            <Input id="host-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Host display name" />
-          </div>
-          <div className="space-y-2">
-            <Label className="flex items-center gap-1">
-              <Globe className="h-3.5 w-3.5" />
-              My language (speak &amp; hear)
-            </Label>
-            <Popover open={langOpen} onOpenChange={setLangOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="w-full justify-between font-normal">
-                  <span>{MEETING_LANGUAGES.find((l) => l.code === selectedLanguage)?.name || selectedLanguage}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                <div className="max-h-52 overflow-y-auto py-1">
-                  {MEETING_LANGUAGES.map((lang) => (
-                    <button
-                      key={lang.code}
-                      type="button"
-                      onClick={() => {
-                        setSelectedLanguage(lang.code);
-                        setLangOpen(false);
-                      }}
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <span>{lang.name}</span>
-                      {selectedLanguage === lang.code && <Check className="h-4 w-4 text-primary" />}
-                    </button>
-                  ))}
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <Button type="button" className="w-full" onClick={joinAsHost}>
-            Join as host
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card className="border-destructive/30 bg-destructive/5">
-        <CardHeader>
-          <CardTitle className="text-base text-destructive">Meeting actions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {canEndMeeting && (
-            <Button type="button" variant="destructive" className="gap-2" disabled={ending} onClick={() => setEndOpen(true)}>
-              <PhoneOff className="h-4 w-4" />
-              {ending ? 'Ending…' : 'End meeting for everyone'}
-            </Button>
-          )}
-          <div>
-            <Button type="button" variant="link" className="h-auto p-0 text-amber-600 dark:text-amber-400" onClick={() => setArchiveOpen(true)}>
-              Archive meeting (no new joins)
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
+  const dialogs = (
+    <>
       <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -562,7 +298,6 @@ export default function V2MeetingDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
       <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -575,6 +310,131 @@ export default function V2MeetingDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  );
+
+  if (!isScheduled) {
+    return (
+      <div className="max-w-3xl space-y-8">
+        <MeetingHeader meeting={meeting} ui={ui} />
+        {showPresence && <MeetingPresenceCard presence={presence} />}
+
+        <Card className="app-card border-border/60">
+          <CardHeader className="border-b border-border/60 pb-3">
+            <CardTitle className="text-base">Guest link</CardTitle>
+            <CardDescription>Share this URL with participants. Use Advanced for policies and invite tokens.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <MeetingAccessPanel {...accessPanelProps} showTitleRow={false} showPolicyToggles={false} showGuestUrl />
+          </CardContent>
+        </Card>
+
+        {joinCard}
+
+        <Accordion type="single" collapsible className="rounded-lg border border-border/60 bg-card px-4 shadow-sm">
+          <AccordionItem value="advanced" className="border-0">
+            <AccordionTrigger className="text-base hover:no-underline">Advanced settings</AccordionTrigger>
+            <AccordionContent className="space-y-8 pt-2">
+              <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
+              <MeetingInvitesPanel {...invitesPanelProps} />
+              <MeetingTranscriptPanel
+                lineCount={meeting.transcriptLineCount}
+                onDownloadJson={downloadTranscriptJson}
+                onDownloadTxt={downloadTranscriptTxt}
+              />
+              <MeetingDangerPanel
+                canEndMeeting={canEndMeeting}
+                ending={ending}
+                onOpenEndDialog={() => setEndOpen(true)}
+                onOpenArchiveDialog={() => setArchiveOpen(true)}
+              />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+
+        {dialogs}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto grid max-w-screen-xl gap-8 lg:grid-cols-2">
+      <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
+        <MeetingHeader meeting={meeting} ui={ui} />
+        {showPresence && <MeetingPresenceCard presence={presence} />}
+
+        <Card className="app-card border-border/60">
+          <CardHeader className="border-b border-border/60 pb-3">
+            <CardTitle className="text-base">Overview</CardTitle>
+            <CardDescription>
+              {meeting.host_present === 1 ? (
+                <span className="text-foreground">Host has opened this session.</span>
+              ) : (
+                <span>Waiting for host to join when host-gate is on.</span>
+              )}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+
+        <Card className="app-card border-border/60">
+          <CardHeader className="border-b border-border/60 pb-3">
+            <CardTitle className="text-base">Guest link</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-6">
+            <MeetingAccessPanel {...accessPanelProps} showTitleRow={false} showPolicyToggles={false} showGuestUrl />
+          </CardContent>
+        </Card>
+
+        {joinCard}
+      </div>
+
+      <div className="min-w-0 space-y-6">
+        <Card className="app-card border-border/60">
+          <CardHeader className="border-b border-border/60 pb-3">
+            <CardTitle className="text-base">Meeting setup</CardTitle>
+            <CardDescription>Access, invites, recordings, and lifecycle actions.</CardDescription>
+          </CardHeader>
+          <CardContent className="pt-2">
+            <Accordion type="multiple" defaultValue={['access', 'invites']} className="w-full">
+              <AccordionItem value="access">
+                <AccordionTrigger className="text-sm hover:no-underline">Access &amp; policy</AccordionTrigger>
+                <AccordionContent>
+                  <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="invites">
+                <AccordionTrigger className="text-sm hover:no-underline">Invite links</AccordionTrigger>
+                <AccordionContent>
+                  <MeetingInvitesPanel {...invitesPanelProps} />
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="recordings">
+                <AccordionTrigger className="text-sm hover:no-underline">Recordings &amp; transcript</AccordionTrigger>
+                <AccordionContent>
+                  <MeetingTranscriptPanel
+                    lineCount={meeting.transcriptLineCount}
+                    onDownloadJson={downloadTranscriptJson}
+                    onDownloadTxt={downloadTranscriptTxt}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+              <AccordionItem value="danger" className="border-b-0">
+                <AccordionTrigger className="text-sm hover:no-underline text-destructive">Danger zone</AccordionTrigger>
+                <AccordionContent className="border-0 pb-0">
+                  <MeetingDangerPanel
+                    canEndMeeting={canEndMeeting}
+                    ending={ending}
+                    onOpenEndDialog={() => setEndOpen(true)}
+                    onOpenArchiveDialog={() => setArchiveOpen(true)}
+                  />
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </CardContent>
+        </Card>
+      </div>
+
+      {dialogs}
     </div>
   );
 }

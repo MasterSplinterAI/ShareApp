@@ -39,14 +39,29 @@ export function getMeetingUiState(meeting, extras = {}) {
 export function toneClasses(tone) {
   switch (tone) {
     case 'green':
-      return 'text-emerald-400 bg-emerald-950/40 border-emerald-800';
+      return 'text-emerald-700 bg-emerald-50 border-emerald-200';
     case 'blue':
-      return 'text-sky-400 bg-sky-950/40 border-sky-800';
+      return 'text-sky-700 bg-sky-50 border-sky-200';
     case 'sky':
-      return 'text-sky-300 bg-sky-950/40 border-sky-800';
+      return 'text-sky-700 bg-sky-50 border-sky-200';
     case 'amber':
-      return 'text-amber-400 bg-amber-950/40 border-amber-800';
+      return 'text-amber-700 bg-amber-50 border-amber-200';
     default:
-      return 'text-gray-400 bg-gray-800/50 border-gray-700';
+      return 'text-muted-foreground bg-muted border-border';
+  }
+}
+
+/** Maps meeting UI tone to shadcn Badge variant (use with `<Badge variant={toneToBadgeVariant(ui.tone)}>`). */
+export function toneToBadgeVariant(tone) {
+  switch (tone) {
+    case 'green':
+      return 'success';
+    case 'blue':
+    case 'sky':
+      return 'info';
+    case 'amber':
+      return 'warning';
+    default:
+      return 'muted';
   }
 }
