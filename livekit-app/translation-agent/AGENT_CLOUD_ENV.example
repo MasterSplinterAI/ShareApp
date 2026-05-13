@@ -31,3 +31,8 @@ XAI_LLM_MODEL=grok-4.20-non-reasoning
 
 # Optional (agent identity)
 AGENT_NAME=translation-cloud-prod
+
+# --- Applying to LiveKit (read this) ---
+# Do NOT pass all vars as one comma-separated lk --secrets string; commas break parsing.
+# Use: lk agent deploy --secrets "STT_PROVIDER=xai" --secrets "LLM_PROVIDER=openai"
+# or: lk agent update-secrets --secrets-file path/to/non-secret-vars-only.txt plus dashboard for keys
