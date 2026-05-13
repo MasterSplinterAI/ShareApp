@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LanguageSelector from './LanguageSelector';
 import { useMeeting } from '../context/MeetingContext';
@@ -385,6 +385,29 @@ export default function CustomControlBar({
           </button>
 
           {/* Share Button - Host Only */}
+          {isHost && (
+            <button
+              onClick={() => {
+                if (sidePanelOpen && sidePanelTab === 'participants') {
+                  closeSidePanel();
+                } else {
+                  openSidePanel('participants');
+                }
+              }}
+              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
+                sidePanelOpen && sidePanelTab === 'participants'
+                  ? 'bg-blue-600/30 hover:bg-blue-600/40 text-blue-200'
+                  : 'bg-white/10 hover:bg-white/15 text-white'
+              }`}
+              aria-label={sidePanelOpen && sidePanelTab === 'participants' ? 'Close participants' : 'Open participants'}
+              title="Participants"
+            >
+              <Users className="w-5 h-5" />
+              {!isCompact && <span className="text-sm font-medium">People</span>}
+            </button>
+          )}
+
+          {/* Share Link - Host Only */}
           {isHost && (
             <button
               onClick={onShareClick}

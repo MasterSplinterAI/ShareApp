@@ -8,6 +8,7 @@ import { v2Meetings, v2Usage } from '../services/apiV2';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
 import ChatPanel from './ChatPanel';
+import ParticipantsPanel from './ParticipantsPanel';
 import RoomControls from './RoomControls';
 import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
@@ -348,6 +349,9 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
 
           {/* In-meeting chat (LiveKit data channel; mutually exclusive with captions panel via context) */}
           <ChatPanel />
+
+          {/* Zoom-style participant management panel for hosts */}
+          <ParticipantsPanel meetingId={meetingId} />
         </div>
 
         {/* Room controls for broadcasting language preferences */}

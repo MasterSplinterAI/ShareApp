@@ -55,10 +55,50 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
   return room;
 }
 
+/**
+ * Ensure a LiveKit room exists and has an agent dispatched.
+ * If the room was torn down after emptyTimeout, LiveKit's createRoom is
+ * idempotent — it returns the existing room or creates a new one.
+ * We then check for an active agent dispatch and create one if missing.
+ */
+async function ensureRoomAndAgent(roomName, roomMode = 'multi-language') {
+  const roomService = getRoomService();
+  const room = await roomService.createRoom({
+    name: roomName,
+    emptyTimeout: 300,
+    maxParticipants: 50,
+    metadata: JSON.stringify({
+      createdAt: new Date().toISOString(),
+      type: 'conference',
+      roomMode,
+    }),
+  });
+
+  const agentName = defaultAgentName();
+  try {
+    const dispatch = getAgentDispatch();
+    const existing = await dispatch.listDispatch(roomName);
+    const hasAgent = existing && existing.length > 0;
+    if (!hasAgent) {
+      await dispatch.createDispatch(roomName, agentName);
+      console.log(`[livekitService] Agent dispatched to ${roomName}`);
+    }
+  } catch (e) {
+    console.warn(`[livekitService] ensureRoomAndAgent dispatch check for ${roomName}:`, e.message);
+    try {
+      await getAgentDispatch().createDispatch(roomName, agentName);
+    } catch (e2) {
+      console.warn(`[livekitService] Fallback dispatch also failed for ${roomName}:`, e2.message);
+    }
+  }
+  return room;
+}
+
 module.exports = {
   getRoomService,
   getAgentDispatch,
   getLivekitHttpHost,
   defaultAgentName,
   createLiveKitConferenceRoom,
+  ensureRoomAndAgent,
 };

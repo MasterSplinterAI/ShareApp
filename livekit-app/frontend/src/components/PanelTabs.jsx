@@ -1,12 +1,12 @@
-import { MessageSquare, MessageCircle, X, Download } from 'lucide-react';
+import { MessageSquare, MessageCircle, Users, X, Download } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 
 /**
  * Shared tab header used by TranscriptionPanel and ChatPanel so both tabs are
- * reachable from either panel. Renders: [Captions] [Chat (unread)] ... [Download?] [X]
+ * reachable from either panel. Renders: [Captions] [Chat (unread)] [Participants?] ... [Download?] [X]
  */
 export default function PanelTabs({ onDownload, canDownload = false, compact = false }) {
-  const { sidePanelTab, setSidePanelTab, closeSidePanel, unreadCount } = useMeeting();
+  const { sidePanelTab, setSidePanelTab, closeSidePanel, unreadCount, isHost } = useMeeting();
 
   const padding = compact ? 'px-3 py-2' : 'px-3 py-2 sm:px-4 sm:py-3';
   const tabText = compact ? 'text-xs' : 'text-sm';
@@ -50,6 +50,19 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             </span>
           )}
         </button>
+        {isHost && (
+          <button
+            type="button"
+            onClick={() => setSidePanelTab('participants')}
+            className={tabBtn(sidePanelTab === 'participants')}
+            aria-label="Participants tab"
+            aria-selected={sidePanelTab === 'participants'}
+            role="tab"
+          >
+            <Users className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+            <span>People</span>
+          </button>
+        )}
       </div>
       <div className="flex items-center gap-1">
         {onDownload && (

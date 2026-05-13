@@ -4,7 +4,7 @@ const router = express.Router();
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
-const { createLiveKitConferenceRoom } = require('../../lib/livekitService');
+const { createLiveKitConferenceRoom, ensureRoomAndAgent } = require('../../lib/livekitService');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 
@@ -320,6 +320,7 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
     if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET) {
       return res.status(500).json({ error: 'LiveKit not configured' });
     }
+    await ensureRoomAndAgent(row.livekit_room_name, 'multi-language');
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: String(participantName).slice(0, 128),
       ttl: '24h',

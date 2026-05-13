@@ -4,6 +4,7 @@
 const express = require('express');
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('../../db/v2Database');
+const { ensureRoomAndAgent } = require('../../lib/livekitService');
 
 const router = express.Router();
 
@@ -106,6 +107,7 @@ router.post('/guest-token', async (req, res) => {
     if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET) {
       return res.status(500).json({ error: 'LiveKit not configured' });
     }
+    await ensureRoomAndAgent(meeting.livekit_room_name, 'multi-language');
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: String(participantName).slice(0, 128),
       ttl: '12h',

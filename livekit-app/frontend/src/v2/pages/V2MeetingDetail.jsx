@@ -1,15 +1,20 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ExternalLink, Copy, Shield, Users } from 'lucide-react';
+import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check } from 'lucide-react';
 import { v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
+import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
+
+const MEETING_LANGUAGES = getMeetingLanguages();
 
 export default function V2MeetingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [meeting, setMeeting] = useState(null);
   const [name, setName] = useState('');
+  const [selectedLanguage, setSelectedLanguage] = useState(() => normalizeMeetingLanguageCode('en'));
+  const [langOpen, setLangOpen] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteHours, setNewInviteHours] = useState(72);
   const [newInviteReusable, setNewInviteReusable] = useState(false);
@@ -115,8 +120,8 @@ export default function V2MeetingDetail() {
         roomName: meeting.livekit_room_name,
         meetingId: id,
         inviteToken: '',
-        selectedLanguage: 'en',
-        spokenLanguage: 'en',
+        selectedLanguage,
+        spokenLanguage: selectedLanguage,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${window.location.search || ''}`);
@@ -274,12 +279,47 @@ export default function V2MeetingDetail() {
             className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white"
             placeholder="Host display name"
           />
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              <Globe className="w-3.5 h-3.5 inline mr-1" />
+              My language (speak &amp; hear)
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setLangOpen(!langOpen)}
+                className="w-full flex items-center justify-between rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white text-sm"
+              >
+                <span>{MEETING_LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage}</span>
+                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {langOpen && (
+                <div className="absolute bottom-full left-0 mb-1 w-full max-h-52 overflow-y-auto rounded-lg bg-gray-900 border border-gray-700 shadow-xl z-30">
+                  {MEETING_LANGUAGES.map(lang => (
+                    <button
+                      key={lang.code}
+                      type="button"
+                      onClick={() => { setSelectedLanguage(lang.code); setLangOpen(false); }}
+                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                        selectedLanguage === lang.code ? 'bg-gray-700 text-white' : 'text-gray-300'
+                      }`}
+                    >
+                      <span>{lang.name}</span>
+                      {selectedLanguage === lang.code && <Check className="w-4 h-4 text-green-400" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={joinAsHost}
             className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
           >
-            Join as host (classic room UI)
+            Join as host
           </button>
         </div>
       </div>
