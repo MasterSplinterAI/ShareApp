@@ -90,6 +90,12 @@ else
   echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/package' && NEED_BACKEND_INSTALL=true || true
 fi
 
+if [ "$NEED_BACKEND_INSTALL" != true ] && [ -f "$BACKEND_DIR/package-lock.json" ]; then
+  if ! cmp -s "$TEMP_DIR/livekit-app/backend/package-lock.json" "$BACKEND_DIR/package-lock.json" 2>/dev/null; then
+    NEED_BACKEND_INSTALL=true
+  fi
+fi
+
 sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR"
 
 # ---------- Backend ----------
