@@ -873,6 +873,67 @@ class TranscriptionOnlyAgent:
             await stt_stream.aclose()
             await vad_stream.aclose()
             await audio_stream.aclose()
+
+
+def log_resolved_inference_config() -> None:
+    """Log effective inference env once per worker (never print API key values)."""
+    lc_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
+    stt = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+    xai_llm_model = os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning").strip()
+    xai_endpoint = os.getenv("XAI_STT_ENDPOINTING_MS", "1000").strip()
+
+    build_ref = (
+        os.getenv("AGENT_BUILD_REF")
+        or os.getenv("GIT_COMMIT")
+        or os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("VERCEL_GIT_COMMIT_SHA")
+        or "unset"
+    )
+    has_xai = bool(os.getenv("XAI_API_KEY"))
+    has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
+    has_openai = bool(os.getenv("OPENAI_API_KEY"))
+
+    stt_primary = {"xai": "xAI Grok STT (then Deepgram, then OpenAI transcribe fallback)", 
+                   "deepgram": "Deepgram nova-3 (then OpenAI transcribe fallback)", 
+                   "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)"}.get(
+        stt, "custom order"
+    )
+
+    warn = ""
+    if stt == "deepgram" and has_xai:
+        warn = (
+            " NOTE: XAI_API_KEY is set but STT_PROVIDER is default 'deepgram' — "
+            "set STT_PROVIDER=xai in LiveKit Agent env to use Grok STT."
+        )
+
+    logger.info("=" * 60)
+    logger.info("RESOLVED INFERENCE CONFIG (transcription_only_agent)")
+    logger.info(f"  build_ref={build_ref}")
+    logger.info(
+        "  LIVEKIT_CLOUD raw=%r interpreted_as_livekit_cloud_inference_defaults=%s",
+        os.getenv("LIVEKIT_CLOUD", ""),
+        lc_cloud,
+    )
+    logger.info(
+        "  STT_PROVIDER=%r primary_path=%s%s",
+        stt,
+        stt_primary,
+        warn or "",
+    )
+    logger.info("  LLM_PROVIDER=%r (translation lanes; same-language captions skip LLM)", llm)
+    if llm == "xai":
+        logger.info(f"  XAI_LLM_MODEL={xai_llm_model!r} (live translation)")
+    else:
+        logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
+    logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r}")
+    logger.info(f"  keys_present mask: XAI_API_KEY={'yes' if has_xai else 'no'}, "
+                f"DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
+                f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
+    logger.info("  (Unset keys may still use LiveKit Cloud-injected Deepgram/STT defaults when LIVEKIT_CLOUD=true.)")
+    logger.info("=" * 60)
+
+
 async def main(ctx: JobContext):
     agent = TranscriptionOnlyAgent()
     await agent.entrypoint(ctx)
@@ -881,6 +942,7 @@ async def main(ctx: JobContext):
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
+    log_resolved_inference_config()
 
     agent_name = os.getenv('AGENT_NAME', 'translation-cloud-prod')
     worker_opts = WorkerOptions(

@@ -135,13 +135,21 @@ The agent ID tells LiveKit which existing agent to update when you run `lk agent
 
 ### LiveKit Cloud Dashboard (Agent)
 
-Set these in the LiveKit Cloud dashboard for your agent:
+See **`AGENT_CLOUD_ENV.example`** for the full variable list and recommended production values (Grok STT = `STT_PROVIDER=xai` + `XAI_API_KEY`; cheap caption translation = `LLM_PROVIDER=openai`).
+
+At minimum set:
 
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
 - `LIVEKIT_URL` (e.g. `wss://production-uiycx4ku.livekit.cloud`)
-- `OPENAI_API_KEY`
-- `DEEPGRAM_API_KEY` (optional, for contextual turn detector)
+- `STT_PROVIDER` — use `xai` for Grok STT primary; default in code is `deepgram` if unset
+- `LLM_PROVIDER` — `openai` (default) uses ~`gpt-4o-mini` for translation lanes; `xai` uses `XAI_LLM_MODEL`
+- `XAI_API_KEY` (required when `STT_PROVIDER=xai` or `LLM_PROVIDER=xai`)
+- `OPENAI_API_KEY` (fallback STT + default translation LLM)
+- `DEEPGRAM_API_KEY` (fallback STT when xAI cannot serve a language)
+- `AGENT_BUILD_REF` (optional; commit SHA or tag — printed in agent logs for traceability)
+
+After `lk agent deploy`, open **`lk agent logs`** and confirm the **RESOLVED INFERENCE CONFIG** banner matches intent.
 
 ### Production Server (Backend)
 

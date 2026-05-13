@@ -1,0 +1,33 @@
+# Copy these into LiveKit Cloud → Agents → translation-cloud-prod → Environment / secrets.
+# Never commit real values. Matches `transcription_only_agent.py` (see startup log banner).
+
+# --- LiveKit ---
+LIVEKIT_URL=wss://YOUR_PROJECT.livekit.cloud
+# LIVEKIT_API_KEY=<livekit generates>
+# LIVEKIT_API_SECRET=<livekit generates>
+# LIVEKIT_CLOUD=true
+
+# --- Build traceability (recommended) ---
+# Set to `git rev-parse HEAD` when you deploy, or any unique tag (logged at worker startup).
+AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
+
+# --- Speech-to-text primary (desired production: Grok STT released with xAI plugin) ---
+# Without this line, defaults to deepgram even if XAI_API_KEY exists.
+STT_PROVIDER=xai
+# XAI_API_KEY=<same xAI credential you use elsewhere; REQUIRED for Grok STT>
+# Tune endpointing (ms); shipped April 2026 work used 1000.
+XAI_STT_ENDPOINTING_MS=1000
+
+# --- Fallback STT credentials (recommended in Cloud) ---
+# Grok STT auto-falls back for langs outside XAI_SUPPORTED_LANGS or on errors.
+DEEPGRAM_API_KEY=
+OPENAI_API_KEY=
+
+# --- Translation captions (cheap / low-latency default) ---
+# openai → openai.LLM() (~gpt-4o-mini) per transcription segment; sufficient for caption translation for most workloads.
+LLM_PROVIDER=openai
+# Only if LLM_PROVIDER=xai:
+XAI_LLM_MODEL=grok-4.20-non-reasoning
+
+# Optional (agent identity)
+AGENT_NAME=translation-cloud-prod
