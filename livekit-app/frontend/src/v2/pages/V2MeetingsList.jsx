@@ -110,7 +110,7 @@ export default function V2MeetingsList() {
               <p className="text-xs text-muted-foreground">Leave unset for an instant meeting.</p>
               <DatetimePicker value={scheduledDate} onChange={setScheduledDate} placeholder="Instant — add date & time to schedule" />
             </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
               <div className="space-y-0.5">
                 <Label htmlFor="host-wait" className="text-sm">
                   Guests wait for host
@@ -119,7 +119,7 @@ export default function V2MeetingsList() {
               </div>
               <Switch id="host-wait" checked={hostRequired} onCheckedChange={setHostRequired} />
             </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/20 px-3 py-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
               <div className="space-y-0.5">
                 <Label htmlFor="store-tr" className="text-sm">
                   Save transcript on server
@@ -143,7 +143,7 @@ export default function V2MeetingsList() {
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : meetings.length === 0 ? (
-        <Card className="border-dashed border-border/80 bg-muted/10">
+        <Card className="border-dashed border-border bg-muted/30 shadow-none">
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
             No meetings yet. Use &quot;New meeting&quot; above to create one.
           </CardContent>
@@ -155,7 +155,7 @@ export default function V2MeetingsList() {
             return (
               <li key={m.id}>
                 <Link to={`/v2/app/meetings/${m.id}`}>
-                  <Card className="border-border/80 transition-colors hover:border-primary/25 hover:bg-muted/15">
+                  <Card className="app-card app-card-hover border-border/70 hover:border-primary/40">
                     <CardContent className="flex items-center justify-between gap-3 p-4">
                       <div className="min-w-0">
                         <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>

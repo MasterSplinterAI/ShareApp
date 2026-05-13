@@ -48,7 +48,7 @@ export default function V2AppHome() {
 
   return (
     <div className="space-y-10">
-      <Card className="app-card overflow-hidden border-border/60 bg-gradient-to-br from-card via-card to-primary/5 shadow-sm">
+      <Card className="app-card overflow-hidden border-border/60 bg-gradient-to-br from-card via-card to-primary/[0.03]">
         <CardHeader className="space-y-2 pb-2 text-center sm:pb-4">
           <Badge variant="secondary" className="mx-auto w-fit text-xs font-normal">
             Workspace
@@ -83,7 +83,7 @@ export default function V2AppHome() {
           <div
             className={`mt-10 grid w-full max-w-2xl gap-4 border-t border-border/60 pt-10 ${teamWorkspace ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}
           >
-            <div className="flex flex-col rounded-lg border border-border/60 bg-muted/20 p-4 text-center">
+            <div className="flex flex-col rounded-lg border border-border/70 bg-muted/40 p-4 text-center">
               <p className="text-sm font-medium text-foreground">Copy a guest link</p>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 Copies the join URL from the <span className="font-medium text-foreground">most recent</span> meeting that has one—handy if you just created a room and want to paste it into chat or email.
@@ -93,7 +93,7 @@ export default function V2AppHome() {
               </Button>
             </div>
             {teamWorkspace ? (
-              <div className="flex flex-col rounded-lg border border-border/60 bg-muted/20 p-4 text-center">
+              <div className="flex flex-col rounded-lg border border-border/70 bg-muted/40 p-4 text-center">
                 <p className="text-sm font-medium text-foreground">Add workspace members</p>
                 <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                   Opens <span className="font-medium text-foreground">Settings → Members</span> so you can invite colleagues by email. They get their own login to this organization—not a meeting guest link.
@@ -106,7 +106,7 @@ export default function V2AppHome() {
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-col rounded-lg border border-dashed border-border/80 bg-muted/10 p-4 text-center">
+              <div className="flex flex-col rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center">
                 <p className="text-sm font-medium text-foreground">Team workspace</p>
                 <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                   Your plan is for individuals: create meetings and share guest links. Inviting colleagues with their own org login (so they can host rooms in the same workspace) is available on team plans such as Pro or Business.
@@ -123,21 +123,21 @@ export default function V2AppHome() {
       <section>
         <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">At a glance</h2>
         <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="app-card border-border/60 shadow-sm">
+          <Card className="app-card app-card-hover border-border/70">
             <CardHeader className="pb-2">
               <CardDescription>Meetings</CardDescription>
               <CardTitle className="text-3xl font-semibold tabular-nums">{meetings.length}</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">In this workspace</CardContent>
           </Card>
-          <Card className="app-card border-border/60 shadow-sm">
+          <Card className="app-card app-card-hover border-border/70">
             <CardHeader className="pb-2">
               <CardDescription>Live now</CardDescription>
               <CardTitle className="text-3xl font-semibold tabular-nums text-emerald-600">{activeLive}</CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">Status &quot;live&quot;</CardContent>
           </Card>
-          <Card className="app-card border-border/60 shadow-sm">
+          <Card className="app-card app-card-hover border-border/70">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center gap-1">
                 <Users className="h-3 w-3" /> Members
@@ -159,7 +159,7 @@ export default function V2AppHome() {
           </Link>
         </div>
         {recentMeetings.length === 0 ? (
-          <Card className="border-dashed border-border/80 bg-muted/10">
+          <Card className="border-dashed border-border bg-muted/30 shadow-none">
             <CardContent className="flex flex-col items-center py-12 text-center">
               <p className="text-sm text-muted-foreground">No meetings yet.</p>
               <Button asChild className="mt-4 gap-2">
@@ -177,7 +177,7 @@ export default function V2AppHome() {
               return (
                 <li key={m.id}>
                   <Link to={`/v2/app/meetings/${m.id}`}>
-                    <Card className="app-card border-border/60 transition-colors hover:border-primary/40 hover:shadow-md">
+                    <Card className="app-card app-card-hover border-border/70 hover:border-primary/40">
                       <CardContent className="flex items-center justify-between gap-3 p-4">
                         <div className="min-w-0">
                           <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>
@@ -200,7 +200,7 @@ export default function V2AppHome() {
         )}
       </section>
 
-      <Card className="border-border/80 bg-muted/10">
+      <Card className="app-card border-border/70 bg-gradient-to-br from-card via-card to-muted/30">
         <CardHeader>
           <CardTitle className="text-lg">Subscription</CardTitle>
           <CardDescription>

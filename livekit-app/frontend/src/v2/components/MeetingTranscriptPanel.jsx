@@ -6,7 +6,7 @@ export default function MeetingTranscriptPanel({ lineCount, onDownloadJson, onDo
     return <p className="text-sm text-muted-foreground">No saved transcript lines for this meeting yet.</p>;
   }
   return (
-    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4">
+    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/40 p-4">
       <p className="text-xs text-muted-foreground">
         Saved lines: <span className="font-medium text-foreground">{lineCount}</span>
       </p>

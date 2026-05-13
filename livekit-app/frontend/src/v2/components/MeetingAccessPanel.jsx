@@ -35,14 +35,14 @@ export default function MeetingAccessPanel({
       )}
       {showPolicyToggles && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
             <div>
               <Label className="text-sm">Require host before guests enter</Label>
               <p className="text-xs text-muted-foreground">Guests wait in the lobby until you join.</p>
             </div>
             <Switch checked={!!policy.host_required_to_start} onCheckedChange={(v) => onPatchPolicy({ host_required_to_start: v })} />
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
+          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
             <div>
               <Label className="text-sm">Require invite token (?i=)</Label>
               <p className="text-xs text-muted-foreground">Guests need a full invite URL when enabled.</p>
@@ -50,7 +50,7 @@ export default function MeetingAccessPanel({
             <Switch checked={!!policy.require_invite_token} onCheckedChange={(v) => onPatchPolicy({ require_invite_token: v })} />
           </div>
           {canManageTranscriptPolicy && (
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/15 px-3 py-3">
+            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
               <div>
                 <Label className="text-sm">Save transcript on server</Label>
                 <p className="text-xs text-muted-foreground">Host session uploads finalized captions when enabled.</p>

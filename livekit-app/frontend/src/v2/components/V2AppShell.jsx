@@ -113,12 +113,12 @@ export default function V2AppShell({ me, onLogout }) {
 
   return (
     <div className="app-surface flex min-h-screen w-full text-foreground">
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border/60 bg-card/90 shadow-sm backdrop-blur-sm md:flex">
+      <aside className="app-sidebar hidden w-60 shrink-0 flex-col border-r border-border/70 md:flex">
         {sidebarBody}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/60 bg-card/80 px-4 backdrop-blur-md md:hidden">
+        <header className="app-sidebar sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/70 px-4 backdrop-blur-md md:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label="Open menu">

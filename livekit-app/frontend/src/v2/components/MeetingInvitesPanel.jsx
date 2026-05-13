@@ -47,7 +47,7 @@ export default function MeetingInvitesPanel({
       </p>
       <ul className="space-y-3 text-sm">
         {(meeting.invites || []).map((inv) => (
-          <li key={inv.id} className="space-y-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+          <li key={inv.id} className="space-y-2 rounded-lg border border-border/60 bg-muted/40 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="font-medium text-foreground">{inv.label || 'Link'}</div>

@@ -4,29 +4,41 @@
 
 @layer base {
   /* Default: light theme (shadcn-style HSL tokens, no hue wrapper in values).
-   * Background is intentionally a bit darker than cards so app-card lifts visibly.
+   * Polished Linear/Vercel-style: bright slate canvas, pure white cards that lift via
+   * layered shadow, a subtly cooler 'sunken' surface for the sidebar/footer so cards
+   * frame nicely, and a soft brand-blue bloom on the app background.
    */
   :root {
-    --background: 215 28% 93%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --background: 210 40% 98%;            /* slate-50 — bright cool canvas */
+    --foreground: 222 47% 11%;            /* slate-900 */
+    --card: 0 0% 100%;                    /* pure white */
+    --card-foreground: 222 47% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 221 83% 53%;               /* brand blue */
     --primary-foreground: 210 40% 98%;
-    --secondary: 214 28% 90%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 214 28% 90%;
-    --muted-foreground: 215.4 16.3% 42%;
-    --accent: 214 28% 90%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
+    --secondary: 214 32% 91%;             /* slate-100 — distinct from card */
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 32% 91%;                 /* slate-100 */
+    --muted-foreground: 215 16% 47%;      /* slate-500 */
+    --accent: 214 32% 91%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214 25% 82%;
-    --input: 214 25% 82%;
-    --ring: 221.2 83.2% 53.3%;
+    --border: 214 24% 86%;                /* slate-200ish — visible but light */
+    --input: 214 24% 86%;
+    --ring: 221 83% 53%;
     --radius: 0.75rem;
+
+    /* Extra layer tokens for elevation/structure (used directly in component CSS) */
+    --surface-sunken: 214 30% 95%;        /* sidebar / framing surface */
+    --surface-elevated: 0 0% 100%;        /* cards */
+    --shadow-card:
+      0 1px 2px 0 hsl(222 47% 11% / 0.04),
+      0 4px 12px -3px hsl(222 47% 11% / 0.06);
+    --shadow-card-hover:
+      0 1px 2px 0 hsl(222 47% 11% / 0.05),
+      0 10px 24px -6px hsl(222 47% 11% / 0.10);
   }
 
   .dark {
@@ -49,22 +61,53 @@
     --border: 215 28% 17%;
     --input: 215 28% 17%;
     --ring: 217 91% 60%;
+
+    --surface-sunken: 224 71% 5%;
+    --surface-elevated: 224 71% 7%;
+    --shadow-card:
+      0 1px 2px 0 hsl(0 0% 0% / 0.30),
+      0 4px 14px -4px hsl(0 0% 0% / 0.40);
+    --shadow-card-hover:
+      0 1px 2px 0 hsl(0 0% 0% / 0.40),
+      0 10px 28px -6px hsl(0 0% 0% / 0.50);
   }
   * {
     @apply border-border;
   }
   body {
-    @apply bg-gradient-to-b from-background via-background to-muted/60 bg-fixed text-foreground antialiased;
+    @apply min-h-screen text-foreground antialiased;
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(900px 600px at 100% -10%, hsl(var(--primary) / 0.06), transparent 60%),
+      radial-gradient(700px 500px at -10% 5%, hsl(var(--primary) / 0.04), transparent 55%);
+    background-attachment: fixed;
   }
 }
 
 @layer components {
   .app-surface {
-    @apply min-h-screen bg-gradient-to-b from-background via-background to-muted/60;
+    @apply min-h-screen text-foreground;
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(900px 600px at 100% -10%, hsl(var(--primary) / 0.06), transparent 60%),
+      radial-gradient(700px 500px at -10% 5%, hsl(var(--primary) / 0.04), transparent 55%);
+    background-attachment: fixed;
+  }
+
+  .app-sidebar {
+    background-color: hsl(var(--surface-sunken));
   }
 
   .app-card {
-    @apply rounded-lg border border-border bg-card text-card-foreground shadow-sm;
+    @apply rounded-lg border border-border/70 bg-card text-card-foreground;
+    box-shadow: var(--shadow-card);
+  }
+
+  .app-card-hover {
+    transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .app-card-hover:hover {
+    box-shadow: var(--shadow-card-hover);
   }
 }
 

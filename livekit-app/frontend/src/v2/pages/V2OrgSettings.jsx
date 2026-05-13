@@ -172,7 +172,7 @@ export default function V2OrgSettings() {
                   {members.map((m) => (
                     <li
                       key={m.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/20 px-3 py-3 text-sm"
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-3 py-3 text-sm"
                     >
                       <div>
                         <div className="font-medium text-foreground">{m.email}</div>
