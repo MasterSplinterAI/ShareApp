@@ -1,6 +1,7 @@
 /**
  * Shared LiveKit server SDK helpers (used by legacy routes and V2).
  */
+const { ParticipantInfo_Kind } = require('@livekit/protocol');
 const { RoomServiceClient, AgentDispatchClient } = require('livekit-server-sdk');
 
 function getLivekitHttpHost() {
@@ -29,11 +30,25 @@ function getAgentDispatch() {
 }
 
 function defaultAgentName() {
-  return process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev');
+  if (process.env.AGENT_NAME) return process.env.AGENT_NAME;
+  // Staging often runs NODE_ENV=development but still uses LiveKit Cloud; the cloud worker
+  // registers as translation-cloud-prod (see translation-agent/livekit.toml). Do not infer
+  // from NODE_ENV alone or dispatches never match a worker.
+  const lk = (process.env.LIVEKIT_URL || '').toLowerCase();
+  if (lk.includes('livekit.cloud')) {
+    return 'translation-cloud-prod';
+  }
+  return process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev';
 }
 
-/** Match frontend RoomControls / host heuristics so we do not count the bot as a human speaker. */
-function looksLikeAgentIdentity(identity) {
+/**
+ * True if this ListParticipants row is the translation/LiveKit agent (not a human).
+ * Prefer server `kind` — cloud agent identities often look like opaque IDs (no "agent-" prefix).
+ */
+function looksLikeAgentParticipant(p) {
+  if (!p) return false;
+  if (p.kind === ParticipantInfo_Kind.AGENT) return true;
+  const identity = p.identity;
   if (!identity) return false;
   const s = String(identity).toLowerCase();
   return (
@@ -93,7 +108,7 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language') {
   } catch (e) {
     console.warn(`[livekitService] listParticipants(${roomName}):`, e.message);
   }
-  const agentParticipantPresent = participants.some((p) => looksLikeAgentIdentity(p.identity));
+  const agentParticipantPresent = participants.some((p) => looksLikeAgentParticipant(p));
 
   try {
     const dispatch = getAgentDispatch();
