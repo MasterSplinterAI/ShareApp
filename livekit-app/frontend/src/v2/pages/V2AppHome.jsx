@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Users, Video, UserPlus } from 'lucide-react';
+import { Plus, Users, Video, UserPlus, Link2 } from 'lucide-react';
 import { v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
@@ -31,6 +31,7 @@ export default function V2AppHome() {
   const recentMeetings = useMemo(() => meetings.slice(0, 5), [meetings]);
   const activeLive = useMemo(() => meetings.filter((m) => m.status === 'live').length, [meetings]);
   const teamWorkspace = hasTeamWorkspace(orgData?.entitlements, sub?.plan);
+  const hasGuestLink = useMemo(() => meetings.some((m) => Boolean(m.joinUrl)), [meetings]);
 
   const copyLastGuestLink = useCallback(async () => {
     const m = meetings.find((x) => x.joinUrl);
@@ -63,7 +64,7 @@ export default function V2AppHome() {
               : ' Create rooms, share guest links, and manage your meetings from here.'}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col items-center pb-10 pt-2">
+        <CardContent className="flex flex-col items-center pb-8 pt-2">
           <Button asChild size="lg" className="min-w-[min(100%,14rem)] gap-2 px-10 text-base">
             <Link to="/v2/app/meetings?create=1">
               <Plus className="h-5 w-5" />
@@ -73,48 +74,26 @@ export default function V2AppHome() {
           <p className="mt-3 max-w-md text-center text-sm text-muted-foreground">
             Start here. You&apos;ll get a guest link on the next screen to share with participants.
           </p>
-          <Button variant="outline" size="lg" asChild className="mt-6 gap-2">
-            <Link to="/v2/app/meetings">
-              <Video className="h-4 w-4" />
-              All meetings
-            </Link>
-          </Button>
-
-          <div
-            className={`mt-10 grid w-full max-w-2xl gap-4 border-t border-border/60 pt-10 ${teamWorkspace ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}
-          >
-            <div className="flex flex-col rounded-lg border border-border/70 bg-muted/40 p-4 text-center">
-              <p className="text-sm font-medium text-foreground">Copy a guest link</p>
-              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                Copies the join URL from the <span className="font-medium text-foreground">most recent</span> meeting that has one—handy if you just created a room and want to paste it into chat or email.
-              </p>
-              <Button type="button" variant="secondary" size="sm" className="mt-4 self-center" onClick={copyLastGuestLink}>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
+            <Button variant="outline" size="sm" asChild className="gap-2">
+              <Link to="/v2/app/meetings">
+                <Video className="h-4 w-4" />
+                All meetings
+              </Link>
+            </Button>
+            {hasGuestLink && (
+              <Button type="button" variant="ghost" size="sm" className="gap-2" onClick={copyLastGuestLink}>
+                <Link2 className="h-4 w-4" />
                 Copy latest guest link
               </Button>
-            </div>
-            {teamWorkspace ? (
-              <div className="flex flex-col rounded-lg border border-border/70 bg-muted/40 p-4 text-center">
-                <p className="text-sm font-medium text-foreground">Add workspace members</p>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                  Opens <span className="font-medium text-foreground">Settings → Members</span> so you can invite colleagues by email. They get their own login to this organization—not a meeting guest link.
-                </p>
-                <Button variant="secondary" size="sm" className="mt-4 gap-2 self-center" asChild>
-                  <Link to="/v2/app/settings">
-                    <UserPlus className="h-4 w-4" />
-                    Open member invites
-                  </Link>
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col rounded-lg border border-dashed border-border bg-muted/30 p-4 text-center">
-                <p className="text-sm font-medium text-foreground">Team workspace</p>
-                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                  Your plan is for individuals: create meetings and share guest links. Inviting colleagues with their own org login (so they can host rooms in the same workspace) is available on team plans such as Pro or Business.
-                </p>
-                <Button variant="outline" size="sm" className="mt-4 self-center" asChild>
-                  <Link to="/v2/app/settings">View settings &amp; billing</Link>
-                </Button>
-              </div>
+            )}
+            {teamWorkspace && (
+              <Button variant="ghost" size="sm" asChild className="gap-2">
+                <Link to="/v2/app/settings">
+                  <UserPlus className="h-4 w-4" />
+                  Invite teammate
+                </Link>
+              </Button>
             )}
           </div>
         </CardContent>
