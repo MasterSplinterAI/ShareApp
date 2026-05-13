@@ -12,6 +12,7 @@ router.use('/meetings', require('./meetings'));
 router.use('/host/meetings', require('./host'));
 router.use('/billing', require('./billing'));
 router.use('/usage', require('./usage'));
-router.use('/files', require('./files'));
+// Org-scoped file uploads disabled for product UX; in-meeting chat file share (e.g. S3) is planned separately.
+// router.use('/files', require('./files'));
 
 module.exports = router;

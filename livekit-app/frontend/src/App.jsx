@@ -12,9 +12,6 @@ import V2Signup from './v2/pages/V2Signup'
 import V2AppHome from './v2/pages/V2AppHome'
 import V2MeetingsList from './v2/pages/V2MeetingsList'
 import V2MeetingDetail from './v2/pages/V2MeetingDetail'
-import V2Schedule from './v2/pages/V2Schedule'
-import V2HostPanel from './v2/pages/V2HostPanel'
-import V2FilesPage from './v2/pages/V2FilesPage'
 import V2OrgSettings from './v2/pages/V2OrgSettings'
 import V2SuperAdmin from './v2/pages/V2SuperAdmin'
 
@@ -45,9 +42,6 @@ function App() {
             <Route index element={<V2AppHome />} />
             <Route path="meetings" element={<V2MeetingsList />} />
             <Route path="meetings/:id" element={<V2MeetingDetail />} />
-            <Route path="schedule" element={<V2Schedule />} />
-            <Route path="host" element={<V2HostPanel />} />
-            <Route path="files" element={<V2FilesPage />} />
             <Route path="settings" element={<V2OrgSettings />} />
             <Route path="superadmin" element={<V2SuperAdmin />} />
           </Route>

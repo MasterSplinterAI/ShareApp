@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Plus } from 'lucide-react';
 import { v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
 
 export default function V2MeetingsList() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('Instant meeting');
   const [hostRequired, setHostRequired] = useState(false);
+  const [scheduledStart, setScheduledStart] = useState('');
 
   const load = () => {
     v2Meetings
@@ -24,13 +26,34 @@ export default function V2MeetingsList() {
     load();
   }, []);
 
+  useEffect(() => {
+    if (searchParams.get('create') === '1') {
+      setNewTitle('Instant meeting');
+      setHostRequired(false);
+      setScheduledStart('');
+      setShowCreate(true);
+      const next = new URLSearchParams(searchParams);
+      next.delete('create');
+      setSearchParams(next, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
+
+  const openCreateModal = () => {
+    setNewTitle('Instant meeting');
+    setHostRequired(false);
+    setScheduledStart('');
+    setShowCreate(true);
+  };
+
   const createNow = async () => {
     try {
+      const iso = scheduledStart.trim() ? new Date(scheduledStart).toISOString() : null;
       const m = await v2Meetings.create({
-        title: newTitle.trim() || 'Instant meeting',
+        title: newTitle.trim() || 'Meeting',
         host_required_to_start: hostRequired,
+        ...(iso ? { scheduled_start: iso } : {}),
       });
-      toast.success('Meeting created');
+      toast.success(m.status === 'scheduled' ? 'Meeting scheduled' : 'Meeting created');
       setShowCreate(false);
       window.location.href = `/v2/app/meetings/${m.id}`;
     } catch (e) {
@@ -43,11 +66,11 @@ export default function V2MeetingsList() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div>
           <h1 className="text-2xl font-semibold text-white">Meetings</h1>
-          <p className="text-gray-500 text-sm mt-1">V2-managed rooms with org billing context.</p>
+          <p className="text-gray-500 text-sm mt-1">Create instant or scheduled meetings, invite guests, join as host.</p>
         </div>
         <button
           type="button"
-          onClick={() => setShowCreate(true)}
+          onClick={openCreateModal}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
@@ -57,12 +80,20 @@ export default function V2MeetingsList() {
 
       {showCreate && (
         <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-md rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-xl border border-gray-700 bg-gray-900 p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-medium text-white mb-4">Create meeting</h2>
             <label className="block text-xs text-gray-500 mb-1">Title</label>
             <input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
+              className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-white mb-4"
+            />
+            <label className="block text-xs text-gray-500 mb-1">Start time (optional)</label>
+            <p className="text-xs text-gray-600 mb-1">Leave empty for an instant meeting. Set a future time to schedule.</p>
+            <input
+              type="datetime-local"
+              value={scheduledStart}
+              onChange={(e) => setScheduledStart(e.target.value)}
               className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-white mb-4"
             />
             <label className="flex items-center gap-2 text-sm text-gray-300 mb-6 cursor-pointer">
@@ -84,7 +115,7 @@ export default function V2MeetingsList() {
       {loading ? (
         <p className="text-gray-500 text-sm">Loading…</p>
       ) : meetings.length === 0 ? (
-        <p className="text-gray-500 text-sm">No meetings yet. Create one above or schedule from Schedule.</p>
+        <p className="text-gray-500 text-sm">No meetings yet. Use &quot;New meeting&quot; above to create one.</p>
       ) : (
         <ul className="space-y-2">
           {meetings.map((m) => {

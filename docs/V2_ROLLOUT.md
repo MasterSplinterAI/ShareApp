@@ -5,7 +5,12 @@
 | Environment | Branch / deploy | Frontend URL | Notes |
 |-------------|-----------------|---------------|--------|
 | Production classic | `main` + `deploy.sh` | `FRONTEND_URL` (e.g. share) | Legacy `/` unchanged |
-| Staging V2 | `v2-foundation` + `deploy-staging.sh` | `staging` host | Isolated `PORT`, DB, and static root |
+| Staging V2 | `v2-foundation` + `deploy-staging.sh` | `staging` host | Isolated `PORT`, DB, and static root. **Nginx:** use `deploy/nginx-staging.jarmetals.com.conf` — HTML must be `no-cache` so SPA picks up new hashed JS after deploys. |
+
+## Staging static caching
+
+- Reference vhost: [deploy/nginx-staging.jarmetals.com.conf](../deploy/nginx-staging.jarmetals.com.conf) — hashed assets `Cache-Control: public, immutable`; `location /` uses `no-cache` for `index.html`.
+- Without this, browsers may cache an old `index.html` and never load new bundles after deploy.
 
 ## Environment variables
 
@@ -54,6 +59,7 @@
 - New meetings (after this release) get a `v2_meeting_policies` row and, when `V2_DEFAULT_REQUIRE_INVITE` is on, a **Default guest link** with expiry.
 - Public join preview: `GET /api/v2/join-info?roomName=&i=` (no auth). Guest LiveKit token: `POST /api/v2/guest-token` with `{ roomName, participantName, inviteToken }`.
 - Org members: `GET/POST/PATCH/DELETE /api/v2/orgs/members*`. Platform admin: `GET /api/v2/orgs/admin/ping`, `GET /api/v2/orgs/admin/orgs`, `PATCH /api/v2/orgs/admin/orgs/:orgId` (superadmin emails only).
+- **Org files API** (`/api/v2/files`): unmounted from the default V2 router; product UX is in-meeting file share only (planned, e.g. S3). The route module may remain in the repo for future reuse.
 
 ## Auto-charge (later)
 

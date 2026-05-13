@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check } from 'lucide-react';
-import { v2Meetings } from '../../services/apiV2';
+import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check, PhoneOff } from 'lucide-react';
+import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
 import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
 
@@ -12,12 +12,14 @@ export default function V2MeetingDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [meeting, setMeeting] = useState(null);
+  const [me, setMe] = useState(null);
   const [name, setName] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState(() => normalizeMeetingLanguageCode('en'));
   const [langOpen, setLangOpen] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteHours, setNewInviteHours] = useState(72);
   const [newInviteReusable, setNewInviteReusable] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   const load = () =>
     v2Meetings
@@ -35,7 +37,20 @@ export default function V2MeetingDetail() {
     load();
   }, [id, navigate]);
 
+  useEffect(() => {
+    v2Auth
+      .me()
+      .then((r) => setMe(r))
+      .catch(() => {});
+  }, []);
+
   const ui = meeting ? getMeetingUiState(meeting) : null;
+
+  const canEndMeeting =
+    meeting &&
+    ['live', 'scheduled'].includes(meeting.status) &&
+    me &&
+    (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
 
   const saveTitle = async () => {
     if (!meeting || !titleEdit.trim()) return;
@@ -66,6 +81,20 @@ export default function V2MeetingDetail() {
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
+    }
+  };
+
+  const endMeeting = async () => {
+    if (!window.confirm('End this meeting for everyone? The LiveKit room will be closed and invite links revoked.')) return;
+    setEnding(true);
+    try {
+      await v2Host.endMeeting(id);
+      toast.success('Meeting ended');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not end meeting');
+    } finally {
+      setEnding(false);
     }
   };
 
@@ -137,37 +166,42 @@ export default function V2MeetingDetail() {
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false };
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="max-w-3xl space-y-8">
       <Link to="/v2/app/meetings" className="text-sm text-blue-400 hover:text-blue-300 inline-block">
         ← Meetings
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-semibold text-white mb-2">{meeting.title}</h1>
+      <header className="space-y-2">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">{meeting.title}</h1>
         <div className="flex flex-wrap items-center gap-2 text-sm">
           {ui && (
-            <span className={`rounded border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
+            <span className={`rounded-md border px-2 py-0.5 text-xs uppercase tracking-wide ${toneClasses(ui.tone)}`}>
               {ui.label}
             </span>
           )}
           <span className="text-gray-500">
-            Room <code className="text-gray-400 text-xs">{meeting.livekit_room_name}</code>
+            Room <code className="text-gray-400 text-xs bg-gray-800/80 px-1.5 py-0.5 rounded">{meeting.livekit_room_name}</code>
           </span>
         </div>
-      </div>
+        {meeting.scheduled_start && (
+          <p className="text-sm text-gray-400">
+            Scheduled: <span className="text-gray-200">{new Date(meeting.scheduled_start).toLocaleString()}</span>
+          </p>
+        )}
+      </header>
 
-      <div className="rounded-lg border border-gray-800 bg-gray-800/30 p-4 space-y-3">
-        <h2 className="text-sm font-medium text-white flex items-center gap-2">
-          <Shield className="w-4 h-4 text-blue-400" />
-          Meeting details
+      <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
+          <Shield className="w-4 h-4 text-blue-400 shrink-0" />
+          Details &amp; access
         </h2>
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <input
             value={titleEdit}
             onChange={(e) => setTitleEdit(e.target.value)}
             className="flex-1 rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white text-sm"
           />
-          <button type="button" onClick={saveTitle} className="px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-white">
+          <button type="button" onClick={saveTitle} className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm text-white shrink-0">
             Save title
           </button>
         </div>
@@ -189,37 +223,33 @@ export default function V2MeetingDetail() {
             Require invite token in URL for guests (?i=)
           </label>
         </div>
-        <button type="button" onClick={archiveMeeting} className="text-xs text-amber-500 hover:text-amber-400">
-          Archive meeting
-        </button>
-      </div>
-
-      <div className="rounded-lg border border-gray-800 bg-gray-800/30 p-4">
-        <p className="text-xs text-gray-500 mb-2">Guest join URL</p>
-        <div className="flex flex-col sm:flex-row gap-2">
-          <a
-            href={meeting.joinUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-blue-400 text-sm break-all inline-flex items-center gap-1 hover:text-blue-300 flex-1"
-          >
-            {meeting.joinUrl}
-            <ExternalLink className="w-3 h-3 shrink-0" />
-          </a>
-          <button
-            type="button"
-            onClick={copyGuestUrl}
-            className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700"
-          >
-            <Copy className="w-4 h-4" />
-            Copy
-          </button>
+        <div>
+          <p className="text-xs text-gray-500 mb-2">Guest join URL</p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <a
+              href={meeting.joinUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-blue-400 text-sm break-all inline-flex items-center gap-1 hover:text-blue-300 flex-1 min-w-0"
+            >
+              {meeting.joinUrl}
+              <ExternalLink className="w-3 h-3 shrink-0" />
+            </a>
+            <button
+              type="button"
+              onClick={copyGuestUrl}
+              className="inline-flex items-center justify-center gap-1 rounded-lg border border-gray-600 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700 shrink-0"
+            >
+              <Copy className="w-4 h-4" />
+              Copy
+            </button>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-lg border border-gray-800 bg-gray-800/30 p-4 space-y-4">
-        <h2 className="text-sm font-medium text-white flex items-center gap-2">
-          <Users className="w-4 h-4 text-blue-400" />
+      <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
+          <Users className="w-4 h-4 text-blue-400 shrink-0" />
           Invite links
         </h2>
         <div className="flex flex-wrap gap-2 items-end text-sm">
@@ -265,64 +295,86 @@ export default function V2MeetingDetail() {
             </li>
           ))}
         </ul>
-      </div>
+      </section>
 
-      <div className="rounded-lg border border-gray-800 bg-gray-800/30 p-4 space-y-3">
-        <Link to="/v2/app/host" className="text-sm text-blue-400 hover:text-blue-300 inline-block">
-          Open host console →
-        </Link>
-        <div className="space-y-3">
-          <label className="block text-xs text-gray-500">Your name (host)</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white"
-            placeholder="Host display name"
-          />
+      <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
+        <h2 className="text-sm font-semibold text-white border-b border-gray-700/80 pb-3">Join as host</h2>
+        <p className="text-xs text-gray-500">
+          In the meeting, use the <strong className="text-gray-400">People</strong> button in the bottom bar to mute or remove participants.
+        </p>
+        <label className="block text-xs text-gray-500">Your name</label>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white"
+          placeholder="Host display name"
+        />
 
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">
-              <Globe className="w-3.5 h-3.5 inline mr-1" />
-              My language (speak &amp; hear)
-            </label>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setLangOpen(!langOpen)}
-                className="w-full flex items-center justify-between rounded-lg bg-gray-800 border border-gray-700 px-3 py-2 text-white text-sm"
-              >
-                <span>{MEETING_LANGUAGES.find(l => l.code === selectedLanguage)?.name || selectedLanguage}</span>
-                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${langOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {langOpen && (
-                <div className="absolute bottom-full left-0 mb-1 w-full max-h-52 overflow-y-auto rounded-lg bg-gray-900 border border-gray-700 shadow-xl z-30">
-                  {MEETING_LANGUAGES.map(lang => (
-                    <button
-                      key={lang.code}
-                      type="button"
-                      onClick={() => { setSelectedLanguage(lang.code); setLangOpen(false); }}
-                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                        selectedLanguage === lang.code ? 'bg-gray-700 text-white' : 'text-gray-300'
-                      }`}
-                    >
-                      <span>{lang.name}</span>
-                      {selectedLanguage === lang.code && <Check className="w-4 h-4 text-green-400" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">
+            <Globe className="w-3.5 h-3.5 inline mr-1" />
+            My language (speak &amp; hear)
+          </label>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setLangOpen(!langOpen)}
+              className="w-full flex items-center justify-between rounded-lg bg-gray-900 border border-gray-700 px-3 py-2 text-white text-sm"
+            >
+              <span>{MEETING_LANGUAGES.find((l) => l.code === selectedLanguage)?.name || selectedLanguage}</span>
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {langOpen && (
+              <div className="absolute bottom-full left-0 mb-1 w-full max-h-52 overflow-y-auto rounded-lg bg-gray-900 border border-gray-700 shadow-xl z-30">
+                {MEETING_LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    onClick={() => {
+                      setSelectedLanguage(lang.code);
+                      setLangOpen(false);
+                    }}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                      selectedLanguage === lang.code ? 'bg-gray-700 text-white' : 'text-gray-300'
+                    }`}
+                  >
+                    <span>{lang.name}</span>
+                    {selectedLanguage === lang.code && <Check className="w-4 h-4 text-green-400" />}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
+        </div>
 
+        <button
+          type="button"
+          onClick={joinAsHost}
+          className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
+        >
+          Join as host
+        </button>
+      </section>
+
+      <section className="rounded-xl border border-red-900/30 bg-red-950/10 p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-red-300">Meeting actions</h2>
+        {canEndMeeting && (
           <button
             type="button"
-            onClick={joinAsHost}
-            className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
+            disabled={ending}
+            onClick={endMeeting}
+            className="inline-flex items-center gap-2 rounded-lg border border-red-800/60 bg-red-950/40 px-4 py-2 text-sm text-red-200 hover:bg-red-950/60 disabled:opacity-50"
           >
-            Join as host
+            <PhoneOff className="w-4 h-4" />
+            {ending ? 'Ending…' : 'End meeting for everyone'}
+          </button>
+        )}
+        <div>
+          <button type="button" onClick={archiveMeeting} className="text-xs text-amber-500 hover:text-amber-400">
+            Archive meeting (keep in list, no new joins)
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

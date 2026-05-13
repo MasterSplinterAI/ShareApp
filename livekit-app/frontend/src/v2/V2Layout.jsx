@@ -1,5 +1,5 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
-import { LogOut, LayoutDashboard, Calendar, Shield, Users, FolderOpen, Radio } from 'lucide-react';
+import { LogOut, LayoutDashboard, Shield, Users } from 'lucide-react';
 
 export default function V2Layout() {
   const navigate = useNavigate();
@@ -21,25 +21,9 @@ export default function V2Layout() {
           <nav className="flex items-center flex-wrap gap-x-4 gap-y-2 text-sm">
             {token && (
               <>
-                <Link to="/v2/app" className="text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1">
-                  <LayoutDashboard className="w-3.5 h-3.5" />
-                  Workspace
-                </Link>
                 <Link to="/v2/app/meetings" className="text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" />
                   Meetings
-                </Link>
-                <Link to="/v2/app/schedule" className="text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5" />
-                  Schedule
-                </Link>
-                <Link to="/v2/app/host" className="text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1">
-                  <Radio className="w-3.5 h-3.5" />
-                  Host
-                </Link>
-                <Link to="/v2/app/files" className="text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1">
-                  <FolderOpen className="w-3.5 h-3.5" />
-                  Files
                 </Link>
                 <Link to="/v2/app/settings" className="text-gray-400 hover:text-white transition-colors inline-flex items-center gap-1">
                   <Shield className="w-3.5 h-3.5" />

@@ -81,20 +81,4 @@ export const v2Usage = {
   rollup: (body) => apiV2.post('/usage/rollup', body || {}).then((r) => r.data),
 };
 
-export const v2Files = {
-  list: () => apiV2.get('/files').then((r) => r.data),
-  upload: (formData) =>
-    apiV2.post('/files', formData, {
-      transformRequest: [
-        (data, headers) => {
-          if (typeof FormData !== 'undefined' && data instanceof FormData) {
-            delete headers['Content-Type'];
-          }
-          return data;
-        },
-      ],
-    }).then((r) => r.data),
-  downloadUrl: (id) => `${base.replace(/\/$/, '')}/v2/files/${id}/download`,
-};
-
 export default apiV2;
