@@ -1,6 +1,6 @@
 import { useEffect, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
-import { DataPacket_Kind, RoomEvent } from 'livekit-client';
+import { DataPacket_Kind, RoomEvent, Track } from 'livekit-client';
 
 function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
   const room = useRoomContext();
@@ -50,6 +50,43 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
       sendLanguagePreference();
     }, 800);
     return () => clearTimeout(id);
+  }, [room?.state, sendLanguagePreference]);
+
+  // Agent STT starts only after language_update AND a published mic track (see transcription_only_agent).
+  // Mic often publishes after "connected"; resend when local audio publishes or unmutes.
+  useEffect(() => {
+    if (!room) return;
+    const onLocalTrackPublished = (publication) => {
+      if (publication?.kind === Track.Kind.Audio) {
+        sendLanguagePreference();
+      }
+    };
+    room.on(RoomEvent.LocalTrackPublished, onLocalTrackPublished);
+    return () => room.off(RoomEvent.LocalTrackPublished, onLocalTrackPublished);
+  }, [room, sendLanguagePreference]);
+
+  useEffect(() => {
+    if (!room) return;
+    const onTrackUnmuted = (publication, participant) => {
+      if (participant?.isLocal && publication?.kind === Track.Kind.Audio) {
+        sendLanguagePreference();
+      }
+    };
+    room.on(RoomEvent.TrackUnmuted, onTrackUnmuted);
+    return () => room.off(RoomEvent.TrackUnmuted, onTrackUnmuted);
+  }, [room, sendLanguagePreference]);
+
+  // Staggered resync: aligns with agent agent_ready (~1.5s) and slow permission / track publish.
+  useEffect(() => {
+    if (!room || room.state !== 'connected') return;
+    const t1 = setTimeout(() => sendLanguagePreference(), 1600);
+    const t2 = setTimeout(() => sendLanguagePreference(), 3200);
+    const t3 = setTimeout(() => sendLanguagePreference(), 6000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [room?.state, sendLanguagePreference]);
 
   // Resend when agent joins (agent may join after us, so it needs our language).

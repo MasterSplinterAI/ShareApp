@@ -60,8 +60,10 @@ export const v2Host = {
   participants: (meetingId) => apiV2.get(`/host/meetings/${meetingId}/participants`).then((r) => r.data),
   removeParticipant: (meetingId, identity) =>
     apiV2.post(`/host/meetings/${meetingId}/participants/${encodeURIComponent(identity)}/remove`).then((r) => r.data),
-  muteParticipant: (meetingId, identity) =>
-    apiV2.post(`/host/meetings/${meetingId}/participants/${encodeURIComponent(identity)}/mute`, {}).then((r) => r.data),
+  muteParticipant: (meetingId, identity, muted = true) =>
+    apiV2
+      .post(`/host/meetings/${meetingId}/participants/${encodeURIComponent(identity)}/mute`, { muted })
+      .then((r) => r.data),
   muteAll: (meetingId, exceptIdentity) =>
     apiV2
       .post(`/host/meetings/${meetingId}/participants/mute-all`, exceptIdentity ? { exceptIdentity } : {})

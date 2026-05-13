@@ -4,13 +4,13 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { getRoomService } = require('../../lib/livekitService');
 
-async function muteParticipantAudio(roomName, identity) {
+async function muteParticipantAudio(roomName, identity, muted = true) {
   const roomService = getRoomService();
   const participant = await roomService.getParticipant(roomName, identity);
   const tracks = participant.tracks || [];
   for (const t of tracks) {
     if (t.type === 0 && t.sid) {
-      await roomService.mutePublishedTrack(roomName, identity, t.sid, true);
+      await roomService.mutePublishedTrack(roomName, identity, t.sid, Boolean(muted));
     }
   }
 }
@@ -100,8 +100,9 @@ router.post('/:id/participants/:identity/mute', requireV2Auth, async (req, res) 
     if (row.host_user_id !== req.v2Auth.userId && !['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    await muteParticipantAudio(row.livekit_room_name, identity);
-    res.json({ ok: true });
+    const muted = req.body?.muted !== undefined ? Boolean(req.body.muted) : true;
+    await muteParticipantAudio(row.livekit_room_name, identity, muted);
+    res.json({ ok: true, muted });
   } catch (e) {
     console.error('[v2/host mute]', e);
     res.status(500).json({ error: 'Mute failed' });

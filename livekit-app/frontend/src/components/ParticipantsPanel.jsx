@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useParticipants } from '@livekit/components-react';
-import { Users, MicOff, UserX, VolumeX, Loader2 } from 'lucide-react';
+import { Users, MicOff, Mic, UserX, VolumeX, Loader2 } from 'lucide-react';
+import { Track } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { useMeeting } from '../context/MeetingContext';
 import { v2Host } from '../services/apiV2';
@@ -23,21 +24,24 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
   const isSelf = identity === localIdentity;
   const name = participant.name || identity;
 
-  const audioTrack = participant.getTrackPublication?.('microphone');
-  const isMuted = !audioTrack || audioTrack.isMuted;
+  const micPub = participant.getTrackPublication?.(Track.Source.Microphone);
+  const isServerMuted = Boolean(micPub?.isMuted);
 
-  const handleMute = useCallback(async () => {
-    if (!meetingId || busy) return;
-    setBusy('mute');
-    try {
-      await v2Host.muteParticipant(meetingId, identity);
-      toast.success(`Muted ${name}`);
-    } catch (e) {
-      toast.error(e?.response?.data?.error || 'Failed to mute');
-    } finally {
-      setBusy(null);
-    }
-  }, [meetingId, identity, name, busy]);
+  const setRemoteMicMuted = useCallback(
+    async (muted) => {
+      if (!meetingId || busy) return;
+      setBusy(muted ? 'mute' : 'unmute');
+      try {
+        await v2Host.muteParticipant(meetingId, identity, muted);
+        toast.success(muted ? `Muted ${name}` : `Unmuted ${name}`);
+      } catch (e) {
+        toast.error(e?.response?.data?.error || (muted ? 'Failed to mute' : 'Failed to unmute'));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [meetingId, identity, name, busy]
+  );
 
   const handleRemove = useCallback(async () => {
     if (!meetingId || busy) return;
@@ -69,15 +73,25 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
       </div>
 
       <div className="flex items-center gap-1">
-        {isMuted && (
-          <MicOff className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
-        )}
+        {isServerMuted && <MicOff className="w-3.5 h-3.5 text-red-400 flex-shrink-0" aria-hidden />}
+        {!isServerMuted && micPub && <Mic className="w-3.5 h-3.5 text-emerald-400/80 flex-shrink-0" aria-hidden />}
 
         {isLocalHost && !isSelf && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {!isMuted && (
+            {isServerMuted ? (
               <button
-                onClick={handleMute}
+                type="button"
+                onClick={() => setRemoteMicMuted(false)}
+                disabled={!!busy}
+                className="p-1.5 rounded-md bg-gray-600 hover:bg-gray-500 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
+                title={`Unmute ${name}`}
+              >
+                {busy === 'unmute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setRemoteMicMuted(true)}
                 disabled={!!busy}
                 className="p-1.5 rounded-md bg-gray-600 hover:bg-gray-500 text-gray-300 hover:text-white transition-colors disabled:opacity-50"
                 title={`Mute ${name}`}
@@ -86,6 +100,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
               </button>
             )}
             <button
+              type="button"
               onClick={handleRemove}
               disabled={!!busy}
               className="p-1.5 rounded-md bg-red-600/60 hover:bg-red-600 text-gray-200 hover:text-white transition-colors disabled:opacity-50"
@@ -101,19 +116,15 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
 }
 
 export default function ParticipantsPanel({ meetingId }) {
-  const { sidePanelOpen, sidePanelTab, isHost, participantName } = useMeeting();
+  const { sidePanelOpen, sidePanelTab, isHost } = useMeeting();
   const participants = useParticipants();
   const [muteAllBusy, setMuteAllBusy] = useState(false);
 
   const isVisible = sidePanelOpen && sidePanelTab === 'participants';
 
-  const humanParticipants = participants.filter(
-    (p) => !isAgentParticipant(p.identity)
-  );
+  const humanParticipants = participants.filter((p) => !isAgentParticipant(p.identity));
 
-  const localIdentity = participants.find(
-    (p) => p.isLocal
-  )?.identity;
+  const localIdentity = participants.find((p) => p.isLocal)?.identity;
 
   const handleMuteAll = useCallback(async () => {
     if (!meetingId || muteAllBusy) return;
@@ -161,6 +172,7 @@ export default function ParticipantsPanel({ meetingId }) {
       {isHost && humanParticipants.length > 1 && (
         <div className="px-3 py-2 border-t border-gray-700">
           <button
+            type="button"
             onClick={handleMuteAll}
             disabled={muteAllBusy}
             className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-gray-200 text-sm font-medium transition-colors disabled:opacity-50"
