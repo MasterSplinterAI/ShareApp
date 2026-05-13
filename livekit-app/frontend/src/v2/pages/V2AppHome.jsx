@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { Plus, Users, Video, UserPlus } from 'lucide-react';
 import { v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
+import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -29,16 +30,17 @@ export default function V2AppHome() {
 
   const recentMeetings = useMemo(() => meetings.slice(0, 5), [meetings]);
   const activeLive = useMemo(() => meetings.filter((m) => m.status === 'live').length, [meetings]);
+  const teamWorkspace = hasTeamWorkspace(orgData?.entitlements, sub?.plan);
 
   const copyLastGuestLink = useCallback(async () => {
     const m = meetings.find((x) => x.joinUrl);
     if (!m?.joinUrl) {
-      toast.error('No meeting with a guest link yet');
+      toast.error('No meeting with a guest link yet. Create a meeting first, then use this from the home page.');
       return;
     }
     try {
       await navigator.clipboard.writeText(m.joinUrl);
-      toast.success('Copied guest link');
+      toast.success(`Copied guest link (${m.title || 'Meeting'})`);
     } catch {
       toast.error('Could not copy');
     }
@@ -46,49 +48,75 @@ export default function V2AppHome() {
 
   return (
     <div className="space-y-10">
-      <div className="flex flex-wrap gap-2">
-        <Button asChild size="sm" className="gap-2">
-          <Link to="/v2/app/meetings?create=1">
-            <Plus className="h-4 w-4" />
-            New meeting
-          </Link>
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={copyLastGuestLink}>
-          Copy last guest link
-        </Button>
-        <Button variant="outline" size="sm" className="gap-2" asChild>
-          <Link to="/v2/app/settings">
-            <UserPlus className="h-4 w-4" />
-            Invite teammate
-          </Link>
-        </Button>
-      </div>
-
       <Card className="app-card overflow-hidden border-border/60 bg-gradient-to-br from-card via-card to-primary/5 shadow-sm">
-        <CardHeader className="space-y-2 pb-2 sm:pb-4">
-          <Badge variant="secondary" className="w-fit text-xs font-normal">
+        <CardHeader className="space-y-2 pb-2 text-center sm:pb-4">
+          <Badge variant="secondary" className="mx-auto w-fit text-xs font-normal">
             Workspace
           </Badge>
           <CardTitle className="text-3xl font-semibold tracking-tight sm:text-4xl">
             {orgData?.organization?.name || orgData?.org?.name || 'Your organization'}
           </CardTitle>
-          <CardDescription className="max-w-xl text-base">
-            Host translated meetings with screen share and live captions. Manage meetings and members from here.
+          <CardDescription className="mx-auto max-w-xl text-base">
+            Host translated meetings with screen share and live captions.
+            {teamWorkspace
+              ? ' Manage meetings and workspace members from here.'
+              : ' Create rooms, share guest links, and manage your meetings from here.'}
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-3 pb-8">
-          <Button variant="outline" size="lg" asChild className="gap-2">
+        <CardContent className="flex flex-col items-center pb-10 pt-2">
+          <Button asChild size="lg" className="min-w-[min(100%,14rem)] gap-2 px-10 text-base">
+            <Link to="/v2/app/meetings?create=1">
+              <Plus className="h-5 w-5" />
+              New meeting
+            </Link>
+          </Button>
+          <p className="mt-3 max-w-md text-center text-sm text-muted-foreground">
+            Start here. You&apos;ll get a guest link on the next screen to share with participants.
+          </p>
+          <Button variant="outline" size="lg" asChild className="mt-6 gap-2">
             <Link to="/v2/app/meetings">
               <Video className="h-4 w-4" />
               All meetings
             </Link>
           </Button>
-          <Button variant="outline" size="lg" asChild className="gap-2">
-            <Link to="/v2/app/settings">
-              <UserPlus className="h-4 w-4" />
-              Invite teammate
-            </Link>
-          </Button>
+
+          <div
+            className={`mt-10 grid w-full max-w-2xl gap-4 border-t border-border/60 pt-10 ${teamWorkspace ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}
+          >
+            <div className="flex flex-col rounded-lg border border-border/60 bg-muted/20 p-4 text-center">
+              <p className="text-sm font-medium text-foreground">Copy a guest link</p>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                Copies the join URL from the <span className="font-medium text-foreground">most recent</span> meeting that has one—handy if you just created a room and want to paste it into chat or email.
+              </p>
+              <Button type="button" variant="secondary" size="sm" className="mt-4 self-center" onClick={copyLastGuestLink}>
+                Copy latest guest link
+              </Button>
+            </div>
+            {teamWorkspace ? (
+              <div className="flex flex-col rounded-lg border border-border/60 bg-muted/20 p-4 text-center">
+                <p className="text-sm font-medium text-foreground">Add workspace members</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                  Opens <span className="font-medium text-foreground">Settings → Members</span> so you can invite colleagues by email. They get their own login to this organization—not a meeting guest link.
+                </p>
+                <Button variant="secondary" size="sm" className="mt-4 gap-2 self-center" asChild>
+                  <Link to="/v2/app/settings">
+                    <UserPlus className="h-4 w-4" />
+                    Open member invites
+                  </Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="flex flex-col rounded-lg border border-dashed border-border/80 bg-muted/10 p-4 text-center">
+                <p className="text-sm font-medium text-foreground">Team workspace</p>
+                <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                  Your plan is for individuals: create meetings and share guest links. Inviting colleagues with their own org login (so they can host rooms in the same workspace) is available on team plans such as Pro or Business.
+                </p>
+                <Button variant="outline" size="sm" className="mt-4 self-center" asChild>
+                  <Link to="/v2/app/settings">View settings &amp; billing</Link>
+                </Button>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -116,7 +144,9 @@ export default function V2AppHome() {
               </CardDescription>
               <CardTitle className="text-3xl font-semibold tabular-nums">{membersCount}</CardTitle>
             </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">Organization</CardContent>
+            <CardContent className="text-xs text-muted-foreground">
+              {teamWorkspace ? 'People in this org' : 'Your account (team plans add seats)'}
+            </CardContent>
           </Card>
         </div>
       </section>
@@ -177,6 +207,11 @@ export default function V2AppHome() {
             Plan: <span className="text-foreground">{sub?.plan?.name || '—'}</span>
             <span className="mx-2 text-muted-foreground">·</span>
             Status: <span className="text-foreground">{sub?.subscription?.status || '—'}</span>
+            {!teamWorkspace && (
+              <span className="mt-2 block text-xs leading-relaxed">
+                Individual: share guest links for your meetings; upgrade for a shared workspace and email invites for colleagues.
+              </span>
+            )}
           </CardDescription>
         </CardHeader>
       </Card>

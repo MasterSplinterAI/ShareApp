@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth, v2Orgs } from '../../services/apiV2';
+import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -28,7 +29,7 @@ const SECTIONS = [
 ];
 
 export default function V2OrgSettings() {
-  const [section, setSection] = useState('members');
+  const [section, setSection] = useState('organization');
   const [role, setRole] = useState('');
   const [members, setMembers] = useState([]);
   const [org, setOrg] = useState(null);
@@ -53,7 +54,9 @@ export default function V2OrgSettings() {
   }, []);
 
   const canManage = ['owner', 'admin'].includes(role);
-  const orgName = org?.organization?.name || org?.name || '—';
+  const teamWorkspace = hasTeamWorkspace(org?.entitlements);
+  const navSections = useMemo(() => SECTIONS.filter((s) => s.id !== 'members' || teamWorkspace), [teamWorkspace]);
+  const orgName = org?.org?.name || org?.organization?.name || org?.name || '—';
 
   const addMember = async (e) => {
     e.preventDefault();
@@ -92,7 +95,7 @@ export default function V2OrgSettings() {
 
       <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
         <nav className="flex shrink-0 flex-row flex-wrap gap-1 border-b border-border/60 pb-4 lg:w-52 lg:flex-col lg:border-b-0 lg:border-r lg:pr-6 lg:pb-0">
-          {SECTIONS.map((s) => (
+          {navSections.map((s) => (
             <button
               key={s.id}
               type="button"
@@ -130,11 +133,11 @@ export default function V2OrgSettings() {
             </Card>
           )}
 
-          {section === 'members' && (
+          {section === 'members' && teamWorkspace && (
             <Card className="app-card border-border/60">
               <CardHeader>
                 <CardTitle>Members</CardTitle>
-                <CardDescription>Invite colleagues and manage access.</CardDescription>
+                <CardDescription>Invite colleagues to this organization. They can sign in and create meetings in the shared workspace.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
                 {!canManage && <p className="text-sm text-muted-foreground">Only owners and admins can manage members.</p>}

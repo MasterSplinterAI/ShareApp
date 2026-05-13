@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
+const { planAllowsTeamWorkspace } = require('../../lib/v2PlanFeatures');
 
 router.get('/plans', async (req, res) => {
   try {
@@ -15,7 +16,13 @@ router.get('/plans', async (req, res) => {
 router.get('/subscription', requireV2Auth, async (req, res) => {
   try {
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
-    const plan = sub ? await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [sub.plan_id]) : null;
+    const planRow = sub ? await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [sub.plan_id]) : null;
+    const plan = planRow
+      ? {
+          ...planRow,
+          teamWorkspace: planAllowsTeamWorkspace(planRow.id),
+        }
+      : null;
     res.json({ subscription: sub, plan });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });

@@ -53,6 +53,13 @@ router.post('/members', requireV2Auth, async (req, res) => {
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    const ent = await getOrgEntitlements(req.v2Auth.orgId);
+    if (!ent?.teamWorkspace) {
+      return res.status(403).json({
+        error: 'Inviting workspace members requires a team plan (e.g. Pro, Business). Individual plans can create meetings and share guest links only.',
+        code: 'plan_no_team_workspace',
+      });
+    }
     const { email, role } = req.body || {};
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       return res.status(400).json({ error: 'Valid email required' });

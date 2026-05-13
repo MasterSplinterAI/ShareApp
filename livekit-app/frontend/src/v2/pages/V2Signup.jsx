@@ -41,7 +41,7 @@ export default function V2Signup() {
       <Card className="border-border/80 shadow-lg">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Create account</CardTitle>
-          <CardDescription>Start an organization and invite your team.</CardDescription>
+          <CardDescription>Create a workspace, host meetings, and share guest links. Team plans add member invites.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">

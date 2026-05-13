@@ -1,4 +1,5 @@
 const db = require('../db/v2Database');
+const { planAllowsTeamWorkspace } = require('./v2PlanFeatures');
 
 /**
  * Load org subscription + plan quotas for entitlement checks.
@@ -15,6 +16,8 @@ async function getOrgEntitlements(orgId) {
   if (!sub) return null;
   return {
     planId: sub.plan_id,
+    /** Named org + invite colleagues + multi-seat workspace (Pro / Business / Enterprise). */
+    teamWorkspace: planAllowsTeamWorkspace(sub.plan_id),
     status: sub.status,
     includedMeetingMinutes: sub.included_meeting_minutes,
     includedTranslationMinutes: sub.included_translation_minutes,
