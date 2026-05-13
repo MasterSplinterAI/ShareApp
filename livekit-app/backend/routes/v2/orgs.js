@@ -192,6 +192,12 @@ router.get('/admin/orgs', requireV2Auth, requireSuperadmin, async (req, res) => 
 router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const orgCountRow = await db.get(`SELECT COUNT(*) AS c FROM v2_organizations`);
+    const mrrRow = await db.get(
+      `SELECT COALESCE(SUM(p.monthly_price_cents), 0) AS mrr_cents
+       FROM v2_org_subscriptions s
+       JOIN v2_plans p ON p.id = s.plan_id
+       WHERE lower(s.status) IN ('active', 'trialing')`
+    );
     const planMix = await db.all(
       `SELECT COALESCE(s.plan_id, '(none)') AS plan_id, COUNT(*) AS org_count
        FROM v2_organizations o
@@ -207,6 +213,7 @@ router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => 
     );
     res.json({
       orgCount: orgCountRow?.c ?? 0,
+      estimatedMrrCents: mrrRow?.mrr_cents ?? 0,
       planMix,
       billingStatusMix: billingMix,
       subscriptionStatusMix: subStatusMix,
@@ -219,9 +226,13 @@ router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => 
 
 router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
-    const { billing_status } = req.body || {};
+    const { billing_status, reason } = req.body || {};
     if (!billing_status || typeof billing_status !== 'string') {
       return res.status(400).json({ error: 'billing_status required' });
+    }
+    const reasonTrim = typeof reason === 'string' ? reason.trim() : '';
+    if (reasonTrim.length < 4 || reasonTrim.length > 2000) {
+      return res.status(400).json({ error: 'reason required (4–2000 characters)', code: 'reason_required' });
     }
     const nextStatus = billing_status.slice(0, 64);
     const auditId = db.uuid();
@@ -232,7 +243,11 @@ router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req,
         auditId,
         (req.v2Auth.email || '').slice(0, 320),
         'admin_patch_org_billing_status',
-        JSON.stringify({ orgId: req.params.orgId, billing_status: nextStatus }),
+        JSON.stringify({
+          orgId: req.params.orgId,
+          billing_status: nextStatus,
+          reason: reasonTrim.slice(0, 2000),
+        }),
       ]
     );
     await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [nextStatus, req.params.orgId]);
