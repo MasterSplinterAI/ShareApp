@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Optional: `docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD)` or set in LiveKit Agent env AGENT_BUILD_REF
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=${GIT_COMMIT}
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
