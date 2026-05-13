@@ -355,7 +355,7 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
   }, []);
 
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-background">
+    <div className="meeting-surface meeting-room-root relative h-[100dvh] w-full overflow-hidden">
       <LiveKitRoom
         video={true}
         audio={true}

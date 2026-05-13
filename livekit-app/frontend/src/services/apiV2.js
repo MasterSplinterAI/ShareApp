@@ -35,12 +35,14 @@ export const v2Auth = {
 
 export const v2Orgs = {
   me: () => apiV2.get('/orgs/me').then((r) => r.data),
+  patchMe: (body) => apiV2.patch('/orgs/me', body).then((r) => r.data),
   listMembers: () => apiV2.get('/orgs/members').then((r) => r.data),
   addMember: (body) => apiV2.post('/orgs/members', body).then((r) => r.data),
   patchMember: (userId, body) => apiV2.patch(`/orgs/members/${encodeURIComponent(userId)}`, body).then((r) => r.data),
   removeMember: (userId) => apiV2.delete(`/orgs/members/${encodeURIComponent(userId)}`).then((r) => r.data),
   adminPing: () => apiV2.get('/orgs/admin/ping').then((r) => r.data),
   adminOrgs: () => apiV2.get('/orgs/admin/orgs').then((r) => r.data),
+  adminKpis: () => apiV2.get('/orgs/admin/kpis').then((r) => r.data),
   adminPatchOrg: (orgId, body) => apiV2.patch(`/orgs/admin/orgs/${encodeURIComponent(orgId)}`, body).then((r) => r.data),
 };
 

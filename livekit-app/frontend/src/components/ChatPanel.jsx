@@ -327,7 +327,7 @@ function ChatPanel() {
           );
         })}
       </div>
-      <div className="flex flex-shrink-0 gap-2 border-t border-border bg-card/95 p-3">
+      <div className="flex flex-shrink-0 gap-2 border-t border-border meeting-control-strip p-3">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_CHARS))}
@@ -354,7 +354,7 @@ function ChatPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 z-[9998] flex max-h-80 w-96 flex-col rounded-xl border border-border bg-card/95 shadow-2xl backdrop-blur-md"
+        className="fixed bottom-20 right-4 z-[9998] flex max-h-80 w-96 flex-col rounded-xl border meeting-panel-surface backdrop-blur-md"
         data-no-translate="true"
       >
         <PanelTabs compact />
@@ -365,7 +365,7 @@ function ChatPanel() {
 
   return (
     <div
-      className="z-40 flex h-full w-80 max-h-[45vh] flex-shrink-0 flex-col rounded-t-xl border border-border bg-card shadow-2xl fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-[350px] lg:w-[400px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
+      className="z-40 flex h-full w-80 max-h-[45vh] flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-[350px] lg:w-[400px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
       data-no-translate="true"
     >
       <PanelTabs />

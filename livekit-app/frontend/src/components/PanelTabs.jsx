@@ -14,13 +14,13 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
   const tabBtn = (active) =>
     `flex items-center gap-1.5 ${compact ? 'px-2 py-1' : 'px-3 py-1.5'} rounded-md transition-colors ${tabText} font-medium ${
       active
-        ? 'bg-muted text-foreground'
-        : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
+        ? 'meeting-tab-pill-active text-foreground'
+        : 'text-muted-foreground hover:text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
     }`;
 
   return (
     <div
-      className={`flex items-center justify-between ${padding} border-b border-border bg-muted/30 flex-shrink-0 rounded-t-xl sm:rounded-none`}
+      className={`flex items-center justify-between ${padding} meeting-tab-strip border-b flex-shrink-0 rounded-t-xl sm:rounded-none`}
     >
       <div className="flex items-center gap-1">
         <button

@@ -87,7 +87,7 @@ function VideoGrid() {
   // Screen share layout
   if (activeScreenShare) {
     return (
-      <div ref={fullScreenRef} className="flex h-full w-full flex-col bg-muted">
+      <div ref={fullScreenRef} className="flex h-full w-full flex-col meeting-video-matte">
         <div className="flex-1 min-h-0 relative">
           <VideoTrackRenderer
             track={activeScreenShare}
@@ -102,7 +102,7 @@ function VideoGrid() {
           </button>
         </div>
         {!isFullScreen && (
-          <div className="h-20 sm:h-36 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto bg-muted/95 border-t border-border">
+          <div className="h-20 sm:h-36 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto meeting-filmstrip border-t border-border">
             {humanParticipants.map(participant => (
               <ParticipantTile
                 key={participant.identity}
@@ -125,7 +125,7 @@ function VideoGrid() {
     const others = humanParticipants.filter(p => p.identity !== speaker.identity);
 
     return (
-      <div ref={fullScreenRef} className="flex h-full w-full flex-col gap-1.5 bg-muted p-1.5">
+      <div ref={fullScreenRef} className="flex h-full w-full flex-col gap-1.5 meeting-video-matte p-1.5">
         <div className="flex-1 min-h-0">
           <ParticipantTile
             participant={speaker}
@@ -148,7 +148,7 @@ function VideoGrid() {
 
   // Normal grid layout
   return (
-    <div ref={fullScreenRef} className="h-full w-full overflow-hidden bg-muted p-1.5 sm:p-3">
+    <div ref={fullScreenRef} className="h-full w-full overflow-hidden meeting-video-matte p-1.5 sm:p-3">
       <div className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full auto-rows-fr`}>
         {humanParticipants.map(participant => (
           <ParticipantTile
@@ -187,7 +187,7 @@ function ParticipantTile({ participant, tracks, compact = false }) {
 
   return (
     <div
-      className={`relative min-h-0 overflow-hidden rounded-lg border border-border bg-card ${
+      className={`relative min-h-0 overflow-hidden rounded-lg border meeting-participant-tile ${
         compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : 'w-full h-full'
       } ${isSpeaking ? 'ring-2 ring-emerald-500' : ''}`}
     >

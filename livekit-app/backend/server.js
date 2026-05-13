@@ -61,6 +61,9 @@ app.use(cors({
   },
   credentials: true
 }));
+const { handleV2BillingWebhook } = require('./routes/v2/billingWebhook');
+
+app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
 app.use(express.json());
 
 // Routes

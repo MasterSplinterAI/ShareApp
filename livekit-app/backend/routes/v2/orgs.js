@@ -33,6 +33,39 @@ router.get('/me', requireV2Auth, async (req, res) => {
   }
 });
 
+const ORG_NAME_MIN = 1;
+const ORG_NAME_MAX = 128;
+
+router.patch('/me', requireV2Auth, async (req, res) => {
+  try {
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden', code: 'forbidden' });
+    }
+    const body = req.body || {};
+    const allowed = new Set(['name']);
+    const extra = Object.keys(body).filter((k) => !allowed.has(k));
+    if (extra.length) {
+      return res.status(400).json({ error: 'Only name may be updated', code: 'invalid_fields' });
+    }
+    if (typeof body.name !== 'string') {
+      return res.status(400).json({ error: 'name is required', code: 'name_required' });
+    }
+    const trimmed = body.name.trim();
+    if (trimmed.length < ORG_NAME_MIN || trimmed.length > ORG_NAME_MAX) {
+      return res.status(400).json({
+        error: `Name must be between ${ORG_NAME_MIN} and ${ORG_NAME_MAX} characters`,
+        code: 'invalid_name_length',
+      });
+    }
+    await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
+    const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    res.json({ org });
+  } catch (e) {
+    console.error('[orgs/me PATCH]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 router.get('/members', requireV2Auth, async (req, res) => {
   try {
     const rows = await db.all(
@@ -156,13 +189,53 @@ router.get('/admin/orgs', requireV2Auth, requireSuperadmin, async (req, res) => 
   }
 });
 
+router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const orgCountRow = await db.get(`SELECT COUNT(*) AS c FROM v2_organizations`);
+    const planMix = await db.all(
+      `SELECT COALESCE(s.plan_id, '(none)') AS plan_id, COUNT(*) AS org_count
+       FROM v2_organizations o
+       LEFT JOIN v2_org_subscriptions s ON s.org_id = o.id
+       GROUP BY s.plan_id
+       ORDER BY org_count DESC`
+    );
+    const billingMix = await db.all(
+      `SELECT billing_status, COUNT(*) AS c FROM v2_organizations GROUP BY billing_status ORDER BY c DESC`
+    );
+    const subStatusMix = await db.all(
+      `SELECT COALESCE(status, '(none)') AS status, COUNT(*) AS c FROM v2_org_subscriptions GROUP BY status ORDER BY c DESC`
+    );
+    res.json({
+      orgCount: orgCountRow?.c ?? 0,
+      planMix,
+      billingStatusMix: billingMix,
+      subscriptionStatusMix: subStatusMix,
+    });
+  } catch (e) {
+    console.error('[admin/kpis]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const { billing_status } = req.body || {};
     if (!billing_status || typeof billing_status !== 'string') {
       return res.status(400).json({ error: 'billing_status required' });
     }
-    await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status.slice(0, 64), req.params.orgId]);
+    const nextStatus = billing_status.slice(0, 64);
+    const auditId = db.uuid();
+    await db.run(
+      `INSERT INTO v2_admin_audit_log (id, actor_email, action, payload_json, created_at)
+       VALUES (?,?,?,?, datetime('now'))`,
+      [
+        auditId,
+        (req.v2Auth.email || '').slice(0, 320),
+        'admin_patch_org_billing_status',
+        JSON.stringify({ orgId: req.params.orgId, billing_status: nextStatus }),
+      ]
+    );
+    await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [nextStatus, req.params.orgId]);
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     res.json({ org });

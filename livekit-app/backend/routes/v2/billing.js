@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { planAllowsTeamWorkspace } = require('../../lib/v2PlanFeatures');
+const { writeOverageLedgerForCycle } = require('../../lib/v2OverageLedger');
 
 router.get('/plans', async (req, res) => {
   try {
@@ -30,12 +31,8 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
 });
 
 /**
- * Stripe (or other) webhook stub — verify signature in production.
+ * Stripe webhooks are registered in server.js with express.raw for signature verification.
  */
-router.post('/webhook', async (req, res) => {
-  console.log('[v2/billing/webhook] received', req.headers['stripe-signature'] ? '(stripe-signature present)' : '(no signature)');
-  res.json({ received: true, mode: 'stub' });
-});
 
 /**
  * Dry-run overage settlement (auto-charge-ready stub).
@@ -72,6 +69,11 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
     const overT = Math.max(0, (usage?.t || 0) - (plan?.included_translation_minutes || 0));
     const amountMeeting = Math.round(overM * (plan?.overage_meeting_cents_per_min || 0));
     const amountTrans = Math.round(overT * (plan?.overage_translation_cents_per_min || 0));
+    const { persistLedger } = req.body || {};
+    let ledger = null;
+    if (persistLedger) {
+      ledger = await writeOverageLedgerForCycle(req.v2Auth.orgId, cycle.id);
+    }
     res.json({
       dryRun: true,
       cycle,
@@ -86,6 +88,7 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
       },
       estimatedChargeCents: amountMeeting + amountTrans,
       autoChargeEnabled: process.env.V2_AUTO_CHARGE_ENABLED === 'true',
+      ledger,
     });
   } catch (e) {
     console.error('[v2/billing/settle-dry-run]', e);

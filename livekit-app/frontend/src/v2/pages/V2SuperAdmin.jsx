@@ -9,6 +9,7 @@ import { Input } from '../../components/ui/input';
 export default function V2SuperAdmin() {
   const [allowed, setAllowed] = useState(null);
   const [orgs, setOrgs] = useState([]);
+  const [kpis, setKpis] = useState(null);
   const [billingEdit, setBillingEdit] = useState({});
 
   useEffect(() => {
@@ -17,6 +18,14 @@ export default function V2SuperAdmin() {
       .then(() => setAllowed(true))
       .catch(() => setAllowed(false));
   }, []);
+
+  useEffect(() => {
+    if (!allowed) return;
+    v2Orgs
+      .adminKpis()
+      .then((r) => setKpis(r))
+      .catch((e) => toast.error(e.response?.data?.error || 'Failed to load KPIs'));
+  }, [allowed]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -75,6 +84,27 @@ export default function V2SuperAdmin() {
         <h1 className="text-2xl font-semibold tracking-tight">Platform admin</h1>
         <p className="mt-1 text-sm text-muted-foreground">Cross-tenant overview (SQLite MVP).</p>
       </div>
+      <div className="space-y-4">
+        <Card className="app-card border-border/60 shadow-sm">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Instance KPIs</CardTitle>
+            <CardDescription>Read-only aggregates from the local SQLite store.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+            <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Organizations</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{kpis?.orgCount ?? '—'}</div>
+            </div>
+            {kpis?.planMix?.map((row) => (
+              <div key={row.plan_id} className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
+                <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plan: {row.plan_id}</div>
+                <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{row.org_count}</div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="app-card overflow-hidden border-border/60 shadow-sm">
         <CardHeader>
           <CardTitle className="text-lg">Organizations</CardTitle>

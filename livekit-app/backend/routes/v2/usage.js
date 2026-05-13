@@ -5,9 +5,10 @@ const { requireV2Auth } = require('../../middleware/v2Auth');
 
 const ALLOWED_TYPES = new Set(['meeting_participant_minute', 'translation_minute', 'storage_byte_day']);
 
+/** POST body may include optional `idempotency_key` (string, max 128) for deduplicated inserts per org. */
 router.post('/events', requireV2Auth, async (req, res) => {
   try {
-    const { event_type, quantity, unit, meeting_id, meta } = req.body || {};
+    const { event_type, quantity, unit, meeting_id, meta, idempotency_key } = req.body || {};
     if (!ALLOWED_TYPES.has(event_type)) {
       return res.status(400).json({ error: 'Invalid event_type' });
     }
@@ -19,10 +20,19 @@ router.post('/events', requireV2Auth, async (req, res) => {
       const m = await db.get(`SELECT id FROM v2_meetings WHERE id = ? AND org_id = ?`, [meeting_id, req.v2Auth.orgId]);
       if (!m) return res.status(404).json({ error: 'Meeting not found' });
     }
+    let idem = null;
+    if (idempotency_key != null && String(idempotency_key).trim()) {
+      idem = String(idempotency_key).trim().slice(0, 128);
+      const prev = await db.get(`SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`, [
+        req.v2Auth.orgId,
+        idem,
+      ]);
+      if (prev) return res.status(200).json({ id: prev.id, ok: true, deduped: true });
+    }
     const id = db.uuid();
     await db.run(
-      `INSERT INTO v2_usage_events (id, org_id, meeting_id, event_type, quantity, unit, unit_cost_micros, meta_json)
-       VALUES (?,?,?,?,?,?,?,?)`,
+      `INSERT INTO v2_usage_events (id, org_id, meeting_id, event_type, quantity, unit, unit_cost_micros, meta_json, idempotency_key)
+       VALUES (?,?,?,?,?,?,?,?,?)`,
       [
         id,
         req.v2Auth.orgId,
@@ -32,10 +42,20 @@ router.post('/events', requireV2Auth, async (req, res) => {
         unit || 'unit',
         null,
         meta ? JSON.stringify(meta) : null,
+        idem,
       ]
     );
     res.status(201).json({ id, ok: true });
   } catch (e) {
+    const idemRetry =
+      req.body && req.body.idempotency_key != null ? String(req.body.idempotency_key).trim().slice(0, 128) : '';
+    if (idemRetry && String(e.message || '').includes('SQLITE_CONSTRAINT')) {
+      const prev = await db.get(`SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`, [
+        req.v2Auth.orgId,
+        idemRetry,
+      ]);
+      if (prev) return res.status(200).json({ id: prev.id, ok: true, deduped: true });
+    }
     console.error('[v2/usage/events]', e);
     res.status(500).json({ error: 'Failed' });
   }

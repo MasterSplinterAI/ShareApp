@@ -109,6 +109,59 @@
   .app-card-hover:hover {
     box-shadow: var(--shadow-card-hover);
   }
+
+  /* In-meeting surfaces: deeper canvas, clearer panels vs dashboard (light + dark). */
+  .meeting-surface {
+    --meeting-canvas: 214 30% 91%;
+    --meeting-panel-bg: 0 0% 99%;
+    --meeting-panel-border: 214 22% 80%;
+    --meeting-panel-shadow: 0 10px 40px -12px hsl(222 47% 11% / 0.14);
+    --meeting-bar-bg: 214 28% 93%;
+    --meeting-bar-border: 214 20% 78%;
+    --meeting-tab-muted: 214 26% 88%;
+  }
+  .dark .meeting-surface {
+    --meeting-canvas: 224 64% 7%;
+    --meeting-panel-bg: 224 55% 10%;
+    --meeting-panel-border: 215 24% 22%;
+    --meeting-panel-shadow: 0 14px 44px -10px hsl(0 0% 0% / 0.55);
+    --meeting-bar-bg: 224 60% 8%;
+    --meeting-bar-border: 215 24% 18%;
+    --meeting-tab-muted: 215 24% 16%;
+  }
+  .meeting-surface.meeting-room-root {
+    background-color: hsl(var(--meeting-canvas));
+    background-image: none;
+  }
+  .meeting-video-matte {
+    background-color: hsl(var(--meeting-canvas));
+  }
+  .meeting-filmstrip {
+    background-color: hsl(var(--meeting-canvas) / 0.94);
+    border-color: hsl(var(--meeting-panel-border));
+  }
+  .meeting-panel-surface {
+    background-color: hsl(var(--meeting-panel-bg));
+    border-color: hsl(var(--meeting-panel-border));
+    box-shadow: var(--meeting-panel-shadow);
+  }
+  .meeting-control-strip {
+    background-color: hsl(var(--meeting-bar-bg) / 0.97);
+    border-top-color: hsl(var(--meeting-bar-border));
+    backdrop-filter: blur(12px);
+  }
+  .meeting-tab-strip {
+    background-color: hsl(var(--meeting-bar-bg) / 0.92);
+    border-bottom-color: hsl(var(--meeting-bar-border));
+  }
+  .meeting-participant-tile {
+    background-color: hsl(var(--meeting-panel-bg));
+    border-color: hsl(var(--meeting-panel-border));
+    box-shadow: 0 1px 0 hsl(222 47% 11% / 0.06);
+  }
+  .meeting-tab-pill-active {
+    background-color: hsl(var(--meeting-tab-muted));
+  }
 }
 
 /* Hide LiveKit's default control bar — we use our own */

@@ -238,6 +238,37 @@ async function migrate() {
     await run(`ALTER TABLE v2_meetings ADD COLUMN host_present INTEGER NOT NULL DEFAULT 1`);
   }
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_webhook_events (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL DEFAULT 'stripe',
+      type TEXT NOT NULL,
+      payload_json TEXT,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      processed_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_admin_audit_log (
+      id TEXT PRIMARY KEY,
+      actor_email TEXT NOT NULL,
+      action TEXT NOT NULL,
+      payload_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_admin_audit_created ON v2_admin_audit_log(created_at)`);
+
+  const usageCols = await all(`PRAGMA table_info(v2_usage_events)`);
+  const usageColNames = new Set((usageCols || []).map((c) => c.name));
+  if (!usageColNames.has('idempotency_key')) {
+    await run(`ALTER TABLE v2_usage_events ADD COLUMN idempotency_key TEXT`);
+  }
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_usage_org_idempotency ON v2_usage_events(org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`
+  );
+
   const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);
   if (!planCount || planCount.c === 0) {
     await run(
@@ -249,6 +280,9 @@ async function migrate() {
       ['pro', 'Pro', 19900, 10000, 3000, 2, 4]
     );
   }
+
+  // Scale / ops: billing + webhook + usage tables remain SQLite here; production should migrate
+  // high-write paths (webhook_events, usage_events, overage_ledger) to Postgres for concurrency and backups.
 }
 
 function initDatabase() {

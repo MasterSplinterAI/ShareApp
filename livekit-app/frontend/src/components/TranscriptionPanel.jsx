@@ -302,7 +302,7 @@ function TranscriptionPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 w-96 max-h-80 border border-border bg-card/95 backdrop-blur-md rounded-xl shadow-2xl z-[9999] flex flex-col"
+        className="fixed bottom-20 right-4 w-96 max-h-80 border meeting-panel-surface backdrop-blur-md rounded-xl z-[9999] flex flex-col"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
@@ -327,7 +327,7 @@ function TranscriptionPanel() {
     <>
       {/* Desktop: right side panel */}
       <div
-        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] bg-card border-l border-border h-full flex-shrink-0"
+        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] meeting-panel-surface border-l border h-full flex-shrink-0"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
@@ -351,7 +351,7 @@ function TranscriptionPanel() {
         />
       ) : (
         <div
-          className="sm:hidden fixed bottom-12 left-0 right-0 bg-card border-t border-border rounded-t-xl z-40 flex flex-col"
+          className="sm:hidden fixed bottom-12 left-0 right-0 meeting-panel-surface border-t border rounded-t-xl z-40 flex flex-col"
           style={{ maxHeight: '45vh' }}
           data-no-translate="true"
         >
@@ -516,7 +516,7 @@ function MobileCaptionBar({ text, onExpand, hasContent }) {
     >
       <button
         onClick={onExpand}
-        className="w-full flex items-center gap-2 px-3 py-2 bg-card/95 backdrop-blur-sm border-t border-border text-left"
+        className="w-full flex items-center gap-2 px-3 py-2 meeting-control-strip backdrop-blur-sm border-t border-border text-left"
       >
         <MessageSquare className="w-3.5 h-3.5 text-primary flex-shrink-0" />
         {text ? (
