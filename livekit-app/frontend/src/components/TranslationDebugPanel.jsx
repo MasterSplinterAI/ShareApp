@@ -62,24 +62,31 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
     <div className="fixed top-2 left-2 z-[100]">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="bg-gray-800 rounded-lg px-2 py-1.5 text-xs text-gray-400 hover:text-white border border-gray-600 flex items-center gap-1"
+        className="flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         title="Translation debug (add ?debug=1 to URL)"
       >
         <Bug className="w-3.5 h-3.5" />
         Debug
       </button>
       {isOpen && (
-        <div className="mt-2 bg-gray-900 border border-gray-600 rounded-lg p-3 text-xs font-mono max-w-xs shadow-xl">
-          <div className="text-gray-400 mb-2 font-semibold">Translation Debug</div>
-          <div className="space-y-1.5 text-gray-300">
-            <div><span className="text-gray-500">You:</span> {participantName} | language={selectedLanguage} | enabled={String(translationEnabled)}</div>
-            <div><span className="text-gray-500">Agent:</span> {agentInRoom ? '✅ In room' : '❌ Not in room'}</div>
-            <div><span className="text-gray-500">Transcriptions:</span> {transcriptionCount} received</div>
+        <div className="mt-2 max-w-xs rounded-lg border border-border bg-card p-3 font-mono text-xs text-foreground shadow-xl">
+          <div className="mb-2 font-semibold text-muted-foreground">Translation Debug</div>
+          <div className="space-y-1.5 text-foreground">
+            <div>
+              <span className="text-muted-foreground">You:</span> {participantName} | language={selectedLanguage} | enabled=
+              {String(translationEnabled)}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Agent:</span> {agentInRoom ? '✅ In room' : '❌ Not in room'}
+            </div>
+            <div>
+              <span className="text-muted-foreground">Transcriptions:</span> {transcriptionCount} received
+            </div>
             {lastTranscriptions.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-gray-700">
-                <div className="text-gray-500 mb-1">Last:</div>
+              <div className="mt-2 border-t border-border pt-2">
+                <div className="mb-1 text-muted-foreground">Last:</div>
                 {lastTranscriptions.map((t, i) => (
-                  <div key={i} className="text-gray-400 truncate">
+                  <div key={i} className="truncate text-muted-foreground">
                     {t.speaker}: {t.orig || t.trans} {t.partial ? '(partial)' : ''}
                   </div>
                 ))}

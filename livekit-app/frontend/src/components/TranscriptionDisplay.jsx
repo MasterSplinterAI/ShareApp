@@ -133,7 +133,7 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
     return (
       <button
         onClick={() => setShowTranscriptions(true)}
-        className="fixed bottom-20 right-4 bg-gray-800 hover:bg-gray-700 text-white p-3 rounded-lg shadow-lg transition-all z-40"
+        className="fixed bottom-20 right-4 z-40 rounded-lg border border-border bg-card p-3 text-foreground shadow-lg transition-all hover:bg-muted"
         title="Show transcriptions"
       >
         <MessageSquare className="w-5 h-5" />
@@ -144,21 +144,21 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
   return (
     <div
       data-no-translate="true"
-      className={`notranslate fixed bottom-20 right-2 sm:right-4 bg-gray-900 border border-gray-700 rounded-lg shadow-xl transition-all z-40 ${
+      className={`notranslate fixed bottom-20 right-2 z-40 rounded-lg border border-border bg-card text-card-foreground shadow-xl transition-all sm:right-4 ${
         isMinimized ? 'w-56 sm:w-64' : 'w-[calc(100vw-1rem)] sm:w-[28rem] max-w-[28rem]'
       }`}
     >
-      <div className="bg-gray-800 px-3 sm:px-4 py-2.5 sm:py-3 rounded-t-lg flex items-center justify-between">
+      <div className="flex items-center justify-between rounded-t-lg bg-muted/50 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="flex items-center gap-2">
-          <MessageSquare className="w-4 h-4 text-blue-400" />
-          <h3 className="text-sm font-medium text-white">Live Transcriptions</h3>
+          <MessageSquare className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-medium text-foreground">Live Transcriptions</h3>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => setIsMinimized(!isMinimized)} className="text-gray-400 hover:text-white transition-colors">
-            {isMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
+          <button type="button" onClick={() => setIsMinimized(!isMinimized)} className="text-muted-foreground transition-colors hover:text-foreground">
+            {isMinimized ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
           </button>
-          <button onClick={() => setShowTranscriptions(false)} className="text-gray-400 hover:text-white transition-colors">
-            <X className="w-4 h-4" />
+          <button type="button" onClick={() => setShowTranscriptions(false)} className="text-muted-foreground transition-colors hover:text-foreground">
+            <X className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -170,28 +170,31 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
             return (
               <div key={`live-${speakerId}`} className="space-y-1 opacity-75">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-xs font-medium text-blue-400">{speakerId}</span>
-                  <span className="text-xs text-gray-500">Live...</span>
+                  <span className="text-xs font-medium text-primary">{speakerId}</span>
+                  <span className="text-xs text-muted-foreground">Live...</span>
                 </div>
                 <div className="space-y-1">
                   {caption.originalText && (
-                    <p className="text-xs text-gray-500 break-words">{caption.originalText}</p>
+                    <p className="break-words text-xs text-muted-foreground">{caption.originalText}</p>
                   )}
                   {hasTranslations && (
                     <div className="space-y-1">
                       {Object.entries(caption.translations).map(([lang, txt]) => (
-                        <p key={lang} className="text-xs sm:text-sm text-green-300 break-words whitespace-normal leading-relaxed">
-                          <span className="text-gray-500 text-xs mr-1">[{getLanguageLabel(lang)}]</span>
+                        <p
+                          key={lang}
+                          className="whitespace-normal break-words text-xs leading-relaxed text-emerald-900 sm:text-sm dark:text-emerald-200"
+                        >
+                          <span className="mr-1 text-xs text-muted-foreground">[{getLanguageLabel(lang)}]</span>
                           {txt}
-                          <span className="inline-block w-2 h-4 bg-green-400 ml-1 animate-pulse">|</span>
+                          <span className="ml-1 inline-block h-4 w-2 animate-pulse bg-emerald-500">|</span>
                         </p>
                       ))}
                     </div>
                   )}
                   {!hasTranslations && caption.originalText && (
-                    <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal leading-relaxed">
+                    <p className="whitespace-normal break-words text-xs leading-relaxed text-foreground sm:text-sm">
                       {caption.originalText}
-                      <span className="inline-block w-2 h-4 bg-blue-400 ml-1 animate-pulse">|</span>
+                      <span className="ml-1 inline-block h-4 w-2 animate-pulse bg-primary">|</span>
                     </p>
                   )}
                 </div>
@@ -200,19 +203,19 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
           })}
 
           {transcriptions.length === 0 && Object.keys(liveCaptions).length === 0 ? (
-            <p className="text-gray-500 text-xs sm:text-sm text-center py-8">Waiting for speech...</p>
+            <p className="py-8 text-center text-xs text-muted-foreground sm:text-sm">Waiting for speech...</p>
           ) : (
             transcriptions.map((item) => (
-              <div key={item.id} className="space-y-2 border-b border-gray-700/50 pb-2 sm:pb-3 last:border-b-0">
+              <div key={item.id} className="space-y-2 border-b border-border/60 pb-2 last:border-b-0 sm:pb-3">
                 <div className="flex items-baseline gap-2">
-                  <span className="text-xs font-medium text-blue-400">{item.speaker}</span>
-                  <span className="text-xs text-gray-500">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-xs font-medium text-primary">{item.speaker}</span>
+                  <span className="text-xs text-muted-foreground">{new Date(item.timestamp).toLocaleTimeString()}</span>
                 </div>
 
                 {item.originalText && (
                   <div className="space-y-1">
-                    <span className="text-xs text-gray-500 uppercase tracking-wide">Original</span>
-                    <p className="text-xs sm:text-sm text-gray-300 break-words whitespace-normal bg-gray-800/50 rounded px-2 py-1.5 leading-relaxed">
+                    <span className="text-xs uppercase tracking-wide text-muted-foreground">Original</span>
+                    <p className="rounded bg-muted/50 px-2 py-1.5 text-xs leading-relaxed text-foreground break-words whitespace-normal sm:text-sm">
                       {item.originalText}
                     </p>
                   </div>
@@ -222,10 +225,10 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
                   <div className="space-y-2">
                     {Object.entries(item.translations).map(([lang, txt]) => (
                       <div key={lang} className="space-y-1">
-                        <span className="text-xs text-gray-500 uppercase tracking-wide">
+                        <span className="text-xs uppercase tracking-wide text-muted-foreground">
                           {getLanguageLabel(lang)}
                         </span>
-                        <p className="text-xs sm:text-sm text-green-300 break-words whitespace-normal bg-green-900/20 rounded px-2 py-1.5 border-l-2 border-green-500 pl-2 leading-relaxed">
+                        <p className="rounded border-l-2 border-emerald-500 bg-emerald-50 py-1.5 pl-2 text-xs leading-relaxed text-emerald-950 break-words whitespace-normal sm:text-sm dark:bg-emerald-950/30 dark:text-emerald-100">
                           {txt}
                         </p>
                       </div>
@@ -238,10 +241,10 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
         </div>
       )}
 
-      <div className="px-3 sm:px-4 py-2 bg-gray-800/50 rounded-b-lg border-t border-gray-700/50">
+      <div className="rounded-b-lg border-t border-border bg-muted/30 px-3 py-2 sm:px-4">
         <div className="flex items-center gap-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${isTranslationActive ? 'bg-green-400 animate-pulse' : 'bg-gray-500'}`} />
-          <span className="text-xs text-gray-400">
+          <div className={`h-1.5 w-1.5 rounded-full ${isTranslationActive ? 'animate-pulse bg-emerald-500' : 'bg-muted-foreground/50'}`} />
+          <span className="text-xs text-muted-foreground">
             {isTranslationActive ? 'Translating...' : 'Translation ready'}
           </span>
         </div>

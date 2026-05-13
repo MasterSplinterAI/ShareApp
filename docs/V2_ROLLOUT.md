@@ -37,7 +37,7 @@
 |----------|---------|
 | `V2_DEFAULT_REQUIRE_INVITE` | When not `0`, new meetings require `?i=` invite token for guests (default on). Set to `0` to allow room-name-only guest links for new meetings. |
 | `V2_DEFAULT_INVITE_TTL_DAYS` | Default expiry for auto-created “Default guest link” (default `7`). |
-| `V2_SUPERADMIN_EMAILS` | Comma-separated emails allowed to call `GET /api/v2/orgs/admin/*` platform routes. |
+| `V2_SUPERADMIN_EMAILS` | Comma-separated emails allowed to call `GET /api/v2/orgs/admin/*` platform routes. **Must match the email on the user’s JWT** (the address they signed up with). Restart backend after changing. |
 
 ## Rollout checklist
 

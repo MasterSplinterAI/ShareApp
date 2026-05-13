@@ -324,7 +324,7 @@ export default function CustomControlBar({
               onClick={toggleScreenShare}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
                 isScreenSharing
-                  ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
+                  ? 'bg-blue-500/20 hover:bg-blue-500/30 text-blue-800 dark:text-blue-200'
                   : 'bg-muted/50 hover:bg-muted/70 text-foreground'
               }`}
               aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
@@ -369,7 +369,7 @@ export default function CustomControlBar({
             }}
             className={`relative flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
               sidePanelOpen && sidePanelTab === 'chat'
-                ? 'bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200'
+                ? 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-900 dark:text-emerald-200'
                 : 'bg-muted/50 hover:bg-muted/70 text-foreground'
             }`}
             aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
@@ -396,7 +396,7 @@ export default function CustomControlBar({
               }}
               className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
                 sidePanelOpen && sidePanelTab === 'participants'
-                  ? 'bg-blue-600/30 hover:bg-blue-600/40 text-blue-200'
+                  ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-900 dark:text-blue-200'
                   : 'bg-muted/50 hover:bg-muted/70 text-foreground'
               }`}
               aria-label={sidePanelOpen && sidePanelTab === 'participants' ? 'Close participants' : 'Open participants'}

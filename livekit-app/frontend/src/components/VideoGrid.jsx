@@ -87,7 +87,7 @@ function VideoGrid() {
   // Screen share layout
   if (activeScreenShare) {
     return (
-      <div ref={fullScreenRef} className="flex flex-col h-full w-full bg-gray-900">
+      <div ref={fullScreenRef} className="flex h-full w-full flex-col bg-muted">
         <div className="flex-1 min-h-0 relative">
           <VideoTrackRenderer
             track={activeScreenShare}
@@ -102,7 +102,7 @@ function VideoGrid() {
           </button>
         </div>
         {!isFullScreen && (
-          <div className="h-20 sm:h-36 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto bg-gray-900/95">
+          <div className="h-20 sm:h-36 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto bg-muted/95 border-t border-border">
             {humanParticipants.map(participant => (
               <ParticipantTile
                 key={participant.identity}
@@ -125,7 +125,7 @@ function VideoGrid() {
     const others = humanParticipants.filter(p => p.identity !== speaker.identity);
 
     return (
-      <div ref={fullScreenRef} className="flex flex-col h-full w-full bg-gray-900 p-1.5 gap-1.5">
+      <div ref={fullScreenRef} className="flex h-full w-full flex-col gap-1.5 bg-muted p-1.5">
         <div className="flex-1 min-h-0">
           <ParticipantTile
             participant={speaker}
@@ -148,7 +148,7 @@ function VideoGrid() {
 
   // Normal grid layout
   return (
-    <div ref={fullScreenRef} className="h-full w-full p-1.5 sm:p-3 bg-gray-900 overflow-hidden">
+    <div ref={fullScreenRef} className="h-full w-full overflow-hidden bg-muted p-1.5 sm:p-3">
       <div className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full auto-rows-fr`}>
         {humanParticipants.map(participant => (
           <ParticipantTile
@@ -187,9 +187,9 @@ function ParticipantTile({ participant, tracks, compact = false }) {
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden bg-gray-800 min-h-0 ${
+      className={`relative min-h-0 overflow-hidden rounded-lg border border-border bg-card ${
         compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : 'w-full h-full'
-      } ${isSpeaking ? 'ring-2 ring-green-400' : ''}`}
+      } ${isSpeaking ? 'ring-2 ring-emerald-500' : ''}`}
     >
       {hasVideo ? (
         <ParticipantContext.Provider value={participant}>
@@ -201,11 +201,12 @@ function ParticipantTile({ participant, tracks, compact = false }) {
           />
         </ParticipantContext.Provider>
       ) : (
-        <div className="w-full h-full flex items-center justify-center bg-gray-800">
-          <div className={`rounded-full bg-gray-700 flex items-center justify-center ${
+        <div className="flex h-full w-full items-center justify-center bg-muted">
+          <div
+            className={`flex items-center justify-center rounded-full bg-muted-foreground/15 ${
             compact ? 'w-10 h-10' : 'w-14 h-14 sm:w-20 sm:h-20'
           }`}>
-            <User className={`text-gray-400 ${compact ? 'w-5 h-5' : 'w-7 h-7 sm:w-10 sm:h-10'}`} />
+            <User className={`text-muted-foreground ${compact ? 'h-5 w-5' : 'h-7 w-7 sm:h-10 sm:w-10'}`} />
           </div>
         </div>
       )}

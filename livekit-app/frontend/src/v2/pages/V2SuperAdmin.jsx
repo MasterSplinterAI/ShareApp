@@ -47,8 +47,14 @@ export default function V2SuperAdmin() {
       <Card className="max-w-xl border-border/80">
         <CardHeader>
           <CardTitle>Restricted</CardTitle>
-          <CardDescription>
-            Superadmin is restricted. Set <code className="rounded bg-muted px-1 py-0.5 text-foreground">V2_SUPERADMIN_EMAILS</code> on the server to include your account email.
+          <CardDescription className="space-y-2 text-pretty">
+            <p>
+              Platform admin APIs are gated by the server env{' '}
+              <code className="rounded bg-muted px-1 py-0.5 text-foreground">V2_SUPERADMIN_EMAILS</code> (comma-separated, case-insensitive).
+            </p>
+            <p>
+              On <strong>production</strong>, add your login email to that variable in the backend <code className="rounded bg-muted px-1 py-0.5">.env</code>, restart the Node process (e.g. PM2), then reload this page. Being an org owner/admin is not enough—only listed emails can use this screen.
+            </p>
           </CardDescription>
         </CardHeader>
         <CardContent>
