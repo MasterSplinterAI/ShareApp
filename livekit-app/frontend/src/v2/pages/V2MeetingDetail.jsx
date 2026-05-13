@@ -171,6 +171,12 @@ export default function V2MeetingDetail() {
 
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false };
   const guestUrlNeedsToken = policy.require_invite_token && meeting.joinUrl && !meeting.joinUrl.includes('?i=');
+  const maxInviteHours = meeting.inviteMaxTtlHours ?? 90 * 24;
+
+  useEffect(() => {
+    if (!meeting?.inviteMaxTtlHours) return;
+    setNewInviteHours((h) => Math.min(Math.max(1, h), meeting.inviteMaxTtlHours));
+  }, [meeting?.inviteMaxTtlHours]);
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -232,6 +238,9 @@ export default function V2MeetingDetail() {
         </div>
         <div>
           <p className="text-xs text-gray-500 mb-2">Guest join URL (full link — scroll or select to verify)</p>
+          <p className="text-xs text-gray-600 mb-2">
+            Anyone with this link can join (plus <code className="text-gray-500">?i=</code> when invite tokens are on). Expiry is counted from when each invite is created, not from the scheduled start time.
+          </p>
           {guestUrlNeedsToken && (
             <p className="text-xs text-amber-400 mb-2 rounded-md border border-amber-800/50 bg-amber-950/30 px-2 py-1.5">
               Invite tokens are required, but no active invite link was found. Create a new invite below so guests get a valid URL with <code className="text-amber-200/90">?i=</code>.
@@ -279,8 +288,11 @@ export default function V2MeetingDetail() {
             <input
               type="number"
               min={1}
+              max={maxInviteHours}
               value={newInviteHours}
-              onChange={(e) => setNewInviteHours(Number(e.target.value) || 24)}
+              onChange={(e) =>
+                setNewInviteHours(Math.min(maxInviteHours, Math.max(1, Number(e.target.value) || 24)))
+              }
               className="w-28 rounded-lg bg-gray-900 border border-gray-700 px-2 py-1.5 text-white"
             />
           </div>
@@ -288,10 +300,22 @@ export default function V2MeetingDetail() {
             <input type="checkbox" checked={newInviteReusable} onChange={(e) => setNewInviteReusable(e.target.checked)} />
             Reusable
           </label>
+          <button
+            type="button"
+            onClick={() => setNewInviteHours(maxInviteHours)}
+            className="rounded-lg border border-gray-600 px-2 py-2 text-xs text-gray-300 hover:bg-gray-700"
+            title={`${maxInviteHours}h (~${Math.round(maxInviteHours / 24)} days) from link creation`}
+          >
+            Max length
+          </button>
           <button type="button" onClick={createInvite} className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 text-sm">
             New invite link
           </button>
         </div>
+        <p className="text-xs text-gray-600">
+          Longest allowed without a shorter custom value: {Math.round(maxInviteHours / 24)} days from when the link is created (server cap — set{' '}
+          <code className="text-gray-500">V2_MAX_INVITE_TTL_DAYS</code> to change).
+        </p>
         <ul className="space-y-3 text-sm">
           {(meeting.invites || []).map((inv) => (
             <li key={inv.id} className="border border-gray-700/60 rounded-lg px-3 py-3 bg-gray-900/40 space-y-2">

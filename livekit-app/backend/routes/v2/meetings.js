@@ -8,9 +8,24 @@ const { createLiveKitConferenceRoom, ensureRoomAndAgent } = require('../../lib/l
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 
+const MS_DAY = 86400000;
+
+/** Upper bound for any invite link lifetime (wall-clock from creation). */
+function maxInviteTtlMs() {
+  const days = Number(process.env.V2_MAX_INVITE_TTL_DAYS || 90);
+  if (!Number.isFinite(days) || days <= 0) return 90 * MS_DAY;
+  return Math.min(days, 365) * MS_DAY;
+}
+
+function clampInviteTtlMs(ms) {
+  const cap = maxInviteTtlMs();
+  return Math.min(Math.max(0, ms), cap);
+}
+
 function defaultInviteTtlMs() {
   const days = Number(process.env.V2_DEFAULT_INVITE_TTL_DAYS || 7);
-  return (Number.isFinite(days) && days > 0 ? days : 7) * 86400000;
+  const desired = (Number.isFinite(days) && days > 0 ? days : 7) * MS_DAY;
+  return clampInviteTtlMs(desired);
 }
 
 function defaultRequireInvite() {
@@ -158,7 +173,8 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const { expiresInHours, reusable, label, maxUses } = req.body || {};
     const hours = Number(expiresInHours);
-    const ttlMs = (Number.isFinite(hours) && hours > 0 ? hours : 168) * 3600000;
+    const rawMs = (Number.isFinite(hours) && hours > 0 ? hours : 168) * 3600000;
+    const ttlMs = clampInviteTtlMs(rawMs);
     const token = crypto.randomBytes(18).toString('base64url');
     const linkId = db.uuid();
     const expiresAt = new Date(Date.now() + ttlMs).toISOString();
@@ -179,7 +195,14 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
     );
     const base = publicFrontendBaseUrl(req);
     const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(token)}`;
-    res.status(201).json({ id: linkId, token, expiresAt, joinUrl, reusable: Boolean(reusable) });
+    res.status(201).json({
+      id: linkId,
+      token,
+      expiresAt,
+      joinUrl,
+      reusable: Boolean(reusable),
+      inviteMaxTtlHours: Math.floor(maxInviteTtlMs() / 3600000),
+    });
   } catch (e) {
     console.error('[v2/invites POST]', e);
     res.status(500).json({ error: 'Failed' });
@@ -255,6 +278,7 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       policy,
       joinUrl,
       invites: invitesEnriched,
+      inviteMaxTtlHours: Math.floor(maxInviteTtlMs() / 3600000),
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
