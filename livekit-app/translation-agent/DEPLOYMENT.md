@@ -151,6 +151,8 @@ At minimum set:
 
 After `lk agent deploy`, open **`lk agent logs`** and confirm the **RESOLVED INFERENCE CONFIG** banner matches intent.
 
+**Secrets CLI pitfall:** `lk agent deploy --secrets "KEY1=a,KEY2=b"` parses on **every comma** — values like `91af7bc,STT_PROVIDER=xai` accidentally become one blob. Prefer **multiple flags**: `--secrets "STT_PROVIDER=xai" --secrets "LLM_PROVIDER=openai"` or a **`--secrets-file`** with one `KEY=value` per line. Use **`lk agent update-secrets`** the same way to fix env without rebuilding the image.
+
 ### Production Server (Backend)
 
 In `/var/www/share-app/livekit-app/backend/.env`:
