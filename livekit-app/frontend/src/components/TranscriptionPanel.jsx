@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
+import { v2Meetings } from '../services/apiV2';
 import PanelTabs from './PanelTabs';
 
 const LANGUAGE_LABELS = {
@@ -16,9 +17,38 @@ function getLanguageLabel(code) {
   return LANGUAGE_LABELS[code] || code;
 }
 
+function buildTranscriptPayload(m, selectedLanguage) {
+  const te = Object.entries(m.translations || {});
+  let translated = null;
+  if (te.length) {
+    const hit = te.find(([k]) => k === selectedLanguage);
+    translated = hit ? hit[1] : te[0][1];
+  }
+  if (translated && translated === m.originalText) translated = null;
+  return {
+    participant_identity: String(m.speaker || 'unknown').slice(0, 200),
+    original_text: m.originalText || '',
+    language: selectedLanguage || 'en',
+    source_language: m.sourceLanguage || undefined,
+    translated_text: translated || undefined,
+    transcription_id: m.transcriptionId != null ? String(m.transcriptionId) : undefined,
+    recorded_at: new Date(m.timestamp).toISOString(),
+  };
+}
+
 function TranscriptionPanel() {
   const room = useRoomContext();
-  const { isPanelOpen, togglePanel, isFullScreen, selectedLanguage, translationEnabled, roomName } = useMeeting();
+  const {
+    isPanelOpen,
+    togglePanel,
+    isFullScreen,
+    selectedLanguage,
+    translationEnabled,
+    roomName,
+    meetingId,
+    transcriptPersistEnabled,
+    isHost,
+  } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
@@ -28,6 +58,48 @@ function TranscriptionPanel() {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef(null);
   const msgCounterRef = useRef(0);
+  const sentMessageIdsRef = useRef(new Set());
+  const persistFlushTimerRef = useRef(null);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+
+  const flushPersistedTranscript = useCallback(async () => {
+    if (!meetingId || !transcriptPersistEnabled || !isHost || !room) return;
+    const latest = messagesRef.current;
+    const batch = latest.filter((m) => !m.isPartial && !sentMessageIdsRef.current.has(m.id));
+    if (!batch.length) return;
+    const paired = batch
+      .map((m) => ({ m, line: buildTranscriptPayload(m, selectedLanguage) }))
+      .filter(({ line }) => line.original_text && String(line.original_text).trim());
+    if (!paired.length) return;
+    const lines = paired.map(({ line }) => line);
+    try {
+      for (let i = 0; i < lines.length; i += 200) {
+        const chunk = lines.slice(i, i + 200);
+        await v2Meetings.appendTranscriptLines(meetingId, chunk);
+      }
+      paired.forEach(({ m }) => sentMessageIdsRef.current.add(m.id));
+    } catch (e) {
+      console.warn('Transcript persist failed:', e.response?.data || e.message);
+    }
+  }, [meetingId, transcriptPersistEnabled, isHost, room, selectedLanguage]);
+
+  useEffect(() => {
+    if (!meetingId || !transcriptPersistEnabled || !isHost || !room) {
+      clearTimeout(persistFlushTimerRef.current);
+      return undefined;
+    }
+    const latest = messagesRef.current;
+    const pending = latest.filter((m) => !m.isPartial && !sentMessageIdsRef.current.has(m.id));
+    if (!pending.length) return undefined;
+    clearTimeout(persistFlushTimerRef.current);
+    persistFlushTimerRef.current = setTimeout(() => {
+      flushPersistedTranscript();
+    }, 2200);
+    return () => {
+      clearTimeout(persistFlushTimerRef.current);
+    };
+  }, [messages, meetingId, transcriptPersistEnabled, isHost, room, flushPersistedTranscript]);
 
   useEffect(() => {
     if (!room) return;

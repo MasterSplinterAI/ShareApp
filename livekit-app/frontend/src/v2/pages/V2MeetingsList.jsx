@@ -12,6 +12,7 @@ export default function V2MeetingsList() {
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('Instant meeting');
   const [hostRequired, setHostRequired] = useState(false);
+  const [storeTranscripts, setStoreTranscripts] = useState(false);
   const [scheduledStart, setScheduledStart] = useState('');
 
   const load = () => {
@@ -30,6 +31,7 @@ export default function V2MeetingsList() {
     if (searchParams.get('create') === '1') {
       setNewTitle('Instant meeting');
       setHostRequired(false);
+      setStoreTranscripts(false);
       setScheduledStart('');
       setShowCreate(true);
       const next = new URLSearchParams(searchParams);
@@ -41,6 +43,7 @@ export default function V2MeetingsList() {
   const openCreateModal = () => {
     setNewTitle('Instant meeting');
     setHostRequired(false);
+    setStoreTranscripts(false);
     setScheduledStart('');
     setShowCreate(true);
   };
@@ -51,6 +54,7 @@ export default function V2MeetingsList() {
       const m = await v2Meetings.create({
         title: newTitle.trim() || 'Meeting',
         host_required_to_start: hostRequired,
+        store_transcripts: storeTranscripts,
         ...(iso ? { scheduled_start: iso } : {}),
       });
       toast.success(m.status === 'scheduled' ? 'Meeting scheduled' : 'Meeting created');
@@ -96,9 +100,13 @@ export default function V2MeetingsList() {
               onChange={(e) => setScheduledStart(e.target.value)}
               className="w-full rounded-lg bg-gray-800 border border-gray-600 px-3 py-2 text-white mb-4"
             />
-            <label className="flex items-center gap-2 text-sm text-gray-300 mb-6 cursor-pointer">
+            <label className="flex items-center gap-2 text-sm text-gray-300 mb-3 cursor-pointer">
               <input type="checkbox" checked={hostRequired} onChange={(e) => setHostRequired(e.target.checked)} />
               Guests wait until you join first
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-300 mb-6 cursor-pointer">
+              <input type="checkbox" checked={storeTranscripts} onChange={(e) => setStoreTranscripts(e.target.checked)} />
+              Save transcript on server (host uploads finalized captions during the meeting)
             </label>
             <div className="flex gap-2 justify-end">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 text-sm text-gray-400 hover:text-white">

@@ -155,4 +155,5 @@ module.exports = {
   defaultAgentName,
   createLiveKitConferenceRoom,
   ensureRoomAndAgent,
+  looksLikeAgentParticipant,
 };

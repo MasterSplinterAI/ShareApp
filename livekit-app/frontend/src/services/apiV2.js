@@ -54,6 +54,13 @@ export const v2Meetings = {
   listInvites: (id) => apiV2.get(`/meetings/${id}/invites`).then((r) => r.data),
   createInvite: (id, body) => apiV2.post(`/meetings/${id}/invites`, body).then((r) => r.data),
   revokeInvite: (id, linkId) => apiV2.delete(`/meetings/${id}/invites/${encodeURIComponent(linkId)}`).then((r) => r.data),
+  appendTranscriptLines: (id, lines) =>
+    apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript-lines`, { lines }).then((r) => r.data),
+  getTranscript: (id) => apiV2.get(`/meetings/${encodeURIComponent(id)}/transcript`).then((r) => r.data),
+  getTranscriptTxtBlob: (id) =>
+    apiV2
+      .get(`/meetings/${encodeURIComponent(id)}/transcript.txt`, { responseType: 'blob' })
+      .then((r) => r.data),
 };
 
 export const v2Host = {

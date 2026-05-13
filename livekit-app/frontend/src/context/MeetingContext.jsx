@@ -95,6 +95,8 @@ export function MeetingProvider({ children, initialState = {} }) {
   const value = useMemo(() => ({
     // Room info
     roomName: initialState.roomName || '',
+    meetingId: initialState.meetingId || '',
+    transcriptPersistEnabled: Boolean(initialState.transcriptPersistEnabled),
     isHost: initialState.isHost || false,
     participantName: initialState.participantName || '',
     spokenLanguage: selectedLanguage,
@@ -134,6 +136,8 @@ export function MeetingProvider({ children, initialState = {} }) {
     meetingMode: initialState.meetingMode || 'translation',
   }), [
     initialState.roomName,
+    initialState.meetingId,
+    initialState.transcriptPersistEnabled,
     initialState.isHost,
     initialState.participantName,
     initialState.meetingMode,

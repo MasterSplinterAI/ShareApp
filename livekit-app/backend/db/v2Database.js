@@ -209,6 +209,29 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_invite_meeting ON v2_meeting_invite_links(meeting_id)`);
 
+  const polCols = await all(`PRAGMA table_info(v2_meeting_policies)`);
+  const polColNames = new Set((polCols || []).map((c) => c.name));
+  if (!polColNames.has('store_transcripts')) {
+    await run(`ALTER TABLE v2_meeting_policies ADD COLUMN store_transcripts INTEGER NOT NULL DEFAULT 0`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_transcript_lines (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      participant_identity TEXT NOT NULL,
+      language TEXT,
+      source_language TEXT,
+      original_text TEXT NOT NULL,
+      translated_text TEXT,
+      transcription_id TEXT,
+      dedupe_key TEXT UNIQUE,
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_transcript_meeting_time ON v2_meeting_transcript_lines(meeting_id, recorded_at)`);
+
   const cols = await all(`PRAGMA table_info(v2_meetings)`);
   const colNames = new Set((cols || []).map((c) => c.name));
   if (!colNames.has('host_present')) {

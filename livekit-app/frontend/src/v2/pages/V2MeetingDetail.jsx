@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check, PhoneOff } from 'lucide-react';
+import { ExternalLink, Copy, Shield, Users, Globe, ChevronDown, Check, PhoneOff, Radio, FileDown } from 'lucide-react';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
 import { getMeetingUiState, toneClasses } from '../lib/meetingState';
 import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
@@ -43,6 +43,19 @@ export default function V2MeetingDetail() {
       .then((r) => setMe(r))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!meeting?.inviteMaxTtlHours) return;
+    setNewInviteHours((h) => Math.min(Math.max(1, h), meeting.inviteMaxTtlHours));
+  }, [meeting?.inviteMaxTtlHours]);
+
+  useEffect(() => {
+    if (!meeting || !['live', 'scheduled'].includes(meeting.status)) return undefined;
+    const t = setInterval(() => {
+      v2Meetings.get(id).then(setMeeting).catch(() => {});
+    }, 12000);
+    return () => clearInterval(t);
+  }, [meeting?.status, id]);
 
   const ui = meeting ? getMeetingUiState(meeting) : null;
 
@@ -144,7 +157,6 @@ export default function V2MeetingDetail() {
     if (!meeting) return;
     try {
       await v2Meetings.hostSessionOpen(id);
-      await v2Meetings.token(id, { participantName: name.trim(), isHost: true });
       const share = meeting.joinUrl || `${window.location.origin}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
       const participantInfo = {
         isHost: true,
@@ -165,18 +177,47 @@ export default function V2MeetingDetail() {
     }
   };
 
+  const downloadTranscriptJson = async () => {
+    try {
+      const { lines } = await v2Meetings.getTranscript(id);
+      const blob = new Blob([JSON.stringify(lines, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `meeting-${id}-transcript.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Download started');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Download failed');
+    }
+  };
+
+  const downloadTranscriptTxt = async () => {
+    try {
+      const blob = await v2Meetings.getTranscriptTxtBlob(id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `meeting-${id}-transcript.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success('Download started');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Download failed');
+    }
+  };
+
   if (!meeting) {
     return <p className="text-gray-500 text-sm">Loading…</p>;
   }
 
-  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false };
+  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false, store_transcripts: false };
   const guestUrlNeedsToken = policy.require_invite_token && meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteHours = meeting.inviteMaxTtlHours ?? 90 * 24;
-
-  useEffect(() => {
-    if (!meeting?.inviteMaxTtlHours) return;
-    setNewInviteHours((h) => Math.min(Math.max(1, h), meeting.inviteMaxTtlHours));
-  }, [meeting?.inviteMaxTtlHours]);
+  const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
+  const canManageTranscriptPolicy =
+    me && (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
 
   return (
     <div className="max-w-3xl space-y-8">
@@ -202,6 +243,30 @@ export default function V2MeetingDetail() {
           </p>
         )}
       </header>
+
+      {['live', 'scheduled'].includes(meeting.status) && (
+        <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-3">
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
+            <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
+            In the room
+          </h2>
+          <p className="text-xs text-gray-500">
+            LiveKit snapshot (refreshes about every 12s while this meeting is scheduled or live). Agents are not listed.
+          </p>
+          {presence.humanCount === 0 ? (
+            <p className="text-sm text-gray-400">No participants connected right now.</p>
+          ) : (
+            <ul className="space-y-2 text-sm">
+              {(presence.participants || []).map((p) => (
+                <li key={p.identity} className="flex flex-wrap items-baseline gap-2 text-gray-200 border border-gray-700/50 rounded-lg px-3 py-2 bg-gray-900/40">
+                  <span className="font-mono text-xs text-gray-300">{p.identity}</span>
+                  {p.name && p.name !== p.identity && <span className="text-gray-400 text-xs">({p.name})</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="rounded-xl border border-gray-800 bg-gray-800/25 p-5 space-y-4">
         <h2 className="text-sm font-semibold text-white flex items-center gap-2 border-b border-gray-700/80 pb-3">
@@ -235,7 +300,42 @@ export default function V2MeetingDetail() {
             />
             Require invite token in URL for guests (?i=)
           </label>
+          {canManageTranscriptPolicy && (
+            <label className="flex items-center gap-2 text-gray-300 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!policy.store_transcripts}
+                onChange={(e) => patchPolicy({ store_transcripts: e.target.checked })}
+              />
+              Save meeting transcript on server (host session uploads finalized captions when enabled)
+            </label>
+          )}
         </div>
+        {Number(meeting.transcriptLineCount || 0) > 0 && (
+          <div className="rounded-lg border border-gray-700/80 bg-gray-900/30 px-3 py-3 space-y-2">
+            <p className="text-xs text-gray-400">
+              Saved transcript lines: <span className="text-gray-200 font-medium">{meeting.transcriptLineCount}</span>
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={downloadTranscriptJson}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Download JSON
+              </button>
+              <button
+                type="button"
+                onClick={downloadTranscriptTxt}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-600 px-3 py-2 text-xs text-gray-200 hover:bg-gray-700"
+              >
+                <FileDown className="w-3.5 h-3.5" />
+                Download .txt
+              </button>
+            </div>
+          </div>
+        )}
         <div>
           <p className="text-xs text-gray-500 mb-2">Guest join URL (full link — scroll or select to verify)</p>
           <p className="text-xs text-gray-600 mb-2">

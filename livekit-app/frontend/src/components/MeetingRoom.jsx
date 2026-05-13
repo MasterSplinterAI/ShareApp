@@ -54,6 +54,7 @@ function MeetingRoom() {
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
 
   // Initialize participant info on mount
   useEffect(() => {
@@ -151,6 +152,12 @@ function MeetingRoom() {
         throw new Error('Invalid token received from server');
       }
 
+      const persist =
+        Boolean(participantInfo.meetingId) &&
+        Boolean(participantInfo.isHost) &&
+        Boolean(tokenData.policy?.store_transcripts);
+      setTranscriptPersistEnabled(persist);
+
       setToken(tokenData.token);
       if (tokenData.url) {
         setLivekitUrl(tokenData.url);
@@ -228,6 +235,8 @@ function MeetingRoom() {
     <MeetingProvider
       initialState={{
         roomName,
+        meetingId: participantInfo.meetingId || '',
+        transcriptPersistEnabled,
         isHost: participantInfo.isHost,
         participantName: participantInfo.participantName,
         selectedLanguage: participantInfo.selectedLanguage,
