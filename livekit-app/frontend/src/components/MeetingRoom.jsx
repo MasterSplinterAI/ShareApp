@@ -366,8 +366,24 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
           adaptiveStream: true,
           dynacast: true,
           publishDefaults: {
-            videoSimulcastLayers: [],
-            videoCodec: 'vp8',
+            // Camera: 3-layer simulcast for graceful degradation on low-bandwidth viewers
+            videoSimulcastLayers: [
+              { width: 320,  height: 180,  encoding: { maxBitrate: 150_000,  maxFramerate: 15 } },
+              { width: 640,  height: 360,  encoding: { maxBitrate: 500_000,  maxFramerate: 30 } },
+              { width: 1280, height: 720,  encoding: { maxBitrate: 1_700_000, maxFramerate: 30 } },
+            ],
+            // Screen share: prioritize clarity over motion
+            screenShareEncoding: {
+              maxBitrate: 3_000_000,
+              maxFramerate: 15,
+            },
+            // Screen share simulcast: 2 layers so 720p viewers don't drop the whole stream
+            screenShareSimulcastLayers: [
+              { width: 1280, height: 720,  encoding: { maxBitrate: 1_500_000, maxFramerate: 15 } },
+              { width: 1920, height: 1080, encoding: { maxBitrate: 3_000_000, maxFramerate: 15 } },
+            ],
+            // VP9 for cameras (~30% better quality at same bitrate)
+            videoCodec: 'vp9',
           },
         }}
         className="h-full flex flex-col"
