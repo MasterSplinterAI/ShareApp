@@ -16,6 +16,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set
 
+from cost_reporter import CostReporter
+
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli, AutoSubscribe
 from livekit.plugins import silero
@@ -109,6 +111,7 @@ class TargetLaneState:
     is_same_language: bool
     llm_instance: Optional[Any]
     target_lang_name: str
+    llm_provider: str = "openai"
     turn_translated_parts: List[str] = field(default_factory=list)
     pending_translate_tasks: List[asyncio.Task] = field(default_factory=list)
 
@@ -125,9 +128,11 @@ class TranscriptionOnlyAgent:
         self._update_debounce_task: asyncio.Task | None = None
         self._update_debounce_sec = 0.4  # Coalesce rapid language switches
         self._agent_ready_ping_task: asyncio.Task | None = None
-        # Caption config set by host via data channel (Phase 1: stored, enforcement in Phase 2)
+        # Caption config set by host via data channel
         self.caption_mode: str = "transcription_translation"
         self.caption_languages: List[str] = []
+        # Cost reporter — initialized in entrypoint once room name is known
+        self.cost_reporter: Optional[CostReporter] = None
 
     def _normalize_language_code(self, lang: str) -> str:
         if not lang:
@@ -185,11 +190,13 @@ class TranscriptionOnlyAgent:
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
 
-        # Read caption_config from room metadata (persisted by host, supports late-joining agent)
+        org_id: Optional[str] = None
+        # Read caption_config and org_id from room metadata (persisted by host, supports late-joining agent)
         try:
             raw_meta = getattr(ctx.room, "metadata", None) or ""
             if raw_meta:
                 meta = json.loads(raw_meta)
+                org_id = meta.get("org_id") or None
                 cc = meta.get("caption_config")
                 if isinstance(cc, dict):
                     self.caption_mode = cc.get("mode", self.caption_mode)
@@ -200,7 +207,9 @@ class TranscriptionOnlyAgent:
                         f"mode={self.caption_mode!r} languages={self.caption_languages}"
                     )
         except Exception as e:
-            logger.warning(f"caption_config metadata parse failed: {e}")
+            logger.warning(f"Room metadata parse failed: {e}")
+
+        self.cost_reporter = CostReporter(meeting_id=ctx.room.name, org_id=org_id)
 
         # Broadcast to existing participants so they re-send their language preferences.
         # This handles agent restarts / redeployments mid-call where participants are
@@ -271,6 +280,7 @@ class TranscriptionOnlyAgent:
                             f"📋 caption_config updated by {participant_id}: "
                             f"mode={self.caption_mode!r} languages={self.caption_languages}"
                         )
+                        _schedule_update()
                     return
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
@@ -362,6 +372,13 @@ class TranscriptionOnlyAgent:
             await self._shutdown_all_assistants(ctx)
 
     async def update_assistants(self, ctx: JobContext):
+        # caption_mode='off' → kill all pipelines and do nothing
+        if self.caption_mode == "off":
+            for sid in list(self.speaker_pipelines.keys()):
+                await self._cancel_speaker_pipeline(sid)
+            logger.info("⏸️ caption_mode='off' — all speaker pipelines stopped")
+            return
+
         speakers = [
             p.identity for p in ctx.room.remote_participants.values()
             if any(pub.kind == rtc.TrackKind.KIND_AUDIO for pub in p.track_publications.values())
@@ -371,6 +388,11 @@ class TranscriptionOnlyAgent:
             lang for pid, lang in self.participant_languages.items()
             if self.translation_enabled.get(pid, False)
         }
+
+        # caption_languages restricts which target languages are active when non-empty
+        if self.caption_languages:
+            allowed_norm = {self._normalize_language_code(l) for l in self.caption_languages}
+            targets = {t for t in targets if self._normalize_language_code(t) in allowed_norm}
 
         logger.info(
             f"📊 update_assistants: speakers={speakers}, targets={targets}, "
@@ -466,12 +488,15 @@ class TranscriptionOnlyAgent:
                 await self._speaker_ctx[speaker].set_targets(ts)
                 logger.debug(f"📎 Updated translation targets for {speaker}: {sorted(ts)}")
 
-    def _create_stt_instance(self, speaker_id: str, speaker_lang: str) -> Optional[Any]:
-        """Single shared STT for one speaker (one instance per speaker pipeline)."""
+    def _create_stt_instance(self, speaker_id: str, speaker_lang: str):
+        """Single shared STT for one speaker (one instance per speaker pipeline).
+
+        Returns (stt_instance, provider_name) tuple; provider_name used for cost reporting.
+        """
         L = f"[{speaker_id}]"
         if not speaker_lang:
             logger.error(f"{L} _create_stt_instance: missing speaker_lang")
-            return None
+            return None, "unknown"
         is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
         _default_keyterms = (
@@ -491,8 +516,10 @@ class TranscriptionOnlyAgent:
         stt_provider = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
         normalized_lang = self._normalize_language_code(stt_lang)
         stt_instance: Optional[Any] = None
+        stt_provider_name = "unknown"
 
         def _try_xai():
+            nonlocal stt_provider_name
             if stt_provider != "xai":
                 return None
             if not XAI_AVAILABLE or xai_plugin is None:
@@ -512,12 +539,14 @@ class TranscriptionOnlyAgent:
                     endpointing=xai_endpointing,
                 )
                 logger.info(f"{L} STT: xAI grok-stt lang={normalized_lang} endpointing={xai_endpointing}ms (shared)")
+                stt_provider_name = "xai"
                 return inst
             except Exception as e:
                 logger.warning(f"{L} xAI STT init failed ({e}) — falling back")
                 return None
 
         def _try_deepgram():
+            nonlocal stt_provider_name
             if not (PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv("DEEPGRAM_API_KEY"))):
                 return None
             stt_kwargs = dict(
@@ -532,13 +561,16 @@ class TranscriptionOnlyAgent:
             inst = deepgram.STT(**stt_kwargs)
             kt = len(keyterms) if stt_kwargs.get("keyterm") else 0
             logger.info(f"{L} STT: Deepgram nova-3 lang={stt_lang} keyterms={kt} (shared)")
+            stt_provider_name = "deepgram"
             return inst
 
         def _try_openai():
+            nonlocal stt_provider_name
             if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
                 return None
             inst = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
             logger.info(f"{L} STT: OpenAI gpt-4o-transcribe (shared, no interim)")
+            stt_provider_name = "openai"
             return inst
 
         provider_order = {
@@ -554,14 +586,17 @@ class TranscriptionOnlyAgent:
 
         if stt_instance is None:
             logger.error(f"{L} No STT provider available (STT_PROVIDER={stt_provider})")
-        return stt_instance
+        return stt_instance, stt_provider_name
 
-    def _create_llm_for_target(self, speaker_id: str, target_lang: str) -> Optional[Any]:
+    def _create_llm_for_target(self, speaker_id: str, target_lang: str):
+        """Returns (llm_instance, provider_name) tuple; provider_name used for cost reporting."""
         L = f"[{speaker_id}→{target_lang}]"
         is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         llm_provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
+        llm_provider_name = "openai"
 
         def _try_xai_llm():
+            nonlocal llm_provider_name
             if llm_provider != "xai":
                 return None
             if not XAI_AVAILABLE or xai_plugin is None:
@@ -574,16 +609,19 @@ class TranscriptionOnlyAgent:
                 model = os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning")
                 inst = xai_plugin.responses.LLM(model=model)
                 logger.info(f"{L} LLM: xAI {model}")
+                llm_provider_name = "xai"
                 return inst
             except Exception as e:
                 logger.warning(f"{L} xAI LLM init failed ({e}) — falling back")
                 return None
 
         def _try_openai_llm():
+            nonlocal llm_provider_name
             if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
                 return None
             inst = openai.LLM()
             logger.info(f"{L} LLM: OpenAI (default gpt-4o-mini)")
+            llm_provider_name = "openai"
             return inst
 
         llm_order = {
@@ -598,7 +636,7 @@ class TranscriptionOnlyAgent:
                 break
         if llm_instance is None:
             logger.error(f"{L} No LLM available (LLM_PROVIDER={llm_provider})")
-        return llm_instance
+        return llm_instance, llm_provider_name
     async def _run_speaker_pipeline(self, job_ctx: JobContext, run_ctx: SpeakerRunContext) -> None:
         """One STT + VAD per speaker; fan out FINAL segments to per-target LLM lanes."""
         from livekit.agents.llm import ChatContext
@@ -626,8 +664,9 @@ class TranscriptionOnlyAgent:
                     continue
                 is_same = self._normalize_language_code(sl) == self._normalize_language_code(tgt)
                 llm = None
+                llm_pname = "openai"
                 if not is_same:
-                    llm = self._create_llm_for_target(speaker_id, tgt)
+                    llm, llm_pname = self._create_llm_for_target(speaker_id, tgt)
                     if llm is None:
                         logger.error(f"{L}→{tgt} No LLM — skipping translation lane")
                         continue
@@ -636,6 +675,7 @@ class TranscriptionOnlyAgent:
                     is_same_language=is_same,
                     llm_instance=llm,
                     target_lang_name=LANG_NAMES.get(tgt, tgt),
+                    llm_provider=llm_pname,
                 )
 
         async def publish_lane(
@@ -656,12 +696,17 @@ class TranscriptionOnlyAgent:
                 reliable=reliable,
             )
 
+        # Guard: if captions are disabled, don't start the pipeline
+        if self.caption_mode == "off":
+            logger.info(f"{L} caption_mode='off' — pipeline skipped")
+            return
+
         speaker_lang = self.participant_languages.get(speaker_id)
         if not speaker_lang:
             logger.error(f"{L} No speaker language — abort pipeline")
             return
 
-        stt_instance = self._create_stt_instance(speaker_id, speaker_lang)
+        stt_instance, stt_provider_name = self._create_stt_instance(speaker_id, speaker_lang)
         if stt_instance is None:
             return
         vad_instance = silero.VAD.load(**self._vad_params())
@@ -693,6 +738,9 @@ class TranscriptionOnlyAgent:
         seg_counter = [0]
         speech_active = [False]
         turn_start_time = [0.0]
+        # Track cumulative speech seconds per turn for STT cost reporting
+        seg_speech_start: List[float] = [0.0]
+        turn_stt_seconds: List[float] = [0.0]
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -701,18 +749,20 @@ class TranscriptionOnlyAgent:
             if llm is None:
                 return
             try:
-                chat_ctx = ChatContext()
-                chat_ctx.add_message(
-                    role="system",
-                    content=(
-                        f"Translate the following text to {lane.target_lang_name}. "
-                        "Output ONLY the translation, nothing else."
-                    ),
+                sys_msg = (
+                    f"Translate the following text to {lane.target_lang_name}. "
+                    "Output ONLY the translation, nothing else."
                 )
+                chat_ctx = ChatContext()
+                chat_ctx.add_message(role="system", content=sys_msg)
                 chat_ctx.add_message(role="user", content=original)
                 accumulated = ""
+                last_usage = None
                 stream = llm.chat(chat_ctx=chat_ctx)
                 async for chunk in stream:
+                    # Capture token usage if the provider sends it (OpenAI-compatible APIs)
+                    if getattr(chunk, "usage", None) is not None:
+                        last_usage = chunk.usage
                     delta = chunk.delta.content if chunk.delta and chunk.delta.content else ""
                     if not delta:
                         continue
@@ -742,6 +792,28 @@ class TranscriptionOnlyAgent:
                 while len(lane.turn_translated_parts) <= seg_idx:
                     lane.turn_translated_parts.append("")
                 lane.turn_translated_parts[seg_idx] = accumulated.strip()
+
+                # Fire-and-forget LLM cost event — never interrupts translation
+                if self.cost_reporter:
+                    if last_usage and hasattr(last_usage, "prompt_tokens"):
+                        in_tok = last_usage.prompt_tokens or 0
+                        out_tok = last_usage.completion_tokens or 0
+                    else:
+                        # Estimate: ~4 chars/token
+                        in_tok = max(1, (len(sys_msg) + len(original)) // 4)
+                        out_tok = max(1, len(accumulated) // 4)
+                    model_name = (
+                        os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning")
+                        if lane.llm_provider == "xai"
+                        else "gpt-4o-mini"
+                    )
+                    asyncio.create_task(self.cost_reporter.emit_llm(
+                        input_tokens=in_tok,
+                        output_tokens=out_tok,
+                        provider=lane.llm_provider,
+                        participant=speaker_id,
+                        model=model_name,
+                    ))
             except Exception as e:
                 logger.error(f"{L}→{tgt_lang} LLM error seg {seg_idx}: {e}", exc_info=True)
                 while len(lane.turn_translated_parts) <= seg_idx:
@@ -794,6 +866,16 @@ class TranscriptionOnlyAgent:
                 lane.turn_translated_parts.clear()
             turn_id[0] = None
 
+            # Emit STT cost for the completed turn (fire-and-forget)
+            if self.cost_reporter and turn_stt_seconds[0] > 0:
+                asyncio.create_task(self.cost_reporter.emit_stt(
+                    duration_seconds=turn_stt_seconds[0],
+                    provider=stt_provider_name,
+                    participant=speaker_id,
+                    language=speaker_lang,
+                ))
+                turn_stt_seconds[0] = 0.0
+
         async def start_new_turn() -> None:
             await reconcile_lanes()
             for lane in lanes.values():
@@ -807,6 +889,8 @@ class TranscriptionOnlyAgent:
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
             turn_original_parts.clear()
             turn_start_time[0] = asyncio.get_event_loop().time()
+            turn_stt_seconds[0] = 0.0
+            seg_speech_start[0] = 0.0
 
         PRE_SPEECH_BUFFER_FRAMES = 50
         pre_speech_buffer = deque(maxlen=PRE_SPEECH_BUFFER_FRAMES)
@@ -839,6 +923,7 @@ class TranscriptionOnlyAgent:
 
             async for vad_event in vad_stream:
                 if vad_event.type == VADEventType.START_OF_SPEECH:
+                    seg_speech_start[0] = time.time()
                     pending = finalization_task[0]
                     if pending and not pending.done():
                         pending.cancel()
@@ -855,6 +940,9 @@ class TranscriptionOnlyAgent:
                         await start_new_turn()
                     logger.debug(f"{L} 🎙️ Speech started")
                 elif vad_event.type == VADEventType.END_OF_SPEECH:
+                    if seg_speech_start[0] > 0:
+                        turn_stt_seconds[0] += time.time() - seg_speech_start[0]
+                        seg_speech_start[0] = 0.0
                     speech_active[0] = False
                     logger.debug(f"{L} 🔇 Speech ended")
                     pending = finalization_task[0]
@@ -928,7 +1016,7 @@ class TranscriptionOnlyAgent:
                             tgt,
                             is_same_language_lane=lane.is_same_language,
                         )
-                        if not lane.is_same_language:
+                        if not lane.is_same_language and self.caption_mode != "transcription_only":
                             task = asyncio.create_task(
                                 translate_segment(lane, tgt, text, seg_idx)
                             )

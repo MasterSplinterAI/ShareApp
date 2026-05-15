@@ -62,6 +62,34 @@ async function aggregateRollup(meetingId) {
     totalCost += row.subtotal;
   }
 
+  // Per-participant aggregates from cost event meta_json
+  const allCostEvents = await all(
+    `SELECT event_type, units, total_cost_usd, meta_json FROM meeting_cost_events WHERE meeting_id = ? AND meta_json IS NOT NULL`,
+    [meetingId]
+  );
+  const participantStats = {};
+  function ensureParticipant(pid) {
+    if (!participantStats[pid]) {
+      participantStats[pid] = { total_cost_usd: 0, stt_seconds: 0, llm_tokens: 0, livekit_minutes: 0 };
+    }
+  }
+  for (const row of allCostEvents) {
+    let meta = null;
+    try { meta = JSON.parse(row.meta_json); } catch { /* skip malformed */ }
+    const pid = meta && meta.participant;
+    if (!pid) continue;
+    ensureParticipant(pid);
+    participantStats[pid].total_cost_usd += row.total_cost_usd || 0;
+    // units stored as minutes for STT event types
+    if (row.event_type && row.event_type.includes('stt')) {
+      participantStats[pid].stt_seconds += (row.units || 0) * 60;
+    }
+    // units stored as Mtok for LLM event types
+    if (row.event_type && (row.event_type.includes('input') || row.event_type.includes('output'))) {
+      participantStats[pid].llm_tokens += (row.units || 0) * 1_000_000;
+    }
+  }
+
   // Calculate duration from room_started / room_finished events
   const startEv = await get(
     `SELECT ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'room_started' ORDER BY ts ASC LIMIT 1`,
@@ -91,18 +119,30 @@ async function aggregateRollup(meetingId) {
       leaveMap[r.participant_identity] = r.ts;
     }
 
+    const PARTICIPANT_RATE = 0.004;
     let participantMinutes = 0;
     for (const r of joinRows) {
       const leftTs = leaveMap[r.participant_identity] || endEv.ts;
-      participantMinutes += (leftTs - r.ts) / 1000 / 60;
+      const mins = (leftTs - r.ts) / 1000 / 60;
+      participantMinutes += mins;
+      // Merge livekit minutes + cost into per-participant stats
+      const pid = r.participant_identity;
+      if (pid) {
+        ensureParticipant(pid);
+        participantStats[pid].livekit_minutes += mins;
+        participantStats[pid].total_cost_usd += mins * PARTICIPANT_RATE;
+      }
     }
 
-    const PARTICIPANT_RATE = 0.004;
     const participantCost = participantMinutes * PARTICIPANT_RATE;
     if (participantCost > 0) {
       breakdown['livekit'] = (breakdown['livekit'] || 0) + participantCost;
       totalCost += participantCost;
     }
+  }
+
+  if (Object.keys(participantStats).length > 0) {
+    breakdown.participants = participantStats;
   }
 
   await run(
