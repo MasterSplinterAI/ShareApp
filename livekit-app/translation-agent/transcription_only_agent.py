@@ -125,6 +125,9 @@ class TranscriptionOnlyAgent:
         self._update_debounce_task: asyncio.Task | None = None
         self._update_debounce_sec = 0.4  # Coalesce rapid language switches
         self._agent_ready_ping_task: asyncio.Task | None = None
+        # Caption config set by host via data channel (Phase 1: stored, enforcement in Phase 2)
+        self.caption_mode: str = "transcription_translation"
+        self.caption_languages: List[str] = []
 
     def _normalize_language_code(self, lang: str) -> str:
         if not lang:
@@ -181,6 +184,23 @@ class TranscriptionOnlyAgent:
     async def entrypoint(self, ctx: JobContext):
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
         logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
+
+        # Read caption_config from room metadata (persisted by host, supports late-joining agent)
+        try:
+            raw_meta = getattr(ctx.room, "metadata", None) or ""
+            if raw_meta:
+                meta = json.loads(raw_meta)
+                cc = meta.get("caption_config")
+                if isinstance(cc, dict):
+                    self.caption_mode = cc.get("mode", self.caption_mode)
+                    langs = cc.get("languages", [])
+                    self.caption_languages = list(langs) if isinstance(langs, list) else []
+                    logger.info(
+                        f"📋 Loaded caption_config from room metadata: "
+                        f"mode={self.caption_mode!r} languages={self.caption_languages}"
+                    )
+        except Exception as e:
+            logger.warning(f"caption_config metadata parse failed: {e}")
 
         # Broadcast to existing participants so they re-send their language preferences.
         # This handles agent restarts / redeployments mid-call where participants are
@@ -241,6 +261,17 @@ class TranscriptionOnlyAgent:
                         or "en"
                     )
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
+                elif msg_type == "caption_config":
+                    new_mode = msg.get("mode", self.caption_mode)
+                    new_langs = msg.get("languages", self.caption_languages)
+                    if new_mode != self.caption_mode or new_langs != self.caption_languages:
+                        self.caption_mode = new_mode
+                        self.caption_languages = list(new_langs) if isinstance(new_langs, list) else []
+                        logger.info(
+                            f"📋 caption_config updated by {participant_id}: "
+                            f"mode={self.caption_mode!r} languages={self.caption_languages}"
+                        )
+                    return
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return

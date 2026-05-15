@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTracks, useParticipants, useLocalParticipant, VideoTrack, ParticipantContext } from '@livekit/components-react';
-import { Track, RoomEvent } from 'livekit-client';
-import { Maximize, Minimize, User, Mic, MicOff, Video, VideoOff } from 'lucide-react';
+import { Track, RoomEvent, VideoQuality } from 'livekit-client';
+import { Maximize, Minimize, User, MicOff, VideoOff } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 
@@ -20,7 +20,7 @@ function VideoGrid() {
   const participants = useParticipants();
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
-  const { isFullScreen, setIsFullScreen } = useMeeting();
+  const { isFullScreen, setIsFullScreen, meetingId } = useMeeting();
   const fullScreenRef = useRef(null);
   const isMobile = useIsMobile();
   const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState(null);
@@ -93,6 +93,7 @@ function VideoGrid() {
             track={activeScreenShare}
             className="w-full h-full object-contain bg-black"
           />
+          <ScreenShareQualityChip trackRef={activeScreenShare} meetingId={meetingId} />
           <button
             onClick={toggleFullScreen}
             className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-all z-10"
@@ -241,6 +242,49 @@ function ParticipantTile({ participant, tracks, compact = false }) {
           <div className={`bg-green-400 rounded-full animate-pulse ${compact ? 'w-2 h-2' : 'w-3 h-3'}`} />
         </div>
       )}
+    </div>
+  );
+}
+
+function ScreenShareQualityChip({ trackRef, meetingId }) {
+  const [label, setLabel] = useState(null);
+  const prevQualityRef = useRef(null);
+
+  useEffect(() => {
+    const pub = trackRef?.publication;
+    if (!pub) return;
+
+    const update = () => {
+      // videoQuality: VideoQuality.HIGH=2 (1080p), MEDIUM=1 (720p), LOW=0 (360p), OFF=-1
+      const q = pub.videoQuality ?? -1;
+      const layerLabel = q === VideoQuality.HIGH ? '1080p' : q === VideoQuality.MEDIUM ? '720p' : q === VideoQuality.LOW ? '360p' : null;
+      setLabel(layerLabel);
+
+      // Detect 1080p → 720p downgrade
+      if (prevQualityRef.current === VideoQuality.HIGH && q === VideoQuality.MEDIUM) {
+        fetch('/api/quality-events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            meeting_id: meetingId || 'unknown',
+            participant_identity: trackRef.participant?.identity || null,
+            from_layer: '1080p',
+            to_layer: '720p',
+          }),
+        }).catch(() => {});
+      }
+      prevQualityRef.current = q;
+    };
+
+    update();
+    const id = setInterval(update, 2000);
+    return () => clearInterval(id);
+  }, [trackRef?.publication, meetingId]);
+
+  if (!label) return null;
+  return (
+    <div className="absolute top-2 left-2 rounded bg-black/60 px-1.5 py-0.5 font-mono text-[10px] text-white">
+      {label}
     </div>
   );
 }

@@ -71,7 +71,6 @@ export default function V2MeetingDetail() {
         }
       })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hostShareUrl = useMemo(() => {
@@ -241,7 +240,6 @@ export default function V2MeetingDetail() {
     }
     setAutoJoinTriggered(true);
     joinAsHost();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoJoinIntent, autoJoinTriggered, meeting?.host_user_id, me?.user?.id, name]);
 
   const downloadTranscriptJson = async () => {

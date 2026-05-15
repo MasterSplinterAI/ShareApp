@@ -281,6 +281,57 @@ async function migrate() {
     );
   }
 
+  // Phase 1 cost-tracking tables
+  await run(`
+    CREATE TABLE IF NOT EXISTS meeting_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id TEXT NOT NULL,
+      org_id TEXT,
+      event_type TEXT NOT NULL,
+      participant_identity TEXT,
+      track_sid TEXT,
+      payload_json TEXT,
+      ts INTEGER NOT NULL
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_meeting_events_meeting ON meeting_events(meeting_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_meeting_events_org ON meeting_events(org_id)`);
+  await run(`
+    CREATE TABLE IF NOT EXISTS meeting_cost_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id TEXT NOT NULL,
+      org_id TEXT,
+      event_type TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      units REAL NOT NULL,
+      unit_cost_usd REAL NOT NULL,
+      total_cost_usd REAL NOT NULL,
+      ts INTEGER NOT NULL,
+      meta_json TEXT
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_cost_events_meeting ON meeting_cost_events(meeting_id)`);
+  await run(`
+    CREATE TABLE IF NOT EXISTS meeting_cost_rollups (
+      meeting_id TEXT PRIMARY KEY,
+      org_id TEXT,
+      total_cost_usd REAL NOT NULL,
+      breakdown_json TEXT NOT NULL,
+      duration_seconds INTEGER,
+      computed_at INTEGER NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS screen_share_quality_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id TEXT NOT NULL,
+      participant_identity TEXT,
+      from_layer TEXT,
+      to_layer TEXT,
+      ts INTEGER NOT NULL
+    )
+  `);
+
   // Scale / ops: billing + webhook + usage tables remain SQLite here; production should migrate
   // high-write paths (webhook_events, usage_events, overage_ledger) to Postgres for concurrency and backups.
 }

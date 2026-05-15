@@ -1,12 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users, Subtitles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import LanguageSelector from './LanguageSelector';
 import { useMeeting } from '../context/MeetingContext';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+
+const CAPTION_MODES = [
+  { value: 'off', label: 'Captions off' },
+  { value: 'transcription_only', label: 'Transcription only' },
+  { value: 'transcription_translation', label: 'Transcription + Translation' },
+];
+
+const CAPTION_LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'zh-CN', name: 'Mandarin' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'tiv', name: 'Tiv' },
+];
 
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false);
@@ -37,8 +58,14 @@ export default function CustomControlBar({
     openSidePanel,
     closeSidePanel,
     unreadCount,
+    roomName,
   } = useMeeting();
   const isCompact = useIsCompact();
+
+  const [captionMode, setCaptionMode] = useState('transcription_translation');
+  const [captionLanguages, setCaptionLanguages] = useState([selectedLanguage || 'en']);
+  const [showCaptionMenu, setShowCaptionMenu] = useState(false);
+  const captionMenuRef = useRef(null);
 
   const cameraTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Camera);
   const micTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Microphone);
@@ -216,10 +243,63 @@ export default function CustomControlBar({
     const handleOrientationChange = () => {
       setShowMicMenu(false);
       setShowCameraMenu(false);
+      setShowCaptionMenu(false);
     };
     window.addEventListener('orientationchange', handleOrientationChange);
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
+
+  // Close caption menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (captionMenuRef.current && !captionMenuRef.current.contains(e.target)) {
+        setShowCaptionMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const publishCaptionConfig = async (mode, languages) => {
+    if (!localParticipant) return;
+    try {
+      const payload = JSON.stringify({ type: 'caption_config', mode, languages });
+      await localParticipant.publishData(
+        new TextEncoder().encode(payload),
+        { reliable: true, topic: 'caption_config' }
+      );
+    } catch (err) {
+      console.error('Failed to publish caption config:', err);
+    }
+
+    if (roomName) {
+      const apiBase = import.meta.env.VITE_API_URL || '/api';
+      fetch(`${apiBase}/v2/rooms/${encodeURIComponent(roomName)}/caption-config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('v2_token') || ''}`,
+        },
+        body: JSON.stringify({ mode, languages }),
+      }).catch(() => {});
+    }
+  };
+
+  const handleCaptionModeChange = async (mode) => {
+    setCaptionMode(mode);
+    await publishCaptionConfig(mode, captionLanguages);
+    setShowCaptionMenu(false);
+    toast(mode === 'off' ? 'Captions disabled' : 'Caption mode updated');
+  };
+
+  const toggleCaptionLanguage = async (code) => {
+    const next = captionLanguages.includes(code)
+      ? captionLanguages.filter(c => c !== code)
+      : [...captionLanguages, code];
+    const langs = next.length > 0 ? next : [code];
+    setCaptionLanguages(langs);
+    await publishCaptionConfig(captionMode, langs);
+  };
 
   const barBtn = (compact) =>
     cn(
@@ -358,6 +438,69 @@ export default function CustomControlBar({
               <Monitor className="h-5 w-5" />
               <span className="text-sm font-medium">{isScreenSharing ? 'Stop sharing' : 'Share screen'}</span>
             </Button>
+          )}
+
+          {/* Caption Config - host only, desktop only */}
+          {isHost && !isCompact && (
+            <div className="relative" ref={captionMenuRef}>
+              <Button
+                type="button"
+                variant={captionMode !== 'off' ? 'success' : 'secondary'}
+                onClick={() => setShowCaptionMenu(v => !v)}
+                className={cn(barBtn(false), 'gap-1.5')}
+                aria-label="Caption settings"
+              >
+                <Subtitles className="h-5 w-5" />
+                <span className="text-sm font-medium">Captions</span>
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showCaptionMenu ? 'rotate-180' : ''}`} />
+              </Button>
+
+              {showCaptionMenu && (
+                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-64 rounded-lg border border-border bg-popover shadow-xl">
+                  <div className="p-2">
+                    <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Mode</p>
+                    {CAPTION_MODES.map(m => (
+                      <button
+                        key={m.value}
+                        type="button"
+                        onClick={() => handleCaptionModeChange(m.value)}
+                        className={cn(
+                          'flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                          captionMode === m.value && 'bg-accent'
+                        )}
+                      >
+                        <span className="text-popover-foreground">{m.label}</span>
+                        {captionMode === m.value && <span className="text-xs text-primary">✓</span>}
+                      </button>
+                    ))}
+
+                    {captionMode !== 'off' && (
+                      <>
+                        <div className="my-1.5 border-t border-border" />
+                        <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Languages</p>
+                        <div className="flex flex-wrap gap-1 px-2 pb-2">
+                          {CAPTION_LANGUAGES.map(lang => (
+                            <button
+                              key={lang.code}
+                              type="button"
+                              onClick={() => toggleCaptionLanguage(lang.code)}
+                              className={cn(
+                                'rounded-full border px-2 py-0.5 text-xs transition-colors',
+                                captionLanguages.includes(lang.code)
+                                  ? 'border-primary bg-primary text-primary-foreground'
+                                  : 'border-border bg-transparent text-popover-foreground hover:bg-accent'
+                              )}
+                            >
+                              {lang.name}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
 

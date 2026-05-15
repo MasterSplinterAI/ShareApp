@@ -62,8 +62,11 @@ app.use(cors({
   credentials: true
 }));
 const { handleV2BillingWebhook } = require('./routes/v2/billingWebhook');
+const { handleLiveKitWebhook } = require('./routes/webhooks');
 
+// Raw-body routes must come before express.json()
 app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
+app.post('/api/webhooks/livekit', express.raw({ type: '*/*' }), handleLiveKitWebhook);
 app.use(express.json());
 
 // Routes
@@ -78,6 +81,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateRoutes);
 app.use('/api/v2', v2Routes);
+app.use('/api/cost-events', require('./routes/costEvents'));
+app.use('/api/quality-events', require('./routes/qualityEvents'));
 
 // Health check
 app.get('/api/health', (req, res) => {
