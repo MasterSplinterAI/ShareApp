@@ -22,6 +22,12 @@ XAI_STT_ENDPOINTING_MS=1800
 # Seconds after true silence before moving live bubble to history (resume within = same block).
 CAPTION_UTTERANCE_END_DELAY_SEC=3.0
 
+# Silero VAD — higher activation_threshold = less background noise triggering speech.
+# Presets: quiet | normal | noisy | ultra_noisy (override with VAD_PRESET).
+VAD_PRESET=normal
+VAD_ACTIVATION_THRESHOLD=0.58
+VAD_MIN_SILENCE_SEC=1.1
+
 # --- Fallback STT credentials (recommended in Cloud) ---
 # Grok STT auto-falls back for langs outside XAI_SUPPORTED_LANGS or on errors.
 DEEPGRAM_API_KEY=

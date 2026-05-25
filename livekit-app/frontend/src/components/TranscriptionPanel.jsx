@@ -54,15 +54,18 @@ function wordPrefixMatch(shorter, longer) {
   return true;
 }
 
-/** Agent sends cumulative live lines — prefer latest superset, don't re-append. */
+/** Agent sends cumulative live lines — prefer prefix extensions, reject mid-string repeats. */
 function pickLiveCaptionText(previous, incoming) {
   const prev = (previous || '').trim();
   const next = (incoming || '').trim();
   if (!next) return prev;
   if (!prev) return next;
   if (next === prev) return prev;
-  if (next.includes(prev) || wordPrefixMatch(prev, next)) return next;
-  if (prev.includes(next) || wordPrefixMatch(next, prev)) return prev;
+  if (next.startsWith(prev) || wordPrefixMatch(prev, next)) return next;
+  if (prev.startsWith(next) || wordPrefixMatch(next, prev)) return prev;
+  // Substring without prefix (e.g. "foo bar" inside "foo bar foo bar") — keep shorter line.
+  if (next.includes(prev) && !next.startsWith(prev)) return prev;
+  if (prev.includes(next) && !prev.startsWith(next)) return prev;
   return mergeSttOverlap(prev, next);
 }
 
@@ -186,8 +189,16 @@ function TranscriptionPanel() {
         if (message.type !== 'transcription') return;
         if (topic != null && topic !== 'transcription') return;
 
-        if (import.meta.env.DEV) {
-          console.log('📝 Transcription received:', { speaker: message.participant_id, partial: message.partial, orig: message.originalText?.slice(0, 40), text: message.text?.slice(0, 40) });
+        const debugCaptions = import.meta.env.DEV
+          || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1');
+        if (debugCaptions) {
+          console.log('📝 Transcription received:', {
+            speaker: message.participant_id,
+            partial: message.partial,
+            origLen: message.originalText?.length ?? 0,
+            orig: message.originalText?.slice(-80),
+            textLen: message.text?.length ?? 0,
+          });
         }
 
         const speakerId = message.participant_id || participant?.identity || 'Unknown';
@@ -386,13 +397,15 @@ function TranscriptionPanel() {
     if (messages.length === 0) return null;
     const live = [...messages].reverse().find((m) => m.isPartial);
     const target = live || messages[messages.length - 1];
-    const { dominant } = getDominantAndSecondary(
+    const { dominant, pendingTranslation } = getDominantAndSecondary(
       target.originalText,
       target.translations,
       selectedLanguage,
       target.isPartial,
+      target.sourceLanguage,
     );
-    return dominant ? `${target.speaker}: ${dominant}` : null;
+    const line = pendingTranslation && !dominant ? 'Translating…' : dominant;
+    return line ? `${target.speaker}: ${line}` : null;
   }, [messages, selectedLanguage]);
 
   const visibleMessages = useMemo(() => messagesForDisplay(messages), [messages]);
@@ -474,38 +487,53 @@ function TranscriptionPanel() {
   );
 }
 
-function getDominantAndSecondary(originalText, translations, selectedLanguage, isPartial = false) {
+function getDominantAndSecondary(
+  originalText,
+  translations,
+  selectedLanguage,
+  isPartial = false,
+  sourceLanguage = null,
+) {
+  const normalize = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
   const translationEntries = Object.entries(translations || {});
-  const hasTranslation = translationEntries.length > 0;
+  const wantsTranslation = !!(
+    selectedLanguage &&
+    sourceLanguage &&
+    normalize(selectedLanguage) !== normalize(sourceLanguage)
+  );
 
-  if (!hasTranslation) {
-    return { dominant: originalText, secondary: null, dominantLang: null, secondaryLang: null };
-  }
+  const matchingEntry = translationEntries.find(
+    ([lang]) => normalize(lang) === normalize(selectedLanguage),
+  );
 
-  const matchingEntry = translationEntries.find(([lang]) => lang === selectedLanguage);
-
-  if (matchingEntry) {
-    const translated = matchingEntry[1];
-    // While live: STT updates the original every ~500ms but LLM translation only catches
-    // up on segment finals. Show the growing original until translation is in sync.
-    const translationLags =
-      isPartial &&
-      originalText &&
-      translated &&
-      originalText.length > translated.length + 12;
-    if (translationLags) {
-      return {
-        dominant: originalText,
-        secondary: translated,
-        dominantLang: null,
-        secondaryLang: matchingEntry[0],
-      };
-    }
+  if (matchingEntry?.[1]?.trim()) {
+    const translated = matchingEntry[1].trim();
     return {
       dominant: translated,
-      secondary: originalText,
+      secondary: originalText && originalText.trim() !== translated ? originalText : null,
       dominantLang: matchingEntry[0],
+      secondaryLang: sourceLanguage,
+      pendingTranslation: false,
+    };
+  }
+
+  if (wantsTranslation) {
+    return {
+      dominant: null,
+      secondary: originalText || null,
+      dominantLang: selectedLanguage,
+      secondaryLang: sourceLanguage,
+      pendingTranslation: true,
+    };
+  }
+
+  if (!translationEntries.length) {
+    return {
+      dominant: originalText,
+      secondary: null,
+      dominantLang: null,
       secondaryLang: null,
+      pendingTranslation: false,
     };
   }
 
@@ -515,6 +543,7 @@ function getDominantAndSecondary(originalText, translations, selectedLanguage, i
     secondary: firstEntry[1],
     dominantLang: null,
     secondaryLang: firstEntry[0],
+    pendingTranslation: false,
   };
 }
 
@@ -528,17 +557,10 @@ function TranscriptionBubble({
   selectedLanguage,
   timestamp,
   isPartial = false,
+  pendingTranslation = false,
   compact = false,
 }) {
-  // If we're showing the speaker's original while the reader's selected language
-  // has no translation yet, hint that a translation is still pending.
-  const normalize = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
-  const isPendingTranslation =
-    isPartial &&
-    !dominantLang &&
-    selectedLanguage &&
-    sourceLanguage &&
-    normalize(sourceLanguage) !== normalize(selectedLanguage);
+  const showTranslating = pendingTranslation && !dominant;
 
   return (
     <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0`}>
@@ -547,7 +569,7 @@ function TranscriptionBubble({
         {isPartial ? (
           <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
             <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-            {isPendingTranslation ? 'translating' : 'live'}
+            {showTranslating ? 'translating' : 'live'}
           </span>
         ) : (
           timestamp && (
@@ -558,21 +580,31 @@ function TranscriptionBubble({
         )}
       </div>
 
-      {dominant && (
+      {showTranslating ? (
         <p
-          className={`break-words leading-relaxed bg-muted/40 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-foreground ${
-            isPendingTranslation ? 'italic text-muted-foreground' : ''
-          }`}
+          className={`break-words leading-relaxed bg-muted/40 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-foreground`}
         >
-          {isPendingTranslation && sourceLanguage && (
-            <span className="text-muted-foreground not-italic mr-1">[{getLanguageLabel(sourceLanguage)}]</span>
+          {selectedLanguage && (
+            <span className="text-muted-foreground mr-1">[{getLanguageLabel(selectedLanguage)}]</span>
+          )}
+          Translating…
+          {isPartial && (
+            <span className="inline-block w-1.5 h-4 bg-primary ml-1 animate-pulse rounded-sm align-middle" />
+          )}
+        </p>
+      ) : dominant ? (
+        <p
+          className={`break-words leading-relaxed bg-muted/40 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-foreground`}
+        >
+          {dominantLang && (
+            <span className="text-muted-foreground mr-1">[{getLanguageLabel(dominantLang)}]</span>
           )}
           {dominant}
           {isPartial && (
             <span className="inline-block w-1.5 h-4 bg-primary ml-1 animate-pulse rounded-sm align-middle" />
           )}
         </p>
-      )}
+      ) : null}
 
       {secondary && (
         <p className={`text-muted-foreground break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} opacity-70`}>
@@ -603,8 +635,18 @@ function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact
       )}
 
       {messages.map((item) => {
-        const { dominant, secondary, dominantLang, secondaryLang } = getDominantAndSecondary(
-          item.originalText, item.translations, selectedLanguage, item.isPartial
+        const {
+          dominant,
+          secondary,
+          dominantLang,
+          secondaryLang,
+          pendingTranslation,
+        } = getDominantAndSecondary(
+          item.originalText,
+          item.translations,
+          selectedLanguage,
+          item.isPartial,
+          item.sourceLanguage,
         );
         return (
           <TranscriptionBubble
@@ -618,6 +660,7 @@ function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact
             selectedLanguage={selectedLanguage}
             timestamp={item.timestamp}
             isPartial={item.isPartial}
+            pendingTranslation={pendingTranslation}
             compact={compact}
           />
         );

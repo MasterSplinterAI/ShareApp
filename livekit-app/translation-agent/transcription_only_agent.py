@@ -323,16 +323,38 @@ class TranscriptionOnlyAgent:
             await tok.aclose()
 
     def _vad_params(self) -> dict:
-        # activation_threshold: lower = more sensitive to quiet speech (fewer first-word clips),
-        # higher = fewer false positives from background noise. 0.4 is a good middle ground.
-        # min_silence_duration: brief pauses within a thought should not gate STT (we always
-        # feed xAI); this only affects VAD metrics and backup finalization timing.
-        return {
-            "activation_threshold": float(os.getenv("VAD_ACTIVATION_THRESHOLD", "0.4")),
-            "min_speech_duration": 0.15,
-            "min_silence_duration": float(os.getenv("VAD_MIN_SILENCE_SEC", "1.2")),
-            "prefix_padding_duration": 0.8,
+        # activation_threshold: higher = fewer false positives from background noise.
+        # min_speech_duration: ignore very short noise bursts.
+        preset = (os.getenv("VAD_PRESET") or self.host_vad_sensitivity or "normal").strip().lower()
+        presets = {
+            "quiet": {
+                "activation_threshold": 0.52,
+                "min_speech_duration": 0.18,
+                "min_silence_duration": 1.0,
+            },
+            "normal": {
+                "activation_threshold": 0.58,
+                "min_speech_duration": 0.22,
+                "min_silence_duration": 1.1,
+            },
+            "noisy": {
+                "activation_threshold": 0.68,
+                "min_speech_duration": 0.28,
+                "min_silence_duration": 1.2,
+            },
+            "ultra_noisy": {
+                "activation_threshold": 0.78,
+                "min_speech_duration": 0.35,
+                "min_silence_duration": 1.3,
+            },
         }
+        params = dict(presets.get(preset, presets["normal"]))
+        if os.getenv("VAD_ACTIVATION_THRESHOLD"):
+            params["activation_threshold"] = float(os.getenv("VAD_ACTIVATION_THRESHOLD"))
+        if os.getenv("VAD_MIN_SILENCE_SEC"):
+            params["min_silence_duration"] = float(os.getenv("VAD_MIN_SILENCE_SEC"))
+        params["prefix_padding_duration"] = 0.8
+        return params
 
     async def entrypoint(self, ctx: JobContext):
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
@@ -910,9 +932,11 @@ class TranscriptionOnlyAgent:
         vad_stream = vad_instance.stream()
 
         turn_id: List[Optional[str]] = [None]
-        turn_original_parts: List[str] = []
-        # Latest full original shown live (includes interims not yet in turn_original_parts).
+        # Single committed line for the turn (chunk finals only — interims stay in turn_snapshot).
+        canonical_turn_text: List[str] = [""]
+        # Latest full original shown live (committed + open interim chunk).
         turn_snapshot: List[str] = [""]
+        chunk_seg_counter = [0]
         seg_counter = [0]
         vad_speech_active = [False]
         stt_speech_active = [False]
@@ -921,7 +945,6 @@ class TranscriptionOnlyAgent:
         seg_speech_start: List[float] = [0.0]
         turn_stt_seconds: List[float] = [0.0]
         last_live_publish: List[str] = [""]
-        open_chunk_text: List[str] = [""]
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -951,7 +974,7 @@ class TranscriptionOnlyAgent:
                     while len(lane.turn_translated_parts) <= seg_idx:
                         lane.turn_translated_parts.append("")
                     lane.turn_translated_parts[seg_idx] = accumulated
-                    full_original = " ".join(turn_original_parts)
+                    full_original = (turn_snapshot[0] or canonical_turn_text[0]).strip()
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                     await publish_lane(
                         {
@@ -1043,8 +1066,9 @@ class TranscriptionOnlyAgent:
                     f"{L}→{tgt} ✅ Turn final: '{full_original[:50]}...' → '{full_translated[:50]}...'"
                 )
 
-            turn_original_parts.clear()
+            canonical_turn_text[0] = ""
             turn_snapshot[0] = ""
+            chunk_seg_counter[0] = 0
             for lane in lanes.values():
                 lane.turn_translated_parts.clear()
             turn_id[0] = None
@@ -1070,13 +1094,13 @@ class TranscriptionOnlyAgent:
                 lane.turn_translated_parts.clear()
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
-            turn_original_parts.clear()
+            canonical_turn_text[0] = ""
             turn_snapshot[0] = ""
+            chunk_seg_counter[0] = 0
             turn_start_time[0] = asyncio.get_event_loop().time()
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
-            open_chunk_text[0] = ""
 
         finalization_task: List[Optional[asyncio.Task]] = [None]
 
@@ -1143,7 +1167,10 @@ class TranscriptionOnlyAgent:
             if new in base:
                 return base
             if base in new:
-                return new
+                # Mid-string repeat (e.g. "foo bar" inside "foo bar foo bar baz") — keep shorter.
+                if new.startswith(base) or _word_prefix_match(base, new):
+                    return new
+                return base
             base_words = base.split()
             new_words = new.split()
             overlap = 0
@@ -1155,62 +1182,50 @@ class TranscriptionOnlyAgent:
                 return " ".join(base_words + new_words[overlap:])
             return f"{base} {new}".strip()
 
-        def locked_turn_text() -> str:
-            return " ".join(turn_original_parts).strip()
+        def _upsert_canonical_turn(incoming: str) -> str:
+            """Merge one STT chunk final into the turn's committed line."""
+            incoming = incoming.strip()
+            if not incoming:
+                return canonical_turn_text[0].strip()
+            merged = _merge_stt_text(canonical_turn_text[0], incoming)
+            canonical_turn_text[0] = merged
+            return merged
 
-        def compose_live_display(open_text: str) -> str:
-            """Build one live line from finalized segments + current open xAI chunk."""
-            open_text = open_text.strip()
-            locked = locked_turn_text()
+        def live_display_text(open_interim: str) -> str:
+            """Build live line from committed turn text + current open xAI chunk."""
+            open_interim = open_interim.strip()
+            locked = canonical_turn_text[0].strip()
             if not locked:
-                return open_text
-            if not open_text:
+                return open_interim
+            if not open_interim:
                 return locked
-            # xAI interims are cumulative for the active chunk — replace, never re-append.
             if (
-                open_text == locked
-                or open_text.startswith(locked)
-                or locked.startswith(open_text)
-                or locked in open_text
-                or _word_prefix_match(locked, open_text)
+                open_interim == locked
+                or open_interim.startswith(locked)
+                or locked.startswith(open_interim)
+                or _word_prefix_match(locked, open_interim)
             ):
-                return open_text if len(open_text) >= len(locked) else locked
-            return _merge_stt_text(locked, open_text)
+                return open_interim if len(open_interim) >= len(locked) else locked
+            return _merge_stt_text(locked, open_interim)
 
-        def append_turn_segment(text: str) -> str:
-            """Append STT segment text; handle xAI cumulative chunk finals without duplicating."""
-            segment = text.strip()
-            if not segment:
-                return " ".join(turn_original_parts).strip()
-            committed = " ".join(turn_original_parts).strip()
-            if not committed:
-                turn_original_parts.append(segment)
-            elif segment == committed or segment in committed:
-                pass
-            elif committed in segment:
-                # Cumulative chunk final supersedes piecemeal parts.
-                turn_original_parts.clear()
-                turn_original_parts.append(segment)
-            elif segment.startswith(committed):
-                suffix = segment[len(committed):].strip()
-                if suffix:
-                    turn_original_parts.append(suffix)
-            elif _word_prefix_match(committed, segment):
-                # Chunk final supersedes fuzzy-matching locked tail (punctuation revisions).
-                turn_original_parts.clear()
-                turn_original_parts.append(segment)
-            elif committed.startswith(segment):
-                pass
-            else:
-                turn_original_parts.append(segment)
-            return " ".join(turn_original_parts).strip()
+        def _segment_delta(prev: str, new: str, raw: str) -> str:
+            """New words since last commit — for per-chunk translation."""
+            prev, new, raw = prev.strip(), new.strip(), raw.strip()
+            if not raw or new == prev:
+                return ""
+            if new.startswith(prev):
+                suffix = new[len(prev):].strip()
+                return suffix or raw
+            if _word_prefix_match(prev, new):
+                return raw if raw not in prev else ""
+            if raw in prev:
+                return ""
+            return raw
 
         def lane_live_text(lane: TargetLaneState, display_text: str) -> str:
-            """Translation lanes lag on interims — show live original until LLM catches up."""
+            """Foreign-language lanes never echo English STT — wait for translation."""
             full_t = " ".join(p for p in lane.turn_translated_parts if p).strip()
-            if lane.is_same_language or not full_t:
-                return display_text
-            if len(display_text) > len(full_t) + 8:
+            if lane.is_same_language:
                 return display_text
             return full_t
 
@@ -1254,7 +1269,7 @@ class TranscriptionOnlyAgent:
 
         def _best_turn_original() -> str:
             """Never drop interims that have not yet become STT finals."""
-            committed = " ".join(turn_original_parts).strip()
+            committed = canonical_turn_text[0].strip()
             snapshot = turn_snapshot[0].strip()
             if not snapshot:
                 return committed
@@ -1379,21 +1394,24 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    open_chunk_text[0] = text
-                    display_text = compose_live_display(text)
+                    display_text = live_display_text(text)
                     turn_snapshot[0] = display_text
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    seg_idx = len(turn_original_parts)
-                    full_original = append_turn_segment(text)
-                    open_chunk_text[0] = ""
-                    seg_text = turn_original_parts[-1] if turn_original_parts else text
-                    logger.info(f"{L} 📝 Segment {seg_idx}: '{seg_text[:60]}...'")
+                    prev_canonical = canonical_turn_text[0]
+                    full_original = _upsert_canonical_turn(text)
+                    seg_text = _segment_delta(prev_canonical, full_original, text)
+                    seg_idx = chunk_seg_counter[0]
+                    if seg_text:
+                        logger.info(f"{L} 📝 Segment {seg_idx}: '{seg_text[:60]}...'")
+                        chunk_seg_counter[0] += 1
                     turn_snapshot[0] = full_original
 
                     for tgt, lane in lanes.items():
+                        if not seg_text:
+                            continue
                         if lane.is_same_language:
                             while len(lane.turn_translated_parts) <= seg_idx:
                                 lane.turn_translated_parts.append("")
