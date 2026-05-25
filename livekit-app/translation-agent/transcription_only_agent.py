@@ -920,6 +920,7 @@ class TranscriptionOnlyAgent:
         # Track cumulative speech seconds per turn for STT cost reporting
         seg_speech_start: List[float] = [0.0]
         turn_stt_seconds: List[float] = [0.0]
+        last_live_publish: List[str] = [""]
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -1073,6 +1074,7 @@ class TranscriptionOnlyAgent:
             turn_start_time[0] = asyncio.get_event_loop().time()
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
+            last_live_publish[0] = ""
 
         finalization_task: List[Optional[asyncio.Task]] = [None]
 
@@ -1101,14 +1103,41 @@ class TranscriptionOnlyAgent:
         def speech_in_progress() -> bool:
             return vad_speech_active[0] or stt_speech_active[0]
 
+        def _merge_stt_text(base: str, new: str) -> str:
+            """Merge committed + interim without duplicating overlapping words."""
+            base = base.strip()
+            new = new.strip()
+            if not base:
+                return new
+            if not new:
+                return base
+            if new == base:
+                return base
+            if new.startswith(base):
+                return new
+            if base.startswith(new):
+                return base
+            if new in base:
+                return base
+            if base in new:
+                return new
+            base_words = base.split()
+            new_words = new.split()
+            overlap = 0
+            for k in range(min(len(base_words), len(new_words)), 0, -1):
+                if base_words[-k:] == new_words[:k]:
+                    overlap = k
+                    break
+            if overlap:
+                return " ".join(base_words + new_words[overlap:])
+            return f"{base} {new}".strip()
+
         def live_display_text(interim_text: str) -> str:
             committed = " ".join(turn_original_parts).strip()
             interim = interim_text.strip()
             if not committed:
                 return interim
-            if interim.startswith(committed):
-                return interim
-            return f"{committed} {interim}".strip()
+            return _merge_stt_text(committed, interim)
 
         def append_turn_segment(text: str) -> str:
             """Append STT segment text; handle xAI cumulative chunk finals without duplicating."""
@@ -1118,8 +1147,12 @@ class TranscriptionOnlyAgent:
             committed = " ".join(turn_original_parts).strip()
             if not committed:
                 turn_original_parts.append(segment)
-            elif segment == committed:
+            elif segment == committed or segment in committed:
                 pass
+            elif committed in segment:
+                # Cumulative chunk final supersedes piecemeal parts.
+                turn_original_parts.clear()
+                turn_original_parts.append(segment)
             elif segment.startswith(committed):
                 suffix = segment[len(committed):].strip()
                 if suffix:
@@ -1164,9 +1197,14 @@ class TranscriptionOnlyAgent:
             ])
 
         def schedule_live_partial(display_text: str) -> None:
+            normalized = display_text.strip()
+            if not normalized or normalized == last_live_publish[0]:
+                return
+            last_live_publish[0] = normalized
+
             async def _run() -> None:
                 try:
-                    await publish_live_partial(display_text)
+                    await publish_live_partial(normalized)
                 except Exception as e:
                     logger.warning(f"{L} live partial publish failed: {e}")
 
@@ -1184,7 +1222,7 @@ class TranscriptionOnlyAgent:
                 return snapshot
             if committed.startswith(snapshot):
                 return committed
-            return f"{committed} {snapshot}".strip()
+            return _merge_stt_text(committed, snapshot)
 
         async def ensure_lanes_for_caption() -> None:
             if not turn_id[0]:

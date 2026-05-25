@@ -17,18 +17,37 @@ function getLanguageLabel(code) {
   return LANGUAGE_LABELS[code] || code;
 }
 
-/** Keep caption text monotonic — never replace a longer live string with a shorter STT packet. */
+/** Word-overlap merge — avoid "hello world" + "world how are" → duplicates. */
+function mergeSttOverlap(base, addition) {
+  const bw = base.split(/\s+/).filter(Boolean);
+  const nw = addition.split(/\s+/).filter(Boolean);
+  if (!bw.length) return addition.trim();
+  if (!nw.length) return base.trim();
+  let overlap = 0;
+  for (let k = Math.min(bw.length, nw.length); k > 0; k -= 1) {
+    if (bw.slice(-k).join(' ') === nw.slice(0, k).join(' ')) {
+      overlap = k;
+      break;
+    }
+  }
+  if (overlap > 0) {
+    return [...bw, ...nw.slice(overlap)].join(' ');
+  }
+  return `${base} ${addition}`.trim();
+}
+
+/** Keep caption text monotonic without duplicating overlapping STT packets. */
 function mergeCaptionText(previous, incoming) {
   const prev = (previous || '').trim();
   const next = (incoming || '').trim();
   if (!next) return prev;
   if (!prev) return next;
   if (next === prev) return prev;
-  if (next.length >= prev.length && next.includes(prev)) return next;
+  if (next.includes(prev)) return next;
   if (prev.includes(next)) return prev;
   if (next.startsWith(prev)) return next;
   if (prev.startsWith(next)) return prev;
-  return `${prev} ${next}`.trim();
+  return mergeSttOverlap(prev, next);
 }
 
 function buildTranscriptPayload(m, selectedLanguage) {
@@ -184,7 +203,7 @@ function TranscriptionPanel() {
               const next = [...withOthersFinalized];
               const mergedOriginal = mergeCaptionText(
                 existing.originalText,
-                isTranslation ? originalText : text || originalText,
+                originalText || text,
               );
               const nextTranslations = { ...existing.translations };
               if (isTranslation) {
