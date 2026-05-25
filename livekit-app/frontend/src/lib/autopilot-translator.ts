@@ -4,6 +4,29 @@ interface TranslationCache {
     [key: string]: string;
 }
 
+const BATCH_SEPARATOR = '---SEPARATOR---';
+
+function isPoisonedBatchTranslation(sourceText: string, translatedText: string): boolean {
+    if (!translatedText?.includes(BATCH_SEPARATOR)) return false;
+    return !sourceText?.includes(BATCH_SEPARATOR);
+}
+
+function sanitizeTranslationCache(cache: TranslationCache): TranslationCache {
+    const cleaned: TranslationCache = {};
+    Object.entries(cache).forEach(([key, value]) => {
+        const colon = key.indexOf(':');
+        if (colon === -1) {
+            cleaned[key] = value;
+            return;
+        }
+        const source = key.slice(colon + 1);
+        if (!isPoisonedBatchTranslation(source, value)) {
+            cleaned[key] = value;
+        }
+    });
+    return cleaned;
+}
+
 export interface AutopilotTranslatorConfig {
     apiKey?: string;
     apiEndpoint?: string;
@@ -162,6 +185,11 @@ class AutopilotTranslator {
                     
                     // Skip if parent has data-no-translate
                     if (parent.hasAttribute('data-no-translate') || parent.closest('[data-no-translate]')) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+
+                    // Meeting controls are translated via React labels — avoid batch DOM translation here.
+                    if (parent.closest('.meeting-control-strip')) {
                         return NodeFilter.FILTER_REJECT;
                     }
                     
@@ -425,7 +453,7 @@ class AutopilotTranslator {
                     if (i < toTranslate.length && translation) {
                         const originalText = toTranslate[i]; // This is always the original English text
                         const nodes = textToNodes.get(originalText);
-                        if (nodes && translation !== originalText) {
+                        if (nodes && translation !== originalText && !isPoisonedBatchTranslation(originalText, translation)) {
                             nodes.forEach(({ node, originalText: orig }) => {
                                 // Always store the original English text (never overwrite)
                                 const parent = node.parentElement;
@@ -539,6 +567,11 @@ class AutopilotTranslator {
                     
                     // Skip if parent has data-no-translate
                     if (parent.hasAttribute('data-no-translate') || parent.closest('[data-no-translate]')) {
+                        return NodeFilter.FILTER_REJECT;
+                    }
+
+                    // Meeting controls are translated via React labels — avoid batch DOM translation here.
+                    if (parent.closest('.meeting-control-strip')) {
                         return NodeFilter.FILTER_REJECT;
                     }
                     
@@ -697,7 +730,7 @@ class AutopilotTranslator {
 
         texts.forEach((text, index) => {
             const cacheKey = `${this.currentLanguage}:${text}`;
-            if (this.cache[cacheKey]) {
+            if (this.cache[cacheKey] && !isPoisonedBatchTranslation(text, this.cache[cacheKey])) {
                 cached[index] = this.cache[cacheKey];
             } else {
                 toTranslate.push(text);
@@ -745,7 +778,8 @@ class AutopilotTranslator {
                             const originalText = toTranslate[i];
                             
                             // Use translation if valid, otherwise use original
-                            if (translation && typeof translation === 'string' && translation.trim()) {
+                            if (translation && typeof translation === 'string' && translation.trim()
+                                && !isPoisonedBatchTranslation(originalText, translation)) {
                                 cached[originalIndex] = translation;
                                 
                                 // Cache it
@@ -819,7 +853,8 @@ class AutopilotTranslator {
                             const originalText = chunk.texts[i];
                             
                             // Use translation if valid, otherwise use original
-                            if (translation && typeof translation === 'string' && translation.trim()) {
+                            if (translation && typeof translation === 'string' && translation.trim()
+                                && !isPoisonedBatchTranslation(originalText, translation)) {
                                 cached[originalIndex] = translation;
                                 
                                 // Cache it
@@ -1004,9 +1039,9 @@ class AutopilotTranslator {
      */
     private loadCache(): void {
         try {
-            const cached = localStorage.getItem(`translation_cache_${this.currentLanguage}`);
+            const cached = localStorage.getItem(`translation_cache_v2_${this.currentLanguage}`);
             if (cached) {
-                this.cache = JSON.parse(cached);
+                this.cache = sanitizeTranslationCache(JSON.parse(cached));
             }
         } catch (error) {
             console.error('Failed to load translation cache:', error);
@@ -1026,7 +1061,7 @@ class AutopilotTranslator {
             }
             
             localStorage.setItem(
-                `translation_cache_${this.currentLanguage}`,
+                `translation_cache_v2_${this.currentLanguage}`,
                 JSON.stringify(this.cache)
             );
         } catch (error) {

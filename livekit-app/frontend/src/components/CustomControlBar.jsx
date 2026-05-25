@@ -8,6 +8,7 @@ import MeetingPanelMenu from './MeetingPanelMenu';
 import { useMeeting } from '../context/MeetingContext';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
+import { controlLabel } from '../lib/controlLabels';
 
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false);
@@ -272,8 +273,10 @@ export default function CustomControlBar({
       compact ? 'h-11 w-11 shrink-0 px-0' : 'h-11 gap-2 px-5'
     );
 
+  const t = (key) => controlLabel(selectedLanguage, key);
+
   return (
-    <div className={`w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`}>
+    <div className={`w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`} data-no-translate>
       <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
         {/* Left side - Standard controls */}
         <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
@@ -290,7 +293,7 @@ export default function CustomControlBar({
               aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
               {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              {!isCompact && <span className="text-sm font-medium">Microphone</span>}
+              {!isCompact && <span className="text-sm font-medium">{t('microphone')}</span>}
             </Button>
 
             {micDevices.length > 1 && !isCompact && (
@@ -345,7 +348,7 @@ export default function CustomControlBar({
               aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
               {isCameraEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-              {!isCompact && <span className="text-sm font-medium">Camera</span>}
+              {!isCompact && <span className="text-sm font-medium">{t('camera')}</span>}
             </Button>
 
             {cameraDevices.length > 1 && !isCompact && (
@@ -401,7 +404,7 @@ export default function CustomControlBar({
               aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             >
               <Monitor className="h-5 w-5" />
-              <span className="text-sm font-medium">{isScreenSharing ? 'Stop sharing' : 'Share screen'}</span>
+              <span className="text-sm font-medium">{isScreenSharing ? t('stopSharing') : t('shareScreen')}</span>
             </Button>
           )}
 
@@ -472,7 +475,7 @@ export default function CustomControlBar({
                 title="Chat"
               >
                 <MessageCircle className="h-5 w-5" />
-                <span className="text-sm font-medium">Chat</span>
+                <span className="text-sm font-medium">{t('chat')}</span>
                 {!(sidePanelOpen && sidePanelTab === 'chat') && unreadCount > 0 && (
                   <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
                     {unreadCount > 99 ? '99+' : unreadCount}
@@ -496,7 +499,7 @@ export default function CustomControlBar({
                   title="Participants"
                 >
                   <Users className="h-5 w-5" />
-                  <span className="text-sm font-medium">People</span>
+                  <span className="text-sm font-medium">{t('people')}</span>
                 </Button>
               )}
             </>
@@ -506,14 +509,14 @@ export default function CustomControlBar({
           {isHost && (
             <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting">
               <Share2 className="h-5 w-5" />
-              {!isCompact && <span className="text-sm font-medium">Share</span>}
+              {!isCompact && <span className="text-sm font-medium">{t('share')}</span>}
             </Button>
           )}
 
           {/* Leave Button */}
           <Button type="button" variant="destructive" onClick={onDisconnect} className={barBtn(isCompact)} aria-label="Leave meeting">
             <PhoneOff className="h-5 w-5" />
-            {!isCompact && <span className="text-sm font-medium">Leave</span>}
+            {!isCompact && <span className="text-sm font-medium">{t('leave')}</span>}
           </Button>
         </div>
       </div>

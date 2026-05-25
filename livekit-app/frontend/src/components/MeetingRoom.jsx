@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { LiveKitRoom, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
+import { controlLabel } from '../lib/controlLabels';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
@@ -434,7 +435,9 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         />
 
         <RoomAudioRenderer />
-        <StartAudio label="Click to enable audio" />
+        <div data-no-translate>
+          <StartAudio label={controlLabel(selectedLanguage, 'startAudio')} />
+        </div>
       </LiveKitRoom>
 
       {/* Share Modal */}

@@ -98,7 +98,7 @@ initDatabase();
 /**
  * Get cached translation from database
  */
-function getCachedTranslation(sourceHash, targetLanguage) {
+function getCachedTranslation(sourceHash, targetLanguage, sourceText = '') {
   return new Promise((resolve) => {
     if (!db) {
       resolve(null);
@@ -113,6 +113,11 @@ function getCachedTranslation(sourceHash, targetLanguage) {
           console.error('Database query error:', err);
           resolve(null);
         } else if (row) {
+          if (isPoisonedBatchTranslation(sourceText, row.translated_text)) {
+            console.warn(`Skipping poisoned cached translation for ${targetLanguage}`);
+            resolve(null);
+            return;
+          }
           // Update usage stats
           db.run(
             'UPDATE translations SET usage_count = usage_count + 1, last_used_at = CURRENT_TIMESTAMP WHERE source_hash = ? AND target_language = ?',
@@ -153,7 +158,7 @@ function saveTranslation(sourceText, sourceHash, targetLanguage, translatedText,
 /**
  * Translate using Grok API (X.AI)
  */
-async function translateWithGrok(text, targetLanguage, sourceLanguage = 'en') {
+async function translateWithGrok(text, targetLanguage, sourceLanguage = 'en', systemPrompt = null) {
   const apiKey = process.env.TRANSLATION_API_KEY;
   const apiUrl = process.env.TRANSLATION_API_URL || 'https://api.x.ai/v1/chat/completions';
   const model = process.env.TRANSLATION_MODEL || 'grok-4.20-non-reasoning';
@@ -169,7 +174,7 @@ async function translateWithGrok(text, targetLanguage, sourceLanguage = 'en') {
       messages: [
         {
           role: 'system',
-          content: `You are a professional translator. Translate the following text from ${sourceLanguage} to ${targetLanguage}. Only return the translation, no explanations.`
+          content: systemPrompt || `You are a professional translator. Translate the following text from ${sourceLanguage} to ${targetLanguage}. Only return the translation, no explanations.`
         },
         {
           role: 'user',
@@ -203,10 +208,14 @@ async function translateWithGrok(text, targetLanguage, sourceLanguage = 'en') {
   return trim(translated);
 }
 
+async function translateWithGrokBatch(text, targetLanguage, sourceLanguage, systemPrompt) {
+  return translateWithGrok(text, targetLanguage, sourceLanguage, systemPrompt);
+}
+
 /**
  * Translate using OpenAI API
  */
-async function translateWithOpenAI(text, targetLanguage, sourceLanguage = 'en') {
+async function translateWithOpenAI(text, targetLanguage, sourceLanguage = 'en', systemPrompt = null) {
   const apiKey = process.env.TRANSLATION_API_KEY;
   
   if (!apiKey) {
@@ -220,7 +229,7 @@ async function translateWithOpenAI(text, targetLanguage, sourceLanguage = 'en') 
       messages: [
         {
           role: 'system',
-          content: `You are a professional translator. Translate the following text from ${sourceLanguage} to ${targetLanguage}. Only return the translation, no explanations.`
+          content: systemPrompt || `You are a professional translator. Translate the following text from ${sourceLanguage} to ${targetLanguage}. Only return the translation, no explanations.`
         },
         {
           role: 'user',
@@ -253,8 +262,74 @@ async function translateWithOpenAI(text, targetLanguage, sourceLanguage = 'en') 
   return trim(translated);
 }
 
+async function translateWithOpenAIBatch(text, targetLanguage, sourceLanguage, systemPrompt) {
+  return translateWithOpenAI(text, targetLanguage, sourceLanguage, systemPrompt);
+}
+
 function trim(str) {
   return typeof str === 'string' ? str.trim() : str;
+}
+
+const BATCH_SEPARATOR = '---SEPARATOR---';
+const BATCH_SEPARATOR_REGEX = /\s*---SEPARATOR---\s*/;
+
+function isPoisonedBatchTranslation(sourceText, translatedText) {
+  if (!translatedText || typeof translatedText !== 'string') return true;
+  if (!translatedText.includes(BATCH_SEPARATOR)) return false;
+  return !(sourceText || '').includes(BATCH_SEPARATOR);
+}
+
+function splitBatchTranslations(translated, expectedCount) {
+  const parts = translated
+    .split(BATCH_SEPARATOR_REGEX)
+    .map((part) => trim(part))
+    .filter((part) => part.length > 0);
+  if (parts.length === expectedCount) {
+    return parts;
+  }
+  return null;
+}
+
+async function translateBatchChunk(chunk, targetLanguage, sourceLanguage, provider) {
+  if (chunk.length === 1) {
+    if (provider.toLowerCase() === 'openai') {
+      return [await translateWithOpenAI(chunk[0], targetLanguage, sourceLanguage)];
+    }
+    return [await translateWithGrok(chunk[0], targetLanguage, sourceLanguage)];
+  }
+
+  const combinedText = chunk.join(`\n${BATCH_SEPARATOR}\n`);
+  const batchSystemPrompt =
+    `You translate UI strings from ${sourceLanguage} to ${targetLanguage}. ` +
+    `The input contains exactly ${chunk.length} strings separated by the token ${BATCH_SEPARATOR}. ` +
+    `Return ONLY the ${chunk.length} translations in the same order, each separated by ${BATCH_SEPARATOR}. ` +
+    'Do not merge strings, do not add numbering, and do not change the separator token.';
+
+  let translated;
+  if (provider.toLowerCase() === 'openai') {
+    translated = await translateWithOpenAIBatch(combinedText, targetLanguage, sourceLanguage, batchSystemPrompt);
+  } else {
+    translated = await translateWithGrokBatch(combinedText, targetLanguage, sourceLanguage, batchSystemPrompt);
+  }
+
+  const parts = splitBatchTranslations(translated, chunk.length);
+  if (parts) {
+    return parts;
+  }
+
+  console.warn(
+    `Batch split mismatch for ${targetLanguage}: expected ${chunk.length}, got ${translated.split(BATCH_SEPARATOR_REGEX).length}. Falling back to individual translations.`
+  );
+
+  const results = [];
+  for (const text of chunk) {
+    if (provider.toLowerCase() === 'openai') {
+      results.push(await translateWithOpenAI(text, targetLanguage, sourceLanguage));
+    } else {
+      results.push(await translateWithGrok(text, targetLanguage, sourceLanguage));
+    }
+  }
+  return results;
 }
 
 /**
@@ -290,7 +365,7 @@ router.post('/', async (req, res) => {
 
     // Check database cache first (skipped for ephemeral chat — no_cache: true)
     if (!noCache) {
-      const cached = await getCachedTranslation(sourceHash, targetLanguage);
+      const cached = await getCachedTranslation(sourceHash, targetLanguage, text);
       if (cached) {
         return res.json({
           original: text,
@@ -385,7 +460,7 @@ router.post('/batch', async (req, res) => {
         .update(text.toLowerCase().trim() + '|' + sourceLanguage)
         .digest('hex');
 
-      const cached = await getCachedTranslation(sourceHash, targetLanguage);
+      const cached = await getCachedTranslation(sourceHash, targetLanguage, text);
       if (cached) {
         results[i] = cached;
       } else {
@@ -408,25 +483,13 @@ router.post('/batch', async (req, res) => {
 
         const allTranslations = [];
         for (const chunk of chunks) {
-          // Combine texts with separator
-          const combinedText = chunk.join('\n---SEPARATOR---\n');
-          
-          let translated;
-          if (provider.toLowerCase() === 'openai') {
-            translated = await translateWithOpenAI(combinedText, targetLanguage, sourceLanguage);
-          } else {
-            translated = await translateWithGrok(combinedText, targetLanguage, sourceLanguage);
-          }
-          
-          // Split translations
-          const chunkTranslations = translated.split('\n---SEPARATOR---\n');
-          
-          // Ensure we have same number of translations as inputs
-          while (chunkTranslations.length < chunk.length) {
-            chunkTranslations.push(chunk[chunkTranslations.length] || '');
-          }
-          
-          allTranslations.push(...chunkTranslations.slice(0, chunk.length));
+          const chunkTranslations = await translateBatchChunk(
+            chunk,
+            targetLanguage,
+            sourceLanguage,
+            provider
+          );
+          allTranslations.push(...chunkTranslations);
         }
 
         // Map translations back to original indices and cache them
@@ -442,7 +505,9 @@ router.post('/batch', async (req, res) => {
           const sourceHash = crypto.createHash('sha256')
             .update(originalText.toLowerCase().trim() + '|' + sourceLanguage)
             .digest('hex');
-          saveTranslation(originalText, sourceHash, targetLanguage, translatedText, provider);
+          if (!isPoisonedBatchTranslation(originalText, translatedText)) {
+            saveTranslation(originalText, sourceHash, targetLanguage, translatedText, provider);
+          }
           
           translationIndex++;
         }
