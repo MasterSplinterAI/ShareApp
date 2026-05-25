@@ -71,6 +71,24 @@ function mergeCaptionText(previous, incoming) {
   return pickLiveCaptionText(previous, incoming);
 }
 
+/** Hide chunk-sized finals still part of an open live turn (common on mobile list view). */
+function messagesForDisplay(messages) {
+  const partials = messages.filter((m) => m.isPartial);
+  if (!partials.length) return messages;
+
+  const activeTurnIds = new Set(
+    partials.map((p) => p.transcriptionId).filter((id) => id != null),
+  );
+
+  return messages.filter((m) => {
+    if (m.isPartial) return true;
+    if (m.transcriptionId != null && activeTurnIds.has(m.transcriptionId)) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function buildTranscriptPayload(m, selectedLanguage) {
   const te = Object.entries(m.translations || {});
   let translated = null;
@@ -197,7 +215,7 @@ function TranscriptionPanel() {
           return {
             id: `m${msgCounterRef.current}`,
             speaker: speakerId,
-            originalText: isTranslation ? originalText : text,
+            originalText: isTranslation ? originalText : (originalText || text),
             translations: isTranslation ? { [targetLang]: text } : {},
             sourceLanguage,
             timestamp: messageTimestamp,
@@ -206,6 +224,23 @@ function TranscriptionPanel() {
           };
         };
 
+        const applyPartialUpdate = (existing, isPartial) => ({
+          ...existing,
+          originalText: pickLiveCaptionText(existing.originalText, originalText || text),
+          translations: isTranslation
+            ? {
+                ...existing.translations,
+                ...(text && text.length >= (existing.translations[targetLang]?.length || 0)
+                  ? { [targetLang]: mergeCaptionText(existing.translations[targetLang], text) }
+                  : {}),
+              }
+            : existing.translations,
+          sourceLanguage: existing.sourceLanguage || sourceLanguage,
+          timestamp: messageTimestamp,
+          transcriptionId: transcriptionId ?? existing.transcriptionId,
+          isPartial,
+        });
+
         if (message.partial) {
           setMessages((prev) => {
             // Another speaker starting/interrupting commits everyone else's live bubble.
@@ -213,35 +248,24 @@ function TranscriptionPanel() {
               m.isPartial && m.speaker !== speakerId ? { ...m, isPartial: false } : m,
             );
             // Same bubble while this speaker's turn is still in progress.
-            const idx = withOthersFinalized.findIndex(
+            let idx = withOthersFinalized.findIndex(
               (m) =>
                 m.isPartial &&
                 ((transcriptionId != null && m.transcriptionId === transcriptionId) ||
                   m.speaker === speakerId),
             );
-            if (idx >= 0) {
-              const existing = withOthersFinalized[idx];
-              const next = [...withOthersFinalized];
-              const mergedOriginal = pickLiveCaptionText(
-                existing.originalText,
-                originalText || text,
+            if (idx < 0 && transcriptionId != null) {
+              // Same turn was prematurely finalized (e.g. out-of-order packet) — reopen it.
+              idx = withOthersFinalized.findIndex(
+                (m) =>
+                  !m.isPartial &&
+                  m.speaker === speakerId &&
+                  m.transcriptionId === transcriptionId,
               );
-              const nextTranslations = { ...existing.translations };
-              if (isTranslation) {
-                const prevT = nextTranslations[targetLang] || '';
-                // Don't overwrite a longer translation with stale partial text from the agent.
-                if (text && text.length >= prevT.length) {
-                  nextTranslations[targetLang] = mergeCaptionText(prevT, text);
-                }
-              }
-              next[idx] = {
-                ...existing,
-                originalText: mergedOriginal,
-                translations: nextTranslations,
-                sourceLanguage: existing.sourceLanguage || sourceLanguage,
-                timestamp: messageTimestamp,
-                transcriptionId: transcriptionId ?? existing.transcriptionId,
-              };
+            }
+            if (idx >= 0) {
+              const next = [...withOthersFinalized];
+              next[idx] = applyPartialUpdate(withOthersFinalized[idx], true);
               return next;
             }
             return [...withOthersFinalized, buildNew(true)];
@@ -268,9 +292,10 @@ function TranscriptionPanel() {
               const next = [...prev];
               next[idx] = {
                 ...existing,
-                originalText: isTranslation
-                  ? originalText || existing.originalText
-                  : text || existing.originalText,
+                originalText: pickLiveCaptionText(
+                  existing.originalText,
+                  isTranslation ? (originalText || existing.originalText) : (text || originalText || existing.originalText),
+                ),
                 translations: newTranslations,
                 sourceLanguage: existing.sourceLanguage || sourceLanguage,
                 timestamp: messageTimestamp,
@@ -359,10 +384,18 @@ function TranscriptionPanel() {
 
   const latestCaptionText = useMemo(() => {
     if (messages.length === 0) return null;
-    const last = messages[messages.length - 1];
-    const { dominant } = getDominantAndSecondary(last.originalText, last.translations, selectedLanguage);
-    return dominant ? `${last.speaker}: ${dominant}` : null;
+    const live = [...messages].reverse().find((m) => m.isPartial);
+    const target = live || messages[messages.length - 1];
+    const { dominant } = getDominantAndSecondary(
+      target.originalText,
+      target.translations,
+      selectedLanguage,
+      target.isPartial,
+    );
+    return dominant ? `${target.speaker}: ${dominant}` : null;
   }, [messages, selectedLanguage]);
+
+  const visibleMessages = useMemo(() => messagesForDisplay(messages), [messages]);
 
   // If captions are not enabled, don't show the panel at all
   if (!translationEnabled) return null;
@@ -376,7 +409,7 @@ function TranscriptionPanel() {
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
         <PanelContent
-          messages={messages}
+          messages={visibleMessages}
           scrollRef={scrollRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
@@ -401,7 +434,7 @@ function TranscriptionPanel() {
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
         <PanelContent
-          messages={messages}
+          messages={visibleMessages}
           scrollRef={scrollRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
@@ -426,7 +459,7 @@ function TranscriptionPanel() {
         >
           <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
           <PanelContent
-            messages={messages}
+            messages={visibleMessages}
             scrollRef={scrollRef}
             onScroll={handleScroll}
             selectedLanguage={selectedLanguage}
