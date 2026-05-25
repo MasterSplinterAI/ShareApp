@@ -14,7 +14,9 @@ import logging
 import sys
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
+
+import aiohttp
 
 from cost_reporter import CostReporter
 
@@ -53,6 +55,112 @@ XAI_SUPPORTED_LANGS = {
     "it", "ja", "ko", "mk", "ms", "fa", "pl", "pt", "ro", "ru",
     "es", "sv", "th", "tr", "vi",
 }
+
+# Official xAI STT endpoints (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)
+XAI_STT_WS_URL = "wss://api.x.ai/v1/stt"
+XAI_STT_REST_URL = "https://api.x.ai/v1/stt"
+
+_xai_stt_probe_cache: Optional[Tuple[bool, str]] = None
+
+
+def _xai_api_key() -> str:
+    return (os.getenv("XAI_API_KEY") or "").strip()
+
+
+def _xai_stt_endpointing_ms() -> int:
+    """Silence (ms) before xAI emits speech_final. Higher = brief pauses stay in one utterance."""
+    raw = os.getenv("XAI_STT_ENDPOINTING_MS", "1800").strip()
+    try:
+        ms = int(raw)
+    except ValueError:
+        ms = 1800
+    return max(0, min(ms, 5000))
+
+
+def _xai_stt_ws_params(language: str) -> Dict[str, str]:
+    """Query params for xAI streaming STT WebSocket (matches livekit-plugins-xai)."""
+    return {
+        "encoding": "pcm",
+        "sample_rate": "16000",
+        "interim_results": "true",
+        "diarize": "false",
+        "language": language,
+        "endpointing": str(_xai_stt_endpointing_ms()),
+    }
+
+
+async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
+    """Verify XAI_API_KEY against wss://api.x.ai/v1/stt before selecting Grok STT."""
+    global _xai_stt_probe_cache
+    if _xai_stt_probe_cache is not None:
+        return _xai_stt_probe_cache
+
+    api_key = _xai_api_key()
+    if not api_key:
+        _xai_stt_probe_cache = (False, "XAI_API_KEY is missing or empty")
+        return _xai_stt_probe_cache
+
+    params = _xai_stt_ws_params(language)
+    try:
+        timeout = aiohttp.ClientTimeout(total=10, sock_connect=8)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.ws_connect(
+                XAI_STT_WS_URL,
+                headers={"Authorization": f"Bearer {api_key}"},
+                params=params,
+            ) as ws:
+                msg = await ws.receive(timeout=8)
+                if msg.type != aiohttp.WSMsgType.TEXT:
+                    _xai_stt_probe_cache = (
+                        False,
+                        f"unexpected xAI STT handshake message type: {msg.type}",
+                    )
+                    return _xai_stt_probe_cache
+                payload = json.loads(msg.data)
+                if payload.get("type") != "transcript.created":
+                    _xai_stt_probe_cache = (
+                        False,
+                        f"unexpected xAI STT first event: {payload.get('type')!r}",
+                    )
+                    return _xai_stt_probe_cache
+    except aiohttp.WSServerHandshakeError as e:
+        status = getattr(e, "status", None) or getattr(e, "code", None)
+        if status in (400, 401):
+            hint = (
+                "Regenerate the key at https://console.x.ai and run "
+                "lk agent update-secrets --secrets \"XAI_API_KEY=<new-key>\""
+            )
+            _xai_stt_probe_cache = (
+                False,
+                f"xAI STT rejected API key (HTTP {status} on {XAI_STT_WS_URL}). {hint}",
+            )
+            return _xai_stt_probe_cache
+        _xai_stt_probe_cache = (False, f"xAI STT WebSocket handshake failed: {e}")
+        return _xai_stt_probe_cache
+    except Exception as e:
+        _xai_stt_probe_cache = (False, f"xAI STT probe failed: {e}")
+        return _xai_stt_probe_cache
+
+    _xai_stt_probe_cache = (True, "ok")
+    return _xai_stt_probe_cache
+
+
+def _caption_finalize_delay_sec() -> float:
+    """Wait after utterance end before posting caption block to history (resume window)."""
+    raw = os.getenv("CAPTION_UTTERANCE_END_DELAY_SEC", "3.0").strip()
+    try:
+        return max(0.5, min(float(raw), 10.0))
+    except ValueError:
+        return 3.0
+
+
+def _is_stt_handshake_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return (
+        "wsserverhandshakeerror" in type(exc).__name__.lower()
+        or "invalid response status" in msg
+        or "api.x.ai/v1/stt" in msg
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,6 +214,15 @@ class SpeakerRunContext:
 
 
 @dataclass
+class SpeakerCaptionSession:
+    """Hooks so another speaker's pipeline can commit this speaker's in-progress bubble."""
+
+    speaker_id: str
+    finalize_now: Callable[[], Awaitable[None]]
+    has_open_turn: Callable[[], bool]
+
+
+@dataclass
 class TargetLaneState:
     target_lang: str
     is_same_language: bool
@@ -133,6 +250,35 @@ class TranscriptionOnlyAgent:
         self.caption_languages: List[str] = []
         # Cost reporter — initialized in entrypoint once room name is known
         self.cost_reporter: Optional[CostReporter] = None
+        self._caption_sessions: Dict[str, SpeakerCaptionSession] = {}
+        self._caption_sessions_lock = asyncio.Lock()
+
+    async def _register_caption_session(self, session: SpeakerCaptionSession) -> None:
+        async with self._caption_sessions_lock:
+            self._caption_sessions[session.speaker_id] = session
+
+    async def _unregister_caption_session(self, speaker_id: str) -> None:
+        async with self._caption_sessions_lock:
+            self._caption_sessions.pop(speaker_id, None)
+
+    async def _finalize_other_speakers(self, active_speaker_id: str) -> None:
+        """When someone else starts speaking, commit their open live bubble for chronology."""
+        async with self._caption_sessions_lock:
+            others = [
+                s for sid, s in self._caption_sessions.items() if sid != active_speaker_id
+            ]
+        for session in others:
+            try:
+                if session.has_open_turn():
+                    logger.info(
+                        f"[{active_speaker_id}] ↪︎ committing open caption from "
+                        f"{session.speaker_id!r} (another speaker started)"
+                    )
+                    await session.finalize_now()
+            except Exception as e:
+                logger.warning(
+                    f"[{active_speaker_id}] failed to finalize {session.speaker_id!r}: {e}"
+                )
 
     def _normalize_language_code(self, lang: str) -> str:
         if not lang:
@@ -179,10 +325,12 @@ class TranscriptionOnlyAgent:
     def _vad_params(self) -> dict:
         # activation_threshold: lower = more sensitive to quiet speech (fewer first-word clips),
         # higher = fewer false positives from background noise. 0.4 is a good middle ground.
+        # min_silence_duration: brief pauses within a thought should not gate STT (we always
+        # feed xAI); this only affects VAD metrics and backup finalization timing.
         return {
             "activation_threshold": float(os.getenv("VAD_ACTIVATION_THRESHOLD", "0.4")),
             "min_speech_duration": 0.15,
-            "min_silence_duration": 0.9,
+            "min_silence_duration": float(os.getenv("VAD_MIN_SILENCE_SEC", "1.2")),
             "prefix_padding_duration": 0.8,
         }
 
@@ -488,7 +636,13 @@ class TranscriptionOnlyAgent:
                 await self._speaker_ctx[speaker].set_targets(ts)
                 logger.debug(f"📎 Updated translation targets for {speaker}: {sorted(ts)}")
 
-    def _create_stt_instance(self, speaker_id: str, speaker_lang: str):
+    def _create_stt_instance(
+        self,
+        speaker_id: str,
+        speaker_lang: str,
+        *,
+        skip_providers: Optional[Set[str]] = None,
+    ):
         """Single shared STT for one speaker (one instance per speaker pipeline).
 
         Returns (stt_instance, provider_name) tuple; provider_name used for cost reporting.
@@ -517,28 +671,34 @@ class TranscriptionOnlyAgent:
         normalized_lang = self._normalize_language_code(stt_lang)
         stt_instance: Optional[Any] = None
         stt_provider_name = "unknown"
+        excluded = skip_providers or set()
 
         def _try_xai():
             nonlocal stt_provider_name
-            if stt_provider != "xai":
+            if stt_provider != "xai" or "xai" in excluded:
                 return None
             if not XAI_AVAILABLE or xai_plugin is None:
                 logger.warning(f"{L} STT_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
                 return None
-            if not os.getenv("XAI_API_KEY"):
+            if not _xai_api_key():
                 logger.warning(f"{L} STT_PROVIDER=xai but XAI_API_KEY not set — falling back")
                 return None
             if normalized_lang not in XAI_SUPPORTED_LANGS:
                 logger.info(f"{L} xAI does not support lang={stt_lang!r} — falling back to Deepgram")
                 return None
             try:
-                xai_endpointing = int(os.getenv("XAI_STT_ENDPOINTING_MS", "1000"))
+                xai_endpointing = _xai_stt_endpointing_ms()
                 inst = xai_plugin.STT(
                     language=normalized_lang,
+                    sample_rate=16000,
                     enable_interim_results=True,
                     endpointing=xai_endpointing,
+                    api_key=_xai_api_key(),
                 )
-                logger.info(f"{L} STT: xAI grok-stt lang={normalized_lang} endpointing={xai_endpointing}ms (shared)")
+                logger.info(
+                    f"{L} STT: xAI Grok via {XAI_STT_WS_URL} "
+                    f"lang={normalized_lang} endpointing={xai_endpointing}ms (shared)"
+                )
                 stt_provider_name = "xai"
                 return inst
             except Exception as e:
@@ -547,6 +707,8 @@ class TranscriptionOnlyAgent:
 
         def _try_deepgram():
             nonlocal stt_provider_name
+            if "deepgram" in excluded:
+                return None
             if not (PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv("DEEPGRAM_API_KEY"))):
                 return None
             stt_kwargs = dict(
@@ -566,6 +728,8 @@ class TranscriptionOnlyAgent:
 
         def _try_openai():
             nonlocal stt_provider_name
+            if "openai" in excluded:
+                return None
             if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
                 return None
             inst = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
@@ -602,7 +766,7 @@ class TranscriptionOnlyAgent:
             if not XAI_AVAILABLE or xai_plugin is None:
                 logger.warning(f"{L} LLM_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
                 return None
-            if not os.getenv("XAI_API_KEY"):
+            if not _xai_api_key():
                 logger.warning(f"{L} LLM_PROVIDER=xai but XAI_API_KEY not set — falling back")
                 return None
             try:
@@ -641,7 +805,6 @@ class TranscriptionOnlyAgent:
         """One STT + VAD per speaker; fan out FINAL segments to per-target LLM lanes."""
         from livekit.agents.llm import ChatContext
         from livekit.agents.stt import SpeechEventType
-        from collections import deque
 
         speaker_id = run_ctx.speaker_id
         L = f"[{speaker_id}]"
@@ -706,7 +869,20 @@ class TranscriptionOnlyAgent:
             logger.error(f"{L} No speaker language — abort pipeline")
             return
 
-        stt_instance, stt_provider_name = self._create_stt_instance(speaker_id, speaker_lang)
+        skip_stt: Set[str] = set()
+        if os.getenv("STT_PROVIDER", "deepgram").strip().lower() == "xai":
+            ok, reason = await probe_xai_stt_connection(
+                language=self._normalize_language_code(speaker_lang.split("-")[0])
+            )
+            if not ok:
+                logger.error(f"{L} xAI STT unavailable ({reason}) — using Deepgram/OpenAI fallback")
+                skip_stt.add("xai")
+
+        stt_instance, stt_provider_name = self._create_stt_instance(
+            speaker_id,
+            speaker_lang,
+            skip_providers=skip_stt,
+        )
         if stt_instance is None:
             return
         vad_instance = silero.VAD.load(**self._vad_params())
@@ -735,8 +911,11 @@ class TranscriptionOnlyAgent:
 
         turn_id: List[Optional[str]] = [None]
         turn_original_parts: List[str] = []
+        # Latest full original shown live (includes interims not yet in turn_original_parts).
+        turn_snapshot: List[str] = [""]
         seg_counter = [0]
-        speech_active = [False]
+        vad_speech_active = [False]
+        stt_speech_active = [False]
         turn_start_time = [0.0]
         # Track cumulative speech seconds per turn for STT cost reporting
         seg_speech_start: List[float] = [0.0]
@@ -830,10 +1009,11 @@ class TranscriptionOnlyAgent:
                 for lane in lanes.values():
                     lane.pending_translate_tasks.clear()
 
-            full_original = " ".join(turn_original_parts)
+            full_original = _best_turn_original()
             tid = turn_id[0]
             if not full_original.strip():
                 turn_id[0] = None
+                turn_snapshot[0] = ""
                 return
 
             for tgt, lane in lanes.items():
@@ -862,6 +1042,7 @@ class TranscriptionOnlyAgent:
                 )
 
             turn_original_parts.clear()
+            turn_snapshot[0] = ""
             for lane in lanes.values():
                 lane.turn_translated_parts.clear()
             turn_id[0] = None
@@ -888,91 +1069,186 @@ class TranscriptionOnlyAgent:
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
             turn_original_parts.clear()
+            turn_snapshot[0] = ""
             turn_start_time[0] = asyncio.get_event_loop().time()
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
 
-        PRE_SPEECH_BUFFER_FRAMES = 50
-        pre_speech_buffer = deque(maxlen=PRE_SPEECH_BUFFER_FRAMES)
         finalization_task: List[Optional[asyncio.Task]] = [None]
 
+        async def cancel_finalization() -> None:
+            pending = finalization_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+                try:
+                    await pending
+                except (asyncio.CancelledError, Exception):
+                    pass
+            finalization_task[0] = None
+
+        def arm_finalization() -> None:
+            pending = finalization_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+            finalization_task[0] = asyncio.create_task(schedule_finalization())
+
+        def maybe_arm_finalization() -> None:
+            """Post to history only when both VAD and STT agree speech has stopped."""
+            if vad_speech_active[0] or stt_speech_active[0]:
+                return
+            arm_finalization()
+
+        def speech_in_progress() -> bool:
+            return vad_speech_active[0] or stt_speech_active[0]
+
+        def live_display_text(interim_text: str) -> str:
+            committed = " ".join(turn_original_parts).strip()
+            interim = interim_text.strip()
+            if not committed:
+                return interim
+            if interim.startswith(committed):
+                return interim
+            return f"{committed} {interim}".strip()
+
+        def _best_turn_original() -> str:
+            """Never drop interims that have not yet become STT finals."""
+            committed = " ".join(turn_original_parts).strip()
+            snapshot = turn_snapshot[0].strip()
+            if not snapshot:
+                return committed
+            if not committed:
+                return snapshot
+            if snapshot.startswith(committed) or len(snapshot) >= len(committed):
+                return snapshot
+            if committed.startswith(snapshot):
+                return committed
+            return f"{committed} {snapshot}".strip()
+
+        async def ensure_lanes_for_caption() -> None:
+            if not turn_id[0]:
+                await start_new_turn()
+            if not lanes:
+                await reconcile_lanes()
+
         async def feed_audio() -> None:
+            # Always stream audio to STT (including silence). Gating STT on VAD caused xAI to
+            # miss interim partials after brief pauses — only chunk/utterance finals arrived.
             async for ev in audio_stream:
                 vad_stream.push_frame(ev.frame)
-                if speech_active[0]:
-                    stt_stream.push_frame(ev.frame)
-                else:
-                    pre_speech_buffer.append(ev.frame)
+                stt_stream.push_frame(ev.frame)
 
         async def schedule_finalization() -> None:
             try:
-                await asyncio.sleep(1.5)
-                if speech_active[0] or not turn_id[0]:
+                await asyncio.sleep(_caption_finalize_delay_sec())
+                if speech_in_progress() or not turn_id[0]:
                     return
                 stt_stream.flush()
-                await asyncio.sleep(0.5)
-                if speech_active[0] or not turn_id[0]:
+                await asyncio.sleep(0.15)
+                if speech_in_progress() or not turn_id[0]:
                     return
                 await finalize_turn()
             except asyncio.CancelledError:
                 logger.debug(f"{L} ↩️ Finalization cancelled (speech resumed)")
                 raise
 
+        async def finalize_now() -> None:
+            await cancel_finalization()
+            if not turn_id[0]:
+                return
+            try:
+                stt_stream.flush()
+                # Let flushed STT finals land before we commit (interruption / early finalize).
+                await asyncio.sleep(0.25)
+            except Exception:
+                pass
+            if turn_id[0]:
+                await finalize_turn()
+
+        def has_open_turn() -> bool:
+            return turn_id[0] is not None and bool(_best_turn_original().strip())
+
+        caption_session = SpeakerCaptionSession(
+            speaker_id=speaker_id,
+            finalize_now=finalize_now,
+            has_open_turn=has_open_turn,
+        )
+        await self._register_caption_session(caption_session)
+
         async def process_vad() -> None:
             from livekit.agents.vad import VADEventType
 
             async for vad_event in vad_stream:
                 if vad_event.type == VADEventType.START_OF_SPEECH:
+                    await self._finalize_other_speakers(speaker_id)
                     seg_speech_start[0] = time.time()
-                    pending = finalization_task[0]
-                    if pending and not pending.done():
-                        pending.cancel()
-                        try:
-                            await pending
-                        except (asyncio.CancelledError, Exception):
-                            pass
-                    finalization_task[0] = None
-                    speech_active[0] = True
-                    for frame in pre_speech_buffer:
-                        stt_stream.push_frame(frame)
-                    pre_speech_buffer.clear()
+                    await cancel_finalization()
+                    vad_speech_active[0] = True
                     if not turn_id[0]:
                         await start_new_turn()
-                    logger.debug(f"{L} 🎙️ Speech started")
+                    logger.debug(f"{L} 🎙️ Speech started (VAD)")
                 elif vad_event.type == VADEventType.END_OF_SPEECH:
                     if seg_speech_start[0] > 0:
                         turn_stt_seconds[0] += time.time() - seg_speech_start[0]
                         seg_speech_start[0] = 0.0
-                    speech_active[0] = False
-                    logger.debug(f"{L} 🔇 Speech ended")
-                    pending = finalization_task[0]
-                    if pending and not pending.done():
-                        pending.cancel()
-                    finalization_task[0] = asyncio.create_task(schedule_finalization())
+                    vad_speech_active[0] = False
+                    logger.debug(f"{L} 🔇 Speech ended (VAD)")
+                    try:
+                        stt_stream.flush()
+                    except Exception:
+                        pass
+                    stt_speech_active[0] = False
+                    maybe_arm_finalization()
 
         async def process_stt() -> None:
             async for stt_event in stt_stream:
                 alt = stt_event.alternatives
+                ev_type = stt_event.type
+
+                if ev_type == SpeechEventType.START_OF_SPEECH:
+                    await self._finalize_other_speakers(speaker_id)
+                    await cancel_finalization()
+                    stt_speech_active[0] = True
+                    if not turn_id[0]:
+                        await start_new_turn()
+                    logger.debug(f"{L} 🎙️ Speech started (STT)")
+                    continue
+
+                if ev_type == SpeechEventType.END_OF_SPEECH:
+                    # xAI ends an internal segment on brief pauses (endpointing). If VAD still
+                    # hears the speaker, treat this as a breath — not end-of-turn — so live
+                    # interims resume in the same bubble without waiting for finalize.
+                    if vad_speech_active[0]:
+                        logger.debug(f"{L} 🔇 STT segment pause (VAD still active — same turn)")
+                        try:
+                            stt_stream.flush()
+                        except Exception:
+                            pass
+                        continue
+                    stt_speech_active[0] = False
+                    logger.debug(f"{L} 🔇 Speech ended (STT / xAI speech_final)")
+                    maybe_arm_finalization()
+                    continue
+
                 if not alt:
                     continue
                 text = alt[0].text.strip()
                 if not text:
                     continue
-                ev_type = stt_event.type
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
-                    if not turn_id[0]:
-                        await start_new_turn()
-                    await reconcile_lanes()
-                    full_so_far = " ".join(turn_original_parts)
-                    display_text = (full_so_far + " " + text).strip() if full_so_far else text
-                    for tgt, lane in lanes.items():
-                        ft = " ".join(p for p in lane.turn_translated_parts if p)
-                        await publish_lane(
+                    await ensure_lanes_for_caption()
+                    display_text = live_display_text(text)
+                    turn_snapshot[0] = display_text
+                    await asyncio.gather(*[
+                        publish_lane(
                             {
                                 "type": "transcription",
                                 "originalText": display_text,
-                                "text": ft if ft else display_text,
+                                "text": (
+                                    " ".join(p for p in lane.turn_translated_parts if p)
+                                    if " ".join(p for p in lane.turn_translated_parts if p)
+                                    else display_text
+                                ),
                                 "language": tgt,
                                 "sourceLanguage": speaker_lang,
                                 "participant_id": speaker_id,
@@ -984,15 +1260,16 @@ class TranscriptionOnlyAgent:
                             tgt,
                             is_same_language_lane=lane.is_same_language,
                         )
+                        for tgt, lane in lanes.items()
+                    ])
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
-                    if not turn_id[0]:
-                        await start_new_turn()
-                    await reconcile_lanes()
+                    await ensure_lanes_for_caption()
                     seg_idx = len(turn_original_parts)
                     turn_original_parts.append(text)
                     logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
                     full_original = " ".join(turn_original_parts)
+                    turn_snapshot[0] = full_original
 
                     for tgt, lane in lanes.items():
                         if lane.is_same_language:
@@ -1027,8 +1304,42 @@ class TranscriptionOnlyAgent:
         except asyncio.CancelledError:
             logger.info(f"{L} Speaker pipeline cancelled")
         except Exception as e:
-            logger.error(f"{L} Pipeline error: {e}", exc_info=True)
+            if stt_provider_name == "xai" and _is_stt_handshake_error(e):
+                logger.error(
+                    f"{L} xAI STT handshake failed at runtime ({e}) — retrying with Deepgram/OpenAI"
+                )
+                await stt_stream.aclose()
+                await vad_stream.aclose()
+                await audio_stream.aclose()
+                fallback_inst, fallback_name = self._create_stt_instance(
+                    speaker_id,
+                    speaker_lang,
+                    skip_providers={"xai"},
+                )
+                if fallback_inst is None:
+                    logger.error(f"{L} No STT fallback available after xAI failure")
+                    return
+                participant = None
+                for p in job_ctx.room.remote_participants.values():
+                    if p.identity == speaker_id:
+                        participant = p
+                        break
+                if not participant:
+                    return
+                audio_stream = rtc.AudioStream.from_participant(
+                    participant=participant,
+                    track_source=rtc.TrackSource.SOURCE_MICROPHONE,
+                    sample_rate=16000,
+                    num_channels=1,
+                )
+                stt_stream = fallback_inst.stream()
+                vad_stream = vad_instance.stream()
+                stt_provider_name = fallback_name
+                await asyncio.gather(feed_audio(), process_vad(), process_stt())
+            else:
+                logger.error(f"{L} Pipeline error: {e}", exc_info=True)
         finally:
+            await self._unregister_caption_session(speaker_id)
             if turn_id[0]:
                 await finalize_turn()
             await stt_stream.aclose()
@@ -1042,7 +1353,7 @@ def log_resolved_inference_config() -> None:
     stt = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
     llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
     xai_llm_model = os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning").strip()
-    xai_endpoint = os.getenv("XAI_STT_ENDPOINTING_MS", "1000").strip()
+    xai_endpoint = str(_xai_stt_endpointing_ms())
 
     build_ref = (
         os.getenv("AGENT_BUILD_REF")
@@ -1051,7 +1362,7 @@ def log_resolved_inference_config() -> None:
         or os.getenv("VERCEL_GIT_COMMIT_SHA")
         or "unset"
     )
-    has_xai = bool(os.getenv("XAI_API_KEY"))
+    has_xai = bool(_xai_api_key())
     has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
 
@@ -1087,7 +1398,8 @@ def log_resolved_inference_config() -> None:
         logger.info(f"  XAI_LLM_MODEL={xai_llm_model!r} (live translation)")
     else:
         logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
-    logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r}")
+    logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r} (xAI docs default=10, plugin default=100)")
+    logger.info(f"  xAI STT endpoints: WS={XAI_STT_WS_URL} REST={XAI_STT_REST_URL}")
     logger.info(f"  keys_present mask: XAI_API_KEY={'yes' if has_xai else 'no'}, "
                 f"DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
                 f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
@@ -1096,8 +1408,30 @@ def log_resolved_inference_config() -> None:
 
 
 async def main(ctx: JobContext):
+    if os.getenv("STT_PROVIDER", "deepgram").strip().lower() == "xai":
+        ok, reason = await probe_xai_stt_connection()
+        if ok:
+            logger.info("✅ xAI STT probe OK (%s)", XAI_STT_WS_URL)
+        else:
+            logger.error("❌ xAI STT probe failed: %s", reason)
     agent = TranscriptionOnlyAgent()
     await agent.entrypoint(ctx)
+
+
+def prewarm(proc) -> None:
+    """Run once per worker process — validate xAI STT when configured."""
+    if os.getenv("STT_PROVIDER", "deepgram").strip().lower() != "xai":
+        return
+    try:
+        ok, reason = asyncio.run(probe_xai_stt_connection())
+        proc.userdata["xai_stt_probe_ok"] = ok
+        proc.userdata["xai_stt_probe_reason"] = reason
+        if ok:
+            logger.info("✅ Worker prewarm: xAI STT reachable at %s", XAI_STT_WS_URL)
+        else:
+            logger.error("❌ Worker prewarm: xAI STT probe failed: %s", reason)
+    except Exception as e:
+        logger.error("❌ Worker prewarm: xAI STT probe error: %s", e)
 
 
 if __name__ == "__main__":
@@ -1108,6 +1442,7 @@ if __name__ == "__main__":
     agent_name = os.getenv('AGENT_NAME', 'translation-cloud-prod')
     worker_opts = WorkerOptions(
         entrypoint_fnc=main,
+        prewarm_fnc=prewarm,
         api_key=os.getenv('LIVEKIT_API_KEY'),
         api_secret=os.getenv('LIVEKIT_API_SECRET'),
         ws_url=os.getenv('LIVEKIT_URL', 'wss://production-uiycx4ku.livekit.cloud'),

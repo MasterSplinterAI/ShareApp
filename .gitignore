@@ -11,6 +11,7 @@ backend/.env
 translation-agent/.env
 livekit-app/backend/.env
 livekit-app/translation-agent/.env
+livekit-app/translation-agent/AGENT_CLOUD_ENV.local
 livekit-app/translation-agent/env
 translation-agent/env
 

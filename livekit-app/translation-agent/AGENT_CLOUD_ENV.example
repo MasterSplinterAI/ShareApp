@@ -14,9 +14,13 @@ AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
 # --- Speech-to-text primary (desired production: Grok STT released with xAI plugin) ---
 # Without this line, defaults to deepgram even if XAI_API_KEY exists.
 STT_PROVIDER=xai
-# XAI_API_KEY=<same xAI credential you use elsewhere; REQUIRED for Grok STT>
-# Tune endpointing (ms); shipped April 2026 work used 1000.
-XAI_STT_ENDPOINTING_MS=1000
+# XAI_API_KEY=<from https://console.x.ai — required for Grok STT>
+# Streaming: wss://api.x.ai/v1/stt  |  Batch: POST https://api.x.ai/v1/stt
+# Tune endpointing (ms, range 0–5000). xAI default=10, LiveKit plugin default=100.
+# Lower = snappier utterance splits; higher = smoother live typing during brief pauses.
+XAI_STT_ENDPOINTING_MS=1800
+# Seconds after true silence before moving live bubble to history (resume within = same block).
+CAPTION_UTTERANCE_END_DELAY_SEC=3.0
 
 # --- Fallback STT credentials (recommended in Cloud) ---
 # Grok STT auto-falls back for langs outside XAI_SUPPORTED_LANGS or on errors.

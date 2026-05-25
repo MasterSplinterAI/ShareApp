@@ -154,13 +154,17 @@ function TranscriptionPanel() {
 
         if (message.partial) {
           setMessages((prev) => {
+            // Another speaker starting/interrupting commits everyone else's live bubble.
+            const withOthersFinalized = prev.map((m) =>
+              m.isPartial && m.speaker !== speakerId ? { ...m, isPartial: false } : m,
+            );
             // Same bubble while this speaker's turn is still in progress.
-            const idx = prev.findIndex(
+            const idx = withOthersFinalized.findIndex(
               (m) => m.speaker === speakerId && m.isPartial,
             );
             if (idx >= 0) {
-              const existing = prev[idx];
-              const next = [...prev];
+              const existing = withOthersFinalized[idx];
+              const next = [...withOthersFinalized];
               next[idx] = {
                 ...existing,
                 originalText: isTranslation
@@ -175,7 +179,7 @@ function TranscriptionPanel() {
               };
               return next;
             }
-            return [...prev, buildNew(true)];
+            return [...withOthersFinalized, buildNew(true)];
           });
         } else {
           setMessages((prev) => {
