@@ -249,6 +249,7 @@ function TranscriptionPanel() {
           console.log('📝 Transcription received:', {
             speaker: message.participant_id,
             partial: message.partial,
+            sttProvider: message.sttProvider,
             origLen: message.originalText?.length ?? 0,
             orig: message.originalText?.slice(-80),
             textLen: message.text?.length ?? 0,

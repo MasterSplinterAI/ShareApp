@@ -19,6 +19,7 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 import aiohttp
 
 from cost_reporter import CostReporter
+from transcript_assembler import TimedTranscriptAssembler, stitch_committed_and_open
 
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli, AutoSubscribe
@@ -60,7 +61,7 @@ XAI_SUPPORTED_LANGS = {
 XAI_STT_WS_URL = "wss://api.x.ai/v1/stt"
 XAI_STT_REST_URL = "https://api.x.ai/v1/stt"
 
-_xai_stt_probe_cache: Optional[Tuple[bool, str]] = None
+_xai_stt_probe_ok: Optional[bool] = None
 
 
 def _xai_api_key() -> str:
@@ -91,14 +92,13 @@ def _xai_stt_ws_params(language: str) -> Dict[str, str]:
 
 async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
     """Verify XAI_API_KEY against wss://api.x.ai/v1/stt before selecting Grok STT."""
-    global _xai_stt_probe_cache
-    if _xai_stt_probe_cache is not None:
-        return _xai_stt_probe_cache
+    global _xai_stt_probe_ok
+    if _xai_stt_probe_ok is True:
+        return True, "ok"
 
     api_key = _xai_api_key()
     if not api_key:
-        _xai_stt_probe_cache = (False, "XAI_API_KEY is missing or empty")
-        return _xai_stt_probe_cache
+        return False, "XAI_API_KEY is missing or empty"
 
     params = _xai_stt_ws_params(language)
     try:
@@ -111,18 +111,16 @@ async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
             ) as ws:
                 msg = await ws.receive(timeout=8)
                 if msg.type != aiohttp.WSMsgType.TEXT:
-                    _xai_stt_probe_cache = (
+                    return (
                         False,
                         f"unexpected xAI STT handshake message type: {msg.type}",
                     )
-                    return _xai_stt_probe_cache
                 payload = json.loads(msg.data)
                 if payload.get("type") != "transcript.created":
-                    _xai_stt_probe_cache = (
+                    return (
                         False,
                         f"unexpected xAI STT first event: {payload.get('type')!r}",
                     )
-                    return _xai_stt_probe_cache
     except aiohttp.WSServerHandshakeError as e:
         status = getattr(e, "status", None) or getattr(e, "code", None)
         if status in (400, 401):
@@ -130,19 +128,17 @@ async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
                 "Regenerate the key at https://console.x.ai and run "
                 "lk agent update-secrets --secrets \"XAI_API_KEY=<new-key>\""
             )
-            _xai_stt_probe_cache = (
+            _xai_stt_probe_ok = False
+            return (
                 False,
                 f"xAI STT rejected API key (HTTP {status} on {XAI_STT_WS_URL}). {hint}",
             )
-            return _xai_stt_probe_cache
-        _xai_stt_probe_cache = (False, f"xAI STT WebSocket handshake failed: {e}")
-        return _xai_stt_probe_cache
+        return False, f"xAI STT WebSocket handshake failed: {e}"
     except Exception as e:
-        _xai_stt_probe_cache = (False, f"xAI STT probe failed: {e}")
-        return _xai_stt_probe_cache
+        return False, f"xAI STT probe failed: {e}"
 
-    _xai_stt_probe_cache = (True, "ok")
-    return _xai_stt_probe_cache
+    _xai_stt_probe_ok = True
+    return True, "ok"
 
 
 def _caption_finalize_delay_sec() -> float:
@@ -907,6 +903,15 @@ class TranscriptionOnlyAgent:
         )
         if stt_instance is None:
             return
+        logger.info(
+            f"{L} Caption pipeline STT provider={stt_provider_name!r} "
+            f"(configured STT_PROVIDER={os.getenv('STT_PROVIDER', 'deepgram')!r})"
+        )
+        if os.getenv("STT_PROVIDER", "deepgram").strip().lower() == "xai" and stt_provider_name != "xai":
+            logger.warning(
+                f"{L} xAI STT configured but active provider is {stt_provider_name!r} — "
+                "xAI console will show no STT usage; check probe/key/fallback logs"
+            )
         vad_instance = silero.VAD.load(**self._vad_params())
 
         participant = None
@@ -934,6 +939,7 @@ class TranscriptionOnlyAgent:
         turn_id: List[Optional[str]] = [None]
         # Single committed line for the turn (chunk finals only — interims stay in turn_snapshot).
         canonical_turn_text: List[str] = [""]
+        timed_turn = TimedTranscriptAssembler()
         # Latest full original shown live (committed + open interim chunk).
         turn_snapshot: List[str] = [""]
         chunk_seg_counter = [0]
@@ -990,6 +996,7 @@ class TranscriptionOnlyAgent:
                             "final": False,
                             "timestamp": asyncio.get_event_loop().time(),
                             "transcriptionId": turn_id[0],
+                            "sttProvider": stt_provider_name,
                         },
                         tgt_lang,
                         is_same_language_lane=lane.is_same_language,
@@ -1028,6 +1035,7 @@ class TranscriptionOnlyAgent:
 
         async def finalize_turn() -> None:
             await reconcile_lanes()
+            _absorb_open_chunk_before_finalize()
             pending_all: List[asyncio.Task] = []
             for lane in lanes.values():
                 pending_all.extend(lane.pending_translate_tasks)
@@ -1059,6 +1067,7 @@ class TranscriptionOnlyAgent:
                         "timestamp": asyncio.get_event_loop().time(),
                         "hasTranslation": has_translation,
                         "transcriptionId": tid,
+                        "sttProvider": stt_provider_name,
                     },
                     tgt,
                     is_same_language_lane=lane.is_same_language,
@@ -1069,6 +1078,7 @@ class TranscriptionOnlyAgent:
                 )
 
             canonical_turn_text[0] = ""
+            timed_turn.clear()
             turn_snapshot[0] = ""
             chunk_seg_counter[0] = 0
             for lane in lanes.values():
@@ -1097,6 +1107,7 @@ class TranscriptionOnlyAgent:
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
             canonical_turn_text[0] = ""
+            timed_turn.clear()
             turn_snapshot[0] = ""
             chunk_seg_counter[0] = 0
             turn_start_time[0] = asyncio.get_event_loop().time()
@@ -1230,27 +1241,58 @@ class TranscriptionOnlyAgent:
             """Committed chunk finals + current open interim (replace per packet)."""
             locked = canonical_turn_text[0].strip()
             chunk = open_chunk_text[0].strip()
-            if not locked:
-                return _sanitize_caption_text(chunk)
-            if not chunk:
-                return locked
-            if chunk.startswith(locked) or _word_prefix_match(locked, chunk):
-                return _sanitize_caption_text(chunk)
-            if locked.startswith(chunk) or _word_prefix_match(chunk, locked):
-                return locked
-            common = _common_word_prefix_len(locked, chunk)
-            if common >= 3 and len(chunk) >= len(locked):
-                return _sanitize_caption_text(chunk)
-            return _merge_stt_text(locked, chunk)
+            return _sanitize_caption_text(stitch_committed_and_open(locked, chunk))
 
-        def _upsert_canonical_turn(incoming: str) -> str:
-            """Merge one STT chunk final into the turn's committed line."""
+        def _monotonic_update_snapshot(incoming: str) -> None:
+            """Live turn text must never shrink — chunk finals can lag behind interims."""
+            incoming = _sanitize_caption_text(incoming.strip())
+            if not incoming:
+                return
+            current = turn_snapshot[0].strip()
+            if not current:
+                turn_snapshot[0] = incoming
+                return
+            if incoming == current:
+                return
+            if incoming.startswith(current) or _word_prefix_match(current, incoming):
+                turn_snapshot[0] = incoming
+                return
+            if len(incoming) >= len(current):
+                turn_snapshot[0] = incoming
+                return
+            if current.startswith(incoming) or _word_prefix_match(incoming, current):
+                return
+            merged = stitch_committed_and_open(current, incoming)
+            if len(merged) >= len(current):
+                turn_snapshot[0] = _sanitize_caption_text(merged)
+
+        def _absorb_open_chunk_before_finalize() -> None:
+            """Commit trailing interim audio that never received a chunk final."""
+            if open_chunk_text[0].strip():
+                _monotonic_update_snapshot(compose_live_display())
+            snap = turn_snapshot[0].strip()
+            committed = canonical_turn_text[0].strip()
+            if not snap:
+                return
+            if not committed or len(snap) > len(committed):
+                if not committed or snap.startswith(committed) or _word_prefix_match(committed, snap):
+                    canonical_turn_text[0] = snap
+            open_chunk_text[0] = ""
+
+        def _upsert_canonical_turn(incoming: str, words: Optional[List[object]] = None) -> Tuple[str, str]:
+            """Commit one STT chunk final; returns (full turn text, delta for translation)."""
             incoming = incoming.strip()
             if not incoming:
-                return canonical_turn_text[0].strip()
-            merged = _merge_stt_text(canonical_turn_text[0], incoming)
+                return canonical_turn_text[0].strip(), ""
+            prev = canonical_turn_text[0].strip()
+            if words:
+                merged, delta = timed_turn.commit_with_delta(words, incoming)
+                canonical_turn_text[0] = merged
+                return merged, delta
+            merged = _merge_stt_text(prev, incoming)
             canonical_turn_text[0] = merged
-            return merged
+            delta = _segment_delta(prev, merged, incoming)
+            return merged, delta
 
         def _segment_delta(prev: str, new: str, raw: str) -> str:
             """New words since last commit — for per-chunk translation."""
@@ -1290,6 +1332,7 @@ class TranscriptionOnlyAgent:
                         "final": False,
                         "timestamp": asyncio.get_event_loop().time(),
                         "transcriptionId": turn_id[0],
+                        "sttProvider": stt_provider_name,
                     },
                     tgt,
                     is_same_language_lane=lane.is_same_language,
@@ -1344,7 +1387,7 @@ class TranscriptionOnlyAgent:
                 if speech_in_progress() or not turn_id[0]:
                     return
                 stt_stream.flush()
-                await asyncio.sleep(0.15)
+                await asyncio.sleep(0.45)
                 if speech_in_progress() or not turn_id[0]:
                     return
                 await finalize_turn()
@@ -1359,7 +1402,7 @@ class TranscriptionOnlyAgent:
             try:
                 stt_stream.flush()
                 # Let flushed STT finals land before we commit (interruption / early finalize).
-                await asyncio.sleep(0.25)
+                await asyncio.sleep(0.45)
             except Exception:
                 pass
             if turn_id[0]:
@@ -1432,28 +1475,33 @@ class TranscriptionOnlyAgent:
 
                 if not alt:
                     continue
-                text = alt[0].text.strip()
+                speech_data = alt[0]
+                text = speech_data.text.strip()
                 if not text:
                     continue
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    open_chunk_text[0] = text
-                    display_text = compose_live_display()
-                    turn_snapshot[0] = display_text
-                    schedule_live_partial(display_text)
+                    words = getattr(speech_data, "words", None) or []
+                    if words:
+                        display_text = timed_turn.live_text(words, text)
+                    else:
+                        open_chunk_text[0] = text
+                        display_text = compose_live_display()
+                    _monotonic_update_snapshot(display_text)
+                    schedule_live_partial(turn_snapshot[0])
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    prev_canonical = canonical_turn_text[0]
                     open_chunk_text[0] = ""
-                    full_original = _upsert_canonical_turn(text)
-                    seg_text = _segment_delta(prev_canonical, full_original, text)
+                    words = getattr(speech_data, "words", None) or []
+                    full_original, seg_text = _upsert_canonical_turn(text, words)
                     seg_idx = chunk_seg_counter[0]
                     if seg_text:
                         logger.info(f"{L} 📝 Segment {seg_idx}: '{seg_text[:60]}...'")
                         chunk_seg_counter[0] += 1
-                    turn_snapshot[0] = full_original
+                    _monotonic_update_snapshot(full_original)
+                    display_for_live = turn_snapshot[0]
 
                     for tgt, lane in lanes.items():
                         if not seg_text:
@@ -1467,7 +1515,7 @@ class TranscriptionOnlyAgent:
                                 translate_segment(lane, tgt, seg_text, seg_idx)
                             )
                             lane.pending_translate_tasks.append(task)
-                    schedule_live_partial(full_original)
+                    schedule_live_partial(display_for_live)
 
         try:
             await asyncio.gather(feed_audio(), process_vad(), process_stt())
@@ -1505,6 +1553,11 @@ class TranscriptionOnlyAgent:
                 stt_stream = fallback_inst.stream()
                 vad_stream = vad_instance.stream()
                 stt_provider_name = fallback_name
+                timed_turn.clear()
+                canonical_turn_text[0] = ""
+                turn_snapshot[0] = ""
+                open_chunk_text[0] = ""
+                last_live_publish[0] = ""
                 await asyncio.gather(feed_audio(), process_vad(), process_stt())
             else:
                 logger.error(f"{L} Pipeline error: {e}", exc_info=True)
