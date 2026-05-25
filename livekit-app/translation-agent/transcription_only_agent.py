@@ -945,6 +945,8 @@ class TranscriptionOnlyAgent:
         seg_speech_start: List[float] = [0.0]
         turn_stt_seconds: List[float] = [0.0]
         last_live_publish: List[str] = [""]
+        # xAI interims are cumulative for the active chunk only — replace each packet, never append.
+        open_chunk_text: List[str] = [""]
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -1101,6 +1103,7 @@ class TranscriptionOnlyAgent:
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
+            open_chunk_text[0] = ""
 
         finalization_task: List[Optional[asyncio.Task]] = [None]
 
@@ -1150,6 +1153,43 @@ class TranscriptionOnlyAgent:
                 return False
             return True
 
+        def _common_word_prefix_len(a: str, b: str) -> int:
+            aw, bw = a.split(), b.split()
+            n = 0
+            for i in range(min(len(aw), len(bw))):
+                if aw[i] == bw[i]:
+                    n = i + 1
+                    continue
+                if _normalize_word(aw[i]) == _normalize_word(bw[i]):
+                    n = i + 1
+                    continue
+                break
+            return n
+
+        def _sanitize_caption_text(text: str) -> str:
+            """Collapse adjacent repeated word runs (xAI sometimes echoes a phrase twice)."""
+            words = text.strip().split()
+            if len(words) < 6:
+                return text.strip()
+            changed = True
+            while changed and len(words) >= 6:
+                changed = False
+                for n in range(min(16, len(words) // 2), 2, -1):
+                    i = 0
+                    out: List[str] = []
+                    while i < len(words):
+                        if i + 2 * n <= len(words) and words[i : i + n] == words[i + n : i + 2 * n]:
+                            out.extend(words[i : i + n])
+                            i += 2 * n
+                            changed = True
+                        else:
+                            out.append(words[i])
+                            i += 1
+                    if changed:
+                        words = out
+                        break
+            return " ".join(words).strip()
+
         def _merge_stt_text(base: str, new: str) -> str:
             """Merge committed + interim without duplicating overlapping words."""
             base = base.strip()
@@ -1169,8 +1209,12 @@ class TranscriptionOnlyAgent:
             if base in new:
                 # Mid-string repeat (e.g. "foo bar" inside "foo bar foo bar baz") — keep shorter.
                 if new.startswith(base) or _word_prefix_match(base, new):
-                    return new
+                    return _sanitize_caption_text(new)
                 return base
+            common = _common_word_prefix_len(base, new)
+            if common >= 3 and len(new) > len(base):
+                # xAI revised/restated from a shared anchor — prefer the longer live line.
+                return _sanitize_caption_text(new)
             base_words = base.split()
             new_words = new.split()
             overlap = 0
@@ -1179,8 +1223,25 @@ class TranscriptionOnlyAgent:
                     overlap = k
                     break
             if overlap:
-                return " ".join(base_words + new_words[overlap:])
-            return f"{base} {new}".strip()
+                return _sanitize_caption_text(" ".join(base_words + new_words[overlap:]))
+            return _sanitize_caption_text(f"{base} {new}".strip())
+
+        def compose_live_display() -> str:
+            """Committed chunk finals + current open interim (replace per packet)."""
+            locked = canonical_turn_text[0].strip()
+            chunk = open_chunk_text[0].strip()
+            if not locked:
+                return _sanitize_caption_text(chunk)
+            if not chunk:
+                return locked
+            if chunk.startswith(locked) or _word_prefix_match(locked, chunk):
+                return _sanitize_caption_text(chunk)
+            if locked.startswith(chunk) or _word_prefix_match(chunk, locked):
+                return locked
+            common = _common_word_prefix_len(locked, chunk)
+            if common >= 3 and len(chunk) >= len(locked):
+                return _sanitize_caption_text(chunk)
+            return _merge_stt_text(locked, chunk)
 
         def _upsert_canonical_turn(incoming: str) -> str:
             """Merge one STT chunk final into the turn's committed line."""
@@ -1190,23 +1251,6 @@ class TranscriptionOnlyAgent:
             merged = _merge_stt_text(canonical_turn_text[0], incoming)
             canonical_turn_text[0] = merged
             return merged
-
-        def live_display_text(open_interim: str) -> str:
-            """Build live line from committed turn text + current open xAI chunk."""
-            open_interim = open_interim.strip()
-            locked = canonical_turn_text[0].strip()
-            if not locked:
-                return open_interim
-            if not open_interim:
-                return locked
-            if (
-                open_interim == locked
-                or open_interim.startswith(locked)
-                or locked.startswith(open_interim)
-                or _word_prefix_match(locked, open_interim)
-            ):
-                return open_interim if len(open_interim) >= len(locked) else locked
-            return _merge_stt_text(locked, open_interim)
 
         def _segment_delta(prev: str, new: str, raw: str) -> str:
             """New words since last commit — for per-chunk translation."""
@@ -1254,7 +1298,7 @@ class TranscriptionOnlyAgent:
             ])
 
         def schedule_live_partial(display_text: str) -> None:
-            normalized = display_text.strip()
+            normalized = _sanitize_caption_text(display_text.strip())
             if not normalized or normalized == last_live_publish[0]:
                 return
             last_live_publish[0] = normalized
@@ -1394,13 +1438,15 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    display_text = live_display_text(text)
+                    open_chunk_text[0] = text
+                    display_text = compose_live_display()
                     turn_snapshot[0] = display_text
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
                     prev_canonical = canonical_turn_text[0]
+                    open_chunk_text[0] = ""
                     full_original = _upsert_canonical_turn(text)
                     seg_text = _segment_delta(prev_canonical, full_original, text)
                     seg_idx = chunk_seg_counter[0]

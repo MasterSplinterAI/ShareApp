@@ -54,19 +54,73 @@ function wordPrefixMatch(shorter, longer) {
   return true;
 }
 
+function commonWordPrefixLen(a, b) {
+  const aw = a.trim().split(/\s+/).filter(Boolean);
+  const bw = b.trim().split(/\s+/).filter(Boolean);
+  let n = 0;
+  for (let i = 0; i < Math.min(aw.length, bw.length); i += 1) {
+    if (aw[i] === bw[i]) {
+      n = i + 1;
+      continue;
+    }
+    if (normalizeCaptionWord(aw[i]) === normalizeCaptionWord(bw[i])) {
+      n = i + 1;
+      continue;
+    }
+    break;
+  }
+  return n;
+}
+
+function sanitizeCaptionText(text) {
+  let words = (text || '').trim().split(/\s+/).filter(Boolean);
+  if (words.length < 6) return (text || '').trim();
+  let changed = true;
+  while (changed && words.length >= 6) {
+    changed = false;
+    for (let n = Math.min(16, Math.floor(words.length / 2)); n >= 3; n -= 1) {
+      let i = 0;
+      const out = [];
+      while (i < words.length) {
+        const a = words.slice(i, i + n).join(' ');
+        const b = words.slice(i + n, i + 2 * n).join(' ');
+        if (a && a === b) {
+          out.push(...words.slice(i, i + n));
+          i += 2 * n;
+          changed = true;
+        } else {
+          out.push(words[i]);
+          i += 1;
+        }
+      }
+      if (changed) {
+        words = out;
+        break;
+      }
+    }
+  }
+  return words.join(' ');
+}
+
 /** Agent sends cumulative live lines — prefer prefix extensions, reject mid-string repeats. */
 function pickLiveCaptionText(previous, incoming) {
   const prev = (previous || '').trim();
   const next = (incoming || '').trim();
   if (!next) return prev;
-  if (!prev) return next;
+  if (!prev) return sanitizeCaptionText(next);
   if (next === prev) return prev;
-  if (next.startsWith(prev) || wordPrefixMatch(prev, next)) return next;
+  if (next.startsWith(prev) || wordPrefixMatch(prev, next)) {
+    return sanitizeCaptionText(next);
+  }
   if (prev.startsWith(next) || wordPrefixMatch(next, prev)) return prev;
+  const common = commonWordPrefixLen(prev, next);
+  if (common >= 3 && next.length >= prev.length) {
+    return sanitizeCaptionText(next);
+  }
   // Substring without prefix (e.g. "foo bar" inside "foo bar foo bar") — keep shorter line.
   if (next.includes(prev) && !next.startsWith(prev)) return prev;
   if (prev.includes(next) && !prev.startsWith(next)) return prev;
-  return mergeSttOverlap(prev, next);
+  return sanitizeCaptionText(mergeSttOverlap(prev, next));
 }
 
 /** Keep caption text monotonic without duplicating overlapping STT packets. */
