@@ -17,6 +17,20 @@ function getLanguageLabel(code) {
   return LANGUAGE_LABELS[code] || code;
 }
 
+/** Keep caption text monotonic — never replace a longer live string with a shorter STT packet. */
+function mergeCaptionText(previous, incoming) {
+  const prev = (previous || '').trim();
+  const next = (incoming || '').trim();
+  if (!next) return prev;
+  if (!prev) return next;
+  if (next === prev) return prev;
+  if (next.length >= prev.length && next.includes(prev)) return next;
+  if (prev.includes(next)) return prev;
+  if (next.startsWith(prev)) return next;
+  if (prev.startsWith(next)) return prev;
+  return `${prev} ${next}`.trim();
+}
+
 function buildTranscriptPayload(m, selectedLanguage) {
   const te = Object.entries(m.translations || {});
   let translated = null;
@@ -160,19 +174,30 @@ function TranscriptionPanel() {
             );
             // Same bubble while this speaker's turn is still in progress.
             const idx = withOthersFinalized.findIndex(
-              (m) => m.speaker === speakerId && m.isPartial,
+              (m) =>
+                m.isPartial &&
+                ((transcriptionId != null && m.transcriptionId === transcriptionId) ||
+                  m.speaker === speakerId),
             );
             if (idx >= 0) {
               const existing = withOthersFinalized[idx];
               const next = [...withOthersFinalized];
+              const mergedOriginal = mergeCaptionText(
+                existing.originalText,
+                isTranslation ? originalText : text || originalText,
+              );
+              const nextTranslations = { ...existing.translations };
+              if (isTranslation) {
+                const prevT = nextTranslations[targetLang] || '';
+                // Don't overwrite a longer translation with stale partial text from the agent.
+                if (text && text.length >= prevT.length) {
+                  nextTranslations[targetLang] = mergeCaptionText(prevT, text);
+                }
+              }
               next[idx] = {
                 ...existing,
-                originalText: isTranslation
-                  ? existing.originalText || originalText
-                  : text || existing.originalText,
-                translations: isTranslation
-                  ? { ...existing.translations, [targetLang]: text }
-                  : existing.translations,
+                originalText: mergedOriginal,
+                translations: nextTranslations,
                 sourceLanguage: existing.sourceLanguage || sourceLanguage,
                 timestamp: messageTimestamp,
                 transcriptionId: transcriptionId ?? existing.transcriptionId,
@@ -376,7 +401,7 @@ function TranscriptionPanel() {
   );
 }
 
-function getDominantAndSecondary(originalText, translations, selectedLanguage) {
+function getDominantAndSecondary(originalText, translations, selectedLanguage, isPartial = false) {
   const translationEntries = Object.entries(translations || {});
   const hasTranslation = translationEntries.length > 0;
 
@@ -387,8 +412,24 @@ function getDominantAndSecondary(originalText, translations, selectedLanguage) {
   const matchingEntry = translationEntries.find(([lang]) => lang === selectedLanguage);
 
   if (matchingEntry) {
+    const translated = matchingEntry[1];
+    // While live: STT updates the original every ~500ms but LLM translation only catches
+    // up on segment finals. Show the growing original until translation is in sync.
+    const translationLags =
+      isPartial &&
+      originalText &&
+      translated &&
+      originalText.length > translated.length + 12;
+    if (translationLags) {
+      return {
+        dominant: originalText,
+        secondary: translated,
+        dominantLang: null,
+        secondaryLang: matchingEntry[0],
+      };
+    }
     return {
-      dominant: matchingEntry[1],
+      dominant: translated,
       secondary: originalText,
       dominantLang: matchingEntry[0],
       secondaryLang: null,
@@ -490,7 +531,7 @@ function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact
 
       {messages.map((item) => {
         const { dominant, secondary, dominantLang, secondaryLang } = getDominantAndSecondary(
-          item.originalText, item.translations, selectedLanguage
+          item.originalText, item.translations, selectedLanguage, item.isPartial
         );
         return (
           <TranscriptionBubble

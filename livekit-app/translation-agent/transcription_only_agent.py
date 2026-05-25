@@ -1110,6 +1110,68 @@ class TranscriptionOnlyAgent:
                 return interim
             return f"{committed} {interim}".strip()
 
+        def append_turn_segment(text: str) -> str:
+            """Append STT segment text; handle xAI cumulative chunk finals without duplicating."""
+            segment = text.strip()
+            if not segment:
+                return " ".join(turn_original_parts).strip()
+            committed = " ".join(turn_original_parts).strip()
+            if not committed:
+                turn_original_parts.append(segment)
+            elif segment == committed:
+                pass
+            elif segment.startswith(committed):
+                suffix = segment[len(committed):].strip()
+                if suffix:
+                    turn_original_parts.append(suffix)
+            elif committed.startswith(segment):
+                pass
+            else:
+                turn_original_parts.append(segment)
+            return " ".join(turn_original_parts).strip()
+
+        def lane_live_text(lane: TargetLaneState, display_text: str) -> str:
+            """Translation lanes lag on interims — show live original until LLM catches up."""
+            full_t = " ".join(p for p in lane.turn_translated_parts if p).strip()
+            if lane.is_same_language or not full_t:
+                return display_text
+            if len(display_text) > len(full_t) + 8:
+                return display_text
+            return full_t
+
+        async def publish_live_partial(display_text: str) -> None:
+            """Fire-and-forget partial publish so STT recv loop is never blocked on data channel I/O."""
+            if not display_text.strip():
+                return
+            await asyncio.gather(*[
+                publish_lane(
+                    {
+                        "type": "transcription",
+                        "originalText": display_text,
+                        "text": lane_live_text(lane, display_text),
+                        "language": tgt,
+                        "sourceLanguage": speaker_lang,
+                        "participant_id": speaker_id,
+                        "partial": True,
+                        "final": False,
+                        "timestamp": asyncio.get_event_loop().time(),
+                        "transcriptionId": turn_id[0],
+                    },
+                    tgt,
+                    is_same_language_lane=lane.is_same_language,
+                )
+                for tgt, lane in lanes.items()
+            ])
+
+        def schedule_live_partial(display_text: str) -> None:
+            async def _run() -> None:
+                try:
+                    await publish_live_partial(display_text)
+                except Exception as e:
+                    logger.warning(f"{L} live partial publish failed: {e}")
+
+            asyncio.create_task(_run())
+
         def _best_turn_original() -> str:
             """Never drop interims that have not yet become STT finals."""
             committed = " ".join(turn_original_parts).strip()
@@ -1239,65 +1301,27 @@ class TranscriptionOnlyAgent:
                     await ensure_lanes_for_caption()
                     display_text = live_display_text(text)
                     turn_snapshot[0] = display_text
-                    await asyncio.gather(*[
-                        publish_lane(
-                            {
-                                "type": "transcription",
-                                "originalText": display_text,
-                                "text": (
-                                    " ".join(p for p in lane.turn_translated_parts if p)
-                                    if " ".join(p for p in lane.turn_translated_parts if p)
-                                    else display_text
-                                ),
-                                "language": tgt,
-                                "sourceLanguage": speaker_lang,
-                                "participant_id": speaker_id,
-                                "partial": True,
-                                "final": False,
-                                "timestamp": asyncio.get_event_loop().time(),
-                                "transcriptionId": turn_id[0],
-                            },
-                            tgt,
-                            is_same_language_lane=lane.is_same_language,
-                        )
-                        for tgt, lane in lanes.items()
-                    ])
+                    schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
                     seg_idx = len(turn_original_parts)
-                    turn_original_parts.append(text)
-                    logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
-                    full_original = " ".join(turn_original_parts)
+                    full_original = append_turn_segment(text)
+                    seg_text = turn_original_parts[-1] if turn_original_parts else text
+                    logger.info(f"{L} 📝 Segment {seg_idx}: '{seg_text[:60]}...'")
                     turn_snapshot[0] = full_original
 
                     for tgt, lane in lanes.items():
                         if lane.is_same_language:
                             while len(lane.turn_translated_parts) <= seg_idx:
                                 lane.turn_translated_parts.append("")
-                            lane.turn_translated_parts[seg_idx] = text
-                        full_t = " ".join(p for p in lane.turn_translated_parts if p)
-                        await publish_lane(
-                            {
-                                "type": "transcription",
-                                "originalText": full_original,
-                                "text": full_t if full_t else full_original,
-                                "language": tgt,
-                                "sourceLanguage": speaker_lang,
-                                "participant_id": speaker_id,
-                                "partial": True,
-                                "final": False,
-                                "timestamp": asyncio.get_event_loop().time(),
-                                "transcriptionId": turn_id[0],
-                            },
-                            tgt,
-                            is_same_language_lane=lane.is_same_language,
-                        )
+                            lane.turn_translated_parts[seg_idx] = seg_text
                         if not lane.is_same_language and self.caption_mode != "transcription_only":
                             task = asyncio.create_task(
-                                translate_segment(lane, tgt, text, seg_idx)
+                                translate_segment(lane, tgt, seg_text, seg_idx)
                             )
                             lane.pending_translate_tasks.append(task)
+                    schedule_live_partial(full_original)
 
         try:
             await asyncio.gather(feed_audio(), process_vad(), process_stt())
