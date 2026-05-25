@@ -921,6 +921,7 @@ class TranscriptionOnlyAgent:
         seg_speech_start: List[float] = [0.0]
         turn_stt_seconds: List[float] = [0.0]
         last_live_publish: List[str] = [""]
+        open_chunk_text: List[str] = [""]
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -1075,6 +1076,7 @@ class TranscriptionOnlyAgent:
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
+            open_chunk_text[0] = ""
 
         finalization_task: List[Optional[asyncio.Task]] = [None]
 
@@ -1102,6 +1104,27 @@ class TranscriptionOnlyAgent:
 
         def speech_in_progress() -> bool:
             return vad_speech_active[0] or stt_speech_active[0]
+
+        def _normalize_word(word: str) -> str:
+            return word.strip('.,!?;:"\'-').lower()
+
+        def _word_prefix_match(shorter: str, longer: str) -> bool:
+            """Fuzzy prefix: xAI may revise punctuation on the last word (here. → here?)."""
+            sw = shorter.split()
+            lw = longer.split()
+            if not sw or not lw or len(sw) > len(lw):
+                return False
+            for i, w in enumerate(sw):
+                lw_i = lw[i]
+                if w == lw_i:
+                    continue
+                nw, nlw = _normalize_word(w), _normalize_word(lw_i)
+                if nw == nlw:
+                    continue
+                if i == len(sw) - 1 and (nlw.startswith(nw) or nw.startswith(nlw)):
+                    continue
+                return False
+            return True
 
         def _merge_stt_text(base: str, new: str) -> str:
             """Merge committed + interim without duplicating overlapping words."""
@@ -1132,12 +1155,27 @@ class TranscriptionOnlyAgent:
                 return " ".join(base_words + new_words[overlap:])
             return f"{base} {new}".strip()
 
-        def live_display_text(interim_text: str) -> str:
-            committed = " ".join(turn_original_parts).strip()
-            interim = interim_text.strip()
-            if not committed:
-                return interim
-            return _merge_stt_text(committed, interim)
+        def locked_turn_text() -> str:
+            return " ".join(turn_original_parts).strip()
+
+        def compose_live_display(open_text: str) -> str:
+            """Build one live line from finalized segments + current open xAI chunk."""
+            open_text = open_text.strip()
+            locked = locked_turn_text()
+            if not locked:
+                return open_text
+            if not open_text:
+                return locked
+            # xAI interims are cumulative for the active chunk — replace, never re-append.
+            if (
+                open_text == locked
+                or open_text.startswith(locked)
+                or locked.startswith(open_text)
+                or locked in open_text
+                or _word_prefix_match(locked, open_text)
+            ):
+                return open_text if len(open_text) >= len(locked) else locked
+            return _merge_stt_text(locked, open_text)
 
         def append_turn_segment(text: str) -> str:
             """Append STT segment text; handle xAI cumulative chunk finals without duplicating."""
@@ -1157,6 +1195,10 @@ class TranscriptionOnlyAgent:
                 suffix = segment[len(committed):].strip()
                 if suffix:
                     turn_original_parts.append(suffix)
+            elif _word_prefix_match(committed, segment):
+                # Chunk final supersedes fuzzy-matching locked tail (punctuation revisions).
+                turn_original_parts.clear()
+                turn_original_parts.append(segment)
             elif committed.startswith(segment):
                 pass
             else:
@@ -1337,7 +1379,8 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    display_text = live_display_text(text)
+                    open_chunk_text[0] = text
+                    display_text = compose_live_display(text)
                     turn_snapshot[0] = display_text
                     schedule_live_partial(display_text)
 
@@ -1345,6 +1388,7 @@ class TranscriptionOnlyAgent:
                     await ensure_lanes_for_caption()
                     seg_idx = len(turn_original_parts)
                     full_original = append_turn_segment(text)
+                    open_chunk_text[0] = ""
                     seg_text = turn_original_parts[-1] if turn_original_parts else text
                     logger.info(f"{L} 📝 Segment {seg_idx}: '{seg_text[:60]}...'")
                     turn_snapshot[0] = full_original

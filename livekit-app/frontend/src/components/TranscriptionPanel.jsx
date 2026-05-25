@@ -17,7 +17,6 @@ function getLanguageLabel(code) {
   return LANGUAGE_LABELS[code] || code;
 }
 
-/** Word-overlap merge — avoid "hello world" + "world how are" → duplicates. */
 function mergeSttOverlap(base, addition) {
   const bw = base.split(/\s+/).filter(Boolean);
   const nw = addition.split(/\s+/).filter(Boolean);
@@ -36,18 +35,40 @@ function mergeSttOverlap(base, addition) {
   return `${base} ${addition}`.trim();
 }
 
-/** Keep caption text monotonic without duplicating overlapping STT packets. */
-function mergeCaptionText(previous, incoming) {
+function normalizeCaptionWord(word) {
+  return word.replace(/^[\s.,!?;:"'-]+|[\s.,!?;:"'-]+$/g, '').toLowerCase();
+}
+
+function wordPrefixMatch(shorter, longer) {
+  const sw = shorter.trim().split(/\s+/).filter(Boolean);
+  const lw = longer.trim().split(/\s+/).filter(Boolean);
+  if (!sw.length || !lw.length || sw.length > lw.length) return false;
+  for (let i = 0; i < sw.length; i += 1) {
+    if (sw[i] === lw[i]) continue;
+    const nw = normalizeCaptionWord(sw[i]);
+    const nlw = normalizeCaptionWord(lw[i]);
+    if (nw === nlw) continue;
+    if (i === sw.length - 1 && (nlw.startsWith(nw) || nw.startsWith(nlw))) continue;
+    return false;
+  }
+  return true;
+}
+
+/** Agent sends cumulative live lines — prefer latest superset, don't re-append. */
+function pickLiveCaptionText(previous, incoming) {
   const prev = (previous || '').trim();
   const next = (incoming || '').trim();
   if (!next) return prev;
   if (!prev) return next;
   if (next === prev) return prev;
-  if (next.includes(prev)) return next;
-  if (prev.includes(next)) return prev;
-  if (next.startsWith(prev)) return next;
-  if (prev.startsWith(next)) return prev;
+  if (next.includes(prev) || wordPrefixMatch(prev, next)) return next;
+  if (prev.includes(next) || wordPrefixMatch(next, prev)) return prev;
   return mergeSttOverlap(prev, next);
+}
+
+/** Keep caption text monotonic without duplicating overlapping STT packets. */
+function mergeCaptionText(previous, incoming) {
+  return pickLiveCaptionText(previous, incoming);
 }
 
 function buildTranscriptPayload(m, selectedLanguage) {
@@ -201,7 +222,7 @@ function TranscriptionPanel() {
             if (idx >= 0) {
               const existing = withOthersFinalized[idx];
               const next = [...withOthersFinalized];
-              const mergedOriginal = mergeCaptionText(
+              const mergedOriginal = pickLiveCaptionText(
                 existing.originalText,
                 originalText || text,
               );
