@@ -19,7 +19,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 import aiohttp
 
 from cost_reporter import CostReporter
-from transcript_assembler import TimedTranscriptAssembler, stitch_committed_and_open
+# NOTE: transcript_assembler kept in repo for future use; live captions intentionally
+# use the simple list-of-chunk-finals approach (matches main branch, more accurate).
 
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli, AutoSubscribe
@@ -937,12 +938,8 @@ class TranscriptionOnlyAgent:
         vad_stream = vad_instance.stream()
 
         turn_id: List[Optional[str]] = [None]
-        # Single committed line for the turn (chunk finals only — interims stay in turn_snapshot).
-        canonical_turn_text: List[str] = [""]
-        timed_turn = TimedTranscriptAssembler()
-        # Latest full original shown live (committed + open interim chunk).
-        turn_snapshot: List[str] = [""]
-        chunk_seg_counter = [0]
+        # Per-turn list of chunk finals (main-branch approach: simple, accurate, no merge heuristics).
+        turn_original_parts: List[str] = []
         seg_counter = [0]
         vad_speech_active = [False]
         stt_speech_active = [False]
@@ -951,8 +948,6 @@ class TranscriptionOnlyAgent:
         seg_speech_start: List[float] = [0.0]
         turn_stt_seconds: List[float] = [0.0]
         last_live_publish: List[str] = [""]
-        # xAI interims are cumulative for the active chunk only — replace each packet, never append.
-        open_chunk_text: List[str] = [""]
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -982,7 +977,7 @@ class TranscriptionOnlyAgent:
                     while len(lane.turn_translated_parts) <= seg_idx:
                         lane.turn_translated_parts.append("")
                     lane.turn_translated_parts[seg_idx] = accumulated
-                    full_original = (turn_snapshot[0] or canonical_turn_text[0]).strip()
+                    full_original = " ".join(turn_original_parts).strip()
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                     await publish_lane(
                         {
@@ -1035,7 +1030,6 @@ class TranscriptionOnlyAgent:
 
         async def finalize_turn() -> None:
             await reconcile_lanes()
-            _absorb_open_chunk_before_finalize()
             pending_all: List[asyncio.Task] = []
             for lane in lanes.values():
                 pending_all.extend(lane.pending_translate_tasks)
@@ -1044,11 +1038,10 @@ class TranscriptionOnlyAgent:
                 for lane in lanes.values():
                     lane.pending_translate_tasks.clear()
 
-            full_original = _best_turn_original()
+            full_original = " ".join(turn_original_parts).strip()
             tid = turn_id[0]
-            if not full_original.strip():
+            if not full_original:
                 turn_id[0] = None
-                turn_snapshot[0] = ""
                 return
 
             for tgt, lane in lanes.items():
@@ -1077,10 +1070,7 @@ class TranscriptionOnlyAgent:
                     f"{L}→{tgt} ✅ Turn final: '{full_original[:50]}...' → '{full_translated[:50]}...'"
                 )
 
-            canonical_turn_text[0] = ""
-            timed_turn.clear()
-            turn_snapshot[0] = ""
-            chunk_seg_counter[0] = 0
+            turn_original_parts.clear()
             for lane in lanes.values():
                 lane.turn_translated_parts.clear()
             turn_id[0] = None
@@ -1106,15 +1096,11 @@ class TranscriptionOnlyAgent:
                 lane.turn_translated_parts.clear()
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
-            canonical_turn_text[0] = ""
-            timed_turn.clear()
-            turn_snapshot[0] = ""
-            chunk_seg_counter[0] = 0
+            turn_original_parts.clear()
             turn_start_time[0] = asyncio.get_event_loop().time()
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
-            open_chunk_text[0] = ""
 
         finalization_task: List[Optional[asyncio.Task]] = [None]
 
@@ -1142,171 +1128,6 @@ class TranscriptionOnlyAgent:
 
         def speech_in_progress() -> bool:
             return vad_speech_active[0] or stt_speech_active[0]
-
-        def _normalize_word(word: str) -> str:
-            return word.strip('.,!?;:"\'-').lower()
-
-        def _word_prefix_match(shorter: str, longer: str) -> bool:
-            """Fuzzy prefix: xAI may revise punctuation on the last word (here. → here?)."""
-            sw = shorter.split()
-            lw = longer.split()
-            if not sw or not lw or len(sw) > len(lw):
-                return False
-            for i, w in enumerate(sw):
-                lw_i = lw[i]
-                if w == lw_i:
-                    continue
-                nw, nlw = _normalize_word(w), _normalize_word(lw_i)
-                if nw == nlw:
-                    continue
-                if i == len(sw) - 1 and (nlw.startswith(nw) or nw.startswith(nlw)):
-                    continue
-                return False
-            return True
-
-        def _common_word_prefix_len(a: str, b: str) -> int:
-            aw, bw = a.split(), b.split()
-            n = 0
-            for i in range(min(len(aw), len(bw))):
-                if aw[i] == bw[i]:
-                    n = i + 1
-                    continue
-                if _normalize_word(aw[i]) == _normalize_word(bw[i]):
-                    n = i + 1
-                    continue
-                break
-            return n
-
-        def _sanitize_caption_text(text: str) -> str:
-            """Collapse adjacent repeated word runs (xAI sometimes echoes a phrase twice)."""
-            words = text.strip().split()
-            if len(words) < 6:
-                return text.strip()
-            changed = True
-            while changed and len(words) >= 6:
-                changed = False
-                for n in range(min(16, len(words) // 2), 2, -1):
-                    i = 0
-                    out: List[str] = []
-                    while i < len(words):
-                        if i + 2 * n <= len(words) and words[i : i + n] == words[i + n : i + 2 * n]:
-                            out.extend(words[i : i + n])
-                            i += 2 * n
-                            changed = True
-                        else:
-                            out.append(words[i])
-                            i += 1
-                    if changed:
-                        words = out
-                        break
-            return " ".join(words).strip()
-
-        def _merge_stt_text(base: str, new: str) -> str:
-            """Merge committed + interim without duplicating overlapping words."""
-            base = base.strip()
-            new = new.strip()
-            if not base:
-                return new
-            if not new:
-                return base
-            if new == base:
-                return base
-            if new.startswith(base):
-                return new
-            if base.startswith(new):
-                return base
-            if new in base:
-                return base
-            if base in new:
-                # Mid-string repeat (e.g. "foo bar" inside "foo bar foo bar baz") — keep shorter.
-                if new.startswith(base) or _word_prefix_match(base, new):
-                    return _sanitize_caption_text(new)
-                return base
-            common = _common_word_prefix_len(base, new)
-            if common >= 3 and len(new) > len(base):
-                # xAI revised/restated from a shared anchor — prefer the longer live line.
-                return _sanitize_caption_text(new)
-            base_words = base.split()
-            new_words = new.split()
-            overlap = 0
-            for k in range(min(len(base_words), len(new_words)), 0, -1):
-                if base_words[-k:] == new_words[:k]:
-                    overlap = k
-                    break
-            if overlap:
-                return _sanitize_caption_text(" ".join(base_words + new_words[overlap:]))
-            return _sanitize_caption_text(f"{base} {new}".strip())
-
-        def compose_live_display() -> str:
-            """Committed chunk finals + current open interim (replace per packet)."""
-            locked = canonical_turn_text[0].strip()
-            chunk = open_chunk_text[0].strip()
-            return _sanitize_caption_text(stitch_committed_and_open(locked, chunk))
-
-        def _monotonic_update_snapshot(incoming: str) -> None:
-            """Live turn text must never shrink — chunk finals can lag behind interims."""
-            incoming = _sanitize_caption_text(incoming.strip())
-            if not incoming:
-                return
-            current = turn_snapshot[0].strip()
-            if not current:
-                turn_snapshot[0] = incoming
-                return
-            if incoming == current:
-                return
-            if incoming.startswith(current) or _word_prefix_match(current, incoming):
-                turn_snapshot[0] = incoming
-                return
-            if len(incoming) >= len(current):
-                turn_snapshot[0] = incoming
-                return
-            if current.startswith(incoming) or _word_prefix_match(incoming, current):
-                return
-            merged = stitch_committed_and_open(current, incoming)
-            if len(merged) >= len(current):
-                turn_snapshot[0] = _sanitize_caption_text(merged)
-
-        def _absorb_open_chunk_before_finalize() -> None:
-            """Commit trailing interim audio that never received a chunk final."""
-            if open_chunk_text[0].strip():
-                _monotonic_update_snapshot(compose_live_display())
-            snap = turn_snapshot[0].strip()
-            committed = canonical_turn_text[0].strip()
-            if not snap:
-                return
-            if not committed or len(snap) > len(committed):
-                if not committed or snap.startswith(committed) or _word_prefix_match(committed, snap):
-                    canonical_turn_text[0] = snap
-            open_chunk_text[0] = ""
-
-        def _upsert_canonical_turn(incoming: str, words: Optional[List[object]] = None) -> Tuple[str, str]:
-            """Commit one STT chunk final; returns (full turn text, delta for translation)."""
-            incoming = incoming.strip()
-            if not incoming:
-                return canonical_turn_text[0].strip(), ""
-            prev = canonical_turn_text[0].strip()
-            if words:
-                merged, delta = timed_turn.commit_with_delta(words, incoming)
-                canonical_turn_text[0] = merged
-                return merged, delta
-            merged = _merge_stt_text(prev, incoming)
-            canonical_turn_text[0] = merged
-            delta = _segment_delta(prev, merged, incoming)
-            return merged, delta
-
-        def _segment_delta(prev: str, new: str, raw: str) -> str:
-            """New words since last commit — for per-chunk translation."""
-            prev, new, raw = prev.strip(), new.strip(), raw.strip()
-            if not raw or new == prev:
-                return ""
-            if new.startswith(prev):
-                suffix = new[len(prev):].strip()
-                return suffix or raw
-            if _word_prefix_match(prev, new):
-                return raw if raw not in prev else ""
-            if raw in prev:
-                return ""
-            return raw
 
         def lane_live_text(lane: TargetLaneState, display_text: str) -> str:
             """Foreign-language lanes never echo English STT — wait for translation."""
@@ -1341,7 +1162,7 @@ class TranscriptionOnlyAgent:
             ])
 
         def schedule_live_partial(display_text: str) -> None:
-            normalized = _sanitize_caption_text(display_text.strip())
+            normalized = display_text.strip()
             if not normalized or normalized == last_live_publish[0]:
                 return
             last_live_publish[0] = normalized
@@ -1353,20 +1174,6 @@ class TranscriptionOnlyAgent:
                     logger.warning(f"{L} live partial publish failed: {e}")
 
             asyncio.create_task(_run())
-
-        def _best_turn_original() -> str:
-            """Never drop interims that have not yet become STT finals."""
-            committed = canonical_turn_text[0].strip()
-            snapshot = turn_snapshot[0].strip()
-            if not snapshot:
-                return committed
-            if not committed:
-                return snapshot
-            if snapshot.startswith(committed) or len(snapshot) >= len(committed):
-                return snapshot
-            if committed.startswith(snapshot):
-                return committed
-            return _merge_stt_text(committed, snapshot)
 
         async def ensure_lanes_for_caption() -> None:
             if not turn_id[0]:
@@ -1409,7 +1216,7 @@ class TranscriptionOnlyAgent:
                 await finalize_turn()
 
         def has_open_turn() -> bool:
-            return turn_id[0] is not None and bool(_best_turn_original().strip())
+            return turn_id[0] is not None and bool(" ".join(turn_original_parts).strip())
 
         caption_session = SpeakerCaptionSession(
             speaker_id=speaker_id,
@@ -1482,40 +1289,30 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    words = getattr(speech_data, "words", None) or []
-                    if words:
-                        display_text = timed_turn.live_text(words, text)
-                    else:
-                        open_chunk_text[0] = text
-                        display_text = compose_live_display()
-                    _monotonic_update_snapshot(display_text)
-                    schedule_live_partial(turn_snapshot[0])
+                    # Main-branch approach: chunk finals are already in turn_original_parts;
+                    # interim text represents only the current (open) chunk. Naive concat.
+                    full_so_far = " ".join(turn_original_parts)
+                    display_text = (full_so_far + " " + text).strip() if full_so_far else text
+                    schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    open_chunk_text[0] = ""
-                    words = getattr(speech_data, "words", None) or []
-                    full_original, seg_text = _upsert_canonical_turn(text, words)
-                    seg_idx = chunk_seg_counter[0]
-                    if seg_text:
-                        logger.info(f"{L} 📝 Segment {seg_idx}: '{seg_text[:60]}...'")
-                        chunk_seg_counter[0] += 1
-                    _monotonic_update_snapshot(full_original)
-                    display_for_live = turn_snapshot[0]
+                    seg_idx = len(turn_original_parts)
+                    turn_original_parts.append(text)
+                    logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
+                    full_original = " ".join(turn_original_parts)
 
                     for tgt, lane in lanes.items():
-                        if not seg_text:
-                            continue
                         if lane.is_same_language:
                             while len(lane.turn_translated_parts) <= seg_idx:
                                 lane.turn_translated_parts.append("")
-                            lane.turn_translated_parts[seg_idx] = seg_text
+                            lane.turn_translated_parts[seg_idx] = text
                         if not lane.is_same_language and self.caption_mode != "transcription_only":
                             task = asyncio.create_task(
-                                translate_segment(lane, tgt, seg_text, seg_idx)
+                                translate_segment(lane, tgt, text, seg_idx)
                             )
                             lane.pending_translate_tasks.append(task)
-                    schedule_live_partial(display_for_live)
+                    schedule_live_partial(full_original)
 
         try:
             await asyncio.gather(feed_audio(), process_vad(), process_stt())
@@ -1553,10 +1350,7 @@ class TranscriptionOnlyAgent:
                 stt_stream = fallback_inst.stream()
                 vad_stream = vad_instance.stream()
                 stt_provider_name = fallback_name
-                timed_turn.clear()
-                canonical_turn_text[0] = ""
-                turn_snapshot[0] = ""
-                open_chunk_text[0] = ""
+                turn_original_parts.clear()
                 last_live_publish[0] = ""
                 await asyncio.gather(feed_audio(), process_vad(), process_stt())
             else:
