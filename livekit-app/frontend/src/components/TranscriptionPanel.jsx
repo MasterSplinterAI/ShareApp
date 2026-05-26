@@ -309,12 +309,10 @@ function TranscriptionPanel() {
 
         if (message.partial) {
           setMessages((prev) => {
-            // Another speaker starting/interrupting commits everyone else's live bubble.
-            const withOthersFinalized = prev.map((m) =>
-              m.isPartial && m.speaker !== speakerId ? { ...m, isPartial: false } : m,
-            );
             // Same bubble while this speaker's turn is still in progress.
-            let idx = withOthersFinalized.findIndex(
+            // Other speakers keep their own partials open — they finalize via their own
+            // END_OF_SPEECH timer, so background noise on another mic can't truncate them.
+            let idx = prev.findIndex(
               (m) =>
                 m.isPartial &&
                 ((transcriptionId != null && m.transcriptionId === transcriptionId) ||
@@ -322,7 +320,7 @@ function TranscriptionPanel() {
             );
             if (idx < 0 && transcriptionId != null) {
               // Same turn was prematurely finalized (e.g. out-of-order packet) — reopen it.
-              idx = withOthersFinalized.findIndex(
+              idx = prev.findIndex(
                 (m) =>
                   !m.isPartial &&
                   m.speaker === speakerId &&
@@ -330,11 +328,11 @@ function TranscriptionPanel() {
               );
             }
             if (idx >= 0) {
-              const next = [...withOthersFinalized];
-              next[idx] = applyPartialUpdate(withOthersFinalized[idx], true);
+              const next = [...prev];
+              next[idx] = applyPartialUpdate(prev[idx], true);
               return next;
             }
-            return [...withOthersFinalized, buildNew(true)];
+            return [...prev, buildNew(true)];
           });
         } else {
           setMessages((prev) => {

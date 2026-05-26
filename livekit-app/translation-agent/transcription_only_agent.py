@@ -1242,7 +1242,6 @@ class TranscriptionOnlyAgent:
 
             async for vad_event in vad_stream:
                 if vad_event.type == VADEventType.START_OF_SPEECH:
-                    await self._finalize_other_speakers(speaker_id)
                     seg_speech_start[0] = time.time()
                     await cancel_finalization()
                     vad_speech_active[0] = True
@@ -1268,7 +1267,6 @@ class TranscriptionOnlyAgent:
                 ev_type = stt_event.type
 
                 if ev_type == SpeechEventType.START_OF_SPEECH:
-                    await self._finalize_other_speakers(speaker_id)
                     await cancel_finalization()
                     stt_speech_active[0] = True
                     if not turn_id[0]:
