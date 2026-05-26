@@ -700,7 +700,7 @@ class TranscriptionOnlyAgent:
 
         def _try_xai():
             nonlocal stt_provider_name
-            if stt_provider != "xai" or "xai" in excluded:
+            if "xai" in excluded:
                 return None
             if not XAI_AVAILABLE or xai_plugin is None:
                 logger.warning(f"{L} STT_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
@@ -770,9 +770,9 @@ class TranscriptionOnlyAgent:
 
         provider_order = {
             "xai": [_try_xai, _try_deepgram, _try_openai],
-            "deepgram": [_try_deepgram, _try_openai],
-            "openai": [_try_openai, _try_deepgram],
-        }.get(stt_provider, [_try_deepgram, _try_openai])
+            "deepgram": [_try_deepgram, _try_xai, _try_openai],
+            "openai": [_try_openai, _try_deepgram, _try_xai],
+        }.get(stt_provider, [_try_deepgram, _try_xai, _try_openai])
 
         for attempt in provider_order:
             stt_instance = attempt()
