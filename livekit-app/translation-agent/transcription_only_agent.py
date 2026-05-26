@@ -58,6 +58,12 @@ XAI_SUPPORTED_LANGS = {
     "es", "sv", "th", "tr", "vi",
 }
 
+
+def _stt_force_deepgram_langs() -> set:
+    """Languages where xAI quality is unreliable — force Deepgram. Override via STT_DEEPGRAM_LANGS."""
+    raw = (os.getenv("STT_DEEPGRAM_LANGS") or "es").strip()
+    return {part.strip().lower() for part in raw.split(",") if part.strip()}
+
 # Official xAI STT endpoints (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)
 XAI_STT_WS_URL = "wss://api.x.ai/v1/stt"
 XAI_STT_REST_URL = "https://api.x.ai/v1/stt"
@@ -705,6 +711,12 @@ class TranscriptionOnlyAgent:
             if normalized_lang not in XAI_SUPPORTED_LANGS:
                 logger.info(f"{L} xAI does not support lang={stt_lang!r} — falling back to Deepgram")
                 return None
+            force_dg = _stt_force_deepgram_langs()
+            if normalized_lang in force_dg:
+                logger.info(
+                    f"{L} STT_DEEPGRAM_LANGS={sorted(force_dg)} forces lang={normalized_lang!r} off xAI — using Deepgram"
+                )
+                return None
             try:
                 xai_endpointing = _xai_stt_endpointing_ms()
                 inst = xai_plugin.STT(
@@ -1297,6 +1309,27 @@ class TranscriptionOnlyAgent:
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
+                    # Safe dedup: some xAI languages re-emit a cumulative chunk final that
+                    # includes the previous chunk text. Replace (not append) when this happens.
+                    if turn_original_parts:
+                        last = turn_original_parts[-1]
+                        if text == last:
+                            logger.debug(f"{L} duplicate chunk final ignored")
+                            continue
+                        if text.startswith(last + " ") or text.startswith(last):
+                            logger.info(
+                                f"{L} 📝 Chunk final supersedes prior (cumulative): '{text[:60]}...'"
+                            )
+                            seg_idx = len(turn_original_parts) - 1
+                            turn_original_parts[seg_idx] = text
+                            full_original = " ".join(turn_original_parts)
+                            for tgt, lane in lanes.items():
+                                if lane.is_same_language:
+                                    while len(lane.turn_translated_parts) <= seg_idx:
+                                        lane.turn_translated_parts.append("")
+                                    lane.turn_translated_parts[seg_idx] = text
+                            schedule_live_partial(full_original)
+                            continue
                     seg_idx = len(turn_original_parts)
                     turn_original_parts.append(text)
                     logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
