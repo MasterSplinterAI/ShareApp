@@ -150,11 +150,11 @@ async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
 
 def _caption_finalize_delay_sec() -> float:
     """Wait after utterance end before posting caption block to history (resume window)."""
-    raw = os.getenv("CAPTION_UTTERANCE_END_DELAY_SEC", "3.0").strip()
+    raw = os.getenv("CAPTION_UTTERANCE_END_DELAY_SEC", "1.5").strip()
     try:
         return max(0.5, min(float(raw), 10.0))
     except ValueError:
-        return 3.0
+        return 1.5
 
 
 def _is_stt_handshake_error(exc: BaseException) -> bool:
