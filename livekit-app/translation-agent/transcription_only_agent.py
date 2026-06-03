@@ -19,8 +19,9 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 import aiohttp
 
 from cost_reporter import CostReporter
-# NOTE: transcript_assembler kept in repo for future use; live captions intentionally
-# use the simple list-of-chunk-finals approach (matches main branch, more accurate).
+# List-of-chunk-finals for commits; stitch_committed_and_open for live interims only
+# (Deepgram/xAI often send cumulative interims — naive concat duplicates prior chunks).
+from transcript_assembler import stitch_committed_and_open
 
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli, AutoSubscribe
@@ -1299,16 +1300,29 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    # Main-branch approach: chunk finals are already in turn_original_parts;
-                    # interim text represents only the current (open) chunk. Naive concat.
-                    full_so_far = " ".join(turn_original_parts)
-                    display_text = (full_so_far + " " + text).strip() if full_so_far else text
+                    committed = " ".join(turn_original_parts).strip()
+                    # Streaming STT (esp. Deepgram) sends cumulative open-chunk interims.
+                    display_text = (
+                        stitch_committed_and_open(committed, text) if committed else text
+                    )
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    # Safe dedup: some xAI languages re-emit a cumulative chunk final that
-                    # includes the previous chunk text. Replace (not append) when this happens.
+                    full_so_far = " ".join(turn_original_parts).strip()
+                    if full_so_far and text == full_so_far:
+                        logger.debug(f"{L} duplicate turn final ignored")
+                        continue
+                    # Cumulative final for the whole turn so far — append only new tail.
+                    if full_so_far and (
+                        text.startswith(full_so_far + " ")
+                        or (len(text) > len(full_so_far) and text.startswith(full_so_far))
+                    ):
+                        text = text[len(full_so_far) :].strip()
+                        if not text:
+                            logger.debug(f"{L} duplicate cumulative final ignored")
+                            continue
+                    # Safe dedup: chunk final may restate prior chunk text (xAI / endpointing).
                     if turn_original_parts:
                         last = turn_original_parts[-1]
                         if text == last:
