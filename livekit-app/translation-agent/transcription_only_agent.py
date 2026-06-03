@@ -160,11 +160,11 @@ def _caption_finalize_delay_sec() -> float:
 
 def _deepgram_endpointing_ms() -> int:
     """Silence (ms) before Deepgram sets speech_final (END_OF_SPEECH). See Deepgram endpointing docs."""
-    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "400").strip()
+    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "1500").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 400
+        ms = 1500
     return max(25, min(ms, 5000))
 
 
