@@ -14,10 +14,11 @@ AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
 # --- Speech-to-text (production: Deepgram nova-3) ---
 STT_PROVIDER=deepgram
 DEEPGRAM_API_KEY=
-# Deepgram speech_final silence (ms). LiveKit plugin default is 25; 1500 suits slow/thoughtful speech.
-# Raise (e.g. 2000–2500) for longer thinking pauses; lower (e.g. 800) for snappier turn-taking.
-# See https://developers.deepgram.com/docs/understand-endpointing-interim-results
-DEEPGRAM_ENDPOINTING_MS=1500
+# Deepgram speech_final (ms silence). Fast path only — keep moderate (400–600).
+DEEPGRAM_ENDPOINTING_MS=400
+# Primary finalize for captions: no new/changed transcript for this long (not audio silence).
+# Raise for slow thinkers (e.g. 1800); lower for snappier bubbles (e.g. 900).
+DEEPGRAM_STT_IDLE_MS=1200
 # Legacy non-Deepgram only: delay before history finalize when speech_final is unavailable.
 CAPTION_UTTERANCE_END_DELAY_SEC=1.5
 # xAI (disabled unless STT_PROVIDER=xai):

@@ -159,13 +159,26 @@ def _caption_finalize_delay_sec() -> float:
 
 
 def _deepgram_endpointing_ms() -> int:
-    """Silence (ms) before Deepgram sets speech_final (END_OF_SPEECH). See Deepgram endpointing docs."""
-    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "1500").strip()
+    """Silence (ms) before Deepgram emits speech_final (fast path). Keep moderate — see STT_IDLE."""
+    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "400").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 1500
+        ms = 400
     return max(25, min(ms, 5000))
+
+
+def _deepgram_stt_idle_ms() -> int:
+    """
+    Finalize the live bubble after this long with no *changed* transcript from Deepgram.
+    Does not depend on room silence — background noise won't block finalize.
+    """
+    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "1200").strip()
+    try:
+        ms = int(raw)
+    except ValueError:
+        ms = 1200
+    return max(400, min(ms, 8000))
 
 
 def _speech_times(speech_data: Any) -> Tuple[float, float]:
@@ -1154,8 +1167,57 @@ class TranscriptionOnlyAgent:
             last_live_publish[0] = ""
 
         finalization_task: List[Optional[asyncio.Task]] = [None]
+        stt_idle_task: List[Optional[asyncio.Task]] = [None]
+        last_stt_text_at: List[float] = [0.0]
+
+        async def cancel_stt_idle_finalize() -> None:
+            pending = stt_idle_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+                try:
+                    await pending
+                except (asyncio.CancelledError, Exception):
+                    pass
+            stt_idle_task[0] = None
+
+        def arm_stt_idle_finalize() -> None:
+            """Deepgram: finalize when transcript stops changing (not when audio is silent)."""
+            if not use_deepgram_captions[0] or not turn_id[0]:
+                return
+            pending = stt_idle_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+            stt_idle_task[0] = asyncio.create_task(schedule_stt_idle_finalize())
+
+        def touch_stt_activity() -> None:
+            last_stt_text_at[0] = time.time()
+            arm_stt_idle_finalize()
+
+        async def schedule_stt_idle_finalize() -> None:
+            try:
+                idle_sec = _deepgram_stt_idle_ms() / 1000.0
+                await asyncio.sleep(idle_sec)
+                if not turn_id[0] or not dg_buffer.has_content():
+                    return
+                if time.time() - last_stt_text_at[0] < idle_sec * 0.85:
+                    return
+                logger.info(
+                    f"{L} ⏱️ STT idle finalize ({_deepgram_stt_idle_ms()}ms without new words)"
+                )
+                dg_buffer.on_speech_final()
+                try:
+                    stt_stream.flush()
+                except Exception:
+                    pass
+                await asyncio.sleep(0.15)
+                if turn_id[0] and dg_buffer.has_content():
+                    await finalize_turn()
+            except asyncio.CancelledError:
+                logger.debug(f"{L} ↩️ STT idle finalize cancelled (new speech)")
+                raise
 
         async def cancel_finalization() -> None:
+            await cancel_stt_idle_finalize()
             pending = finalization_task[0]
             if pending and not pending.done():
                 pending.cancel()
@@ -1219,6 +1281,8 @@ class TranscriptionOnlyAgent:
             if not normalized or normalized == last_live_publish[0]:
                 return
             last_live_publish[0] = normalized
+            if use_deepgram_captions[0]:
+                touch_stt_activity()
 
             async def _run() -> None:
                 try:
@@ -1322,14 +1386,14 @@ class TranscriptionOnlyAgent:
                 if ev_type == SpeechEventType.END_OF_SPEECH:
                     if use_deepgram_captions[0]:
                         stt_speech_active[0] = False
-                        await cancel_finalization()
+                        await cancel_stt_idle_finalize()
                         dg_buffer.on_speech_final()
                         logger.debug(f"{L} 🔇 Deepgram speech_final (END_OF_SPEECH)")
                         try:
                             stt_stream.flush()
                         except Exception:
                             pass
-                        await asyncio.sleep(0.2)
+                        await asyncio.sleep(0.15)
                         if turn_id[0] and dg_buffer.has_content():
                             await finalize_turn()
                         continue
@@ -1555,7 +1619,13 @@ def log_resolved_inference_config() -> None:
     else:
         logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
     logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r} (xAI only)")
-    logger.info(f"  DEEPGRAM_ENDPOINTING_MS={_deepgram_endpointing_ms()!r} (speech_final / END_OF_SPEECH)")
+    logger.info(
+        f"  DEEPGRAM_ENDPOINTING_MS={_deepgram_endpointing_ms()!r} (speech_final fast path)"
+    )
+    logger.info(
+        f"  DEEPGRAM_STT_IDLE_MS={_deepgram_stt_idle_ms()!r} "
+        "(finalize when transcript stops changing — ignores background noise)"
+    )
     logger.info(f"  xAI STT endpoints: WS={XAI_STT_WS_URL} REST={XAI_STT_REST_URL}")
     logger.info(f"  keys_present mask: XAI_API_KEY={'yes' if has_xai else 'no'}, "
                 f"DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
