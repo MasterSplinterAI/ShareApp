@@ -35,6 +35,57 @@ function mergeSttOverlap(base, addition) {
   return `${base} ${addition}`.trim();
 }
 
+/** Stitch committed chunk finals with a cumulative open interim (mirrors agent transcript_assembler). */
+function stitchCommittedAndOpen(committed, openText) {
+  const c = (committed || '').trim();
+  const o = (openText || '').trim();
+  if (!c) return o;
+  if (!o) return c;
+  if (o.startsWith(c)) return o;
+
+  const cw = c.split(/\s+/).filter(Boolean);
+  const ow = o.split(/\s+/).filter(Boolean);
+  if (!cw.length || !ow.length) return `${c} ${o}`.trim();
+
+  if (cw.join(' ') === ow.slice(0, cw.length).join(' ')) return o;
+
+  let common = 0;
+  for (let i = 0; i < Math.min(cw.length, ow.length); i += 1) {
+    if (cw[i] === ow[i]) common = i + 1;
+    else break;
+  }
+  if (common >= 3 && ow.length >= cw.length) return o;
+
+  let best = 0;
+  const maxK = Math.min(cw.length, ow.length);
+  for (let k = maxK; k > 0; k -= 1) {
+    if (cw.slice(-k).join(' ') === ow.slice(0, k).join(' ')) {
+      best = k;
+      break;
+    }
+  }
+  if (best > 0) return [...cw, ...ow.slice(best)].join(' ').trim();
+  return `${c} ${o}`.trim();
+}
+
+/**
+ * Live partials for one turn: agent sends a full cumulative hypothesis each packet.
+ * Do not concat when Deepgram revises earlier words (pickLiveCaptionText → mergeSttOverlap).
+ */
+function applyLivePartialText(previous, incoming) {
+  const p = (previous || '').trim();
+  const n = sanitizeCaptionText((incoming || '').trim());
+  if (!n) return p;
+  if (!p) return n;
+  if (n === p) return p;
+  if (n.startsWith(p) || wordPrefixMatch(p, n)) return n;
+  if (p.startsWith(n) || wordPrefixMatch(n, p)) return p;
+  const common = commonWordPrefixLen(p, n);
+  if (common >= 2 && n.length >= p.length * 0.75) return n;
+  if (common >= 2 && p.length > n.length) return p;
+  return sanitizeCaptionText(stitchCommittedAndOpen(p, n));
+}
+
 function normalizeCaptionWord(word) {
   return word.replace(/^[\s.,!?;:"'-]+|[\s.,!?;:"'-]+$/g, '').toLowerCase();
 }
@@ -290,9 +341,16 @@ function TranscriptionPanel() {
           };
         };
 
-        const applyPartialUpdate = (existing, isPartial) => ({
+        const applyPartialUpdate = (existing, isPartial) => {
+          const incomingLine = originalText || text;
+          const sameTurn =
+            transcriptionId != null && existing.transcriptionId === transcriptionId;
+          const mergedOriginal = sameTurn
+            ? applyLivePartialText(existing.originalText, incomingLine)
+            : pickLiveCaptionText(existing.originalText, incomingLine);
+          return {
           ...existing,
-          originalText: pickLiveCaptionText(existing.originalText, originalText || text),
+          originalText: mergedOriginal,
           translations: isTranslation
             ? {
                 ...existing.translations,
@@ -305,7 +363,8 @@ function TranscriptionPanel() {
           timestamp: messageTimestamp,
           transcriptionId: transcriptionId ?? existing.transcriptionId,
           isPartial,
-        });
+        };
+        };
 
         if (message.partial) {
           setMessages((prev) => {

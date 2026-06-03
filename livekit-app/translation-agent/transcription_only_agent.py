@@ -1345,7 +1345,17 @@ class TranscriptionOnlyAgent:
                     seg_idx = len(turn_original_parts)
                     turn_original_parts.append(text)
                     logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
-                    full_original = " ".join(turn_original_parts)
+                    full_original = " ".join(turn_original_parts).strip()
+                    # Non-prefix chunk finals (Deepgram) can restate the whole turn — collapse.
+                    if len(turn_original_parts) > 1:
+                        collapsed = stitch_committed_and_open(
+                            " ".join(turn_original_parts[:-1]).strip(),
+                            turn_original_parts[-1],
+                        )
+                        if collapsed and collapsed != full_original:
+                            turn_original_parts.clear()
+                            turn_original_parts.append(collapsed)
+                            full_original = collapsed
 
                     for tgt, lane in lanes.items():
                         if lane.is_same_language:
