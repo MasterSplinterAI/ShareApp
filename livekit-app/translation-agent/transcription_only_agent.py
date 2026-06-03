@@ -19,8 +19,8 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 import aiohttp
 
 from cost_reporter import CostReporter
-# List-of-chunk-finals for commits; stitch_committed_and_open for live interims only
-# (Deepgram/xAI often send cumulative interims — naive concat duplicates prior chunks).
+from deepgram_caption_buffer import DeepgramCaptionBuffer
+# Legacy non-Deepgram STT (xAI/OpenAI) still uses stitch + part list.
 from transcript_assembler import stitch_committed_and_open
 
 from livekit import rtc
@@ -150,12 +150,31 @@ async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
 
 
 def _caption_finalize_delay_sec() -> float:
-    """Wait after utterance end before posting caption block to history (resume window)."""
+    """Legacy fallback delay when STT does not emit speech_final (non-Deepgram)."""
     raw = os.getenv("CAPTION_UTTERANCE_END_DELAY_SEC", "1.5").strip()
     try:
         return max(0.5, min(float(raw), 10.0))
     except ValueError:
         return 1.5
+
+
+def _deepgram_endpointing_ms() -> int:
+    """Silence (ms) before Deepgram sets speech_final (END_OF_SPEECH). See Deepgram endpointing docs."""
+    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "400").strip()
+    try:
+        ms = int(raw)
+    except ValueError:
+        ms = 400
+    return max(25, min(ms, 5000))
+
+
+def _speech_times(speech_data: Any) -> Tuple[float, float]:
+    start = getattr(speech_data, "start_time", None) or 0.0
+    end = getattr(speech_data, "end_time", None) or 0.0
+    try:
+        return float(start), float(end)
+    except (TypeError, ValueError):
+        return 0.0, 0.0
 
 
 def _is_stt_handshake_error(exc: BaseException) -> bool:
@@ -743,18 +762,23 @@ class TranscriptionOnlyAgent:
                 return None
             if not (PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv("DEEPGRAM_API_KEY"))):
                 return None
+            endpointing_ms = _deepgram_endpointing_ms()
             stt_kwargs = dict(
                 model="nova-3",
                 language=stt_lang,
                 interim_results=True,
                 punctuate=True,
                 smart_format=True,
+                endpointing_ms=endpointing_ms,
             )
             if keyterms and normalized_lang == "en":
                 stt_kwargs["keyterm"] = keyterms
             inst = deepgram.STT(**stt_kwargs)
             kt = len(keyterms) if stt_kwargs.get("keyterm") else 0
-            logger.info(f"{L} STT: Deepgram nova-3 lang={stt_lang} keyterms={kt} (shared)")
+            logger.info(
+                f"{L} STT: Deepgram nova-3 lang={stt_lang} keyterms={kt} "
+                f"endpointing_ms={endpointing_ms} (shared)"
+            )
             stt_provider_name = "deepgram"
             return inst
 
@@ -771,9 +795,10 @@ class TranscriptionOnlyAgent:
 
         provider_order = {
             "xai": [_try_xai, _try_deepgram, _try_openai],
-            "deepgram": [_try_deepgram, _try_xai, _try_openai],
-            "openai": [_try_openai, _try_deepgram, _try_xai],
-        }.get(stt_provider, [_try_deepgram, _try_xai, _try_openai])
+            # Deepgram-primary: no xAI fallback until re-enabled explicitly.
+            "deepgram": [_try_deepgram, _try_openai],
+            "openai": [_try_openai, _try_deepgram],
+        }.get(stt_provider, [_try_deepgram, _try_openai])
 
         for attempt in provider_order:
             stt_instance = attempt()
@@ -951,7 +976,10 @@ class TranscriptionOnlyAgent:
         vad_stream = vad_instance.stream()
 
         turn_id: List[Optional[str]] = [None]
-        # Per-turn list of chunk finals (main-branch approach: simple, accurate, no merge heuristics).
+        # Deepgram: canonical is_final buffer + open interim (see deepgram_caption_buffer.py).
+        dg_buffer = DeepgramCaptionBuffer()
+        use_deepgram_captions = [stt_provider_name == "deepgram"]
+        # Legacy STT (xAI/OpenAI): list of chunk finals + stitch for interims.
         turn_original_parts: List[str] = []
         seg_counter = [0]
         vad_speech_active = [False]
@@ -990,7 +1018,11 @@ class TranscriptionOnlyAgent:
                     while len(lane.turn_translated_parts) <= seg_idx:
                         lane.turn_translated_parts.append("")
                     lane.turn_translated_parts[seg_idx] = accumulated
-                    full_original = " ".join(turn_original_parts).strip()
+                    full_original = (
+                        dg_buffer.committed_text()
+                        if use_deepgram_captions[0]
+                        else " ".join(turn_original_parts).strip()
+                    )
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                     await publish_lane(
                         {
@@ -1051,7 +1083,11 @@ class TranscriptionOnlyAgent:
                 for lane in lanes.values():
                     lane.pending_translate_tasks.clear()
 
-            full_original = " ".join(turn_original_parts).strip()
+            if use_deepgram_captions[0]:
+                dg_buffer.on_speech_final()
+                full_original = dg_buffer.committed_text()
+            else:
+                full_original = " ".join(turn_original_parts).strip()
             tid = turn_id[0]
             if not full_original:
                 turn_id[0] = None
@@ -1083,6 +1119,7 @@ class TranscriptionOnlyAgent:
                     f"{L}→{tgt} ✅ Turn final: '{full_original[:50]}...' → '{full_translated[:50]}...'"
                 )
 
+            dg_buffer.clear()
             turn_original_parts.clear()
             for lane in lanes.values():
                 lane.turn_translated_parts.clear()
@@ -1109,6 +1146,7 @@ class TranscriptionOnlyAgent:
                 lane.turn_translated_parts.clear()
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
+            dg_buffer.clear()
             turn_original_parts.clear()
             turn_start_time[0] = asyncio.get_event_loop().time()
             turn_stt_seconds[0] = 0.0
@@ -1134,7 +1172,9 @@ class TranscriptionOnlyAgent:
             finalization_task[0] = asyncio.create_task(schedule_finalization())
 
         def maybe_arm_finalization() -> None:
-            """Post to history only when both VAD and STT agree speech has stopped."""
+            """Non-Deepgram: post to history when VAD and STT agree speech stopped."""
+            if use_deepgram_captions[0]:
+                return
             if vad_speech_active[0] or stt_speech_active[0]:
                 return
             arm_finalization()
@@ -1229,7 +1269,11 @@ class TranscriptionOnlyAgent:
                 await finalize_turn()
 
         def has_open_turn() -> bool:
-            return turn_id[0] is not None and bool(" ".join(turn_original_parts).strip())
+            if turn_id[0] is None:
+                return False
+            if use_deepgram_captions[0]:
+                return dg_buffer.has_content()
+            return bool(" ".join(turn_original_parts).strip())
 
         caption_session = SpeakerCaptionSession(
             speaker_id=speaker_id,
@@ -1276,9 +1320,20 @@ class TranscriptionOnlyAgent:
                     continue
 
                 if ev_type == SpeechEventType.END_OF_SPEECH:
-                    # xAI ends an internal segment on brief pauses (endpointing). If VAD still
-                    # hears the speaker, treat this as a breath — not end-of-turn — so live
-                    # interims resume in the same bubble without waiting for finalize.
+                    if use_deepgram_captions[0]:
+                        stt_speech_active[0] = False
+                        await cancel_finalization()
+                        dg_buffer.on_speech_final()
+                        logger.debug(f"{L} 🔇 Deepgram speech_final (END_OF_SPEECH)")
+                        try:
+                            stt_stream.flush()
+                        except Exception:
+                            pass
+                        await asyncio.sleep(0.2)
+                        if turn_id[0] and dg_buffer.has_content():
+                            await finalize_turn()
+                        continue
+                    # xAI: brief internal endpointing — ignore if VAD still hears speech.
                     if vad_speech_active[0]:
                         logger.debug(f"{L} 🔇 STT segment pause (VAD still active — same turn)")
                         try:
@@ -1287,7 +1342,7 @@ class TranscriptionOnlyAgent:
                             pass
                         continue
                     stt_speech_active[0] = False
-                    logger.debug(f"{L} 🔇 Speech ended (STT / xAI speech_final)")
+                    logger.debug(f"{L} 🔇 Speech ended (STT speech_final)")
                     maybe_arm_finalization()
                     continue
 
@@ -1300,20 +1355,49 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     await ensure_lanes_for_caption()
-                    committed = " ".join(turn_original_parts).strip()
-                    # Streaming STT (esp. Deepgram) sends cumulative open-chunk interims.
-                    display_text = (
-                        stitch_committed_and_open(committed, text) if committed else text
-                    )
+                    if use_deepgram_captions[0]:
+                        display_text = dg_buffer.on_interim(text)
+                    else:
+                        committed = " ".join(turn_original_parts).strip()
+                        display_text = (
+                            stitch_committed_and_open(committed, text) if committed else text
+                        )
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     await ensure_lanes_for_caption()
+                    if use_deepgram_captions[0]:
+                        start_t, end_t = _speech_times(speech_data)
+                        display_text, seg_idx, segment = dg_buffer.on_final_segment(
+                            text, start_time=start_t, end_time=end_t
+                        )
+                        if seg_idx < 0:
+                            if display_text.strip():
+                                schedule_live_partial(display_text)
+                            continue
+                        logger.info(
+                            f"{L} 📝 Deepgram is_final seg {seg_idx}: '{segment[:60]}...'"
+                        )
+                        for tgt, lane in lanes.items():
+                            if lane.is_same_language:
+                                while len(lane.turn_translated_parts) <= seg_idx:
+                                    lane.turn_translated_parts.append("")
+                                lane.turn_translated_parts[seg_idx] = segment
+                            if (
+                                not lane.is_same_language
+                                and self.caption_mode != "transcription_only"
+                            ):
+                                task = asyncio.create_task(
+                                    translate_segment(lane, tgt, segment, seg_idx)
+                                )
+                                lane.pending_translate_tasks.append(task)
+                        schedule_live_partial(display_text)
+                        continue
+
                     full_so_far = " ".join(turn_original_parts).strip()
                     if full_so_far and text == full_so_far:
                         logger.debug(f"{L} duplicate turn final ignored")
                         continue
-                    # Cumulative final for the whole turn so far — append only new tail.
                     if full_so_far and (
                         text.startswith(full_so_far + " ")
                         or (len(text) > len(full_so_far) and text.startswith(full_so_far))
@@ -1322,7 +1406,6 @@ class TranscriptionOnlyAgent:
                         if not text:
                             logger.debug(f"{L} duplicate cumulative final ignored")
                             continue
-                    # Safe dedup: chunk final may restate prior chunk text (xAI / endpointing).
                     if turn_original_parts:
                         last = turn_original_parts[-1]
                         if text == last:
@@ -1346,7 +1429,6 @@ class TranscriptionOnlyAgent:
                     turn_original_parts.append(text)
                     logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
                     full_original = " ".join(turn_original_parts).strip()
-                    # Non-prefix chunk finals (Deepgram) can restate the whole turn — collapse.
                     if len(turn_original_parts) > 1:
                         collapsed = stitch_committed_and_open(
                             " ".join(turn_original_parts[:-1]).strip(),
@@ -1405,6 +1487,8 @@ class TranscriptionOnlyAgent:
                 stt_stream = fallback_inst.stream()
                 vad_stream = vad_instance.stream()
                 stt_provider_name = fallback_name
+                use_deepgram_captions[0] = fallback_name == "deepgram"
+                dg_buffer.clear()
                 turn_original_parts.clear()
                 last_live_publish[0] = ""
                 await asyncio.gather(feed_audio(), process_vad(), process_stt())
@@ -1438,11 +1522,11 @@ def log_resolved_inference_config() -> None:
     has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
 
-    stt_primary = {"xai": "xAI Grok STT (then Deepgram, then OpenAI transcribe fallback)", 
-                   "deepgram": "Deepgram nova-3 (then OpenAI transcribe fallback)", 
-                   "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)"}.get(
-        stt, "custom order"
-    )
+    stt_primary = {
+        "xai": "xAI Grok STT (then Deepgram, then OpenAI transcribe fallback)",
+        "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize; no xAI fallback)",
+        "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)",
+    }.get(stt, "custom order")
 
     warn = ""
     if stt == "deepgram" and has_xai:
@@ -1470,7 +1554,8 @@ def log_resolved_inference_config() -> None:
         logger.info(f"  XAI_LLM_MODEL={xai_llm_model!r} (live translation)")
     else:
         logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
-    logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r} (xAI docs default=10, plugin default=100)")
+    logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r} (xAI only)")
+    logger.info(f"  DEEPGRAM_ENDPOINTING_MS={_deepgram_endpointing_ms()!r} (speech_final / END_OF_SPEECH)")
     logger.info(f"  xAI STT endpoints: WS={XAI_STT_WS_URL} REST={XAI_STT_REST_URL}")
     logger.info(f"  keys_present mask: XAI_API_KEY={'yes' if has_xai else 'no'}, "
                 f"DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "

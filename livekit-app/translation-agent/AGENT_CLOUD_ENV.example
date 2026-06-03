@@ -11,16 +11,17 @@ LIVEKIT_URL=wss://YOUR_PROJECT.livekit.cloud
 # Set to `git rev-parse HEAD` when you deploy, or any unique tag (logged at worker startup).
 AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
 
-# --- Speech-to-text primary (desired production: Grok STT released with xAI plugin) ---
-# Without this line, defaults to deepgram even if XAI_API_KEY exists.
-STT_PROVIDER=xai
-# XAI_API_KEY=<from https://console.x.ai — required for Grok STT>
-# Streaming: wss://api.x.ai/v1/stt  |  Batch: POST https://api.x.ai/v1/stt
-# Tune endpointing (ms, range 0–5000). xAI default=10, LiveKit plugin default=100.
-# Lower = snappier utterance splits; higher = smoother live typing during brief pauses.
-XAI_STT_ENDPOINTING_MS=1800
-# Seconds after true silence before moving live bubble to history (resume within = same block).
-CAPTION_UTTERANCE_END_DELAY_SEC=3.0
+# --- Speech-to-text (production: Deepgram nova-3) ---
+STT_PROVIDER=deepgram
+DEEPGRAM_API_KEY=
+# Deepgram speech_final silence (ms). LiveKit plugin default is 25; 400 is meeting-friendly.
+# See https://developers.deepgram.com/docs/understand-endpointing-interim-results
+DEEPGRAM_ENDPOINTING_MS=400
+# Legacy non-Deepgram only: delay before history finalize when speech_final is unavailable.
+CAPTION_UTTERANCE_END_DELAY_SEC=1.5
+# xAI (disabled unless STT_PROVIDER=xai):
+# XAI_API_KEY=
+# XAI_STT_ENDPOINTING_MS=1800
 
 # Silero VAD — higher activation_threshold = less background noise triggering speech.
 # Presets: quiet | normal | noisy | ultra_noisy (override with VAD_PRESET).
