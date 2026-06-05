@@ -1002,6 +1002,27 @@ class TranscriptionOnlyAgent:
         seg_speech_start: List[float] = [0.0]
         turn_stt_seconds: List[float] = [0.0]
         last_live_publish: List[str] = [""]
+        # Post-finalize residual guard: Deepgram keeps streaming trailing is_final/interim
+        # events for an utterance we already committed. Without this, those trailing events
+        # open a brand-new turn and re-render the same words as a duplicate bubble. Main never
+        # hit this because it finalized only on VAD silence (after the stream went quiet).
+        last_finalized_norm: List[str] = [""]
+        last_finalized_at: List[float] = [0.0]
+
+        def _residual_guard_sec() -> float:
+            return min(max(_deepgram_stt_idle_ms() / 1000.0 + 1.5, 1.5), 5.0)
+
+        def is_residual_after_finalize(candidate: str) -> bool:
+            prev = last_finalized_norm[0]
+            if not prev:
+                return False
+            if time.time() - last_finalized_at[0] > _residual_guard_sec():
+                return False
+            norm = " ".join(candidate.strip().lower().split())
+            if not norm:
+                return True
+            prev_n = " ".join(prev.split())
+            return norm == prev_n or prev_n.startswith(norm) or prev_n.endswith(norm)
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -1105,6 +1126,9 @@ class TranscriptionOnlyAgent:
             if not full_original:
                 turn_id[0] = None
                 return
+
+            last_finalized_norm[0] = full_original.strip().lower()
+            last_finalized_at[0] = time.time()
 
             for tgt, lane in lanes.items():
                 full_translated = " ".join(p for p in lane.turn_translated_parts if p)
@@ -1354,6 +1378,7 @@ class TranscriptionOnlyAgent:
                     seg_speech_start[0] = time.time()
                     await cancel_finalization()
                     vad_speech_active[0] = True
+                    last_finalized_norm[0] = ""
                     if not turn_id[0]:
                         await start_new_turn()
                     logger.debug(f"{L} 🎙️ Speech started (VAD)")
@@ -1378,6 +1403,7 @@ class TranscriptionOnlyAgent:
                 if ev_type == SpeechEventType.START_OF_SPEECH:
                     await cancel_finalization()
                     stt_speech_active[0] = True
+                    last_finalized_norm[0] = ""
                     if not turn_id[0]:
                         await start_new_turn()
                     logger.debug(f"{L} 🎙️ Speech started (STT)")
@@ -1418,6 +1444,8 @@ class TranscriptionOnlyAgent:
                     continue
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
+                    if turn_id[0] is None and is_residual_after_finalize(text):
+                        continue
                     await ensure_lanes_for_caption()
                     if use_deepgram_captions[0]:
                         display_text = dg_buffer.on_interim(text)
@@ -1429,6 +1457,11 @@ class TranscriptionOnlyAgent:
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
+                    if turn_id[0] is None and is_residual_after_finalize(text):
+                        logger.debug(
+                            f"{L} 🛑 Residual final after finalize ignored: '{text[:40]}'"
+                        )
+                        continue
                     await ensure_lanes_for_caption()
                     if use_deepgram_captions[0]:
                         start_t, end_t = _speech_times(speech_data)
