@@ -47,10 +47,14 @@ export const v2Orgs = {
 };
 
 export const v2Meetings = {
-  list: () => apiV2.get('/meetings').then((r) => r.data),
+  list: (opts = {}) => {
+    const params = opts.archived ? { archived: '1' } : {};
+    return apiV2.get('/meetings', { params }).then((r) => r.data);
+  },
   create: (body) => apiV2.post('/meetings', body).then((r) => r.data),
   get: (id) => apiV2.get(`/meetings/${id}`).then((r) => r.data),
   patch: (id, body) => apiV2.patch(`/meetings/${id}`, body).then((r) => r.data),
+  delete: (id) => apiV2.delete(`/meetings/${encodeURIComponent(id)}`).then((r) => r.data),
   token: (id, body) => apiV2.post(`/meetings/${id}/token`, body).then((r) => r.data),
   hostSessionOpen: (id) => apiV2.post(`/meetings/${id}/host-session-open`, {}).then((r) => r.data),
   listInvites: (id) => apiV2.get(`/meetings/${id}/invites`).then((r) => r.data),
@@ -63,6 +67,11 @@ export const v2Meetings = {
     apiV2
       .get(`/meetings/${encodeURIComponent(id)}/transcript.txt`, { responseType: 'blob' })
       .then((r) => r.data),
+  getTranscriptTemplates: () => apiV2.get('/meetings/transcript-templates').then((r) => r.data),
+  listTranscriptReports: (id) =>
+    apiV2.get(`/meetings/${encodeURIComponent(id)}/transcript/reports`).then((r) => r.data),
+  synthesizeTranscript: (id, body) =>
+    apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript/synthesize`, body).then((r) => r.data),
 };
 
 export const v2Host = {

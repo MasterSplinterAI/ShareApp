@@ -1,25 +1,310 @@
-import { FileDown } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
+import { Copy, FileDown, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { v2Meetings } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 
-export default function MeetingTranscriptPanel({ lineCount, onDownloadJson, onDownloadTxt }) {
-  if (!lineCount || lineCount <= 0) {
-    return <p className="text-sm text-muted-foreground">No saved transcript lines for this meeting yet.</p>;
+function formatTime(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  } catch {
+    return iso;
   }
-  return (
-    <div className="space-y-2 rounded-lg border border-border/60 bg-muted/40 p-4">
-      <p className="text-xs text-muted-foreground">
-        Saved lines: <span className="font-medium text-foreground">{lineCount}</span>
+}
+
+function templateLabel(id, templates) {
+  return templates.find((t) => t.id === id)?.label || id;
+}
+
+export default function MeetingTranscriptPanel({
+  meetingId,
+  lineCount,
+  storeTranscripts,
+  onDownloadJson,
+  onDownloadTxt,
+}) {
+  const [tab, setTab] = useState('view');
+  const [lines, setLines] = useState([]);
+  const [loadingLines, setLoadingLines] = useState(false);
+  const [search, setSearch] = useState('');
+  const [speakerFilter, setSpeakerFilter] = useState('all');
+
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState('executive_summary');
+  const [customInstructions, setCustomInstructions] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [report, setReport] = useState(null);
+  const [reports, setReports] = useState([]);
+
+  const loadLines = useCallback(async () => {
+    if (!meetingId || !lineCount) return;
+    setLoadingLines(true);
+    try {
+      const { lines: fetched } = await v2Meetings.getTranscript(meetingId);
+      setLines(fetched || []);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not load transcript');
+    } finally {
+      setLoadingLines(false);
+    }
+  }, [meetingId, lineCount]);
+
+  const loadReports = useCallback(async () => {
+    if (!meetingId) return;
+    try {
+      const { reports: r } = await v2Meetings.listTranscriptReports(meetingId);
+      setReports(r || []);
+    } catch {
+      setReports([]);
+    }
+  }, [meetingId]);
+
+  useEffect(() => {
+    v2Meetings
+      .getTranscriptTemplates()
+      .then((r) => setTemplates(r.templates || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (tab === 'view' && lineCount > 0 && lines.length === 0) {
+      loadLines();
+    }
+    if (tab === 'insights') {
+      loadReports();
+    }
+  }, [tab, lineCount, lines.length, loadLines, loadReports]);
+
+  const speakers = useMemo(() => {
+    const set = new Set();
+    for (const l of lines) {
+      if (l.participant_identity) set.add(l.participant_identity);
+    }
+    return [...set].sort();
+  }, [lines]);
+
+  const filteredLines = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return lines.filter((l) => {
+      if (speakerFilter !== 'all' && l.participant_identity !== speakerFilter) return false;
+      if (!q) return true;
+      const hay = [l.original_text, l.translated_text, l.participant_identity].filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }, [lines, search, speakerFilter]);
+
+  const runSynthesis = async (regenerate = false) => {
+    if (!meetingId) return;
+    setGenerating(true);
+    try {
+      const r = await v2Meetings.synthesizeTranscript(meetingId, {
+        templateId,
+        customInstructions: customInstructions.trim() || undefined,
+        regenerate,
+      });
+      setReport(r.report);
+      if (!r.cached) toast.success('Report generated');
+      else toast.success('Loaded cached report');
+      loadReports();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not generate report');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const copyReport = async () => {
+    if (!report?.content_markdown) return;
+    try {
+      await navigator.clipboard.writeText(report.content_markdown);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Could not copy');
+    }
+  };
+
+  if (!storeTranscripts) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Transcript storage is off for this meeting. Enable &quot;Save transcript on server&quot; in Access &amp; policy to
+        capture and view lines here.
       </p>
-      <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onDownloadJson}>
-          <FileDown className="h-3.5 w-3.5" />
-          Download JSON
-        </Button>
-        <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onDownloadTxt}>
-          <FileDown className="h-3.5 w-3.5" />
-          Download .txt
-        </Button>
-      </div>
-    </div>
+    );
+  }
+
+  if (!lineCount || lineCount <= 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No saved transcript lines yet. Lines appear when the host is in the meeting with storage enabled.
+      </p>
+    );
+  }
+
+  return (
+    <Tabs value={tab} onValueChange={setTab} className="w-full">
+      <TabsList className="grid w-full grid-cols-3">
+        <TabsTrigger value="view">View</TabsTrigger>
+        <TabsTrigger value="insights">Insights</TabsTrigger>
+        <TabsTrigger value="export">Export</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="view" className="space-y-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search transcript…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9"
+            />
+          </div>
+          {speakers.length > 1 && (
+            <Select value={speakerFilter} onValueChange={setSpeakerFilter}>
+              <SelectTrigger className="w-full sm:w-[180px]">
+                <SelectValue placeholder="Speaker" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All speakers</SelectItem>
+                {speakers.map((s) => (
+                  <SelectItem key={s} value={s}>
+                    {s}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Button type="button" variant="outline" size="sm" onClick={loadLines} disabled={loadingLines}>
+            {loadingLines ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {filteredLines.length} of {lineCount} lines
+          {filteredLines.length < lineCount && lines.length < lineCount ? ' (loaded subset — refresh for latest)' : ''}
+        </p>
+        <div className="max-h-[min(420px,50vh)] overflow-y-auto rounded-lg border border-border/60 bg-muted/20 p-3">
+          {loadingLines && lines.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Loading transcript…</p>
+          ) : filteredLines.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No lines match your filters.</p>
+          ) : (
+            <ul className="space-y-3">
+              {filteredLines.map((l, i) => (
+                <li key={`${l.recorded_at}-${l.participant_identity}-${i}`} className="text-sm">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                    <span className="font-medium text-foreground">{l.participant_identity || 'Unknown'}</span>
+                    <span className="text-xs text-muted-foreground">{formatTime(l.recorded_at)}</span>
+                  </div>
+                  <p className="mt-0.5 text-foreground/90">{l.original_text}</p>
+                  {l.translated_text && l.translated_text !== l.original_text && (
+                    <p className="mt-0.5 text-muted-foreground italic">{l.translated_text}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </TabsContent>
+
+      <TabsContent value="insights" className="space-y-4">
+        <div className="space-y-2">
+          <Label>Report type</Label>
+          <Select value={templateId} onValueChange={setTemplateId}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(templates.length ? templates : [{ id: 'executive_summary', label: 'Executive summary' }]).map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="custom-instructions">Additional instructions (optional)</Label>
+          <textarea
+            id="custom-instructions"
+            rows={3}
+            value={customInstructions}
+            onChange={(e) => setCustomInstructions(e.target.value)}
+            placeholder="e.g. Only list dates and actionable items; ignore small talk."
+            className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            maxLength={1000}
+          />
+          <p className="text-xs text-muted-foreground">
+            AI analyzes saved transcript lines. Results are cached until you regenerate or the transcript grows.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" className="gap-1.5" onClick={() => runSynthesis(false)} disabled={generating}>
+            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {generating ? 'Generating…' : 'Generate report'}
+          </Button>
+          {report && (
+            <>
+              <Button type="button" variant="outline" size="sm" onClick={() => runSynthesis(true)} disabled={generating}>
+                Regenerate
+              </Button>
+              <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={copyReport}>
+                <Copy className="h-4 w-4" />
+                Copy
+              </Button>
+            </>
+          )}
+        </div>
+        {report?.content_markdown && (
+          <div className="rounded-lg border border-border/60 bg-card p-4">
+            <p className="mb-2 text-xs text-muted-foreground">
+              {templateLabel(report.template_id, templates)} · {report.line_count} lines ·{' '}
+              {report.created_at ? new Date(report.created_at).toLocaleString() : ''}
+            </p>
+            <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-foreground dark:prose-invert">
+              {report.content_markdown}
+            </div>
+          </div>
+        )}
+        {reports.length > 1 && (
+          <div className="space-y-2 border-t border-border/60 pt-3">
+            <p className="text-xs font-medium text-muted-foreground">Previous reports</p>
+            <ul className="space-y-1">
+              {reports.slice(0, 5).map((r) => (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    className="text-left text-sm text-primary hover:underline"
+                    onClick={() => setReport(r)}
+                  >
+                    {templateLabel(r.template_id, templates)} — {new Date(r.created_at).toLocaleString()}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </TabsContent>
+
+      <TabsContent value="export" className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Download the full saved transcript ({lineCount} lines) as JSON or plain text.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onDownloadJson}>
+            <FileDown className="h-3.5 w-3.5" />
+            Download JSON
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onDownloadTxt}>
+            <FileDown className="h-3.5 w-3.5" />
+            Download .txt
+          </Button>
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }

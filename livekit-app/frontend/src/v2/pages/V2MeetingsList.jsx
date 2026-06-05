@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Archive, MoreHorizontal, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { Badge } from '../../components/ui/badge';
@@ -15,13 +15,32 @@ import {
   DialogHeader,
   DialogTitle,
 } from '../../components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../components/ui/alert-dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { DatetimePicker } from '../../components/ui/datetime-picker';
 
 export default function V2MeetingsList() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [tab, setTab] = useState('active');
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -29,18 +48,21 @@ export default function V2MeetingsList() {
   const [hostRequired, setHostRequired] = useState(false);
   const [storeTranscripts, setStoreTranscripts] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(undefined);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const load = () => {
+  const load = (archived = false) => {
+    setLoading(true);
     v2Meetings
-      .list()
+      .list({ archived })
       .then((r) => setMeetings(r.meetings || []))
       .catch(() => toast.error('Failed to load meetings'))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    load();
-  }, []);
+    load(tab === 'archived');
+  }, [tab]);
 
   useEffect(() => {
     if (searchParams.get('create') === '1') {
@@ -81,6 +103,113 @@ export default function V2MeetingsList() {
     }
   };
 
+  const archiveMeeting = async (id, e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    try {
+      await v2Meetings.patch(id, { status: 'archived' });
+      toast.success('Meeting archived');
+      load(tab === 'archived');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not archive');
+    }
+  };
+
+  const restoreMeeting = async (id, e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    try {
+      await v2Meetings.patch(id, { status: 'ended' });
+      toast.success('Meeting restored');
+      load(true);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not restore');
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      await v2Meetings.delete(pendingDelete);
+      toast.success('Meeting deleted');
+      setPendingDelete(null);
+      load(tab === 'archived');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not delete');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const meetingRow = (m) => {
+    const ui = getMeetingUiState(m);
+    const lineCount = Number(m.transcript_line_count) || 0;
+    return (
+      <li key={m.id}>
+        <Card className="app-card app-card-hover border-border/70 hover:border-primary/40">
+          <CardContent className="flex items-center justify-between gap-3 p-4">
+            <Link to={`/v2/app/meetings/${m.id}`} className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {m.scheduled_start ? new Date(m.scheduled_start).toLocaleString() : new Date(m.created_at).toLocaleString()}
+                {lineCount > 0 ? ` · ${lineCount} transcript lines` : ''}
+              </span>
+            </Link>
+            <div className="flex shrink-0 items-center gap-2">
+              <Badge variant={toneToBadgeVariant(ui.tone)} className="text-xs uppercase tracking-wide">
+                {ui.label}
+              </Badge>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => e.preventDefault()}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                    <span className="sr-only">Actions</span>
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenuItem asChild>
+                    <Link to={`/v2/app/meetings/${m.id}`}>Open</Link>
+                  </DropdownMenuItem>
+                  {tab === 'active' && m.status !== 'archived' && (
+                    <DropdownMenuItem onClick={(e) => archiveMeeting(m.id, e)}>
+                      <Archive className="mr-2 h-4 w-4" />
+                      Archive
+                    </DropdownMenuItem>
+                  )}
+                  {tab === 'archived' && (
+                    <DropdownMenuItem onClick={(e) => restoreMeeting(m.id, e)}>
+                      <RotateCcw className="mr-2 h-4 w-4" />
+                      Restore
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setPendingDelete(m.id);
+                    }}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete permanently
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </CardContent>
+        </Card>
+      </li>
+    );
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -93,6 +222,39 @@ export default function V2MeetingsList() {
           New meeting
         </Button>
       </div>
+
+      <Tabs value={tab} onValueChange={setTab}>
+        <TabsList>
+          <TabsTrigger value="active">Active</TabsTrigger>
+          <TabsTrigger value="archived">Archived</TabsTrigger>
+        </TabsList>
+        <TabsContent value="active" className="mt-4">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : meetings.length === 0 ? (
+            <Card className="border-dashed border-border bg-muted/30 shadow-none">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No active meetings. Use &quot;New meeting&quot; above to create one.
+              </CardContent>
+            </Card>
+          ) : (
+            <ul className="space-y-2">{meetings.map(meetingRow)}</ul>
+          )}
+        </TabsContent>
+        <TabsContent value="archived" className="mt-4">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : meetings.length === 0 ? (
+            <Card className="border-dashed border-border bg-muted/30 shadow-none">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                No archived meetings. Archive a meeting from its detail page or the actions menu.
+              </CardContent>
+            </Card>
+          ) : (
+            <ul className="space-y-2">{meetings.map(meetingRow)}</ul>
+          )}
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
@@ -140,42 +302,26 @@ export default function V2MeetingsList() {
         </DialogContent>
       </Dialog>
 
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      ) : meetings.length === 0 ? (
-        <Card className="border-dashed border-border bg-muted/30 shadow-none">
-          <CardContent className="py-10 text-center text-sm text-muted-foreground">
-            No meetings yet. Use &quot;New meeting&quot; above to create one.
-          </CardContent>
-        </Card>
-      ) : (
-        <ul className="space-y-2">
-          {meetings.map((m) => {
-            const ui = getMeetingUiState(m);
-            return (
-              <li key={m.id}>
-                <Link to={`/v2/app/meetings/${m.id}`}>
-                  <Card className="app-card app-card-hover border-border/70 hover:border-primary/40">
-                    <CardContent className="flex items-center justify-between gap-3 p-4">
-                      <div className="min-w-0">
-                        <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>
-                        {m.scheduled_start && (
-                          <span className="mt-0.5 block text-xs text-muted-foreground">
-                            {new Date(m.scheduled_start).toLocaleString()}
-                          </span>
-                        )}
-                      </div>
-                      <Badge variant={toneToBadgeVariant(ui.tone)} className="shrink-0 text-xs uppercase tracking-wide">
-                        {ui.label}
-                      </Badge>
-                    </CardContent>
-                  </Card>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <AlertDialog open={Boolean(pendingDelete)} onOpenChange={(open) => !open && setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete meeting permanently?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the meeting, invites, transcripts, and AI reports. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={confirmDelete}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

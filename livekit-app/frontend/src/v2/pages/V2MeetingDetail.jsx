@@ -22,7 +22,7 @@ import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
-import MeetingDangerPanel from '../components/MeetingDangerPanel';
+import MeetingLifecyclePanel from '../components/MeetingLifecyclePanel';
 
 const MEETING_LANGUAGES = getMeetingLanguages();
 
@@ -43,6 +43,9 @@ export default function V2MeetingDetail() {
   const [ending, setEnding] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const load = () =>
     v2Meetings
@@ -103,11 +106,15 @@ export default function V2MeetingDetail() {
 
   const ui = meeting ? getMeetingUiState(meeting) : null;
 
+  const canManageMeeting =
+    meeting &&
+    me &&
+    (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
+
   const canEndMeeting =
     meeting &&
     ['live', 'scheduled'].includes(meeting.status) &&
-    me &&
-    (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
+    canManageMeeting;
 
   const onTitleBlur = async () => {
     if (!meeting || !titleEdit.trim()) return;
@@ -135,11 +142,38 @@ export default function V2MeetingDetail() {
   const runArchive = async () => {
     try {
       await v2Meetings.patch(id, { status: 'archived' });
-      toast.success('Archived');
+      toast.success('Meeting archived');
       setArchiveOpen(false);
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
+    }
+  };
+
+  const runRestore = async () => {
+    setRestoring(true);
+    try {
+      await v2Meetings.patch(id, { status: 'ended' });
+      toast.success('Meeting restored');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not restore');
+    } finally {
+      setRestoring(false);
+    }
+  };
+
+  const runDelete = async () => {
+    setDeleting(true);
+    try {
+      await v2Meetings.delete(id);
+      toast.success('Meeting deleted');
+      setDeleteOpen(false);
+      navigate('/v2/app/meetings');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not delete');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -281,10 +315,10 @@ export default function V2MeetingDetail() {
   const guestUrlNeedsToken = policy.require_invite_token && meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteHours = meeting.inviteMaxTtlHours ?? 90 * 24;
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
-  const canManageTranscriptPolicy =
-    me && (meeting.host_user_id === me.user?.id || ['owner', 'admin'].includes(me.role));
+  const canManageTranscriptPolicy = canManageMeeting;
   const isScheduled = Boolean(meeting.scheduled_start);
   const showPresence = ['live', 'scheduled'].includes(meeting.status);
+  const showTranscriptCard = policy.store_transcripts || (meeting.transcriptLineCount && meeting.transcriptLineCount > 0);
 
   const accessPanelProps = {
     meeting,
@@ -309,6 +343,30 @@ export default function V2MeetingDetail() {
     onRevokeInvite: revokeInvite,
     onCopyInviteUrl: copyInviteUrl,
   };
+
+  const transcriptPanel = (
+    <MeetingTranscriptPanel
+      meetingId={id}
+      lineCount={meeting.transcriptLineCount}
+      storeTranscripts={policy.store_transcripts}
+      onDownloadJson={downloadTranscriptJson}
+      onDownloadTxt={downloadTranscriptTxt}
+    />
+  );
+
+  const lifecyclePanel = (
+    <MeetingLifecyclePanel
+      meetingStatus={meeting.status}
+      canManage={canManageMeeting}
+      canEndMeeting={canEndMeeting}
+      ending={ending}
+      onOpenEndDialog={() => setEndOpen(true)}
+      onOpenArchiveDialog={() => setArchiveOpen(true)}
+      onOpenDeleteDialog={() => setDeleteOpen(true)}
+      onRestore={runRestore}
+      restoring={restoring}
+    />
+  );
 
   const joinCard = (
     <MeetingJoinCard
@@ -347,11 +405,34 @@ export default function V2MeetingDetail() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Archive this meeting?</AlertDialogTitle>
-            <AlertDialogDescription>It will be hidden from the main list. No new joins will be allowed.</AlertDialogDescription>
+            <AlertDialogDescription>
+              It will move to the Archived tab on your meetings list. Transcripts and reports are kept. New joins are
+              blocked.
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={runArchive}>Archive</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete meeting permanently?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This removes the meeting, invite links, transcript lines, and AI reports. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={runDelete}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete permanently'}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -376,23 +457,28 @@ export default function V2MeetingDetail() {
 
         {joinCard}
 
+        {showTranscriptCard && (
+          <Card className="app-card border-border/60">
+            <CardHeader className="border-b border-border/60 pb-3">
+              <CardTitle className="text-base">Transcript</CardTitle>
+              <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">{transcriptPanel}</CardContent>
+          </Card>
+        )}
+
+        {canManageMeeting && (
+          <Card className="app-card border-border/60">
+            <CardContent className="pt-6">{lifecyclePanel}</CardContent>
+          </Card>
+        )}
+
         <Accordion type="single" collapsible className="rounded-lg border border-border/60 bg-card px-4 shadow-sm">
           <AccordionItem value="advanced" className="border-0">
             <AccordionTrigger className="text-base hover:no-underline">Advanced settings</AccordionTrigger>
             <AccordionContent className="space-y-8 pt-2">
               <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
               <MeetingInvitesPanel {...invitesPanelProps} />
-              <MeetingTranscriptPanel
-                lineCount={meeting.transcriptLineCount}
-                onDownloadJson={downloadTranscriptJson}
-                onDownloadTxt={downloadTranscriptTxt}
-              />
-              <MeetingDangerPanel
-                canEndMeeting={canEndMeeting}
-                ending={ending}
-                onOpenEndDialog={() => setEndOpen(true)}
-                onOpenArchiveDialog={() => setArchiveOpen(true)}
-              />
             </AccordionContent>
           </AccordionItem>
         </Accordion>
@@ -434,10 +520,26 @@ export default function V2MeetingDetail() {
       </div>
 
       <div className="min-w-0 space-y-6">
+        {showTranscriptCard && (
+          <Card className="app-card border-border/60">
+            <CardHeader className="border-b border-border/60 pb-3">
+              <CardTitle className="text-base">Transcript</CardTitle>
+              <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-6">{transcriptPanel}</CardContent>
+          </Card>
+        )}
+
+        {canManageMeeting && (
+          <Card className="app-card border-border/60">
+            <CardContent className="pt-6">{lifecyclePanel}</CardContent>
+          </Card>
+        )}
+
         <Card className="app-card border-border/60">
           <CardHeader className="border-b border-border/60 pb-3">
             <CardTitle className="text-base">Meeting setup</CardTitle>
-            <CardDescription>Access, invites, recordings, and lifecycle actions.</CardDescription>
+            <CardDescription>Access, invites, and policies.</CardDescription>
           </CardHeader>
           <CardContent className="pt-2">
             <Accordion type="multiple" defaultValue={['access', 'invites']} className="w-full">
@@ -447,31 +549,10 @@ export default function V2MeetingDetail() {
                   <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
                 </AccordionContent>
               </AccordionItem>
-              <AccordionItem value="invites">
+              <AccordionItem value="invites" className="border-b-0">
                 <AccordionTrigger className="text-sm hover:no-underline">Invite links</AccordionTrigger>
-                <AccordionContent>
-                  <MeetingInvitesPanel {...invitesPanelProps} />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="recordings">
-                <AccordionTrigger className="text-sm hover:no-underline">Recordings &amp; transcript</AccordionTrigger>
-                <AccordionContent>
-                  <MeetingTranscriptPanel
-                    lineCount={meeting.transcriptLineCount}
-                    onDownloadJson={downloadTranscriptJson}
-                    onDownloadTxt={downloadTranscriptTxt}
-                  />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="danger" className="border-b-0">
-                <AccordionTrigger className="text-sm hover:no-underline text-destructive">Danger zone</AccordionTrigger>
                 <AccordionContent className="border-0 pb-0">
-                  <MeetingDangerPanel
-                    canEndMeeting={canEndMeeting}
-                    ending={ending}
-                    onOpenEndDialog={() => setEndOpen(true)}
-                    onOpenArchiveDialog={() => setArchiveOpen(true)}
-                  />
+                  <MeetingInvitesPanel {...invitesPanelProps} />
                 </AccordionContent>
               </AccordionItem>
             </Accordion>

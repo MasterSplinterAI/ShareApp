@@ -7,6 +7,7 @@ const { requireV2Auth } = require('../../middleware/v2Auth');
 const { createLiveKitConferenceRoom, ensureRoomAndAgent, getRoomService, looksLikeAgentParticipant } = require('../../lib/livekitService');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
+const { listTemplates, instructionsHash, synthesizeTranscript } = require('../../lib/transcriptSynthesis');
 
 const MS_DAY = 86400000;
 
@@ -141,21 +142,28 @@ router.post('/', requireV2Auth, async (req, res) => {
 
 router.get('/', requireV2Auth, async (req, res) => {
   try {
+    const archivedOnly = req.query.archived === '1' || req.query.status === 'archived';
+    const statusClause = archivedOnly ? `m.status = 'archived'` : `m.status != 'archived'`;
     const rows = await db.all(
       `SELECT m.id, m.livekit_room_name, m.title, m.status, m.scheduled_start, m.scheduled_end, m.host_code,
               m.created_at, m.started_at, m.ended_at, m.host_present,
               IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
               IFNULL(p.require_invite_token, 0) AS require_invite_token,
-              IFNULL(p.store_transcripts, 0) AS store_transcripts
+              IFNULL(p.store_transcripts, 0) AS store_transcripts,
+              (SELECT COUNT(*) FROM v2_meeting_transcript_lines t WHERE t.meeting_id = m.id) AS transcript_line_count
        FROM v2_meetings m
        LEFT JOIN v2_meeting_policies p ON p.meeting_id = m.id
-       WHERE m.org_id = ? AND m.status != 'archived' ORDER BY datetime(m.created_at) DESC LIMIT 100`,
+       WHERE m.org_id = ? AND ${statusClause} ORDER BY datetime(m.created_at) DESC LIMIT 100`,
       [req.v2Auth.orgId]
     );
-    res.json({ meetings: rows });
+    res.json({ meetings: rows, archivedOnly });
   } catch (e) {
     res.status(500).json({ error: 'Failed to list meetings' });
   }
+});
+
+router.get('/transcript-templates', requireV2Auth, (_req, res) => {
+  res.json({ templates: listTemplates() });
 });
 
 router.get('/:id/invites', requireV2Auth, async (req, res) => {
@@ -516,6 +524,129 @@ router.get('/:id/transcript', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/transcript GET]', e);
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/:id/transcript/reports', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+    const reports = await db.all(
+      `SELECT id, template_id, custom_instructions, line_count, content_markdown, model, created_at
+       FROM v2_meeting_transcript_reports WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 20`,
+      [req.params.id]
+    );
+    res.json({ reports });
+  } catch (e) {
+    console.error('[v2/transcript/reports GET]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/:id/transcript/synthesize', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+
+    const { templateId, customInstructions, regenerate } = req.body || {};
+    const tid = templateId && String(templateId).slice(0, 64);
+    if (!tid || !listTemplates().some((t) => t.id === tid)) {
+      return res.status(400).json({ error: 'Invalid templateId' });
+    }
+
+    const lines = await loadTranscriptLines(req.params.id);
+    if (!lines.length) {
+      return res.status(400).json({ error: 'No transcript lines saved for this meeting' });
+    }
+
+    const custom = customInstructions != null ? String(customInstructions).trim().slice(0, 1000) : '';
+    const hash = instructionsHash(tid, custom, lines.length);
+
+    if (!regenerate) {
+      const cached = await db.get(
+        `SELECT id, template_id, custom_instructions, line_count, content_markdown, model, created_at
+         FROM v2_meeting_transcript_reports WHERE meeting_id = ? AND instructions_hash = ? ORDER BY datetime(created_at) DESC LIMIT 1`,
+        [req.params.id, hash]
+      );
+      if (cached) {
+        return res.json({ report: cached, cached: true });
+      }
+    }
+
+    let result;
+    try {
+      result = await synthesizeTranscript({
+        templateId: tid,
+        customInstructions: custom,
+        lines,
+        meetingTitle: row.title,
+      });
+    } catch (e) {
+      const msg = e.message || 'Synthesis failed';
+      if (msg.includes('TRANSLATION_API_KEY')) {
+        return res.status(503).json({ error: 'AI synthesis is not configured on this server' });
+      }
+      console.error('[v2/transcript/synthesize]', e);
+      return res.status(502).json({ error: msg });
+    }
+
+    const reportId = db.uuid();
+    const now = new Date().toISOString();
+    await db.run(
+      `INSERT INTO v2_meeting_transcript_reports (id, meeting_id, template_id, custom_instructions, instructions_hash, line_count, content_markdown, model, input_tokens, output_tokens, created_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [
+        reportId,
+        req.params.id,
+        tid,
+        custom || null,
+        hash,
+        lines.length,
+        result.markdown,
+        result.model,
+        result.inputTokens,
+        result.outputTokens,
+        now,
+      ]
+    );
+
+    res.status(201).json({
+      report: {
+        id: reportId,
+        template_id: tid,
+        custom_instructions: custom || null,
+        line_count: lines.length,
+        content_markdown: result.markdown,
+        model: result.model,
+        created_at: now,
+      },
+      cached: false,
+    });
+  } catch (e) {
+    console.error('[v2/transcript/synthesize]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.delete('/:id', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+
+    const meetingId = req.params.id;
+    await db.run(`DELETE FROM v2_meeting_transcript_reports WHERE meeting_id = ?`, [meetingId]);
+    await db.run(`DELETE FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [meetingId]);
+    await db.run(`DELETE FROM v2_meeting_invite_links WHERE meeting_id = ?`, [meetingId]);
+    await db.run(`DELETE FROM v2_meeting_policies WHERE meeting_id = ?`, [meetingId]);
+    await db.run(`DELETE FROM v2_meetings WHERE id = ?`, [meetingId]);
+
+    res.json({ ok: true, deleted: meetingId });
+  } catch (e) {
+    console.error('[v2/meetings DELETE]', e);
+    res.status(500).json({ error: 'Failed to delete meeting' });
   }
 });
 

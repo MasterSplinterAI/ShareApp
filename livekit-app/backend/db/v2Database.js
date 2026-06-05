@@ -232,6 +232,26 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_transcript_meeting_time ON v2_meeting_transcript_lines(meeting_id, recorded_at)`);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_transcript_reports (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      custom_instructions TEXT,
+      instructions_hash TEXT NOT NULL,
+      line_count INTEGER NOT NULL DEFAULT 0,
+      content_markdown TEXT NOT NULL,
+      model TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_transcript_reports_meeting ON v2_meeting_transcript_reports(meeting_id, created_at)`
+  );
+
   const cols = await all(`PRAGMA table_info(v2_meetings)`);
   const colNames = new Set((cols || []).map((c) => c.name));
   if (!colNames.has('host_present')) {
