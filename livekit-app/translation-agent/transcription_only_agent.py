@@ -159,7 +159,7 @@ def _caption_finalize_delay_sec() -> float:
 
 
 def _deepgram_endpointing_ms() -> int:
-    """Silence (ms) before Deepgram emits speech_final (fast path). Keep moderate — see STT_IDLE."""
+    """Silence (ms) before Deepgram emits END_OF_SPEECH."""
     raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "400").strip()
     try:
         ms = int(raw)
@@ -178,7 +178,7 @@ def _deepgram_stt_idle_ms() -> int:
         ms = int(raw)
     except ValueError:
         ms = 1200
-    return max(400, min(ms, 8000))
+    return max(400, min(ms, 5000))
 
 
 def _speech_times(speech_data: Any) -> Tuple[float, float]:
@@ -1386,16 +1386,16 @@ class TranscriptionOnlyAgent:
                 if ev_type == SpeechEventType.END_OF_SPEECH:
                     if use_deepgram_captions[0]:
                         stt_speech_active[0] = False
-                        await cancel_stt_idle_finalize()
-                        dg_buffer.on_speech_final()
-                        logger.debug(f"{L} 🔇 Deepgram speech_final (END_OF_SPEECH)")
+                        logger.debug(
+                            f"{L} 🔇 Deepgram END_OF_SPEECH — waiting "
+                            f"{_deepgram_stt_idle_ms()}ms STT idle before finalize"
+                        )
                         try:
                             stt_stream.flush()
                         except Exception:
                             pass
-                        await asyncio.sleep(0.15)
-                        if turn_id[0] and dg_buffer.has_content():
-                            await finalize_turn()
+                        # Brief pauses should not split bubbles; only finalize after idle window.
+                        arm_stt_idle_finalize()
                         continue
                     # xAI: brief internal endpointing — ignore if VAD still hears speech.
                     if vad_speech_active[0]:

@@ -59,11 +59,22 @@ function looksLikeAgentParticipant(p) {
   );
 }
 
+function roomLifecycleTimeouts() {
+  const emptyRaw = Number(process.env.LIVEKIT_EMPTY_TIMEOUT_SEC || 1800);
+  const departRaw = Number(process.env.LIVEKIT_DEPARTURE_TIMEOUT_SEC || 600);
+  return {
+    emptyTimeout: Number.isFinite(emptyRaw) && emptyRaw > 0 ? Math.min(emptyRaw, 86400) : 1800,
+    departureTimeout: Number.isFinite(departRaw) && departRaw > 0 ? Math.min(departRaw, 86400) : 600,
+  };
+}
+
 async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language') {
   const roomService = getRoomService();
+  const { emptyTimeout, departureTimeout } = roomLifecycleTimeouts();
   const createOptions = {
     name: roomName,
-    emptyTimeout: 300,
+    emptyTimeout,
+    departureTimeout,
     maxParticipants: 50,
     metadata: JSON.stringify({
       createdAt: new Date().toISOString(),
@@ -90,9 +101,11 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
  */
 async function ensureRoomAndAgent(roomName, roomMode = 'multi-language') {
   const roomService = getRoomService();
+  const { emptyTimeout, departureTimeout } = roomLifecycleTimeouts();
   const room = await roomService.createRoom({
     name: roomName,
-    emptyTimeout: 300,
+    emptyTimeout,
+    departureTimeout,
     maxParticipants: 50,
     metadata: JSON.stringify({
       createdAt: new Date().toISOString(),

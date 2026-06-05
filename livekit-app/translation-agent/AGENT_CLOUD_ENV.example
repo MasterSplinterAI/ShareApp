@@ -14,10 +14,9 @@ AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
 # --- Speech-to-text (production: Deepgram nova-3) ---
 STT_PROVIDER=deepgram
 DEEPGRAM_API_KEY=
-# Deepgram speech_final (ms silence). Fast path only — keep moderate (400–600).
+# Deepgram END_OF_SPEECH (ms silence). 400 is a good default.
 DEEPGRAM_ENDPOINTING_MS=400
-# Primary finalize for captions: no new/changed transcript for this long (not audio silence).
-# Raise for slow thinkers (e.g. 1800); lower for snappier bubbles (e.g. 900).
+# Finalize bubble after no new/changed transcript for this long (default 1200ms).
 DEEPGRAM_STT_IDLE_MS=1200
 # Legacy non-Deepgram only: delay before history finalize when speech_final is unavailable.
 CAPTION_UTTERANCE_END_DELAY_SEC=1.5

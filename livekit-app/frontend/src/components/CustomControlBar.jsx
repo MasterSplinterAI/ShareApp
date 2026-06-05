@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocalParticipant, useTracks } from '@livekit/components-react';
+import { useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -28,8 +28,10 @@ export default function CustomControlBar({
   setTranslationEnabled,
   isHost,
   onShareClick,
-  onDisconnect
+  intentionalLeaveRef,
+  onNavigateAfterLeave,
 }) {
+  const room = useRoomContext();
   const localParticipantHook = useLocalParticipant();
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
@@ -514,7 +516,20 @@ export default function CustomControlBar({
           )}
 
           {/* Leave Button */}
-          <Button type="button" variant="destructive" onClick={onDisconnect} className={barBtn(isCompact)} aria-label="Leave meeting">
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={async () => {
+              if (intentionalLeaveRef) intentionalLeaveRef.current = true;
+              try {
+                await room?.disconnect(true);
+              } catch {
+                onNavigateAfterLeave?.();
+              }
+            }}
+            className={barBtn(isCompact)}
+            aria-label="Leave meeting"
+          >
             <PhoneOff className="h-5 w-5" />
             {!isCompact && <span className="text-sm font-medium">{t('leave')}</span>}
           </Button>

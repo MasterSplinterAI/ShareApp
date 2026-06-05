@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LiveKitRoom, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
+import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext } from '@livekit/components-react';
+import { ConnectionState, RoomEvent } from 'livekit-client';
 import { controlLabel } from '../lib/controlLabels';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
@@ -13,11 +14,30 @@ import ParticipantsPanel from './ParticipantsPanel';
 import RoomControls from './RoomControls';
 import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
+import RoomConnectionGuard from './RoomConnectionGuard';
 import VideoGrid from './VideoGrid';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 // Autopilot Translator SDK — for DOM/UI translation (navigation, buttons, labels)
 import { AutopilotTranslator } from '../lib/autopilot-translator';
+
+function HostSessionReporter({ meetingId, isHost }) {
+  const room = useRoomContext();
+  useEffect(() => {
+    if (!room || !isHost || !meetingId) return undefined;
+    const markHostPresent = () => {
+      v2Meetings.hostSessionOpen(meetingId).catch(() => {});
+    };
+    if (room.state === ConnectionState.Connected) {
+      markHostPresent();
+    }
+    room.on(RoomEvent.Connected, markHostPresent);
+    return () => {
+      room.off(RoomEvent.Connected, markHostPresent);
+    };
+  }, [room, meetingId, isHost]);
+  return null;
+}
 
 function HostUsageReporter({ meetingId, isHost }) {
   useEffect(() => {
@@ -56,6 +76,9 @@ function MeetingRoom() {
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const intentionalLeaveRef = useRef(false);
+  const reconnectingRef = useRef(false);
 
   // Initialize participant info on mount
   useEffect(() => {
@@ -117,42 +140,44 @@ function MeetingRoom() {
     connectToRoom();
   }, [isInitialized, participantInfo]);
 
+  const fetchRoomToken = useCallback(async () => {
+    if (!participantInfo) throw new Error('No participant info');
+    const v2Tok = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
+    let tokenData;
+    if (participantInfo.meetingId) {
+      if (participantInfo.isHost) {
+        if (!v2Tok) {
+          throw new Error('Sign in required for host');
+        }
+        tokenData = await v2Meetings.token(participantInfo.meetingId, {
+          participantName: participantInfo.participantName,
+          isHost: true,
+        });
+      } else {
+        tokenData = await joinPublicService.guestToken({
+          roomName,
+          participantName: participantInfo.participantName,
+          inviteToken: participantInfo.inviteToken || '',
+        });
+      }
+    } else {
+      tokenData = await authService.getToken(
+        roomName,
+        participantInfo.participantName,
+        participantInfo.isHost
+      );
+    }
+    if (!tokenData?.token || typeof tokenData.token !== 'string') {
+      throw new Error('Invalid token received from server');
+    }
+    return tokenData;
+  }, [participantInfo, roomName]);
+
   const connectToRoom = async () => {
     if (!participantInfo) return;
 
     try {
-      let tokenData;
-      const v2Tok = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
-      if (participantInfo.meetingId) {
-        if (participantInfo.isHost) {
-          if (!v2Tok) {
-            setError('Open the V2 app and sign in to host this meeting.');
-            toast.error('Sign in required for host');
-            return;
-          }
-          tokenData = await v2Meetings.token(participantInfo.meetingId, {
-            participantName: participantInfo.participantName,
-            isHost: true,
-          });
-        } else {
-          tokenData = await joinPublicService.guestToken({
-            roomName,
-            participantName: participantInfo.participantName,
-            inviteToken: participantInfo.inviteToken || '',
-          });
-        }
-      } else {
-        tokenData = await authService.getToken(
-          roomName,
-          participantInfo.participantName,
-          participantInfo.isHost
-        );
-      }
-
-      if (!tokenData.token || typeof tokenData.token !== 'string') {
-        throw new Error('Invalid token received from server');
-      }
-
+      const tokenData = await fetchRoomToken();
       const persist =
         Boolean(participantInfo.meetingId) &&
         Boolean(participantInfo.isHost) &&
@@ -165,15 +190,14 @@ function MeetingRoom() {
       }
     } catch (error) {
       console.error('Failed to get token:', error);
-      setError(error.response?.data?.error || 'Failed to connect to room');
+      setError(error.response?.data?.error || error.message || 'Failed to connect to room');
       toast.error('Failed to connect to room');
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleDisconnected = () => {
-    toast('Disconnected from room');
+  const navigateAfterLeave = useCallback(() => {
     const hasV2 = typeof localStorage !== 'undefined' && localStorage.getItem('v2_token');
     const mid = participantInfo?.meetingId;
     if (hasV2 && mid) {
@@ -185,21 +209,23 @@ function MeetingRoom() {
       return;
     }
     navigate('/');
-  };
+  }, [navigate, participantInfo?.meetingId]);
 
-  const navigateAfterLeave = () => {
-    const hasV2 = typeof localStorage !== 'undefined' && localStorage.getItem('v2_token');
-    const mid = participantInfo?.meetingId;
-    if (hasV2 && mid) {
-      navigate(`/v2/app/meetings/${mid}`);
-      return;
+  const handleGiveUpConnection = useCallback(() => {
+    setReconnecting(false);
+    navigateAfterLeave();
+  }, [navigateAfterLeave]);
+
+  const handleReconnected = useCallback(async () => {
+    setReconnecting(false);
+    if (participantInfo?.meetingId && participantInfo?.isHost) {
+      try {
+        await v2Meetings.hostSessionOpen(participantInfo.meetingId);
+      } catch {
+        /* non-fatal */
+      }
     }
-    if (hasV2) {
-      navigate('/v2/app');
-      return;
-    }
-    navigate('/');
-  };
+  }, [participantInfo?.meetingId, participantInfo?.isHost]);
 
   // Handle orientation changes
   useEffect(() => {
@@ -278,14 +304,35 @@ function MeetingRoom() {
         livekitUrl={livekitUrl}
         participantInfo={participantInfo}
         roomName={roomName}
-        onDisconnected={handleDisconnected}
         meetingId={participantInfo.meetingId}
+        intentionalLeaveRef={intentionalLeaveRef}
+        reconnectingRef={reconnectingRef}
+        reconnecting={reconnecting}
+        setReconnecting={setReconnecting}
+        fetchRoomToken={fetchRoomToken}
+        onGiveUpConnection={handleGiveUpConnection}
+        onReconnected={handleReconnected}
+        onNavigateAfterLeave={navigateAfterLeave}
       />
     </MeetingProvider>
   );
 }
 
-function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisconnected, meetingId }) {
+function MeetingRoomInner({
+  token,
+  livekitUrl,
+  participantInfo,
+  roomName,
+  meetingId,
+  intentionalLeaveRef,
+  reconnectingRef,
+  reconnecting,
+  setReconnecting,
+  fetchRoomToken,
+  onGiveUpConnection,
+  onReconnected,
+  onNavigateAfterLeave,
+}) {
   const {
     selectedLanguage,
     setSelectedLanguage,
@@ -355,15 +402,34 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
     };
   }, []);
 
+  const handleFetchTokenForReconnect = useCallback(async () => {
+    setReconnecting(true);
+    const tokenData = await fetchRoomToken();
+    return { token: tokenData.token, url: tokenData.url };
+  }, [fetchRoomToken, setReconnecting]);
+
   return (
     <div className="meeting-surface meeting-room-root relative h-[100dvh] w-full overflow-hidden">
+      {reconnecting && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="text-center">
+            <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Reconnecting to meeting…</p>
+          </div>
+        </div>
+      )}
       <LiveKitRoom
         video={true}
         audio={true}
         token={token}
         serverUrl={livekitUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud'}
-        onDisconnected={onDisconnected}
+        onDisconnected={() => {
+          if (intentionalLeaveRef?.current) {
+            onNavigateAfterLeave();
+          }
+        }}
         options={{
+          disconnectOnPageLeave: false,
           adaptiveStream: true,
           dynacast: true,
           publishDefaults: {
@@ -389,6 +455,14 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
         }}
         className="h-full flex flex-col"
       >
+        <RoomConnectionGuard
+          intentionalLeaveRef={intentionalLeaveRef}
+          reconnectingRef={reconnectingRef}
+          onFetchToken={handleFetchTokenForReconnect}
+          onReconnected={onReconnected}
+          onGiveUp={onGiveUpConnection}
+        />
+        <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
         <HostUsageReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content area: video grid + optional transcription panel */}
         <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -423,7 +497,8 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
           setTranslationEnabled={setTranslationEnabled}
           isHost={participantInfo?.isHost || false}
           onShareClick={() => setShowShareModal(true)}
-          onDisconnect={onDisconnected}
+          intentionalLeaveRef={intentionalLeaveRef}
+          onNavigateAfterLeave={onNavigateAfterLeave}
         />
 
         {/* Debug panel — add ?debug=1 to URL */}
