@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 _STT_EVENT_TYPES = {
     "deepgram": "deepgram_stt_minute",
     "openai": "openai_stt_minute",
+    "gladia": "gladia_stt_minute",
 }
 
 # Maps LLM provider name → (input_event_type, output_event_type)

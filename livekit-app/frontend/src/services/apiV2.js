@@ -87,6 +87,9 @@ export const v2Host = {
       .post(`/host/meetings/${meetingId}/participants/mute-all`, exceptIdentity ? { exceptIdentity } : {})
       .then((r) => r.data),
   endMeeting: (meetingId) => apiV2.post(`/host/meetings/${meetingId}/end`).then((r) => r.data),
+  getSttPipeline: (meetingId) => apiV2.get(`/host/meetings/${meetingId}/stt-pipeline`).then((r) => r.data),
+  switchSttPipeline: (meetingId, pipeline) =>
+    apiV2.post(`/host/meetings/${meetingId}/switch-stt-pipeline`, { pipeline }).then((r) => r.data),
 };
 
 export const v2Billing = {

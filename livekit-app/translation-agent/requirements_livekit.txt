@@ -12,6 +12,9 @@ livekit-plugins-silero>=0.6.0
 # Deepgram plugin (required for contextual turn detector)
 livekit-plugins-deepgram>=0.6.0
 
+# Gladia plugin (STT_PROVIDER=gladia + GLADIA_API_KEY)
+livekit-plugins-gladia>=1.5.8
+
 # Contextual Turn Detector plugin (Dec 2025 enhancement - semantic understanding)
 livekit-plugins-turn-detector>=0.1.0
 

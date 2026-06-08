@@ -22,6 +22,7 @@ const COSTS = {
 
   // Deepgram Nova-3
   deepgram_stt_minute:         { provider: 'deepgram',  unit_cost_usd: 0.0043  },
+  gladia_stt_minute:           { provider: 'gladia',    unit_cost_usd: 0.0125 },
 };
 
 /**

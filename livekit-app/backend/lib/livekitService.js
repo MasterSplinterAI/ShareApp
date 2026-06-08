@@ -3,6 +3,15 @@
  */
 const { ParticipantInfo_Kind } = require('@livekit/protocol');
 const { RoomServiceClient, AgentDispatchClient } = require('livekit-server-sdk');
+const { readRoomMetadata, mergeRoomMetadata } = require('./livekitRoomMetadata');
+
+/** LiveKit worker names for STT pipeline A/B testing (host switch on staging). */
+const STT_PIPELINE_AGENTS = {
+  deepgram: 'translation-cloud-prod',
+  gladia: 'translation-cloud-gladia',
+};
+
+const VALID_STT_PIPELINES = Object.keys(STT_PIPELINE_AGENTS);
 
 function getLivekitHttpHost() {
   const url = process.env.LIVEKIT_URL;
@@ -36,9 +45,28 @@ function defaultAgentName() {
   // from NODE_ENV alone or dispatches never match a worker.
   const lk = (process.env.LIVEKIT_URL || '').toLowerCase();
   if (lk.includes('livekit.cloud')) {
-    return 'translation-cloud-prod';
+    return STT_PIPELINE_AGENTS.deepgram;
   }
-  return process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev';
+  return process.env.NODE_ENV === 'production' ? STT_PIPELINE_AGENTS.deepgram : 'translation-bot-dev';
+}
+
+function agentNameForPipeline(pipeline) {
+  const key = String(pipeline || 'deepgram').toLowerCase();
+  return STT_PIPELINE_AGENTS[key] || defaultAgentName();
+}
+
+function normalizeSttPipeline(pipeline) {
+  const key = String(pipeline || 'deepgram').toLowerCase();
+  return VALID_STT_PIPELINES.includes(key) ? key : 'deepgram';
+}
+
+async function resolveRoomSttPipeline(roomName) {
+  try {
+    const meta = await readRoomMetadata(roomName);
+    return normalizeSttPipeline(meta.stt_pipeline);
+  } catch {
+    return 'deepgram';
+  }
 }
 
 /**
@@ -75,6 +103,7 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
     createdAt: new Date().toISOString(),
     type: 'conference',
     roomMode,
+    stt_pipeline: 'deepgram',
   };
   if (orgId) metadata.org_id = orgId;
   const createOptions = {
@@ -85,7 +114,7 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
     metadata: JSON.stringify(metadata),
   };
   const room = await roomService.createRoom(createOptions);
-  const agentName = defaultAgentName();
+  const agentName = agentNameForPipeline('deepgram');
   try {
     const agentDispatch = getAgentDispatch();
     await agentDispatch.createDispatch(roomName, agentName);
@@ -110,15 +139,18 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language', orgId =
     roomMode,
   };
   if (orgId) metadata.org_id = orgId;
+  const existingMeta = await readRoomMetadata(roomName).catch(() => ({}));
+  if (!existingMeta.stt_pipeline) metadata.stt_pipeline = 'deepgram';
   const room = await roomService.createRoom({
     name: roomName,
     emptyTimeout,
     departureTimeout,
     maxParticipants: 50,
-    metadata: JSON.stringify(metadata),
+    metadata: JSON.stringify({ ...existingMeta, ...metadata }),
   });
 
-  const agentName = defaultAgentName();
+  const pipeline = normalizeSttPipeline(metadata.stt_pipeline || existingMeta.stt_pipeline);
+  const agentName = agentNameForPipeline(pipeline);
   let participants = [];
   try {
     participants = await roomService.listParticipants(roomName);
@@ -175,12 +207,70 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language', orgId =
   return room;
 }
 
+async function removeAgentsFromRoom(roomName) {
+  const roomService = getRoomService();
+  const dispatch = getAgentDispatch();
+
+  try {
+    const participants = await roomService.listParticipants(roomName);
+    for (const p of participants) {
+      if (!looksLikeAgentParticipant(p)) continue;
+      try {
+        await roomService.removeParticipant(roomName, p.identity);
+        console.log(`[livekitService] Removed agent participant ${p.identity} from ${roomName}`);
+      } catch (e) {
+        console.warn(`[livekitService] removeParticipant ${p.identity}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn(`[livekitService] listParticipants(${roomName}) during agent removal:`, e.message);
+  }
+
+  try {
+    const existing = await dispatch.listDispatch(roomName);
+    const dispatchRows = Array.isArray(existing) ? existing : [];
+    for (const row of dispatchRows) {
+      const dispatchId = row && row.id;
+      if (!dispatchId) continue;
+      try {
+        await dispatch.deleteDispatch(dispatchId, roomName);
+        console.log(`[livekitService] Removed agent dispatch ${dispatchId} for ${roomName}`);
+      } catch (e) {
+        console.warn(`[livekitService] deleteDispatch ${dispatchId}:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn(`[livekitService] listDispatch(${roomName}) during agent removal:`, e.message);
+  }
+}
+
+/**
+ * Host-only: swap STT pipeline by removing the current agent and dispatching another worker.
+ */
+async function switchRoomSttPipeline(roomName, pipeline) {
+  const normalized = normalizeSttPipeline(pipeline);
+  await mergeRoomMetadata(roomName, { stt_pipeline: normalized });
+  await removeAgentsFromRoom(roomName);
+  await new Promise((r) => setTimeout(r, 600));
+  const agentName = agentNameForPipeline(normalized);
+  await getAgentDispatch().createDispatch(roomName, agentName);
+  console.log(`[livekitService] Switched ${roomName} to pipeline=${normalized} agent=${agentName}`);
+  return { pipeline: normalized, agentName };
+}
+
 module.exports = {
   getRoomService,
   getAgentDispatch,
   getLivekitHttpHost,
   defaultAgentName,
+  agentNameForPipeline,
+  normalizeSttPipeline,
+  resolveRoomSttPipeline,
+  STT_PIPELINE_AGENTS,
+  VALID_STT_PIPELINES,
   createLiveKitConferenceRoom,
   ensureRoomAndAgent,
+  removeAgentsFromRoom,
+  switchRoomSttPipeline,
   looksLikeAgentParticipant,
 };

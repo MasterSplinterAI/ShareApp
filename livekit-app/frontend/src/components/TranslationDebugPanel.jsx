@@ -2,9 +2,10 @@
  * In-app debug panel for translation / STT troubleshooting.
  * Enable with ?debug=1 in the URL (e.g. staging.jarmetals.com/room/xxx?debug=1)
  */
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRoomContext, useParticipants } from '@livekit/components-react';
 import { Bug } from 'lucide-react';
+import { v2Host } from '../services/apiV2';
 
 function isLikelyAgentIdentity(identity) {
   if (!identity) return false;
@@ -23,7 +24,20 @@ function formatTime(ts) {
   return d.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEnabled, participantName }) {
+function isStagingHost() {
+  if (typeof window === 'undefined') return false;
+  const h = window.location.hostname.toLowerCase();
+  return h.includes('staging.') || h === 'localhost' || h === '127.0.0.1';
+}
+
+function TranslationDebugPanel({
+  selectedLanguage,
+  spokenLanguage,
+  translationEnabled,
+  participantName,
+  meetingId,
+  isHost,
+}) {
   const room = useRoomContext();
   const participants = useParticipants();
   const [isOpen, setIsOpen] = useState(false);
@@ -33,9 +47,32 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
   const [lastTranscriptions, setLastTranscriptions] = useState([]);
   const [agentInRoom, setAgentInRoom] = useState(false);
   const [agentIdentities, setAgentIdentities] = useState([]);
+  const [roomPipeline, setRoomPipeline] = useState(null);
+  const [pipelineOptions, setPipelineOptions] = useState(['deepgram', 'gladia']);
+  const [pipelineSwitching, setPipelineSwitching] = useState(false);
+  const [pipelineError, setPipelineError] = useState(null);
   const countRef = useRef(0);
 
   const showDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
+  const showPipelineSwitch = showDebug && isHost && isStagingHost() && Boolean(meetingId);
+
+  const refreshRoomPipeline = useCallback(async () => {
+    if (!showPipelineSwitch) return;
+    try {
+      const data = await v2Host.getSttPipeline(meetingId);
+      setRoomPipeline(data.pipeline || 'deepgram');
+      if (Array.isArray(data.options) && data.options.length) {
+        setPipelineOptions(data.options);
+      }
+      setPipelineError(null);
+    } catch (e) {
+      setPipelineError(e?.response?.data?.error || e.message || 'Failed to load pipeline');
+    }
+  }, [meetingId, showPipelineSwitch]);
+
+  useEffect(() => {
+    refreshRoomPipeline();
+  }, [refreshRoomPipeline]);
 
   useEffect(() => {
     if (!room || !showDebug) return;
@@ -95,8 +132,22 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
   if (!showDebug) return null;
 
   const sttStatus = sttProvider
-    ? (sttProvider === 'xai' ? '✅ xAI Grok STT' : `⚠️ ${sttProvider} (not xAI)`)
+    ? `✅ ${sttProvider}`
     : '— waiting for caption packet';
+
+  const handlePipelineSwitch = async (pipeline) => {
+    if (!showPipelineSwitch || pipelineSwitching || pipeline === roomPipeline) return;
+    setPipelineSwitching(true);
+    setPipelineError(null);
+    try {
+      const data = await v2Host.switchSttPipeline(meetingId, pipeline);
+      setRoomPipeline(data.pipeline || pipeline);
+    } catch (e) {
+      setPipelineError(e?.response?.data?.error || e.message || 'Switch failed');
+    } finally {
+      setPipelineSwitching(false);
+    }
+  };
 
   return (
     <div className="fixed top-2 left-2 z-[100] max-w-sm">
@@ -109,7 +160,7 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
         <Bug className="h-3.5 w-3.5 text-amber-500" />
         Debug
         {sttProvider && (
-          <span className={`rounded px-1 py-0.5 text-[10px] ${sttProvider === 'xai' ? 'bg-emerald-500/20 text-emerald-600' : 'bg-amber-500/20 text-amber-700'}`}>
+          <span className="rounded bg-emerald-500/20 px-1 py-0.5 text-[10px] text-emerald-600">
             STT:{sttProvider}
           </span>
         )}
@@ -121,14 +172,9 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
           <div className="space-y-2">
             <section className="rounded border border-border/60 bg-muted/30 p-2">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">STT provider</div>
-              <div className={sttProvider === 'xai' ? 'text-emerald-600' : sttProvider ? 'text-amber-600' : 'text-muted-foreground'}>
+              <div className={sttProvider ? 'text-emerald-600' : 'text-muted-foreground'}>
                 {sttStatus}
               </div>
-              {sttProvider && sttProvider !== 'xai' && (
-                <div className="mt-1 text-[10px] text-muted-foreground">
-                  xAI console will show zero STT usage when fallback is active.
-                </div>
-              )}
               {sttProviderHistory.length > 1 && (
                 <div className="mt-1 text-[10px] text-muted-foreground">
                   history:
@@ -137,6 +183,40 @@ function TranslationDebugPanel({ selectedLanguage, spokenLanguage, translationEn
                 </div>
               )}
             </section>
+
+            {showPipelineSwitch && (
+              <section className="rounded border border-amber-500/40 bg-amber-500/5 p-2">
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Host STT pipeline (staging)
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  room config: {roomPipeline || '…'}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {pipelineOptions.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      disabled={pipelineSwitching}
+                      onClick={() => handlePipelineSwitch(p)}
+                      className={`rounded px-2 py-1 text-[10px] font-medium transition-colors ${
+                        roomPipeline === p
+                          ? 'bg-primary text-primary-foreground'
+                          : 'border border-border bg-background hover:bg-muted'
+                      } ${pipelineSwitching ? 'opacity-60' : ''}`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
+                {pipelineSwitching && (
+                  <div className="mt-1 text-[10px] text-muted-foreground">Switching agent…</div>
+                )}
+                {pipelineError && (
+                  <div className="mt-1 text-[10px] text-destructive">{pipelineError}</div>
+                )}
+              </section>
+            )}
 
             <section className="rounded border border-border/60 bg-muted/30 p-2">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Session</div>

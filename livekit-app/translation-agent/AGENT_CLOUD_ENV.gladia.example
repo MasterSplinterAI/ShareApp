@@ -1,0 +1,12 @@
+# Gladia test agent — translation-cloud-gladia (separate LiveKit Cloud worker)
+# Copy secrets into LiveKit Cloud → Agents → translation-cloud-gladia
+
+STT_PROVIDER=gladia
+GLADIA_API_KEY=
+LLM_PROVIDER=openai
+OPENAI_API_KEY=
+AGENT_NAME=translation-cloud-gladia
+
+# Optional tuning (endpointing in seconds; defaults to DEEPGRAM_ENDPOINTING_MS / 1000)
+# GLADIA_ENDPOINTING_SEC=0.8
+DEEPGRAM_STT_IDLE_MS=1500

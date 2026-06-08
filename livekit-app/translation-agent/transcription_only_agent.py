@@ -33,6 +33,13 @@ except ImportError:
     openai = None
 
 try:
+    from livekit.plugins import gladia
+    GLADIA_AVAILABLE = True
+except ImportError:
+    GLADIA_AVAILABLE = False
+    gladia = None
+
+try:
     from livekit.plugins import noise_cancellation
     NOISE_CANCELLATION_AVAILABLE = True
 except ImportError:
@@ -47,6 +54,16 @@ def _deepgram_endpointing_ms() -> int:
     except ValueError:
         ms = 800
     return max(25, min(ms, 5000))
+
+
+def _gladia_endpointing_sec() -> float:
+    raw = os.getenv("GLADIA_ENDPOINTING_SEC", "").strip()
+    if raw:
+        try:
+            return max(0.05, min(float(raw), 5.0))
+        except ValueError:
+            pass
+    return max(0.05, min(_deepgram_endpointing_ms() / 1000.0, 5.0))
 
 
 def _deepgram_stt_idle_ms() -> int:
@@ -627,6 +644,28 @@ class TranscriptionOnlyAgent:
             stt_provider_name = "deepgram"
             return inst
 
+        def _try_gladia():
+            nonlocal stt_provider_name
+            if "gladia" in excluded:
+                return None
+            if not (GLADIA_AVAILABLE and gladia and (is_cloud or os.getenv("GLADIA_API_KEY"))):
+                return None
+            endpointing_sec = _gladia_endpointing_sec()
+            inst = gladia.STT(
+                model="solaria-1",
+                interim_results=True,
+                code_switching=True,
+                sample_rate=16000,
+                endpointing=endpointing_sec,
+                translation_enabled=False,
+            )
+            logger.info(
+                f"{L} STT: Gladia solaria-1 code_switching=True "
+                f"endpointing={endpointing_sec}s (shared, STT-only)"
+            )
+            stt_provider_name = "gladia"
+            return inst
+
         def _try_openai():
             nonlocal stt_provider_name
             if "openai" in excluded:
@@ -640,6 +679,7 @@ class TranscriptionOnlyAgent:
 
         provider_order = {
             "deepgram": [_try_deepgram, _try_openai],
+            "gladia": [_try_gladia, _try_deepgram, _try_openai],
             "openai": [_try_openai, _try_deepgram],
         }.get(stt_provider, [_try_deepgram, _try_openai])
 
@@ -1240,9 +1280,11 @@ def log_resolved_inference_config() -> None:
     )
     has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
+    has_gladia = bool(os.getenv("GLADIA_API_KEY"))
 
     stt_primary = {
         "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize)",
+        "gladia": "Gladia solaria-1 code-switching (STT-only; OpenAI translation lanes)",
         "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)",
     }.get(stt, "Deepgram nova-3 (then OpenAI fallback)")
 
@@ -1265,6 +1307,7 @@ def log_resolved_inference_config() -> None:
         "(finalize when transcript stops changing — ignores background noise)"
     )
     logger.info(f"  keys_present mask: DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
+                f"GLADIA_API_KEY={'yes' if has_gladia else 'no'}, "
                 f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
     logger.info("  (Unset keys may still use LiveKit Cloud-injected Deepgram/STT defaults when LIVEKIT_CLOUD=true.)")
     logger.info("=" * 60)

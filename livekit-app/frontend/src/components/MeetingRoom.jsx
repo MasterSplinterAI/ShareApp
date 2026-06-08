@@ -429,6 +429,8 @@ function MeetingRoomInner({
           spokenLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
           participantName={participantInfo?.participantName || ''}
+          meetingId={meetingId}
+          isHost={participantInfo?.isHost || false}
         />
 
         <RoomAudioRenderer />

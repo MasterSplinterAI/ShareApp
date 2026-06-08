@@ -3,7 +3,7 @@ const { TrackType } = require('@livekit/protocol');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
-const { getRoomService } = require('../../lib/livekitService');
+const { getRoomService, switchRoomSttPipeline, resolveRoomSttPipeline, VALID_STT_PIPELINES } = require('../../lib/livekitService');
 
 async function muteParticipantAudio(roomName, identity, muted = true) {
   const roomService = getRoomService();
@@ -144,6 +144,66 @@ router.post('/:id/participants/:identity/mute', requireV2Auth, async (req, res) 
       return res.status(404).json({ error: msg, code: 'participant_not_found' });
     }
     res.status(500).json({ error: 'Mute failed' });
+  }
+});
+
+router.get('/:id/stt-pipeline', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(
+      `SELECT livekit_room_name, host_user_id FROM v2_meetings WHERE id = ? AND org_id = ?`,
+      [req.params.id, req.v2Auth.orgId]
+    );
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (row.host_user_id !== req.v2Auth.userId && !['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const pipeline = await resolveRoomSttPipeline(row.livekit_room_name);
+    res.json({ pipeline, options: VALID_STT_PIPELINES });
+  } catch (e) {
+    console.error('[v2/host stt-pipeline get]', e);
+    res.status(500).json({ error: 'Failed to read STT pipeline' });
+  }
+});
+
+router.post('/:id/switch-stt-pipeline', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(
+      `SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`,
+      [req.params.id, req.v2Auth.orgId]
+    );
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (row.host_user_id !== req.v2Auth.userId && !['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { pipeline } = req.body || {};
+    if (!VALID_STT_PIPELINES.includes(String(pipeline || '').toLowerCase())) {
+      return res.status(400).json({
+        error: `pipeline must be one of: ${VALID_STT_PIPELINES.join(', ')}`,
+      });
+    }
+
+    const current = await resolveRoomSttPipeline(row.livekit_room_name);
+    const target = String(pipeline).toLowerCase();
+    if (current === target) {
+      return res.json({
+        ok: true,
+        pipeline: current,
+        agentName: null,
+        message: 'Already on this pipeline',
+      });
+    }
+
+    const result = await switchRoomSttPipeline(row.livekit_room_name, target);
+    res.json({
+      ok: true,
+      pipeline: result.pipeline,
+      agentName: result.agentName,
+      message: 'Captions may pause briefly while the new agent connects',
+    });
+  } catch (e) {
+    console.error('[v2/host switch-stt-pipeline]', e);
+    res.status(500).json({ error: 'Failed to switch STT pipeline' });
   }
 });
 
