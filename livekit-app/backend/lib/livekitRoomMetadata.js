@@ -1,8 +1,11 @@
-const { getRoomService } = require('./livekitService');
+function roomService() {
+  const { getRoomService } = require('./livekitService');
+  return getRoomService();
+}
 
 async function readRoomMetadata(roomName) {
   try {
-    const svc = getRoomService();
+    const svc = roomService();
     const rooms = await svc.listRooms([roomName]);
     if (rooms.length > 0 && rooms[0].metadata) {
       return JSON.parse(rooms[0].metadata);
@@ -16,7 +19,7 @@ async function readRoomMetadata(roomName) {
 async function mergeRoomMetadata(roomName, patch) {
   const existing = await readRoomMetadata(roomName);
   const merged = { ...existing, ...patch };
-  const svc = getRoomService();
+  const svc = roomService();
   await svc.updateRoomMetadata(roomName, JSON.stringify(merged));
   return merged;
 }
