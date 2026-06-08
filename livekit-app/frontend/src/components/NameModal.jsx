@@ -18,7 +18,6 @@ function NameModal({ onClose, onSubmit, title = 'Enter your name', subtitle = ''
     e.preventDefault();
     if (name.trim()) {
       onSubmit(name.trim(), selectedLanguage, selectedLanguage);
-      onClose();
     }
   };
 
