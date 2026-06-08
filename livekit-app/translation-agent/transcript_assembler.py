@@ -149,7 +149,7 @@ def stitch_committed_and_open(committed: str, open_text: str) -> str:
             common_prefix = i + 1
         else:
             break
-    # xAI chunk interims often restate from a shared anchor and revise the tail.
+    # Chunk interims often restate from a shared anchor and revise the tail.
     if common_prefix >= 3 and len(open_words) >= len(committed_words):
         return open_text
 

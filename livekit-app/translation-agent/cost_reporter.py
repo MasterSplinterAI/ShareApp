@@ -14,13 +14,12 @@ logger = logging.getLogger(__name__)
 
 # Maps STT provider name → backend event_type (per costConstants.js)
 _STT_EVENT_TYPES = {
-    "xai": "xai_stt_minute",
     "deepgram": "deepgram_stt_minute",
+    "openai": "openai_stt_minute",
 }
 
 # Maps LLM provider name → (input_event_type, output_event_type)
 _LLM_EVENT_TYPES = {
-    "xai": ("xai_llm_input_mtok", "xai_llm_output_mtok"),
     "openai": ("openai_llm_input_mtok", "openai_llm_output_mtok"),
 }
 

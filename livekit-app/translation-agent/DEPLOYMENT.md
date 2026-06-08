@@ -135,32 +135,22 @@ The agent ID tells LiveKit which existing agent to update when you run `lk agent
 
 ### LiveKit Cloud Dashboard (Agent)
 
-See **`AGENT_CLOUD_ENV.example`** for the full variable list and recommended production values (Grok STT = `STT_PROVIDER=xai` + `XAI_API_KEY`; cheap caption translation = `LLM_PROVIDER=openai`).
+See **`AGENT_CLOUD_ENV.example`** for the full variable list and recommended production values (Deepgram nova-3 STT + OpenAI gpt-4o-mini for translation).
 
 At minimum set:
 
 - `LIVEKIT_API_KEY`
 - `LIVEKIT_API_SECRET`
 - `LIVEKIT_URL` (e.g. `wss://production-uiycx4ku.livekit.cloud`)
-- `STT_PROVIDER` — use `xai` for Grok STT primary; default in code is `deepgram` if unset
-- `LLM_PROVIDER` — `openai` (default) uses ~`gpt-4o-mini` for translation lanes; `xai` uses `XAI_LLM_MODEL`
-- `XAI_API_KEY` (required when `STT_PROVIDER=xai` or `LLM_PROVIDER=xai`)
+- `STT_PROVIDER` — `deepgram` (default and recommended); `openai` as emergency fallback
+- `LLM_PROVIDER` — `openai` (default) uses ~`gpt-4o-mini` for translation lanes
+- `DEEPGRAM_API_KEY` (required — primary STT)
 - `OPENAI_API_KEY` (fallback STT + default translation LLM)
-- `DEEPGRAM_API_KEY` (fallback STT when xAI cannot serve a language)
 - `AGENT_BUILD_REF` (optional; commit SHA or tag — printed in agent logs for traceability)
-
-**xAI Speech-to-Text endpoints** ([official docs](https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)):
-
-| Mode | URL | Used by agent |
-|------|-----|----------------|
-| Streaming (live captions) | `wss://api.x.ai/v1/stt?sample_rate=16000&encoding=pcm&interim_results=true&language=<lang>&endpointing=<ms>` | `livekit-plugins-xai` via `STT_PROVIDER=xai` |
-| Batch (file upload) | `POST https://api.x.ai/v1/stt` | Not used in room pipeline |
-
-The agent probes `wss://api.x.ai/v1/stt` at worker startup. If xAI returns **HTTP 400** on the WebSocket handshake, that usually means an **invalid `XAI_API_KEY`** (not wrong endpoint). Regenerate at [console.x.ai](https://console.x.ai) and run `lk agent update-secrets --secrets "XAI_API_KEY=<new-key>"`. On failure the agent falls back to Deepgram when `DEEPGRAM_API_KEY` is set.
 
 After `lk agent deploy`, open **`lk agent logs`** and confirm the **RESOLVED INFERENCE CONFIG** banner matches intent.
 
-**Secrets CLI pitfall:** `lk agent deploy --secrets "KEY1=a,KEY2=b"` parses on **every comma** — values like `91af7bc,STT_PROVIDER=xai` accidentally become one blob. Prefer **multiple flags**: `--secrets "STT_PROVIDER=xai" --secrets "LLM_PROVIDER=openai"` or a **`--secrets-file`** with one `KEY=value` per line. Use **`lk agent update-secrets`** the same way to fix env without rebuilding the image.
+**Secrets CLI pitfall:** `lk agent deploy --secrets "KEY1=a,KEY2=b"` parses on **every comma** — values can accidentally become one blob. Prefer **multiple flags**: `--secrets "STT_PROVIDER=deepgram" --secrets "LLM_PROVIDER=openai"` or a **`--secrets-file`** with one `KEY=value` per line. Use **`lk agent update-secrets`** the same way to fix env without rebuilding the image.
 
 ### Production Server (Backend)
 
