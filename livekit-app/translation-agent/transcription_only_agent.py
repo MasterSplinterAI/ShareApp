@@ -19,7 +19,6 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 from cost_reporter import CostReporter
 from deepgram_caption_buffer import DeepgramCaptionBuffer
 from residual_guard import is_residual_repeat
-from transcript_assembler import stitch_committed_and_open
 
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli, AutoSubscribe
@@ -39,15 +38,6 @@ try:
 except ImportError:
     NOISE_CANCELLATION_AVAILABLE = False
     noise_cancellation = None
-
-def _caption_finalize_delay_sec() -> float:
-    """Legacy fallback delay when STT does not emit speech_final (non-Deepgram)."""
-    raw = os.getenv("CAPTION_UTTERANCE_END_DELAY_SEC", "1.5").strip()
-    try:
-        return max(0.5, min(float(raw), 10.0))
-    except ValueError:
-        return 1.5
-
 
 def _deepgram_endpointing_ms() -> int:
     """Silence (ms) before Deepgram emits END_OF_SPEECH."""
@@ -794,11 +784,10 @@ class TranscriptionOnlyAgent:
         vad_stream = vad_instance.stream()
 
         turn_id: List[Optional[str]] = [None]
-        # Deepgram: canonical is_final buffer + open interim (see deepgram_caption_buffer.py).
+        # Canonical is_final buffer + open interim (see deepgram_caption_buffer.py).
+        # All STT providers route through this buffer; finalize is driven by the
+        # STT-idle timer (armed on new text and on VAD END_OF_SPEECH).
         dg_buffer = DeepgramCaptionBuffer()
-        use_deepgram_captions = [stt_provider_name == "deepgram"]
-        # Legacy STT (xAI/OpenAI): list of chunk finals + stitch for interims.
-        turn_original_parts: List[str] = []
         seg_counter = [0]
         vad_speech_active = [False]
         stt_speech_active = [False]
@@ -853,11 +842,7 @@ class TranscriptionOnlyAgent:
                     while len(lane.turn_translated_parts) <= seg_idx:
                         lane.turn_translated_parts.append("")
                     lane.turn_translated_parts[seg_idx] = accumulated
-                    full_original = (
-                        dg_buffer.committed_text()
-                        if use_deepgram_captions[0]
-                        else " ".join(turn_original_parts).strip()
-                    )
+                    full_original = dg_buffer.committed_text()
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                     await publish_lane(
                         {
@@ -914,11 +899,8 @@ class TranscriptionOnlyAgent:
                 for lane in lanes.values():
                     lane.pending_translate_tasks.clear()
 
-            if use_deepgram_captions[0]:
-                dg_buffer.on_speech_final()
-                full_original = dg_buffer.committed_text()
-            else:
-                full_original = " ".join(turn_original_parts).strip()
+            dg_buffer.on_speech_final()
+            full_original = dg_buffer.committed_text()
             tid = turn_id[0]
             if not full_original:
                 turn_id[0] = None
@@ -954,7 +936,6 @@ class TranscriptionOnlyAgent:
                 )
 
             dg_buffer.clear()
-            turn_original_parts.clear()
             for lane in lanes.values():
                 lane.turn_translated_parts.clear()
             turn_id[0] = None
@@ -981,13 +962,11 @@ class TranscriptionOnlyAgent:
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
             dg_buffer.clear()
-            turn_original_parts.clear()
             turn_start_time[0] = asyncio.get_event_loop().time()
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
 
-        finalization_task: List[Optional[asyncio.Task]] = [None]
         stt_idle_task: List[Optional[asyncio.Task]] = [None]
         last_stt_text_at: List[float] = [0.0]
 
@@ -1002,8 +981,13 @@ class TranscriptionOnlyAgent:
             stt_idle_task[0] = None
 
         def arm_stt_idle_finalize() -> None:
-            """Deepgram: finalize when transcript stops changing (not when audio is silent)."""
-            if not use_deepgram_captions[0] or not turn_id[0]:
+            """Finalize when the transcript stops changing (not when audio is silent).
+
+            Works for every STT provider: Deepgram arms this on its END_OF_SPEECH,
+            providers without speech_final (e.g. OpenAI gpt-4o-transcribe) arm it on
+            VAD END_OF_SPEECH and on each new caption.
+            """
+            if not turn_id[0]:
                 return
             pending = stt_idle_task[0]
             if pending and not pending.done():
@@ -1039,31 +1023,6 @@ class TranscriptionOnlyAgent:
 
         async def cancel_finalization() -> None:
             await cancel_stt_idle_finalize()
-            pending = finalization_task[0]
-            if pending and not pending.done():
-                pending.cancel()
-                try:
-                    await pending
-                except (asyncio.CancelledError, Exception):
-                    pass
-            finalization_task[0] = None
-
-        def arm_finalization() -> None:
-            pending = finalization_task[0]
-            if pending and not pending.done():
-                pending.cancel()
-            finalization_task[0] = asyncio.create_task(schedule_finalization())
-
-        def maybe_arm_finalization() -> None:
-            """Non-Deepgram: post to history when VAD and STT agree speech stopped."""
-            if use_deepgram_captions[0]:
-                return
-            if vad_speech_active[0] or stt_speech_active[0]:
-                return
-            arm_finalization()
-
-        def speech_in_progress() -> bool:
-            return vad_speech_active[0] or stt_speech_active[0]
 
         def lane_live_text(lane: TargetLaneState, display_text: str) -> str:
             """Foreign-language lanes never echo English STT — wait for translation."""
@@ -1102,8 +1061,7 @@ class TranscriptionOnlyAgent:
             if not normalized or normalized == last_live_publish[0]:
                 return
             last_live_publish[0] = normalized
-            if use_deepgram_captions[0]:
-                touch_stt_activity()
+            touch_stt_activity()
 
             async def _run() -> None:
                 try:
@@ -1120,25 +1078,11 @@ class TranscriptionOnlyAgent:
                 await reconcile_lanes()
 
         async def feed_audio() -> None:
-            # Always stream audio to STT (including silence). Gating STT on VAD caused xAI to
-            # miss interim partials after brief pauses — only chunk/utterance finals arrived.
+            # Always stream audio to STT (including silence). Gating STT on VAD caused
+            # missed interim partials after brief pauses — only utterance finals arrived.
             async for ev in audio_stream:
                 vad_stream.push_frame(ev.frame)
                 stt_stream.push_frame(ev.frame)
-
-        async def schedule_finalization() -> None:
-            try:
-                await asyncio.sleep(_caption_finalize_delay_sec())
-                if speech_in_progress() or not turn_id[0]:
-                    return
-                stt_stream.flush()
-                await asyncio.sleep(0.45)
-                if speech_in_progress() or not turn_id[0]:
-                    return
-                await finalize_turn()
-            except asyncio.CancelledError:
-                logger.debug(f"{L} ↩️ Finalization cancelled (speech resumed)")
-                raise
 
         async def finalize_now() -> None:
             await cancel_finalization()
@@ -1156,9 +1100,7 @@ class TranscriptionOnlyAgent:
         def has_open_turn() -> bool:
             if turn_id[0] is None:
                 return False
-            if use_deepgram_captions[0]:
-                return dg_buffer.has_content()
-            return bool(" ".join(turn_original_parts).strip())
+            return dg_buffer.has_content()
 
         caption_session = SpeakerCaptionSession(
             speaker_id=speaker_id,
@@ -1190,7 +1132,9 @@ class TranscriptionOnlyAgent:
                     except Exception:
                         pass
                     stt_speech_active[0] = False
-                    maybe_arm_finalization()
+                    # Drives finalize for providers that never emit STT END_OF_SPEECH
+                    # (e.g. OpenAI gpt-4o-transcribe); harmless re-arm for Deepgram.
+                    arm_stt_idle_finalize()
 
         async def process_stt() -> None:
             async for stt_event in stt_stream:
@@ -1207,30 +1151,17 @@ class TranscriptionOnlyAgent:
                     continue
 
                 if ev_type == SpeechEventType.END_OF_SPEECH:
-                    if use_deepgram_captions[0]:
-                        stt_speech_active[0] = False
-                        logger.debug(
-                            f"{L} 🔇 Deepgram END_OF_SPEECH — waiting "
-                            f"{_deepgram_stt_idle_ms()}ms STT idle before finalize"
-                        )
-                        try:
-                            stt_stream.flush()
-                        except Exception:
-                            pass
-                        # Brief pauses should not split bubbles; only finalize after idle window.
-                        arm_stt_idle_finalize()
-                        continue
-                    # xAI: brief internal endpointing — ignore if VAD still hears speech.
-                    if vad_speech_active[0]:
-                        logger.debug(f"{L} 🔇 STT segment pause (VAD still active — same turn)")
-                        try:
-                            stt_stream.flush()
-                        except Exception:
-                            pass
-                        continue
                     stt_speech_active[0] = False
-                    logger.debug(f"{L} 🔇 Speech ended (STT speech_final)")
-                    maybe_arm_finalization()
+                    logger.debug(
+                        f"{L} 🔇 STT END_OF_SPEECH — waiting "
+                        f"{_deepgram_stt_idle_ms()}ms STT idle before finalize"
+                    )
+                    try:
+                        stt_stream.flush()
+                    except Exception:
+                        pass
+                    # Brief pauses should not split bubbles; only finalize after idle window.
+                    arm_stt_idle_finalize()
                     continue
 
                 if not alt:
@@ -1245,13 +1176,7 @@ class TranscriptionOnlyAgent:
                         logger.info(f"{L} 🛑 residual interim dropped: '{text[:40]}'")
                         continue
                     await ensure_lanes_for_caption()
-                    if use_deepgram_captions[0]:
-                        display_text = dg_buffer.on_interim(text)
-                    else:
-                        committed = " ".join(turn_original_parts).strip()
-                        display_text = (
-                            stitch_committed_and_open(committed, text) if committed else text
-                        )
+                    display_text = dg_buffer.on_interim(text)
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
@@ -1261,90 +1186,32 @@ class TranscriptionOnlyAgent:
                         )
                         continue
                     await ensure_lanes_for_caption()
-                    if use_deepgram_captions[0]:
-                        start_t, end_t = _speech_times(speech_data)
-                        display_text, seg_idx, segment = dg_buffer.on_final_segment(
-                            text, start_time=start_t, end_time=end_t
-                        )
-                        if seg_idx < 0:
-                            if display_text.strip():
-                                schedule_live_partial(display_text)
-                            continue
-                        logger.info(
-                            f"{L} 📝 Deepgram is_final seg {seg_idx}: '{segment[:60]}...'"
-                        )
-                        for tgt, lane in lanes.items():
-                            if lane.is_same_language:
-                                while len(lane.turn_translated_parts) <= seg_idx:
-                                    lane.turn_translated_parts.append("")
-                                lane.turn_translated_parts[seg_idx] = segment
-                            if (
-                                not lane.is_same_language
-                                and self.caption_mode != "transcription_only"
-                            ):
-                                task = asyncio.create_task(
-                                    translate_segment(lane, tgt, segment, seg_idx)
-                                )
-                                lane.pending_translate_tasks.append(task)
-                        schedule_live_partial(display_text)
+                    start_t, end_t = _speech_times(speech_data)
+                    display_text, seg_idx, segment = dg_buffer.on_final_segment(
+                        text, start_time=start_t, end_time=end_t
+                    )
+                    if seg_idx < 0:
+                        if display_text.strip():
+                            schedule_live_partial(display_text)
                         continue
-
-                    full_so_far = " ".join(turn_original_parts).strip()
-                    if full_so_far and text == full_so_far:
-                        logger.debug(f"{L} duplicate turn final ignored")
-                        continue
-                    if full_so_far and (
-                        text.startswith(full_so_far + " ")
-                        or (len(text) > len(full_so_far) and text.startswith(full_so_far))
-                    ):
-                        text = text[len(full_so_far) :].strip()
-                        if not text:
-                            logger.debug(f"{L} duplicate cumulative final ignored")
-                            continue
-                    if turn_original_parts:
-                        last = turn_original_parts[-1]
-                        if text == last:
-                            logger.debug(f"{L} duplicate chunk final ignored")
-                            continue
-                        if text.startswith(last + " ") or text.startswith(last):
-                            logger.info(
-                                f"{L} 📝 Chunk final supersedes prior (cumulative): '{text[:60]}...'"
-                            )
-                            seg_idx = len(turn_original_parts) - 1
-                            turn_original_parts[seg_idx] = text
-                            full_original = " ".join(turn_original_parts)
-                            for tgt, lane in lanes.items():
-                                if lane.is_same_language:
-                                    while len(lane.turn_translated_parts) <= seg_idx:
-                                        lane.turn_translated_parts.append("")
-                                    lane.turn_translated_parts[seg_idx] = text
-                            schedule_live_partial(full_original)
-                            continue
-                    seg_idx = len(turn_original_parts)
-                    turn_original_parts.append(text)
-                    logger.info(f"{L} 📝 Segment {seg_idx}: '{text[:60]}...'")
-                    full_original = " ".join(turn_original_parts).strip()
-                    if len(turn_original_parts) > 1:
-                        collapsed = stitch_committed_and_open(
-                            " ".join(turn_original_parts[:-1]).strip(),
-                            turn_original_parts[-1],
-                        )
-                        if collapsed and collapsed != full_original:
-                            turn_original_parts.clear()
-                            turn_original_parts.append(collapsed)
-                            full_original = collapsed
-
+                    logger.info(
+                        f"{L} 📝 is_final seg {seg_idx}: '{segment[:60]}...'"
+                    )
                     for tgt, lane in lanes.items():
                         if lane.is_same_language:
                             while len(lane.turn_translated_parts) <= seg_idx:
                                 lane.turn_translated_parts.append("")
-                            lane.turn_translated_parts[seg_idx] = text
-                        if not lane.is_same_language and self.caption_mode != "transcription_only":
+                            lane.turn_translated_parts[seg_idx] = segment
+                        if (
+                            not lane.is_same_language
+                            and self.caption_mode != "transcription_only"
+                        ):
                             task = asyncio.create_task(
-                                translate_segment(lane, tgt, text, seg_idx)
+                                translate_segment(lane, tgt, segment, seg_idx)
                             )
                             lane.pending_translate_tasks.append(task)
-                    schedule_live_partial(full_original)
+                    schedule_live_partial(display_text)
+                    continue
 
         try:
             await asyncio.gather(feed_audio(), process_vad(), process_stt())
