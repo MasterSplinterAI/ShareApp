@@ -41,11 +41,11 @@ except ImportError:
 
 def _deepgram_endpointing_ms() -> int:
     """Silence (ms) before Deepgram emits END_OF_SPEECH."""
-    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "400").strip()
+    raw = os.getenv("DEEPGRAM_ENDPOINTING_MS", "800").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 400
+        ms = 800
     return max(25, min(ms, 5000))
 
 
@@ -54,11 +54,11 @@ def _deepgram_stt_idle_ms() -> int:
     Finalize the live bubble after this long with no *changed* transcript from Deepgram.
     Does not depend on room silence — background noise won't block finalize.
     """
-    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "1200").strip()
+    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "1500").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 1200
+        ms = 1500
     return max(400, min(ms, 5000))
 
 
