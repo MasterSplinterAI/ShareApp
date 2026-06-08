@@ -230,10 +230,12 @@ function TranscriptionPanel() {
     isHost,
   } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
-  const [mobileExpanded, setMobileExpanded] = useState(false);
+  // Default to expanded on mobile: when captions open (incl. on join) show the
+  // full bottom sheet, not just the compact bar. Minimizing collapses to the bar.
+  const [mobileExpanded, setMobileExpanded] = useState(true);
 
   useEffect(() => {
-    if (!isPanelOpen) setMobileExpanded(false);
+    setMobileExpanded(isPanelOpen);
   }, [isPanelOpen]);
 
   // Unified flow: one bubble per speaker turn. Partials update in place;
@@ -582,11 +584,15 @@ function TranscriptionPanel() {
         />
       ) : (
         <div
-          className="sm:hidden fixed bottom-12 left-0 right-0 meeting-panel-surface border-t border rounded-t-xl z-40 flex flex-col"
-          style={{ maxHeight: '45vh' }}
+          className="sm:hidden fixed bottom-12 left-0 right-0 z-40 flex max-h-[45vh] w-full min-h-0 flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface"
           data-no-translate="true"
         >
-          <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
+          <PanelTabs
+            onDownload={handleDownload}
+            canDownload={finalMessages.length > 0}
+            compact
+            onMinimize={() => setMobileExpanded(false)}
+          />
           <PanelContent
             messages={visibleMessages}
             scrollRef={scrollRef}

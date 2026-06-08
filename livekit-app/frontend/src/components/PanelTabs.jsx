@@ -1,11 +1,13 @@
-import { MessageSquare, MessageCircle, Users, X, Download } from 'lucide-react';
+import { MessageSquare, MessageCircle, Users, X, Download, ChevronDown } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 
 /**
  * Shared tab header used by TranscriptionPanel and ChatPanel so both tabs are
- * reachable from either panel. Renders: [Captions] [Chat (unread)] [Participants?] ... [Download?] [X]
+ * reachable from either panel. Renders: [Captions] [Chat (unread)] [Participants?] ... [Download?] [Minimize?] [X]
+ * When `onMinimize` is provided (mobile bottom sheet), a chevron-down collapses
+ * the sheet back to its compact bar instead of closing the panel entirely.
  */
-export default function PanelTabs({ onDownload, canDownload = false, compact = false }) {
+export default function PanelTabs({ onDownload, canDownload = false, compact = false, onMinimize }) {
   const { sidePanelTab, setSidePanelTab, closeSidePanel, unreadCount, isHost } = useMeeting();
 
   const padding = compact ? 'px-3 py-2' : 'px-3 py-2 sm:px-4 sm:py-3';
@@ -75,6 +77,17 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             title="Download transcript"
           >
             <Download className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+          </button>
+        )}
+        {onMinimize && (
+          <button
+            type="button"
+            onClick={onMinimize}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1"
+            aria-label="Minimize panel"
+            title="Minimize"
+          >
+            <ChevronDown className="w-4 h-4" />
           </button>
         )}
         <button

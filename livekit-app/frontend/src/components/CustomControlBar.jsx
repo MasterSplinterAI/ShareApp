@@ -278,7 +278,7 @@ export default function CustomControlBar({
   const t = (key) => controlLabel(selectedLanguage, key);
 
   return (
-    <div className={`w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`} data-no-translate>
+    <div className={`relative z-50 w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`} data-no-translate>
       <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
         {/* Left side - Standard controls */}
         <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>

@@ -365,7 +365,7 @@ function ChatPanel() {
 
   return (
     <div
-      className="z-40 flex h-full w-80 max-h-[45vh] flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-[350px] lg:w-[400px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
+      className="z-40 flex max-h-[45vh] w-full min-h-0 flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-[350px] lg:w-[400px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
       data-no-translate="true"
     >
       <PanelTabs />
