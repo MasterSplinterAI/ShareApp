@@ -124,6 +124,56 @@ async function flushOpenParticipants(roomName, endTs, orgId, meetingUuid) {
   }
 }
 
+function computeRoomDurationSeconds(startRows, finishRows) {
+  if (!startRows.length || !finishRows.length) return null;
+  let total = 0;
+  const pairs = Math.min(startRows.length, finishRows.length);
+  for (let i = 0; i < pairs; i += 1) {
+    total += Math.max(0, Math.round((finishRows[i].ts - startRows[i].ts) / 1000));
+  }
+  return total;
+}
+
+/** Pair each join with the next leave for the same identity (matches billing usage logic). */
+function computeParticipantMinutes(joinRows, leaveRows, fallbackEndTs, skipIdentity) {
+  const leavesByIdentity = {};
+  for (const row of leaveRows) {
+    const id = row.participant_identity;
+    if (!id) continue;
+    if (!leavesByIdentity[id]) leavesByIdentity[id] = [];
+    leavesByIdentity[id].push(row.ts);
+  }
+  for (const id of Object.keys(leavesByIdentity)) {
+    leavesByIdentity[id].sort((a, b) => a - b);
+  }
+
+  const leaveCursor = {};
+  let participantMinutes = 0;
+  const byParticipant = {};
+
+  for (const join of joinRows.sort((a, b) => a.ts - b.ts)) {
+    const pid = join.participant_identity;
+    if (!pid || skipIdentity(pid)) continue;
+
+    const leaves = leavesByIdentity[pid] || [];
+    let idx = leaveCursor[pid] || 0;
+    while (idx < leaves.length && leaves[idx] < join.ts) idx += 1;
+
+    const leftTs = idx < leaves.length ? leaves[idx] : fallbackEndTs;
+    if (idx < leaves.length) leaveCursor[pid] = idx + 1;
+
+    const mins = Math.max(0, (leftTs - join.ts) / 1000 / 60);
+    participantMinutes += mins;
+    if (!byParticipant[pid]) {
+      byParticipant[pid] = { minutes: 0, cost: 0 };
+    }
+    byParticipant[pid].minutes += mins;
+    byParticipant[pid].cost += mins * 0.004;
+  }
+
+  return { participantMinutes, byParticipant };
+}
+
 async function aggregateRollup(meetingId) {
   const ctx = await resolveMeetingContext(meetingId);
   const orgId = ctx.orgId;
@@ -180,46 +230,40 @@ async function aggregateRollup(meetingId) {
     }
   }
 
-  const startEv = await get(
-    `SELECT ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'room_started' ORDER BY ts ASC LIMIT 1`,
+  const startRows = await all(
+    `SELECT ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'room_started' ORDER BY ts ASC`,
     [meetingId]
   );
-  const endEv = await get(
-    `SELECT ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'room_finished' ORDER BY ts DESC LIMIT 1`,
+  const finishRows = await all(
+    `SELECT ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'room_finished' ORDER BY ts ASC`,
     [meetingId]
   );
+  const endEv = finishRows.length ? finishRows[finishRows.length - 1] : null;
 
-  let durationSeconds = null;
-  if (startEv && endEv) {
-    durationSeconds = Math.round((endEv.ts - startEv.ts) / 1000);
+  let durationSeconds = computeRoomDurationSeconds(startRows, finishRows);
 
+  if (endEv) {
     const joinRows = await all(
-      `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_joined'`,
+      `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_joined' ORDER BY ts ASC`,
       [meetingId]
     );
     const leaveRows = await all(
-      `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_left'`,
+      `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_left' ORDER BY ts ASC`,
       [meetingId]
     );
 
-    const leaveMap = {};
-    for (const r of leaveRows) {
-      leaveMap[r.participant_identity] = r.ts;
-    }
-
     const PARTICIPANT_RATE = 0.004;
-    let participantMinutes = 0;
-    for (const r of joinRows) {
-      if (isAgentIdentity(r.participant_identity)) continue;
-      const leftTs = leaveMap[r.participant_identity] || endEv.ts;
-      const mins = (leftTs - r.ts) / 1000 / 60;
-      participantMinutes += mins;
-      const pid = r.participant_identity;
-      if (pid) {
-        ensureParticipant(pid);
-        participantStats[pid].livekit_minutes += mins;
-        participantStats[pid].total_cost_usd += mins * PARTICIPANT_RATE;
-      }
+    const { participantMinutes, byParticipant } = computeParticipantMinutes(
+      joinRows,
+      leaveRows,
+      endEv.ts,
+      isAgentIdentity
+    );
+
+    for (const [pid, stats] of Object.entries(byParticipant)) {
+      ensureParticipant(pid);
+      participantStats[pid].livekit_minutes += stats.minutes;
+      participantStats[pid].total_cost_usd += stats.cost;
     }
 
     const participantCost = participantMinutes * PARTICIPANT_RATE;
@@ -312,4 +356,4 @@ async function handleLiveKitWebhook(req, res) {
   }
 }
 
-module.exports = { handleLiveKitWebhook };
+module.exports = { handleLiveKitWebhook, aggregateRollup, computeParticipantMinutes };

@@ -39,8 +39,9 @@ router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
          FROM v2_usage_events WHERE org_id = o.id AND created_at >= datetime('now', 'start of month')) AS mtd_meeting_minutes,
         (SELECT COALESCE(SUM(r.total_cost_usd), 0)
          FROM meeting_cost_rollups r
-         JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
-         WHERE mt.org_id = o.id AND r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000) AS mtd_cost_usd
+         LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
+         WHERE COALESCE(r.org_id, mt.org_id) = o.id
+           AND r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000) AS mtd_cost_usd
        FROM v2_organizations o
        LEFT JOIN v2_org_subscriptions s ON s.org_id = o.id
        LEFT JOIN v2_plans p ON p.id = s.plan_id
@@ -74,8 +75,8 @@ router.get('/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) =>
     const costRow = await db.get(
       `SELECT COALESCE(SUM(r.total_cost_usd), 0) AS total_usd
        FROM meeting_cost_rollups r
-       JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
-       WHERE mt.org_id = ? AND r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000`,
+       LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
+       WHERE COALESCE(r.org_id, mt.org_id) = ? AND r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000`,
       [req.params.orgId]
     );
     res.json({
@@ -165,19 +166,20 @@ router.get('/costs/summary', requireV2Auth, requireSuperadmin, async (req, res) 
        WHERE r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000`
     );
     const byOrg = await db.all(
-      `SELECT mt.org_id, o.name AS org_name,
+      `SELECT COALESCE(r.org_id, mt.org_id) AS org_id, o.name AS org_name,
               COALESCE(SUM(r.total_cost_usd), 0) AS cost_usd,
               COUNT(*) AS meetings,
               s.plan_id, s.is_comp, p.monthly_price_cents,
               (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
-               FROM v2_usage_events u WHERE u.org_id = mt.org_id AND u.created_at >= datetime('now', 'start of month')) AS mtd_minutes
+               FROM v2_usage_events u WHERE u.org_id = COALESCE(r.org_id, mt.org_id) AND u.created_at >= datetime('now', 'start of month')) AS mtd_minutes
        FROM meeting_cost_rollups r
-       JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
-       JOIN v2_organizations o ON o.id = mt.org_id
-       LEFT JOIN v2_org_subscriptions s ON s.org_id = mt.org_id
+       LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
+       LEFT JOIN v2_organizations o ON o.id = COALESCE(r.org_id, mt.org_id)
+       LEFT JOIN v2_org_subscriptions s ON s.org_id = COALESCE(r.org_id, mt.org_id)
        LEFT JOIN v2_plans p ON p.id = s.plan_id
        WHERE r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000
-       GROUP BY mt.org_id
+         AND COALESCE(r.org_id, mt.org_id) IS NOT NULL
+       GROUP BY COALESCE(r.org_id, mt.org_id)
        ORDER BY cost_usd DESC
        LIMIT 100`
     );
