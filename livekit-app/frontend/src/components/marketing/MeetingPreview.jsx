@@ -56,13 +56,13 @@ export function MeetingPreview() {
               <VideoTile
                 label="Kenny (Host)"
                 sub="Camera · EN"
-                image="/marketing/hero-host.jpg"
+                image="/marketing/hero-kenny.jpg"
                 fallback="from-sky-700 to-slate-900"
               />
               <VideoTile
                 label="María"
                 sub="Translated · ES"
-                image="/marketing/hero-guest.jpg"
+                image="/marketing/hero-maria.jpg"
                 fallback="from-violet-700 to-slate-900"
                 badge="ES"
               />
