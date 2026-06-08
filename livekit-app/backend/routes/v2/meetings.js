@@ -156,6 +156,26 @@ router.get('/', requireV2Auth, async (req, res) => {
        WHERE m.org_id = ? AND ${statusClause} ORDER BY datetime(m.created_at) DESC LIMIT 100`,
       [req.v2Auth.orgId]
     );
+
+    // Enrich live/scheduled meetings with room presence (best-effort)
+    const liveMeetings = rows.filter((m) => m.status === 'live' || m.status === 'scheduled');
+    if (liveMeetings.length > 0) {
+      try {
+        const roomService = getRoomService();
+        await Promise.all(liveMeetings.map(async (m) => {
+          try {
+            const lp = await roomService.listParticipants(m.livekit_room_name);
+            const humans = (lp || []).filter((p) => !looksLikeAgentParticipant(p));
+            m.room_human_count = humans.length;
+          } catch {
+            m.room_human_count = 0;
+          }
+        }));
+      } catch {
+        // LiveKit unreachable — leave room_human_count unset
+      }
+    }
+
     res.json({ meetings: rows, archivedOnly });
   } catch (e) {
     res.status(500).json({ error: 'Failed to list meetings' });

@@ -29,7 +29,13 @@ export default function V2AppHome() {
   }, []);
 
   const recentMeetings = useMemo(() => meetings.slice(0, 5), [meetings]);
-  const activeLive = useMemo(() => meetings.filter((m) => m.status === 'live').length, [meetings]);
+  const activeLive = useMemo(
+    () => meetings.filter((m) => {
+      const ui = getMeetingUiState(m);
+      return ui.key === 'live_active' || ui.key === 'scheduled_active';
+    }).length,
+    [meetings],
+  );
   const teamWorkspace = hasTeamWorkspace(orgData?.entitlements, sub?.plan);
   const hasGuestLink = useMemo(() => meetings.some((m) => Boolean(m.joinUrl)), [meetings]);
 
@@ -114,7 +120,7 @@ export default function V2AppHome() {
               <CardDescription>Live now</CardDescription>
               <CardTitle className="text-3xl font-semibold tabular-nums text-emerald-600">{activeLive}</CardTitle>
             </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">Status &quot;live&quot;</CardContent>
+            <CardContent className="text-xs text-muted-foreground">Active with participants</CardContent>
           </Card>
           <Card className="app-card app-card-hover border-border/70">
             <CardHeader className="pb-2">
