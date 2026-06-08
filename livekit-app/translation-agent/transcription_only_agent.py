@@ -20,6 +20,7 @@ import aiohttp
 
 from cost_reporter import CostReporter
 from deepgram_caption_buffer import DeepgramCaptionBuffer
+from residual_guard import is_residual_repeat
 # Legacy non-Deepgram STT (xAI/OpenAI) still uses stitch + part list.
 from transcript_assembler import stitch_committed_and_open
 
@@ -1018,11 +1019,7 @@ class TranscriptionOnlyAgent:
                 return False
             if time.time() - last_finalized_at[0] > _residual_guard_sec():
                 return False
-            norm = " ".join(candidate.strip().lower().split())
-            if not norm:
-                return True
-            prev_n = " ".join(prev.split())
-            return norm == prev_n or prev_n.startswith(norm) or prev_n.endswith(norm)
+            return is_residual_repeat(candidate, prev)
 
         async def translate_segment(
             lane: TargetLaneState, tgt_lang: str, original: str, seg_idx: int
@@ -1445,6 +1442,7 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     if turn_id[0] is None and is_residual_after_finalize(text):
+                        logger.info(f"{L} 🛑 residual interim dropped: '{text[:40]}'")
                         continue
                     await ensure_lanes_for_caption()
                     if use_deepgram_captions[0]:
