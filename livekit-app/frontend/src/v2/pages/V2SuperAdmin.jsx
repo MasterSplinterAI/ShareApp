@@ -28,12 +28,10 @@ export default function V2SuperAdmin() {
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgDetail, setOrgDetail] = useState(null);
   const [billingEdit, setBillingEdit] = useState({});
-  const [reasonByOrg, setReasonByOrg] = useState({});
+  const [auditReason, setAuditReason] = useState({});
   const [planEdit, setPlanEdit] = useState({});
-  const [planReason, setPlanReason] = useState({});
   const [compEdit, setCompEdit] = useState({});
   const [compLabel, setCompLabel] = useState({});
-  const [compReason, setCompReason] = useState({});
 
   const reloadOrgs = () =>
     v2Admin.orgs().then((r) => setOrgs(r.orgs || [])).catch(() => toast.error('Failed to load orgs'));
@@ -61,12 +59,14 @@ export default function V2SuperAdmin() {
       .catch(() => toast.error('Failed to load org detail'));
   }, [selectedOrg]);
 
+  const getAuditReason = (orgId) => (auditReason[orgId] || '').trim();
+
   const saveBilling = async (orgId) => {
     const status = billingEdit[orgId];
     if (!status) return;
-    const reason = (reasonByOrg[orgId] || '').trim();
+    const reason = getAuditReason(orgId);
     if (reason.length < 4) {
-      toast.error('Enter an audit reason (at least 4 characters).');
+      toast.error('Enter an audit reason below (at least 4 characters).');
       return;
     }
     try {
@@ -79,10 +79,10 @@ export default function V2SuperAdmin() {
   };
 
   const savePlan = async (orgId) => {
-    const plan_id = planEdit[orgId];
-    const reason = (planReason[orgId] || '').trim();
+    const plan_id = planEdit[orgId] ?? orgDetail?.subscription?.plan_id;
+    const reason = getAuditReason(orgId);
     if (!plan_id || reason.length < 4) {
-      toast.error('Plan and reason required');
+      toast.error('Pick a plan and enter an audit reason below (at least 4 characters).');
       return;
     }
     try {
@@ -96,15 +96,16 @@ export default function V2SuperAdmin() {
   };
 
   const saveComp = async (orgId) => {
-    const reason = (compReason[orgId] || '').trim();
+    const reason = getAuditReason(orgId);
     if (reason.length < 4) {
-      toast.error('Reason required');
+      toast.error('Enter an audit reason below (at least 4 characters).');
       return;
     }
+    const isComp = compEdit[orgId] ?? orgDetail?.subscription?.is_comp === 1;
     try {
       await v2Admin.setComp(orgId, {
-        is_comp: Boolean(compEdit[orgId]),
-        comp_label: compLabel[orgId] || null,
+        is_comp: Boolean(isComp),
+        comp_label: compLabel[orgId] ?? orgDetail?.subscription?.comp_label ?? 'personal',
         reason,
       });
       toast.success('Comp override saved');
@@ -230,6 +231,20 @@ export default function V2SuperAdmin() {
                 <CardDescription>Org ID: {selectedOrg}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 lg:grid-cols-2">
+                <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4 lg:col-span-2">
+                  <label htmlFor={`audit-reason-${selectedOrg}`} className="text-sm font-medium">
+                    Audit reason
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Required for comp, plan, and billing changes. Use at least 4 characters.
+                  </p>
+                  <Input
+                    id={`audit-reason-${selectedOrg}`}
+                    placeholder="e.g. Founder account — unlimited access"
+                    value={auditReason[selectedOrg] ?? ''}
+                    onChange={(e) => setAuditReason((p) => ({ ...p, [selectedOrg]: e.target.value }))}
+                  />
+                </div>
                 <div className="space-y-3 rounded-lg border border-border/60 p-4">
                   <h3 className="font-medium">Comp / unlimited access</h3>
                   <p className="text-xs text-muted-foreground">
@@ -254,11 +269,6 @@ export default function V2SuperAdmin() {
                       </option>
                     ))}
                   </select>
-                  <Input
-                    placeholder="Audit reason"
-                    value={compReason[selectedOrg] ?? ''}
-                    onChange={(e) => setCompReason((p) => ({ ...p, [selectedOrg]: e.target.value }))}
-                  />
                   <Button type="button" size="sm" onClick={() => saveComp(selectedOrg)}>
                     Save comp override
                   </Button>
@@ -274,11 +284,6 @@ export default function V2SuperAdmin() {
                     <option value="starter">starter</option>
                     <option value="pro">pro</option>
                   </select>
-                  <Input
-                    placeholder="Audit reason"
-                    value={planReason[selectedOrg] ?? ''}
-                    onChange={(e) => setPlanReason((p) => ({ ...p, [selectedOrg]: e.target.value }))}
-                  />
                   <Button type="button" size="sm" onClick={() => savePlan(selectedOrg)}>
                     Set plan
                   </Button>
@@ -294,12 +299,6 @@ export default function V2SuperAdmin() {
                       className="max-w-[160px]"
                       defaultValue={orgDetail.org?.billing_status}
                       onChange={(e) => setBillingEdit((p) => ({ ...p, [selectedOrg]: e.target.value }))}
-                    />
-                    <Input
-                      placeholder="Audit reason"
-                      className="max-w-xs"
-                      value={reasonByOrg[selectedOrg] ?? ''}
-                      onChange={(e) => setReasonByOrg((p) => ({ ...p, [selectedOrg]: e.target.value }))}
                     />
                     <Button type="button" size="sm" variant="outline" onClick={() => saveBilling(selectedOrg)}>
                       Save billing status
