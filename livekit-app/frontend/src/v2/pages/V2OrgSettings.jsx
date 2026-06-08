@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
@@ -29,7 +29,8 @@ const SECTIONS = [
 ];
 
 export default function V2OrgSettings() {
-  const [section, setSection] = useState('organization');
+  const [searchParams] = useSearchParams();
+  const [section, setSection] = useState(searchParams.get('section') || 'organization');
   const [role, setRole] = useState('');
   const [members, setMembers] = useState([]);
   const [org, setOrg] = useState(null);
@@ -40,6 +41,29 @@ export default function V2OrgSettings() {
   const [orgNameDraft, setOrgNameDraft] = useState('');
   const [savingOrgName, setSavingOrgName] = useState(false);
   const [billingSnap, setBillingSnap] = useState(null);
+  const [plans, setPlans] = useState([]);
+  const [checkoutLoading, setCheckoutLoading] = useState(null);
+
+  const startCheckout = async (planId) => {
+    setCheckoutLoading(planId);
+    try {
+      const { url } = await v2Billing.checkout(planId);
+      if (url) window.location.href = url;
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Checkout unavailable');
+    } finally {
+      setCheckoutLoading(null);
+    }
+  };
+
+  const openPortal = async () => {
+    try {
+      const { url } = await v2Billing.portal();
+      if (url) window.location.href = url;
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Billing portal unavailable');
+    }
+  };
 
   const load = () => {
     Promise.all([
@@ -47,15 +71,22 @@ export default function V2OrgSettings() {
       v2Orgs.listMembers(),
       v2Orgs.me().catch(() => null),
       v2Billing.subscription().catch(() => null),
+      v2Billing.plans().catch(() => null),
       v2Usage.summary().catch(() => null),
     ])
-      .then(([me, m, o, sub, usage]) => {
+      .then(([me, m, o, sub, plansRes, usage]) => {
         setRole(me.role || '');
         setMembers(m.members || []);
         setOrg(o);
         const n = o?.org?.name || '';
         setOrgNameDraft(n);
-        setBillingSnap({ subscription: sub?.subscription, plan: sub?.plan, usageSummary: usage?.byType || [] });
+        setPlans(plansRes?.plans || []);
+        setBillingSnap({
+          subscription: sub?.subscription,
+          plan: sub?.plan,
+          stripeEnabled: sub?.stripeEnabled,
+          usageSummary: usage?.byType || [],
+        });
       })
       .catch((e) => toast.error(e.response?.data?.error || 'Failed to load'))
       .finally(() => setLoading(false));
@@ -262,9 +293,14 @@ export default function V2OrgSettings() {
             <Card className="app-card border-border/60">
               <CardHeader>
                 <CardTitle>Billing</CardTitle>
-                <CardDescription>Current plan and usage (read-only). Payment method and invoices are not wired in this build.</CardDescription>
+                <CardDescription>Plan, usage, and self-serve upgrade (Stripe test mode when enabled).</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
+                {billingSnap?.subscription?.is_comp === 1 && (
+                  <div className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-3 text-foreground">
+                    Unlimited access ({billingSnap.subscription.comp_label || 'comp'}) — usage caps waived.
+                  </div>
+                )}
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
                     <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Account status</div>
@@ -280,14 +316,14 @@ export default function V2OrgSettings() {
                 </div>
                 {billingSnap?.plan && (
                   <div className="rounded-lg border border-border/60 px-3 py-3 text-muted-foreground">
-                    <div>Included meeting minutes (plan): {billingSnap.plan.included_meeting_minutes ?? '—'}</div>
-                    <div>Included translation minutes (plan): {billingSnap.plan.included_translation_minutes ?? '—'}</div>
+                    <div>Included participant-minutes: {billingSnap.plan.included_meeting_minutes ?? '—'}/mo</div>
+                    <div>Included translation minutes: {billingSnap.plan.included_translation_minutes ?? '—'}/mo</div>
                   </div>
                 )}
                 <div>
-                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Usage this month (by type)</div>
+                  <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground mb-2">Usage this month</div>
                   {!billingSnap?.usageSummary?.length ? (
-                    <p className="text-muted-foreground">No usage events recorded yet this month.</p>
+                    <p className="text-muted-foreground">No usage recorded yet this month.</p>
                   ) : (
                     <ul className="space-y-1">
                       {billingSnap.usageSummary.map((row) => (
@@ -299,6 +335,37 @@ export default function V2OrgSettings() {
                     </ul>
                   )}
                 </div>
+                {canManage && billingSnap?.subscription?.is_comp !== 1 && (
+                  <div className="space-y-3 border-t border-border/60 pt-4">
+                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</div>
+                    <div className="flex flex-wrap gap-2">
+                      {plans
+                        .filter((p) => p.id !== 'free' && p.id !== billingSnap?.plan?.id)
+                        .map((p) => (
+                          <Button
+                            key={p.id}
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={!billingSnap?.stripeEnabled || checkoutLoading === p.id}
+                            onClick={() => startCheckout(p.id)}
+                          >
+                            {checkoutLoading === p.id ? 'Loading…' : `Upgrade to ${p.name}`}
+                          </Button>
+                        ))}
+                      {billingSnap?.subscription?.stripe_customer_id && billingSnap?.stripeEnabled && (
+                        <Button type="button" variant="ghost" size="sm" onClick={openPortal}>
+                          Manage billing
+                        </Button>
+                      )}
+                    </div>
+                    {!billingSnap?.stripeEnabled && (
+                      <p className="text-xs text-muted-foreground">
+                        Stripe checkout is disabled on this server. Set STRIPE_ENABLED=true with test API keys to enable.
+                      </p>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

@@ -73,7 +73,7 @@ router.post('/', requireV2Auth, async (req, res) => {
     const requireInvite = defaultRequireInvite();
     const storeTr = Boolean(store_transcripts) ? 1 : 0;
     const roomName = `v2-${db.uuid().replace(/-/g, '').slice(0, 12)}-${Date.now().toString(36)}`;
-    await createLiveKitConferenceRoom(roomName, 'multi-language');
+    await createLiveKitConferenceRoom(roomName, 'multi-language', req.v2Auth.orgId);
     const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const now = new Date().toISOString();
     let status = 'live';
@@ -415,10 +415,16 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
     if (host && row.host_user_id !== req.v2Auth.userId) {
       return res.status(403).json({ error: 'Only meeting host can request host token' });
     }
+    if (host) {
+      const gate = await assertCanCreateMeeting(req.v2Auth.orgId);
+      if (!gate.ok) {
+        return res.status(402).json({ error: gate.message, code: gate.code });
+      }
+    }
     if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET) {
       return res.status(500).json({ error: 'LiveKit not configured' });
     }
-    await ensureRoomAndAgent(row.livekit_room_name, 'multi-language');
+    await ensureRoomAndAgent(row.livekit_room_name, 'multi-language', row.org_id);
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: String(participantName).slice(0, 128),
       ttl: '24h',

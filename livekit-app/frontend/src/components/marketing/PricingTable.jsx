@@ -9,28 +9,31 @@ const tiers = [
     name: 'Free',
     price: '$0',
     period: '/ org / month',
-    blurb: 'Try the workspace with core meetings.',
-    features: ['Up to 3 members', 'Instant & scheduled meetings', 'Live captions', 'Community support'],
+    blurb: '60 participant-minutes per month — perfect to try Parley.',
+    features: ['Live captions & translation', 'Instant & scheduled meetings', 'Guest links', 'Hard stop at 60 min/mo'],
     cta: 'Start free',
     highlight: false,
+    planId: 'free',
+  },
+  {
+    name: 'Starter',
+    price: '$49',
+    period: '/ org / month',
+    blurb: 'For small teams meeting across languages weekly.',
+    features: ['2,000 participant-minutes', 'Transcript storage', 'Usage dashboard', 'Email support'],
+    cta: 'Start free',
+    highlight: false,
+    planId: 'starter',
   },
   {
     name: 'Pro',
-    price: '$29',
+    price: '$199',
     period: '/ org / month',
-    blurb: 'For teams that meet weekly across regions.',
-    features: ['Up to 25 members', 'Transcript storage & download', 'Usage visibility', 'Email support'],
+    blurb: 'For teams that need workspace seats and higher volume.',
+    features: ['10,000 participant-minutes', 'Team workspace & invites', 'AI transcript insights', 'Priority support'],
     cta: 'Start free',
     highlight: true,
-  },
-  {
-    name: 'Business',
-    price: '$99',
-    period: '/ org / month',
-    blurb: 'Placeholder tier for larger rollouts.',
-    features: ['Up to 100 members', 'Admin & audit roadmap', 'SSO (planned)', 'Dedicated success'],
-    cta: 'Start free',
-    highlight: false,
+    planId: 'pro',
   },
 ];
 
@@ -40,13 +43,8 @@ export function PricingTable() {
       <div className="mx-auto max-w-2xl text-center">
         <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Pricing</h2>
         <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-          Placeholder numbers for positioning and UX—billing is wired separately when you are ready to charge.
+          Start free with 60 participant-minutes per month. Upgrade when you are ready — billed per organization.
         </p>
-      </div>
-      <div className="mt-4 flex justify-center">
-        <Badge variant="secondary" className="text-xs font-normal">
-          Placeholder pricing
-        </Badge>
       </div>
       <div className="mt-12 grid gap-6 lg:grid-cols-3">
         {tiers.map((t) => (

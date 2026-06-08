@@ -289,8 +289,36 @@ async function migrate() {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_usage_org_idempotency ON v2_usage_events(org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`
   );
 
+  const planCols = await all(`PRAGMA table_info(v2_plans)`);
+  const planColNames = new Set((planCols || []).map((c) => c.name));
+  if (!planColNames.has('stripe_price_id')) {
+    await run(`ALTER TABLE v2_plans ADD COLUMN stripe_price_id TEXT`);
+  }
+
+  const subCols = await all(`PRAGMA table_info(v2_org_subscriptions)`);
+  const subColNames = new Set((subCols || []).map((c) => c.name));
+  if (!subColNames.has('is_comp')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN is_comp INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!subColNames.has('comp_label')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_label TEXT`);
+  }
+  if (!subColNames.has('comp_reason')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_reason TEXT`);
+  }
+  if (!subColNames.has('comp_set_by')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_set_by TEXT`);
+  }
+  if (!subColNames.has('comp_set_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_set_at TEXT`);
+  }
+
   const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);
   if (!planCount || planCount.c === 0) {
+    await run(
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
+      ['free', 'Free', 0, 60, 60, 0, 0]
+    );
     await run(
       `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
       ['starter', 'Starter', 4900, 2000, 500, 3, 5]
@@ -299,6 +327,14 @@ async function migrate() {
       `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
       ['pro', 'Pro', 19900, 10000, 3000, 2, 4]
     );
+  } else {
+    const freePlan = await get(`SELECT id FROM v2_plans WHERE id = 'free'`);
+    if (!freePlan) {
+      await run(
+        `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
+        ['free', 'Free', 0, 60, 60, 0, 0]
+      );
+    }
   }
 
   // Phase 1 cost-tracking tables

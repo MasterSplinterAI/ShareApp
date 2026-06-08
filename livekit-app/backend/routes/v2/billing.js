@@ -5,10 +5,25 @@ const { requireV2Auth } = require('../../middleware/v2Auth');
 const { planAllowsTeamWorkspace } = require('../../lib/v2PlanFeatures');
 const { writeOverageLedgerForCycle } = require('../../lib/v2OverageLedger');
 
+function stripeEnabled() {
+  return process.env.STRIPE_ENABLED === 'true' && Boolean(process.env.STRIPE_SECRET_KEY);
+}
+
+function getStripe() {
+  if (!stripeEnabled()) return null;
+  // eslint-disable-next-line global-require
+  const Stripe = require('stripe');
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
+}
+
+function frontendBaseUrl() {
+  return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+}
+
 router.get('/plans', async (req, res) => {
   try {
     const plans = await db.all(`SELECT * FROM v2_plans ORDER BY monthly_price_cents ASC`);
-    res.json({ plans });
+    res.json({ plans, stripeEnabled: stripeEnabled() });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -24,19 +39,97 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
           teamWorkspace: planAllowsTeamWorkspace(planRow.id),
         }
       : null;
-    res.json({ subscription: sub, plan });
+    res.json({ subscription: sub, plan, stripeEnabled: stripeEnabled() });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
 });
 
-/**
- * Stripe webhooks are registered in server.js with express.raw for signature verification.
- */
+router.post('/checkout', requireV2Auth, async (req, res) => {
+  try {
+    if (!stripeEnabled()) {
+      return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
+    }
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { planId } = req.body || {};
+    if (!planId || typeof planId !== 'string') {
+      return res.status(400).json({ error: 'planId required' });
+    }
+    const plan = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [planId]);
+    if (!plan || !plan.stripe_price_id) {
+      return res.status(400).json({ error: 'Plan not available for self-serve checkout' });
+    }
+    if (planId === 'free') {
+      return res.status(400).json({ error: 'Free plan does not require checkout' });
+    }
 
-/**
- * Dry-run overage settlement (auto-charge-ready stub).
- */
+    const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
+    if (!sub) return res.status(404).json({ error: 'No subscription' });
+    if (sub.is_comp === 1) {
+      return res.status(400).json({ error: 'Comp accounts cannot change plan via checkout' });
+    }
+
+    const stripe = getStripe();
+    let customerId = sub.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: req.v2Auth.email,
+        metadata: { org_id: req.v2Auth.orgId },
+      });
+      customerId = customer.id;
+      await db.run(`UPDATE v2_org_subscriptions SET stripe_customer_id = ? WHERE org_id = ?`, [
+        customerId,
+        req.v2Auth.orgId,
+      ]);
+    }
+
+    const base = frontendBaseUrl();
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId,
+      line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
+      success_url: `${base}/v2/app/settings?billing=success`,
+      cancel_url: `${base}/v2/app/settings?billing=cancel`,
+      metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
+      subscription_data: {
+        metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
+      },
+    });
+
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (e) {
+    console.error('[v2/billing/checkout]', e);
+    res.status(500).json({ error: 'Checkout failed' });
+  }
+});
+
+router.post('/portal', requireV2Auth, async (req, res) => {
+  try {
+    if (!stripeEnabled()) {
+      return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
+    }
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
+    if (!sub?.stripe_customer_id) {
+      return res.status(400).json({ error: 'No Stripe customer on file' });
+    }
+    const stripe = getStripe();
+    const base = frontendBaseUrl();
+    const session = await stripe.billingPortal.sessions.create({
+      customer: sub.stripe_customer_id,
+      return_url: `${base}/v2/app/settings`,
+    });
+    res.json({ url: session.url });
+  } catch (e) {
+    console.error('[v2/billing/portal]', e);
+    res.status(500).json({ error: 'Portal failed' });
+  }
+});
+
 router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
   try {
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {

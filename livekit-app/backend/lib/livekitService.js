@@ -68,19 +68,21 @@ function roomLifecycleTimeouts() {
   };
 }
 
-async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language') {
+async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language', orgId = null) {
   const roomService = getRoomService();
   const { emptyTimeout, departureTimeout } = roomLifecycleTimeouts();
+  const metadata = {
+    createdAt: new Date().toISOString(),
+    type: 'conference',
+    roomMode,
+  };
+  if (orgId) metadata.org_id = orgId;
   const createOptions = {
     name: roomName,
     emptyTimeout,
     departureTimeout,
     maxParticipants: 50,
-    metadata: JSON.stringify({
-      createdAt: new Date().toISOString(),
-      type: 'conference',
-      roomMode,
-    }),
+    metadata: JSON.stringify(metadata),
   };
   const room = await roomService.createRoom(createOptions);
   const agentName = defaultAgentName();
@@ -99,19 +101,21 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
  * idempotent — it returns the existing room or creates a new one.
  * We then check for an active agent dispatch and create one if missing.
  */
-async function ensureRoomAndAgent(roomName, roomMode = 'multi-language') {
+async function ensureRoomAndAgent(roomName, roomMode = 'multi-language', orgId = null) {
   const roomService = getRoomService();
   const { emptyTimeout, departureTimeout } = roomLifecycleTimeouts();
+  const metadata = {
+    createdAt: new Date().toISOString(),
+    type: 'conference',
+    roomMode,
+  };
+  if (orgId) metadata.org_id = orgId;
   const room = await roomService.createRoom({
     name: roomName,
     emptyTimeout,
     departureTimeout,
     maxParticipants: 50,
-    metadata: JSON.stringify({
-      createdAt: new Date().toISOString(),
-      type: 'conference',
-      roomMode,
-    }),
+    metadata: JSON.stringify(metadata),
   });
 
   const agentName = defaultAgentName();
@@ -158,6 +162,16 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language') {
       console.warn(`[livekitService] Fallback dispatch also failed for ${roomName}:`, e2.message);
     }
   }
+
+  if (orgId) {
+    try {
+      const { ensureRoomOrgMetadata } = require('./livekitRoomMetadata');
+      await ensureRoomOrgMetadata(roomName, orgId);
+    } catch (metaErr) {
+      console.warn(`[livekitService] org metadata merge for ${roomName}:`, metaErr.message);
+    }
+  }
+
   return room;
 }
 

@@ -21,7 +21,7 @@ export function MarketingNav() {
     <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link to="/" className="text-sm font-semibold tracking-tight text-foreground">
-          JarMetals Conference
+          Parley
         </Link>
         <nav className="flex items-center gap-2 sm:gap-3">
           <a href="#features" className="hidden text-sm text-muted-foreground transition-colors hover:text-foreground sm:inline">

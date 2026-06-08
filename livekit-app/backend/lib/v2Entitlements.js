@@ -1,12 +1,18 @@
 const db = require('../db/v2Database');
 const { planAllowsTeamWorkspace } = require('./v2PlanFeatures');
 
+function hardCapMultiplier(planId) {
+  if (planId === 'free') return 1;
+  const raw = Number(process.env.V2_HARD_CAP_MULTIPLIER || 2);
+  return Number.isFinite(raw) && raw >= 1 ? raw : 2;
+}
+
 /**
  * Load org subscription + plan quotas for entitlement checks.
  */
 async function getOrgEntitlements(orgId) {
   const sub = await db.get(
-    `SELECT s.*, p.included_meeting_minutes, p.included_translation_minutes,
+    `SELECT s.*, p.name AS plan_name, p.monthly_price_cents, p.included_meeting_minutes, p.included_translation_minutes,
             p.overage_meeting_cents_per_min, p.overage_translation_cents_per_min
      FROM v2_org_subscriptions s
      JOIN v2_plans p ON p.id = s.plan_id
@@ -16,9 +22,12 @@ async function getOrgEntitlements(orgId) {
   if (!sub) return null;
   return {
     planId: sub.plan_id,
-    /** Named org + invite colleagues + multi-seat workspace (Pro / Business / Enterprise). */
+    planName: sub.plan_name,
+    monthlyPriceCents: sub.monthly_price_cents,
     teamWorkspace: planAllowsTeamWorkspace(sub.plan_id),
     status: sub.status,
+    isComp: sub.is_comp === 1,
+    compLabel: sub.comp_label || null,
     includedMeetingMinutes: sub.included_meeting_minutes,
     includedTranslationMinutes: sub.included_translation_minutes,
     overageMeetingCentsPerMin: sub.overage_meeting_cents_per_min,
@@ -52,22 +61,34 @@ async function assertCanCreateMeeting(orgId) {
   if (!ent) {
     return { ok: false, code: 'no_subscription', message: 'Organization has no active plan' };
   }
+  if (ent.isComp) {
+    const usage = await getMonthToDateUsage(orgId);
+    return { ok: true, entitlements: ent, usage, unlimited: true };
+  }
   if (!['active', 'trialing'].includes(String(ent.status).toLowerCase())) {
     return { ok: false, code: 'billing_inactive', message: 'Subscription is not active' };
   }
   const usage = await getMonthToDateUsage(orgId);
-  if (usage.meetingMinutes > ent.includedMeetingMinutes * 2) {
+  const cap = ent.includedMeetingMinutes * hardCapMultiplier(ent.planId);
+  if (usage.meetingMinutes >= cap) {
     return {
       ok: false,
       code: 'hard_cap_meeting',
-      message: 'Meeting usage exceeds policy; contact support or upgrade',
+      message:
+        ent.planId === 'free'
+          ? 'Free plan limit reached (60 participant-minutes/month). Upgrade to continue.'
+          : 'Meeting usage exceeds policy; contact support or upgrade',
+      usage,
+      cap,
+      entitlements: ent,
     };
   }
-  return { ok: true, entitlements: ent, usage };
+  return { ok: true, entitlements: ent, usage, cap };
 }
 
 module.exports = {
   getOrgEntitlements,
   getMonthToDateUsage,
   assertCanCreateMeeting,
+  hardCapMultiplier,
 };

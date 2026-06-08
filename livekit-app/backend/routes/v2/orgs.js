@@ -4,25 +4,7 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { getOrgEntitlements, getMonthToDateUsage } = require('../../lib/v2Entitlements');
 
-function superadminEmails() {
-  const raw = process.env.V2_SUPERADMIN_EMAILS || '';
-  return new Set(
-    raw
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
-function requireSuperadmin(req, res, next) {
-  const email = (req.v2Auth.email || '').toLowerCase();
-  if (!email || !superadminEmails().has(email)) {
-    return res.status(403).json({ error: 'Forbidden', code: 'not_superadmin' });
-  }
-  next();
-}
-
-router.get('/me', requireV2Auth, async (req, res) => {
+const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
   try {
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     const ent = await getOrgEntitlements(req.v2Auth.orgId);
@@ -196,7 +178,7 @@ router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => 
       `SELECT COALESCE(SUM(p.monthly_price_cents), 0) AS mrr_cents
        FROM v2_org_subscriptions s
        JOIN v2_plans p ON p.id = s.plan_id
-       WHERE lower(s.status) IN ('active', 'trialing')`
+       WHERE lower(s.status) IN ('active', 'trialing') AND COALESCE(s.is_comp, 0) = 0`
     );
     const planMix = await db.all(
       `SELECT COALESCE(s.plan_id, '(none)') AS plan_id, COUNT(*) AS org_count
@@ -236,20 +218,11 @@ router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req,
     }
     const nextStatus = billing_status.slice(0, 64);
     const auditId = db.uuid();
-    await db.run(
-      `INSERT INTO v2_admin_audit_log (id, actor_email, action, payload_json, created_at)
-       VALUES (?,?,?,?, datetime('now'))`,
-      [
-        auditId,
-        (req.v2Auth.email || '').slice(0, 320),
-        'admin_patch_org_billing_status',
-        JSON.stringify({
-          orgId: req.params.orgId,
-          billing_status: nextStatus,
-          reason: reasonTrim.slice(0, 2000),
-        }),
-      ]
-    );
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_org_billing_status', {
+      orgId: req.params.orgId,
+      billing_status: nextStatus,
+      reason: reasonTrim.slice(0, 2000),
+    });
     await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [nextStatus, req.params.orgId]);
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });

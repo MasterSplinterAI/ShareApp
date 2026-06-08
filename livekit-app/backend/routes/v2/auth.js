@@ -33,7 +33,7 @@ router.post('/signup', async (req, res) => {
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString();
     await db.run(
       `INSERT INTO v2_org_subscriptions (org_id, plan_id, status, current_period_start, current_period_end) VALUES (?,?,?,?,?)`,
-      [orgId, 'starter', 'active', start, end]
+      [orgId, 'free', 'active', start, end]
     );
     const cycleId = db.uuid();
     await db.run(
@@ -82,11 +82,18 @@ router.post('/login', async (req, res) => {
   }
 });
 
+const { isSuperadminEmail } = require('../../lib/v2Superadmin');
+
 router.get('/me', requireV2Auth, async (req, res) => {
   try {
     const user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
     const org = await db.get(`SELECT id, name, billing_status FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
-    res.json({ user, org, role: req.v2Auth.role });
+    res.json({
+      user,
+      org,
+      role: req.v2Auth.role,
+      isSuperadmin: isSuperadminEmail(req.v2Auth.email),
+    });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }

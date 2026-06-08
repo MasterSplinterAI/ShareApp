@@ -50,6 +50,7 @@ export default function V2MeetingsList() {
   const [scheduledDate, setScheduledDate] = useState(undefined);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [quotaBlocked, setQuotaBlocked] = useState(null);
 
   const load = (archived = false) => {
     setLoading(true);
@@ -99,6 +100,12 @@ export default function V2MeetingsList() {
       setShowCreate(false);
       window.location.href = `/v2/app/meetings/${m.id}`;
     } catch (e) {
+      const code = e.response?.data?.code;
+      if (e.response?.status === 402 && code === 'hard_cap_meeting') {
+        setShowCreate(false);
+        setQuotaBlocked(e.response?.data?.error || 'Usage limit reached');
+        return;
+      }
       toast.error(e.response?.data?.error || 'Could not create');
     }
   };
@@ -318,6 +325,21 @@ export default function V2MeetingsList() {
               disabled={deleting}
             >
               {deleting ? 'Deleting…' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={Boolean(quotaBlocked)} onOpenChange={(open) => !open && setQuotaBlocked(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Usage limit reached</AlertDialogTitle>
+            <AlertDialogDescription>{quotaBlocked}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Link to="/v2/app/settings?section=billing">Upgrade plan</Link>
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

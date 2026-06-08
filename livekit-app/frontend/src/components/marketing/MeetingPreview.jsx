@@ -13,7 +13,7 @@ export function MeetingPreview() {
           <span className="h-2.5 w-2.5 rounded-full bg-red-400/90" />
           <span className="h-2.5 w-2.5 rounded-full bg-amber-400/90" />
           <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/90" />
-          <span className="ml-2 truncate text-[10px] font-medium text-muted-foreground sm:text-xs">JarMetals Conference — Live</span>
+          <span className="ml-2 truncate text-[10px] font-medium text-muted-foreground sm:text-xs">Parley — Live</span>
         </div>
 
         <div className="relative grid min-h-[200px] grid-cols-1 gap-2 p-2 sm:min-h-[240px] sm:grid-cols-[1fr_11rem] sm:gap-3 sm:p-3">

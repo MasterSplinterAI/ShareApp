@@ -33,8 +33,8 @@ function InviteLinkModal({ inviteLink, onClose }) {
     }
     try {
       await navigator.share({
-        title: 'Join JarMetals Conference',
-        text: 'Join my JarMetals Conference meeting – video with real-time translation and captions',
+        title: 'Join Parley meeting',
+        text: 'Join my Parley meeting – video with real-time translation and captions',
         url: inviteLink,
       });
       toast.success('Shared!');

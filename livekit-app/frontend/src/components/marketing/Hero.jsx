@@ -13,7 +13,7 @@ export function Hero() {
           Video meetings everyone can follow—in their own language.
         </h1>
         <p className="mx-auto mt-6 max-w-xl text-center text-base leading-relaxed text-muted-foreground sm:text-lg">
-          JarMetals Conference combines LiveKit rooms with live captions and translation so global teams stay aligned.
+          Parley brings live captions and translation to every meeting so global teams stay aligned.
           Schedule from your workspace, share a guest link, and keep an optional transcript on the server when you need it.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:gap-4">

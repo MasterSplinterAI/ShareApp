@@ -6,7 +6,7 @@ import { controlLabel } from '../lib/controlLabels';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
-import { v2Meetings, v2Usage } from '../services/apiV2';
+import { v2Meetings } from '../services/apiV2';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
 import ChatPanel from './ChatPanel';
@@ -36,31 +36,6 @@ function HostSessionReporter({ meetingId, isHost }) {
       room.off(RoomEvent.Connected, markHostPresent);
     };
   }, [room, meetingId, isHost]);
-  return null;
-}
-
-function HostUsageReporter({ meetingId, isHost }) {
-  useEffect(() => {
-    if (!isHost || !meetingId || typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) {
-      return undefined;
-    }
-    const tick = () => {
-      v2Usage
-        .recordEvent({
-          event_type: 'meeting_participant_minute',
-          quantity: 1,
-          unit: 'minute',
-          meeting_id: meetingId,
-        })
-        .catch(() => {});
-    };
-    const initial = setTimeout(tick, 8000);
-    const id = setInterval(tick, 60000);
-    return () => {
-      clearTimeout(initial);
-      clearInterval(id);
-    };
-  }, [meetingId, isHost]);
   return null;
 }
 
@@ -463,7 +438,6 @@ function MeetingRoomInner({
           onGiveUp={onGiveUpConnection}
         />
         <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
-        <HostUsageReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content area: video grid + optional transcription panel */}
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {/* Video grid takes remaining space */}

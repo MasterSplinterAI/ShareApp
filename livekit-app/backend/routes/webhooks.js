@@ -1,5 +1,5 @@
 const { WebhookReceiver } = require('livekit-server-sdk');
-const { run, get, all } = require('../db/v2Database');
+const { run, get, all, uuid } = require('../db/v2Database');
 
 const VERIFY = process.env.LIVEKIT_WEBHOOK_VERIFY !== 'false';
 
@@ -49,7 +49,96 @@ async function readyTables() {
   }
 }
 
+function isAgentIdentity(identity) {
+  if (!identity) return true;
+  const s = String(identity).toLowerCase();
+  return (
+    s.startsWith('agent-') ||
+    s.includes('translation') ||
+    s.includes('-agent') ||
+    s.includes('agent_')
+  );
+}
+
+async function resolveMeetingContext(roomName) {
+  const row = await get(
+    `SELECT id, org_id FROM v2_meetings WHERE livekit_room_name = ? ORDER BY datetime(created_at) DESC LIMIT 1`,
+    [roomName]
+  );
+  if (!row) return { orgId: null, meetingUuid: null };
+  return { orgId: row.org_id, meetingUuid: row.id };
+}
+
+async function recordParticipantSessionUsage(roomName, participantIdentity, leaveTs, orgId, meetingUuid) {
+  if (!orgId || !participantIdentity || isAgentIdentity(participantIdentity)) return;
+
+  const joinEv = await get(
+    `SELECT ts FROM meeting_events
+     WHERE meeting_id = ? AND event_type = 'participant_joined'
+       AND participant_identity = ?
+       AND ts <= ?
+     ORDER BY ts DESC LIMIT 1`,
+    [roomName, participantIdentity, leaveTs]
+  );
+  if (!joinEv) return;
+
+  const idempotencyKey = `${roomName}:${participantIdentity}:${joinEv.ts}`;
+  const existing = await get(
+    `SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`,
+    [orgId, idempotencyKey]
+  );
+  if (existing) return;
+
+  const minutes = Math.max(0.01, (leaveTs - joinEv.ts) / 1000 / 60);
+  await run(
+    `INSERT INTO v2_usage_events (id, org_id, meeting_id, event_type, quantity, unit, idempotency_key)
+     VALUES (?,?,?,?,?,?,?)`,
+    [uuid(), orgId, meetingUuid, 'meeting_participant_minute', minutes, 'minute', idempotencyKey]
+  );
+}
+
+async function flushOpenParticipants(roomName, endTs, orgId, meetingUuid) {
+  if (!orgId) return;
+  const joinRows = await all(
+    `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_joined'`,
+    [roomName]
+  );
+  for (const join of joinRows) {
+    if (isAgentIdentity(join.participant_identity)) continue;
+    const idempotencyKey = `${roomName}:${join.participant_identity}:${join.ts}`;
+    const billed = await get(
+      `SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`,
+      [orgId, idempotencyKey]
+    );
+    if (billed) continue;
+
+    const leftAfter = await get(
+      `SELECT ts FROM meeting_events
+       WHERE meeting_id = ? AND event_type = 'participant_left'
+         AND participant_identity = ? AND ts >= ?
+       ORDER BY ts ASC LIMIT 1`,
+      [roomName, join.participant_identity, join.ts]
+    );
+    const leaveTs = leftAfter ? leftAfter.ts : endTs;
+    await recordParticipantSessionUsage(roomName, join.participant_identity, leaveTs, orgId, meetingUuid);
+  }
+}
+
 async function aggregateRollup(meetingId) {
+  const ctx = await resolveMeetingContext(meetingId);
+  const orgId = ctx.orgId;
+
+  if (orgId) {
+    await run(
+      `UPDATE meeting_cost_events SET org_id = ? WHERE meeting_id = ? AND org_id IS NULL`,
+      [orgId, meetingId]
+    );
+    await run(
+      `UPDATE meeting_events SET org_id = ? WHERE meeting_id = ? AND org_id IS NULL`,
+      [orgId, meetingId]
+    );
+  }
+
   const costRows = await all(
     `SELECT provider, SUM(total_cost_usd) as subtotal FROM meeting_cost_events WHERE meeting_id = ? GROUP BY provider`,
     [meetingId]
@@ -62,7 +151,6 @@ async function aggregateRollup(meetingId) {
     totalCost += row.subtotal;
   }
 
-  // Per-participant aggregates from cost event meta_json
   const allCostEvents = await all(
     `SELECT event_type, units, total_cost_usd, meta_json FROM meeting_cost_events WHERE meeting_id = ? AND meta_json IS NOT NULL`,
     [meetingId]
@@ -75,22 +163,23 @@ async function aggregateRollup(meetingId) {
   }
   for (const row of allCostEvents) {
     let meta = null;
-    try { meta = JSON.parse(row.meta_json); } catch { /* skip malformed */ }
+    try {
+      meta = JSON.parse(row.meta_json);
+    } catch {
+      /* skip malformed */
+    }
     const pid = meta && meta.participant;
     if (!pid) continue;
     ensureParticipant(pid);
     participantStats[pid].total_cost_usd += row.total_cost_usd || 0;
-    // units stored as minutes for STT event types
     if (row.event_type && row.event_type.includes('stt')) {
       participantStats[pid].stt_seconds += (row.units || 0) * 60;
     }
-    // units stored as Mtok for LLM event types
     if (row.event_type && (row.event_type.includes('input') || row.event_type.includes('output'))) {
       participantStats[pid].llm_tokens += (row.units || 0) * 1_000_000;
     }
   }
 
-  // Calculate duration from room_started / room_finished events
   const startEv = await get(
     `SELECT ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'room_started' ORDER BY ts ASC LIMIT 1`,
     [meetingId]
@@ -104,7 +193,6 @@ async function aggregateRollup(meetingId) {
   if (startEv && endEv) {
     durationSeconds = Math.round((endEv.ts - startEv.ts) / 1000);
 
-    // Add participant-minute cost from events
     const joinRows = await all(
       `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_joined'`,
       [meetingId]
@@ -122,10 +210,10 @@ async function aggregateRollup(meetingId) {
     const PARTICIPANT_RATE = 0.004;
     let participantMinutes = 0;
     for (const r of joinRows) {
+      if (isAgentIdentity(r.participant_identity)) continue;
       const leftTs = leaveMap[r.participant_identity] || endEv.ts;
       const mins = (leftTs - r.ts) / 1000 / 60;
       participantMinutes += mins;
-      // Merge livekit minutes + cost into per-participant stats
       const pid = r.participant_identity;
       if (pid) {
         ensureParticipant(pid);
@@ -136,7 +224,7 @@ async function aggregateRollup(meetingId) {
 
     const participantCost = participantMinutes * PARTICIPANT_RATE;
     if (participantCost > 0) {
-      breakdown['livekit'] = (breakdown['livekit'] || 0) + participantCost;
+      breakdown.livekit = (breakdown.livekit || 0) + participantCost;
       totalCost += participantCost;
     }
   }
@@ -147,13 +235,14 @@ async function aggregateRollup(meetingId) {
 
   await run(
     `INSERT INTO meeting_cost_rollups (meeting_id, org_id, total_cost_usd, breakdown_json, duration_seconds, computed_at)
-     VALUES (?, NULL, ?, ?, ?, ?)
+     VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(meeting_id) DO UPDATE SET
+       org_id = excluded.org_id,
        total_cost_usd = excluded.total_cost_usd,
        breakdown_json = excluded.breakdown_json,
        duration_seconds = excluded.duration_seconds,
        computed_at = excluded.computed_at`,
-    [meetingId, totalCost, JSON.stringify(breakdown), durationSeconds, Date.now()]
+    [meetingId, orgId, totalCost, JSON.stringify(breakdown), durationSeconds, Date.now()]
   );
 }
 
@@ -181,24 +270,37 @@ async function handleLiveKitWebhook(req, res) {
     }
 
     const eventType = event.event || 'unknown';
-    const meetingId = event.room?.name || 'unknown';
+    const roomName = event.room?.name || 'unknown';
     const ts = Date.now();
+    const participantIdentity = event.participant?.identity || null;
+
+    const ctx = await resolveMeetingContext(roomName);
+    const orgId = ctx.orgId;
+    const meetingUuid = ctx.meetingUuid;
 
     await run(
       `INSERT INTO meeting_events (meeting_id, org_id, event_type, participant_identity, track_sid, payload_json, ts)
-       VALUES (?, NULL, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
-        meetingId,
+        roomName,
+        orgId,
         eventType,
-        event.participant?.identity || null,
+        participantIdentity,
         event.track?.sid || null,
         JSON.stringify(event),
         ts,
       ]
     );
 
+    if (eventType === 'participant_left' && participantIdentity && orgId) {
+      await recordParticipantSessionUsage(roomName, participantIdentity, ts, orgId, meetingUuid);
+    }
+
     if (eventType === 'room_finished') {
-      aggregateRollup(meetingId).catch(err =>
+      if (orgId) {
+        await flushOpenParticipants(roomName, ts, orgId, meetingUuid);
+      }
+      aggregateRollup(roomName).catch((err) =>
         console.error('[webhook/livekit] rollup error:', err.message)
       );
     }

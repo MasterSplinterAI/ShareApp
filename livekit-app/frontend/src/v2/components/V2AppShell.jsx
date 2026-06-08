@@ -21,7 +21,7 @@ function navLinkClass({ isActive }) {
   );
 }
 
-function SidebarNav({ onNavigate }) {
+function SidebarNav({ onNavigate, isSuperadmin }) {
   return (
     <nav className="flex flex-1 flex-col gap-1 px-2 py-4" onClick={onNavigate}>
       <NavLink to="/v2/app" end className={navLinkClass}>
@@ -36,10 +36,12 @@ function SidebarNav({ onNavigate }) {
         <Shield className="h-4 w-4 shrink-0" />
         Settings
       </NavLink>
-      <NavLink to="/v2/app/superadmin" className={({ isActive }) => cn(navLinkClass({ isActive }), 'text-xs')}>
-        <Shield className="h-4 w-4 shrink-0 opacity-70" />
-        Admin
-      </NavLink>
+      {isSuperadmin && (
+        <NavLink to="/v2/app/superadmin" className={({ isActive }) => cn(navLinkClass({ isActive }), 'text-xs')}>
+          <Shield className="h-4 w-4 shrink-0 opacity-70" />
+          Admin
+        </NavLink>
+      )}
     </nav>
   );
 }
@@ -68,13 +70,13 @@ export default function V2AppShell({ me, onLogout }) {
       <div className="border-b border-border/60 px-4 py-4">
         <Link to="/v2/app" className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
           <LayoutDashboard className="h-5 w-5 text-primary" />
-          Conference V2
+          Parley
         </Link>
         <p className="mt-2 truncate text-xs text-muted-foreground" title={orgName}>
           {orgName}
         </p>
       </div>
-      <SidebarNav onNavigate={() => setMobileOpen(false)} />
+      <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
       <div className="mt-auto border-t border-border/60 p-3">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -130,7 +132,7 @@ export default function V2AppShell({ me, onLogout }) {
             </SheetContent>
           </Sheet>
           <Link to="/v2/app" className="truncate text-sm font-semibold">
-            Conference V2
+            Parley
           </Link>
         </header>
 

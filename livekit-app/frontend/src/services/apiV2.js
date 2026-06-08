@@ -92,7 +92,19 @@ export const v2Host = {
 export const v2Billing = {
   plans: () => apiV2.get('/billing/plans').then((r) => r.data),
   subscription: () => apiV2.get('/billing/subscription').then((r) => r.data),
+  checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
+  portal: () => apiV2.post('/billing/portal', {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),
+};
+
+export const v2Admin = {
+  users: () => apiV2.get('/admin/users').then((r) => r.data),
+  orgs: () => apiV2.get('/admin/orgs').then((r) => r.data),
+  orgDetail: (orgId) => apiV2.get(`/admin/orgs/${encodeURIComponent(orgId)}`).then((r) => r.data),
+  setPlan: (orgId, body) => apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/plan`, body).then((r) => r.data),
+  setComp: (orgId, body) => apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/comp`, body).then((r) => r.data),
+  costsSummary: () => apiV2.get('/admin/costs/summary').then((r) => r.data),
+  audit: () => apiV2.get('/admin/audit').then((r) => r.data),
 };
 
 export const v2Usage = {
