@@ -66,6 +66,11 @@ def _gladia_endpointing_sec() -> float:
     return max(0.05, min(_deepgram_endpointing_ms() / 1000.0, 5.0))
 
 
+def _stt_stream_supports_flush(provider: str) -> bool:
+    """Gladia STT treats flush() as stop_recording — never call it on live Gladia streams."""
+    return provider != "gladia"
+
+
 def _deepgram_stt_idle_ms() -> int:
     """
     Finalize the live bubble after this long with no *changed* transcript from Deepgram.
@@ -1036,13 +1041,25 @@ class TranscriptionOnlyAgent:
                     pass
             stt_idle_task[0] = None
 
+        def maybe_flush_stt() -> None:
+            if not _stt_stream_supports_flush(stt_provider_name):
+                return
+            try:
+                stt_stream.flush()
+            except Exception:
+                pass
+
         def arm_stt_idle_finalize() -> None:
             """Finalize when the transcript stops changing (not when audio is silent).
 
             Works for every STT provider: Deepgram arms this on its END_OF_SPEECH,
             providers without speech_final (e.g. OpenAI gpt-4o-transcribe) arm it on
             VAD END_OF_SPEECH and on each new caption.
+
+            Gladia emits one utterance per FINAL+END_OF_SPEECH — idle finalize is skipped.
             """
+            if stt_provider_name == "gladia":
+                return
             if not turn_id[0]:
                 return
             pending = stt_idle_task[0]
@@ -1052,7 +1069,8 @@ class TranscriptionOnlyAgent:
 
         def touch_stt_activity() -> None:
             last_stt_text_at[0] = time.time()
-            arm_stt_idle_finalize()
+            if stt_provider_name != "gladia":
+                arm_stt_idle_finalize()
 
         async def schedule_stt_idle_finalize() -> None:
             try:
@@ -1066,10 +1084,7 @@ class TranscriptionOnlyAgent:
                     f"{L} ⏱️ STT idle finalize ({_deepgram_stt_idle_ms()}ms without new words)"
                 )
                 dg_buffer.on_speech_final()
-                try:
-                    stt_stream.flush()
-                except Exception:
-                    pass
+                maybe_flush_stt()
                 await asyncio.sleep(0.15)
                 if turn_id[0] and dg_buffer.has_content():
                     await finalize_turn()
@@ -1145,9 +1160,9 @@ class TranscriptionOnlyAgent:
             if not turn_id[0]:
                 return
             try:
-                stt_stream.flush()
+                maybe_flush_stt()
                 # Let flushed STT finals land before we commit (interruption / early finalize).
-                await asyncio.sleep(0.45)
+                await asyncio.sleep(0.45 if _stt_stream_supports_flush(stt_provider_name) else 0.0)
             except Exception:
                 pass
             if turn_id[0]:
@@ -1183,10 +1198,7 @@ class TranscriptionOnlyAgent:
                         seg_speech_start[0] = 0.0
                     vad_speech_active[0] = False
                     logger.debug(f"{L} 🔇 Speech ended (VAD)")
-                    try:
-                        stt_stream.flush()
-                    except Exception:
-                        pass
+                    maybe_flush_stt()
                     stt_speech_active[0] = False
                     # Drives finalize for providers that never emit STT END_OF_SPEECH
                     # (e.g. OpenAI gpt-4o-transcribe); harmless re-arm for Deepgram.
@@ -1201,6 +1213,12 @@ class TranscriptionOnlyAgent:
                     await cancel_finalization()
                     stt_speech_active[0] = True
                     last_finalized_norm[0] = ""
+                    if (
+                        stt_provider_name == "gladia"
+                        and turn_id[0]
+                        and dg_buffer.has_content()
+                    ):
+                        await finalize_turn()
                     if not turn_id[0]:
                         await start_new_turn()
                     logger.debug(f"{L} 🎙️ Speech started (STT)")
@@ -1208,15 +1226,14 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.END_OF_SPEECH:
                     stt_speech_active[0] = False
+                    if stt_provider_name == "gladia":
+                        logger.debug(f"{L} 🔇 STT END_OF_SPEECH (Gladia — finalized on FINAL)")
+                        continue
                     logger.debug(
                         f"{L} 🔇 STT END_OF_SPEECH — waiting "
                         f"{_deepgram_stt_idle_ms()}ms STT idle before finalize"
                     )
-                    try:
-                        stt_stream.flush()
-                    except Exception:
-                        pass
-                    # Brief pauses should not split bubbles; only finalize after idle window.
+                    maybe_flush_stt()
                     arm_stt_idle_finalize()
                     continue
 
@@ -1242,10 +1259,13 @@ class TranscriptionOnlyAgent:
                         )
                         continue
                     await ensure_lanes_for_caption()
-                    start_t, end_t = _speech_times(speech_data)
-                    display_text, seg_idx, segment = dg_buffer.on_final_segment(
-                        text, start_time=start_t, end_time=end_t
-                    )
+                    if stt_provider_name == "gladia":
+                        display_text, seg_idx, segment = dg_buffer.on_utterance_final(text)
+                    else:
+                        start_t, end_t = _speech_times(speech_data)
+                        display_text, seg_idx, segment = dg_buffer.on_final_segment(
+                            text, start_time=start_t, end_time=end_t
+                        )
                     if seg_idx < 0:
                         if display_text.strip():
                             schedule_live_partial(display_text)
@@ -1255,18 +1275,28 @@ class TranscriptionOnlyAgent:
                     )
                     for tgt, lane in lanes.items():
                         if lane.is_same_language:
-                            while len(lane.turn_translated_parts) <= seg_idx:
-                                lane.turn_translated_parts.append("")
-                            lane.turn_translated_parts[seg_idx] = segment
+                            if stt_provider_name == "gladia":
+                                lane.turn_translated_parts = [segment]
+                            else:
+                                while len(lane.turn_translated_parts) <= seg_idx:
+                                    lane.turn_translated_parts.append("")
+                                lane.turn_translated_parts[seg_idx] = segment
                         if (
                             not lane.is_same_language
                             and self.caption_mode != "transcription_only"
                         ):
+                            if stt_provider_name == "gladia":
+                                lane.turn_translated_parts = [""]
+                                seg_for_lane = 0
+                            else:
+                                seg_for_lane = seg_idx
                             task = asyncio.create_task(
-                                translate_segment(lane, tgt, segment, seg_idx)
+                                translate_segment(lane, tgt, segment, seg_for_lane)
                             )
                             lane.pending_translate_tasks.append(task)
                     schedule_live_partial(display_text)
+                    if stt_provider_name == "gladia":
+                        await finalize_turn()
                     continue
 
         try:

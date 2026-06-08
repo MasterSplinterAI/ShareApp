@@ -38,6 +38,22 @@ class DeepgramCaptionBufferTest(unittest.TestCase):
         self.assertEqual(utterance, "Done.")
         self.assertEqual(buf.live_text(), "Done.")
 
+    def test_gladia_utterance_final_replaces_buffer(self):
+        buf = DeepgramCaptionBuffer()
+        buf.on_interim("Hello there")
+        live, idx, seg = buf.on_utterance_final("Hello there friend")
+        self.assertEqual(idx, 0)
+        self.assertEqual(seg, "Hello there friend")
+        self.assertEqual(live, "Hello there friend")
+        self.assertEqual(buf.committed_text(), "Hello there friend")
+
+    def test_gladia_duplicate_final_is_noop(self):
+        buf = DeepgramCaptionBuffer()
+        buf.on_utterance_final("Same line.")
+        _, idx, seg = buf.on_utterance_final("Same line.")
+        self.assertEqual(idx, -1)
+        self.assertEqual(seg, "")
+
 
 if __name__ == "__main__":
     unittest.main()

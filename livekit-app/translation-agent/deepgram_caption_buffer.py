@@ -108,3 +108,21 @@ class DeepgramCaptionBuffer:
         """speech_final / END_OF_SPEECH — drop open interim; committed text is the utterance."""
         self.open_interim = ""
         return self.committed_text()
+
+    def on_utterance_final(self, text: str) -> tuple[str, int, str]:
+        """
+        Gladia-style finals: one full utterance per event (not Deepgram incremental segments).
+        Replaces the buffer with the utterance text.
+        """
+        text = text.strip()
+        if not text:
+            return self.live_text(), -1, ""
+
+        committed = self.committed_text()
+        if committed == text:
+            self.open_interim = ""
+            return self.live_text(), -1, ""
+
+        self.final_segments = [text]
+        self.open_interim = ""
+        return self.committed_text(), 0, text
