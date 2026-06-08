@@ -42,6 +42,11 @@ function fmtCents(c) {
   return fmtUsd(Number(c) / 100);
 }
 
+function fmtMins(n) {
+  const v = Number(n) || 0;
+  return `${Math.round(v).toLocaleString()} participant-min`;
+}
+
 export default function V2SuperAdmin() {
   const [allowed, setAllowed] = useState(null);
   const [tab, setTab] = useState('orgs');
@@ -260,7 +265,10 @@ export default function V2SuperAdmin() {
           <Card className="app-card overflow-hidden border-border/60">
             <CardHeader>
               <CardTitle className="text-lg">Organizations</CardTitle>
-              <CardDescription>{orgs.length} workspaces — click a row to manage comp/plan.</CardDescription>
+              <CardDescription>
+                {orgs.length} workspaces — click a row for usage analytics and comp/plan controls. Participant-min =
+                each person-minute in a meeting (2 people × 30 min = 60).
+              </CardDescription>
             </CardHeader>
             <div className="overflow-x-auto border-t border-border/60">
               <table className="w-full text-left text-sm">
@@ -269,8 +277,12 @@ export default function V2SuperAdmin() {
                     <th className="px-4 py-3 font-medium">Organization</th>
                     <th className="px-4 py-3 font-medium">Plan</th>
                     <th className="px-4 py-3 font-medium">Comp</th>
-                    <th className="px-4 py-3 font-medium">MTD min</th>
-                    <th className="px-4 py-3 font-medium">MTD cost</th>
+                    <th className="px-4 py-3 font-medium" title="Participant-minutes this calendar month">
+                      Part.-min (month)
+                    </th>
+                    <th className="px-4 py-3 font-medium" title="Estimated infra cost for meetings ended this month">
+                      Infra cost (month)
+                    </th>
                     <th className="px-4 py-3 font-medium">Members</th>
                   </tr>
                 </thead>
@@ -307,6 +319,82 @@ export default function V2SuperAdmin() {
                 <CardDescription>Org ID: {orgKey(selectedOrg)}</CardDescription>
               </CardHeader>
               <CardContent className="grid gap-6 lg:grid-cols-2">
+                {orgDetail.usageAnalytics && (
+                  <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-4 lg:col-span-2">
+                    <div>
+                      <h3 className="font-medium">Usage analytics</h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Billing meter: participant-minutes (people × minutes in meetings).{' '}
+                        {orgDetail.usageAnalytics.periodLabel}. Infra cost is a separate estimate from completed
+                        rooms.
+                      </p>
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
+                      <div className="rounded-md border border-border/60 bg-background px-3 py-2">
+                        <div className="text-xs text-muted-foreground">This month</div>
+                        <div className="font-semibold tabular-nums">
+                          {fmtMins(orgDetail.usageAnalytics.monthToDate?.meetingMinutes)}
+                        </div>
+                        {orgDetail.subscription?.included_meeting_minutes != null &&
+                          orgDetail.subscription?.is_comp !== 1 && (
+                            <div className="text-xs text-muted-foreground">
+                              of {orgDetail.subscription.included_meeting_minutes.toLocaleString()} included
+                            </div>
+                          )}
+                      </div>
+                      <div className="rounded-md border border-border/60 bg-background px-3 py-2">
+                        <div className="text-xs text-muted-foreground">All time</div>
+                        <div className="font-semibold tabular-nums">
+                          {fmtMins(orgDetail.usageAnalytics.allTime?.meetingMinutes)}
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-border/60 bg-background px-3 py-2">
+                        <div className="text-xs text-muted-foreground">Translation (month)</div>
+                        <div className="font-semibold tabular-nums">
+                          {Math.round(orgDetail.usageAnalytics.monthToDate?.translationMinutes || 0).toLocaleString()}{' '}
+                          min
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-border/60 bg-background px-3 py-2">
+                        <div className="text-xs text-muted-foreground">Infra cost (month)</div>
+                        <div className="font-semibold tabular-nums">{fmtUsd(orgDetail.costThisMonthUsd)}</div>
+                      </div>
+                    </div>
+                    {(orgDetail.usageAnalytics.byDay?.length > 0 ||
+                      orgDetail.usageAnalytics.byMeeting?.length > 0) && (
+                      <div className="grid gap-4 lg:grid-cols-2">
+                        {orgDetail.usageAnalytics.byDay?.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-muted-foreground mb-1">By day (this month)</div>
+                            <ul className="text-xs space-y-0.5 max-h-32 overflow-y-auto">
+                              {orgDetail.usageAnalytics.byDay.map((row) => (
+                                <li key={row.day} className="flex justify-between gap-2 tabular-nums">
+                                  <span>{row.day}</span>
+                                  <span>{Math.round(row.meeting_minutes)} min</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {orgDetail.usageAnalytics.byMeeting?.length > 0 && (
+                          <div>
+                            <div className="text-xs font-medium text-muted-foreground mb-1">
+                              By meeting (this month)
+                            </div>
+                            <ul className="text-xs space-y-0.5 max-h-32 overflow-y-auto">
+                              {orgDetail.usageAnalytics.byMeeting.map((row) => (
+                                <li key={row.meeting_id || row.title} className="flex justify-between gap-2">
+                                  <span className="truncate">{row.title || row.meeting_id?.slice(0, 8) || '—'}</span>
+                                  <span className="tabular-nums shrink-0">{Math.round(row.meeting_minutes)} min</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4 lg:col-span-2">
                   <label htmlFor={`audit-reason-${orgKey(selectedOrg)}`} className="text-sm font-medium">
                     Audit reason <span className="text-destructive">*</span>
@@ -379,8 +467,7 @@ export default function V2SuperAdmin() {
                     Set plan
                   </Button>
                   <div className="text-xs text-muted-foreground pt-2">
-                    MTD usage: {Math.round(orgDetail.usageThisMonth?.meetingMinutes || 0)} participant-min · Cost{' '}
-                    {fmtUsd(orgDetail.costThisMonthUsd)}
+                    See usage analytics above for month vs all-time breakdown.
                   </div>
                 </div>
                 <div className="space-y-3 rounded-lg border border-border/60 p-4 lg:col-span-2">
@@ -417,7 +504,7 @@ export default function V2SuperAdmin() {
                     <th className="px-4 py-3 font-medium">Role</th>
                     <th className="px-4 py-3 font-medium">Plan</th>
                     <th className="px-4 py-3 font-medium">Comp</th>
-                    <th className="px-4 py-3 font-medium">MTD min</th>
+                    <th className="px-4 py-3 font-medium">Part.-min (month)</th>
                   </tr>
                 </thead>
                 <tbody>

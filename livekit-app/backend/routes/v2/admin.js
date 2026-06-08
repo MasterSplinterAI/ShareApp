@@ -5,6 +5,67 @@ const { requireV2Auth } = require('../../middleware/v2Auth');
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
 const { getMonthToDateUsage } = require('../../lib/v2Entitlements');
 
+/** Billing usage analytics for admin (participant-minutes = sum of each human's time in meetings). */
+async function getOrgUsageAnalytics(orgId) {
+  const monthToDate = await db.get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0) AS meeting_minutes,
+       COALESCE(SUM(CASE WHEN event_type = 'translation_minute' THEN quantity ELSE 0 END), 0) AS translation_minutes,
+       COUNT(DISTINCT date(created_at)) AS active_days,
+       COUNT(CASE WHEN event_type = 'meeting_participant_minute' THEN 1 END) AS billing_events
+     FROM v2_usage_events
+     WHERE org_id = ? AND created_at >= datetime('now', 'start of month')`,
+    [orgId]
+  );
+  const allTime = await db.get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0) AS meeting_minutes,
+       COALESCE(SUM(CASE WHEN event_type = 'translation_minute' THEN quantity ELSE 0 END), 0) AS translation_minutes
+     FROM v2_usage_events WHERE org_id = ?`,
+    [orgId]
+  );
+  const byDay = await db.all(
+    `SELECT date(created_at) AS day,
+            COALESCE(SUM(quantity), 0) AS meeting_minutes
+     FROM v2_usage_events
+     WHERE org_id = ? AND event_type = 'meeting_participant_minute'
+       AND created_at >= datetime('now', 'start of month')
+     GROUP BY date(created_at)
+     ORDER BY day DESC`,
+    [orgId]
+  );
+  const byMeeting = await db.all(
+    `SELECT ue.meeting_id, m.title,
+            COALESCE(SUM(ue.quantity), 0) AS meeting_minutes,
+            MIN(ue.created_at) AS first_at,
+            MAX(ue.created_at) AS last_at
+     FROM v2_usage_events ue
+     LEFT JOIN v2_meetings m ON m.id = ue.meeting_id
+     WHERE ue.org_id = ? AND ue.event_type = 'meeting_participant_minute'
+       AND ue.created_at >= datetime('now', 'start of month')
+     GROUP BY ue.meeting_id
+     ORDER BY meeting_minutes DESC
+     LIMIT 20`,
+    [orgId]
+  );
+  return {
+    period: 'calendar_month',
+    periodLabel: 'Current calendar month (server UTC)',
+    monthToDate: {
+      meetingMinutes: monthToDate?.meeting_minutes || 0,
+      translationMinutes: monthToDate?.translation_minutes || 0,
+      activeDays: monthToDate?.active_days || 0,
+      billingEvents: monthToDate?.billing_events || 0,
+    },
+    allTime: {
+      meetingMinutes: allTime?.meeting_minutes || 0,
+      translationMinutes: allTime?.translation_minutes || 0,
+    },
+    byDay,
+    byMeeting,
+  };
+}
+
 router.get('/users', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const rows = await db.all(
@@ -72,6 +133,7 @@ router.get('/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) =>
       [req.params.orgId]
     );
     const usage = await getMonthToDateUsage(req.params.orgId);
+    const usageAnalytics = await getOrgUsageAnalytics(req.params.orgId);
     const costRow = await db.get(
       `SELECT COALESCE(SUM(r.total_cost_usd), 0) AS total_usd
        FROM meeting_cost_rollups r
@@ -84,6 +146,7 @@ router.get('/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) =>
       subscription: sub,
       members,
       usageThisMonth: usage,
+      usageAnalytics,
       costThisMonthUsd: costRow?.total_usd || 0,
     });
   } catch (e) {
