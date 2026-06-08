@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { MessageCircle, Send, Loader2 } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
@@ -185,11 +185,16 @@ function ChatPanel() {
     return () => room.off('dataReceived', handleDataReceived);
   }, [room, localParticipant?.identity, translateIncoming, incrementChatUnread]);
 
-  useEffect(() => {
-    if (isAtBottom && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isAtBottom]);
+  useLayoutEffect(() => {
+    if (!isAtBottom || !scrollRef.current) return;
+    const el = scrollRef.current;
+    const scroll = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    scroll();
+    const frame = requestAnimationFrame(scroll);
+    return () => cancelAnimationFrame(frame);
+  }, [messages, isAtBottom, isChatOpen]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;

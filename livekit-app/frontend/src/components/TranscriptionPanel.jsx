@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
@@ -467,12 +467,22 @@ function TranscriptionPanel() {
     return () => room.off('dataReceived', handleDataReceived);
   }, [room]);
 
-  // Auto-scroll when at bottom
-  useEffect(() => {
-    if (isAtBottom && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isAtBottom]);
+  const visibleMessages = useMemo(() => messagesForDisplay(messages), [messages]);
+
+  const scrollToBottom = useCallback((force = false) => {
+    const el = scrollRef.current;
+    if (!el || (!force && !isAtBottom)) return;
+    el.scrollTop = el.scrollHeight;
+    if (force) setIsAtBottom(true);
+  }, [isAtBottom]);
+
+  // Auto-scroll after layout (partials grow in place; useEffect runs too early on desktop).
+  useLayoutEffect(() => {
+    if (!isAtBottom || !scrollRef.current) return;
+    scrollToBottom();
+    const frame = requestAnimationFrame(() => scrollToBottom());
+    return () => cancelAnimationFrame(frame);
+  }, [visibleMessages, isAtBottom, isPanelOpen, scrollToBottom]);
 
   // Track scroll position
   const handleScroll = () => {
@@ -481,12 +491,7 @@ function TranscriptionPanel() {
     setIsAtBottom(scrollHeight - scrollTop - clientHeight < 40);
   };
 
-  const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      setIsAtBottom(true);
-    }
-  };
+  const jumpToLatest = () => scrollToBottom(true);
 
   const finalMessages = useMemo(() => messages.filter((m) => !m.isPartial), [messages]);
 
@@ -526,8 +531,6 @@ function TranscriptionPanel() {
     return line ? `${target.speaker}: ${line}` : null;
   }, [messages, selectedLanguage]);
 
-  const visibleMessages = useMemo(() => messagesForDisplay(messages), [messages]);
-
   // If captions are not enabled, don't show the panel at all
   if (!translationEnabled) return null;
 
@@ -535,7 +538,7 @@ function TranscriptionPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 w-96 max-h-80 border meeting-panel-surface backdrop-blur-md rounded-xl z-[9999] flex flex-col"
+        className="fixed bottom-20 right-4 w-96 max-h-80 border meeting-panel-surface backdrop-blur-md rounded-xl z-[9999] flex flex-col min-h-0"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
@@ -547,7 +550,7 @@ function TranscriptionPanel() {
           compact
         />
         {!isAtBottom && (
-          <JumpToLatest onClick={scrollToBottom} />
+          <JumpToLatest onClick={jumpToLatest} />
         )}
       </div>
     );
@@ -560,7 +563,7 @@ function TranscriptionPanel() {
     <>
       {/* Desktop: right side panel */}
       <div
-        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] meeting-panel-surface border-l border h-full flex-shrink-0"
+        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] meeting-panel-surface border-l border h-full min-h-0 flex-shrink-0"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
@@ -571,7 +574,7 @@ function TranscriptionPanel() {
           selectedLanguage={selectedLanguage}
         />
         {!isAtBottom && (
-          <JumpToLatest onClick={scrollToBottom} />
+          <JumpToLatest onClick={jumpToLatest} />
         )}
       </div>
 
@@ -601,7 +604,7 @@ function TranscriptionPanel() {
             compact
           />
           {!isAtBottom && (
-            <JumpToLatest onClick={scrollToBottom} />
+            <JumpToLatest onClick={jumpToLatest} />
           )}
         </div>
       )}
@@ -747,7 +750,7 @@ function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact
     <div
       ref={scrollRef}
       onScroll={onScroll}
-      className={`flex-1 overflow-y-auto ${compact ? 'p-2 space-y-1.5' : 'p-4 space-y-3'}`}
+      className={`flex-1 min-h-0 overflow-y-auto ${compact ? 'p-2 space-y-1.5' : 'p-4 space-y-3'}`}
     >
       {!hasContent && (
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
