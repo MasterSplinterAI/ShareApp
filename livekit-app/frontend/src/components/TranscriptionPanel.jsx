@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
@@ -476,13 +476,28 @@ function TranscriptionPanel() {
     if (force) setIsAtBottom(true);
   }, [isAtBottom]);
 
-  // Auto-scroll after layout (partials grow in place; useEffect runs too early on desktop).
-  useLayoutEffect(() => {
-    if (!isAtBottom || !scrollRef.current) return;
-    scrollToBottom();
-    const frame = requestAnimationFrame(() => scrollToBottom());
-    return () => cancelAnimationFrame(frame);
-  }, [visibleMessages, isAtBottom, isPanelOpen, scrollToBottom]);
+  // MutationObserver-based auto-scroll: catches all content changes including
+  // in-place partial text growth that doesn't trigger React state deps.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const doScroll = () => {
+      if (!isAtBottom || !scrollRef.current) return;
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    };
+
+    const mo = new MutationObserver(doScroll);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+
+    const ro = new ResizeObserver(doScroll);
+    ro.observe(el);
+
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+    };
+  }, [isAtBottom, isPanelOpen]);
 
   // Track scroll position
   const handleScroll = () => {
