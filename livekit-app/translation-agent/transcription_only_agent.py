@@ -16,12 +16,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple
 
-import aiohttp
-
 from cost_reporter import CostReporter
 from deepgram_caption_buffer import DeepgramCaptionBuffer
 from residual_guard import is_residual_repeat
-# Legacy non-Deepgram STT (xAI/OpenAI) still uses stitch + part list.
 from transcript_assembler import stitch_committed_and_open
 
 from livekit import rtc
@@ -36,119 +33,12 @@ except ImportError:
     deepgram = None
     openai = None
 
-# xAI is imported separately so a missing plugin doesn't disable Deepgram/OpenAI
-try:
-    from livekit.plugins import xai as xai_plugin
-    XAI_AVAILABLE = True
-except ImportError:
-    XAI_AVAILABLE = False
-    xai_plugin = None
-
 try:
     from livekit.plugins import noise_cancellation
     NOISE_CANCELLATION_AVAILABLE = True
 except ImportError:
     NOISE_CANCELLATION_AVAILABLE = False
     noise_cancellation = None
-
-# xAI STT supported languages (BCP-47 primary subtags, as of April 2026).
-# Anything outside this set falls back to Deepgram/OpenAI even when STT_PROVIDER=xai.
-# Notably MISSING: zh (Chinese), he (Hebrew), tiv — keep these on Deepgram.
-XAI_SUPPORTED_LANGS = {
-    "ar", "cs", "da", "nl", "en", "fil", "fr", "de", "hi", "id",
-    "it", "ja", "ko", "mk", "ms", "fa", "pl", "pt", "ro", "ru",
-    "es", "sv", "th", "tr", "vi",
-}
-
-
-def _stt_force_deepgram_langs() -> set:
-    """Languages where xAI quality is unreliable — force Deepgram. Override via STT_DEEPGRAM_LANGS."""
-    raw = (os.getenv("STT_DEEPGRAM_LANGS") or "es").strip()
-    return {part.strip().lower() for part in raw.split(",") if part.strip()}
-
-# Official xAI STT endpoints (https://docs.x.ai/developers/model-capabilities/audio/speech-to-text)
-XAI_STT_WS_URL = "wss://api.x.ai/v1/stt"
-XAI_STT_REST_URL = "https://api.x.ai/v1/stt"
-
-_xai_stt_probe_ok: Optional[bool] = None
-
-
-def _xai_api_key() -> str:
-    return (os.getenv("XAI_API_KEY") or "").strip()
-
-
-def _xai_stt_endpointing_ms() -> int:
-    """Silence (ms) before xAI emits speech_final. Higher = brief pauses stay in one utterance."""
-    raw = os.getenv("XAI_STT_ENDPOINTING_MS", "1800").strip()
-    try:
-        ms = int(raw)
-    except ValueError:
-        ms = 1800
-    return max(0, min(ms, 5000))
-
-
-def _xai_stt_ws_params(language: str) -> Dict[str, str]:
-    """Query params for xAI streaming STT WebSocket (matches livekit-plugins-xai)."""
-    return {
-        "encoding": "pcm",
-        "sample_rate": "16000",
-        "interim_results": "true",
-        "diarize": "false",
-        "language": language,
-        "endpointing": str(_xai_stt_endpointing_ms()),
-    }
-
-
-async def probe_xai_stt_connection(*, language: str = "en") -> Tuple[bool, str]:
-    """Verify XAI_API_KEY against wss://api.x.ai/v1/stt before selecting Grok STT."""
-    global _xai_stt_probe_ok
-    if _xai_stt_probe_ok is True:
-        return True, "ok"
-
-    api_key = _xai_api_key()
-    if not api_key:
-        return False, "XAI_API_KEY is missing or empty"
-
-    params = _xai_stt_ws_params(language)
-    try:
-        timeout = aiohttp.ClientTimeout(total=10, sock_connect=8)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.ws_connect(
-                XAI_STT_WS_URL,
-                headers={"Authorization": f"Bearer {api_key}"},
-                params=params,
-            ) as ws:
-                msg = await ws.receive(timeout=8)
-                if msg.type != aiohttp.WSMsgType.TEXT:
-                    return (
-                        False,
-                        f"unexpected xAI STT handshake message type: {msg.type}",
-                    )
-                payload = json.loads(msg.data)
-                if payload.get("type") != "transcript.created":
-                    return (
-                        False,
-                        f"unexpected xAI STT first event: {payload.get('type')!r}",
-                    )
-    except aiohttp.WSServerHandshakeError as e:
-        status = getattr(e, "status", None) or getattr(e, "code", None)
-        if status in (400, 401):
-            hint = (
-                "Regenerate the key at https://console.x.ai and run "
-                "lk agent update-secrets --secrets \"XAI_API_KEY=<new-key>\""
-            )
-            _xai_stt_probe_ok = False
-            return (
-                False,
-                f"xAI STT rejected API key (HTTP {status} on {XAI_STT_WS_URL}). {hint}",
-            )
-        return False, f"xAI STT WebSocket handshake failed: {e}"
-    except Exception as e:
-        return False, f"xAI STT probe failed: {e}"
-
-    _xai_stt_probe_ok = True
-    return True, "ok"
-
 
 def _caption_finalize_delay_sec() -> float:
     """Legacy fallback delay when STT does not emit speech_final (non-Deepgram)."""
@@ -190,14 +80,6 @@ def _speech_times(speech_data: Any) -> Tuple[float, float]:
     except (TypeError, ValueError):
         return 0.0, 0.0
 
-
-def _is_stt_handshake_error(exc: BaseException) -> bool:
-    msg = str(exc).lower()
-    return (
-        "wsserverhandshakeerror" in type(exc).__name__.lower()
-        or "invalid response status" in msg
-        or "api.x.ai/v1/stt" in msg
-    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -732,44 +614,6 @@ class TranscriptionOnlyAgent:
         stt_provider_name = "unknown"
         excluded = skip_providers or set()
 
-        def _try_xai():
-            nonlocal stt_provider_name
-            if "xai" in excluded:
-                return None
-            if not XAI_AVAILABLE or xai_plugin is None:
-                logger.warning(f"{L} STT_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
-                return None
-            if not _xai_api_key():
-                logger.warning(f"{L} STT_PROVIDER=xai but XAI_API_KEY not set — falling back")
-                return None
-            if normalized_lang not in XAI_SUPPORTED_LANGS:
-                logger.info(f"{L} xAI does not support lang={stt_lang!r} — falling back to Deepgram")
-                return None
-            force_dg = _stt_force_deepgram_langs()
-            if normalized_lang in force_dg:
-                logger.info(
-                    f"{L} STT_DEEPGRAM_LANGS={sorted(force_dg)} forces lang={normalized_lang!r} off xAI — using Deepgram"
-                )
-                return None
-            try:
-                xai_endpointing = _xai_stt_endpointing_ms()
-                inst = xai_plugin.STT(
-                    language=normalized_lang,
-                    sample_rate=16000,
-                    enable_interim_results=True,
-                    endpointing=xai_endpointing,
-                    api_key=_xai_api_key(),
-                )
-                logger.info(
-                    f"{L} STT: xAI Grok via {XAI_STT_WS_URL} "
-                    f"lang={normalized_lang} endpointing={xai_endpointing}ms (shared)"
-                )
-                stt_provider_name = "xai"
-                return inst
-            except Exception as e:
-                logger.warning(f"{L} xAI STT init failed ({e}) — falling back")
-                return None
-
         def _try_deepgram():
             nonlocal stt_provider_name
             if "deepgram" in excluded:
@@ -808,8 +652,6 @@ class TranscriptionOnlyAgent:
             return inst
 
         provider_order = {
-            "xai": [_try_xai, _try_deepgram, _try_openai],
-            # Deepgram-primary: no xAI fallback until re-enabled explicitly.
             "deepgram": [_try_deepgram, _try_openai],
             "openai": [_try_openai, _try_deepgram],
         }.get(stt_provider, [_try_deepgram, _try_openai])
@@ -830,26 +672,6 @@ class TranscriptionOnlyAgent:
         llm_provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
         llm_provider_name = "openai"
 
-        def _try_xai_llm():
-            nonlocal llm_provider_name
-            if llm_provider != "xai":
-                return None
-            if not XAI_AVAILABLE or xai_plugin is None:
-                logger.warning(f"{L} LLM_PROVIDER=xai but livekit-plugins-xai not installed — falling back")
-                return None
-            if not _xai_api_key():
-                logger.warning(f"{L} LLM_PROVIDER=xai but XAI_API_KEY not set — falling back")
-                return None
-            try:
-                model = os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning")
-                inst = xai_plugin.responses.LLM(model=model)
-                logger.info(f"{L} LLM: xAI {model}")
-                llm_provider_name = "xai"
-                return inst
-            except Exception as e:
-                logger.warning(f"{L} xAI LLM init failed ({e}) — falling back")
-                return None
-
         def _try_openai_llm():
             nonlocal llm_provider_name
             if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
@@ -859,10 +681,7 @@ class TranscriptionOnlyAgent:
             llm_provider_name = "openai"
             return inst
 
-        llm_order = {
-            "xai": [_try_xai_llm, _try_openai_llm],
-            "openai": [_try_openai_llm, _try_xai_llm],
-        }.get(llm_provider, [_try_openai_llm])
+        llm_order = [_try_openai_llm]
 
         llm_instance = None
         for attempt in llm_order:
@@ -940,19 +759,9 @@ class TranscriptionOnlyAgent:
             logger.error(f"{L} No speaker language — abort pipeline")
             return
 
-        skip_stt: Set[str] = set()
-        if os.getenv("STT_PROVIDER", "deepgram").strip().lower() == "xai":
-            ok, reason = await probe_xai_stt_connection(
-                language=self._normalize_language_code(speaker_lang.split("-")[0])
-            )
-            if not ok:
-                logger.error(f"{L} xAI STT unavailable ({reason}) — using Deepgram/OpenAI fallback")
-                skip_stt.add("xai")
-
         stt_instance, stt_provider_name = self._create_stt_instance(
             speaker_id,
             speaker_lang,
-            skip_providers=skip_stt,
         )
         if stt_instance is None:
             return
@@ -960,11 +769,6 @@ class TranscriptionOnlyAgent:
             f"{L} Caption pipeline STT provider={stt_provider_name!r} "
             f"(configured STT_PROVIDER={os.getenv('STT_PROVIDER', 'deepgram')!r})"
         )
-        if os.getenv("STT_PROVIDER", "deepgram").strip().lower() == "xai" and stt_provider_name != "xai":
-            logger.warning(
-                f"{L} xAI STT configured but active provider is {stt_provider_name!r} — "
-                "xAI console will show no STT usage; check probe/key/fallback logs"
-            )
         vad_instance = silero.VAD.load(**self._vad_params())
 
         participant = None
@@ -1086,11 +890,7 @@ class TranscriptionOnlyAgent:
                         # Estimate: ~4 chars/token
                         in_tok = max(1, (len(sys_msg) + len(original)) // 4)
                         out_tok = max(1, len(accumulated) // 4)
-                    model_name = (
-                        os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning")
-                        if lane.llm_provider == "xai"
-                        else "gpt-4o-mini"
-                    )
+                    model_name = "gpt-4o-mini"
                     asyncio.create_task(self.cost_reporter.emit_llm(
                         input_tokens=in_tok,
                         output_tokens=out_tok,
@@ -1551,44 +1351,7 @@ class TranscriptionOnlyAgent:
         except asyncio.CancelledError:
             logger.info(f"{L} Speaker pipeline cancelled")
         except Exception as e:
-            if stt_provider_name == "xai" and _is_stt_handshake_error(e):
-                logger.error(
-                    f"{L} xAI STT handshake failed at runtime ({e}) — retrying with Deepgram/OpenAI"
-                )
-                await stt_stream.aclose()
-                await vad_stream.aclose()
-                await audio_stream.aclose()
-                fallback_inst, fallback_name = self._create_stt_instance(
-                    speaker_id,
-                    speaker_lang,
-                    skip_providers={"xai"},
-                )
-                if fallback_inst is None:
-                    logger.error(f"{L} No STT fallback available after xAI failure")
-                    return
-                participant = None
-                for p in job_ctx.room.remote_participants.values():
-                    if p.identity == speaker_id:
-                        participant = p
-                        break
-                if not participant:
-                    return
-                audio_stream = rtc.AudioStream.from_participant(
-                    participant=participant,
-                    track_source=rtc.TrackSource.SOURCE_MICROPHONE,
-                    sample_rate=16000,
-                    num_channels=1,
-                )
-                stt_stream = fallback_inst.stream()
-                vad_stream = vad_instance.stream()
-                stt_provider_name = fallback_name
-                use_deepgram_captions[0] = fallback_name == "deepgram"
-                dg_buffer.clear()
-                turn_original_parts.clear()
-                last_live_publish[0] = ""
-                await asyncio.gather(feed_audio(), process_vad(), process_stt())
-            else:
-                logger.error(f"{L} Pipeline error: {e}", exc_info=True)
+            logger.error(f"{L} Pipeline error: {e}", exc_info=True)
         finally:
             await self._unregister_caption_session(speaker_id)
             if turn_id[0]:
@@ -1603,8 +1366,6 @@ def log_resolved_inference_config() -> None:
     lc_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
     stt = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
     llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
-    xai_llm_model = os.getenv("XAI_LLM_MODEL", "grok-4.20-non-reasoning").strip()
-    xai_endpoint = str(_xai_stt_endpointing_ms())
 
     build_ref = (
         os.getenv("AGENT_BUILD_REF")
@@ -1613,22 +1374,13 @@ def log_resolved_inference_config() -> None:
         or os.getenv("VERCEL_GIT_COMMIT_SHA")
         or "unset"
     )
-    has_xai = bool(_xai_api_key())
     has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
 
     stt_primary = {
-        "xai": "xAI Grok STT (then Deepgram, then OpenAI transcribe fallback)",
-        "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize; no xAI fallback)",
+        "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize)",
         "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)",
-    }.get(stt, "custom order")
-
-    warn = ""
-    if stt == "deepgram" and has_xai:
-        warn = (
-            " NOTE: XAI_API_KEY is set but STT_PROVIDER is default 'deepgram' — "
-            "set STT_PROVIDER=xai in LiveKit Agent env to use Grok STT."
-        )
+    }.get(stt, "Deepgram nova-3 (then OpenAI fallback)")
 
     logger.info("=" * 60)
     logger.info("RESOLVED INFERENCE CONFIG (transcription_only_agent)")
@@ -1638,18 +1390,9 @@ def log_resolved_inference_config() -> None:
         os.getenv("LIVEKIT_CLOUD", ""),
         lc_cloud,
     )
-    logger.info(
-        "  STT_PROVIDER=%r primary_path=%s%s",
-        stt,
-        stt_primary,
-        warn or "",
-    )
+    logger.info("  STT_PROVIDER=%r primary_path=%s", stt, stt_primary)
     logger.info("  LLM_PROVIDER=%r (translation lanes; same-language captions skip LLM)", llm)
-    if llm == "xai":
-        logger.info(f"  XAI_LLM_MODEL={xai_llm_model!r} (live translation)")
-    else:
-        logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
-    logger.info(f"  XAI_STT_ENDPOINTING_MS={xai_endpoint!r} (xAI only)")
+    logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
     logger.info(
         f"  DEEPGRAM_ENDPOINTING_MS={_deepgram_endpointing_ms()!r} (speech_final fast path)"
     )
@@ -1657,39 +1400,15 @@ def log_resolved_inference_config() -> None:
         f"  DEEPGRAM_STT_IDLE_MS={_deepgram_stt_idle_ms()!r} "
         "(finalize when transcript stops changing — ignores background noise)"
     )
-    logger.info(f"  xAI STT endpoints: WS={XAI_STT_WS_URL} REST={XAI_STT_REST_URL}")
-    logger.info(f"  keys_present mask: XAI_API_KEY={'yes' if has_xai else 'no'}, "
-                f"DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
+    logger.info(f"  keys_present mask: DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
                 f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
     logger.info("  (Unset keys may still use LiveKit Cloud-injected Deepgram/STT defaults when LIVEKIT_CLOUD=true.)")
     logger.info("=" * 60)
 
 
 async def main(ctx: JobContext):
-    if os.getenv("STT_PROVIDER", "deepgram").strip().lower() == "xai":
-        ok, reason = await probe_xai_stt_connection()
-        if ok:
-            logger.info("✅ xAI STT probe OK (%s)", XAI_STT_WS_URL)
-        else:
-            logger.error("❌ xAI STT probe failed: %s", reason)
     agent = TranscriptionOnlyAgent()
     await agent.entrypoint(ctx)
-
-
-def prewarm(proc) -> None:
-    """Run once per worker process — validate xAI STT when configured."""
-    if os.getenv("STT_PROVIDER", "deepgram").strip().lower() != "xai":
-        return
-    try:
-        ok, reason = asyncio.run(probe_xai_stt_connection())
-        proc.userdata["xai_stt_probe_ok"] = ok
-        proc.userdata["xai_stt_probe_reason"] = reason
-        if ok:
-            logger.info("✅ Worker prewarm: xAI STT reachable at %s", XAI_STT_WS_URL)
-        else:
-            logger.error("❌ Worker prewarm: xAI STT probe failed: %s", reason)
-    except Exception as e:
-        logger.error("❌ Worker prewarm: xAI STT probe error: %s", e)
 
 
 if __name__ == "__main__":
@@ -1700,7 +1419,6 @@ if __name__ == "__main__":
     agent_name = os.getenv('AGENT_NAME', 'translation-cloud-prod')
     worker_opts = WorkerOptions(
         entrypoint_fnc=main,
-        prewarm_fnc=prewarm,
         api_key=os.getenv('LIVEKIT_API_KEY'),
         api_secret=os.getenv('LIVEKIT_API_SECRET'),
         ws_url=os.getenv('LIVEKIT_URL', 'wss://production-uiycx4ku.livekit.cloud'),
