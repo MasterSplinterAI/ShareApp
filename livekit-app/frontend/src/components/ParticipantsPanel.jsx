@@ -78,7 +78,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
         {!isServerMuted && micPub && <Mic className="w-3.5 h-3.5 text-emerald-400/80 flex-shrink-0" aria-hidden />}
 
         {isLocalHost && !isSelf && (
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
             {isServerMuted ? (
               <button
                 type="button"
@@ -143,7 +143,10 @@ export default function ParticipantsPanel({ meetingId }) {
   if (!isVisible) return null;
 
   return (
-    <div className="flex h-full w-80 flex-shrink-0 flex-col border-l border-border bg-card sm:w-96">
+    <div
+      className="z-40 flex max-h-[45vh] w-full min-h-0 flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-80 lg:w-96 sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
+      data-no-translate="true"
+    >
       <PanelTabs />
 
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
@@ -155,7 +158,7 @@ export default function ParticipantsPanel({ meetingId }) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1">
         {humanParticipants.map((p) => (
           <ParticipantRow
             key={p.identity}

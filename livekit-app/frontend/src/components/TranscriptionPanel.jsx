@@ -232,6 +232,10 @@ function TranscriptionPanel() {
   const usePipMode = isFullScreen && isPanelOpen;
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
+  useEffect(() => {
+    if (!isPanelOpen) setMobileExpanded(false);
+  }, [isPanelOpen]);
+
   // Unified flow: one bubble per speaker turn. Partials update in place;
   // the same bubble firms up when the final arrives. No separate live section.
   const [messages, setMessages] = useState([]);
