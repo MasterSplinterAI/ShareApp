@@ -68,6 +68,18 @@ function stitchCommittedAndOpen(committed, openText) {
   return `${c} ${o}`.trim();
 }
 
+function applyGladiaPartialText(previous, incoming) {
+  const p = (previous || '').trim();
+  const n = sanitizeCaptionText((incoming || '').trim());
+  if (!n) return p;
+  if (!p) return n;
+  if (n === p) return p;
+  if (n.startsWith(p) || wordPrefixMatch(p, n)) return n;
+  if (p.startsWith(n) || wordPrefixMatch(n, p)) return p;
+  // Gladia partials can revise earlier words (not strict prefix extensions) — take latest line.
+  return n;
+}
+
 /**
  * Live partials for one turn: agent sends a full cumulative hypothesis each packet.
  * Do not concat when Deepgram revises earlier words (pickLiveCaptionText → mergeSttOverlap).
@@ -83,6 +95,8 @@ function applyLivePartialText(previous, incoming) {
   const common = commonWordPrefixLen(p, n);
   if (common >= 2 && n.length >= p.length * 0.75) return n;
   if (common >= 2 && p.length > n.length) return p;
+  // Non-prefix revision (common with Gladia partial model swaps) — prefer latest hypothesis.
+  if (common < 2) return n;
   return sanitizeCaptionText(stitchCommittedAndOpen(p, n));
 }
 
@@ -242,9 +256,19 @@ function TranscriptionPanel() {
   // the same bubble firms up when the final arrives. No separate live section.
   const [messages, setMessages] = useState([]);
   const [isAtBottom, setIsAtBottom] = useState(true);
-  const scrollRef = useRef(null);
+  const desktopScrollRef = useRef(null);
+  const mobileScrollRef = useRef(null);
+  const pipScrollRef = useRef(null);
   const bottomAnchorRef = useRef(null);
   const isAtBottomRef = useRef(true);
+
+  const getScrollEl = useCallback(() => {
+    if (usePipMode) return pipScrollRef.current;
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches) {
+      return desktopScrollRef.current;
+    }
+    return mobileScrollRef.current;
+  }, [usePipMode]);
   const msgCounterRef = useRef(0);
   const sentMessageIdsRef = useRef(new Set());
   const persistFlushTimerRef = useRef(null);
@@ -349,13 +373,20 @@ function TranscriptionPanel() {
           };
         };
 
+        const sttProvider = message.sttProvider || null;
+
         const applyPartialUpdate = (existing, isPartial) => {
           const incomingLine = originalText || text;
           const sameTurn =
             transcriptionId != null && existing.transcriptionId === transcriptionId;
-          const mergedOriginal = sameTurn
-            ? applyLivePartialText(existing.originalText, incomingLine)
-            : pickLiveCaptionText(existing.originalText, incomingLine);
+          let mergedOriginal;
+          if (sameTurn) {
+            mergedOriginal = sttProvider === 'gladia'
+              ? applyGladiaPartialText(existing.originalText, incomingLine)
+              : applyLivePartialText(existing.originalText, incomingLine);
+          } else {
+            mergedOriginal = pickLiveCaptionText(existing.originalText, incomingLine);
+          }
           return {
           ...existing,
           originalText: mergedOriginal,
@@ -473,13 +504,12 @@ function TranscriptionPanel() {
 
   const scrollToLatest = useCallback((force = false) => {
     if (!force && !isAtBottomRef.current) return;
-    const el = scrollRef.current;
+    const el = getScrollEl();
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-    bottomAnchorRef.current?.scrollIntoView({ block: 'end' });
     isAtBottomRef.current = true;
     if (force) setIsAtBottom(true);
-  }, []);
+  }, [getScrollEl]);
 
   // React state updates (partials/finals) — layout effect runs before paint.
   useLayoutEffect(() => {
@@ -489,15 +519,18 @@ function TranscriptionPanel() {
 
   // MutationObserver catches in-place partial text growth between React renders.
   useEffect(() => {
-    const el = scrollRef.current;
+    const el = getScrollEl();
     if (!el) return;
 
     const doScroll = () => {
-      if (!isAtBottomRef.current || !scrollRef.current) return;
+      if (!isAtBottomRef.current) return;
+      const target = getScrollEl();
+      if (!target) return;
       requestAnimationFrame(() => {
-        if (!isAtBottomRef.current || !scrollRef.current) return;
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        bottomAnchorRef.current?.scrollIntoView({ block: 'end' });
+        if (!isAtBottomRef.current) return;
+        const active = getScrollEl();
+        if (!active) return;
+        active.scrollTop = active.scrollHeight;
       });
     };
 
@@ -511,12 +544,12 @@ function TranscriptionPanel() {
       mo.disconnect();
       ro.disconnect();
     };
-  }, [isPanelOpen]);
+  }, [isPanelOpen, mobileExpanded, usePipMode, getScrollEl]);
 
-  // Track scroll position
-  const handleScroll = () => {
-    if (!scrollRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+  // Track scroll position (event target is the visible panel's scroll container).
+  const handleScroll = (e) => {
+    const el = e.currentTarget;
+    const { scrollTop, scrollHeight, clientHeight } = el;
     const atBottom = scrollHeight - scrollTop - clientHeight < 40;
     isAtBottomRef.current = atBottom;
     setIsAtBottom(atBottom);
@@ -575,7 +608,7 @@ function TranscriptionPanel() {
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
         <PanelContent
           messages={visibleMessages}
-          scrollRef={scrollRef}
+          scrollRef={pipScrollRef}
           bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
@@ -601,7 +634,7 @@ function TranscriptionPanel() {
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
         <PanelContent
           messages={visibleMessages}
-          scrollRef={scrollRef}
+          scrollRef={desktopScrollRef}
           bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
@@ -631,7 +664,7 @@ function TranscriptionPanel() {
           />
           <PanelContent
             messages={visibleMessages}
-            scrollRef={scrollRef}
+            scrollRef={mobileScrollRef}
             bottomAnchorRef={bottomAnchorRef}
             onScroll={handleScroll}
             selectedLanguage={selectedLanguage}
