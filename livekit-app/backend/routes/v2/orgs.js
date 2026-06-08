@@ -176,6 +176,7 @@ router.get('/admin/orgs', requireV2Auth, requireSuperadmin, async (req, res) => 
 router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const orgCountRow = await db.get(`SELECT COUNT(*) AS c FROM v2_organizations`);
+    const userCountRow = await db.get(`SELECT COUNT(*) AS c FROM v2_users`);
     const mrrRow = await db.get(
       `SELECT COALESCE(SUM(p.monthly_price_cents), 0) AS mrr_cents
        FROM v2_org_subscriptions s
@@ -197,6 +198,7 @@ router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => 
     );
     res.json({
       orgCount: orgCountRow?.c ?? 0,
+      userCount: userCountRow?.c ?? 0,
       estimatedMrrCents: mrrRow?.mrr_cents ?? 0,
       planMix,
       billingStatusMix: billingMix,

@@ -51,9 +51,9 @@ export default function V2SuperAdmin() {
   const [allowed, setAllowed] = useState(null);
   const [tab, setTab] = useState('orgs');
   const [orgs, setOrgs] = useState([]);
-  const [users, setUsers] = useState([]);
   const [kpis, setKpis] = useState(null);
   const [costs, setCosts] = useState(null);
+  const [costsLoadedAt, setCostsLoadedAt] = useState(null);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgDetail, setOrgDetail] = useState(null);
   const [billingEdit, setBillingEdit] = useState({});
@@ -67,17 +67,40 @@ export default function V2SuperAdmin() {
   const reloadOrgs = () =>
     v2Admin.orgs().then((r) => setOrgs(r.orgs || [])).catch(() => toast.error('Failed to load orgs'));
 
+  const reloadCosts = () =>
+    v2Admin
+      .costsSummary()
+      .then((data) => {
+        setCosts(data);
+        setCostsLoadedAt(new Date());
+      })
+      .catch(() => toast.error('Failed to load costs'));
+
+  const reloadKpis = () => v2Orgs.adminKpis().then(setKpis).catch(() => {});
+
+  const refreshAdminData = () => {
+    reloadKpis();
+    reloadOrgs();
+    reloadCosts();
+    if (selectedOrg) {
+      v2Admin.orgDetail(selectedOrg).then(setOrgDetail).catch(() => {});
+    }
+  };
+
   useEffect(() => {
     v2Orgs.adminPing().then(() => setAllowed(true)).catch(() => setAllowed(false));
   }, []);
 
   useEffect(() => {
     if (!allowed) return;
-    v2Orgs.adminKpis().then(setKpis).catch(() => {});
+    reloadKpis();
     reloadOrgs();
-    v2Admin.users().then((r) => setUsers(r.users || [])).catch(() => {});
-    v2Admin.costsSummary().then(setCosts).catch(() => {});
+    reloadCosts();
   }, [allowed]);
+
+  useEffect(() => {
+    if (tab === 'costs' && allowed) reloadCosts();
+  }, [tab, allowed]);
 
   useEffect(() => {
     if (!selectedOrg) {
@@ -166,6 +189,8 @@ export default function V2SuperAdmin() {
       await v2Admin.setPlan(orgId, { plan_id, reason });
       toast.success('Plan updated');
       reloadOrgs();
+      reloadCosts();
+      reloadKpis();
       if (selectedOrg === orgId) v2Admin.orgDetail(orgId).then(setOrgDetail);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
@@ -191,6 +216,8 @@ export default function V2SuperAdmin() {
         return next;
       });
       reloadOrgs();
+      reloadCosts();
+      reloadKpis();
       if (selectedOrg === orgId) v2Admin.orgDetail(orgId).then(setOrgDetail);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
@@ -223,9 +250,16 @@ export default function V2SuperAdmin() {
       <Button variant="link" className="h-auto p-0 text-primary" asChild>
         <Link to="/v2/app">← Workspace</Link>
       </Button>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Parley admin</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Users, orgs, costs, and comp overrides.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Parley admin</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Organizations are the billing unit — select one to see members, usage, and comp/plan controls.
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={refreshAdminData}>
+          Refresh data
+        </Button>
       </div>
 
       <Card className="app-card border-border/60 shadow-sm">
@@ -248,8 +282,9 @@ export default function V2SuperAdmin() {
             <div className="mt-1 text-2xl font-semibold tabular-nums">{fmtUsd(costs?.totals?.total_cost_usd)}</div>
           </div>
           <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Users</div>
-            <div className="mt-1 text-2xl font-semibold tabular-nums">{users.length}</div>
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Accounts</div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">{kpis?.userCount ?? '—'}</div>
+            <div className="text-xs text-muted-foreground">Login identities (nested under orgs)</div>
           </div>
         </CardContent>
       </Card>
@@ -257,7 +292,6 @@ export default function V2SuperAdmin() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="orgs">Organizations</TabsTrigger>
-          <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="costs">Costs & margin</TabsTrigger>
         </TabsList>
 
@@ -395,6 +429,31 @@ export default function V2SuperAdmin() {
                     )}
                   </div>
                 )}
+                {orgDetail.members?.length > 0 && (
+                  <div className="rounded-lg border border-border/60 p-4 lg:col-span-2">
+                    <h3 className="font-medium mb-2">Members</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm">
+                        <thead className="text-xs text-muted-foreground">
+                          <tr>
+                            <th className="pb-2 font-medium">Email</th>
+                            <th className="pb-2 font-medium">Role</th>
+                            <th className="pb-2 font-medium">Joined</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {orgDetail.members.map((m) => (
+                            <tr key={m.id} className="border-t border-border/40">
+                              <td className="py-2">{m.email}</td>
+                              <td className="py-2">{m.role}</td>
+                              <td className="py-2 text-muted-foreground text-xs">{m.created_at?.slice(0, 10) || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-4 lg:col-span-2">
                   <label htmlFor={`audit-reason-${orgKey(selectedOrg)}`} className="text-sm font-medium">
                     Audit reason <span className="text-destructive">*</span>
@@ -490,45 +549,19 @@ export default function V2SuperAdmin() {
           )}
         </TabsContent>
 
-        <TabsContent value="users" className="mt-4">
-          <Card className="app-card overflow-hidden border-border/60">
-            <CardHeader>
-              <CardTitle className="text-lg">Users</CardTitle>
-            </CardHeader>
-            <div className="overflow-x-auto border-t border-border/60">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-border bg-muted/30 text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-3 font-medium">Email</th>
-                    <th className="px-4 py-3 font-medium">Org</th>
-                    <th className="px-4 py-3 font-medium">Role</th>
-                    <th className="px-4 py-3 font-medium">Plan</th>
-                    <th className="px-4 py-3 font-medium">Comp</th>
-                    <th className="px-4 py-3 font-medium">Part.-min (month)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <tr key={`${u.id}-${u.org_id || 'none'}`} className="border-b border-border/60 last:border-0">
-                      <td className="px-4 py-3">{u.email}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{u.org_name || '—'}</td>
-                      <td className="px-4 py-3">{u.role || '—'}</td>
-                      <td className="px-4 py-3">{u.plan_id || '—'}</td>
-                      <td className="px-4 py-3">{u.is_comp === 1 ? u.comp_label || 'yes' : '—'}</td>
-                      <td className="px-4 py-3 tabular-nums">{Math.round(u.mtd_meeting_minutes || 0)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </TabsContent>
-
         <TabsContent value="costs" className="mt-4">
           <Card className="app-card overflow-hidden border-border/60">
             <CardHeader>
-              <CardTitle className="text-lg">Costs & margin (MTD)</CardTitle>
-              <CardDescription>Hard USD infra cost vs plan revenue per org.</CardDescription>
+              <CardTitle className="text-lg">Costs & margin (month)</CardTitle>
+              <CardDescription>
+                Estimated infra cost for meetings that ended this calendar month vs plan revenue. Comp orgs
+                show $0 revenue. Data refreshes when you open this tab — click Refresh if numbers look stale.
+                {costsLoadedAt && (
+                  <span className="block mt-1 text-xs">
+                    Last loaded {costsLoadedAt.toLocaleTimeString()}
+                  </span>
+                )}
+              </CardDescription>
             </CardHeader>
             <div className="overflow-x-auto border-t border-border/60">
               <table className="w-full text-left text-sm">
@@ -537,14 +570,23 @@ export default function V2SuperAdmin() {
                     <th className="px-4 py-3 font-medium">Org</th>
                     <th className="px-4 py-3 font-medium">Plan</th>
                     <th className="px-4 py-3 font-medium">Revenue/mo</th>
-                    <th className="px-4 py-3 font-medium">Cost MTD</th>
+                    <th className="px-4 py-3 font-medium">Infra cost (month)</th>
                     <th className="px-4 py-3 font-medium">Margin</th>
-                    <th className="px-4 py-3 font-medium">Minutes</th>
+                    <th className="px-4 py-3 font-medium">Part.-min (month)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(costs?.byOrg || []).map((row) => (
-                    <tr key={row.org_id} className="border-b border-border/60 last:border-0">
+                    <tr
+                      key={row.org_id || row.org_name || 'unknown'}
+                      className="border-b border-border/60 last:border-0 cursor-pointer hover:bg-muted/30"
+                      onClick={() => {
+                        if (row.org_id) {
+                          setTab('orgs');
+                          setSelectedOrg(row.org_id);
+                        }
+                      }}
+                    >
                       <td className="px-4 py-3 font-medium">{row.org_name}</td>
                       <td className="px-4 py-3">
                         {row.plan_id}
