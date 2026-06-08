@@ -243,12 +243,20 @@ class AutopilotTranslator {
      * Check if current page is enabled for translation
      */
     private isPageEnabled(): boolean {
+        const currentPath = window.location.pathname;
+        // Live meetings: React owns the DOM; batch DOM translation causes removeChild crashes.
+        if (
+            currentPath.startsWith('/room/')
+            || currentPath.startsWith('/join/')
+        ) {
+            return false;
+        }
+
         // Empty array means all pages are enabled
         if (this.enabledPages.length === 0) {
             return true;
         }
 
-        const currentPath = window.location.pathname;
         const routeName = currentPath.replace(/^\//, '').replace(/\/$/, '') || 'dashboard';
         
         return this.enabledPages.some(page => {
@@ -634,7 +642,8 @@ class AutopilotTranslator {
                         parent.classList.contains('notranslate') ||
                         parent.closest('[data-no-translate]') ||
                         parent.closest('[data-i18n-skip]') ||
-                        parent.closest('.notranslate')
+                        parent.closest('.notranslate') ||
+                        parent.closest('.meeting-room-root')
                     ) {
                         return NodeFilter.FILTER_REJECT;
                     }

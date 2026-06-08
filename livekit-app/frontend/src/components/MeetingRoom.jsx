@@ -18,8 +18,7 @@ import RoomConnectionGuard from './RoomConnectionGuard';
 import VideoGrid from './VideoGrid';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
-// Autopilot Translator SDK — for DOM/UI translation (navigation, buttons, labels)
-import { AutopilotTranslator } from '../lib/autopilot-translator';
+import { autopilotTranslator } from '../lib/autopilot-translator';
 
 function HostSessionReporter({ meetingId, isHost }) {
   const room = useRoomContext();
@@ -317,64 +316,13 @@ function MeetingRoomInner({
   } = useMeeting();
 
   const [showShareModal, setShowShareModal] = useState(false);
-  const translatorRef = useRef(null);
-  const selectedLanguageRef = useRef(selectedLanguage);
 
-  // Keep ref in sync
+  // Live meetings are React-heavy (captions, chat, video tiles). AutopilotTranslator
+  // mutates text nodes in the DOM and causes React removeChild crashes when users pick
+  // a non-English caption language. Caption/translation is handled by the agent; UI
+  // chrome uses controlLabel() instead.
   useEffect(() => {
-    selectedLanguageRef.current = selectedLanguage;
-  }, [selectedLanguage]);
-
-  // Autopilot Translator — DOM/UI translation (navigation, buttons, labels)
-  useEffect(() => {
-    if (!selectedLanguage || selectedLanguage === 'en') {
-      if (translatorRef.current) {
-        translatorRef.current.setLanguage('en').catch(() => {});
-        translatorRef.current.destroy();
-        translatorRef.current = null;
-        localStorage.removeItem('app_language');
-      }
-      return;
-    }
-
-    // Get API endpoint
-    const isNetworkAccess = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    const isNgrok = window.location.hostname.includes('ngrok');
-    const isHTTPS = window.location.protocol === 'https:';
-    let API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-    if (isNgrok || (isNetworkAccess && isHTTPS)) {
-      API_BASE_URL = '/api';
-    } else if (isNetworkAccess) {
-      API_BASE_URL = `http://${window.location.hostname}:3001/api`;
-    }
-
-    if (translatorRef.current) {
-      translatorRef.current.setLanguage(selectedLanguage).catch(err => {
-        console.error('Error changing DOM language:', err);
-      });
-    } else {
-      const translator = new AutopilotTranslator({
-        apiEndpoint: API_BASE_URL,
-        language: selectedLanguage,
-        enabledPages: [],
-      });
-      translatorRef.current = translator;
-      translator.init(selectedLanguage, []);
-    }
-
-    return () => {
-      // Only destroy on unmount, not on language change
-    };
-  }, [selectedLanguage]);
-
-  // Cleanup translator on unmount
-  useEffect(() => {
-    return () => {
-      if (translatorRef.current) {
-        translatorRef.current.destroy();
-        translatorRef.current = null;
-      }
-    };
+    autopilotTranslator.destroy();
   }, []);
 
   const handleFetchTokenForReconnect = useCallback(async () => {
