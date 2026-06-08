@@ -802,9 +802,35 @@ class TranscriptionOnlyAgent:
         # hit this because it finalized only on VAD silence (after the stream went quiet).
         last_finalized_norm: List[str] = [""]
         last_finalized_at: List[float] = [0.0]
+        # Same-speaker continuation: after finalize, if the same speaker resumes within
+        # the grace window, reopen the previous turn to avoid splitting mid-sentence.
+        last_finalized_turn_id: List[Optional[str]] = [None]
+        last_finalized_text: List[str] = [""]
 
         def _residual_guard_sec() -> float:
             return min(max(_deepgram_stt_idle_ms() / 1000.0 + 1.5, 1.5), 5.0)
+
+        def _continuation_grace_sec() -> float:
+            """Grace window after finalize: new speech reopens the previous bubble."""
+            return 2.0
+
+        def _strip_overlap_prefix(prev_text: str, new_text: str) -> str:
+            """Strip duplicated words from start of new_text that match end of prev_text."""
+            if not prev_text or not new_text:
+                return new_text
+            pw = prev_text.strip().split()
+            nw = new_text.strip().split()
+            if not pw or not nw:
+                return new_text
+            best = 0
+            for k in range(min(len(pw), len(nw)), 0, -1):
+                if pw[-k:] == nw[:k]:
+                    best = k
+                    break
+            if best > 0:
+                trimmed = " ".join(nw[best:]).strip()
+                return trimmed if trimmed else new_text
+            return new_text
 
         def is_residual_after_finalize(candidate: str) -> bool:
             prev = last_finalized_norm[0]
@@ -908,6 +934,8 @@ class TranscriptionOnlyAgent:
 
             last_finalized_norm[0] = full_original.strip().lower()
             last_finalized_at[0] = time.time()
+            last_finalized_turn_id[0] = tid
+            last_finalized_text[0] = full_original.strip()
 
             for tgt, lane in lanes.items():
                 full_translated = " ".join(p for p in lane.turn_translated_parts if p)
@@ -958,6 +986,32 @@ class TranscriptionOnlyAgent:
                 if lane.pending_translate_tasks:
                     await asyncio.gather(*lane.pending_translate_tasks, return_exceptions=True)
                 lane.pending_translate_tasks.clear()
+
+            # Same-speaker continuation: reopen previous bubble if within grace window
+            elapsed = time.time() - last_finalized_at[0]
+            if (
+                last_finalized_turn_id[0]
+                and elapsed < _continuation_grace_sec()
+                and last_finalized_text[0]
+            ):
+                logger.info(
+                    f"{L} 🔗 Continuation: reopening turn {last_finalized_turn_id[0]} "
+                    f"({elapsed:.1f}s since finalize)"
+                )
+                turn_id[0] = last_finalized_turn_id[0]
+                # Seed the buffer with previous finalized text so new words append
+                dg_buffer.clear()
+                dg_buffer.final_segments.append(last_finalized_text[0])
+                # Don't clear lane translations — they carry over
+                for lane in lanes.values():
+                    lane.turn_translated_parts.clear()
+                turn_start_time[0] = asyncio.get_event_loop().time()
+                turn_stt_seconds[0] = 0.0
+                seg_speech_start[0] = 0.0
+                last_live_publish[0] = ""
+                return
+
+            for lane in lanes.values():
                 lane.turn_translated_parts.clear()
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
@@ -966,6 +1020,9 @@ class TranscriptionOnlyAgent:
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
+            # Clear continuation state — this is a genuinely new turn
+            last_finalized_turn_id[0] = None
+            last_finalized_text[0] = ""
 
         stt_idle_task: List[Optional[asyncio.Task]] = [None]
         last_stt_text_at: List[float] = [0.0]
@@ -1176,7 +1233,14 @@ class TranscriptionOnlyAgent:
                         logger.info(f"{L} 🛑 residual interim dropped: '{text[:40]}'")
                         continue
                     await ensure_lanes_for_caption()
-                    display_text = dg_buffer.on_interim(text)
+                    # In continuation mode, Deepgram's first interims may repeat the
+                    # tail of the previous finalized text — strip the overlap.
+                    interim_text = text
+                    if last_finalized_text[0] and dg_buffer.final_segments:
+                        interim_text = _strip_overlap_prefix(last_finalized_text[0], text)
+                        if not interim_text.strip():
+                            interim_text = text
+                    display_text = dg_buffer.on_interim(interim_text)
                     schedule_live_partial(display_text)
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
@@ -1186,9 +1250,19 @@ class TranscriptionOnlyAgent:
                         )
                         continue
                     await ensure_lanes_for_caption()
+                    # In continuation, strip overlap with previous finalized tail
+                    final_text = text
+                    if last_finalized_text[0] and dg_buffer.final_segments:
+                        stripped = _strip_overlap_prefix(last_finalized_text[0], text)
+                        if stripped and stripped != text:
+                            logger.debug(
+                                f"{L} 🔗 Deduped continuation overlap: "
+                                f"'{text[:40]}' → '{stripped[:40]}'"
+                            )
+                            final_text = stripped
                     start_t, end_t = _speech_times(speech_data)
                     display_text, seg_idx, segment = dg_buffer.on_final_segment(
-                        text, start_time=start_t, end_time=end_t
+                        final_text, start_time=start_t, end_time=end_t
                     )
                     if seg_idx < 0:
                         if display_text.strip():
