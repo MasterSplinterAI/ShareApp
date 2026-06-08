@@ -148,8 +148,8 @@ function VideoTile({ label, sub, image, fallback, badge }) {
           e.currentTarget.style.display = 'none';
         }}
       />
-      <div className={`absolute inset-0 bg-gradient-to-br ${fallback} opacity-80 mix-blend-multiply`} />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+      <div className={`absolute inset-0 bg-gradient-to-br ${fallback} opacity-30`} />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
       {badge && (
         <span className="absolute right-1 top-1 rounded bg-primary/90 px-1 py-0.5 text-[8px] font-bold text-primary-foreground">
           {badge}
