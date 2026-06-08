@@ -613,18 +613,15 @@ class TranscriptionOnlyAgent:
             endpointing_ms = _deepgram_endpointing_ms()
             stt_kwargs = dict(
                 model="nova-3",
-                language=stt_lang,
+                language="multi",
                 interim_results=True,
                 punctuate=True,
                 smart_format=True,
                 endpointing_ms=endpointing_ms,
             )
-            if keyterms and normalized_lang == "en":
-                stt_kwargs["keyterm"] = keyterms
             inst = deepgram.STT(**stt_kwargs)
-            kt = len(keyterms) if stt_kwargs.get("keyterm") else 0
             logger.info(
-                f"{L} STT: Deepgram nova-3 lang={stt_lang} keyterms={kt} "
+                f"{L} STT: Deepgram nova-3 lang=multi (auto-detect) "
                 f"endpointing_ms={endpointing_ms} (shared)"
             )
             stt_provider_name = "deepgram"
@@ -636,8 +633,8 @@ class TranscriptionOnlyAgent:
                 return None
             if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
                 return None
-            inst = openai.STT(model="gpt-4o-transcribe", language=stt_lang)
-            logger.info(f"{L} STT: OpenAI gpt-4o-transcribe (shared, no interim)")
+            inst = openai.STT(model="gpt-4o-transcribe", language=None)
+            logger.info(f"{L} STT: OpenAI gpt-4o-transcribe (shared, auto-detect, no interim)")
             stt_provider_name = "openai"
             return inst
 
