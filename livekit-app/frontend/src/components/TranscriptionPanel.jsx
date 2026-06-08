@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
@@ -243,6 +243,8 @@ function TranscriptionPanel() {
   const [messages, setMessages] = useState([]);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef(null);
+  const bottomAnchorRef = useRef(null);
+  const isAtBottomRef = useRef(true);
   const msgCounterRef = useRef(0);
   const sentMessageIdsRef = useRef(new Set());
   const persistFlushTimerRef = useRef(null);
@@ -469,22 +471,34 @@ function TranscriptionPanel() {
 
   const visibleMessages = useMemo(() => messagesForDisplay(messages), [messages]);
 
-  const scrollToBottom = useCallback((force = false) => {
+  const scrollToLatest = useCallback((force = false) => {
+    if (!force && !isAtBottomRef.current) return;
     const el = scrollRef.current;
-    if (!el || (!force && !isAtBottom)) return;
+    if (!el) return;
     el.scrollTop = el.scrollHeight;
+    bottomAnchorRef.current?.scrollIntoView({ block: 'end' });
+    isAtBottomRef.current = true;
     if (force) setIsAtBottom(true);
-  }, [isAtBottom]);
+  }, []);
 
-  // MutationObserver-based auto-scroll: catches all content changes including
-  // in-place partial text growth that doesn't trigger React state deps.
+  // React state updates (partials/finals) — layout effect runs before paint.
+  useLayoutEffect(() => {
+    if (!isAtBottomRef.current) return;
+    scrollToLatest();
+  }, [visibleMessages, scrollToLatest]);
+
+  // MutationObserver catches in-place partial text growth between React renders.
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
     const doScroll = () => {
-      if (!isAtBottom || !scrollRef.current) return;
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      if (!isAtBottomRef.current || !scrollRef.current) return;
+      requestAnimationFrame(() => {
+        if (!isAtBottomRef.current || !scrollRef.current) return;
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        bottomAnchorRef.current?.scrollIntoView({ block: 'end' });
+      });
     };
 
     const mo = new MutationObserver(doScroll);
@@ -497,16 +511,18 @@ function TranscriptionPanel() {
       mo.disconnect();
       ro.disconnect();
     };
-  }, [isAtBottom, isPanelOpen]);
+  }, [isPanelOpen]);
 
   // Track scroll position
   const handleScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    setIsAtBottom(scrollHeight - scrollTop - clientHeight < 40);
+    const atBottom = scrollHeight - scrollTop - clientHeight < 40;
+    isAtBottomRef.current = atBottom;
+    setIsAtBottom(atBottom);
   };
 
-  const jumpToLatest = () => scrollToBottom(true);
+  const jumpToLatest = () => scrollToLatest(true);
 
   const finalMessages = useMemo(() => messages.filter((m) => !m.isPartial), [messages]);
 
@@ -560,6 +576,7 @@ function TranscriptionPanel() {
         <PanelContent
           messages={visibleMessages}
           scrollRef={scrollRef}
+          bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
           compact
@@ -585,6 +602,7 @@ function TranscriptionPanel() {
         <PanelContent
           messages={visibleMessages}
           scrollRef={scrollRef}
+          bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
         />
@@ -614,6 +632,7 @@ function TranscriptionPanel() {
           <PanelContent
             messages={visibleMessages}
             scrollRef={scrollRef}
+            bottomAnchorRef={bottomAnchorRef}
             onScroll={handleScroll}
             selectedLanguage={selectedLanguage}
             compact
@@ -758,7 +777,7 @@ function TranscriptionBubble({
   );
 }
 
-function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact = false }) {
+function PanelContent({ messages, scrollRef, bottomAnchorRef, onScroll, selectedLanguage, compact = false }) {
   const hasContent = messages.length > 0;
 
   return (
@@ -805,6 +824,7 @@ function PanelContent({ messages, scrollRef, onScroll, selectedLanguage, compact
           />
         );
       })}
+      <div ref={bottomAnchorRef} className="h-px w-full shrink-0" aria-hidden />
     </div>
   );
 }

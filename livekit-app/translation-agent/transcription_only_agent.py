@@ -279,8 +279,22 @@ class TranscriptionOnlyAgent:
             params["activation_threshold"] = float(os.getenv("VAD_ACTIVATION_THRESHOLD"))
         if os.getenv("VAD_MIN_SILENCE_SEC"):
             params["min_silence_duration"] = float(os.getenv("VAD_MIN_SILENCE_SEC"))
+        if os.getenv("VAD_MIN_SPEECH_SEC"):
+            params["min_speech_duration"] = float(os.getenv("VAD_MIN_SPEECH_SEC"))
         params["prefix_padding_duration"] = 0.8
         return params
+
+    def _audio_stream_noise_cancellation(self):
+        """BVC on inbound mic audio — suppresses background voices and room noise (LiveKit Cloud)."""
+        if not NOISE_CANCELLATION_AVAILABLE or not noise_cancellation:
+            return None
+        if os.getenv("NOISE_CANCELLATION", "bvc").strip().lower() in ("0", "false", "off", "none"):
+            return None
+        try:
+            return noise_cancellation.BVC()
+        except Exception as e:
+            logger.warning("BVC noise cancellation unavailable: %s", e)
+            return None
 
     async def entrypoint(self, ctx: JobContext):
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
@@ -811,12 +825,17 @@ class TranscriptionOnlyAgent:
             logger.warning(f"{L} Participant not found after wait")
             return
 
-        audio_stream = rtc.AudioStream.from_participant(
+        audio_stream_kwargs = dict(
             participant=participant,
             track_source=rtc.TrackSource.SOURCE_MICROPHONE,
             sample_rate=16000,
             num_channels=1,
         )
+        nc = self._audio_stream_noise_cancellation()
+        if nc is not None:
+            audio_stream_kwargs["noise_cancellation"] = nc
+            logger.info(f"{L} BVC noise cancellation enabled on inbound audio")
+        audio_stream = rtc.AudioStream.from_participant(**audio_stream_kwargs)
         stt_stream = stt_instance.stream()
         vad_stream = vad_instance.stream()
 
