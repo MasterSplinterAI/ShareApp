@@ -204,11 +204,18 @@ async function migrate() {
       reusable INTEGER NOT NULL DEFAULT 0,
       use_count INTEGER NOT NULL DEFAULT 0,
       max_uses INTEGER,
+      expiry_mode TEXT NOT NULL DEFAULT 'days_after_start',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_invite_meeting ON v2_meeting_invite_links(meeting_id)`);
+
+  const inviteCols = await all(`PRAGMA table_info(v2_meeting_invite_links)`);
+  const inviteColNames = new Set((inviteCols || []).map((c) => c.name));
+  if (!inviteColNames.has('expiry_mode')) {
+    await run(`ALTER TABLE v2_meeting_invite_links ADD COLUMN expiry_mode TEXT NOT NULL DEFAULT 'days_after_start'`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_meeting_guest_invites (

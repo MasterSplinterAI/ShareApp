@@ -8,58 +8,35 @@ const { createLiveKitConferenceRoom, ensureRoomAndAgent, getRoomService, looksLi
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const { listTemplates, instructionsHash, synthesizeTranscript } = require('../../lib/transcriptSynthesis');
-
-const MS_DAY = 86400000;
-
-/** Upper bound for any invite link lifetime (wall-clock from creation). */
-function maxInviteTtlMs() {
-  const days = Number(process.env.V2_MAX_INVITE_TTL_DAYS || 90);
-  if (!Number.isFinite(days) || days <= 0) return 90 * MS_DAY;
-  return Math.min(days, 365) * MS_DAY;
-}
-
-function clampInviteTtlMs(ms) {
-  const cap = maxInviteTtlMs();
-  return Math.min(Math.max(0, ms), cap);
-}
-
-function defaultInviteTtlMs() {
-  const days = Number(process.env.V2_DEFAULT_INVITE_TTL_DAYS || 7);
-  const desired = (Number.isFinite(days) && days > 0 ? days : 7) * MS_DAY;
-  return clampInviteTtlMs(desired);
-}
+const {
+  maxInviteTtlMs,
+  defaultExpiryModeForMeeting,
+  computeInviteExpiresAt,
+  inviteIsUsable,
+  describeInviteExpiry,
+  expiryModeLabel,
+  linkTypeLabel,
+  parseCreateInviteBody,
+} = require('../../lib/inviteExpiry');
 
 function defaultRequireInvite() {
   return process.env.V2_DEFAULT_REQUIRE_INVITE !== '0';
 }
 
-/**
- * Invite expiry is anchored to the MEETING, not link creation: for a meeting
- * scheduled in the future, "expires in 72h" means 72h after the scheduled
- * start — otherwise a link for a meeting a month out would die weeks early.
- * Instant/unscheduled meetings anchor to now.
- */
-function computeInviteExpiresAt(meeting, requestedMs) {
-  const now = Date.now();
-  const sched = meeting?.scheduled_start ? new Date(meeting.scheduled_start).getTime() : NaN;
-  const anchor = Number.isFinite(sched) && sched > now ? sched : now;
-  return new Date(anchor + clampInviteTtlMs(requestedMs)).toISOString();
-}
-
-function inviteIsUsable(inv) {
-  if (inv.revoked_at) return false;
-  const exp = new Date(inv.expires_at).getTime();
-  if (Number.isNaN(exp) || exp < Date.now()) return false;
-  if (inv.max_uses != null && inv.use_count >= inv.max_uses) return false;
-  if (!inv.reusable && inv.use_count >= 1) return false;
-  return true;
-}
-
-function enrichInvitesWithJoinUrls(invites, guestJoinBase) {
+function enrichInvitesWithJoinUrls(invites, guestJoinBase, meeting) {
   return invites.map((inv) => {
-    const usable = inviteIsUsable(inv);
+    const usable = inviteIsUsable(inv, meeting);
     const joinUrl = usable ? `${guestJoinBase}?i=${encodeURIComponent(inv.token)}` : null;
-    return { ...inv, joinUrl, usable };
+    const expiry = describeInviteExpiry(inv, meeting);
+    return {
+      ...inv,
+      joinUrl,
+      usable,
+      expiryLabel: expiry.short,
+      expiryDetail: expiry.detail,
+      expiryModeLabel: expiryModeLabel(inv.expiry_mode),
+      linkTypeLabel: linkTypeLabel(Boolean(inv.reusable)),
+    };
   });
 }
 
@@ -125,13 +102,14 @@ router.post('/', requireV2Auth, async (req, res) => {
       const linkId = db.uuid();
       defaultInviteToken = crypto.randomBytes(18).toString('base64url');
       defaultInviteExpiresAt = computeInviteExpiresAt(
-        { scheduled_start: scheduled_start || null },
-        defaultInviteTtlMs()
+        { scheduled_start: scheduled_start || null, scheduled_end: scheduled_end || null },
+        { mode: defaultExpiryModeForMeeting({ scheduled_start: scheduled_start || null }) }
       );
+      const defaultExpiryMode = defaultExpiryModeForMeeting({ scheduled_start: scheduled_start || null });
       await db.run(
-        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-        [linkId, meetingId, defaultInviteToken, 'Default guest link', defaultInviteExpiresAt, null, 1, 0, null]
+        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [linkId, meetingId, defaultInviteToken, 'Default guest link', defaultInviteExpiresAt, null, 1, 0, null, defaultExpiryMode]
       );
     }
 
@@ -208,7 +186,7 @@ router.get('/:id/invites', requireV2Auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const links = await db.all(
-      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, created_at FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
+      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, created_at FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
       [req.params.id]
     );
     res.json({ invites: links });
@@ -222,36 +200,49 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
     const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
-    const { expiresInHours, reusable, label, maxUses } = req.body || {};
-    const hours = Number(expiresInHours);
-    const rawMs = (Number.isFinite(hours) && hours > 0 ? hours : 168) * 3600000;
+    const { reusable, expiryMode, opts, linkType } = parseCreateInviteBody(req.body, row);
+    const { label, maxUses } = req.body || {};
     const token = crypto.randomBytes(18).toString('base64url');
     const linkId = db.uuid();
-    const expiresAt = computeInviteExpiresAt(row, rawMs);
+    const expiresAt = computeInviteExpiresAt(row, opts);
     await db.run(
-      `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses)
-       VALUES (?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
         linkId,
         req.params.id,
         token,
-        (label && String(label).slice(0, 80)) || 'Guest link',
+        (label && String(label).slice(0, 80)) || (linkType === 'single_use' ? 'Single-guest link' : 'Guest link'),
         expiresAt,
         null,
         reusable ? 1 : 0,
         0,
         maxUses != null && Number.isFinite(Number(maxUses)) ? Number(maxUses) : null,
+        expiryMode,
       ]
     );
     const base = publicFrontendBaseUrl(req);
     const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(token)}`;
+    const invRow = {
+      id: linkId,
+      expires_at: expiresAt,
+      expiry_mode: expiryMode,
+      reusable: reusable ? 1 : 0,
+      use_count: 0,
+      revoked_at: null,
+    };
+    const expiry = describeInviteExpiry(invRow, row);
     res.status(201).json({
       id: linkId,
       token,
       expiresAt,
+      expiryMode,
+      expiryLabel: expiry.short,
+      expiryDetail: expiry.detail,
+      linkType,
       joinUrl,
       reusable: Boolean(reusable),
-      inviteMaxTtlHours: Math.floor(maxInviteTtlMs() / 3600000),
+      inviteMaxTtlDays: Math.floor(maxInviteTtlMs() / 86400000),
     });
   } catch (e) {
     console.error('[v2/invites POST]', e);
@@ -297,11 +288,14 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
     if (!link) {
       const token = crypto.randomBytes(18).toString('base64url');
       const linkId = db.uuid();
-      const expiresAt = computeInviteExpiresAt(row, defaultInviteTtlMs());
+      const expiresAt = computeInviteExpiresAt(row, {
+        mode: defaultExpiryModeForMeeting(row),
+      });
+      const emailExpiryMode = defaultExpiryModeForMeeting(row);
       await db.run(
-        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses)
-         VALUES (?,?,?,?,?,?,?,?,?)`,
-        [linkId, req.params.id, token, 'Email invite link', expiresAt, null, 1, 0, null]
+        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [linkId, req.params.id, token, 'Email invite link', expiresAt, null, 1, 0, null, emailExpiryMode]
       );
       link = { id: linkId, token };
     }
@@ -390,7 +384,7 @@ router.get('/:id', requireV2Auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Not found' });
     const base = publicFrontendBaseUrl(req);
     const invites = await db.all(
-      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, created_at, token FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
+      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, created_at, token FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
       [req.params.id]
     );
     const policy = {
@@ -399,14 +393,24 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       store_transcripts: row.store_transcripts === 1,
     };
     const guestJoinBase = `${base}/join/${encodeURIComponent(row.livekit_room_name)}`;
-    const invitesEnriched = enrichInvitesWithJoinUrls(invites, guestJoinBase);
+    const invitesEnriched = enrichInvitesWithJoinUrls(invites, guestJoinBase, row);
     let joinUrl = guestJoinBase;
+    let guestLinkMeta = null;
     if (policy.require_invite_token) {
       const primary =
         invitesEnriched.find((l) => l.label === 'Default guest link' && l.usable) ||
         invitesEnriched.find((l) => l.usable);
       if (primary?.joinUrl) {
         joinUrl = primary.joinUrl;
+        guestLinkMeta = {
+          expiryLabel: primary.expiryLabel,
+          expiryDetail: primary.expiryDetail,
+          expiryMode: primary.expiry_mode,
+          expiryModeLabel: primary.expiryModeLabel,
+          linkTypeLabel: primary.linkTypeLabel,
+          expiresAt: primary.expires_at,
+          reusable: Boolean(primary.reusable),
+        };
       }
     }
     let roomPresence = { humanCount: 0, participants: [] };
@@ -432,8 +436,10 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       ...meetingRow,
       policy,
       joinUrl,
+      guestLinkMeta,
       invites: invitesEnriched,
-      inviteMaxTtlHours: Math.floor(maxInviteTtlMs() / 3600000),
+      inviteMaxTtlDays: Math.floor(maxInviteTtlMs() / 86400000),
+      defaultExpiryMode: defaultExpiryModeForMeeting(row),
       roomPresence,
       transcriptLineCount,
     });

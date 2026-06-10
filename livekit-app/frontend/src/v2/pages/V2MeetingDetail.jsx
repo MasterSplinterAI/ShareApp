@@ -42,7 +42,7 @@ import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
-import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
+import { defaultExpiryMode } from '../../lib/inviteExpiry';
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -115,8 +115,9 @@ export default function V2MeetingDetail() {
   const [me, setMe] = useState(null);
   const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
-  const [newInviteHours, setNewInviteHours] = useState(72);
-  const [newInviteReusable, setNewInviteReusable] = useState(false);
+  const [newInviteExpiryMode, setNewInviteExpiryMode] = useState('through_meeting');
+  const [newInviteLinkType, setNewInviteLinkType] = useState('shared');
+  const [newInviteCustomHours, setNewInviteCustomHours] = useState(72);
   const [ending, setEnding] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -165,9 +166,12 @@ export default function V2MeetingDetail() {
   };
 
   useEffect(() => {
-    if (!meeting?.inviteMaxTtlHours) return;
-    setNewInviteHours((h) => Math.min(Math.max(1, h), meeting.inviteMaxTtlHours));
-  }, [meeting?.inviteMaxTtlHours]);
+    if (!meeting) return;
+    const mode = defaultExpiryMode(meeting);
+    setNewInviteExpiryMode(mode);
+    const maxDays = meeting.inviteMaxTtlDays ?? 90;
+    setNewInviteCustomHours((h) => Math.min(Math.max(1, h), maxDays * 24));
+  }, [meeting?.id, meeting?.scheduled_start, meeting?.defaultExpiryMode, meeting?.inviteMaxTtlDays]);
 
   useEffect(() => {
     if (!meeting || !['live', 'scheduled'].includes(meeting.status)) return undefined;
@@ -266,11 +270,15 @@ export default function V2MeetingDetail() {
 
   const createInvite = async () => {
     try {
-      const r = await v2Meetings.createInvite(id, {
-        expiresInHours: newInviteHours,
-        reusable: newInviteReusable,
-        label: 'Guest link',
-      });
+      const body = {
+        expiryMode: newInviteExpiryMode,
+        linkType: newInviteLinkType,
+        label: newInviteLinkType === 'single_use' ? 'Single-guest link' : 'Guest link',
+      };
+      if (newInviteExpiryMode === 'custom_hours') {
+        body.expiresInHours = newInviteCustomHours;
+      }
+      const r = await v2Meetings.createInvite(id, body);
       toast.success('Invite created');
       await navigator.clipboard.writeText(r.joinUrl);
       toast('Copied invite link to clipboard');
@@ -401,7 +409,7 @@ export default function V2MeetingDetail() {
 
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false, store_transcripts: false };
   const guestUrlNeedsToken = policy.require_invite_token && meeting.joinUrl && !meeting.joinUrl.includes('?i=');
-  const maxInviteHours = meeting.inviteMaxTtlHours ?? 90 * 24;
+  const maxInviteDays = meeting.inviteMaxTtlDays ?? 90;
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
   const canManageTranscriptPolicy = canManageMeeting;
   const hasTranscriptLines = (meeting.transcriptLineCount || 0) > 0;
@@ -435,16 +443,19 @@ export default function V2MeetingDetail() {
     onPatchPolicy: patchPolicy,
     canManageTranscriptPolicy,
     guestUrlNeedsToken,
+    guestLinkMeta: meeting.guestLinkMeta,
     onCopyGuestUrl: copyGuestUrl,
   };
 
   const invitesPanelProps = {
     meeting,
-    newInviteHours,
-    setNewInviteHours,
-    newInviteReusable,
-    setNewInviteReusable,
-    maxInviteHours,
+    newInviteExpiryMode,
+    setNewInviteExpiryMode,
+    newInviteLinkType,
+    setNewInviteLinkType,
+    newInviteCustomHours,
+    setNewInviteCustomHours,
+    maxInviteDays,
     onCreateInvite: createInvite,
     onRevokeInvite: revokeInvite,
     onCopyInviteUrl: copyInviteUrl,

@@ -12,6 +12,7 @@ export default function MeetingAccessPanel({
   showGuestUrl,
   showPolicyToggles = true,
   guestUrlNeedsToken,
+  guestLinkMeta,
   onCopyGuestUrl,
 }) {
   return (
@@ -49,8 +50,14 @@ export default function MeetingAccessPanel({
       {showGuestUrl && (
         <div>
           <p className="text-xs text-muted-foreground">
-            Anyone with this link can join (plus <code className="text-foreground/80">?i=</code> when invite tokens are on).
+            Share this link with guests{policy.require_invite_token ? ' — includes a secure invite token' : ''}.
           </p>
+          {guestLinkMeta?.expiryLabel && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{guestLinkMeta.expiryLabel}</span>
+              {guestLinkMeta.expiryDetail ? ` — ${guestLinkMeta.expiryDetail}` : ''}
+            </p>
+          )}
           {guestUrlNeedsToken && (
             <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-2 text-xs text-amber-800 dark:text-amber-200">
               Invite tokens are required, but no active invite link was found. Create a new invite in Meeting settings →

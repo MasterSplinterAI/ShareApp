@@ -2,48 +2,99 @@ import { ExternalLink, Copy } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { Switch } from '../../components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
+import {
+  expiryOptionsForMeeting,
+  inviteStatusLine,
+  linkTypeLabel,
+} from '../../lib/inviteExpiry';
 
 export default function MeetingInvitesPanel({
   meeting,
-  newInviteHours,
-  setNewInviteHours,
-  newInviteReusable,
-  setNewInviteReusable,
-  maxInviteHours,
+  newInviteExpiryMode,
+  setNewInviteExpiryMode,
+  newInviteLinkType,
+  setNewInviteLinkType,
+  newInviteCustomHours,
+  setNewInviteCustomHours,
+  maxInviteDays,
   onCreateInvite,
   onRevokeInvite,
   onCopyInviteUrl,
 }) {
+  const expiryOptions = expiryOptionsForMeeting(meeting);
+  const selectedExpiry = expiryOptions.find((o) => o.value === newInviteExpiryMode) || expiryOptions[0];
+  const showCustomHours = newInviteExpiryMode === 'custom_hours';
+  const maxCustomHours = Math.max(1, (maxInviteDays ?? 90) * 24);
+
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Expires in (hours)</Label>
-          <Input
-            type="number"
-            min={1}
-            max={maxInviteHours}
-            className="w-28"
-            value={newInviteHours}
-            onChange={(e) => setNewInviteHours(Math.min(maxInviteHours, Math.max(1, Number(e.target.value) || 24)))}
-          />
+          <Label className="text-xs text-muted-foreground">Link type</Label>
+          <Select value={newInviteLinkType} onValueChange={setNewInviteLinkType}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="shared">{linkTypeLabel('shared')}</SelectItem>
+              <SelectItem value="single_use">{linkTypeLabel('single_use')}</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-        <div className="flex items-center gap-2 pb-2">
-          <Switch id="reusable" checked={newInviteReusable} onCheckedChange={setNewInviteReusable} />
-          <Label htmlFor="reusable" className="text-sm font-normal">
-            Reusable
-          </Label>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Expires</Label>
+          <Select value={newInviteExpiryMode} onValueChange={setNewInviteExpiryMode}>
+            <SelectTrigger className="h-9">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {expiryOptions.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-        <Button type="button" variant="outline" size="sm" onClick={() => setNewInviteHours(maxInviteHours)}>
-          Use max
-        </Button>
+      </div>
+      {showCustomHours && (
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Custom duration (hours)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={maxCustomHours}
+              className="w-32"
+              value={newInviteCustomHours}
+              onChange={(e) =>
+                setNewInviteCustomHours(Math.min(maxCustomHours, Math.max(1, Number(e.target.value) || 24)))
+              }
+            />
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setNewInviteCustomHours(maxCustomHours)}>
+            Use max
+          </Button>
+        </div>
+      )}
+      {selectedExpiry?.hint && (
+        <p className="text-xs text-muted-foreground">{selectedExpiry.hint}</p>
+      )}
+      <div>
         <Button type="button" onClick={onCreateInvite}>
           Create invite
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Longest cap: {Math.round(maxInviteHours / 24)} days from link creation (<code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>).
+        Longest cap: {maxInviteDays ?? 90} days from scheduled start (or from now if unscheduled). Configured via{' '}
+        <code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>.
       </p>
       <ul className="space-y-3 text-sm">
         {(meeting.invites || []).map((inv) => (
@@ -51,19 +102,19 @@ export default function MeetingInvitesPanel({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <div className="font-medium text-foreground">{inv.label || 'Link'}</div>
-                <div className="text-xs text-muted-foreground">
-                  {inv.revoked_at ? (
-                    <span className="text-destructive">Revoked</span>
-                  ) : (
-                    <>
-                      Expires {new Date(inv.expires_at).toLocaleString()} · uses {inv.use_count}
-                      {inv.reusable ? ' · reusable' : ''}
-                    </>
-                  )}
-                </div>
+                <div className="text-xs text-muted-foreground">{inviteStatusLine(inv)}</div>
+                {inv.expiryDetail && !inv.revoked_at && (
+                  <div className="mt-0.5 text-xs text-muted-foreground/90">{inv.expiryDetail}</div>
+                )}
               </div>
               {!inv.revoked_at && (
-                <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => onRevokeInvite(inv.id)}>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => onRevokeInvite(inv.id)}
+                >
                   Revoke
                 </Button>
               )}
@@ -90,7 +141,9 @@ export default function MeetingInvitesPanel({
                 </Button>
               </div>
             ) : (
-              !inv.revoked_at && <p className="text-xs text-amber-600 dark:text-amber-400">No guest URL — expired or use limit reached.</p>
+              !inv.revoked_at && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">No guest URL — expired or use limit reached.</p>
+              )
             )}
           </li>
         ))}

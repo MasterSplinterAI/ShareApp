@@ -6,6 +6,7 @@ const { AccessToken } = require('livekit-server-sdk');
 const db = require('../../db/v2Database');
 const { ensureRoomAndAgent } = require('../../lib/livekitService');
 const { serializePublicBranding } = require('../../lib/v2Branding');
+const { inviteIsUsable, inviteEffectiveFromMs } = require('../../lib/inviteExpiry');
 
 const router = express.Router();
 
@@ -45,13 +46,19 @@ function meetingBranding(req, meeting) {
 }
 
 async function validateGuestAccess(meeting, inviteToken) {
-  if (['ended', 'archived'].includes(meeting.status)) {
+  if (meeting.status === 'archived') {
+    return { ok: false, reason: 'meeting_ended' };
+  }
+  if (meeting.status === 'ended' && !inviteToken) {
     return { ok: false, reason: 'meeting_ended' };
   }
   if (meeting.host_required_to_start === 1 && meeting.host_present !== 1) {
     return { ok: false, reason: 'waiting_for_host' };
   }
   if (meeting.require_invite_token !== 1) {
+    if (meeting.status === 'ended') {
+      return { ok: false, reason: 'meeting_ended' };
+    }
     return { ok: true, link: null };
   }
   if (!inviteToken || typeof inviteToken !== 'string') {
@@ -64,15 +71,21 @@ async function validateGuestAccess(meeting, inviteToken) {
   if (!link) {
     return { ok: false, reason: 'invalid_invite' };
   }
-  const exp = new Date(link.expires_at).getTime();
-  if (Number.isNaN(exp) || exp < Date.now()) {
+  const fromMs = inviteEffectiveFromMs(meeting, link);
+  if (fromMs != null && Date.now() < fromMs) {
+    return { ok: false, reason: 'invite_not_yet_valid' };
+  }
+  if (!inviteIsUsable(link, meeting)) {
+    if (meeting.status === 'ended' && ['through_meeting', 'day_of_meeting'].includes(link.expiry_mode)) {
+      return { ok: false, reason: 'invite_expired' };
+    }
+    if (link.max_uses != null && link.use_count >= link.max_uses) {
+      return { ok: false, reason: 'invite_max_uses' };
+    }
+    if (!link.reusable && link.use_count >= 1) {
+      return { ok: false, reason: 'invite_used' };
+    }
     return { ok: false, reason: 'invite_expired' };
-  }
-  if (link.max_uses != null && link.use_count >= link.max_uses) {
-    return { ok: false, reason: 'invite_max_uses' };
-  }
-  if (!link.reusable && link.use_count >= 1) {
-    return { ok: false, reason: 'invite_used' };
   }
   return { ok: true, link };
 }

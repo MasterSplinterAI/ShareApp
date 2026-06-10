@@ -118,6 +118,8 @@ function JoinMeeting() {
           const msg =
             joinPreview.reason === 'invite_required'
               ? 'This meeting requires a full invite link (with ?i= token).'
+              : joinPreview.reason === 'invite_not_yet_valid'
+                ? 'This invite link is not active yet — it opens shortly before the meeting.'
               : joinPreview.reason === 'invalid_invite' || joinPreview.reason === 'invite_expired'
                 ? 'This invite link is invalid or has expired.'
                 : joinPreview.reason === 'meeting_ended'
