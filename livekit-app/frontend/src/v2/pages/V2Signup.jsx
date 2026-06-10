@@ -16,7 +16,7 @@ export default function V2Signup() {
   const planName = PAID_PLANS[planParam] || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [orgName, setOrgName] = useState('');
+  const [teamName, setTeamName] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -35,7 +35,12 @@ export default function V2Signup() {
     }
     setLoading(true);
     try {
-      const data = await v2Auth.signup({ email, password, orgName, displayName: displayName || undefined });
+      const data = await v2Auth.signup({
+        email,
+        password,
+        displayName: displayName.trim() || undefined,
+        orgName: teamName.trim() || undefined,
+      });
       localStorage.setItem('v2_token', data.token);
       toast.success('Account created');
       if (planName) {
@@ -55,7 +60,10 @@ export default function V2Signup() {
       <Card className="border-border/80 shadow-lg">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Create account</CardTitle>
-          <CardDescription>Create a workspace, host meetings, and share guest links. Team plans add member invites.</CardDescription>
+          <CardDescription>
+            Start free with a personal account — host meetings, share guest links, and get live captions. No company name
+            required.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {planName && (
@@ -66,12 +74,15 @@ export default function V2Signup() {
           )}
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="org">Organization name</Label>
-              <Input id="org" type="text" value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="Acme Inc" />
-            </div>
-            <div className="space-y-2">
               <Label htmlFor="display">Your name</Label>
-              <Input id="display" type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Jane Doe" />
+              <Input
+                id="display"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Jane Doe"
+                autoComplete="name"
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
@@ -89,6 +100,22 @@ export default function V2Signup() {
                 autoComplete="new-password"
               />
             </div>
+            {planName && (
+              <div className="space-y-2">
+                <Label htmlFor="team">Company or team name (optional)</Label>
+                <Input
+                  id="team"
+                  type="text"
+                  value={teamName}
+                  onChange={(e) => setTeamName(e.target.value)}
+                  placeholder="Acme Inc"
+                  autoComplete="organization"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Skip this for a personal account. Add a name if you&apos;re setting up a shared team workspace.
+                </p>
+              </div>
+            )}
             <div className="flex items-start gap-2">
               <input
                 id="terms"

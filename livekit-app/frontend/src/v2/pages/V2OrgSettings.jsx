@@ -3,7 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
+import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
 import { cn } from '../../lib/utils';
+import { Loader2, ImagePlus, Trash2 } from 'lucide-react';
+import { DEFAULT_BRAND_ACCENT, brandingStyleVars, brandButtonClassName } from '../../lib/meetingBranding';
+import MeetingBrandHeader from '../../components/MeetingBrandHeader';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -20,8 +24,8 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 
-const SECTIONS = [
-  { id: 'organization', label: 'Organization' },
+const BASE_SECTIONS = [
+  { id: 'profile', label: 'Account' },
   { id: 'members', label: 'Members' },
   { id: 'branding', label: 'Branding' },
   { id: 'billing', label: 'Billing' },
@@ -37,16 +41,26 @@ function humanizeUsageLabel(eventType) {
 
 export default function V2OrgSettings() {
   const [searchParams] = useSearchParams();
-  const [section, setSection] = useState(searchParams.get('section') || 'organization');
+  const [section, setSection] = useState(searchParams.get('section') || 'profile');
   const [role, setRole] = useState('');
   const [members, setMembers] = useState([]);
   const [org, setOrg] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [email, setEmail] = useState('');
   const [memberRole, setMemberRole] = useState('member');
   const [loading, setLoading] = useState(true);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [orgNameDraft, setOrgNameDraft] = useState('');
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [teamNameDraft, setTeamNameDraft] = useState('');
   const [savingOrgName, setSavingOrgName] = useState(false);
+  const [savingDisplayName, setSavingDisplayName] = useState(false);
+  const [enablingTeam, setEnablingTeam] = useState(false);
+  const [brandingAccent, setBrandingAccent] = useState(DEFAULT_BRAND_ACCENT);
+  const [brandingWelcome, setBrandingWelcome] = useState('');
+  const [brandingLogoUrl, setBrandingLogoUrl] = useState('');
+  const [savingBranding, setSavingBranding] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [billingSnap, setBillingSnap] = useState(null);
   const [plans, setPlans] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
@@ -83,10 +97,13 @@ export default function V2OrgSettings() {
     ])
       .then(([me, m, o, sub, plansRes, usage]) => {
         setRole(me.role || '');
+        setProfile(me);
         setMembers(m.members || []);
         setOrg(o);
         const n = o?.org?.name || '';
         setOrgNameDraft(n);
+        setDisplayNameDraft(me?.user?.display_name || '');
+        setTeamNameDraft('');
         setPlans(plansRes?.plans || []);
         setBillingSnap({
           subscription: sub?.subscription,
@@ -94,6 +111,12 @@ export default function V2OrgSettings() {
           stripeEnabled: sub?.stripeEnabled,
           usageSummary: usage?.byType || [],
         });
+        const b = o?.branding;
+        if (b) {
+          setBrandingAccent(b.accentColor || DEFAULT_BRAND_ACCENT);
+          setBrandingWelcome(b.welcomeMessage || '');
+          setBrandingLogoUrl(b.logoUrl || '');
+        }
       })
       .catch((e) => toast.error(e.response?.data?.error || 'Failed to load'))
       .finally(() => setLoading(false));
@@ -126,8 +149,64 @@ export default function V2OrgSettings() {
   const canManage = ['owner', 'admin'].includes(role);
   const canRenameOrg = canManage;
   const teamWorkspace = hasTeamWorkspace(org?.entitlements);
-  const navSections = useMemo(() => SECTIONS.filter((s) => s.id !== 'members' || teamWorkspace), [teamWorkspace]);
+  const teamAccount = isTeamWorkspace(org?.org || profile?.org);
+  const navSections = useMemo(() => {
+    const label = teamAccount ? 'Organization' : 'Account';
+    return BASE_SECTIONS.map((s) => (s.id === 'profile' ? { ...s, label } : s)).filter(
+      (s) => s.id !== 'members' || teamWorkspace
+    );
+  }, [teamWorkspace, teamAccount]);
   const orgName = org?.org?.name || org?.organization?.name || org?.name || '—';
+  const userEmail = profile?.user?.email || '—';
+
+  const saveDisplayName = async (e) => {
+    e.preventDefault();
+    const trimmed = displayNameDraft.trim();
+    if (trimmed.length < 1 || trimmed.length > 128) {
+      toast.error('Name must be 1–128 characters');
+      return;
+    }
+    setSavingDisplayName(true);
+    try {
+      const fresh = await v2Auth.patchMe({ displayName: trimmed });
+      setProfile(fresh);
+      setDisplayNameDraft(fresh?.user?.display_name || trimmed);
+      if (!teamAccount) {
+        const o = await v2Orgs.me();
+        setOrg(o);
+      }
+      toast.success('Name updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not update name');
+    } finally {
+      setSavingDisplayName(false);
+    }
+  };
+
+  const enableTeamWorkspace = async (e) => {
+    e.preventDefault();
+    if (!canRenameOrg) return;
+    const trimmed = teamNameDraft.trim();
+    if (trimmed.length < 1 || trimmed.length > 128) {
+      toast.error('Team name must be 1–128 characters');
+      return;
+    }
+    setEnablingTeam(true);
+    try {
+      await v2Orgs.patchMe({ name: trimmed, makeTeam: true });
+      toast.success('Team workspace enabled');
+      const fresh = await v2Orgs.me();
+      setOrg(fresh);
+      setOrgNameDraft(fresh?.org?.name || trimmed);
+      setTeamNameDraft('');
+      const meFresh = await v2Auth.me();
+      setProfile(meFresh);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not enable team workspace');
+    } finally {
+      setEnablingTeam(false);
+    }
+  };
 
   const saveOrgName = async (e) => {
     e.preventDefault();
@@ -140,7 +219,7 @@ export default function V2OrgSettings() {
     setSavingOrgName(true);
     try {
       await v2Orgs.patchMe({ name: trimmed });
-      toast.success('Organization name updated');
+      toast.success('Team name updated');
       const fresh = await v2Orgs.me();
       setOrg(fresh);
       setOrgNameDraft(fresh?.org?.name || trimmed);
@@ -149,6 +228,69 @@ export default function V2OrgSettings() {
     } finally {
       setSavingOrgName(false);
     }
+  };
+
+  const saveBranding = async (e) => {
+    e.preventDefault();
+    if (!canManage) return;
+    setSavingBranding(true);
+    try {
+      const res = await v2Orgs.patchBranding({
+        accentColor: brandingAccent,
+        welcomeMessage: brandingWelcome,
+      });
+      if (res?.branding) {
+        setBrandingAccent(res.branding.accentColor || brandingAccent);
+        setBrandingWelcome(res.branding.welcomeMessage || '');
+        setBrandingLogoUrl(res.branding.logoUrl || brandingLogoUrl);
+      }
+      toast.success('Branding saved');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not save branding');
+    } finally {
+      setSavingBranding(false);
+    }
+  };
+
+  const onLogoPick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !canManage) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error('Logo must be 2 MB or smaller');
+      return;
+    }
+    setUploadingLogo(true);
+    try {
+      const res = await v2Orgs.uploadBrandingLogo(file);
+      setBrandingLogoUrl(res?.branding?.logoUrl || '');
+      toast.success('Logo uploaded');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Logo upload failed');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const removeLogo = async () => {
+    if (!canManage) return;
+    setUploadingLogo(true);
+    try {
+      await v2Orgs.deleteBrandingLogo();
+      setBrandingLogoUrl('');
+      toast.success('Logo removed');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not remove logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const previewBranding = {
+    accentColor: brandingAccent,
+    logoUrl: brandingLogoUrl || null,
+    welcomeMessage: brandingWelcome,
+    hostName: workspaceLabel({ org: org?.org || profile?.org, user: profile?.user }),
   };
 
   const addMember = async (e) => {
@@ -227,38 +369,95 @@ export default function V2OrgSettings() {
             </p>
           </div>
 
-          {section === 'organization' && (
-            <Card className="app-card border-border/60">
-              <CardHeader>
-                <CardTitle>Organization</CardTitle>
-                <CardDescription>Workspace name. Owners and admins can change it; members cannot.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                {!canRenameOrg && (
-                  <div>
-                    <span className="text-muted-foreground">Name</span>
-                    <p className="font-medium text-foreground">{orgName}</p>
-                  </div>
-                )}
-                {canRenameOrg && (
-                  <form onSubmit={saveOrgName} className="space-y-3 max-w-md">
-                    <div className="space-y-2">
-                      <Label htmlFor="org-name">Workspace name</Label>
-                      <Input
-                        id="org-name"
-                        value={orgNameDraft}
-                        onChange={(e) => setOrgNameDraft(e.target.value)}
-                        maxLength={128}
-                        autoComplete="organization"
-                      />
+          {section === 'profile' && (
+            <>
+              <Card className="app-card border-border/60">
+                <CardHeader>
+                  <CardTitle>{teamAccount ? 'Organization' : 'Your account'}</CardTitle>
+                  <CardDescription>
+                    {teamAccount
+                      ? 'Workspace name shown to your team. Owners and admins can change it.'
+                      : 'Personal account — your name is shown in meetings and across the app. No company name required.'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4 text-sm">
+                  {!teamAccount && (
+                    <form onSubmit={saveDisplayName} className="max-w-md space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="display-name">Your name</Label>
+                        <Input
+                          id="display-name"
+                          value={displayNameDraft}
+                          onChange={(e) => setDisplayNameDraft(e.target.value)}
+                          maxLength={128}
+                          autoComplete="name"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-muted-foreground">Email</span>
+                        <p className="font-medium text-foreground">{userEmail}</p>
+                      </div>
+                      <Button type="submit" disabled={savingDisplayName}>
+                        {savingDisplayName ? 'Saving…' : 'Save'}
+                      </Button>
+                    </form>
+                  )}
+                  {teamAccount && !canRenameOrg && (
+                    <div>
+                      <span className="text-muted-foreground">Workspace name</span>
+                      <p className="font-medium text-foreground">{orgName}</p>
                     </div>
-                    <Button type="submit" disabled={savingOrgName}>
-                      {savingOrgName ? 'Saving…' : 'Save'}
-                    </Button>
-                  </form>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                  {teamAccount && canRenameOrg && (
+                    <form onSubmit={saveOrgName} className="max-w-md space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="org-name">Team or company name</Label>
+                        <Input
+                          id="org-name"
+                          value={orgNameDraft}
+                          onChange={(e) => setOrgNameDraft(e.target.value)}
+                          maxLength={128}
+                          autoComplete="organization"
+                        />
+                      </div>
+                      <Button type="submit" disabled={savingOrgName}>
+                        {savingOrgName ? 'Saving…' : 'Save'}
+                      </Button>
+                    </form>
+                  )}
+                </CardContent>
+              </Card>
+              {!teamAccount && canRenameOrg && (
+                <Card className="app-card border-border/60">
+                  <CardHeader>
+                    <CardTitle>Team workspace</CardTitle>
+                    <CardDescription>
+                      {teamWorkspace
+                        ? 'Add a company or team name when you want a shared workspace and member invites.'
+                        : 'Upgrade to a team plan to invite colleagues. You can still set a team name now if you prefer.'}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={enableTeamWorkspace} className="max-w-md space-y-3">
+                      <div className="space-y-2">
+                        <Label htmlFor="team-name">Company or team name</Label>
+                        <Input
+                          id="team-name"
+                          value={teamNameDraft}
+                          onChange={(e) => setTeamNameDraft(e.target.value)}
+                          placeholder="Acme Inc"
+                          maxLength={128}
+                          autoComplete="organization"
+                        />
+                      </div>
+                      <Button type="submit" variant="outline" disabled={enablingTeam || !teamNameDraft.trim()}>
+                        {enablingTeam ? 'Enabling…' : 'Enable team workspace'}
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {section === 'members' && teamWorkspace && (
@@ -321,15 +520,129 @@ export default function V2OrgSettings() {
           )}
 
           {section === 'branding' && (
-            <Card className="app-card border-border/60">
-              <CardHeader>
-                <CardTitle>Branding</CardTitle>
-                <CardDescription>Logo and accent colors for guest join pages — coming soon.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">No options to configure yet.</p>
-              </CardContent>
-            </Card>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card className="app-card border-border/60">
+                <CardHeader>
+                  <CardTitle>Guest join branding</CardTitle>
+                  <CardDescription>
+                    Logo, accent color, and welcome message appear on your guest join and prejoin pages. Hosts see the
+                    same styling when joining from the dashboard.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {!canManage && (
+                    <p className="text-sm text-muted-foreground">Only owners and admins can edit branding.</p>
+                  )}
+                  {canManage && (
+                    <form onSubmit={saveBranding} className="space-y-5">
+                      <div className="space-y-2">
+                        <Label>Logo</Label>
+                        <div className="flex flex-wrap items-center gap-3">
+                          {brandingLogoUrl ? (
+                            <img
+                              src={brandingLogoUrl}
+                              alt=""
+                              className="h-12 max-w-[140px] rounded border border-border/60 bg-muted/30 object-contain p-1"
+                            />
+                          ) : (
+                            <div className="flex h-12 w-12 items-center justify-center rounded border border-dashed border-border text-muted-foreground">
+                              <ImagePlus className="h-5 w-5" />
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-2">
+                            <Button type="button" variant="outline" size="sm" disabled={uploadingLogo} asChild>
+                              <label className="cursor-pointer">
+                                {uploadingLogo ? 'Uploading…' : 'Upload logo'}
+                                <input
+                                  type="file"
+                                  accept="image/png,image/jpeg,image/webp,image/gif"
+                                  className="sr-only"
+                                  onChange={onLogoPick}
+                                />
+                              </label>
+                            </Button>
+                            {brandingLogoUrl && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={uploadingLogo}
+                                onClick={removeLogo}
+                              >
+                                <Trash2 className="mr-1 h-4 w-4" />
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">PNG, JPEG, WebP, or GIF · max 2 MB</p>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="brand-accent">Accent color</Label>
+                        <div className="flex max-w-xs items-center gap-2">
+                          <input
+                            id="brand-accent"
+                            type="color"
+                            value={brandingAccent}
+                            onChange={(e) => setBrandingAccent(e.target.value)}
+                            className="h-10 w-14 cursor-pointer rounded border border-input bg-background p-1"
+                            aria-label="Accent color"
+                          />
+                          <Input
+                            value={brandingAccent}
+                            onChange={(e) => setBrandingAccent(e.target.value)}
+                            pattern="^#[0-9A-Fa-f]{6}$"
+                            maxLength={7}
+                            className="font-mono text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="brand-welcome">Welcome message</Label>
+                        <Input
+                          id="brand-welcome"
+                          value={brandingWelcome}
+                          onChange={(e) => setBrandingWelcome(e.target.value)}
+                          maxLength={200}
+                          placeholder="Welcome to our weekly sync"
+                        />
+                        <p className="text-xs text-muted-foreground">Optional · shown under your name on the join page</p>
+                      </div>
+                      <Button type="submit" disabled={savingBranding}>
+                        {savingBranding ? 'Saving…' : 'Save branding'}
+                      </Button>
+                    </form>
+                  )}
+                </CardContent>
+              </Card>
+              <Card className="app-card border-border/60">
+                <CardHeader>
+                  <CardTitle>Preview</CardTitle>
+                  <CardDescription>How guests will see your join lobby</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div
+                    className="rounded-xl border border-border/60 bg-muted/30 p-6"
+                    style={brandingStyleVars(previewBranding)}
+                  >
+                    <MeetingBrandHeader branding={previewBranding} meetingTitle="Weekly standup" />
+                    <h3 className="text-center text-base font-semibold">Ready to join?</h3>
+                    <p className="mt-1 text-center text-xs text-muted-foreground">v2-example-room</p>
+                    <div className="mt-4 space-y-2">
+                      <div className="h-9 rounded-md border border-border/60 bg-background" />
+                      <button
+                        type="button"
+                        tabIndex={-1}
+                        className={brandButtonClassName('h-10 w-full rounded-md text-sm font-medium')}
+                      >
+                        Join meeting
+                      </button>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {section === 'billing' && (

@@ -19,8 +19,8 @@ const items = [
   },
   {
     icon: Shield,
-    title: 'Organizations & roles',
-    description: 'Multi-tenant workspaces with owners, admins, and members, plus the controls operators need to stay in charge.',
+    title: 'Personal or team accounts',
+    description: 'Start solo on a free personal account, or add a team workspace with roles when you need shared access.',
   },
 ];
 

@@ -6,6 +6,7 @@ import { ArrowRight, CalendarClock, Clock, Plus, UserPlus, Video } from 'lucide-
 import { v2Auth, v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
+import { workspaceLabel, isTeamWorkspace } from '../lib/workspaceDisplay';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
@@ -50,7 +51,8 @@ export default function V2AppHome() {
 
   const displayName = me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || 'there';
   const firstName = displayName.split(' ')[0];
-  const workspaceName = me?.org?.name || orgData?.org?.name || 'Workspace';
+  const workspaceName = workspaceLabel({ org: me?.org || orgData?.org, user: me?.user });
+  const teamAccount = isTeamWorkspace(me?.org || orgData?.org);
   const teamWorkspace = hasTeamWorkspace(orgData?.entitlements, sub?.plan);
 
   const nextUpcoming = useMemo(() => {
@@ -79,7 +81,9 @@ export default function V2AppHome() {
             {greetingForNow()}, {firstName}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            {workspaceName} · Host translated meetings with live captions and guest links.
+            {teamAccount
+              ? `${workspaceName} · Host translated meetings with live captions and guest links.`
+              : 'Your personal account · Host translated meetings with live captions and guest links.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

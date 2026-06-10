@@ -3,6 +3,8 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Loader2, AlertCircle, Video, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService, joinPublicService } from '../services/api';
+import { normalizeMeetingBranding, brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding';
+import MeetingBrandHeader from './MeetingBrandHeader';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 
@@ -23,13 +25,15 @@ function JoinMeeting() {
   const [isInviteLink, setIsInviteLink] = useState(false);
   const [isStartingRoom, setIsStartingRoom] = useState(false);
   const [waitingHost, setWaitingHost] = useState(false);
+  const [joinBranding, setJoinBranding] = useState(null);
+  const [meetingTitle, setMeetingTitle] = useState('');
 
   const goHome = useCallback(() => navigate(homePath()), [navigate]);
 
   // Name + language + devices are collected on the prejoin screen (/room/:roomName).
   // This page only validates access, then forwards the join context.
   const goToPrejoin = useCallback(
-    (info, v2Ctx) => {
+    (info, v2Ctx, joinMeta = {}) => {
       const participantInfo = {
         participantName: '',
         isHost: !!info?.hostCode,
@@ -43,6 +47,8 @@ function JoinMeeting() {
         numParticipants: info?.numParticipants ?? null,
         meetingId: v2Ctx?.meetingId,
         inviteToken: v2Ctx?.inviteToken || inviteFromUrl,
+        meetingTitle: joinMeta.meetingTitle || null,
+        branding: joinMeta.branding || null,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       navigate(`/room/${roomName}${window.location.search}`, {
@@ -60,10 +66,10 @@ function JoinMeeting() {
     };
   }, [roomName, inviteFromUrl]);
 
-  const proceedAfterV2Allowed = async (v2Ctx) => {
+  const proceedAfterV2Allowed = async (v2Ctx, joinMeta = {}) => {
     try {
       const info = await roomService.getInfo(roomName);
-      goToPrejoin(info, v2Ctx);
+      goToPrejoin(info, v2Ctx, joinMeta);
     } catch (e) {
       if (e.response?.status === 404) {
         setError('Meeting room is not available yet. Ask the host to start the meeting from the dashboard.');
@@ -84,6 +90,10 @@ function JoinMeeting() {
       const joinPreview = await joinPublicService.joinInfo(roomName, inviteFromUrl);
       if (joinPreview.mode === 'v2') {
         const v2Ctx = { meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl };
+        const branding = normalizeMeetingBranding(joinPreview.branding);
+        setJoinBranding(branding);
+        setMeetingTitle(joinPreview.title || '');
+        const joinMeta = { branding, meetingTitle: joinPreview.title || null };
         if (!joinPreview.allowed && joinPreview.reason === 'waiting_for_host') {
           setWaitingHost(true);
           setIsLoading(false);
@@ -95,7 +105,7 @@ function JoinMeeting() {
                   clearInterval(pollRef.current);
                   pollRef.current = null;
                   setWaitingHost(false);
-                  await proceedAfterV2Allowed(v2Ctx);
+                  await proceedAfterV2Allowed(v2Ctx, joinMeta);
                 }
               } catch {
                 /* ignore */
@@ -117,7 +127,7 @@ function JoinMeeting() {
           setIsLoading(false);
           return;
         }
-        await proceedAfterV2Allowed(v2Ctx);
+        await proceedAfterV2Allowed(v2Ctx, joinMeta);
         return;
       }
 
@@ -162,9 +172,13 @@ function JoinMeeting() {
 
   if (waitingHost) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div
+        className="flex min-h-screen items-center justify-center bg-background px-4"
+        style={brandingStyleVars(joinBranding)}
+      >
         <Card className="w-full max-w-md text-center">
           <CardHeader>
+            <MeetingBrandHeader branding={joinBranding} meetingTitle={meetingTitle} />
             <div className="relative mx-auto mb-2 inline-flex h-16 w-16 items-center justify-center">
               <Clock className="h-12 w-12 text-amber-500" />
               <Loader2 className="absolute -right-1 -top-1 h-5 w-5 animate-spin text-primary" />

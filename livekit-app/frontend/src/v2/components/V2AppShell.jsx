@@ -13,6 +13,7 @@ import {
 } from '../../components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '../../components/ui/sheet';
 import { cn } from '../../lib/utils';
+import { workspaceLabel, workspaceKindLabel } from '../lib/workspaceDisplay';
 
 function navLinkClass({ isActive }) {
   return cn(
@@ -59,7 +60,8 @@ export default function V2AppShell({ me, onLogout }) {
 
   const displayName = me?.user?.display_name || me?.user?.displayName || null;
   const initial = (displayName || me?.user?.email || '?').slice(0, 1).toUpperCase();
-  const orgName = me?.org?.name || 'Workspace';
+  const sidebarTitle = workspaceLabel({ org: me?.org, user: me?.user });
+  const sidebarSubtitle = workspaceKindLabel(me?.org);
   const planStatus = me?.org?.billing_status || null;
 
   const sidebarBody = (
@@ -69,15 +71,18 @@ export default function V2AppShell({ me, onLogout }) {
           <LayoutDashboard className="h-5 w-5 text-primary" />
           Parley
         </Link>
-        <div className="mt-2.5 flex items-center gap-2">
-          <p className="min-w-0 truncate text-xs font-medium text-foreground" title={orgName}>
-            {orgName}
+        <div className="mt-2.5 flex flex-col gap-0.5">
+          <p className="min-w-0 truncate text-xs font-medium text-foreground" title={sidebarTitle}>
+            {sidebarTitle}
           </p>
-          {planStatus && (
-            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-medium capitalize">
-              {planStatus}
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            <p className="text-[10px] text-muted-foreground">{sidebarSubtitle}</p>
+            {planStatus && (
+              <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-medium capitalize">
+                {planStatus}
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />

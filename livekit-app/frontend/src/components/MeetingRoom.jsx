@@ -6,7 +6,8 @@ import { controlLabel } from '../lib/controlLabels';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
-import { v2Meetings } from '../services/apiV2';
+import { v2Meetings, v2Orgs } from '../services/apiV2';
+import { normalizeMeetingBranding } from '../lib/meetingBranding';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
 import ChatPanel from './ChatPanel';
@@ -52,6 +53,8 @@ function MeetingRoom() {
   const [isInitialized, setIsInitialized] = useState(false);
   // Device + AV choices from the prejoin lobby; room connects only after this is set.
   const [prejoinChoices, setPrejoinChoices] = useState(null);
+  const [meetingBranding, setMeetingBranding] = useState(null);
+  const [meetingTitle, setMeetingTitle] = useState(null);
   const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const intentionalLeaveRef = useRef(false);
@@ -84,6 +87,8 @@ function MeetingRoom() {
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
     const meetingId = stateInfo.meetingId || sessionInfo.meetingId;
     const inviteToken = stateInfo.inviteToken || sessionInfo.inviteToken;
+    const brandingFromSession = stateInfo.branding || sessionInfo.branding || null;
+    const titleFromSession = stateInfo.meetingTitle || sessionInfo.meetingTitle || null;
     const selectedLanguage = normalizeMeetingLanguageCode(
       stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en'
     );
@@ -116,9 +121,32 @@ function MeetingRoom() {
       selectedLanguage,
       spokenLanguage,
     });
+    setMeetingBranding(normalizeMeetingBranding(brandingFromSession));
+    setMeetingTitle(titleFromSession);
 
     setIsInitialized(true);
   }, [roomName, navigate]);
+
+  // Hosts joining from the dashboard may not have guest-session branding — load org branding.
+  useEffect(() => {
+    if (meetingBranding || !isInitialized) return;
+    if (typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) return;
+    v2Orgs
+      .me()
+      .then((res) => {
+        const orgRow = res?.org;
+        const configured =
+          orgRow?.brand_logo_file || orgRow?.brand_welcome_message || orgRow?.brand_accent_color;
+        if (!configured) return;
+        setMeetingBranding(
+          normalizeMeetingBranding({
+            ...res.branding,
+            hostName: orgRow?.name || null,
+          })
+        );
+      })
+      .catch(() => {});
+  }, [isInitialized, meetingBranding]);
 
   // Connect to room only after the prejoin lobby confirms name/language/devices.
   useEffect(() => {
@@ -288,6 +316,8 @@ function MeetingRoom() {
         defaultName={participantInfo.participantName}
         defaultLanguage={participantInfo.selectedLanguage}
         participantCount={participantInfo.numParticipants}
+        meetingTitle={meetingTitle}
+        branding={meetingBranding}
         onJoin={handlePrejoinJoin}
       />
     );

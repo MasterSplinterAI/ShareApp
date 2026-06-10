@@ -57,6 +57,7 @@ async function migrate() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       billing_status TEXT NOT NULL DEFAULT 'trial',
+      account_type TEXT NOT NULL DEFAULT 'personal',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
@@ -326,6 +327,43 @@ async function migrate() {
   }
   if (!subColNames.has('comp_set_at')) {
     await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_set_at TEXT`);
+  }
+
+  const orgCols = await all(`PRAGMA table_info(v2_organizations)`);
+  const orgColNames = new Set((orgCols || []).map((c) => c.name));
+  if (!orgColNames.has('account_type')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN account_type TEXT NOT NULL DEFAULT 'personal'`);
+    const orgRows = await all(`SELECT o.id, o.name, u.email, u.display_name
+      FROM v2_organizations o
+      LEFT JOIN v2_org_members m ON m.org_id = o.id AND m.role = 'owner'
+      LEFT JOIN v2_users u ON u.id = m.user_id`);
+    for (const row of orgRows || []) {
+      const legacyAuto =
+        row.name && row.email && row.name === `${String(row.email).split('@')[0]}'s org`;
+      if (legacyAuto) {
+        const personalName = (row.display_name || String(row.email).split('@')[0] || 'Account').slice(
+          0,
+          128
+        );
+        await run(`UPDATE v2_organizations SET account_type = 'personal', name = ? WHERE id = ?`, [
+          personalName,
+          row.id,
+        ]);
+      } else {
+        await run(`UPDATE v2_organizations SET account_type = 'team' WHERE id = ?`, [row.id]);
+      }
+    }
+  }
+  const orgCols2 = await all(`PRAGMA table_info(v2_organizations)`);
+  const orgColNames2 = new Set((orgCols2 || []).map((c) => c.name));
+  if (!orgColNames2.has('brand_accent_color')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN brand_accent_color TEXT`);
+  }
+  if (!orgColNames2.has('brand_welcome_message')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN brand_welcome_message TEXT`);
+  }
+  if (!orgColNames2.has('brand_logo_file')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN brand_logo_file TEXT`);
   }
 
   const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);

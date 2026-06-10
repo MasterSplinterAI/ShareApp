@@ -5,6 +5,7 @@ const express = require('express');
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('../../db/v2Database');
 const { ensureRoomAndAgent } = require('../../lib/livekitService');
+const { serializePublicBranding } = require('../../lib/v2Branding');
 
 const router = express.Router();
 
@@ -12,12 +13,35 @@ async function loadV2MeetingByRoom(roomName) {
   return db.get(
     `SELECT m.*,
        IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
-       IFNULL(p.require_invite_token, 0) AS require_invite_token
+       IFNULL(p.require_invite_token, 0) AS require_invite_token,
+       o.id AS org_id_ref,
+       o.name AS org_name,
+       o.account_type AS org_account_type,
+       o.brand_accent_color,
+       o.brand_welcome_message,
+       o.brand_logo_file,
+       u.display_name AS host_display_name
      FROM v2_meetings m
      LEFT JOIN v2_meeting_policies p ON p.meeting_id = m.id
+     LEFT JOIN v2_organizations o ON o.id = m.org_id
+     LEFT JOIN v2_users u ON u.id = m.host_user_id
      WHERE m.livekit_room_name = ?`,
     [roomName]
   );
+}
+
+function meetingBranding(req, meeting) {
+  if (!meeting?.org_id_ref) return null;
+  const org = {
+    id: meeting.org_id_ref,
+    name: meeting.org_name,
+    account_type: meeting.org_account_type,
+    brand_accent_color: meeting.brand_accent_color,
+    brand_welcome_message: meeting.brand_welcome_message,
+    brand_logo_file: meeting.brand_logo_file,
+  };
+  const hostUser = { display_name: meeting.host_display_name };
+  return serializePublicBranding(req, org, hostUser);
 }
 
 async function validateGuestAccess(meeting, inviteToken) {
@@ -72,6 +96,7 @@ router.get('/join-info', async (req, res) => {
         reason: v.reason,
         meetingId: meeting.id,
         title: meeting.title,
+        branding: meetingBranding(req, meeting),
       });
     }
     return res.json({
@@ -80,6 +105,7 @@ router.get('/join-info', async (req, res) => {
       meetingId: meeting.id,
       title: meeting.title,
       inviteRequired: meeting.require_invite_token === 1,
+      branding: meetingBranding(req, meeting),
     });
   } catch (e) {
     console.error('[v2/join-info]', e);

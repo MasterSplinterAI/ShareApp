@@ -1,7 +1,7 @@
 import { Card, CardDescription, CardHeader, CardTitle } from '../ui/card';
 
 const steps = [
-  { n: '01', title: 'Create your organization', body: 'Sign up, name your workspace, and invite teammates with clear roles.' },
+  { n: '01', title: 'Create your account', body: 'Sign up free — no company name required. Use a personal account or add a team workspace anytime.' },
   { n: '02', title: 'Schedule or start a meeting', body: 'Instant or scheduled sessions with policies for host presence and guest links.' },
   { n: '03', title: 'Share the guest link', body: 'Guests join in one click; optional invite tokens keep access tight when you need them.' },
 ];

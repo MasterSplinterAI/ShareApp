@@ -9,6 +9,8 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
+import MeetingBrandHeader from './MeetingBrandHeader';
+import { brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding';
 
 const MEETING_LANGUAGES = getMeetingLanguages();
 
@@ -99,6 +101,8 @@ function PreJoinScreen({
   defaultName = '',
   defaultLanguage = 'en',
   participantCount = null,
+  meetingTitle = null,
+  branding = null,
   onJoin,
 }) {
   const [name, setName] = useState(defaultName);
@@ -198,9 +202,14 @@ function PreJoinScreen({
   };
 
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center bg-muted/40 px-4 py-6" data-no-translate="true">
+    <div
+      className="flex min-h-[100dvh] items-center justify-center bg-muted/40 px-4 py-6"
+      data-no-translate="true"
+      style={brandingStyleVars(branding)}
+    >
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border/70 bg-card shadow-lg">
         <div className="border-b border-border/60 px-4 py-4 text-center sm:px-6 sm:py-5">
+          <MeetingBrandHeader branding={branding} meetingTitle={meetingTitle} />
           <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Ready to join?</h1>
           <p className="mt-1 flex flex-wrap items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <span className="truncate">{roomName}</span>
@@ -359,7 +368,12 @@ function PreJoinScreen({
               </p>
             </div>
 
-            <Button type="submit" size="lg" className="w-full" disabled={!name.trim()}>
+            <Button
+              type="submit"
+              size="lg"
+              className={branding ? brandButtonClassName('w-full border-0') : 'w-full'}
+              disabled={!name.trim()}
+            >
               Join meeting
             </Button>
           </form>

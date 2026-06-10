@@ -1,17 +1,39 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { getOrgEntitlements, getMonthToDateUsage } = require('../../lib/v2Entitlements');
+const {
+  DEFAULT_ACCENT,
+  LOGO_MAX_BYTES,
+  LOGO_MIME,
+  brandingDir,
+  normalizeAccentColor,
+  normalizeWelcomeMessage,
+  publicLogoUrl,
+  removeLogoFile,
+} = require('../../lib/v2Branding');
 
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
+const { TEAM } = require('../../lib/v2Workspace');
+
+function brandingPayload(req, org) {
+  return {
+    accentColor: normalizeAccentColor(org?.brand_accent_color) || DEFAULT_ACCENT,
+    welcomeMessage: org?.brand_welcome_message || '',
+    logoUrl: publicLogoUrl(req, org?.id, Boolean(org?.brand_logo_file)),
+  };
+}
 
 router.get('/me', requireV2Auth, async (req, res) => {
   try {
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     const ent = await getOrgEntitlements(req.v2Auth.orgId);
     const usage = await getMonthToDateUsage(req.v2Auth.orgId);
-    res.json({ org, entitlements: ent, usageThisMonth: usage });
+    res.json({ org, entitlements: ent, usageThisMonth: usage, branding: brandingPayload(req, org) });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -26,10 +48,10 @@ router.patch('/me', requireV2Auth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden', code: 'forbidden' });
     }
     const body = req.body || {};
-    const allowed = new Set(['name']);
+    const allowed = new Set(['name', 'makeTeam']);
     const extra = Object.keys(body).filter((k) => !allowed.has(k));
     if (extra.length) {
-      return res.status(400).json({ error: 'Only name may be updated', code: 'invalid_fields' });
+      return res.status(400).json({ error: 'Only name and makeTeam may be updated', code: 'invalid_fields' });
     }
     if (typeof body.name !== 'string') {
       return res.status(400).json({ error: 'name is required', code: 'name_required' });
@@ -41,7 +63,23 @@ router.patch('/me', requireV2Auth, async (req, res) => {
         code: 'invalid_name_length',
       });
     }
-    await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
+    const current = await db.get(`SELECT account_type FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    if (current?.account_type !== TEAM) {
+      if (!body.makeTeam) {
+        return res.status(400).json({
+          error:
+            'Personal accounts use your profile name. Set a team workspace name with makeTeam to invite colleagues.',
+          code: 'personal_account',
+        });
+      }
+      await db.run(`UPDATE v2_organizations SET name = ?, account_type = ? WHERE id = ?`, [
+        trimmed,
+        TEAM,
+        req.v2Auth.orgId,
+      ]);
+    } else {
+      await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
+    }
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     res.json({ org });
   } catch (e) {
@@ -232,6 +270,108 @@ router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req,
     if (!org) return res.status(404).json({ error: 'Not found' });
     res.json({ org });
   } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination(req, _file, cb) {
+      try {
+        cb(null, brandingDir(req.v2Auth.orgId));
+      } catch (e) {
+        cb(e);
+      }
+    },
+    filename(_req, file, cb) {
+      const ext = path.extname(file.originalname || '').toLowerCase().slice(0, 10) || '.png';
+      cb(null, `logo${ext}`);
+    },
+  }),
+  limits: { fileSize: LOGO_MAX_BYTES },
+  fileFilter(_req, file, cb) {
+    if (!LOGO_MIME.has(file.mimetype)) {
+      return cb(new Error('Logo must be PNG, JPEG, WebP, or GIF'));
+    }
+    cb(null, true);
+  },
+});
+
+router.patch('/me/branding', requireV2Auth, async (req, res) => {
+  try {
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden', code: 'forbidden' });
+    }
+    const { accentColor, welcomeMessage } = req.body || {};
+    const updates = [];
+    const params = [];
+
+    if (accentColor !== undefined) {
+      const color = normalizeAccentColor(accentColor);
+      if (!color) {
+        return res.status(400).json({ error: 'accentColor must be a hex color like #2563eb' });
+      }
+      updates.push('brand_accent_color = ?');
+      params.push(color);
+    }
+    if (welcomeMessage !== undefined) {
+      updates.push('brand_welcome_message = ?');
+      params.push(normalizeWelcomeMessage(welcomeMessage));
+    }
+    if (!updates.length) {
+      return res.status(400).json({ error: 'Nothing to update' });
+    }
+    params.push(req.v2Auth.orgId);
+    await db.run(`UPDATE v2_organizations SET ${updates.join(', ')} WHERE id = ?`, params);
+    const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    res.json({ org, branding: brandingPayload(req, org) });
+  } catch (e) {
+    console.error('[orgs/me/branding PATCH]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/me/branding/logo', requireV2Auth, (req, res) => {
+  logoUpload.single('logo')(req, res, async (err) => {
+    if (err) {
+      return res.status(400).json({ error: err.message || 'Upload failed' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: 'logo field required' });
+    }
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    try {
+      const org = await db.get(`SELECT brand_logo_file FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+      if (org?.brand_logo_file && org.brand_logo_file !== req.file.filename) {
+        removeLogoFile(req.v2Auth.orgId, org.brand_logo_file);
+      }
+      await db.run(`UPDATE v2_organizations SET brand_logo_file = ? WHERE id = ?`, [
+        req.file.filename,
+        req.v2Auth.orgId,
+      ]);
+      const fresh = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+      res.json({ branding: brandingPayload(req, fresh) });
+    } catch (e) {
+      console.error('[orgs/me/branding/logo POST]', e);
+      res.status(500).json({ error: 'Save failed' });
+    }
+  });
+});
+
+router.delete('/me/branding/logo', requireV2Auth, async (req, res) => {
+  try {
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const org = await db.get(`SELECT brand_logo_file FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    removeLogoFile(req.v2Auth.orgId, org?.brand_logo_file);
+    await db.run(`UPDATE v2_organizations SET brand_logo_file = NULL WHERE id = ?`, [req.v2Auth.orgId]);
+    const fresh = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    res.json({ branding: brandingPayload(req, fresh) });
+  } catch (e) {
+    console.error('[orgs/me/branding/logo DELETE]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

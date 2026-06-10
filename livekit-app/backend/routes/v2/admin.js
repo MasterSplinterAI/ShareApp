@@ -70,7 +70,7 @@ router.get('/users', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const rows = await db.all(
       `SELECT u.id, u.email, u.display_name, u.created_at,
-              m.org_id, m.role, o.name AS org_name,
+              m.org_id, m.role, o.name AS org_name, o.account_type AS org_account_type,
               s.plan_id, s.status AS sub_status, s.is_comp, s.comp_label,
               (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
                FROM v2_usage_events WHERE org_id = m.org_id AND created_at >= datetime('now', 'start of month')) AS mtd_meeting_minutes
@@ -91,7 +91,7 @@ router.get('/users', requireV2Auth, requireSuperadmin, async (req, res) => {
 router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const orgs = await db.all(
-      `SELECT o.id, o.name, o.billing_status, o.created_at,
+      `SELECT o.id, o.name, o.billing_status, o.account_type, o.created_at,
         s.plan_id, s.status AS sub_status, s.is_comp, s.comp_label, s.comp_reason,
         p.monthly_price_cents, p.included_meeting_minutes,
         (SELECT COUNT(*) FROM v2_org_members m WHERE m.org_id = o.id) AS member_count,

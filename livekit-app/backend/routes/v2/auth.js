@@ -6,16 +6,20 @@ const { requireV2Auth } = require('../../middleware/v2Auth');
 const { hashPassword, verifyPassword, signSession } = require('../../lib/authAdapter');
 const { sendEmail } = require('../../lib/mailer');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
+const { PERSONAL, resolveNewWorkspace } = require('../../lib/v2Workspace');
 
 function emailValid(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 /** Org + owner membership + free subscription + billing cycle for a user. */
-async function provisionOrgForUser(userId, email, orgName) {
-  const org = orgName && String(orgName).trim() ? String(orgName).trim() : `${email.split('@')[0]}'s org`;
+async function provisionOrgForUser(userId, email, { orgName, displayName } = {}) {
+  const { accountType, name } = resolveNewWorkspace({ orgName, displayName, email });
   const orgId = db.uuid();
-  await db.run(`INSERT INTO v2_organizations (id, name, billing_status) VALUES (?,?,?)`, [orgId, org, 'trial']);
+  await db.run(
+    `INSERT INTO v2_organizations (id, name, billing_status, account_type) VALUES (?,?,?,?)`,
+    [orgId, name, 'trial', accountType]
+  );
   await db.run(`INSERT INTO v2_org_members (org_id, user_id, role) VALUES (?,?,?)`, [orgId, userId, 'owner']);
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
@@ -28,7 +32,7 @@ async function provisionOrgForUser(userId, email, orgName) {
     `INSERT INTO v2_billing_cycles (id, org_id, period_start, period_end) VALUES (?,?,?,?)`,
     [db.uuid(), orgId, start, end]
   );
-  return { orgId, orgName: org };
+  return { orgId, orgName: name, accountType };
 }
 
 router.post('/signup', async (req, res) => {
@@ -49,9 +53,16 @@ router.post('/signup', async (req, res) => {
       [userId, email.trim().toLowerCase(), hash, displayName || email.split('@')[0]]
     );
     cleanup.push(() => db.run(`DELETE FROM v2_users WHERE id = ?`, [userId]));
-    const { orgId, orgName: org } = await provisionOrgForUser(userId, email, orgName);
+    const { orgId, orgName: org, accountType } = await provisionOrgForUser(userId, email, {
+      orgName,
+      displayName: displayName || email.split('@')[0],
+    });
     const token = signSession({ sub: userId, email: email.trim().toLowerCase(), orgId, role: 'owner' });
-    res.status(201).json({ token, user: { id: userId, email: email.trim().toLowerCase(), displayName: displayName || null }, org: { id: orgId, name: org } });
+    res.status(201).json({
+      token,
+      user: { id: userId, email: email.trim().toLowerCase(), displayName: displayName || null },
+      org: { id: orgId, name: org, account_type: accountType },
+    });
   } catch (e) {
     console.error('[v2/auth/signup]', e);
     // Compensating cleanup: a half-created account (user without org membership)
@@ -85,7 +96,9 @@ router.post('/login', async (req, res) => {
       // Self-heal orphans from historical non-transactional signups: provision the
       // missing org instead of locking the account out forever.
       console.warn(`[v2/auth/login] repairing org-less user ${user.email}`);
-      const { orgId } = await provisionOrgForUser(user.id, user.email, null);
+      const { orgId } = await provisionOrgForUser(user.id, user.email, {
+        displayName: user.display_name,
+      });
       membership = { org_id: orgId, role: 'owner' };
     }
     const token = signSession({
@@ -204,7 +217,10 @@ const { isSuperadminEmail } = require('../../lib/v2Superadmin');
 router.get('/me', requireV2Auth, async (req, res) => {
   try {
     const user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
-    const org = await db.get(`SELECT id, name, billing_status FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    const org = await db.get(
+      `SELECT id, name, billing_status, account_type FROM v2_organizations WHERE id = ?`,
+      [req.v2Auth.orgId]
+    );
     res.json({
       user,
       org,
@@ -212,6 +228,43 @@ router.get('/me', requireV2Auth, async (req, res) => {
       isSuperadmin: isSuperadminEmail(req.v2Auth.email),
     });
   } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+const DISPLAY_NAME_MIN = 1;
+const DISPLAY_NAME_MAX = 128;
+
+router.patch('/me', requireV2Auth, async (req, res) => {
+  try {
+    const { displayName } = req.body || {};
+    if (displayName === undefined) {
+      return res.status(400).json({ error: 'displayName is required' });
+    }
+    const trimmed = String(displayName).trim();
+    if (trimmed.length < DISPLAY_NAME_MIN || trimmed.length > DISPLAY_NAME_MAX) {
+      return res.status(400).json({
+        error: `Name must be between ${DISPLAY_NAME_MIN} and ${DISPLAY_NAME_MAX} characters`,
+      });
+    }
+    await db.run(`UPDATE v2_users SET display_name = ? WHERE id = ?`, [trimmed, req.v2Auth.userId]);
+    const org = await db.get(`SELECT account_type FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    if (org?.account_type === PERSONAL) {
+      await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
+    }
+    const user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    const orgRow = await db.get(
+      `SELECT id, name, billing_status, account_type FROM v2_organizations WHERE id = ?`,
+      [req.v2Auth.orgId]
+    );
+    res.json({
+      user,
+      org: orgRow,
+      role: req.v2Auth.role,
+      isSuperadmin: isSuperadminEmail(req.v2Auth.email),
+    });
+  } catch (e) {
+    console.error('[v2/auth/me PATCH]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

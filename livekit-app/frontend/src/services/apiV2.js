@@ -31,11 +31,21 @@ export const v2Auth = {
   signup: (body) => apiV2.post('/auth/signup', body).then((r) => r.data),
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
   me: () => apiV2.get('/auth/me').then((r) => r.data),
+  patchMe: (body) => apiV2.patch('/auth/me', body).then((r) => r.data),
 };
 
 export const v2Orgs = {
   me: () => apiV2.get('/orgs/me').then((r) => r.data),
   patchMe: (body) => apiV2.patch('/orgs/me', body).then((r) => r.data),
+  patchBranding: (body) => apiV2.patch('/orgs/me/branding', body).then((r) => r.data),
+  uploadBrandingLogo: (file) => {
+    const fd = new FormData();
+    fd.append('logo', file);
+    return apiV2.post('/orgs/me/branding/logo', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }).then((r) => r.data);
+  },
+  deleteBrandingLogo: () => apiV2.delete('/orgs/me/branding/logo').then((r) => r.data),
   listMembers: () => apiV2.get('/orgs/members').then((r) => r.data),
   addMember: (body) => apiV2.post('/orgs/members', body).then((r) => r.data),
   patchMember: (userId, body) => apiV2.patch(`/orgs/members/${encodeURIComponent(userId)}`, body).then((r) => r.data),

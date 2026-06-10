@@ -39,7 +39,7 @@ export default function V2Login() {
       <Card className="border-border/80 shadow-lg">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Sign in</CardTitle>
-          <CardDescription>Workspace — meetings, members, and billing in one place.</CardDescription>
+          <CardDescription>Sign in to host meetings, manage guest links, and view transcripts.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
@@ -77,7 +77,7 @@ export default function V2Login() {
           <p className="mt-6 text-center text-sm text-muted-foreground">
             No account?{' '}
             <Link to="/v2/signup" className="font-medium text-primary hover:underline">
-              Create organization
+              Create free account
             </Link>
           </p>
           <p className="mt-4 text-center">

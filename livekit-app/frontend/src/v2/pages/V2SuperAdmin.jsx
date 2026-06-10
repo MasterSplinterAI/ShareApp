@@ -843,8 +843,8 @@ export default function V2SuperAdmin() {
             <CardHeader>
               <CardTitle className="text-lg">Users</CardTitle>
               <CardDescription>
-                Every login identity, including people who signed up without a company name (their
-                workspace is auto-named “their-email&apos;s org”). Click a row to open the workspace.
+                Every registered user. Personal accounts use their own name; team workspaces have a shared company name.
+                Click a row to open the workspace.
               </CardDescription>
               <Input
                 aria-label="Search users"
@@ -860,7 +860,8 @@ export default function V2SuperAdmin() {
                   <tr>
                     <th className="px-4 py-3 font-medium">Email</th>
                     <th className="px-4 py-3 font-medium">Name</th>
-                    <th className="px-4 py-3 font-medium">Organization</th>
+                    <th className="px-4 py-3 font-medium">Workspace</th>
+                    <th className="px-4 py-3 font-medium">Type</th>
                     <th className="px-4 py-3 font-medium">Role</th>
                     <th className="px-4 py-3 font-medium">Plan</th>
                     <th className="px-4 py-3 font-medium" title="Org participant-minutes this month">
@@ -878,8 +879,7 @@ export default function V2SuperAdmin() {
                         .some((v) => (v || '').toLowerCase().includes(q));
                     })
                     .map((u) => {
-                      const autoNamed =
-                        u.org_name && u.email && u.org_name === `${u.email.split('@')[0]}'s org`;
+                      const personal = u.org_account_type === 'personal';
                       return (
                         <tr
                           key={u.id}
@@ -896,15 +896,19 @@ export default function V2SuperAdmin() {
                           <td className="px-4 py-3">
                             {u.org_name ? (
                               <span className="inline-flex items-center gap-1.5">
-                                {u.org_name}
-                                {autoNamed && (
-                                  <Badge variant="outline" className="text-[10px]">
-                                    no company name
-                                  </Badge>
-                                )}
+                                {personal ? u.display_name || u.org_name : u.org_name}
                               </span>
                             ) : (
                               <Badge variant="destructive">no org — broken signup</Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            {u.org_id ? (
+                              <Badge variant={personal ? 'secondary' : 'outline'} className="text-[10px]">
+                                {personal ? 'Personal' : 'Team'}
+                              </Badge>
+                            ) : (
+                              '—'
                             )}
                           </td>
                           <td className="px-4 py-3">{u.role || '—'}</td>
