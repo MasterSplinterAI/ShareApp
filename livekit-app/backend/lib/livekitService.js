@@ -13,6 +13,13 @@ const STT_PIPELINE_AGENTS = {
 
 const VALID_STT_PIPELINES = Object.keys(STT_PIPELINE_AGENTS);
 
+// Default pipeline for new rooms. NOTE: Gladia free tier allows only ONE concurrent
+// live session — a paid Gladia plan is required for multi-participant rooms.
+const _rawDefaultPipeline = String(process.env.DEFAULT_STT_PIPELINE || 'gladia').toLowerCase();
+const DEFAULT_STT_PIPELINE = VALID_STT_PIPELINES.includes(_rawDefaultPipeline)
+  ? _rawDefaultPipeline
+  : 'gladia';
+
 function getLivekitHttpHost() {
   const url = process.env.LIVEKIT_URL;
   if (!url) throw new Error('LIVEKIT_URL not configured');
@@ -45,19 +52,19 @@ function defaultAgentName() {
   // from NODE_ENV alone or dispatches never match a worker.
   const lk = (process.env.LIVEKIT_URL || '').toLowerCase();
   if (lk.includes('livekit.cloud')) {
-    return STT_PIPELINE_AGENTS.deepgram;
+    return STT_PIPELINE_AGENTS[DEFAULT_STT_PIPELINE];
   }
-  return process.env.NODE_ENV === 'production' ? STT_PIPELINE_AGENTS.deepgram : 'translation-bot-dev';
+  return process.env.NODE_ENV === 'production' ? STT_PIPELINE_AGENTS[DEFAULT_STT_PIPELINE] : 'translation-bot-dev';
 }
 
 function agentNameForPipeline(pipeline) {
-  const key = String(pipeline || 'deepgram').toLowerCase();
+  const key = String(pipeline || DEFAULT_STT_PIPELINE).toLowerCase();
   return STT_PIPELINE_AGENTS[key] || defaultAgentName();
 }
 
 function normalizeSttPipeline(pipeline) {
-  const key = String(pipeline || 'deepgram').toLowerCase();
-  return VALID_STT_PIPELINES.includes(key) ? key : 'deepgram';
+  const key = String(pipeline || DEFAULT_STT_PIPELINE).toLowerCase();
+  return VALID_STT_PIPELINES.includes(key) ? key : DEFAULT_STT_PIPELINE;
 }
 
 async function resolveRoomSttPipeline(roomName) {
@@ -65,7 +72,7 @@ async function resolveRoomSttPipeline(roomName) {
     const meta = await readRoomMetadata(roomName);
     return normalizeSttPipeline(meta.stt_pipeline);
   } catch {
-    return 'deepgram';
+    return DEFAULT_STT_PIPELINE;
   }
 }
 
@@ -103,7 +110,7 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
     createdAt: new Date().toISOString(),
     type: 'conference',
     roomMode,
-    stt_pipeline: 'deepgram',
+    stt_pipeline: DEFAULT_STT_PIPELINE,
   };
   if (orgId) metadata.org_id = orgId;
   const createOptions = {
@@ -114,7 +121,7 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
     metadata: JSON.stringify(metadata),
   };
   const room = await roomService.createRoom(createOptions);
-  const agentName = agentNameForPipeline('deepgram');
+  const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
   try {
     const agentDispatch = getAgentDispatch();
     await agentDispatch.createDispatch(roomName, agentName);
@@ -140,7 +147,7 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language', orgId =
   };
   if (orgId) metadata.org_id = orgId;
   const existingMeta = await readRoomMetadata(roomName).catch(() => ({}));
-  if (!existingMeta.stt_pipeline) metadata.stt_pipeline = 'deepgram';
+  if (!existingMeta.stt_pipeline) metadata.stt_pipeline = DEFAULT_STT_PIPELINE;
   const room = await roomService.createRoom({
     name: roomName,
     emptyTimeout,
@@ -268,6 +275,7 @@ module.exports = {
   resolveRoomSttPipeline,
   STT_PIPELINE_AGENTS,
   VALID_STT_PIPELINES,
+  DEFAULT_STT_PIPELINE,
   createLiveKitConferenceRoom,
   ensureRoomAndAgent,
   removeAgentsFromRoom,

@@ -51,6 +51,23 @@ class CostReporter:
         self._url = f"{backend_url.rstrip('/')}/api/cost-events"
         self._secret = secret
         self._enabled = True
+        self._session: aiohttp.ClientSession | None = None
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        # One session for the agent's lifetime — a fresh session per event churns
+        # sockets/TLS on every turn and can exhaust file descriptors under load.
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=5)
+            )
+        return self._session
+
+    async def aclose(self) -> None:
+        if getattr(self, "_session", None) is not None and not self._session.closed:
+            try:
+                await self._session.close()
+            except Exception:
+                pass
 
     async def _post(self, event_type: str, units: float, meta: dict | None = None) -> None:
         payload: dict = {
@@ -62,18 +79,17 @@ class CostReporter:
         if meta:
             payload["meta"] = meta
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self._url,
-                    json=payload,
-                    headers={"X-Cost-Secret": self._secret},
-                    timeout=aiohttp.ClientTimeout(total=5),
-                ) as resp:
-                    if resp.status not in (200, 201):
-                        body = await resp.text()
-                        logger.warning(
-                            f"CostReporter: {event_type} → HTTP {resp.status}: {body[:200]}"
-                        )
+            session = self._get_session()
+            async with session.post(
+                self._url,
+                json=payload,
+                headers={"X-Cost-Secret": self._secret},
+            ) as resp:
+                if resp.status not in (200, 201):
+                    body = await resp.text()
+                    logger.warning(
+                        f"CostReporter: {event_type} → HTTP {resp.status}: {body[:200]}"
+                    )
         except Exception as exc:
             logger.warning(f"CostReporter: emit {event_type} failed: {exc}")
 

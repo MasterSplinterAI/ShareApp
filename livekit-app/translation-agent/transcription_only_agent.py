@@ -93,6 +93,46 @@ def _speech_times(speech_data: Any) -> Tuple[float, float]:
         return 0.0, 0.0
 
 
+def _gladia_translation_enabled() -> bool:
+    return os.getenv("GLADIA_TRANSLATION_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _gladia_cross_lang_targets(speaker_lang: str, targets: Set[str]) -> List[str]:
+    """Distinct listener languages that differ from the speaker (Gladia translation targets)."""
+    sl = (speaker_lang or "en").split("-")[0].lower()
+    out: Set[str] = set()
+    for t in targets:
+        if t.split("-")[0].lower() != sl:
+            out.add(t.split("-")[0].lower())
+    return sorted(out)
+
+
+def _speech_data_language_code(speech_data: Any) -> str:
+    lang = getattr(speech_data, "language", None)
+    if lang is None:
+        return ""
+    if hasattr(lang, "language"):
+        return str(lang.language).split("-")[0].lower()
+    return str(lang).split("-")[0].lower()
+
+
+def _gladia_source_text(speech_data: Any, fallback: str) -> str:
+    source_texts = getattr(speech_data, "source_texts", None) or []
+    for src in source_texts:
+        if src and str(src).strip():
+            return str(src).strip()
+    return fallback.strip()
+
+
+def _is_gladia_translation_final(speech_data: Any) -> bool:
+    source_texts = getattr(speech_data, "source_texts", None) or []
+    return any(src and str(src).strip() for src in source_texts)
+
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -112,6 +152,8 @@ LANG_NAMES = {
     "ko": "Korean", "ru": "Russian", "ar": "Arabic", "hi": "Hindi",
     "tiv": "Tiv",
 }
+
+VALID_CAPTION_MODES = ("off", "transcription_only", "transcription_translation")
 
 
 def is_likely_agent_identity(identity: str) -> bool:
@@ -162,6 +204,10 @@ class TargetLaneState:
     llm_provider: str = "openai"
     turn_translated_parts: List[str] = field(default_factory=list)
     pending_translate_tasks: List[asyncio.Task] = field(default_factory=list)
+    # Latest in-flight translate task per segment index. When a Deepgram is_final
+    # extends/replaces a segment, the stale task for the same index must be cancelled
+    # or its slower completion can overwrite the newer translation.
+    pending_by_seg: Dict[int, asyncio.Task] = field(default_factory=dict)
 
 
 class TranscriptionOnlyAgent:
@@ -183,6 +229,47 @@ class TranscriptionOnlyAgent:
         self.cost_reporter: Optional[CostReporter] = None
         self._caption_sessions: Dict[str, SpeakerCaptionSession] = {}
         self._caption_sessions_lock = asyncio.Lock()
+        # Serializes update_assistants: it awaits mid-flight while mutating
+        # speaker_pipelines, so concurrent invocations (debounce + disconnect +
+        # translation-off) could create duplicate pipelines or cancel fresh ones.
+        self._reconcile_lock = asyncio.Lock()
+        # Fire-and-forget tasks (cost emits, data handlers) tracked so shutdown can
+        # drain them and a flood can't leak unbounded orphans.
+        self._bg_tasks: Set[asyncio.Task] = set()
+        # Providers that failed fast for a speaker (e.g. Gladia 429 concurrency limit
+        # — free tier allows ONE concurrent live session). The next pipeline attempt
+        # skips them and falls through the provider ladder; cleared after a healthy run.
+        self._stt_skip_providers: Dict[str, Set[str]] = {}
+
+    def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+        return task
+
+    def _apply_caption_config(self, cc: Any, source: str) -> bool:
+        """Validate + apply caption_config; returns True when something changed."""
+        if not isinstance(cc, dict):
+            return False
+        new_mode = cc.get("mode", self.caption_mode)
+        if new_mode not in VALID_CAPTION_MODES:
+            logger.warning(f"caption_config from {source}: invalid mode {new_mode!r} — ignored")
+            new_mode = self.caption_mode
+        raw_langs = cc.get("languages", self.caption_languages)
+        new_langs = (
+            [str(l) for l in raw_langs if isinstance(l, str) and l.strip()]
+            if isinstance(raw_langs, list)
+            else self.caption_languages
+        )
+        if new_mode == self.caption_mode and new_langs == self.caption_languages:
+            return False
+        self.caption_mode = new_mode
+        self.caption_languages = new_langs
+        logger.info(
+            f"📋 caption_config applied from {source}: "
+            f"mode={self.caption_mode!r} languages={self.caption_languages}"
+        )
+        return True
 
     async def _register_caption_session(self, session: SpeakerCaptionSession) -> None:
         async with self._caption_sessions_lock:
@@ -312,15 +399,7 @@ class TranscriptionOnlyAgent:
             if raw_meta:
                 meta = json.loads(raw_meta)
                 org_id = meta.get("org_id") or None
-                cc = meta.get("caption_config")
-                if isinstance(cc, dict):
-                    self.caption_mode = cc.get("mode", self.caption_mode)
-                    langs = cc.get("languages", [])
-                    self.caption_languages = list(langs) if isinstance(langs, list) else []
-                    logger.info(
-                        f"📋 Loaded caption_config from room metadata: "
-                        f"mode={self.caption_mode!r} languages={self.caption_languages}"
-                    )
+                self._apply_caption_config(meta.get("caption_config"), "room metadata (startup)")
         except Exception as e:
             logger.warning(f"Room metadata parse failed: {e}")
 
@@ -386,16 +465,14 @@ class TranscriptionOnlyAgent:
                     )
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
                 elif msg_type == "caption_config":
-                    new_mode = msg.get("mode", self.caption_mode)
-                    new_langs = msg.get("languages", self.caption_languages)
-                    if new_mode != self.caption_mode or new_langs != self.caption_languages:
-                        self.caption_mode = new_mode
-                        self.caption_languages = list(new_langs) if isinstance(new_langs, list) else []
-                        logger.info(
-                            f"📋 caption_config updated by {participant_id}: "
-                            f"mode={self.caption_mode!r} languages={self.caption_languages}"
-                        )
-                        _schedule_update()
+                    # Room-global control — only honored via room metadata, which the
+                    # backend writes after authenticating the host (POST /v2/rooms/:name/
+                    # caption-config → room_metadata_changed below). Honoring the raw data
+                    # channel here would let ANY participant kill captions for the room.
+                    logger.info(
+                        f"📋 caption_config data packet from {participant_id} ignored "
+                        "(applied via authenticated room metadata instead)"
+                    )
                     return
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
@@ -432,7 +509,18 @@ class TranscriptionOnlyAgent:
                 logger.error(f"Data error: {e}", exc_info=True)
 
         def on_data(data: rtc.DataPacket):
-            asyncio.create_task(handle_data(data))
+            self._spawn_bg(handle_data(data))
+
+        def on_room_metadata_changed(old_metadata: str, new_metadata: str):
+            # Authenticated caption_config path: host POSTs to the backend, the backend
+            # updates room metadata, LiveKit fans the change out to the agent here.
+            try:
+                meta = json.loads(new_metadata) if new_metadata else {}
+            except Exception as e:
+                logger.warning(f"room_metadata_changed: parse failed: {e}")
+                return
+            if self._apply_caption_config(meta.get("caption_config"), "room metadata"):
+                _schedule_update()
 
         async def on_connected(participant: rtc.RemoteParticipant):
             ident = participant.identity or ""
@@ -473,9 +561,10 @@ class TranscriptionOnlyAgent:
             await self.update_assistants(ctx)
 
         ctx.room.on("data_received", on_data)
-        ctx.room.on("participant_connected", lambda p: asyncio.create_task(on_connected(p)))
-        ctx.room.on("track_published", lambda pub, p: asyncio.create_task(on_track_published(pub, p)))
-        ctx.room.on("participant_disconnected", lambda p: asyncio.create_task(on_disconnected(p)))
+        ctx.room.on("room_metadata_changed", on_room_metadata_changed)
+        ctx.room.on("participant_connected", lambda p: self._spawn_bg(on_connected(p)))
+        ctx.room.on("track_published", lambda pub, p: self._spawn_bg(on_track_published(pub, p)))
+        ctx.room.on("participant_disconnected", lambda p: self._spawn_bg(on_disconnected(p)))
 
         try:
             await asyncio.Event().wait()
@@ -485,8 +574,24 @@ class TranscriptionOnlyAgent:
                 t.cancel()
                 await asyncio.gather(t, return_exceptions=True)
             await self._shutdown_all_assistants(ctx)
+            # Drain in-flight background work (cost emits, data handlers) briefly so
+            # the last turn's telemetry isn't lost on SIGTERM.
+            pending_bg = [t for t in self._bg_tasks if not t.done()]
+            if pending_bg:
+                _, still_pending = await asyncio.wait(pending_bg, timeout=3.0)
+                for t in still_pending:
+                    t.cancel()
+            if self.cost_reporter:
+                await self.cost_reporter.aclose()
 
     async def update_assistants(self, ctx: JobContext):
+        # Serialized: the body awaits while mutating speaker_pipelines, and it is
+        # reachable concurrently from the debounce task, disconnects, metadata
+        # changes, and the translation-off fast path.
+        async with self._reconcile_lock:
+            await self._update_assistants_locked(ctx)
+
+    async def _update_assistants_locked(self, ctx: JobContext):
         # caption_mode='off' → kill all pipelines and do nothing
         if self.caption_mode == "off":
             for sid in list(self.speaker_pipelines.keys()):
@@ -609,6 +714,7 @@ class TranscriptionOnlyAgent:
         speaker_lang: str,
         *,
         skip_providers: Optional[Set[str]] = None,
+        gladia_translation_targets: Optional[List[str]] = None,
     ):
         """Single shared STT for one speaker (one instance per speaker pipeline).
 
@@ -670,18 +776,27 @@ class TranscriptionOnlyAgent:
             if not (GLADIA_AVAILABLE and gladia and (is_cloud or os.getenv("GLADIA_API_KEY"))):
                 return None
             endpointing_sec = _gladia_endpointing_sec()
+            trans_targets = gladia_translation_targets or []
+            use_gladia_trans = _gladia_translation_enabled() and bool(trans_targets)
             inst = gladia.STT(
                 model="solaria-1",
                 interim_results=True,
                 code_switching=True,
                 sample_rate=16000,
                 endpointing=endpointing_sec,
-                translation_enabled=False,
+                translation_enabled=use_gladia_trans,
+                translation_target_languages=trans_targets if use_gladia_trans else [],
             )
-            logger.info(
-                f"{L} STT: Gladia solaria-1 code_switching=True "
-                f"endpointing={endpointing_sec}s (shared, STT-only)"
-            )
+            if use_gladia_trans:
+                logger.info(
+                    f"{L} STT: Gladia solaria-1 code_switching=True "
+                    f"endpointing={endpointing_sec}s native_translation={trans_targets}"
+                )
+            else:
+                logger.info(
+                    f"{L} STT: Gladia solaria-1 code_switching=True "
+                    f"endpointing={endpointing_sec}s (shared, STT-only)"
+                )
             stt_provider_name = "gladia"
             return inst
 
@@ -745,6 +860,39 @@ class TranscriptionOnlyAgent:
         speaker_id = run_ctx.speaker_id
         L = f"[{speaker_id}]"
         lanes: Dict[str, TargetLaneState] = {}
+        use_gladia_native_translation: List[bool] = [False]
+        stt_instance: Optional[Any] = None
+        stt_provider_name = "unknown"
+
+        async def compute_gladia_translation_targets() -> List[str]:
+            targets = await run_ctx.get_targets()
+            sl = self.participant_languages.get(speaker_id)
+            return _gladia_cross_lang_targets(sl or "en", targets)
+
+        gladia_applied_targets: List[Optional[List[str]]] = [None]
+
+        async def sync_gladia_translation_options() -> None:
+            if stt_provider_name != "gladia" or not _gladia_translation_enabled():
+                use_gladia_native_translation[0] = False
+                return
+            if stt_instance is None or not hasattr(stt_instance, "update_options"):
+                return
+            trans_targets = await compute_gladia_translation_targets()
+            # update_options triggers a Gladia websocket reconnect — only call it when
+            # the target set actually changed, never on routine lane reconciles.
+            if gladia_applied_targets[0] == trans_targets:
+                return
+            use_native = bool(trans_targets)
+            try:
+                stt_instance.update_options(
+                    translation_enabled=use_native,
+                    translation_target_languages=trans_targets,
+                )
+                gladia_applied_targets[0] = trans_targets
+                use_gladia_native_translation[0] = use_native
+                logger.info(f"{L} Gladia native translation targets={trans_targets}")
+            except Exception as e:
+                logger.warning(f"{L} Gladia update_options failed: {e}")
 
         async def reconcile_lanes() -> None:
             targets = await run_ctx.get_targets()
@@ -765,10 +913,13 @@ class TranscriptionOnlyAgent:
                 llm = None
                 llm_pname = "openai"
                 if not is_same:
-                    llm, llm_pname = self._create_llm_for_target(speaker_id, tgt)
-                    if llm is None:
-                        logger.error(f"{L}→{tgt} No LLM — skipping translation lane")
-                        continue
+                    if use_gladia_native_translation[0]:
+                        llm_pname = "gladia"
+                    else:
+                        llm, llm_pname = self._create_llm_for_target(speaker_id, tgt)
+                        if llm is None:
+                            logger.error(f"{L}→{tgt} No LLM — skipping translation lane")
+                            continue
                 lanes[tgt] = TargetLaneState(
                     target_lang=tgt,
                     is_same_language=is_same,
@@ -776,6 +927,7 @@ class TranscriptionOnlyAgent:
                     target_lang_name=LANG_NAMES.get(tgt, tgt),
                     llm_provider=llm_pname,
                 )
+            await sync_gladia_translation_options()
 
         async def publish_lane(
             msg_dict: dict,
@@ -805,14 +957,29 @@ class TranscriptionOnlyAgent:
             logger.error(f"{L} No speaker language — abort pipeline")
             return
 
+        initial_gladia_targets = await compute_gladia_translation_targets()
+        skip = self._stt_skip_providers.get(speaker_id) or set()
         stt_instance, stt_provider_name = self._create_stt_instance(
             speaker_id,
             speaker_lang,
+            skip_providers=skip,
+            gladia_translation_targets=initial_gladia_targets,
+        )
+        gladia_applied_targets[0] = initial_gladia_targets
+        use_gladia_native_translation[0] = (
+            stt_provider_name == "gladia"
+            and _gladia_translation_enabled()
+            and bool(initial_gladia_targets)
         )
         if stt_instance is None:
+            # Every provider (including fallbacks) is exhausted — reset so the next
+            # attempt retries the full ladder rather than staying dead forever.
+            self._stt_skip_providers.pop(speaker_id, None)
             return
         logger.info(
             f"{L} Caption pipeline STT provider={stt_provider_name!r} "
+            f"gladia_native_translation={use_gladia_native_translation[0]} "
+            f"skip_providers={sorted(skip) or '[]'} "
             f"(configured STT_PROVIDER={os.getenv('STT_PROVIDER', 'deepgram')!r})"
         )
         vad_instance = silero.VAD.load(**self._vad_params())
@@ -937,7 +1104,7 @@ class TranscriptionOnlyAgent:
                         in_tok = max(1, (len(sys_msg) + len(original)) // 4)
                         out_tok = max(1, len(accumulated) // 4)
                     model_name = "gpt-4o-mini"
-                    asyncio.create_task(self.cost_reporter.emit_llm(
+                    self._spawn_bg(self.cost_reporter.emit_llm(
                         input_tokens=in_tok,
                         output_tokens=out_tok,
                         provider=lane.llm_provider,
@@ -950,7 +1117,20 @@ class TranscriptionOnlyAgent:
                     lane.turn_translated_parts.append("")
                 lane.turn_translated_parts[seg_idx] = original
 
+        finalize_lock = asyncio.Lock()
+
         async def finalize_turn() -> None:
+            # Reentrancy guard: reachable from the STT-idle timer, the Gladia
+            # translation debounce, cross-speaker finalize_now, Gladia
+            # START_OF_SPEECH, and pipeline teardown — without this lock two
+            # interleaved runs double-publish the same FINAL or clear the buffer
+            # mid-publish.
+            async with finalize_lock:
+                if turn_id[0] is None:
+                    return
+                await _finalize_turn_locked()
+
+        async def _finalize_turn_locked() -> None:
             await reconcile_lanes()
             pending_all: List[asyncio.Task] = []
             for lane in lanes.values():
@@ -959,6 +1139,7 @@ class TranscriptionOnlyAgent:
                 await asyncio.gather(*pending_all, return_exceptions=True)
                 for lane in lanes.values():
                     lane.pending_translate_tasks.clear()
+                    lane.pending_by_seg.clear()
 
             dg_buffer.on_speech_final()
             full_original = dg_buffer.committed_text()
@@ -999,11 +1180,12 @@ class TranscriptionOnlyAgent:
             dg_buffer.clear()
             for lane in lanes.values():
                 lane.turn_translated_parts.clear()
+            gladia_satisfied_targets.clear()
             turn_id[0] = None
 
             # Emit STT cost for the completed turn (fire-and-forget)
             if self.cost_reporter and turn_stt_seconds[0] > 0:
-                asyncio.create_task(self.cost_reporter.emit_stt(
+                self._spawn_bg(self.cost_reporter.emit_stt(
                     duration_seconds=turn_stt_seconds[0],
                     provider=stt_provider_name,
                     participant=speaker_id,
@@ -1019,7 +1201,9 @@ class TranscriptionOnlyAgent:
                 if lane.pending_translate_tasks:
                     await asyncio.gather(*lane.pending_translate_tasks, return_exceptions=True)
                 lane.pending_translate_tasks.clear()
+                lane.pending_by_seg.clear()
                 lane.turn_translated_parts.clear()
+            gladia_satisfied_targets.clear()
             seg_counter[0] += 1
             turn_id[0] = f"{speaker_id}-turn-{seg_counter[0]}-{int(asyncio.get_event_loop().time() * 1000)}"
             dg_buffer.clear()
@@ -1027,9 +1211,59 @@ class TranscriptionOnlyAgent:
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
+            # Chronology: commit any other speaker's open bubble so overlapping
+            # speech doesn't interleave captions out of order.
+            self._spawn_bg(self._finalize_other_speakers(speaker_id))
 
         stt_idle_task: List[Optional[asyncio.Task]] = [None]
+        gladia_trans_finalize_task: List[Optional[asyncio.Task]] = [None]
+        # Normalized target langs whose Gladia translation FINAL arrived this turn.
+        gladia_satisfied_targets: Set[str] = set()
         last_stt_text_at: List[float] = [0.0]
+
+        def gladia_expected_targets() -> Set[str]:
+            return {
+                self._normalize_language_code(t)
+                for t, lane in lanes.items()
+                if not lane.is_same_language
+            }
+
+        async def cancel_gladia_translation_finalize() -> None:
+            pending = gladia_trans_finalize_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+                try:
+                    await pending
+                except (asyncio.CancelledError, Exception):
+                    pass
+            gladia_trans_finalize_task[0] = None
+
+        def arm_gladia_translation_finalize() -> None:
+            """Gladia emits one FINAL per translation target.
+
+            Finalize immediately once every cross-language lane has its translation;
+            otherwise wait a grace period for the remaining targets so a slow second
+            language doesn't get committed empty.
+            """
+            if not use_gladia_native_translation[0] or not turn_id[0]:
+                return
+            pending = gladia_trans_finalize_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+
+            all_satisfied = gladia_expected_targets() <= gladia_satisfied_targets
+
+            async def _run() -> None:
+                try:
+                    await asyncio.sleep(0.15 if all_satisfied else 1.0)
+                    if turn_id[0] and dg_buffer.has_content():
+                        await finalize_turn()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.warning(f"{L} Gladia translation finalize failed: {e}")
+
+            gladia_trans_finalize_task[0] = asyncio.create_task(_run())
 
         async def cancel_stt_idle_finalize() -> None:
             pending = stt_idle_task[0]
@@ -1094,6 +1328,7 @@ class TranscriptionOnlyAgent:
 
         async def cancel_finalization() -> None:
             await cancel_stt_idle_finalize()
+            await cancel_gladia_translation_finalize()
 
         def lane_live_text(lane: TargetLaneState, display_text: str) -> str:
             """Foreign-language lanes never echo English STT — wait for translation."""
@@ -1259,6 +1494,48 @@ class TranscriptionOnlyAgent:
                         )
                         continue
                     await ensure_lanes_for_caption()
+
+                    if (
+                        stt_provider_name == "gladia"
+                        and use_gladia_native_translation[0]
+                        and _is_gladia_translation_final(speech_data)
+                    ):
+                        original = _gladia_source_text(speech_data, text)
+                        translated = text.strip()
+                        target_norm = _speech_data_language_code(speech_data)
+                        # Late straggler for an already-committed turn (e.g. second
+                        # target language landing after finalize) — don't reopen it.
+                        if turn_id[0] is None and is_residual_after_finalize(original):
+                            logger.debug(
+                                f"{L} 🛑 late Gladia translation ({target_norm}) after "
+                                f"finalize dropped: '{translated[:40]}'"
+                            )
+                            continue
+                        display_text, seg_idx, segment = dg_buffer.on_utterance_final(original)
+                        if seg_idx < 0 and not display_text.strip():
+                            continue
+                        matched_lane = False
+                        for tgt, lane in lanes.items():
+                            if lane.is_same_language:
+                                continue
+                            if self._normalize_language_code(tgt) != target_norm:
+                                continue
+                            lane.turn_translated_parts = [translated]
+                            gladia_satisfied_targets.add(target_norm)
+                            matched_lane = True
+                            logger.info(
+                                f"{L}→{tgt} 🌐 Gladia translation final: "
+                                f"'{original[:40]}...' → '{translated[:40]}...'"
+                            )
+                            break
+                        if not matched_lane:
+                            logger.warning(
+                                f"{L} Gladia translation for {target_norm!r} — no matching lane"
+                            )
+                        schedule_live_partial(display_text or original)
+                        arm_gladia_translation_finalize()
+                        continue
+
                     if stt_provider_name == "gladia":
                         display_text, seg_idx, segment = dg_buffer.on_utterance_final(text)
                     else:
@@ -1284,34 +1561,90 @@ class TranscriptionOnlyAgent:
                         if (
                             not lane.is_same_language
                             and self.caption_mode != "transcription_only"
+                            and not use_gladia_native_translation[0]
                         ):
                             if stt_provider_name == "gladia":
                                 lane.turn_translated_parts = [""]
                                 seg_for_lane = 0
                             else:
                                 seg_for_lane = seg_idx
+                            # A replacement is_final for the same segment supersedes any
+                            # in-flight translation — cancel it so a slower stale result
+                            # can't overwrite the newer text.
+                            stale = lane.pending_by_seg.get(seg_for_lane)
+                            if stale and not stale.done():
+                                stale.cancel()
                             task = asyncio.create_task(
                                 translate_segment(lane, tgt, segment, seg_for_lane)
                             )
                             lane.pending_translate_tasks.append(task)
+                            lane.pending_by_seg[seg_for_lane] = task
                     schedule_live_partial(display_text)
-                    if stt_provider_name == "gladia":
+                    if stt_provider_name == "gladia" and not use_gladia_native_translation[0]:
                         await finalize_turn()
                     continue
 
+        was_cancelled = False
+        pipeline_started_at = time.time()
+        # FIRST_COMPLETED: if any leg exits (e.g. the STT websocket drops and
+        # process_stt returns), tear the others down instead of waiting forever
+        # on feed_audio — otherwise the pipeline hangs silently with dead STT.
+        legs = [
+            asyncio.create_task(feed_audio(), name=f"{speaker_id}-feed-audio"),
+            asyncio.create_task(process_vad(), name=f"{speaker_id}-vad"),
+            asyncio.create_task(process_stt(), name=f"{speaker_id}-stt"),
+        ]
         try:
-            await asyncio.gather(feed_audio(), process_vad(), process_stt())
+            done, _pending = await asyncio.wait(legs, return_when=asyncio.FIRST_COMPLETED)
+            for t in done:
+                exc = t.exception() if not t.cancelled() else None
+                if exc is not None:
+                    raise exc
+            logger.warning(f"{L} Pipeline leg ended (STT stream closed?) — exiting for restart")
         except asyncio.CancelledError:
+            was_cancelled = True
             logger.info(f"{L} Speaker pipeline cancelled")
         except Exception as e:
             logger.error(f"{L} Pipeline error: {e}", exc_info=True)
         finally:
+            # Unlike gather(), asyncio.wait does not propagate cancellation to the
+            # legs — cancel them explicitly on every exit path.
+            for t in legs:
+                if not t.done():
+                    t.cancel()
+            await asyncio.gather(*legs, return_exceptions=True)
             await self._unregister_caption_session(speaker_id)
             if turn_id[0]:
-                await finalize_turn()
+                try:
+                    await finalize_turn()
+                except Exception as e:
+                    logger.warning(f"{L} finalize on teardown failed: {e}")
             await stt_stream.aclose()
             await vad_stream.aclose()
             await audio_stream.aclose()
+            if not was_cancelled:
+                lifetime = time.time() - pipeline_started_at
+                if lifetime < 20.0:
+                    # Died right after start → the provider itself is rejecting us
+                    # (e.g. Gladia 429: free tier = 1 concurrent live session). Retrying
+                    # the same provider would fail forever — skip it next attempt so the
+                    # fallback ladder (deepgram/openai) keeps captions alive.
+                    self._stt_skip_providers.setdefault(speaker_id, set()).add(stt_provider_name)
+                    logger.error(
+                        f"{L} ⚠️ STT provider {stt_provider_name!r} failed {lifetime:.1f}s "
+                        f"after start — falling back to next provider. If this is Gladia, "
+                        f"check account concurrency limits (free tier allows 1 live session)."
+                    )
+                else:
+                    # Healthy run that died later (network blip) — retry the full ladder.
+                    self._stt_skip_providers.pop(speaker_id, None)
+                # Self-heal: STT/VAD died mid-meeting with no participant event to
+                # trigger reconciliation. Once this task is done, update_assistants
+                # recycles it and recreates the pipeline.
+                async def _restart_soon() -> None:
+                    await asyncio.sleep(1.0)
+                    await self.update_assistants(job_ctx)
+                self._spawn_bg(_restart_soon())
 
 
 def log_resolved_inference_config() -> None:
@@ -1333,7 +1666,14 @@ def log_resolved_inference_config() -> None:
 
     stt_primary = {
         "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize)",
-        "gladia": "Gladia solaria-1 code-switching (STT-only; OpenAI translation lanes)",
+        "gladia": (
+            "Gladia solaria-1 code-switching "
+            + (
+                "(native translation when GLADIA_TRANSLATION_ENABLED and cross-lang listeners)"
+                if _gladia_translation_enabled()
+                else "(STT-only; OpenAI translation lanes)"
+            )
+        ),
         "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)",
     }.get(stt, "Deepgram nova-3 (then OpenAI fallback)")
 
@@ -1346,6 +1686,10 @@ def log_resolved_inference_config() -> None:
         lc_cloud,
     )
     logger.info("  STT_PROVIDER=%r primary_path=%s", stt, stt_primary)
+    logger.info(
+        "  GLADIA_TRANSLATION_ENABLED=%r (Gladia agent only; OpenAI lanes when false or no cross-lang targets)",
+        os.getenv("GLADIA_TRANSLATION_ENABLED", "true"),
+    )
     logger.info("  LLM_PROVIDER=%r (translation lanes; same-language captions skip LLM)", llm)
     logger.info("  Translation LLM: OpenAI SDK default (~gpt-4o-mini logged per lane)")
     logger.info(
