@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
-import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -44,8 +43,6 @@ import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
-
-const MEETING_LANGUAGES = getMeetingLanguages();
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -116,9 +113,7 @@ export default function V2MeetingDetail() {
   const autoJoinIntent = searchParams.get('join') === '1';
   const [meeting, setMeeting] = useState(null);
   const [me, setMe] = useState(null);
-  const [name, setName] = useState('');
   const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState(() => normalizeMeetingLanguageCode('en'));
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteHours, setNewInviteHours] = useState(72);
   const [newInviteReusable, setNewInviteReusable] = useState(false);
@@ -146,17 +141,13 @@ export default function V2MeetingDetail() {
   }, [id, navigate]);
 
   useEffect(() => {
-    v2Auth
-      .me()
-      .then((r) => {
-        setMe(r);
-        if (!name) {
-          const fallback = r?.user?.display_name || r?.user?.displayName || r?.user?.email?.split('@')[0] || '';
-          if (fallback) setName(fallback);
-        }
-      })
-      .catch(() => {});
+    v2Auth.me().then(setMe).catch(() => {});
   }, []);
+
+  const hostDisplayName = useMemo(() => {
+    const u = me?.user;
+    return (u?.display_name || u?.displayName || u?.email?.split('@')[0] || '').trim();
+  }, [me]);
 
   const hostShareUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -312,8 +303,8 @@ export default function V2MeetingDetail() {
   };
 
   const joinAsHost = async () => {
-    if (!name.trim()) {
-      toast.error('Enter a display name to join');
+    if (!hostDisplayName) {
+      toast.error('Set your name in Settings before joining');
       return;
     }
     if (!meeting) return;
@@ -322,15 +313,13 @@ export default function V2MeetingDetail() {
       const share = meeting.joinUrl || `${window.location.origin}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
       const participantInfo = {
         isHost: true,
-        participantName: name.trim(),
+        participantName: hostDisplayName,
         hostCode: meeting.host_code,
         shareableLink: share,
         shareableLinkNetwork: share,
         roomName: meeting.livekit_room_name,
         meetingId: id,
         inviteToken: '',
-        selectedLanguage,
-        spokenLanguage: selectedLanguage,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       const next = new URLSearchParams(window.location.search);
@@ -346,7 +335,7 @@ export default function V2MeetingDetail() {
     if (!autoJoinIntent) return;
     if (autoJoinTriggered) return;
     if (!meeting || !me) return;
-    if (!name.trim()) return;
+    if (!hostDisplayName) return;
     if (meeting.host_user_id && me?.user?.id && meeting.host_user_id !== me.user.id) {
       toast.error('This host link only works for the meeting host');
       const next = new URLSearchParams(searchParams);
@@ -356,7 +345,7 @@ export default function V2MeetingDetail() {
     }
     setAutoJoinTriggered(true);
     joinAsHost();
-  }, [autoJoinIntent, autoJoinTriggered, meeting?.host_user_id, me?.user?.id, name]);
+  }, [autoJoinIntent, autoJoinTriggered, meeting?.host_user_id, me?.user?.id, hostDisplayName]);
 
   const downloadTranscriptJson = async () => {
     try {
@@ -549,16 +538,7 @@ export default function V2MeetingDetail() {
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80">
-          <MeetingJoinCard
-            meetingLanguages={MEETING_LANGUAGES}
-            name={name}
-            setName={setName}
-            selectedLanguage={selectedLanguage}
-            setSelectedLanguage={setSelectedLanguage}
-            onJoinAsHost={joinAsHost}
-            hostShareUrl={hostShareUrl}
-            onCopyHostLink={copyHostLink}
-          />
+          <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
         </PopoverContent>
       </Popover>
       {canManageMeeting && (
