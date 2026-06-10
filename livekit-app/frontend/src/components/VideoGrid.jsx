@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTracks, useParticipants, useLocalParticipant, VideoTrack, ParticipantContext } from '@livekit/components-react';
-import { Track, RoomEvent, VideoQuality } from 'livekit-client';
+import { Track, RoomEvent, VideoQuality, ConnectionQuality } from 'livekit-client';
 import { Maximize, Minimize, User, MicOff, VideoOff } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
@@ -236,10 +236,154 @@ function ParticipantTile({ participant, tracks, compact = false }) {
         </div>
       )}
 
-      {/* Speaking indicator */}
-      {isSpeaking && (
-        <div className={`absolute ${compact ? 'top-1 right-1' : 'top-1.5 sm:top-2 right-1.5 sm:right-2'}`}>
+      {/* Top-right: speaking indicator + connection quality */}
+      <div className={`absolute flex items-center gap-1 ${compact ? 'top-1 right-1' : 'top-1.5 sm:top-2 right-1.5 sm:right-2'}`}>
+        {isSpeaking && (
           <div className={`bg-green-400 rounded-full animate-pulse ${compact ? 'w-2 h-2' : 'w-3 h-3'}`} />
+        )}
+        {!compact && (
+          <ConnectionQualityBadge
+            participant={participant}
+            cameraPub={camPub}
+            isLocal={isLocal}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+const QUALITY_META = {
+  [ConnectionQuality.Excellent]: { bars: 3, color: 'bg-emerald-400', label: 'Excellent' },
+  [ConnectionQuality.Good]: { bars: 2, color: 'bg-amber-400', label: 'Good' },
+  [ConnectionQuality.Poor]: { bars: 1, color: 'bg-red-500', label: 'Poor' },
+  [ConnectionQuality.Lost]: { bars: 0, color: 'bg-red-500', label: 'Lost' },
+};
+
+/**
+ * Jitsi-style per-tile signal bars. Hover (or tap) shows live resolution,
+ * FPS, and bitrate from WebRTC sender/receiver stats.
+ */
+function ConnectionQualityBadge({ participant, cameraPub, isLocal }) {
+  const [quality, setQuality] = useState(participant.connectionQuality);
+  const [open, setOpen] = useState(false);
+  const [stats, setStats] = useState(null);
+  const prevBytesRef = useRef(null);
+
+  useEffect(() => {
+    const onChange = (q) => setQuality(q);
+    participant.on('connectionQualityChanged', onChange);
+    setQuality(participant.connectionQuality);
+    return () => {
+      participant.off('connectionQualityChanged', onChange);
+    };
+  }, [participant]);
+
+  // Poll WebRTC stats only while the tooltip is open
+  useEffect(() => {
+    if (!open) {
+      prevBytesRef.current = null;
+      return undefined;
+    }
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const track = cameraPub?.track;
+        if (!track) {
+          if (!cancelled) setStats(null);
+          return;
+        }
+        let raw = null;
+        if (isLocal && typeof track.getSenderStats === 'function') {
+          const layers = (await track.getSenderStats()) || [];
+          // Highest simulcast layer for resolution/FPS; total bytes across layers
+          const best = layers.reduce(
+            (a, b) => (!a || (b.frameHeight || 0) > (a.frameHeight || 0) ? b : a),
+            null
+          );
+          if (best) {
+            raw = {
+              fps: best.framesPerSecond,
+              w: best.frameWidth,
+              h: best.frameHeight,
+              bytes: layers.reduce((sum, l) => sum + (l.bytesSent || 0), 0),
+            };
+          }
+        } else if (typeof track.getReceiverStats === 'function') {
+          const r = await track.getReceiverStats();
+          if (r) {
+            raw = {
+              fps: r.framesPerSecond,
+              w: r.frameWidth,
+              h: r.frameHeight,
+              bytes: r.bytesReceived || 0,
+            };
+          }
+        }
+        if (cancelled) return;
+        if (!raw) {
+          setStats(null);
+          return;
+        }
+        const now = performance.now();
+        let kbps = null;
+        const prev = prevBytesRef.current;
+        if (prev && raw.bytes >= prev.bytes) {
+          const dt = (now - prev.t) / 1000;
+          if (dt > 0.3) kbps = Math.round(((raw.bytes - prev.bytes) * 8) / dt / 1000);
+        }
+        prevBytesRef.current = { bytes: raw.bytes, t: now };
+        setStats({
+          fps: raw.fps ? Math.round(raw.fps) : null,
+          w: raw.w,
+          h: raw.h,
+          kbps,
+        });
+      } catch {
+        /* stats not available on this browser/track — tooltip shows quality only */
+      }
+    };
+
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [open, cameraPub, isLocal]);
+
+  const meta = QUALITY_META[quality] || { bars: 3, color: 'bg-white/50', label: 'Unknown' };
+
+  return (
+    <div
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-label={`Connection: ${meta.label}`}
+        className="flex h-5 items-end gap-[2px] rounded bg-black/40 px-1 py-0.5"
+      >
+        {[1, 2, 3].map((i) => (
+          <span
+            key={i}
+            className={`w-[3px] rounded-sm ${i <= meta.bars ? meta.color : 'bg-white/30'}`}
+            style={{ height: `${i * 4 + 2}px` }}
+          />
+        ))}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-20 mt-1 whitespace-nowrap rounded-md bg-black/85 px-2.5 py-1.5 text-[10px] leading-4 text-white shadow-lg">
+          <div className="font-semibold">Connection: {meta.label}</div>
+          <div>Resolution: {stats?.w && stats?.h ? `${stats.w}×${stats.h}` : '—'}</div>
+          <div>FPS: {stats?.fps ?? '—'}</div>
+          <div>
+            Bitrate: {stats?.kbps != null ? `${stats.kbps} kbps` : '—'}
+            {stats?.kbps != null ? (isLocal ? ' ↑' : ' ↓') : ''}
+          </div>
         </div>
       )}
     </div>
