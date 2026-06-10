@@ -74,8 +74,8 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
       </div>
 
       <div className="flex items-center gap-1">
-        {isServerMuted && <MicOff className="w-3.5 h-3.5 text-red-400 flex-shrink-0" aria-hidden />}
-        {!isServerMuted && micPub && <Mic className="w-3.5 h-3.5 text-emerald-400/80 flex-shrink-0" aria-hidden />}
+        {isServerMuted && <MicOff className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label="Muted" />}
+        {!isServerMuted && micPub && <Mic className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-label="Unmuted" />}
 
         {isLocalHost && !isSelf && (
           <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
@@ -84,30 +84,33 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
                 type="button"
                 onClick={() => setRemoteMicMuted(false)}
                 disabled={!!busy}
-                className="rounded-md bg-secondary p-1.5 text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
+                className="rounded-md bg-secondary p-1.5 text-secondary-foreground transition-colors hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                aria-label={`Unmute ${name}`}
                 title={`Unmute ${name}`}
               >
-                {busy === 'unmute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mic className="w-3.5 h-3.5" />}
+                {busy === 'unmute' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => setRemoteMicMuted(true)}
                 disabled={!!busy}
-                className="rounded-md bg-secondary p-1.5 text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
+                className="rounded-md bg-secondary p-1.5 text-secondary-foreground transition-colors hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+                aria-label={`Mute ${name}`}
                 title={`Mute ${name}`}
               >
-                {busy === 'mute' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <VolumeX className="w-3.5 h-3.5" />}
+                {busy === 'mute' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <VolumeX className="h-3.5 w-3.5" />}
               </button>
             )}
             <button
               type="button"
               onClick={handleRemove}
               disabled={!!busy}
-              className="rounded-md bg-destructive/80 p-1.5 text-destructive-foreground transition-colors hover:bg-destructive disabled:opacity-50"
+              className="rounded-md bg-destructive/80 p-1.5 text-destructive-foreground transition-colors hover:bg-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              aria-label={`Remove ${name}`}
               title={`Remove ${name}`}
             >
-              {busy === 'remove' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
+              {busy === 'remove' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserX className="h-3.5 w-3.5" />}
             </button>
           </div>
         )}
@@ -179,9 +182,9 @@ export default function ParticipantsPanel({ meetingId }) {
             type="button"
             onClick={handleMuteAll}
             disabled={muteAllBusy}
-            className="flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 disabled:opacity-50"
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-3 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-secondary/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
-            {muteAllBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <VolumeX className="w-4 h-4" />}
+            {muteAllBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <VolumeX className="h-4 w-4" />}
             Mute all
           </button>
         </div>

@@ -25,19 +25,26 @@ const faqs = [
 
 export function FAQ() {
   return (
-    <section id="faq" className="mx-auto max-w-3xl scroll-mt-20 px-4 py-20 sm:px-6">
-      <h2 className="text-center text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">FAQ</h2>
-      <p className="mt-3 text-center text-sm text-muted-foreground">Straight answers—no marketing fluff.</p>
-      <Accordion type="single" collapsible className="mt-10 w-full">
-        {faqs.map((item, i) => (
-          <AccordionItem key={item.q} value={`item-${i}`}>
-            <AccordionTrigger className="text-left text-sm font-medium text-foreground hover:no-underline">
-              {item.q}
-            </AccordionTrigger>
-            <AccordionContent className="text-sm leading-relaxed text-muted-foreground">{item.a}</AccordionContent>
-          </AccordionItem>
-        ))}
-      </Accordion>
+    <section id="faq" className="scroll-mt-20 py-20 sm:py-24">
+      <div className="mx-auto max-w-3xl px-4 sm:px-6">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">FAQ</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            Frequently asked questions
+          </h2>
+          <p className="mt-4 text-base text-muted-foreground">Straight answers, no marketing fluff.</p>
+        </div>
+        <Accordion type="single" collapsible className="mt-10 w-full sm:mt-12">
+          {faqs.map((item, i) => (
+            <AccordionItem key={item.q} value={`item-${i}`}>
+              <AccordionTrigger className="text-left text-sm font-medium text-foreground hover:no-underline">
+                {item.q}
+              </AccordionTrigger>
+              <AccordionContent className="text-sm leading-relaxed text-muted-foreground">{item.a}</AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      </div>
     </section>
   );
 }

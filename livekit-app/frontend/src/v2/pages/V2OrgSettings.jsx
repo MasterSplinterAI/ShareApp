@@ -28,6 +28,13 @@ const SECTIONS = [
   { id: 'danger', label: 'Danger zone' },
 ];
 
+/** Turn raw usage event keys (e.g. "meeting_minutes") into readable labels. */
+function humanizeUsageLabel(eventType) {
+  if (!eventType) return '—';
+  const spaced = String(eventType).replace(/[_-]+/g, ' ').trim();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 export default function V2OrgSettings() {
   const [searchParams] = useSearchParams();
   const [section, setSection] = useState(searchParams.get('section') || 'organization');
@@ -170,7 +177,22 @@ export default function V2OrgSettings() {
   };
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div className="space-y-6">
+        <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+        <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
+          <div className="hidden shrink-0 space-y-2 lg:block lg:w-52">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} className="h-9 w-full animate-pulse rounded-md bg-muted/70" />
+            ))}
+          </div>
+          <div className="min-w-0 flex-1 space-y-4">
+            <div className="h-7 w-40 animate-pulse rounded bg-muted" />
+            <div className="app-card h-48 animate-pulse border-border/50 bg-muted/40" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -188,6 +210,7 @@ export default function V2OrgSettings() {
               onClick={() => setSection(s.id)}
               className={cn(
                 'rounded-md px-3 py-2 text-left text-sm transition-colors',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
                 section === s.id ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
               )}
             >
@@ -198,7 +221,7 @@ export default function V2OrgSettings() {
 
         <div className="min-w-0 flex-1 space-y-6">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Your role: <span className="text-foreground">{role}</span>
             </p>
@@ -279,14 +302,14 @@ export default function V2OrgSettings() {
                       key={m.id}
                       className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-3 py-3 text-sm"
                     >
-                      <div>
-                        <div className="font-medium text-foreground">{m.email}</div>
-                        <div className="text-xs text-muted-foreground">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-foreground">{m.email}</div>
+                        <div className="truncate text-xs text-muted-foreground">
                           {m.display_name || '—'} · {m.role}
                         </div>
                       </div>
                       {canManage && m.role !== 'owner' && (
-                        <Button type="button" variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setRemoveTarget(m.id)}>
+                        <Button type="button" variant="ghost" size="sm" className="shrink-0 text-destructive hover:text-destructive" onClick={() => setRemoveTarget(m.id)}>
                           Remove
                         </Button>
                       )}
@@ -348,8 +371,8 @@ export default function V2OrgSettings() {
                     <ul className="space-y-1">
                       {billingSnap.usageSummary.map((row) => (
                         <li key={row.event_type} className="flex justify-between gap-2 border-b border-border/40 py-1 last:border-0">
-                          <span className="text-foreground">{row.event_type}</span>
-                          <span className="tabular-nums text-muted-foreground">{Number(row.total).toLocaleString()}</span>
+                          <span className="min-w-0 truncate text-foreground">{humanizeUsageLabel(row.event_type)}</span>
+                          <span className="shrink-0 tabular-nums text-muted-foreground">{Number(row.total).toLocaleString()}</span>
                         </li>
                       ))}
                     </ul>

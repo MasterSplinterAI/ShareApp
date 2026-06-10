@@ -95,8 +95,10 @@ function VideoGrid() {
           />
           <ScreenShareQualityChip trackRef={activeScreenShare} meetingId={meetingId} />
           <button
+            type="button"
             onClick={toggleFullScreen}
-            className="absolute top-3 right-3 p-2 bg-black/60 hover:bg-black/80 text-white rounded-lg transition-all z-10"
+            className="absolute top-3 right-3 z-10 rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
+            aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
             title={isFullScreen ? 'Exit full screen' : 'Full screen'}
           >
             {isFullScreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
@@ -213,8 +215,8 @@ function ParticipantTile({ participant, tracks, compact = false }) {
       )}
 
       {/* Name label */}
-      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent ${compact ? 'px-1.5 py-1' : 'px-3 py-2'}`}>
-        <span className={`text-white font-medium truncate block ${compact ? 'text-[10px]' : 'text-xs sm:text-sm'}`} data-no-translate="true">
+      <div className={`pointer-events-none absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent ${compact ? 'px-1.5 pb-1 pt-3' : 'px-3 pb-2 pt-6'}`}>
+        <span className={`block truncate font-medium text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.6)] ${compact ? 'text-[10px]' : 'text-xs sm:text-sm'}`} data-no-translate="true">
           {displayName}
           {isLocal && ' (You)'}
         </span>
@@ -222,24 +224,28 @@ function ParticipantTile({ participant, tracks, compact = false }) {
 
       {/* Mic/camera status indicators -- hidden on compact to save space */}
       {!compact && (
-        <div className="absolute top-1.5 sm:top-2 left-1.5 sm:left-2 flex items-center gap-1">
+        <div className="absolute left-1.5 top-1.5 flex items-center gap-1 sm:left-2 sm:top-2">
           {isMicMuted && (
-            <span className="p-0.5 sm:p-1 rounded bg-red-500/80" title="Microphone off">
-              <MicOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white" />
+            <span className="rounded-md bg-red-500/90 p-1 shadow-sm" title="Microphone off" aria-label="Microphone off">
+              <MicOff className="h-3 w-3 text-white sm:h-3.5 sm:w-3.5" aria-hidden="true" />
             </span>
           )}
           {isCameraOff && (
-            <span className="p-0.5 sm:p-1 rounded bg-red-500/80" title="Camera off">
-              <VideoOff className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-white" />
+            <span className="rounded-md bg-red-500/90 p-1 shadow-sm" title="Camera off" aria-label="Camera off">
+              <VideoOff className="h-3 w-3 text-white sm:h-3.5 sm:w-3.5" aria-hidden="true" />
             </span>
           )}
         </div>
       )}
 
       {/* Top-right: speaking indicator + connection quality */}
-      <div className={`absolute flex items-center gap-1 ${compact ? 'top-1 right-1' : 'top-1.5 sm:top-2 right-1.5 sm:right-2'}`}>
+      <div className={`absolute flex items-center gap-1 ${compact ? 'right-1 top-1' : 'right-1.5 top-1.5 sm:right-2 sm:top-2'}`}>
         {isSpeaking && (
-          <div className={`bg-green-400 rounded-full animate-pulse ${compact ? 'w-2 h-2' : 'w-3 h-3'}`} />
+          <div
+            className={`animate-pulse rounded-full bg-emerald-400 shadow-[0_0_0_2px_rgb(0_0_0/0.25)] ${compact ? 'h-2 w-2' : 'h-3 w-3'}`}
+            title="Speaking"
+            aria-label="Speaking"
+          />
         )}
         {!compact && (
           <ConnectionQualityBadge
@@ -365,7 +371,8 @@ function ConnectionQualityBadge({ participant, cameraPub, isLocal }) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-label={`Connection: ${meta.label}`}
-        className="flex h-5 items-end gap-[2px] rounded bg-black/40 px-1 py-0.5"
+        title={`Connection: ${meta.label}`}
+        className="flex h-5 items-end gap-[2px] rounded-md bg-black/40 px-1 py-0.5 transition-colors hover:bg-black/55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
       >
         {[1, 2, 3].map((i) => (
           <span

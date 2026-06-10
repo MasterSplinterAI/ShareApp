@@ -70,13 +70,14 @@ function DeviceSelect({ kind, devices, activeDeviceId, onChange, disabled }) {
   const label = kind === 'audioinput' ? 'Microphone' : 'Camera';
   if (!devices.length) return null;
   return (
-    <div className="space-y-1">
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+    <div className="space-y-1.5">
+      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
       <select
         value={activeDeviceId || ''}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        aria-label={label}
+        className="h-9 w-full cursor-pointer truncate rounded-md border border-input bg-background px-2.5 text-sm transition-colors hover:border-ring/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
       >
         {devices.map((d, i) => (
           <option key={d.deviceId || i} value={d.deviceId}>
@@ -198,10 +199,10 @@ function PreJoinScreen({
 
   return (
     <div className="flex min-h-[100dvh] items-center justify-center bg-muted/40 px-4 py-6" data-no-translate="true">
-      <div className="w-full max-w-3xl rounded-2xl border border-border/70 bg-card shadow-lg">
-        <div className="border-b border-border/60 px-6 py-4 text-center">
-          <h1 className="text-lg font-semibold">Ready to join?</h1>
-          <p className="mt-0.5 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+      <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border/70 bg-card shadow-lg">
+        <div className="border-b border-border/60 px-4 py-4 text-center sm:px-6 sm:py-5">
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Ready to join?</h1>
+          <p className="mt-1 flex flex-wrap items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <span className="truncate">{roomName}</span>
             {participantCount !== null && participantCount > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
@@ -212,7 +213,7 @@ function PreJoinScreen({
           </p>
         </div>
 
-        <div className="grid gap-6 p-6 md:grid-cols-[1.3fr_1fr]">
+        <div className="grid gap-6 p-4 sm:p-6 md:grid-cols-[1.3fr_1fr]">
           {/* Preview */}
           <div className="space-y-3">
             <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-zinc-900">
@@ -238,7 +239,9 @@ function PreJoinScreen({
                   type="button"
                   onClick={() => setAudioEnabled((v) => !v)}
                   aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
-                  className={`flex h-11 w-11 items-center justify-center rounded-full shadow transition-colors ${
+                  aria-pressed={!audioEnabled}
+                  title={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                  className={`flex h-11 w-11 items-center justify-center rounded-full shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90 focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 ${
                     audioEnabled
                       ? 'bg-white/90 text-zinc-900 hover:bg-white'
                       : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
@@ -250,7 +253,9 @@ function PreJoinScreen({
                   type="button"
                   onClick={() => setVideoEnabled((v) => !v)}
                   aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
-                  className={`flex h-11 w-11 items-center justify-center rounded-full shadow transition-colors ${
+                  aria-pressed={!videoEnabled}
+                  title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+                  className={`flex h-11 w-11 items-center justify-center rounded-full shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90 focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 ${
                     videoEnabled
                       ? 'bg-white/90 text-zinc-900 hover:bg-white'
                       : 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
@@ -268,10 +273,15 @@ function PreJoinScreen({
             </div>
 
             {mediaError && (
-              <p className="flex items-start gap-1.5 text-xs text-amber-600">
-                <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                Camera/microphone unavailable ({mediaError.name || 'permission denied'}). You can
-                still join — note live captions need a working microphone.
+              <p
+                role="alert"
+                className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-700 dark:text-amber-400"
+              >
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                <span>
+                  Camera or microphone unavailable ({mediaError.name || 'permission denied'}). You
+                  can still join — live captions need a working microphone.
+                </span>
               </p>
             )}
 

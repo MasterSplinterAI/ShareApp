@@ -14,7 +14,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
   const tabText = compact ? 'text-xs' : 'text-sm';
 
   const tabBtn = (active) =>
-    `flex items-center gap-1.5 ${compact ? 'px-2 py-1' : 'px-3 py-1.5'} rounded-md transition-colors ${tabText} font-medium ${
+    `flex items-center gap-1.5 ${compact ? 'px-2 py-1' : 'px-3 py-1.5'} rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${tabText} font-medium ${
       active
         ? 'meeting-tab-pill-active text-foreground'
         : 'text-muted-foreground hover:text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
@@ -24,7 +24,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
     <div
       className={`flex items-center justify-between ${padding} meeting-tab-strip border-b flex-shrink-0 rounded-t-xl sm:rounded-none`}
     >
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-1" role="tablist">
         <button
           type="button"
           onClick={() => setSidePanelTab('captions')}
@@ -47,7 +47,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
           <MessageCircle className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
           <span>Chat</span>
           {sidePanelTab !== 'chat' && unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold">
+            <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
               {unreadCount > 99 ? '99+' : unreadCount}
             </span>
           )}
@@ -72,7 +72,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             type="button"
             onClick={onDownload}
             disabled={!canDownload}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Download transcript"
             title="Download transcript"
           >
@@ -83,7 +83,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
           <button
             type="button"
             onClick={onMinimize}
-            className="text-muted-foreground hover:text-foreground transition-colors p-1"
+            className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Minimize panel"
             title="Minimize"
           >
@@ -93,7 +93,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
         <button
           type="button"
           onClick={closeSidePanel}
-          className="text-muted-foreground hover:text-foreground transition-colors p-1"
+          className="rounded-md p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Close panel"
         >
           <X className="w-4 h-4" />

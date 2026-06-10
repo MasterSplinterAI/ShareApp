@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 
@@ -9,8 +11,8 @@ const CONTACT_EMAIL = 'hello@parley.app';
 function Section({ title, children }) {
   return (
     <section className="mt-10">
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2>
-      <div className="mt-3 space-y-3 text-sm leading-relaxed text-muted-foreground">{children}</div>
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+      <div className="mt-3 space-y-3 text-base leading-relaxed text-muted-foreground">{children}</div>
     </section>
   );
 }
@@ -20,10 +22,17 @@ export default function PrivacyPage() {
     <div className="min-h-screen bg-background">
       <MarketingNav />
       <main className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Privacy Policy</h1>
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to home
+        </Link>
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Privacy Policy</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
-        <p className="mt-8 text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-8 text-base leading-relaxed text-muted-foreground">
           This Privacy Policy explains how {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
           &ldquo;our&rdquo;) collects, uses, and shares information when you use Parley, our video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;).
@@ -108,7 +117,7 @@ export default function PrivacyPage() {
             Depending on where you live, you may have rights to access, correct, export, or delete your personal
             information, and to object to or restrict certain processing. You can manage much of your data directly in
             the Service (including deleting stored transcripts), or contact us at{' '}
-            <a className="text-primary hover:underline" href={`mailto:${CONTACT_EMAIL}`}>
+            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>
               {CONTACT_EMAIL}
             </a>{' '}
             to exercise your rights. We will respond within the timeframes required by applicable law.
@@ -134,7 +143,7 @@ export default function PrivacyPage() {
         <Section title="9. Contact">
           <p>
             Questions about this Privacy Policy or our data practices? Contact us at{' '}
-            <a className="text-primary hover:underline" href={`mailto:${CONTACT_EMAIL}`}>
+            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>
               {CONTACT_EMAIL}
             </a>
             .

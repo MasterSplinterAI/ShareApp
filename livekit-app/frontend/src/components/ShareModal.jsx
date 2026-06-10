@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Copy, Check, Smartphone, Laptop } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
@@ -28,11 +28,12 @@ function ShareModal({ shareableLink, shareableLinkNetwork, hostCode, onClose }) 
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md border-border/80 bg-card">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md border-border/80 bg-card">
         <DialogHeader>
           <DialogTitle>Share meeting</DialogTitle>
+          <DialogDescription>Scan the code or copy a link to invite people.</DialogDescription>
         </DialogHeader>
-        <div className="flex justify-center rounded-lg bg-white p-4">
+        <div className="flex justify-center rounded-lg border border-border/60 bg-white p-4">
           <QRCodeSVG value={shareableLink} size={200} />
         </div>
         <div className="space-y-3">
@@ -42,8 +43,16 @@ function ShareModal({ shareableLink, shareableLinkNetwork, hostCode, onClose }) 
               <span className="text-sm text-muted-foreground">Direct link</span>
             </div>
             <div className="flex items-center gap-2">
-              <Input type="text" value={shareableLink} readOnly className="font-mono text-xs" />
-              <Button type="button" variant="secondary" size="icon" onClick={() => copyToClipboard(shareableLink, 'direct')}>
+              <Input type="text" value={shareableLink} readOnly aria-label="Direct link" className="font-mono text-xs" />
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="shrink-0"
+                onClick={() => copyToClipboard(shareableLink, 'direct')}
+                aria-label={copiedLink === 'direct' ? 'Direct link copied' : 'Copy direct link'}
+                title="Copy direct link"
+              >
                 {copiedLink === 'direct' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>
@@ -55,8 +64,16 @@ function ShareModal({ shareableLink, shareableLinkNetwork, hostCode, onClose }) 
                 <span className="text-sm text-muted-foreground">Network link (same Wi‑Fi)</span>
               </div>
               <div className="flex items-center gap-2">
-                <Input type="text" value={shareableLinkNetwork} readOnly className="font-mono text-xs" />
-                <Button type="button" variant="secondary" size="icon" onClick={() => copyToClipboard(shareableLinkNetwork, 'network')}>
+                <Input type="text" value={shareableLinkNetwork} readOnly aria-label="Network link" className="font-mono text-xs" />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => copyToClipboard(shareableLinkNetwork, 'network')}
+                  aria-label={copiedLink === 'network' ? 'Network link copied' : 'Copy network link'}
+                  title="Copy network link"
+                >
                   {copiedLink === 'network' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
                 </Button>
               </div>
@@ -67,8 +84,16 @@ function ShareModal({ shareableLink, shareableLinkNetwork, hostCode, onClose }) 
           <div className="rounded-lg border border-border bg-muted/30 p-4">
             <p className="mb-2 text-sm text-muted-foreground">Host code (rejoining)</p>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-2xl font-bold text-primary">{hostCode}</span>
-              <Button type="button" variant="secondary" size="icon" className="ml-auto" onClick={() => copyToClipboard(hostCode, 'code')}>
+              <span className="font-mono text-2xl font-bold tracking-wider text-primary">{hostCode}</span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className="ml-auto shrink-0"
+                onClick={() => copyToClipboard(hostCode, 'code')}
+                aria-label={copiedCode ? 'Host code copied' : 'Copy host code'}
+                title="Copy host code"
+              >
                 {copiedCode ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
               </Button>
             </div>

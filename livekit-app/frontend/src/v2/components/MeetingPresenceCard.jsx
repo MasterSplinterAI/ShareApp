@@ -10,7 +10,7 @@ export default function MeetingPresenceCard({ presence }) {
           In the room
         </CardTitle>
         <CardDescription>
-          LiveKit snapshot (refreshes about every 12s while this meeting is scheduled or live). Agents are not listed.
+          Updates automatically every few seconds. Bots aren&apos;t listed.
         </CardDescription>
       </CardHeader>
       <CardContent className="pt-4">

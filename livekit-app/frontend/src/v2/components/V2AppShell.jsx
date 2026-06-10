@@ -17,6 +17,7 @@ import { cn } from '../../lib/utils';
 function navLinkClass({ isActive }) {
   return cn(
     'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
     isActive
       ? 'bg-primary/10 font-medium text-primary'
       : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
@@ -39,7 +40,7 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
         Settings
       </NavLink>
       {isSuperadmin && (
-        <NavLink to="/v2/app/superadmin" className={({ isActive }) => cn(navLinkClass({ isActive }), 'text-xs')}>
+        <NavLink to="/v2/app/superadmin" className={navLinkClass}>
           <Shield className="h-4 w-4 shrink-0 opacity-70" />
           Admin
         </NavLink>

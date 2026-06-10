@@ -36,10 +36,10 @@ export default function MeetingInvitesPanel({
           </Label>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => setNewInviteHours(maxInviteHours)}>
-          Max length
+          Use max
         </Button>
         <Button type="button" onClick={onCreateInvite}>
-          New invite link
+          Create invite
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
@@ -72,18 +72,19 @@ export default function MeetingInvitesPanel({
               <div className="flex flex-wrap items-center gap-2">
                 <Input
                   readOnly
+                  aria-label={`Invite link${inv.label ? ` for ${inv.label}` : ''}`}
                   value={inv.joinUrl}
                   onFocus={(e) => e.currentTarget.select()}
                   spellCheck={false}
                   className="h-8 min-w-0 flex-1 truncate font-mono text-xs"
                 />
                 <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => onCopyInviteUrl(inv.joinUrl)}>
-                  <Copy className="h-3.5 w-3.5" />
+                  <Copy className="h-4 w-4" />
                   Copy
                 </Button>
                 <Button variant="outline" size="sm" className="gap-1" asChild>
                   <a href={inv.joinUrl} target="_blank" rel="noreferrer">
-                    <ExternalLink className="h-3.5 w-3.5" />
+                    <ExternalLink className="h-4 w-4" />
                     Open
                   </a>
                 </Button>

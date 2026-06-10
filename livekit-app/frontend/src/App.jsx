@@ -21,11 +21,17 @@ import PrivacyPage from './components/legal/PrivacyPage'
 
 function App() {
   const location = useLocation();
-  
+
+  // Scroll to anchor targets (e.g. /#pricing from the legal pages) after the
+  // SPA route renders; without this, in-app navigation to a hash lands at top.
   useEffect(() => {
-    // Route tracking removed for cleaner console
-  }, [location]);
-  
+    if (!location.hash) return;
+    const id = location.hash.slice(1);
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }, [location.pathname, location.hash]);
+
   return (
     <>
       <Toaster

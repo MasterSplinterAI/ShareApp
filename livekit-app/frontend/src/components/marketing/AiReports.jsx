@@ -13,17 +13,17 @@ const TEMPLATES = [
  */
 export default function AiReports() {
   return (
-    <section id="ai-reports" className="border-t border-border/60 bg-muted/30 py-16 sm:py-24">
-      <div className="mx-auto max-w-6xl px-4">
+    <section id="ai-reports" className="scroll-mt-20 border-y border-border/60 bg-muted/30 py-20 sm:py-24">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="grid items-center gap-10 lg:grid-cols-2">
           {/* Copy */}
           <div>
-            <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-primary">
+            <p className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.2em] text-primary">
               <Sparkles className="h-4 w-4" />
               AI meeting reports
             </p>
-            <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-              Your meeting, distilled — in any language it was spoken.
+            <h2 className="text-3xl font-semibold tracking-tight text-balance text-foreground sm:text-4xl">
+              Your meeting, distilled—in any language it was spoken.
             </h2>
             <p className="mt-4 text-muted-foreground">
               When transcript storage is on, Parley turns the full multilingual conversation into a

@@ -47,12 +47,12 @@ function InviteLinkModal({ inviteLink, onClose }) {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md border-border/80 bg-card">
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-md border-border/80 bg-card">
         <DialogHeader>
           <DialogTitle>Invite link created</DialogTitle>
           <DialogDescription>Share this link with others to invite them to your meeting.</DialogDescription>
         </DialogHeader>
-        <Input ref={inputRef} type="text" value={inviteLink} readOnly className="font-mono text-sm select-all" />
+        <Input ref={inputRef} type="text" value={inviteLink} readOnly aria-label="Invite link" className="select-all font-mono text-sm" />
         <DialogFooter className="flex-col gap-2 sm:flex-row">
           {typeof navigator !== 'undefined' && navigator.share && (
             <Button type="button" className="gap-2" onClick={handleShare}>

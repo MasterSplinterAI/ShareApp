@@ -293,6 +293,8 @@ export default function CustomControlBar({
                 !isMicEnabled && 'border border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
               )}
               aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
+              aria-pressed={!isMicEnabled}
+              title={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
               {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
               {!isCompact && <span className="text-sm font-medium">{t('microphone')}</span>}
@@ -348,6 +350,8 @@ export default function CustomControlBar({
                 !isCameraEnabled && 'border border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
               )}
               aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
+              aria-pressed={!isCameraEnabled}
+              title={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
               {isCameraEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
               {!isCompact && <span className="text-sm font-medium">{t('camera')}</span>}
@@ -404,6 +408,8 @@ export default function CustomControlBar({
                 !isScreenSharing && 'text-foreground'
               )}
               aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
+              aria-pressed={isScreenSharing}
+              title={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             >
               <Monitor className="h-5 w-5" />
               <span className="text-sm font-medium">{isScreenSharing ? t('stopSharing') : t('shareScreen')}</span>
@@ -474,6 +480,7 @@ export default function CustomControlBar({
                 }}
                 className={cn(barBtn(false), 'relative')}
                 aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
+                aria-pressed={sidePanelOpen && sidePanelTab === 'chat'}
                 title="Chat"
               >
                 <MessageCircle className="h-5 w-5" />
@@ -498,6 +505,7 @@ export default function CustomControlBar({
                   }}
                   className={barBtn(false)}
                   aria-label={sidePanelOpen && sidePanelTab === 'participants' ? 'Close participants' : 'Open participants'}
+                  aria-pressed={sidePanelOpen && sidePanelTab === 'participants'}
                   title="Participants"
                 >
                   <Users className="h-5 w-5" />
@@ -509,7 +517,7 @@ export default function CustomControlBar({
 
           {/* Share Link - Host Only */}
           {isHost && (
-            <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting">
+            <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting" title="Share meeting">
               <Share2 className="h-5 w-5" />
               {!isCompact && <span className="text-sm font-medium">{t('share')}</span>}
             </Button>
@@ -529,6 +537,7 @@ export default function CustomControlBar({
             }}
             className={barBtn(isCompact)}
             aria-label="Leave meeting"
+            title="Leave meeting"
           >
             <PhoneOff className="h-5 w-5" />
             {!isCompact && <span className="text-sm font-medium">{t('leave')}</span>}

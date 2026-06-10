@@ -239,6 +239,7 @@ export default function V2MeetingsList() {
   const [storeTranscripts, setStoreTranscripts] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(undefined);
   const [startingInstant, setStartingInstant] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(null);
@@ -322,6 +323,7 @@ export default function V2MeetingsList() {
   };
 
   const createNow = async () => {
+    setCreating(true);
     try {
       const iso =
         scheduledDate instanceof Date && !Number.isNaN(scheduledDate.getTime()) ? scheduledDate.toISOString() : null;
@@ -336,6 +338,8 @@ export default function V2MeetingsList() {
       window.location.href = `/v2/app/meetings/${m.id}`;
     } catch (e) {
       handleCreateError(e);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -573,11 +577,11 @@ export default function V2MeetingsList() {
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
+            <Button type="button" variant="outline" onClick={() => setShowCreate(false)} disabled={creating}>
               Cancel
             </Button>
-            <Button type="button" onClick={createNow}>
-              Create
+            <Button type="button" onClick={createNow} disabled={creating}>
+              {creating ? 'Creating…' : 'Create'}
             </Button>
           </DialogFooter>
         </DialogContent>

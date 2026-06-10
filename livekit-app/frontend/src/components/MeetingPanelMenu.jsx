@@ -141,7 +141,7 @@ export default function MeetingPanelMenu({
                   type="button"
                   onClick={() => selectPanel(item.id)}
                   className={cn(
-                    'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent',
+                    'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
                     isSelected && 'bg-accent'
                   )}
                   data-no-translate="true"
@@ -163,7 +163,7 @@ export default function MeetingPanelMenu({
             type="button"
             onClick={() => onTranslationToggle()}
             className={cn(
-              'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent',
+              'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
               translationEnabled && 'bg-primary/10'
             )}
             data-no-translate="true"
@@ -187,7 +187,7 @@ export default function MeetingPanelMenu({
                 type="button"
                 onClick={() => handleLanguageSelect(language)}
                 className={cn(
-                  'flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-accent',
+                  'flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
                   language.code === normalizedValue && 'bg-accent',
                   !translationEnabled && 'opacity-50'
                 )}

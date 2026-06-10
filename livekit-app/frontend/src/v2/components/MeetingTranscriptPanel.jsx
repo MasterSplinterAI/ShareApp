@@ -207,6 +207,7 @@ export default function MeetingTranscriptPanel({
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
+              aria-label="Search transcript"
               placeholder="Search transcript…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -228,7 +229,14 @@ export default function MeetingTranscriptPanel({
               </SelectContent>
             </Select>
           )}
-          <Button type="button" variant="outline" size="sm" onClick={loadLines} disabled={loadingLines}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            aria-label="Refresh transcript"
+            onClick={loadLines}
+            disabled={loadingLines}
+          >
             {loadingLines ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
         </div>
@@ -344,6 +352,7 @@ export default function MeetingTranscriptPanel({
         {report && emailOpen && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
             <Input
+              aria-label="Recipient email"
               value={emailTo}
               onChange={(e) => setEmailTo(e.target.value)}
               placeholder="recipient@company.com"
@@ -377,7 +386,7 @@ export default function MeetingTranscriptPanel({
                 <li key={r.id}>
                   <button
                     type="button"
-                    className="text-left text-sm text-primary hover:underline"
+                    className="rounded text-left text-sm text-primary transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     onClick={() => setReport(r)}
                   >
                     {templateLabel(r.template_id, templates)} — {new Date(r.created_at).toLocaleString()}
@@ -395,11 +404,11 @@ export default function MeetingTranscriptPanel({
         </p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onDownloadJson}>
-            <FileDown className="h-3.5 w-3.5" />
+            <FileDown className="h-4 w-4" />
             Download JSON
           </Button>
           <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={onDownloadTxt}>
-            <FileDown className="h-3.5 w-3.5" />
+            <FileDown className="h-4 w-4" />
             Download .txt
           </Button>
         </div>

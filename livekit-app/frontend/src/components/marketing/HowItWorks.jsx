@@ -8,17 +8,20 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="border-y border-border/40 bg-muted/20 py-20 sm:py-24">
+    <section className="py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <h2 className="text-center text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">How it works</h2>
-        <p className="mx-auto mt-4 max-w-xl text-center text-sm leading-relaxed text-muted-foreground">
-          Three calm steps from signup to first translated call.
-        </p>
-        <div className="mt-12 grid gap-5 sm:mt-14 sm:gap-6 md:grid-cols-3">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">How it works</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            From signup to your first translated call
+          </h2>
+          <p className="mt-4 text-base text-muted-foreground">Three quick steps—no downloads, no setup.</p>
+        </div>
+        <div className="mt-12 grid gap-5 sm:mt-16 sm:gap-6 md:grid-cols-3">
           {steps.map((s) => (
-            <Card key={s.n} className="border-border/80 bg-background/80">
+            <Card key={s.n} className="border-border/80 bg-card/50 transition-colors hover:border-border">
               <CardHeader>
-                <p className="text-xs font-mono text-primary">{s.n}</p>
+                <p className="font-mono text-xs text-primary">{s.n}</p>
                 <CardTitle className="text-base">{s.title}</CardTitle>
                 <CardDescription className="text-sm leading-relaxed">{s.body}</CardDescription>
               </CardHeader>

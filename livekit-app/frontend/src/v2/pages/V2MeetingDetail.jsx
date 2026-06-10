@@ -282,7 +282,7 @@ export default function V2MeetingDetail() {
       });
       toast.success('Invite created');
       await navigator.clipboard.writeText(r.joinUrl);
-      toast('Copied join URL to clipboard');
+      toast('Copied invite link to clipboard');
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
@@ -302,18 +302,18 @@ export default function V2MeetingDetail() {
   const copyGuestUrl = async () => {
     if (!meeting?.joinUrl) return;
     await navigator.clipboard.writeText(meeting.joinUrl);
-    toast.success('Copied guest URL');
+    toast.success('Copied guest link');
   };
 
   const copyInviteUrl = async (url) => {
     if (!url) return;
     await navigator.clipboard.writeText(url);
-    toast.success('Copied invite URL');
+    toast.success('Copied invite link');
   };
 
   const joinAsHost = async () => {
     if (!name.trim()) {
-      toast.error('Enter display name');
+      toast.error('Enter a display name to join');
       return;
     }
     if (!meeting) return;
@@ -338,7 +338,7 @@ export default function V2MeetingDetail() {
       const qs = next.toString();
       navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${qs ? `?${qs}` : ''}`);
     } catch (e) {
-      toast.error(e.response?.data?.error || 'Token failed');
+      toast.error(e.response?.data?.error || 'Could not join meeting');
     }
   };
 
@@ -390,7 +390,24 @@ export default function V2MeetingDetail() {
   };
 
   if (!meeting) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <div className="mx-auto max-w-screen-xl space-y-6" aria-busy="true">
+        <div className="space-y-3">
+          <div className="h-4 w-24 animate-pulse rounded bg-muted" />
+          <div className="h-9 w-64 max-w-full animate-pulse rounded bg-muted" />
+          <div className="h-5 w-44 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="grid items-start gap-6 lg:grid-cols-5">
+          <div className="space-y-6 lg:col-span-3">
+            <div className="h-48 animate-pulse rounded-xl border border-border/60 bg-muted/40" />
+          </div>
+          <div className="space-y-6 lg:col-span-2">
+            <div className="h-32 animate-pulse rounded-xl border border-border/60 bg-muted/40" />
+          </div>
+        </div>
+        <span className="sr-only">Loading meeting…</span>
+      </div>
+    );
   }
 
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false, store_transcripts: false };
@@ -450,7 +467,7 @@ export default function V2MeetingDetail() {
         <CardTitle className="text-base">Transcript</CardTitle>
         <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
       </CardHeader>
-      <CardContent className="pt-6">
+      <CardContent className="pt-4">
         <MeetingTranscriptPanel
           meetingId={id}
           lineCount={meeting.transcriptLineCount}
@@ -464,11 +481,11 @@ export default function V2MeetingDetail() {
 
   const guestLinkCard = (
     <Card className="app-card border-border/60">
-      <CardHeader className="pb-3">
+      <CardHeader className="border-b border-border/60 pb-3">
         <CardTitle className="text-base">Invite guests</CardTitle>
         <CardDescription>Share the link, or email it with an automatic reminder.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 pt-4">
         <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
         <div className="border-t border-border/60 pt-4">
           <MeetingEmailInvites meetingId={meeting.id} />

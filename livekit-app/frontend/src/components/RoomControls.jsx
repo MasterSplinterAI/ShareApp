@@ -120,7 +120,6 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
       try {
         const msg = JSON.parse(new TextDecoder().decode(payload));
         if (msg?.type === 'agent_ready') {
-          console.log('[RoomControls] agent_ready received — re-syncing language preferences');
           sendLanguagePreference();
         }
       } catch {

@@ -42,47 +42,52 @@ const tiers = [
 
 export function PricingTable() {
   return (
-    <section id="pricing" className="mx-auto max-w-6xl scroll-mt-20 px-4 py-20 sm:px-6">
-      <div className="mx-auto max-w-2xl text-center">
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Pricing</h2>
-        <p className="mt-3 text-sm text-muted-foreground sm:text-base">
-          Start free with 60 participant-minutes per month. Upgrade when you are ready — billed per organization.
-        </p>
-      </div>
-      <div className="mt-12 grid gap-6 lg:grid-cols-3">
-        {tiers.map((t) => (
-          <Card
-            key={t.name}
-            className={`relative flex flex-col border-border/80 ${t.highlight ? 'border-primary/50 bg-primary/5 shadow-md shadow-primary/10' : 'bg-card/50'}`}
-          >
-            {t.highlight && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                <Badge>Popular</Badge>
-              </div>
-            )}
-            <CardHeader className="pt-8">
-              <CardTitle className="text-xl">{t.name}</CardTitle>
-              <CardDescription className="text-sm">{t.blurb}</CardDescription>
-              <div className="mt-4 flex items-baseline gap-1">
-                <span className="text-4xl font-semibold tracking-tight text-foreground">{t.price}</span>
-                <span className="text-sm text-muted-foreground">{t.period}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="flex-1 space-y-3">
-              {t.features.map((f) => (
-                <div key={f} className="flex gap-2 text-sm text-muted-foreground">
-                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                  <span>{f}</span>
+    <section id="pricing" className="scroll-mt-20 border-y border-border/60 bg-muted/30 py-20 sm:py-24">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6">
+        <div className="mx-auto max-w-2xl text-center">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-primary">Pricing</p>
+          <h2 className="mt-3 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">
+            Start free, scale as you grow
+          </h2>
+          <p className="mt-4 text-base text-muted-foreground">
+            Begin with 60 participant-minutes a month. Upgrade when you’re ready—billed per organization.
+          </p>
+        </div>
+        <div className="mt-12 grid gap-6 sm:mt-16 lg:grid-cols-3">
+          {tiers.map((t) => (
+            <Card
+              key={t.name}
+              className={`relative flex flex-col border-border/80 ${t.highlight ? 'border-primary/50 bg-primary/5 shadow-md shadow-primary/10' : 'bg-card/50'}`}
+            >
+              {t.highlight && (
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                  <Badge>Popular</Badge>
                 </div>
-              ))}
-            </CardContent>
-            <CardFooter>
-              <Button className="w-full" variant={t.highlight ? 'default' : 'outline'} asChild>
-                <Link to={t.href}>{t.cta}</Link>
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
+              )}
+              <CardHeader className="pt-8">
+                <CardTitle className="text-xl">{t.name}</CardTitle>
+                <CardDescription className="text-sm">{t.blurb}</CardDescription>
+                <div className="mt-4 flex items-baseline gap-1">
+                  <span className="text-4xl font-semibold tracking-tight text-foreground">{t.price}</span>
+                  <span className="text-sm text-muted-foreground">{t.period}</span>
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 space-y-3">
+                {t.features.map((f) => (
+                  <div key={f} className="flex gap-2 text-sm text-muted-foreground">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span>{f}</span>
+                  </div>
+                ))}
+              </CardContent>
+              <CardFooter>
+                <Button className="w-full" variant={t.highlight ? 'default' : 'outline'} asChild>
+                  <Link to={t.href}>{t.cta}</Link>
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
       </div>
     </section>
   );

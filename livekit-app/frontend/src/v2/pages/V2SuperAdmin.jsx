@@ -53,6 +53,21 @@ function fmtDateTime(s) {
   return Number.isNaN(d.getTime()) ? String(s).slice(0, 16) : d.toLocaleString();
 }
 
+/** Consistent status colors, aligned with the workspace meeting badges. */
+function statusBadgeVariant(status) {
+  switch (status) {
+    case 'live':
+      return 'success';
+    case 'scheduled':
+      return 'info';
+    case 'ended':
+    case 'archived':
+      return 'muted';
+    default:
+      return 'outline';
+  }
+}
+
 const MIX_COLORS = ['bg-primary', 'bg-sky-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-violet-500'];
 
 /** Compact horizontal stacked bar + legend for plan / billing-status mixes. */
@@ -157,6 +172,7 @@ function TrendsTab() {
       <div className="flex items-center gap-2">
         <span className="text-sm text-muted-foreground">Window:</span>
         <select
+          aria-label="Trends time window"
           className="h-9 rounded-md border border-input bg-background px-2 text-sm"
           value={days}
           onChange={(e) => setDays(Number(e.target.value))}
@@ -307,6 +323,7 @@ function MeetingsTab({ orgs }) {
             Latest 100 meetings across all organizations. Click a row for its per-meeting cost breakdown.
           </CardDescription>
           <select
+            aria-label="Filter meetings by organization"
             className="mt-2 h-9 max-w-sm rounded-md border border-input bg-background px-2 text-sm"
             value={orgFilter}
             onChange={(e) => {
@@ -348,7 +365,7 @@ function MeetingsTab({ orgs }) {
                   <td className="px-4 py-3 font-medium">{m.title || m.livekit_room_name || m.id.slice(0, 8)}</td>
                   <td className="px-4 py-3">{m.org_name || '—'}</td>
                   <td className="px-4 py-3">
-                    <Badge variant="outline">{m.status}</Badge>
+                    <Badge variant={statusBadgeVariant(m.status)}>{m.status}</Badge>
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{(m.created_at || '').slice(0, 16)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{(m.scheduled_start || '').slice(0, 16) || '—'}</td>
@@ -762,12 +779,12 @@ export default function V2SuperAdmin() {
 
   return (
     <div className="space-y-6">
-      <Button variant="link" className="h-auto p-0 text-primary" asChild>
-        <Link to="/v2/app">← Workspace</Link>
-      </Button>
+      <Link to="/v2/app" className="text-sm font-medium text-primary hover:underline">
+        ← Workspace
+      </Link>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Parley admin</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Parley admin</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Organizations are the billing unit — select one to see members, usage, and comp/plan controls.
           </p>
@@ -830,6 +847,7 @@ export default function V2SuperAdmin() {
                 workspace is auto-named “their-email&apos;s org”). Click a row to open the workspace.
               </CardDescription>
               <Input
+                aria-label="Search users"
                 value={userSearch}
                 onChange={(e) => setUserSearch(e.target.value)}
                 placeholder="Search by email, name, or organization…"
@@ -1105,6 +1123,7 @@ export default function V2SuperAdmin() {
                     Unlimited (comp)
                   </label>
                   <select
+                    aria-label="Comp label"
                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                     value={compLabel[orgKey(selectedOrg)] ?? orgDetail.subscription?.comp_label ?? 'personal'}
                     onChange={(e) =>
@@ -1124,6 +1143,7 @@ export default function V2SuperAdmin() {
                 <div className="space-y-3 rounded-lg border border-border/60 p-4">
                   <h3 className="font-medium">Plan override</h3>
                   <select
+                    aria-label="Plan override"
                     className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
                     value={planEdit[orgKey(selectedOrg)] ?? orgDetail.subscription?.plan_id ?? 'free'}
                     onChange={(e) =>
@@ -1145,6 +1165,7 @@ export default function V2SuperAdmin() {
                   <h3 className="font-medium">Billing status</h3>
                   <div className="flex flex-wrap gap-2">
                     <Input
+                      aria-label="Billing status"
                       className="max-w-[160px]"
                       defaultValue={orgDetail.org?.billing_status}
                       onChange={(e) =>

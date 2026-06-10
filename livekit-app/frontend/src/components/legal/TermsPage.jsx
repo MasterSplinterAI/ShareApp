@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 
@@ -9,8 +11,8 @@ const CONTACT_EMAIL = 'hello@parley.app';
 function Section({ title, children }) {
   return (
     <section className="mt-10">
-      <h2 className="text-lg font-semibold tracking-tight text-foreground">{title}</h2>
-      <div className="mt-3 space-y-3 text-sm leading-relaxed text-muted-foreground">{children}</div>
+      <h2 className="text-xl font-semibold tracking-tight text-foreground">{title}</h2>
+      <div className="mt-3 space-y-3 text-base leading-relaxed text-muted-foreground">{children}</div>
     </section>
   );
 }
@@ -20,10 +22,17 @@ export default function TermsPage() {
     <div className="min-h-screen bg-background">
       <MarketingNav />
       <main className="mx-auto max-w-3xl px-4 py-16 sm:px-6">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Terms of Service</h1>
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to home
+        </Link>
+        <h1 className="mt-6 text-3xl font-semibold tracking-tight text-foreground sm:text-4xl">Terms of Service</h1>
         <p className="mt-2 text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
-        <p className="mt-8 text-sm leading-relaxed text-muted-foreground">
+        <p className="mt-8 text-base leading-relaxed text-muted-foreground">
           These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Parley, a video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;), operated by{' '}
           {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). Please read these Terms
@@ -54,7 +63,7 @@ export default function TermsPage() {
             Some features require an account. You agree to provide accurate, current information when registering and
             to keep your credentials secure. You are responsible for all activity that occurs under your account.
             Notify us promptly at{' '}
-            <a className="text-primary hover:underline" href={`mailto:${CONTACT_EMAIL}`}>
+            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>
               {CONTACT_EMAIL}
             </a>{' '}
             if you suspect unauthorized use of your account.
@@ -154,7 +163,7 @@ export default function TermsPage() {
         <Section title="12. Contact">
           <p>
             Questions about these Terms? Contact us at{' '}
-            <a className="text-primary hover:underline" href={`mailto:${CONTACT_EMAIL}`}>
+            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>
               {CONTACT_EMAIL}
             </a>
             .

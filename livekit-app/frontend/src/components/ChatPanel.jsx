@@ -304,11 +304,11 @@ function ChatPanel() {
               key={msg.id}
               className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}
             >
-              <div className="flex items-baseline gap-2 mb-1 max-w-[95%]">
-                <span className="text-xs font-medium text-emerald-400 truncate">
+              <div className="mb-1 flex max-w-[95%] items-baseline gap-2">
+                <span className="truncate text-xs font-semibold text-emerald-600 dark:text-emerald-400">
                   {msg.isOwn ? 'You' : msg.senderName}
                 </span>
-                <span className="text-xs text-muted-foreground">
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80">
                   {new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',
                     minute: '2-digit',
@@ -316,10 +316,10 @@ function ChatPanel() {
                 </span>
               </div>
               <div
-                className={`max-w-[95%] break-words rounded-lg border px-3 py-2 text-sm ${
+                className={`max-w-[95%] break-words border px-3 py-2 text-sm shadow-sm ${
                   msg.isOwn
-                    ? 'border-primary/30 bg-primary/15 text-foreground'
-                    : 'border-border bg-muted/60 text-foreground'
+                    ? 'rounded-2xl rounded-br-sm border-primary/30 bg-primary/15 text-foreground'
+                    : 'rounded-2xl rounded-bl-sm border-border bg-muted/60 text-foreground'
                 }`}
               >
                 {msg.translating && !msg.isOwn ? (
@@ -349,7 +349,8 @@ function ChatPanel() {
           onKeyDown={onKeyDown}
           placeholder="Message…"
           rows={2}
-          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          aria-label="Message"
+          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
           maxLength={MAX_CHARS}
         />
         <Button

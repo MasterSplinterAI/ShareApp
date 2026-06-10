@@ -58,9 +58,10 @@ export default function MeetingJoinCard({
           <div className="flex items-center gap-2">
             <Input
               readOnly
+              aria-label="Host link"
               value={hostShareUrl}
               onFocus={(e) => e.currentTarget.select()}
-              className="h-8 truncate font-mono text-xs"
+              className="h-8 min-w-0 flex-1 truncate font-mono text-xs"
             />
             <Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={onCopyHostLink}>
               <Copy className="h-3.5 w-3.5" />

@@ -10,7 +10,10 @@ export default function V2Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
-  const isPublicAuth = location.pathname === '/v2/login' || location.pathname === '/v2/signup';
+  const isPublicAuth =
+    location.pathname === '/v2/login' ||
+    location.pathname === '/v2/signup' ||
+    location.pathname === '/v2/reset-password';
   const [me, setMe] = useState(null);
 
   useEffect(() => {

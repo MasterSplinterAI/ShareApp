@@ -57,13 +57,14 @@ export default function MeetingAccessPanel({
               Advanced invites.
             </p>
           )}
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2 flex flex-wrap items-center gap-2">
             <Input
               readOnly
+              aria-label="Guest join link"
               value={meeting.joinUrl || ''}
               onFocus={(e) => e.currentTarget.select()}
               spellCheck={false}
-              className="h-9 flex-1 truncate font-mono text-xs"
+              className="h-9 min-w-0 flex-1 truncate font-mono text-xs"
             />
             <Button type="button" variant="outline" size="sm" className="gap-1" onClick={onCopyGuestUrl}>
               <Copy className="h-4 w-4" />

@@ -34,7 +34,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
           <button
             type="button"
             onClick={onTranslationToggle}
-            className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
               translationEnabled
                 ? 'bg-emerald-600 text-primary-foreground hover:bg-emerald-700'
                 : 'bg-muted text-foreground hover:bg-muted/80'
@@ -53,7 +53,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
             <button
               type="button"
               onClick={() => translationEnabled && setIsOpen(!isOpen)}
-              className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-all ${
+              className={`flex items-center gap-2 rounded-lg px-4 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
                 translationEnabled
                   ? 'bg-muted text-foreground hover:bg-muted/80'
                   : 'cursor-not-allowed bg-muted/50 text-muted-foreground'
@@ -111,7 +111,7 @@ function LanguageSelector({ value, onChange, onTranslationToggle, translationEna
           <button
             type="button"
             onClick={() => setIsOpen(!isOpen)}
-            className={`flex items-center gap-1 rounded-lg px-2 py-2 transition-all ${
+            className={`flex items-center gap-1 rounded-lg px-2 py-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
               translationEnabled
                 ? 'bg-emerald-600 text-primary-foreground hover:bg-emerald-700'
                 : 'bg-muted text-foreground hover:bg-muted/80'

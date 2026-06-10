@@ -57,6 +57,8 @@ export default function MeetingEmailInvites({ meetingId }) {
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <Input
+          aria-label="Guest email addresses"
+          inputMode="email"
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="guest@company.com, another@company.com"

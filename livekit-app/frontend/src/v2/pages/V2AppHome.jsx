@@ -32,6 +32,7 @@ export default function V2AppHome() {
   const [orgData, setOrgData] = useState(null);
   const [sub, setSub] = useState(null);
   const [meetings, setMeetings] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([v2Auth.me(), v2Orgs.me(), v2Billing.subscription(), v2Meetings.list()])
@@ -43,7 +44,8 @@ export default function V2AppHome() {
       })
       .catch((e) => {
         toast.error(e.response?.data?.error || 'Could not load workspace');
-      });
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   const displayName = me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || 'there';
@@ -110,7 +112,7 @@ export default function V2AppHome() {
         </div>
       </section>
 
-      {nextUpcoming && (
+      {!loading && nextUpcoming && (
         <section>
           <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Up next</h2>
           <Link to={`/v2/app/meetings/${nextUpcoming.id}`}>
@@ -144,7 +146,13 @@ export default function V2AppHome() {
             View all
           </Link>
         </div>
-        {recentMeetings.length === 0 ? (
+        {loading ? (
+          <ul className="space-y-2">
+            {[0, 1, 2].map((i) => (
+              <li key={i} className="app-card h-[68px] animate-pulse border-border/50 bg-muted/40" />
+            ))}
+          </ul>
+        ) : recentMeetings.length === 0 ? (
           <Card className="border-dashed border-border bg-muted/30 shadow-none">
             <CardContent className="flex flex-col items-center py-12 text-center">
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -190,15 +198,17 @@ export default function V2AppHome() {
         )}
       </section>
 
-      <p className="text-xs text-muted-foreground">
-        {planName ? `${planName} plan` : 'Plan: —'}
-        <span className="mx-1.5">·</span>
-        {usageMinutes} participant-minutes used this month
-        <span className="mx-1.5">·</span>
-        <Link to="/v2/app/settings?section=billing" className="text-primary hover:underline">
-          Manage billing
-        </Link>
-      </p>
+      {!loading && (
+        <p className="text-xs text-muted-foreground">
+          {planName ? `${planName} plan` : 'Plan: —'}
+          <span className="mx-1.5">·</span>
+          {usageMinutes} participant-minutes used this month
+          <span className="mx-1.5">·</span>
+          <Link to="/v2/app/settings?section=billing" className="text-primary hover:underline">
+            Manage billing
+          </Link>
+        </p>
+      )}
     </div>
   );
 }
