@@ -66,6 +66,30 @@ def _gladia_endpointing_sec() -> float:
     return max(0.05, min(_deepgram_endpointing_ms() / 1000.0, 5.0))
 
 
+def _gladia_max_no_endpoint_sec() -> Optional[float]:
+    """Force a Gladia final after N seconds of continuous speech (no silence).
+
+    Long monologues otherwise produce no finals — and with native translation,
+    no translations — until the speaker pauses.
+    """
+    raw = os.getenv("GLADIA_MAX_NO_ENDPOINT_SEC", "").strip()
+    if not raw:
+        return None
+    try:
+        return max(1.0, min(float(raw), 60.0))
+    except ValueError:
+        return None
+
+
+def _gladia_translation_grace_sec() -> float:
+    """Max wait for the remaining target languages' translations before committing."""
+    raw = os.getenv("GLADIA_TRANSLATION_GRACE_SEC", "1.0").strip()
+    try:
+        return max(0.1, min(float(raw), 3.0))
+    except ValueError:
+        return 1.0
+
+
 def _stt_stream_supports_flush(provider: str) -> bool:
     """Gladia STT treats flush() as stop_recording — never call it on live Gladia streams."""
     return provider != "gladia"
@@ -808,7 +832,7 @@ class TranscriptionOnlyAgent:
             endpointing_sec = _gladia_endpointing_sec()
             trans_targets = gladia_translation_targets or []
             use_gladia_trans = _gladia_translation_enabled() and bool(trans_targets)
-            inst = gladia.STT(
+            gladia_kwargs = dict(
                 model="solaria-1",
                 interim_results=True,
                 code_switching=True,
@@ -817,10 +841,15 @@ class TranscriptionOnlyAgent:
                 translation_enabled=use_gladia_trans,
                 translation_target_languages=trans_targets if use_gladia_trans else [],
             )
+            max_no_endpoint = _gladia_max_no_endpoint_sec()
+            if max_no_endpoint is not None:
+                gladia_kwargs["maximum_duration_without_endpointing"] = max_no_endpoint
+            inst = gladia.STT(**gladia_kwargs)
             if use_gladia_trans:
                 logger.info(
                     f"{L} STT: Gladia solaria-1 code_switching=True "
-                    f"endpointing={endpointing_sec}s native_translation={trans_targets}"
+                    f"endpointing={endpointing_sec}s max_no_endpoint={max_no_endpoint} "
+                    f"native_translation={trans_targets}"
                 )
             else:
                 logger.info(
@@ -1301,7 +1330,7 @@ class TranscriptionOnlyAgent:
 
             async def _run() -> None:
                 try:
-                    await asyncio.sleep(0.15 if all_satisfied else 1.0)
+                    await asyncio.sleep(0.1 if all_satisfied else _gladia_translation_grace_sec())
                     if turn_id[0] and dg_buffer.has_content():
                         await finalize_turn()
                 except asyncio.CancelledError:

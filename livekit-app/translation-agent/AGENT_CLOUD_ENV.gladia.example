@@ -17,6 +17,13 @@ AGENT_NAME=translation-cloud-gladia
 # Set to false to A/B test Gladia STT-only + OpenAI translation (previous behavior).
 GLADIA_TRANSLATION_ENABLED=true
 
-# Optional tuning (endpointing in seconds; defaults to DEEPGRAM_ENDPOINTING_MS / 1000)
-# GLADIA_ENDPOINTING_SEC=0.8
+# Latency tuning — Gladia translates only after an utterance finalizes, so total
+# translation lag ≈ endpointing silence + ASR final + translation. Lower endpointing
+# for snappier finals (risk: more mid-sentence splits).
+GLADIA_ENDPOINTING_SEC=0.45
+# Force a final after N seconds of continuous speech (long monologues otherwise
+# produce no finals/translations until the speaker pauses).
+GLADIA_MAX_NO_ENDPOINT_SEC=5
+# Max wait for remaining target languages' translations before committing a turn.
+GLADIA_TRANSLATION_GRACE_SEC=0.6
 DEEPGRAM_STT_IDLE_MS=1500
