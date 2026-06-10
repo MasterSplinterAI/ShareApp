@@ -1,5 +1,35 @@
-# NOTE: The deployed agent image installs from requirements_livekit.txt
-# (see Dockerfile: COPY requirements_livekit.txt requirements.txt).
-# This file exists only so local tooling resolves the same dependency set.
-# Do NOT add packages here — edit requirements_livekit.txt instead.
--r requirements_livekit.txt
+# MIRROR of requirements_livekit.txt — the deployed image installs from requirements_livekit.txt
+# (see Dockerfile). Keep these two files in sync; lk CLI validates this one at deploy.
+# LiveKit Agents requirements with Python 3.13 compatible versions
+# Core LiveKit packages
+livekit>=1.0.0
+livekit-agents>=1.2.0
+
+# OpenAI plugin for LiveKit (includes STT/TTS)
+livekit-plugins-openai>=0.6.0
+
+# Silero VAD plugin for VoiceAssistant (voice activity detection)
+livekit-plugins-silero>=0.6.0
+
+# Deepgram plugin (required for contextual turn detector)
+livekit-plugins-deepgram>=0.6.0
+
+# Gladia plugin (STT_PROVIDER=gladia + GLADIA_API_KEY)
+livekit-plugins-gladia>=1.5.8
+
+# Contextual Turn Detector plugin (Dec 2025 enhancement - semantic understanding)
+livekit-plugins-turn-detector>=0.1.0
+
+# Noise cancellation plugin for LiveKit Cloud (BVC - Background Voice Cancellation)
+livekit-plugins-noise-cancellation>=0.1.0
+
+# Core dependencies with updated versions for Python 3.13
+openai>=1.0.0
+python-dotenv==1.0.0
+numpy>=1.26.0  # Updated for Python 3.13 compatibility
+aiohttp>=3.8.0
+websockets>=11.0
+
+# Optional but recommended
+pydantic>=2.0.0
+asyncio-atexit==1.0.1
