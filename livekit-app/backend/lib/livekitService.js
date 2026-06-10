@@ -13,12 +13,13 @@ const STT_PIPELINE_AGENTS = {
 
 const VALID_STT_PIPELINES = Object.keys(STT_PIPELINE_AGENTS);
 
-// Default pipeline for new rooms. NOTE: Gladia free tier allows only ONE concurrent
-// live session — a paid Gladia plan is required for multi-participant rooms.
-const _rawDefaultPipeline = String(process.env.DEFAULT_STT_PIPELINE || 'gladia').toLowerCase();
+// Default pipeline for new rooms. Deepgram for launch: Gladia finalizes utterances
+// noticeably slower, which delays translation. Gladia stays host-switchable per room
+// (debug panel) while we tune its endpointing; flip via DEFAULT_STT_PIPELINE env.
+const _rawDefaultPipeline = String(process.env.DEFAULT_STT_PIPELINE || 'deepgram').toLowerCase();
 const DEFAULT_STT_PIPELINE = VALID_STT_PIPELINES.includes(_rawDefaultPipeline)
   ? _rawDefaultPipeline
-  : 'gladia';
+  : 'deepgram';
 
 function getLivekitHttpHost() {
   const url = process.env.LIVEKIT_URL;

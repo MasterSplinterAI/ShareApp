@@ -17,15 +17,13 @@ translation for participants. Feature branches come after launch.
 | Pipeline switch | Host-only, staging + `?debug=1` | `TranslationDebugPanel.jsx`, `/v2/host/.../switch-stt-pipeline` |
 | Cost telemetry | Per-turn STT minutes + LLM tokens → `/api/cost-events` | `cost_reporter.py` |
 
-Default pipeline at launch: **gladia** (`DEFAULT_STT_PIPELINE` env on the backend can
-flip it back to `deepgram` without a code change). Deepgram remains host-switchable
-as the fallback pipeline.
+Default pipeline at launch: **deepgram** (decision Jun 10: Gladia's slower utterance
+finalize delays translation; revisit after tuning `GLADIA_ENDPOINTING_SEC`). Gladia
+remains host-switchable per room via the debug panel; `DEFAULT_STT_PIPELINE` env
+flips the default without a code change.
 
-> **Gladia plan requirement:** the agent opens one Gladia live session per speaker.
-> Gladia free tier = 1 concurrent live session → the second speaker's STT gets a 429
-> and falls back to another provider. A **paid Gladia plan** (30 concurrent live
-> sessions, $0.75/hr real-time) is required before Gladia can be the default in
-> multi-participant rooms.
+> Gladia account is on a **paid plan** (30 concurrent live sessions) — concurrency
+> verified Jun 10. Remaining Gladia work before GA: finalize/translation latency.
 
 ## 2. Agent architecture (as reviewed)
 
