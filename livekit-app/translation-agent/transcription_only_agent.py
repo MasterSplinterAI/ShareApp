@@ -155,6 +155,9 @@ LANG_NAMES = {
 
 VALID_CAPTION_MODES = ("off", "transcription_only", "transcription_translation")
 
+# Process-wide Silero VAD cache (see _load_shared_vad).
+_VAD_MODEL_CACHE: Dict[tuple, Any] = {}
+
 
 def is_likely_agent_identity(identity: str) -> bool:
     """Aligned with frontend RoomControls — cloud agents may not use agent-* prefix."""
@@ -339,6 +342,21 @@ class TranscriptionOnlyAgent:
             await asyncio.gather(tok, return_exceptions=True)
         elif hasattr(tok, "aclose"):
             await tok.aclose()
+
+    def _load_shared_vad(self):
+        """One Silero VAD model per process, shared across speaker pipelines.
+
+        Loading a model per pipeline ballooned memory ("process memory usage is
+        high" → worker restart mid-meeting). Streams created from a shared model
+        are independent; this is the documented prewarm pattern.
+        """
+        params = self._vad_params()
+        key = tuple(sorted(params.items()))
+        model = _VAD_MODEL_CACHE.get(key)
+        if model is None:
+            model = silero.VAD.load(**params)
+            _VAD_MODEL_CACHE[key] = model
+        return model
 
     def _vad_params(self) -> dict:
         # activation_threshold: higher = fewer false positives from background noise.
@@ -998,7 +1016,7 @@ class TranscriptionOnlyAgent:
             f"skip_providers={sorted(skip) or '[]'} "
             f"(configured STT_PROVIDER={os.getenv('STT_PROVIDER', 'deepgram')!r})"
         )
-        vad_instance = silero.VAD.load(**self._vad_params())
+        vad_instance = self._load_shared_vad()
 
         # Non-streaming STT (e.g. OpenAI gpt-4o-transcribe on plugins >=1.5) must be
         # wrapped: .stream() on it raises and would kill the pipeline.
@@ -1238,9 +1256,10 @@ class TranscriptionOnlyAgent:
             turn_stt_seconds[0] = 0.0
             seg_speech_start[0] = 0.0
             last_live_publish[0] = ""
-            # Chronology: commit any other speaker's open bubble so overlapping
-            # speech doesn't interleave captions out of order.
-            self._spawn_bg(self._finalize_other_speakers(speaker_id))
+            # NOTE: do NOT commit other speakers' open bubbles here. Cross-talk makes
+            # both pipelines "start turns" off the same audio, and committing a Gladia
+            # bubble mid-revision freezes half-revised text into the transcript
+            # (observed live: the same phrase stitched 3x into one caption).
 
         stt_idle_task: List[Optional[asyncio.Task]] = [None]
         gladia_trans_finalize_task: List[Optional[asyncio.Task]] = [None]
