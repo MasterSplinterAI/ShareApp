@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { usePreviewTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import {
@@ -120,10 +120,15 @@ function PreJoinScreen({
     [audioEnabled, videoEnabled, audioDeviceId, videoDeviceId]
   );
 
-  const tracks = usePreviewTracks(trackOptions, (err) => {
+  // Identity MUST be stable: usePreviewTracks re-runs (destroying and re-acquiring
+  // the mic/camera) whenever this callback changes, which made the browser's
+  // permission indicator flash on every render.
+  const onMediaError = useCallback((err) => {
     console.warn('PreJoin media error:', err);
     setMediaError(err);
-  });
+  }, []);
+
+  const tracks = usePreviewTracks(trackOptions, onMediaError);
 
   const videoTrack = useMemo(
     () => tracks?.find((t) => t.kind === Track.Kind.Video),

@@ -702,7 +702,19 @@ class TranscriptionOnlyAgent:
                 rc = SpeakerRunContext(speaker)
                 self._speaker_ctx[speaker] = rc
                 await rc.set_targets(ts)
-                self.speaker_pipelines[speaker] = asyncio.create_task(self._run_speaker_pipeline(ctx, rc))
+                pipeline_task = asyncio.create_task(self._run_speaker_pipeline(ctx, rc))
+
+                def _log_pipeline_crash(t: asyncio.Task, sp: str = speaker) -> None:
+                    # Setup-phase exceptions (before the pipeline's own try block) would
+                    # otherwise die silently — e.g. a provider constructor raising.
+                    if t.cancelled():
+                        return
+                    exc = t.exception()
+                    if exc is not None:
+                        logger.error(f"🔥 Speaker pipeline {sp!r} crashed: {exc!r}", exc_info=exc)
+
+                pipeline_task.add_done_callback(_log_pipeline_crash)
+                self.speaker_pipelines[speaker] = pipeline_task
                 logger.info(f"✅ Speaker pipeline (shared STT): {speaker} targets={sorted(ts)}")
             else:
                 await self._speaker_ctx[speaker].set_targets(ts)
@@ -806,8 +818,12 @@ class TranscriptionOnlyAgent:
                 return None
             if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
                 return None
-            inst = openai.STT(model="gpt-4o-transcribe", language=None)
-            logger.info(f"{L} STT: OpenAI gpt-4o-transcribe (shared, auto-detect, no interim)")
+            # language must never be None: plugin >=1.5 does LanguageCode(language)
+            # which crashes on None (AttributeError on .strip).
+            inst = openai.STT(model="gpt-4o-transcribe", language=normalized_lang or "en")
+            logger.info(
+                f"{L} STT: OpenAI gpt-4o-transcribe lang={normalized_lang!r} (shared, no interim)"
+            )
             stt_provider_name = "openai"
             return inst
 
@@ -983,6 +999,17 @@ class TranscriptionOnlyAgent:
             f"(configured STT_PROVIDER={os.getenv('STT_PROVIDER', 'deepgram')!r})"
         )
         vad_instance = silero.VAD.load(**self._vad_params())
+
+        # Non-streaming STT (e.g. OpenAI gpt-4o-transcribe on plugins >=1.5) must be
+        # wrapped: .stream() on it raises and would kill the pipeline.
+        try:
+            if not getattr(stt_instance.capabilities, "streaming", True):
+                from livekit.agents import stt as lk_stt
+
+                stt_instance = lk_stt.StreamAdapter(stt=stt_instance, vad=vad_instance)
+                logger.info(f"{L} STT wrapped in StreamAdapter (non-streaming provider)")
+        except Exception as e:
+            logger.warning(f"{L} StreamAdapter wrap check failed: {e}")
 
         participant = None
         for _attempt in range(30):
