@@ -16,6 +16,7 @@ import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
 import RoomConnectionGuard from './RoomConnectionGuard';
 import VideoGrid from './VideoGrid';
+import PreJoinScreen from './PreJoinScreen';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { autopilotTranslator } from '../lib/autopilot-translator';
@@ -49,6 +50,8 @@ function MeetingRoom() {
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  // Device + AV choices from the prejoin lobby; room connects only after this is set.
+  const [prejoinChoices, setPrejoinChoices] = useState(null);
   const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const intentionalLeaveRef = useRef(false);
@@ -88,13 +91,22 @@ function MeetingRoom() {
       stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage
     );
 
-    if (!participantName) {
+    // Bounce to /join only when there's no join context at all (cold hit on /room URL).
+    // The prejoin screen collects the display name, so an empty name with valid
+    // context (validated invite, host dashboard) is fine.
+    const hasJoinContext =
+      Boolean(participantName) ||
+      stateInfo.roomName === roomName ||
+      sessionInfo.roomName === roomName ||
+      Boolean(stateInfo.meetingId || sessionInfo.meetingId);
+    if (!hasJoinContext) {
       navigate(`/join/${roomName}`, { replace: true });
       return;
     }
 
     setParticipantInfo({
-      participantName,
+      participantName: participantName || '',
+      numParticipants: stateInfo.numParticipants ?? sessionInfo.numParticipants ?? null,
       isHost,
       hostCode,
       shareableLink,
@@ -108,11 +120,32 @@ function MeetingRoom() {
     setIsInitialized(true);
   }, [roomName, navigate]);
 
-  // Connect to room once initialized
+  // Connect to room only after the prejoin lobby confirms name/language/devices.
   useEffect(() => {
-    if (!isInitialized || !participantInfo) return;
+    if (!isInitialized || !participantInfo || !prejoinChoices) return;
     connectToRoom();
-  }, [isInitialized, participantInfo]);
+  }, [isInitialized, participantInfo, prejoinChoices]);
+
+  const handlePrejoinJoin = useCallback(
+    ({ name, language, audioEnabled, videoEnabled, audioDeviceId, videoDeviceId }) => {
+      setParticipantInfo((prev) => {
+        const next = {
+          ...prev,
+          participantName: name,
+          selectedLanguage: language,
+          spokenLanguage: language,
+        };
+        try {
+          sessionStorage.setItem('participantInfo', JSON.stringify({ ...next, roomName }));
+        } catch {
+          /* storage unavailable — state alone is enough for this session */
+        }
+        return next;
+      });
+      setPrejoinChoices({ audioEnabled, videoEnabled, audioDeviceId, videoDeviceId });
+    },
+    [roomName]
+  );
 
   const fetchRoomToken = useCallback(async () => {
     if (!participantInfo) throw new Error('No participant info');
@@ -248,6 +281,18 @@ function MeetingRoom() {
     );
   }
 
+  if (!prejoinChoices) {
+    return (
+      <PreJoinScreen
+        roomName={roomName}
+        defaultName={participantInfo.participantName}
+        defaultLanguage={participantInfo.selectedLanguage}
+        participantCount={participantInfo.numParticipants}
+        onJoin={handlePrejoinJoin}
+      />
+    );
+  }
+
   if (isConnecting || !token) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -276,6 +321,7 @@ function MeetingRoom() {
       <MeetingRoomInner
         token={token}
         livekitUrl={livekitUrl}
+        prejoinChoices={prejoinChoices}
         participantInfo={participantInfo}
         roomName={roomName}
         meetingId={participantInfo.meetingId}
@@ -295,6 +341,7 @@ function MeetingRoom() {
 function MeetingRoomInner({
   token,
   livekitUrl,
+  prejoinChoices,
   participantInfo,
   roomName,
   meetingId,
@@ -342,8 +389,8 @@ function MeetingRoomInner({
         </div>
       )}
       <LiveKitRoom
-        video={true}
-        audio={true}
+        video={prejoinChoices?.videoEnabled ?? true}
+        audio={prejoinChoices?.audioEnabled ?? true}
         token={token}
         serverUrl={livekitUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud'}
         onDisconnected={() => {
@@ -355,6 +402,12 @@ function MeetingRoomInner({
           disconnectOnPageLeave: false,
           adaptiveStream: true,
           dynacast: true,
+          audioCaptureDefaults: prejoinChoices?.audioDeviceId
+            ? { deviceId: prejoinChoices.audioDeviceId }
+            : undefined,
+          videoCaptureDefaults: prejoinChoices?.videoDeviceId
+            ? { deviceId: prejoinChoices.videoDeviceId }
+            : undefined,
           publishDefaults: {
             // Camera: 3-layer simulcast for graceful degradation on low-bandwidth viewers
             videoSimulcastLayers: [

@@ -3,7 +3,6 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { Users, Loader2, AlertCircle, Video, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService, joinPublicService } from '../services/api';
-import NameModal from './NameModal';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
 
@@ -20,15 +19,39 @@ function JoinMeeting() {
   const pollRef = useRef(null);
 
   const [isLoading, setIsLoading] = useState(true);
-  const [roomInfo, setRoomInfo] = useState(null);
   const [error, setError] = useState(null);
-  const [showNameModal, setShowNameModal] = useState(false);
   const [isInviteLink, setIsInviteLink] = useState(false);
   const [isStartingRoom, setIsStartingRoom] = useState(false);
-  const [v2Context, setV2Context] = useState(null);
   const [waitingHost, setWaitingHost] = useState(false);
 
   const goHome = useCallback(() => navigate(homePath()), [navigate]);
+
+  // Name + language + devices are collected on the prejoin screen (/room/:roomName).
+  // This page only validates access, then forwards the join context.
+  const goToPrejoin = useCallback(
+    (info, v2Ctx) => {
+      const participantInfo = {
+        participantName: '',
+        isHost: !!info?.hostCode,
+        hostCode: info?.hostCode,
+        shareableLink: info?.shareableLink,
+        shareableLinkNetwork: info?.shareableLinkNetwork,
+        roomName,
+        roomMode: info?.roomMode || 'multi-language',
+        selectedLanguage: 'en',
+        spokenLanguage: 'en',
+        numParticipants: info?.numParticipants ?? null,
+        meetingId: v2Ctx?.meetingId,
+        inviteToken: v2Ctx?.inviteToken || inviteFromUrl,
+      };
+      sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
+      navigate(`/room/${roomName}${window.location.search}`, {
+        state: participantInfo,
+        replace: true,
+      });
+    },
+    [navigate, roomName, inviteFromUrl]
+  );
 
   useEffect(() => {
     checkRoom();
@@ -37,11 +60,10 @@ function JoinMeeting() {
     };
   }, [roomName, inviteFromUrl]);
 
-  const proceedAfterV2Allowed = async () => {
+  const proceedAfterV2Allowed = async (v2Ctx) => {
     try {
       const info = await roomService.getInfo(roomName);
-      setRoomInfo(info);
-      setShowNameModal(true);
+      goToPrejoin(info, v2Ctx);
     } catch (e) {
       if (e.response?.status === 404) {
         setError('Meeting room is not available yet. Ask the host to start the meeting from the dashboard.');
@@ -61,9 +83,9 @@ function JoinMeeting() {
     try {
       const joinPreview = await joinPublicService.joinInfo(roomName, inviteFromUrl);
       if (joinPreview.mode === 'v2') {
+        const v2Ctx = { meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl };
         if (!joinPreview.allowed && joinPreview.reason === 'waiting_for_host') {
           setWaitingHost(true);
-          setV2Context({ meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl });
           setIsLoading(false);
           if (!pollRef.current) {
             pollRef.current = setInterval(async () => {
@@ -73,7 +95,7 @@ function JoinMeeting() {
                   clearInterval(pollRef.current);
                   pollRef.current = null;
                   setWaitingHost(false);
-                  await proceedAfterV2Allowed();
+                  await proceedAfterV2Allowed(v2Ctx);
                 }
               } catch {
                 /* ignore */
@@ -95,14 +117,12 @@ function JoinMeeting() {
           setIsLoading(false);
           return;
         }
-        setV2Context({ meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl });
-        await proceedAfterV2Allowed();
+        await proceedAfterV2Allowed(v2Ctx);
         return;
       }
 
       const info = await roomService.getInfo(roomName);
-      setRoomInfo(info);
-      setShowNameModal(true);
+      goToPrejoin(info, null);
     } catch (err) {
       console.error('Failed to check room:', err);
       if (err.response?.status === 404) {
@@ -119,43 +139,14 @@ function JoinMeeting() {
     setIsStartingRoom(true);
     try {
       const response = await roomService.create(roomName);
-      setRoomInfo(response);
       setIsInviteLink(false);
-      setShowNameModal(true);
+      goToPrejoin(response, null);
     } catch (error) {
       console.error('Failed to start room:', error);
       toast.error('Failed to start the meeting. Please try again.');
     } finally {
       setIsStartingRoom(false);
     }
-  };
-
-  const handleNameSubmit = (name, selectedLanguage = 'en', spokenLanguage = null) => {
-    const spoken = spokenLanguage ?? selectedLanguage;
-    const isHost = !!roomInfo?.hostCode;
-    const participantInfo = {
-      participantName: name,
-      isHost,
-      hostCode: roomInfo?.hostCode,
-      shareableLink: roomInfo?.shareableLink,
-      shareableLinkNetwork: roomInfo?.shareableLinkNetwork,
-      roomName,
-      roomMode: roomInfo?.roomMode || 'multi-language',
-      selectedLanguage,
-      spokenLanguage: spoken,
-      meetingId: v2Context?.meetingId,
-      inviteToken: v2Context?.inviteToken || inviteFromUrl,
-    };
-
-    sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-
-    setTimeout(() => {
-      const search = window.location.search;
-      navigate(`/room/${roomName}${search}`, {
-        state: participantInfo,
-        replace: false,
-      });
-    }, 10);
   };
 
   if (isLoading) {
@@ -260,33 +251,16 @@ function JoinMeeting() {
     );
   }
 
+  // Access validated — goToPrejoin navigation is in flight.
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <Users className="mx-auto mb-2 h-16 w-16 text-primary" />
           <CardTitle>Join meeting</CardTitle>
-          {roomInfo && roomInfo.numParticipants > 0 && (
-            <CardDescription>
-              {roomInfo.numParticipants} participant{roomInfo.numParticipants !== 1 ? 's' : ''} in room
-            </CardDescription>
-          )}
+          <CardDescription>Taking you to the meeting lobby…</CardDescription>
         </CardHeader>
       </Card>
-
-      {showNameModal && (
-        <NameModal
-          onClose={() => {
-            setShowNameModal(false);
-            goHome();
-          }}
-          onSubmit={handleNameSubmit}
-          title="Join Meeting"
-          subtitle="Enter your name and select your preferred translation language"
-          showLanguageSelector={true}
-          defaultLanguage="en"
-        />
-      )}
     </div>
   );
 }
