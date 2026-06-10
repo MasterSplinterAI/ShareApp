@@ -8,11 +8,14 @@ const axios = require('axios');
 
 const DEFAULT_FROM = 'Parley <no-reply@parley.app>';
 
-async function sendEmail({ to, subject, text, html }) {
+async function sendEmail({ to, subject, text, html, attachments }) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
     console.warn('[mailer] RESEND_API_KEY not set — email not sent');
-    console.log('[mailer] Would have sent email:', JSON.stringify({ to, subject, text }, null, 2));
+    console.log(
+      '[mailer] Would have sent email:',
+      JSON.stringify({ to, subject, attachments: (attachments || []).map((a) => a.filename) }, null, 2)
+    );
     return { sent: false };
   }
   try {
@@ -24,6 +27,8 @@ async function sendEmail({ to, subject, text, html }) {
         subject,
         ...(text ? { text } : {}),
         ...(html ? { html } : {}),
+        // Resend attachment shape: [{ filename, content (base64) }]
+        ...(attachments?.length ? { attachments } : {}),
       },
       {
         headers: {

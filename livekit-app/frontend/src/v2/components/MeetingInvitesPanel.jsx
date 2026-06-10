@@ -69,27 +69,25 @@ export default function MeetingInvitesPanel({
               )}
             </div>
             {inv.joinUrl ? (
-              <>
-                <textarea
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
                   readOnly
-                  rows={4}
                   value={inv.joinUrl}
+                  onFocus={(e) => e.currentTarget.select()}
                   spellCheck={false}
-                  className="w-full min-h-[5rem] resize-y rounded-md border border-input bg-background px-2 py-2 font-mono text-xs break-all"
+                  className="h-8 min-w-0 flex-1 truncate font-mono text-xs"
                 />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => onCopyInviteUrl(inv.joinUrl)}>
-                    <Copy className="h-3.5 w-3.5" />
-                    Copy URL
-                  </Button>
-                  <Button variant="outline" size="sm" className="gap-1" asChild>
-                    <a href={inv.joinUrl} target="_blank" rel="noreferrer">
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Open
-                    </a>
-                  </Button>
-                </div>
-              </>
+                <Button type="button" variant="outline" size="sm" className="gap-1" onClick={() => onCopyInviteUrl(inv.joinUrl)}>
+                  <Copy className="h-3.5 w-3.5" />
+                  Copy
+                </Button>
+                <Button variant="outline" size="sm" className="gap-1" asChild>
+                  <a href={inv.joinUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open
+                  </a>
+                </Button>
+              </div>
             ) : (
               !inv.revoked_at && <p className="text-xs text-amber-600 dark:text-amber-400">No guest URL — expired or use limit reached.</p>
             )}

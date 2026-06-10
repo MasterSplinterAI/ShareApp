@@ -1,10 +1,32 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { format, isFuture } from 'date-fns';
+import {
+  Archive,
+  Copy,
+  MoreHorizontal,
+  Pencil,
+  PhoneOff,
+  RotateCcw,
+  Trash2,
+  Video,
+} from 'lucide-react';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
-import { getMeetingUiState } from '../lib/meetingState';
+import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../../lib/languages';
+import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,15 +38,75 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../../components/ui/accordion';
-import MeetingHeader from '../components/MeetingHeader';
 import MeetingJoinCard from '../components/MeetingJoinCard';
 import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
-import MeetingLifecyclePanel from '../components/MeetingLifecyclePanel';
 
 const MEETING_LANGUAGES = getMeetingLanguages();
+
+/** Click-to-edit meeting title for the header hero. */
+function EditableTitle({ value, onChange, onCommit, onCancel }) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        title="Rename meeting"
+        className="group flex min-w-0 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+          {value || 'Untitled meeting'}
+        </h1>
+        <Pencil className="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
+      </button>
+    );
+  }
+  return (
+    <Input
+      autoFocus
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={() => {
+        setEditing(false);
+        onCommit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') {
+          onCancel();
+          setEditing(false);
+        }
+      }}
+      className="h-11 max-w-xl text-xl font-semibold sm:text-2xl"
+    />
+  );
+}
+
+/** Small muted, copyable room-name code element (lives in Meeting settings). */
+function RoomCodeChip({ roomName }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(roomName);
+      toast.success('Copied room name');
+    } catch {
+      toast.error('Could not copy room name');
+    }
+  };
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      title="Copy room name"
+      className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted px-2 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <code className="truncate font-mono">{roomName}</code>
+      <Copy className="h-3 w-3 shrink-0" />
+    </button>
+  );
+}
 
 export default function V2MeetingDetail() {
   const { id } = useParams();
@@ -36,7 +118,6 @@ export default function V2MeetingDetail() {
   const [name, setName] = useState('');
   const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState(() => normalizeMeetingLanguageCode('en'));
-  const [langOpen, setLangOpen] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteHours, setNewInviteHours] = useState(72);
   const [newInviteReusable, setNewInviteReusable] = useState(false);
@@ -316,15 +397,33 @@ export default function V2MeetingDetail() {
   const maxInviteHours = meeting.inviteMaxTtlHours ?? 90 * 24;
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
   const canManageTranscriptPolicy = canManageMeeting;
-  const isScheduled = Boolean(meeting.scheduled_start);
-  const showPresence = ['live', 'scheduled'].includes(meeting.status);
-  const showTranscriptCard = policy.store_transcripts || (meeting.transcriptLineCount && meeting.transcriptLineCount > 0);
+  const hasTranscriptLines = (meeting.transcriptLineCount || 0) > 0;
+
+  // State machine for layout: archived > ended > live (people in room or status
+  // 'live') > upcoming (scheduled/ready, nobody joined yet).
+  const isArchived = meeting.status === 'archived';
+  const isEnded = meeting.status === 'ended';
+  const isLive = !isArchived && !isEnded && (presence.humanCount > 0 || meeting.status === 'live');
+  const isUpcoming = !isArchived && !isEnded && !isLive;
+  const joinDemoted = isEnded || isArchived;
+
+  const startDate = meeting.scheduled_start ? new Date(meeting.scheduled_start) : null;
+  const validStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate : null;
+  const scheduleText = validStart ? format(validStart, 'EEEE, MMM d · h:mm a') : null;
+
+  let quietLine = null;
+  if (isUpcoming) {
+    if (meeting.host_present === 1) {
+      quietLine = 'Session is open — waiting for guests to join.';
+    } else if (validStart && isFuture(validStart)) {
+      quietLine = `Starts ${format(validStart, 'EEEE h:mm a')} — no one has joined yet.`;
+    } else {
+      quietLine = 'No one has joined yet.';
+    }
+  }
 
   const accessPanelProps = {
     meeting,
-    titleEdit,
-    setTitleEdit,
-    onTitleBlur,
     policy,
     onPatchPolicy: patchPolicy,
     canManageTranscriptPolicy,
@@ -344,47 +443,223 @@ export default function V2MeetingDetail() {
     onCopyInviteUrl: copyInviteUrl,
   };
 
-  const transcriptPanel = (
-    <MeetingTranscriptPanel
-      meetingId={id}
-      lineCount={meeting.transcriptLineCount}
-      storeTranscripts={policy.store_transcripts}
-      onDownloadJson={downloadTranscriptJson}
-      onDownloadTxt={downloadTranscriptTxt}
-    />
+  const transcriptCard = (
+    <Card className="app-card border-border/60">
+      <CardHeader className="border-b border-border/60 pb-3">
+        <CardTitle className="text-base">Transcript</CardTitle>
+        <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
+      </CardHeader>
+      <CardContent className="pt-6">
+        <MeetingTranscriptPanel
+          meetingId={id}
+          lineCount={meeting.transcriptLineCount}
+          storeTranscripts={policy.store_transcripts}
+          onDownloadJson={downloadTranscriptJson}
+          onDownloadTxt={downloadTranscriptTxt}
+        />
+      </CardContent>
+    </Card>
   );
 
-  const lifecyclePanel = (
-    <MeetingLifecyclePanel
-      meetingStatus={meeting.status}
-      canManage={canManageMeeting}
-      canEndMeeting={canEndMeeting}
-      ending={ending}
-      onOpenEndDialog={() => setEndOpen(true)}
-      onOpenArchiveDialog={() => setArchiveOpen(true)}
-      onOpenDeleteDialog={() => setDeleteOpen(true)}
-      onRestore={runRestore}
-      restoring={restoring}
-    />
+  const guestLinkCard = (
+    <Card className="app-card border-border/60">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Guest link</CardTitle>
+        <CardDescription>Share this URL with participants.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
+      </CardContent>
+    </Card>
   );
 
-  const joinCard = (
-    <MeetingJoinCard
-      meetingLanguages={MEETING_LANGUAGES}
-      name={name}
-      setName={setName}
-      selectedLanguage={selectedLanguage}
-      setSelectedLanguage={setSelectedLanguage}
-      langOpen={langOpen}
-      setLangOpen={setLangOpen}
-      onJoinAsHost={joinAsHost}
-      hostShareUrl={hostShareUrl}
-      onCopyHostLink={copyHostLink}
-    />
+  const settingsAccordion = (
+    <Accordion type="single" collapsible className="rounded-lg border border-border/60 bg-card px-4 shadow-sm">
+      <AccordionItem value="settings" className="border-0">
+        <AccordionTrigger className="text-sm font-medium hover:no-underline">Meeting settings</AccordionTrigger>
+        <AccordionContent className="space-y-8 pt-1">
+          <section className="space-y-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Access &amp; policy</h3>
+            <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
+          </section>
+          {joinDemoted && (
+            <section className="space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Guest link</h3>
+              <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
+            </section>
+          )}
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Advanced invites</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Expiring or reusable invite tokens. Most meetings only need the guest link.
+              </p>
+            </div>
+            <MeetingInvitesPanel {...invitesPanelProps} />
+          </section>
+          <section className="space-y-2">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Room</h3>
+            <RoomCodeChip roomName={meeting.livekit_room_name} />
+          </section>
+        </AccordionContent>
+      </AccordionItem>
+    </Accordion>
   );
 
-  const dialogs = (
-    <>
+  const headerActions = (
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
+      {isLive && canEndMeeting && (
+        <Button type="button" variant="destructive" className="gap-2" disabled={ending} onClick={() => setEndOpen(true)}>
+          <PhoneOff className="h-4 w-4" />
+          {ending ? 'Ending…' : 'End for everyone'}
+        </Button>
+      )}
+      {!joinDemoted && meeting.joinUrl && (
+        <Button type="button" variant="outline" className="gap-2" onClick={copyGuestUrl}>
+          <Copy className="h-4 w-4" />
+          Copy guest link
+        </Button>
+      )}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button type="button" variant={joinDemoted ? 'outline' : 'default'} className="gap-2">
+            <Video className="h-4 w-4" />
+            Join as host
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-80">
+          <MeetingJoinCard
+            meetingLanguages={MEETING_LANGUAGES}
+            name={name}
+            setName={setName}
+            selectedLanguage={selectedLanguage}
+            setSelectedLanguage={setSelectedLanguage}
+            onJoinAsHost={joinAsHost}
+            hostShareUrl={hostShareUrl}
+            onCopyHostLink={copyHostLink}
+          />
+        </PopoverContent>
+      </Popover>
+      {canManageMeeting && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="icon" aria-label="More actions">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {!isArchived && (
+              <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
+                <Archive className="mr-2 h-4 w-4" />
+                Archive
+              </DropdownMenuItem>
+            )}
+            {isArchived && (
+              <DropdownMenuItem disabled={restoring} onSelect={runRestore}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {restoring ? 'Restoring…' : 'Restore'}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete permanently
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
+
+  const hero = (
+    <div className="space-y-3">
+      <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
+        ← Meetings
+      </Link>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 space-y-2">
+          <EditableTitle
+            value={titleEdit}
+            onChange={setTitleEdit}
+            onCommit={onTitleBlur}
+            onCancel={() => setTitleEdit(meeting.title || '')}
+          />
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            {ui && (
+              <Badge variant={toneToBadgeVariant(ui.tone)} className="uppercase tracking-wide">
+                {ui.label}
+              </Badge>
+            )}
+            {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
+          </div>
+          {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
+        </div>
+        {headerActions}
+      </div>
+    </div>
+  );
+
+  let mainColumn;
+  let sideColumn;
+  if (isEnded || isArchived) {
+    mainColumn = transcriptCard;
+    sideColumn = settingsAccordion;
+  } else if (isLive) {
+    mainColumn = (
+      <>
+        <MeetingPresenceCard presence={presence} />
+        {guestLinkCard}
+      </>
+    );
+    sideColumn = (
+      <>
+        {(policy.store_transcripts || hasTranscriptLines) && transcriptCard}
+        {settingsAccordion}
+      </>
+    );
+  } else {
+    mainColumn = (
+      <>
+        {guestLinkCard}
+        {hasTranscriptLines && transcriptCard}
+      </>
+    );
+    sideColumn = (
+      <>
+        {settingsAccordion}
+        {policy.store_transcripts && !hasTranscriptLines && (
+          <p className="px-1 text-xs text-muted-foreground">
+            Transcript will appear here after the meeting when storage is on.
+          </p>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-screen-xl space-y-6">
+      {hero}
+
+      {isArchived && canManageMeeting && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-4 py-3">
+          <p className="text-sm text-muted-foreground">
+            This meeting is archived and hidden from the main list. New joins are blocked.
+          </p>
+          <Button type="button" variant="outline" size="sm" className="gap-2" disabled={restoring} onClick={runRestore}>
+            <RotateCcw className="h-4 w-4" />
+            {restoring ? 'Restoring…' : 'Restore'}
+          </Button>
+        </div>
+      )}
+
+      <div className="grid items-start gap-6 lg:grid-cols-5">
+        <div className="min-w-0 space-y-6 lg:col-span-3">{mainColumn}</div>
+        <div className="min-w-0 space-y-6 lg:col-span-2">{sideColumn}</div>
+      </div>
+
       <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -436,131 +711,6 @@ export default function V2MeetingDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
-  );
-
-  if (!isScheduled) {
-    return (
-      <div className="max-w-3xl space-y-8">
-        <MeetingHeader meeting={meeting} ui={ui} />
-        {showPresence && <MeetingPresenceCard presence={presence} />}
-
-        <Card className="app-card border-border/60">
-          <CardHeader className="border-b border-border/60 pb-3">
-            <CardTitle className="text-base">Guest link</CardTitle>
-            <CardDescription>Share this URL with participants. Use Advanced for policies and invite tokens.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <MeetingAccessPanel {...accessPanelProps} showTitleRow={false} showPolicyToggles={false} showGuestUrl />
-          </CardContent>
-        </Card>
-
-        {joinCard}
-
-        {showTranscriptCard && (
-          <Card className="app-card border-border/60">
-            <CardHeader className="border-b border-border/60 pb-3">
-              <CardTitle className="text-base">Transcript</CardTitle>
-              <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">{transcriptPanel}</CardContent>
-          </Card>
-        )}
-
-        {canManageMeeting && (
-          <Card className="app-card border-border/60">
-            <CardContent className="pt-6">{lifecyclePanel}</CardContent>
-          </Card>
-        )}
-
-        <Accordion type="single" collapsible className="rounded-lg border border-border/60 bg-card px-4 shadow-sm">
-          <AccordionItem value="advanced" className="border-0">
-            <AccordionTrigger className="text-base hover:no-underline">Advanced settings</AccordionTrigger>
-            <AccordionContent className="space-y-8 pt-2">
-              <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
-              <MeetingInvitesPanel {...invitesPanelProps} />
-            </AccordionContent>
-          </AccordionItem>
-        </Accordion>
-
-        {dialogs}
-      </div>
-    );
-  }
-
-  return (
-    <div className="mx-auto grid max-w-screen-xl gap-8 lg:grid-cols-2">
-      <div className="space-y-6 lg:sticky lg:top-6 lg:self-start">
-        <MeetingHeader meeting={meeting} ui={ui} />
-        {showPresence && <MeetingPresenceCard presence={presence} />}
-
-        <Card className="app-card border-border/60">
-          <CardHeader className="border-b border-border/60 pb-3">
-            <CardTitle className="text-base">Overview</CardTitle>
-            <CardDescription>
-              {meeting.host_present === 1 ? (
-                <span className="text-foreground">Host has opened this session.</span>
-              ) : (
-                <span>Waiting for host to join when host-gate is on.</span>
-              )}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card className="app-card border-border/60">
-          <CardHeader className="border-b border-border/60 pb-3">
-            <CardTitle className="text-base">Guest link</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-6">
-            <MeetingAccessPanel {...accessPanelProps} showTitleRow={false} showPolicyToggles={false} showGuestUrl />
-          </CardContent>
-        </Card>
-
-        {joinCard}
-      </div>
-
-      <div className="min-w-0 space-y-6">
-        {showTranscriptCard && (
-          <Card className="app-card border-border/60">
-            <CardHeader className="border-b border-border/60 pb-3">
-              <CardTitle className="text-base">Transcript</CardTitle>
-              <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-6">{transcriptPanel}</CardContent>
-          </Card>
-        )}
-
-        {canManageMeeting && (
-          <Card className="app-card border-border/60">
-            <CardContent className="pt-6">{lifecyclePanel}</CardContent>
-          </Card>
-        )}
-
-        <Card className="app-card border-border/60">
-          <CardHeader className="border-b border-border/60 pb-3">
-            <CardTitle className="text-base">Meeting setup</CardTitle>
-            <CardDescription>Access, invites, and policies.</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-2">
-            <Accordion type="multiple" defaultValue={['access', 'invites']} className="w-full">
-              <AccordionItem value="access">
-                <AccordionTrigger className="text-sm hover:no-underline">Access &amp; policy</AccordionTrigger>
-                <AccordionContent>
-                  <MeetingAccessPanel {...accessPanelProps} showGuestUrl={false} />
-                </AccordionContent>
-              </AccordionItem>
-              <AccordionItem value="invites" className="border-b-0">
-                <AccordionTrigger className="text-sm hover:no-underline">Invite links</AccordionTrigger>
-                <AccordionContent className="border-0 pb-0">
-                  <MeetingInvitesPanel {...invitesPanelProps} />
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </CardContent>
-        </Card>
-      </div>
-
-      {dialogs}
     </div>
   );
 }

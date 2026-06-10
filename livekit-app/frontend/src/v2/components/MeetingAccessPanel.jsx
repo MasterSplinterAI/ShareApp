@@ -6,33 +6,16 @@ import { Switch } from '../../components/ui/switch';
 
 export default function MeetingAccessPanel({
   meeting,
-  titleEdit,
-  setTitleEdit,
-  onTitleBlur,
   policy,
   onPatchPolicy,
   canManageTranscriptPolicy,
   showGuestUrl,
-  showTitleRow = true,
   showPolicyToggles = true,
   guestUrlNeedsToken,
   onCopyGuestUrl,
 }) {
   return (
     <div className="space-y-6">
-      {showTitleRow && (
-        <div className="space-y-2">
-          <Label htmlFor="meeting-title">Title</Label>
-          <Input
-            id="meeting-title"
-            value={titleEdit}
-            onChange={(e) => setTitleEdit(e.target.value)}
-            onBlur={onTitleBlur}
-            className="max-w-xl"
-          />
-          <p className="text-xs text-muted-foreground">Changes save when you leave this field.</p>
-        </div>
-      )}
       {showPolicyToggles && (
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
@@ -65,23 +48,23 @@ export default function MeetingAccessPanel({
       )}
       {showGuestUrl && (
         <div>
-          <Label className="text-xs text-muted-foreground">Guest join URL</Label>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="text-xs text-muted-foreground">
             Anyone with this link can join (plus <code className="text-foreground/80">?i=</code> when invite tokens are on).
           </p>
           {guestUrlNeedsToken && (
             <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-2 py-2 text-xs text-amber-800 dark:text-amber-200">
-              Invite tokens are required, but no active invite link was found. Create a new invite below.
+              Invite tokens are required, but no active invite link was found. Create a new invite in Meeting settings →
+              Advanced invites.
             </p>
           )}
-          <textarea
-            readOnly
-            rows={4}
-            value={meeting.joinUrl || ''}
-            spellCheck={false}
-            className="mt-2 w-full min-h-[5.5rem] resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs break-all text-foreground"
-          />
-          <div className="mt-2 flex flex-wrap gap-2">
+          <div className="mt-2 flex items-center gap-2">
+            <Input
+              readOnly
+              value={meeting.joinUrl || ''}
+              onFocus={(e) => e.currentTarget.select()}
+              spellCheck={false}
+              className="h-9 flex-1 truncate font-mono text-xs"
+            />
             <Button type="button" variant="outline" size="sm" className="gap-1" onClick={onCopyGuestUrl}>
               <Copy className="h-4 w-4" />
               Copy

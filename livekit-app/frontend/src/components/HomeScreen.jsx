@@ -1,6 +1,7 @@
 import { MarketingNav } from './marketing/MarketingNav';
 import { Hero } from './marketing/Hero';
 import { FeatureGrid } from './marketing/FeatureGrid';
+import AiReports from './marketing/AiReports';
 import { HowItWorks } from './marketing/HowItWorks';
 import { PricingTable } from './marketing/PricingTable';
 import { FAQ } from './marketing/FAQ';
@@ -13,6 +14,7 @@ export default function HomeScreen() {
       <main>
         <Hero />
         <FeatureGrid />
+        <AiReports />
         <HowItWorks />
         <PricingTable />
         <FAQ />

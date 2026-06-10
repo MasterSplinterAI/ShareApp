@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Copy, FileDown, Loader2, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { Copy, FileDown, FileText, Loader2, Mail, RefreshCw, Search, Sparkles } from 'lucide-react';
 import { v2Meetings } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -115,6 +115,55 @@ export default function MeetingTranscriptPanel({
       toast.error(e.response?.data?.error || 'Could not generate report');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const [exporting, setExporting] = useState(null);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+
+  const downloadReport = async (format) => {
+    if (!report?.id) return;
+    setExporting(format);
+    try {
+      const res = await v2Meetings.exportTranscriptReport(meetingId, report.id, format);
+      const blob = new Blob([res.data], {
+        type: format === 'md' ? 'text/markdown' : 'application/pdf',
+      });
+      const dispo = res.headers?.['content-disposition'] || '';
+      const match = dispo.match(/filename="([^"]+)"/);
+      const filename = match?.[1] || `meeting-report.${format}`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Export failed');
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const sendReportEmail = async () => {
+    const to = emailTo.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      toast.error('Enter a valid email address');
+      return;
+    }
+    setEmailSending(true);
+    try {
+      await v2Meetings.emailTranscriptReport(meetingId, report.id, to);
+      toast.success(`Report sent to ${to}`);
+      setEmailOpen(false);
+      setEmailTo('');
+    } catch (e) {
+      const data = e.response?.data;
+      toast.error(data?.message || data?.error || 'Email failed');
+    } finally {
+      setEmailSending(false);
     }
   };
 
@@ -256,9 +305,59 @@ export default function MeetingTranscriptPanel({
                 <Copy className="h-4 w-4" />
                 Copy
               </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={!report.id || exporting === 'pdf'}
+                onClick={() => downloadReport('pdf')}
+              >
+                {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                PDF
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={!report.id || exporting === 'md'}
+                onClick={() => downloadReport('md')}
+              >
+                {exporting === 'md' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                .md
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={!report.id}
+                onClick={() => setEmailOpen((v) => !v)}
+              >
+                <Mail className="h-4 w-4" />
+                Email
+              </Button>
             </>
           )}
         </div>
+        {report && emailOpen && (
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
+            <Input
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder="recipient@company.com"
+              type="email"
+              className="h-8 w-64"
+              onKeyDown={(e) => e.key === 'Enter' && !emailSending && sendReportEmail()}
+            />
+            <Button type="button" size="sm" className="gap-1.5" disabled={emailSending} onClick={sendReportEmail}>
+              {emailSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+              Send PDF
+            </Button>
+            <span className="text-xs text-muted-foreground">Sends the formatted PDF as an attachment.</span>
+          </div>
+        )}
         {report?.content_markdown && (
           <div className="rounded-lg border border-border/60 bg-card p-4">
             <p className="mb-2 text-xs text-muted-foreground">
