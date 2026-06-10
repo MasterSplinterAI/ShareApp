@@ -12,8 +12,25 @@ export function MarketingFooter() {
           <Link to="/v2/login" className="text-primary hover:underline">
             Sign in to workspace
           </Link>
+          <div className="flex gap-4 text-xs">
+            <Link to="/terms" className="hover:text-foreground hover:underline">
+              Terms
+            </Link>
+            <Link to="/privacy" className="hover:text-foreground hover:underline">
+              Privacy
+            </Link>
+            <a
+              href="mailto:hello@parley.app?subject=Sales%20inquiry"
+              className="hover:text-foreground hover:underline"
+            >
+              Contact sales
+            </a>
+          </div>
           <p className="text-xs">
-            Support: <span className="text-foreground">hello@parley.app</span>
+            Support:{' '}
+            <a href="mailto:hello@parley.app" className="text-foreground hover:underline">
+              hello@parley.app
+            </a>
           </p>
         </nav>
       </div>

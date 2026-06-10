@@ -10,16 +10,16 @@ const faqs = [
     a: 'No. Each meeting can opt in to saving finalized caption lines on the server. Hosts and org admins can download later when lines exist.',
   },
   {
-    q: 'What happened to the old “instant meeting” home?',
-    a: 'The classic non-workspace flow was retired in favor of organizations and meetings. Hosts start sessions from the V2 workspace; guests still use /join links.',
+    q: 'Can I try it before paying?',
+    a: 'Yes. The free plan includes 60 participant-minutes per month—no credit card required. Upgrade anytime when you need more.',
   },
   {
     q: 'Where is data stored?',
-    a: 'Workspace data lives in the platform database on the deployment you use. Back up the SQLite file (or migrate to Postgres) per your ops policy.',
+    a: 'Meetings are processed in real time. Transcripts are stored only when the host enables storage for a meeting, and can be deleted at any time. All data is encrypted in transit.',
   },
   {
-    q: 'Can I use this in production today?',
-    a: 'Staging validates the product path; production rollout should follow your checklist: secrets, HTTPS, backups, and billing when enabled.',
+    q: 'How accurate is the live translation?',
+    a: 'Parley uses real-time speech recognition with multi-language translation. Accuracy depends on audio quality—it works best when speakers use a headset in a quiet environment.',
   },
 ];
 

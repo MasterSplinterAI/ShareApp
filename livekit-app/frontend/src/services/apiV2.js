@@ -108,6 +108,12 @@ export const v2Admin = {
   setComp: (orgId, body) => apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/comp`, body).then((r) => r.data),
   costsSummary: () => apiV2.get('/admin/costs/summary').then((r) => r.data),
   audit: () => apiV2.get('/admin/audit').then((r) => r.data),
+  trends: (days = 30) => apiV2.get('/admin/trends', { params: { days } }).then((r) => r.data),
+  meetings: (params = {}) => apiV2.get('/admin/meetings', { params }).then((r) => r.data),
+  meetingCosts: (meetingId) =>
+    apiV2.get(`/admin/meetings/${encodeURIComponent(meetingId)}/costs`).then((r) => r.data),
+  guests: (days = 30) => apiV2.get('/admin/guests', { params: { days } }).then((r) => r.data),
+  webhooks: (limit = 50) => apiV2.get('/admin/webhooks', { params: { limit } }).then((r) => r.data),
 };
 
 export const v2Usage = {

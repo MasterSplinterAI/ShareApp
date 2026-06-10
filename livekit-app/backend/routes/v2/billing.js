@@ -48,7 +48,7 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
 router.post('/checkout', requireV2Auth, async (req, res) => {
   try {
     if (!stripeEnabled()) {
-      return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
+      return res.status(400).json({ error: 'billing_not_enabled', code: 'stripe_disabled', message: 'Stripe billing is not enabled' });
     }
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });

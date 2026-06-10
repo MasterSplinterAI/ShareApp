@@ -12,6 +12,7 @@ const tiers = [
     blurb: '60 participant-minutes per month — perfect to try Parley.',
     features: ['Live captions & translation', 'Instant & scheduled meetings', 'Guest links', 'Hard stop at 60 min/mo'],
     cta: 'Start free',
+    href: '/v2/signup',
     highlight: false,
     planId: 'free',
   },
@@ -21,7 +22,8 @@ const tiers = [
     period: '/ org / month',
     blurb: 'For small teams meeting across languages weekly.',
     features: ['2,000 participant-minutes', 'Transcript storage', 'Usage dashboard', 'Email support'],
-    cta: 'Start free',
+    cta: 'Get Starter',
+    href: '/v2/signup?plan=starter',
     highlight: false,
     planId: 'starter',
   },
@@ -31,7 +33,8 @@ const tiers = [
     period: '/ org / month',
     blurb: 'For teams that need workspace seats and higher volume.',
     features: ['10,000 participant-minutes', 'Team workspace & invites', 'AI transcript insights', 'Priority support'],
-    cta: 'Start free',
+    cta: 'Get Pro',
+    href: '/v2/signup?plan=pro',
     highlight: true,
     planId: 'pro',
   },
@@ -75,7 +78,7 @@ export function PricingTable() {
             </CardContent>
             <CardFooter>
               <Button className="w-full" variant={t.highlight ? 'default' : 'outline'} asChild>
-                <Link to="/v2/signup">{t.cta}</Link>
+                <Link to={t.href}>{t.cta}</Link>
               </Button>
             </CardFooter>
           </Card>

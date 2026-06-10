@@ -15,6 +15,9 @@ import V2MeetingsList from './v2/pages/V2MeetingsList'
 import V2MeetingDetail from './v2/pages/V2MeetingDetail'
 import V2OrgSettings from './v2/pages/V2OrgSettings'
 import V2SuperAdmin from './v2/pages/V2SuperAdmin'
+import V2ResetPassword from './v2/pages/V2ResetPassword'
+import TermsPage from './components/legal/TermsPage'
+import PrivacyPage from './components/legal/PrivacyPage'
 
 function App() {
   const location = useLocation();
@@ -40,6 +43,7 @@ function App() {
           <Route index element={<V2RootRedirect />} />
           <Route path="login" element={<V2Login />} />
           <Route path="signup" element={<V2Signup />} />
+          <Route path="reset-password" element={<V2ResetPassword />} />
           <Route path="app" element={<V2RequireAuth />}>
             <Route index element={<V2AppHome />} />
             <Route path="meetings" element={<V2MeetingsList />} />
@@ -49,6 +53,8 @@ function App() {
           </Route>
         </Route>
         <Route path="/" element={<HomeScreen />} />
+        <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/room/:roomName" element={
           <ErrorBoundary>
             <MeetingRoom />

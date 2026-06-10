@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
@@ -95,6 +95,26 @@ export default function V2OrgSettings() {
   useEffect(() => {
     load();
   }, []);
+
+  // Plan-intent funnel: /v2/app/settings?checkout=starter|pro (set after signup
+  // from a paid pricing CTA) — jump to billing and start Stripe checkout once
+  // the billing snapshot is loaded.
+  const checkoutIntentHandled = useRef(false);
+  useEffect(() => {
+    const intent = (searchParams.get('checkout') || '').toLowerCase();
+    if (!intent || checkoutIntentHandled.current || !billingSnap) return;
+    checkoutIntentHandled.current = true;
+    setSection('billing');
+    if (billingSnap.stripeEnabled) {
+      startCheckout(intent);
+    } else {
+      toast(
+        'Your account is ready on the free plan. Online billing is being set up — we\u2019ll email you to complete the upgrade.',
+        { icon: 'ℹ️', duration: 6000 }
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [billingSnap, searchParams]);
 
   const canManage = ['owner', 'admin'].includes(role);
   const canRenameOrg = canManage;

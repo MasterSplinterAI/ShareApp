@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
@@ -7,12 +7,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 
+const PAID_PLANS = { starter: 'Starter', pro: 'Pro' };
+
 export default function V2Signup() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const planParam = (searchParams.get('plan') || '').toLowerCase();
+  const planName = PAID_PLANS[planParam] || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [orgName, setOrgName] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -23,12 +29,20 @@ export default function V2Signup() {
 
   const submit = async (e) => {
     e.preventDefault();
+    if (!agreedToTerms) {
+      toast.error('Please agree to the Terms of Service and Privacy Policy');
+      return;
+    }
     setLoading(true);
     try {
       const data = await v2Auth.signup({ email, password, orgName, displayName: displayName || undefined });
       localStorage.setItem('v2_token', data.token);
       toast.success('Account created');
-      navigate('/v2/app', { replace: true });
+      if (planName) {
+        navigate(`/v2/app/settings?checkout=${planParam}`, { replace: true });
+      } else {
+        navigate('/v2/app', { replace: true });
+      }
     } catch (err) {
       toast.error(err.response?.data?.error || 'Signup failed');
     } finally {
@@ -44,6 +58,12 @@ export default function V2Signup() {
           <CardDescription>Create a workspace, host meetings, and share guest links. Team plans add member invites.</CardDescription>
         </CardHeader>
         <CardContent>
+          {planName && (
+            <div className="mb-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-foreground">
+              You&apos;re signing up for the <span className="font-medium">{planName}</span> plan — you&apos;ll confirm
+              billing after creating your account.
+            </div>
+          )}
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="org">Organization name</Label>
@@ -69,7 +89,36 @@ export default function V2Signup() {
                 autoComplete="new-password"
               />
             </div>
-            <Button type="submit" className="w-full" disabled={loading}>
+            <div className="flex items-start gap-2">
+              <input
+                id="terms"
+                type="checkbox"
+                checked={agreedToTerms}
+                onChange={(e) => setAgreedToTerms(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+              />
+              <Label htmlFor="terms" className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground">
+                I agree to the{' '}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  Terms of Service
+                </a>{' '}
+                and{' '}
+                <a
+                  href="/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary hover:underline"
+                >
+                  Privacy Policy
+                </a>
+              </Label>
+            </div>
+            <Button type="submit" className="w-full" disabled={loading || !agreedToTerms}>
               {loading ? 'Creating…' : 'Create account'}
             </Button>
           </form>

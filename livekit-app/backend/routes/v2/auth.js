@@ -1,8 +1,11 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { hashPassword, verifyPassword, signSession } = require('../../lib/authAdapter');
+const { sendEmail } = require('../../lib/mailer');
+const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 
 function emailValid(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -95,6 +98,104 @@ router.post('/login', async (req, res) => {
   } catch (e) {
     console.error('[v2/auth/login]', e);
     res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function sha256Hex(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
+function resetLinkBase(req) {
+  const fromEnv = (process.env.PUBLIC_FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
+  if (fromEnv) return fromEnv;
+  return publicFrontendBaseUrl(req) || 'https://staging.jarmetals.com';
+}
+
+// Light in-memory rate limit for reset attempts (per IP, 5 per 15 min).
+const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
+const RESET_RATE_MAX = 5;
+const resetAttempts = new Map();
+
+function resetRateLimited(ip) {
+  const now = Date.now();
+  const entry = resetAttempts.get(ip);
+  if (!entry || now - entry.windowStart > RESET_RATE_WINDOW_MS) {
+    resetAttempts.set(ip, { windowStart: now, count: 1 });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > RESET_RATE_MAX;
+}
+
+// Prevent unbounded growth of the rate-limit map.
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of resetAttempts) {
+    if (now - entry.windowStart > RESET_RATE_WINDOW_MS) resetAttempts.delete(ip);
+  }
+}, RESET_RATE_WINDOW_MS).unref();
+
+router.post('/forgot-password', async (req, res) => {
+  // Always 200 to avoid account enumeration.
+  try {
+    const { email } = req.body || {};
+    if (!emailValid(email)) {
+      return res.json({ ok: true });
+    }
+    const user = await db.get(`SELECT id, email FROM v2_users WHERE email = ?`, [email.trim().toLowerCase()]);
+    if (!user) {
+      return res.json({ ok: true });
+    }
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+    await db.run(
+      `INSERT INTO v2_password_resets (id, user_id, token_hash, expires_at) VALUES (?,?,?,?)`,
+      [db.uuid(), user.id, sha256Hex(token), expiresAt]
+    );
+    const resetUrl = `${resetLinkBase(req)}/v2/reset-password?token=${token}`;
+    await sendEmail({
+      to: user.email,
+      subject: 'Reset your Parley password',
+      text: `We received a request to reset your Parley password.\n\nReset it here (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
+      html: `<p>We received a request to reset your Parley password.</p><p><a href="${resetUrl}">Reset your password</a> (link expires in 1 hour).</p><p>If you didn't request this, you can safely ignore this email.</p>`,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[v2/auth/forgot-password]', e);
+    // Still 200 — never leak internal state or account existence.
+    res.json({ ok: true });
+  }
+});
+
+router.post('/reset-password', async (req, res) => {
+  try {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    if (resetRateLimited(String(ip))) {
+      return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+    }
+    const { token, password } = req.body || {};
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({ error: 'Reset token required' });
+    }
+    if (!password || String(password).length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters' });
+    }
+    const row = await db.get(
+      `SELECT * FROM v2_password_resets WHERE token_hash = ?`,
+      [sha256Hex(token)]
+    );
+    if (!row || row.used_at || new Date(row.expires_at).getTime() < Date.now()) {
+      return res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+    }
+    const hash = await hashPassword(String(password));
+    await db.run(`UPDATE v2_users SET password_hash = ? WHERE id = ?`, [hash, row.user_id]);
+    await db.run(`UPDATE v2_password_resets SET used_at = ? WHERE id = ?`, [new Date().toISOString(), row.id]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[v2/auth/reset-password]', e);
+    res.status(500).json({ error: 'Password reset failed' });
   }
 });
 

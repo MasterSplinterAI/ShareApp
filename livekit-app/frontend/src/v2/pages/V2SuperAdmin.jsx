@@ -47,6 +47,515 @@ function fmtMins(n) {
   return `${Math.round(v).toLocaleString()} participant-min`;
 }
 
+function fmtDateTime(s) {
+  if (!s) return '—';
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? String(s).slice(0, 16) : d.toLocaleString();
+}
+
+const MIX_COLORS = ['bg-primary', 'bg-sky-500', 'bg-amber-500', 'bg-emerald-500', 'bg-rose-500', 'bg-violet-500'];
+
+/** Compact horizontal stacked bar + legend for plan / billing-status mixes. */
+function MixBar({ title, items, labelKey, countKey }) {
+  const rows = (items || []).filter((i) => Number(i[countKey]) > 0);
+  const total = rows.reduce((sum, i) => sum + Number(i[countKey] || 0), 0);
+  if (!total) return null;
+  return (
+    <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</div>
+      <div className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full">
+        {rows.map((r, i) => (
+          <div
+            key={r[labelKey] ?? i}
+            className={MIX_COLORS[i % MIX_COLORS.length]}
+            style={{ width: `${(Number(r[countKey]) / total) * 100}%` }}
+            title={`${r[labelKey] || '(none)'}: ${r[countKey]}`}
+          />
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+        {rows.map((r, i) => (
+          <span key={r[labelKey] ?? i} className="inline-flex items-center gap-1.5">
+            <span className={cn('h-2 w-2 rounded-full', MIX_COLORS[i % MIX_COLORS.length])} />
+            {r[labelKey] || '(none)'}
+            <span className="tabular-nums text-muted-foreground">{r[countKey]}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function fillDailySeries(rows, days, valueKey) {
+  const byDay = new Map((rows || []).map((r) => [r.day, Number(r[valueKey]) || 0]));
+  const series = [];
+  const now = Date.now();
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(now - i * 86400000).toISOString().slice(0, 10);
+    series.push({ day, value: byDay.get(day) || 0 });
+  }
+  return series;
+}
+
+/** Pure CSS daily bar chart (no chart library) — bar heights scaled to the series max. */
+function DayBarChart({ rows, days, valueKey, unit }) {
+  const series = fillDailySeries(rows, days, valueKey);
+  const max = Math.max(...series.map((s) => s.value), 1);
+  const labelEvery = Math.max(1, Math.ceil(series.length / 6));
+  return (
+    <div>
+      <div className="flex h-28 items-end gap-px">
+        {series.map((s) => (
+          <div
+            key={s.day}
+            className={cn('min-w-0 flex-1 rounded-t-sm', s.value > 0 ? 'bg-primary/70 hover:bg-primary' : 'bg-muted')}
+            style={{ height: `${s.value > 0 ? Math.max((s.value / max) * 100, 4) : 2}%` }}
+            title={`${s.day}: ${Math.round(s.value).toLocaleString()}${unit ? ` ${unit}` : ''}`}
+          />
+        ))}
+      </div>
+      <div className="mt-1 flex gap-px text-[9px] text-muted-foreground">
+        {series.map((s, i) => (
+          <div key={s.day} className="min-w-0 flex-1">
+            {i % labelEvery === 0 ? <span className="whitespace-nowrap">{s.day.slice(5)}</span> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PrettyJson({ value }) {
+  let text = value || '';
+  try {
+    text = JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    /* show raw string */
+  }
+  return <pre className="mt-2 max-h-64 overflow-auto rounded bg-muted/40 p-2 text-xs">{text}</pre>;
+}
+
+function TrendsTab() {
+  const [days, setDays] = useState(30);
+  const [trends, setTrends] = useState(null);
+
+  useEffect(() => {
+    v2Admin
+      .trends(days)
+      .then(setTrends)
+      .catch(() => toast.error('Failed to load trends'));
+  }, [days]);
+
+  const charts = [
+    { title: 'Signups per day', rows: trends?.signupsByDay, valueKey: 'count', unit: 'signups' },
+    { title: 'Meetings created per day', rows: trends?.meetingsByDay, valueKey: 'count', unit: 'meetings' },
+    { title: 'Participant-minutes per day', rows: trends?.minutesByDay, valueKey: 'minutes', unit: 'min' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <span className="text-sm text-muted-foreground">Window:</span>
+        <select
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          value={days}
+          onChange={(e) => setDays(Number(e.target.value))}
+        >
+          <option value={7}>7 days</option>
+          <option value={30}>30 days</option>
+          <option value={90}>90 days</option>
+        </select>
+      </div>
+      <div className="grid gap-4 lg:grid-cols-3">
+        {charts.map((c) => (
+          <Card key={c.title} className="app-card border-border/60">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">{c.title}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {trends ? (
+                <DayBarChart rows={c.rows} days={days} valueKey={c.valueKey} unit={c.unit} />
+              ) : (
+                <p className="text-sm text-muted-foreground">Loading…</p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function meetingDurationLabel(m) {
+  if (m.duration_seconds != null) return `${Math.max(1, Math.round(m.duration_seconds / 60))} min`;
+  if (m.started_at && m.ended_at) {
+    const ms =
+      new Date(`${m.ended_at.replace(' ', 'T')}Z`).getTime() - new Date(`${m.started_at.replace(' ', 'T')}Z`).getTime();
+    if (ms > 0) return `~${Math.round(ms / 60000)} min`;
+  }
+  if (Number(m.participant_minutes) > 0) return `~${Math.round(m.participant_minutes)} part.-min`;
+  return '—';
+}
+
+/** Per-meeting cost breakdown — where Gladia-vs-Deepgram (etc.) economics show. */
+function MeetingCostsPanel({ meeting, detail }) {
+  return (
+    <Card className="app-card border-primary/30">
+      <CardHeader>
+        <CardTitle className="text-lg">{meeting.title || meeting.livekit_room_name || meeting.id}</CardTitle>
+        <CardDescription>
+          Cost events for this meeting (room <code>{meeting.livekit_room_name}</code>).
+          {detail?.rollup && (
+            <span className="block mt-1">
+              Rollup total <strong className="tabular-nums">{fmtUsd(detail.rollup.total_cost_usd)}</strong>
+              {detail.rollup.duration_seconds != null &&
+                ` over ${Math.max(1, Math.round(detail.rollup.duration_seconds / 60))} min`}
+              {detail.rollup.computed_at && ` — computed ${fmtDateTime(detail.rollup.computed_at)}`}
+            </span>
+          )}
+        </CardDescription>
+      </CardHeader>
+      {!detail ? (
+        <CardContent>
+          <p className="text-sm text-muted-foreground">Loading cost events…</p>
+        </CardContent>
+      ) : detail.events.length === 0 ? (
+        <CardContent>
+          <p className="text-sm text-muted-foreground">No cost events recorded for this meeting.</p>
+        </CardContent>
+      ) : (
+        <div className="overflow-x-auto border-t border-border/60">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 font-medium">Time</th>
+                <th className="px-4 py-3 font-medium">Event</th>
+                <th className="px-4 py-3 font-medium">Provider</th>
+                <th className="px-4 py-3 font-medium">Participant</th>
+                <th className="px-4 py-3 font-medium">Units</th>
+                <th className="px-4 py-3 font-medium">Unit cost</th>
+                <th className="px-4 py-3 font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {detail.events.map((ev) => (
+                <tr key={ev.id} className="border-b border-border/60 last:border-0">
+                  <td className="px-4 py-2 text-xs text-muted-foreground whitespace-nowrap">
+                    {fmtDateTime(ev.created_at)}
+                  </td>
+                  <td className="px-4 py-2">{ev.event_type}</td>
+                  <td className="px-4 py-2">
+                    <Badge variant="outline">{ev.provider}</Badge>
+                  </td>
+                  <td className="px-4 py-2 text-xs">{ev.participant || '—'}</td>
+                  <td className="px-4 py-2 tabular-nums">{Number(ev.units).toLocaleString()}</td>
+                  <td className="px-4 py-2 tabular-nums">${Number(ev.unit_cost_usd || 0).toFixed(6)}</td>
+                  <td className="px-4 py-2 tabular-nums">${Number(ev.total_cost_usd || 0).toFixed(4)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-border bg-muted/20 font-medium">
+                <td className="px-4 py-2" colSpan={6}>
+                  Sum of events
+                </td>
+                <td className="px-4 py-2 tabular-nums">
+                  ${detail.events.reduce((s, ev) => s + Number(ev.total_cost_usd || 0), 0).toFixed(4)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MeetingsTab({ orgs }) {
+  const [meetings, setMeetings] = useState([]);
+  const [orgFilter, setOrgFilter] = useState('');
+  const [selected, setSelected] = useState(null);
+  const [costDetail, setCostDetail] = useState(null);
+
+  useEffect(() => {
+    const params = { limit: 100 };
+    if (orgFilter) params.org_id = orgFilter;
+    v2Admin
+      .meetings(params)
+      .then((r) => setMeetings(r.meetings || []))
+      .catch(() => toast.error('Failed to load meetings'));
+  }, [orgFilter]);
+
+  useEffect(() => {
+    if (!selected) {
+      setCostDetail(null);
+      return;
+    }
+    setCostDetail(null);
+    v2Admin
+      .meetingCosts(selected.id)
+      .then(setCostDetail)
+      .catch(() => toast.error('Failed to load meeting costs'));
+  }, [selected]);
+
+  return (
+    <div className="space-y-4">
+      <Card className="app-card overflow-hidden border-border/60">
+        <CardHeader>
+          <CardTitle className="text-lg">Meetings</CardTitle>
+          <CardDescription>
+            Latest 100 meetings across all organizations. Click a row for its per-meeting cost breakdown.
+          </CardDescription>
+          <select
+            className="mt-2 h-9 max-w-sm rounded-md border border-input bg-background px-2 text-sm"
+            value={orgFilter}
+            onChange={(e) => {
+              setOrgFilter(e.target.value);
+              setSelected(null);
+            }}
+          >
+            <option value="">All organizations</option>
+            {orgs.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </CardHeader>
+        <div className="overflow-x-auto border-t border-border/60">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 font-medium">Title</th>
+                <th className="px-4 py-3 font-medium">Organization</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Created</th>
+                <th className="px-4 py-3 font-medium">Scheduled</th>
+                <th className="px-4 py-3 font-medium">Duration</th>
+                <th className="px-4 py-3 font-medium">Infra cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {meetings.map((m) => (
+                <tr
+                  key={m.id}
+                  className={cn(
+                    'cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/30',
+                    selected?.id === m.id && 'bg-primary/5'
+                  )}
+                  onClick={() => setSelected(m)}
+                >
+                  <td className="px-4 py-3 font-medium">{m.title || m.livekit_room_name || m.id.slice(0, 8)}</td>
+                  <td className="px-4 py-3">{m.org_name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <Badge variant="outline">{m.status}</Badge>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{(m.created_at || '').slice(0, 16)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">{(m.scheduled_start || '').slice(0, 16) || '—'}</td>
+                  <td className="px-4 py-3 tabular-nums">{meetingDurationLabel(m)}</td>
+                  <td className="px-4 py-3 tabular-nums">{m.total_cost_usd != null ? fmtUsd(m.total_cost_usd) : '—'}</td>
+                </tr>
+              ))}
+              {meetings.length === 0 && (
+                <tr>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
+                    No meetings found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      {selected && <MeetingCostsPanel meeting={selected} detail={costDetail} />}
+    </div>
+  );
+}
+
+function GuestsTab() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    v2Admin
+      .guests(30)
+      .then(setData)
+      .catch(() => toast.error('Failed to load guest ledger'));
+  }, []);
+
+  return (
+    <Card className="app-card overflow-hidden border-border/60">
+      <CardHeader>
+        <CardTitle className="text-lg">Participant ledger (30 days)</CardTitle>
+        <CardDescription>{data?.notes || 'Join/leave activity from LiveKit lifecycle webhooks.'}</CardDescription>
+      </CardHeader>
+      <div className="overflow-x-auto border-t border-border/60">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 font-medium">Name</th>
+              <th className="px-4 py-3 font-medium">Identity</th>
+              <th className="px-4 py-3 font-medium">Room</th>
+              <th className="px-4 py-3 font-medium">Joined</th>
+              <th className="px-4 py-3 font-medium">Left</th>
+              <th className="px-4 py-3 font-medium">Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(data?.participants || []).map((p, i) => (
+              <tr key={`${p.room}-${p.identity}-${p.joined_at}-${i}`} className="border-b border-border/60 last:border-0">
+                <td className="px-4 py-3 font-medium">{p.name || '—'}</td>
+                <td className="px-4 py-3 text-xs text-muted-foreground">{p.identity || '—'}</td>
+                <td className="px-4 py-3 text-xs">{p.room}</td>
+                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmtDateTime(p.joined_at)}</td>
+                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                  {p.left_at ? fmtDateTime(p.left_at) : 'still in / unknown'}
+                </td>
+                <td className="px-4 py-3 tabular-nums">
+                  {p.duration_minutes != null ? `${p.duration_minutes} min` : '—'}
+                </td>
+              </tr>
+            ))}
+            {data && (data.participants || []).length === 0 && (
+              <tr>
+                <td className="px-4 py-6 text-muted-foreground" colSpan={6}>
+                  No participant activity in the window.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+function AuditTab() {
+  const [entries, setEntries] = useState([]);
+
+  useEffect(() => {
+    v2Admin
+      .audit()
+      .then((r) => setEntries(r.entries || []))
+      .catch(() => toast.error('Failed to load audit log'));
+  }, []);
+
+  return (
+    <Card className="app-card overflow-hidden border-border/60">
+      <CardHeader>
+        <CardTitle className="text-lg">Admin audit log</CardTitle>
+        <CardDescription>Last 100 superadmin actions (plan/comp/billing changes etc.).</CardDescription>
+      </CardHeader>
+      <div className="overflow-x-auto border-t border-border/60">
+        <table className="w-full text-left text-sm">
+          <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+            <tr>
+              <th className="px-4 py-3 font-medium">Actor</th>
+              <th className="px-4 py-3 font-medium">Action</th>
+              <th className="px-4 py-3 font-medium">Payload</th>
+              <th className="px-4 py-3 font-medium">When</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entries.map((e) => (
+              <tr key={e.id} className="border-b border-border/60 last:border-0 align-top">
+                <td className="px-4 py-3 font-medium">{e.actor_email}</td>
+                <td className="px-4 py-3">
+                  <Badge variant="outline">{e.action}</Badge>
+                </td>
+                <td className="px-4 py-3">
+                  {e.payload_json ? (
+                    <details>
+                      <summary className="cursor-pointer text-xs text-muted-foreground">view payload</summary>
+                      <PrettyJson value={e.payload_json} />
+                    </details>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{(e.created_at || '').slice(0, 19)}</td>
+              </tr>
+            ))}
+            {entries.length === 0 && (
+              <tr>
+                <td className="px-4 py-6 text-muted-foreground" colSpan={4}>
+                  No audit entries yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+/** Stripe webhook ingestion health — rendered inside the Costs tab. */
+function BillingHealthPanel() {
+  const [data, setData] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    v2Admin
+      .webhooks(50)
+      .then(setData)
+      .catch(() => setFailed(true));
+  }, []);
+
+  if (failed) return null;
+
+  return (
+    <Card className="app-card overflow-hidden border-border/60">
+      <CardHeader>
+        <CardTitle className="text-lg">Billing health (webhooks)</CardTitle>
+        <CardDescription>
+          {data
+            ? `${data.totals.total} events received all-time, ${data.totals.unprocessed} unprocessed. ${data.notes || ''}`
+            : 'Loading webhook events…'}
+        </CardDescription>
+      </CardHeader>
+      {data && (
+        <div className="overflow-x-auto border-t border-border/60">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3 font-medium">Provider</th>
+                <th className="px-4 py-3 font-medium">Type</th>
+                <th className="px-4 py-3 font-medium">Status</th>
+                <th className="px-4 py-3 font-medium">Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.events.map((ev) => (
+                <tr key={ev.id} className="border-b border-border/60 last:border-0">
+                  <td className="px-4 py-3">{ev.provider}</td>
+                  <td className="px-4 py-3 font-medium">{ev.type}</td>
+                  <td className="px-4 py-3">
+                    {ev.processed ? (
+                      <Badge variant="secondary">processed</Badge>
+                    ) : (
+                      <Badge variant="destructive">unprocessed</Badge>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                    {(ev.received_at || '').slice(0, 19)}
+                  </td>
+                </tr>
+              ))}
+              {data.events.length === 0 && (
+                <tr>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={4}>
+                    No webhook events recorded yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 export default function V2SuperAdmin() {
   const [allowed, setAllowed] = useState(null);
   const [tab, setTab] = useState('orgs');
@@ -292,6 +801,12 @@ export default function V2SuperAdmin() {
             <div className="mt-1 text-2xl font-semibold tabular-nums">{kpis?.userCount ?? '—'}</div>
             <div className="text-xs text-muted-foreground">Login identities (nested under orgs)</div>
           </div>
+          {(kpis?.planMix?.length > 0 || kpis?.billingStatusMix?.length > 0) && (
+            <div className="grid gap-3 sm:col-span-2 sm:grid-cols-2 lg:col-span-4">
+              <MixBar title="Plan mix" items={kpis?.planMix} labelKey="plan_id" countKey="org_count" />
+              <MixBar title="Billing status mix" items={kpis?.billingStatusMix} labelKey="billing_status" countKey="c" />
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -299,7 +814,11 @@ export default function V2SuperAdmin() {
         <TabsList>
           <TabsTrigger value="orgs">Organizations</TabsTrigger>
           <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="meetings">Meetings</TabsTrigger>
+          <TabsTrigger value="trends">Trends</TabsTrigger>
           <TabsTrigger value="costs">Costs & margin</TabsTrigger>
+          <TabsTrigger value="guests">Guests</TabsTrigger>
+          <TabsTrigger value="audit">Audit</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-4 space-y-4">
@@ -642,7 +1161,23 @@ export default function V2SuperAdmin() {
           )}
         </TabsContent>
 
-        <TabsContent value="costs" className="mt-4">
+        <TabsContent value="meetings" className="mt-4">
+          <MeetingsTab orgs={orgs} />
+        </TabsContent>
+
+        <TabsContent value="trends" className="mt-4">
+          <TrendsTab />
+        </TabsContent>
+
+        <TabsContent value="guests" className="mt-4">
+          <GuestsTab />
+        </TabsContent>
+
+        <TabsContent value="audit" className="mt-4">
+          <AuditTab />
+        </TabsContent>
+
+        <TabsContent value="costs" className="mt-4 space-y-4">
           <Card className="app-card overflow-hidden border-border/60">
             <CardHeader>
               <CardTitle className="text-lg">Costs & margin (month)</CardTitle>
@@ -695,6 +1230,7 @@ export default function V2SuperAdmin() {
               </table>
             </div>
           </Card>
+          <BillingHealthPanel />
         </TabsContent>
       </Tabs>
     </div>
