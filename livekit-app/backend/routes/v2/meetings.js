@@ -33,6 +33,19 @@ function defaultRequireInvite() {
   return process.env.V2_DEFAULT_REQUIRE_INVITE !== '0';
 }
 
+/**
+ * Invite expiry is anchored to the MEETING, not link creation: for a meeting
+ * scheduled in the future, "expires in 72h" means 72h after the scheduled
+ * start — otherwise a link for a meeting a month out would die weeks early.
+ * Instant/unscheduled meetings anchor to now.
+ */
+function computeInviteExpiresAt(meeting, requestedMs) {
+  const now = Date.now();
+  const sched = meeting?.scheduled_start ? new Date(meeting.scheduled_start).getTime() : NaN;
+  const anchor = Number.isFinite(sched) && sched > now ? sched : now;
+  return new Date(anchor + clampInviteTtlMs(requestedMs)).toISOString();
+}
+
 function inviteIsUsable(inv) {
   if (inv.revoked_at) return false;
   const exp = new Date(inv.expires_at).getTime();
@@ -111,7 +124,10 @@ router.post('/', requireV2Auth, async (req, res) => {
     if (requireInvite) {
       const linkId = db.uuid();
       defaultInviteToken = crypto.randomBytes(18).toString('base64url');
-      defaultInviteExpiresAt = new Date(Date.now() + defaultInviteTtlMs()).toISOString();
+      defaultInviteExpiresAt = computeInviteExpiresAt(
+        { scheduled_start: scheduled_start || null },
+        defaultInviteTtlMs()
+      );
       await db.run(
         `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses)
          VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -209,10 +225,9 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
     const { expiresInHours, reusable, label, maxUses } = req.body || {};
     const hours = Number(expiresInHours);
     const rawMs = (Number.isFinite(hours) && hours > 0 ? hours : 168) * 3600000;
-    const ttlMs = clampInviteTtlMs(rawMs);
     const token = crypto.randomBytes(18).toString('base64url');
     const linkId = db.uuid();
-    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
+    const expiresAt = computeInviteExpiresAt(row, rawMs);
     await db.run(
       `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses)
        VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -241,6 +256,91 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/invites POST]', e);
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+    const guests = await db.all(
+      `SELECT id, email, sent_at, reminder_sent_at, created_at
+       FROM v2_meeting_guest_invites WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`,
+      [req.params.id]
+    );
+    res.json({ guests });
+  } catch (e) {
+    console.error('[v2/invites/email GET]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+
+    const raw = Array.isArray(req.body?.emails) ? req.body.emails : [];
+    const emails = [...new Set(raw.map((e) => String(e || '').trim().toLowerCase()).filter(Boolean))].slice(0, 20);
+    const valid = emails.filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    if (!valid.length) return res.status(400).json({ error: 'At least one valid email is required' });
+
+    // Reuse the best usable reusable link, or mint one valid through the meeting.
+    let link = await db.get(
+      `SELECT * FROM v2_meeting_invite_links
+       WHERE meeting_id = ? AND revoked_at IS NULL AND reusable = 1 AND datetime(expires_at) > datetime('now')
+       ORDER BY datetime(expires_at) DESC LIMIT 1`,
+      [req.params.id]
+    );
+    if (!link) {
+      const token = crypto.randomBytes(18).toString('base64url');
+      const linkId = db.uuid();
+      const expiresAt = computeInviteExpiresAt(row, defaultInviteTtlMs());
+      await db.run(
+        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [linkId, req.params.id, token, 'Email invite link', expiresAt, null, 1, 0, null]
+      );
+      link = { id: linkId, token };
+    }
+
+    const { sendGuestInvite } = require('../../lib/guestInvites');
+    const base = publicFrontendBaseUrl(req);
+    const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
+    const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+
+    const results = [];
+    for (const email of valid) {
+      const sendResult = await sendGuestInvite({
+        email,
+        meetingTitle: row.title || 'Meeting',
+        scheduledStart: row.scheduled_start,
+        joinUrl,
+        inviterName: inviter?.display_name || inviter?.email,
+      });
+      await db.run(
+        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
+         VALUES (?,?,?,?,?,?)`,
+        [db.uuid(), req.params.id, link.id, email, req.v2Auth.userId, sendResult?.sent ? new Date().toISOString() : null]
+      );
+      results.push({ email, sent: Boolean(sendResult?.sent) });
+    }
+
+    const anySent = results.some((r) => r.sent);
+    res.status(201).json({
+      ok: true,
+      results,
+      joinUrl,
+      mailerConfigured: anySent || Boolean(process.env.RESEND_API_KEY),
+      message: anySent
+        ? undefined
+        : 'Invites recorded, but email delivery is not configured on this server yet — share the link directly.',
+    });
+  } catch (e) {
+    console.error('[v2/invites/email POST]', e);
+    res.status(500).json({ error: 'Failed to send invites' });
   }
 });
 

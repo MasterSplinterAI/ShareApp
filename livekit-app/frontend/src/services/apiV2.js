@@ -72,6 +72,10 @@ export const v2Meetings = {
     apiV2.get(`/meetings/${encodeURIComponent(id)}/transcript/reports`).then((r) => r.data),
   synthesizeTranscript: (id, body) =>
     apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript/synthesize`, body).then((r) => r.data),
+  listEmailInvites: (id) =>
+    apiV2.get(`/meetings/${encodeURIComponent(id)}/invites/email`).then((r) => r.data),
+  sendEmailInvites: (id, emails) =>
+    apiV2.post(`/meetings/${encodeURIComponent(id)}/invites/email`, { emails }).then((r) => r.data),
   exportTranscriptReport: (id, reportId, format) =>
     apiV2
       .get(`/meetings/${encodeURIComponent(id)}/transcript/reports/${encodeURIComponent(reportId)}/export`, {

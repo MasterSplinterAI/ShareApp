@@ -104,6 +104,17 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[v2Database] init failed:', e.message);
   }
+  try {
+    const { startGuestInviteReminders } = require('./lib/guestInvites');
+    const baseUrl = (process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'https://staging.jarmetals.com').replace(/\/$/, '');
+    startGuestInviteReminders((roomName, token) =>
+      token
+        ? `${baseUrl}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(token)}`
+        : `${baseUrl}/join/${encodeURIComponent(roomName)}`
+    );
+  } catch (e) {
+    console.error('[guestInvites] scheduler start failed:', e.message);
+  }
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);

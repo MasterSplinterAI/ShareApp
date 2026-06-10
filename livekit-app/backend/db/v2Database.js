@@ -209,6 +209,21 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_invite_meeting ON v2_meeting_invite_links(meeting_id)`);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_guest_invites (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      invite_link_id TEXT,
+      email TEXT NOT NULL,
+      invited_by TEXT,
+      sent_at TEXT,
+      reminder_sent_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_guest_invites_meeting ON v2_meeting_guest_invites(meeting_id)`);
+
   const polCols = await all(`PRAGMA table_info(v2_meeting_policies)`);
   const polColNames = new Set((polCols || []).map((c) => c.name));
   if (!polColNames.has('store_transcripts')) {

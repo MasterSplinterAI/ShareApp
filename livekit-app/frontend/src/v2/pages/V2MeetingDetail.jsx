@@ -41,6 +41,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '..
 import MeetingJoinCard from '../components/MeetingJoinCard';
 import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
+import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
 
@@ -464,11 +465,14 @@ export default function V2MeetingDetail() {
   const guestLinkCard = (
     <Card className="app-card border-border/60">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Guest link</CardTitle>
-        <CardDescription>Share this URL with participants.</CardDescription>
+        <CardTitle className="text-base">Invite guests</CardTitle>
+        <CardDescription>Share the link, or email it with an automatic reminder.</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
         <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
+        <div className="border-t border-border/60 pt-4">
+          <MeetingEmailInvites meetingId={meeting.id} />
+        </div>
       </CardContent>
     </Card>
   );
