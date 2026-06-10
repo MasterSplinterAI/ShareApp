@@ -8,13 +8,13 @@ const steps = [
 
 export function HowItWorks() {
   return (
-    <section className="border-y border-border/40 bg-muted/20 py-20">
+    <section className="border-y border-border/40 bg-muted/20 py-20 sm:py-24">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <h2 className="text-center text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">How it works</h2>
-        <p className="mx-auto mt-3 max-w-xl text-center text-sm text-muted-foreground">
+        <p className="mx-auto mt-4 max-w-xl text-center text-sm leading-relaxed text-muted-foreground">
           Three calm steps from signup to first translated call.
         </p>
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
+        <div className="mt-12 grid gap-5 sm:mt-14 sm:gap-6 md:grid-cols-3">
           {steps.map((s) => (
             <Card key={s.n} className="border-border/80 bg-background/80">
               <CardHeader>

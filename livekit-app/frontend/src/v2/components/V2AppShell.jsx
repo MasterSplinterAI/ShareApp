@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, LogOut, Menu, Shield, Users } from 'lucide-react';
+import { Home, LayoutDashboard, LogOut, Menu, Settings, Shield, Video } from 'lucide-react';
+import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import {
   DropdownMenu,
@@ -11,13 +12,14 @@ import {
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
 import { Sheet, SheetContent, SheetTrigger } from '../../components/ui/sheet';
-import { v2Orgs } from '../../services/apiV2';
 import { cn } from '../../lib/utils';
 
 function navLinkClass({ isActive }) {
   return cn(
-    'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
-    isActive ? 'bg-accent font-medium text-accent-foreground' : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
+    'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors',
+    isActive
+      ? 'bg-primary/10 font-medium text-primary'
+      : 'text-muted-foreground hover:bg-muted/80 hover:text-foreground'
   );
 }
 
@@ -25,15 +27,15 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
   return (
     <nav className="flex flex-1 flex-col gap-1 px-2 py-4" onClick={onNavigate}>
       <NavLink to="/v2/app" end className={navLinkClass}>
-        <LayoutDashboard className="h-4 w-4 shrink-0" />
+        <Home className="h-4 w-4 shrink-0" />
         Home
       </NavLink>
       <NavLink to="/v2/app/meetings" className={navLinkClass}>
-        <Users className="h-4 w-4 shrink-0" />
+        <Video className="h-4 w-4 shrink-0" />
         Meetings
       </NavLink>
       <NavLink to="/v2/app/settings" className={navLinkClass}>
-        <Shield className="h-4 w-4 shrink-0" />
+        <Settings className="h-4 w-4 shrink-0" />
         Settings
       </NavLink>
       {isSuperadmin && (
@@ -48,22 +50,16 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
 
 export default function V2AppShell({ me, onLogout }) {
   const location = useLocation();
-  const [org, setOrg] = useState(null);
   const [mobileOpen, setMobileOpen] = useState(false);
-
-  useEffect(() => {
-    v2Orgs
-      .me()
-      .then(setOrg)
-      .catch(() => setOrg(null));
-  }, []);
 
   useEffect(() => {
     setMobileOpen(false);
   }, [location.pathname]);
 
-  const initial = (me?.user?.email || me?.user?.displayName || '?').slice(0, 1).toUpperCase();
-  const orgName = org?.organization?.name || org?.name || 'Workspace';
+  const displayName = me?.user?.display_name || me?.user?.displayName || null;
+  const initial = (displayName || me?.user?.email || '?').slice(0, 1).toUpperCase();
+  const orgName = me?.org?.name || 'Workspace';
+  const planStatus = me?.org?.billing_status || null;
 
   const sidebarBody = (
     <>
@@ -72,9 +68,16 @@ export default function V2AppShell({ me, onLogout }) {
           <LayoutDashboard className="h-5 w-5 text-primary" />
           Parley
         </Link>
-        <p className="mt-2 truncate text-xs text-muted-foreground" title={orgName}>
-          {orgName}
-        </p>
+        <div className="mt-2.5 flex items-center gap-2">
+          <p className="min-w-0 truncate text-xs font-medium text-foreground" title={orgName}>
+            {orgName}
+          </p>
+          {planStatus && (
+            <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-medium capitalize">
+              {planStatus}
+            </Badge>
+          )}
+        </div>
       </div>
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
       <div className="mt-auto border-t border-border/60 p-3">
@@ -90,7 +93,7 @@ export default function V2AppShell({ me, onLogout }) {
           <DropdownMenuContent side="top" align="start" className="w-56">
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{me?.user?.displayName || 'Member'}</p>
+                <p className="text-sm font-medium leading-none">{displayName || 'Member'}</p>
                 <p className="text-xs leading-none text-muted-foreground">{me?.user?.email}</p>
                 {me?.role && (
                   <p className="pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">Role: {me.role}</p>

@@ -1,7 +1,8 @@
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 
-const COMPANY_LEGAL_NAME = 'Jar Metals LLC';
+// TODO: replace with the final legal entity name once incorporated.
+const COMPANY_LEGAL_NAME = 'Parley';
 const LAST_UPDATED = 'June 10, 2026';
 const CONTACT_EMAIL = 'hello@parley.app';
 

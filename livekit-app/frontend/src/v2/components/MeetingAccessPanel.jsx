@@ -44,8 +44,11 @@ export default function MeetingAccessPanel({
           </div>
           <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
             <div>
-              <Label className="text-sm">Require invite token (?i=)</Label>
-              <p className="text-xs text-muted-foreground">Guests need a full invite URL when enabled.</p>
+              <Label className="text-sm">Secure invite link</Label>
+              <p className="text-xs text-muted-foreground">
+                Recommended. Guests join only with your invite link — like a meeting passcode
+                built into the URL. Off means anyone who guesses the room name can join.
+              </p>
             </div>
             <Switch checked={!!policy.require_invite_token} onCheckedChange={(v) => onPatchPolicy({ require_invite_token: v })} />
           </div>

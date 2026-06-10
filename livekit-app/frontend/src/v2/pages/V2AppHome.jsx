@@ -1,143 +1,144 @@
 import { Link } from 'react-router-dom';
-import { useEffect, useMemo, useState, useCallback } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Plus, Users, Video, UserPlus, Link2 } from 'lucide-react';
-import { v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
+import { format, isToday, isTomorrow, isThisYear } from 'date-fns';
+import { ArrowRight, CalendarClock, Clock, Plus, UserPlus, Video } from 'lucide-react';
+import { v2Auth, v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
+import { Card, CardContent } from '../../components/ui/card';
+
+function greetingForNow() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 18) return 'Good afternoon';
+  return 'Good evening';
+}
+
+function friendlyTime(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  if (isToday(d)) return `Today ${format(d, 'h:mm a')}`;
+  if (isTomorrow(d)) return `Tomorrow ${format(d, 'h:mm a')}`;
+  if (isThisYear(d)) return format(d, 'EEE MMM d, h:mm a');
+  return format(d, 'MMM d, yyyy');
+}
 
 export default function V2AppHome() {
+  const [me, setMe] = useState(null);
   const [orgData, setOrgData] = useState(null);
   const [sub, setSub] = useState(null);
   const [meetings, setMeetings] = useState([]);
-  const [membersCount, setMembersCount] = useState(0);
 
   useEffect(() => {
-    Promise.all([v2Orgs.me(), v2Billing.subscription(), v2Meetings.list(), v2Orgs.listMembers()])
-      .then(([o, s, mList, mem]) => {
+    Promise.all([v2Auth.me(), v2Orgs.me(), v2Billing.subscription(), v2Meetings.list()])
+      .then(([meRes, o, s, mList]) => {
+        setMe(meRes);
         setOrgData(o);
         setSub(s);
         setMeetings(mList.meetings || []);
-        setMembersCount((mem.members || []).length);
       })
       .catch((e) => {
         toast.error(e.response?.data?.error || 'Could not load workspace');
       });
   }, []);
 
-  const recentMeetings = useMemo(() => meetings.slice(0, 5), [meetings]);
-  const activeLive = useMemo(
-    () => meetings.filter((m) => {
-      const ui = getMeetingUiState(m);
-      return ui.key === 'live_active' || ui.key === 'scheduled_active';
-    }).length,
-    [meetings],
-  );
+  const displayName = me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || 'there';
+  const firstName = displayName.split(' ')[0];
+  const workspaceName = me?.org?.name || orgData?.org?.name || 'Workspace';
   const teamWorkspace = hasTeamWorkspace(orgData?.entitlements, sub?.plan);
-  const hasGuestLink = useMemo(() => meetings.some((m) => Boolean(m.joinUrl)), [meetings]);
 
-  const copyLastGuestLink = useCallback(async () => {
-    const m = meetings.find((x) => x.joinUrl);
-    if (!m?.joinUrl) {
-      toast.error('No meeting with a guest link yet. Create a meeting first, then use this from the home page.');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(m.joinUrl);
-      toast.success(`Copied guest link (${m.title || 'Meeting'})`);
-    } catch {
-      toast.error('Could not copy');
-    }
+  const nextUpcoming = useMemo(() => {
+    const now = Date.now();
+    return meetings
+      .filter((m) => {
+        const t = m.scheduled_start ? new Date(m.scheduled_start).getTime() : NaN;
+        return !Number.isNaN(t) && t > now;
+      })
+      .sort((a, b) => new Date(a.scheduled_start) - new Date(b.scheduled_start))[0] || null;
   }, [meetings]);
 
+  const recentMeetings = useMemo(
+    () => meetings.filter((m) => m.id !== nextUpcoming?.id).slice(0, 3),
+    [meetings, nextUpcoming],
+  );
+
+  const usageMinutes = Math.round(Number(orgData?.usageThisMonth?.meetingMinutes) || 0);
+  const planName = sub?.plan?.name;
+
   return (
-    <div className="space-y-10">
-      <Card className="app-card overflow-hidden border-border/60 bg-gradient-to-br from-card via-card to-primary/[0.03]">
-        <CardHeader className="space-y-2 pb-2 text-center sm:pb-4">
-          <Badge variant="secondary" className="mx-auto w-fit text-xs font-normal">
-            Workspace
-          </Badge>
-          <CardTitle className="text-3xl font-semibold tracking-tight sm:text-4xl">
-            {orgData?.organization?.name || orgData?.org?.name || 'Your organization'}
-          </CardTitle>
-          <CardDescription className="mx-auto max-w-xl text-base">
-            Host translated meetings with screen share and live captions.
-            {teamWorkspace
-              ? ' Manage meetings and workspace members from here.'
-              : ' Create rooms, share guest links, and manage your meetings from here.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col items-center pb-8 pt-2">
-          <Button asChild size="lg" className="min-w-[min(100%,14rem)] gap-2 px-10 text-base">
+    <div className="mx-auto max-w-4xl space-y-10">
+      <section className="space-y-5 pt-2">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+            {greetingForNow()}, {firstName}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {workspaceName} · Host translated meetings with live captions and guest links.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild className="gap-2">
             <Link to="/v2/app/meetings?create=1">
-              <Plus className="h-5 w-5" />
+              <Plus className="h-4 w-4" />
               New meeting
             </Link>
           </Button>
-          <p className="mt-3 max-w-md text-center text-sm text-muted-foreground">
-            Start here. You&apos;ll get a guest link on the next screen to share with participants.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center justify-center gap-2">
-            <Button variant="outline" size="sm" asChild className="gap-2">
-              <Link to="/v2/app/meetings">
-                <Video className="h-4 w-4" />
-                All meetings
+          <Button variant="outline" asChild className="gap-2">
+            <Link to="/v2/app/meetings?create=1">
+              <CalendarClock className="h-4 w-4" />
+              Schedule
+            </Link>
+          </Button>
+          <Button variant="ghost" asChild className="gap-2">
+            <Link to="/v2/app/meetings">
+              <Video className="h-4 w-4" />
+              All meetings
+            </Link>
+          </Button>
+          {teamWorkspace && (
+            <Button variant="ghost" asChild className="gap-2">
+              <Link to="/v2/app/settings">
+                <UserPlus className="h-4 w-4" />
+                Invite teammate
               </Link>
             </Button>
-            {hasGuestLink && (
-              <Button type="button" variant="ghost" size="sm" className="gap-2" onClick={copyLastGuestLink}>
-                <Link2 className="h-4 w-4" />
-                Copy latest guest link
-              </Button>
-            )}
-            {teamWorkspace && (
-              <Button variant="ghost" size="sm" asChild className="gap-2">
-                <Link to="/v2/app/settings">
-                  <UserPlus className="h-4 w-4" />
-                  Invite teammate
-                </Link>
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      <section>
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">At a glance</h2>
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Card className="app-card app-card-hover border-border/70">
-            <CardHeader className="pb-2">
-              <CardDescription>Meetings</CardDescription>
-              <CardTitle className="text-3xl font-semibold tabular-nums">{meetings.length}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">In this workspace</CardContent>
-          </Card>
-          <Card className="app-card app-card-hover border-border/70">
-            <CardHeader className="pb-2">
-              <CardDescription>Live now</CardDescription>
-              <CardTitle className="text-3xl font-semibold tabular-nums text-emerald-600">{activeLive}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">Active with participants</CardContent>
-          </Card>
-          <Card className="app-card app-card-hover border-border/70">
-            <CardHeader className="pb-2">
-              <CardDescription className="flex items-center gap-1">
-                <Users className="h-3 w-3" /> Members
-              </CardDescription>
-              <CardTitle className="text-3xl font-semibold tabular-nums">{membersCount}</CardTitle>
-            </CardHeader>
-            <CardContent className="text-xs text-muted-foreground">
-              {teamWorkspace ? 'People in this org' : 'Your account (team plans add seats)'}
-            </CardContent>
-          </Card>
+          )}
         </div>
       </section>
 
+      {nextUpcoming && (
+        <section>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Up next</h2>
+          <Link to={`/v2/app/meetings/${nextUpcoming.id}`}>
+            <Card className="app-card app-card-hover border-primary/30 bg-gradient-to-br from-card via-card to-primary/[0.04] hover:border-primary/50">
+              <CardContent className="flex items-center justify-between gap-4 p-5">
+                <div className="flex min-w-0 items-center gap-4">
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                    <CalendarClock className="h-5 w-5 text-primary" />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="block truncate font-medium text-foreground">
+                      {nextUpcoming.title || nextUpcoming.livekit_room_name}
+                    </span>
+                    <span className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
+                      <Clock className="h-3.5 w-3.5" />
+                      {friendlyTime(nextUpcoming.scheduled_start)}
+                    </span>
+                  </div>
+                </div>
+                <ArrowRight className="h-5 w-5 shrink-0 text-muted-foreground" />
+              </CardContent>
+            </Card>
+          </Link>
+        </section>
+      )}
+
       <section>
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="mb-3 flex items-center justify-between gap-4">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent meetings</h2>
           <Link to="/v2/app/meetings" className="text-xs font-medium text-primary hover:underline">
             View all
@@ -146,8 +147,14 @@ export default function V2AppHome() {
         {recentMeetings.length === 0 ? (
           <Card className="border-dashed border-border bg-muted/30 shadow-none">
             <CardContent className="flex flex-col items-center py-12 text-center">
-              <p className="text-sm text-muted-foreground">No meetings yet.</p>
-              <Button asChild className="mt-4 gap-2">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Video className="h-5 w-5 text-primary" />
+              </span>
+              <p className="mt-4 text-sm font-medium text-foreground">No meetings yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                Create one and you&apos;ll get a guest link to share with participants.
+              </p>
+              <Button asChild className="mt-5 gap-2">
                 <Link to="/v2/app/meetings?create=1">
                   <Plus className="h-4 w-4" />
                   Create your first meeting
@@ -166,11 +173,9 @@ export default function V2AppHome() {
                       <CardContent className="flex items-center justify-between gap-3 p-4">
                         <div className="min-w-0">
                           <span className="block truncate font-medium text-foreground">{m.title || m.livekit_room_name}</span>
-                          {m.scheduled_start && (
-                            <span className="mt-0.5 block text-xs text-muted-foreground">
-                              {new Date(m.scheduled_start).toLocaleString()}
-                            </span>
-                          )}
+                          <span className="mt-0.5 block text-xs text-muted-foreground">
+                            {friendlyTime(m.scheduled_start || m.created_at)}
+                          </span>
                         </div>
                         <Badge variant={toneToBadgeVariant(ui.tone)} className="shrink-0 text-xs uppercase tracking-wide">
                           {ui.label}
@@ -185,21 +190,15 @@ export default function V2AppHome() {
         )}
       </section>
 
-      <Card className="app-card border-border/70 bg-gradient-to-br from-card via-card to-muted/30">
-        <CardHeader>
-          <CardTitle className="text-lg">Subscription</CardTitle>
-          <CardDescription>
-            Plan: <span className="text-foreground">{sub?.plan?.name || '—'}</span>
-            <span className="mx-2 text-muted-foreground">·</span>
-            Status: <span className="text-foreground">{sub?.subscription?.status || '—'}</span>
-            {!teamWorkspace && (
-              <span className="mt-2 block text-xs leading-relaxed">
-                Individual: share guest links for your meetings; upgrade for a shared workspace and email invites for colleagues.
-              </span>
-            )}
-          </CardDescription>
-        </CardHeader>
-      </Card>
+      <p className="text-xs text-muted-foreground">
+        {planName ? `${planName} plan` : 'Plan: —'}
+        <span className="mx-1.5">·</span>
+        {usageMinutes} participant-minutes used this month
+        <span className="mx-1.5">·</span>
+        <Link to="/v2/app/settings?section=billing" className="text-primary hover:underline">
+          Manage billing
+        </Link>
+      </p>
     </div>
   );
 }
