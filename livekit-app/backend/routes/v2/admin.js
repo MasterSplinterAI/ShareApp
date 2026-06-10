@@ -241,13 +241,15 @@ router.get('/costs/summary', requireV2Auth, requireSuperadmin, async (req, res) 
        LEFT JOIN v2_org_subscriptions s ON s.org_id = COALESCE(r.org_id, mt.org_id)
        LEFT JOIN v2_plans p ON p.id = s.plan_id
        WHERE r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000
-         AND COALESCE(r.org_id, mt.org_id) IS NOT NULL
        GROUP BY COALESCE(r.org_id, mt.org_id)
        ORDER BY cost_usd DESC
        LIMIT 100`
     );
+    // Org-less meetings (guest rooms started from a bare invite link) still cost
+    // real STT/LLM money — surface them as an explicit bucket instead of hiding them.
     const enriched = byOrg.map((row) => ({
       ...row,
+      org_name: row.org_id ? row.org_name : 'No organization (guest rooms)',
       revenue_cents: row.is_comp === 1 ? 0 : row.monthly_price_cents || 0,
       margin_cents: (row.is_comp === 1 ? 0 : row.monthly_price_cents || 0) - Math.round((row.cost_usd || 0) * 100),
     }));

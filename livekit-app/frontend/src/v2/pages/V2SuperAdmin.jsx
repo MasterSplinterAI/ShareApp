@@ -51,6 +51,8 @@ export default function V2SuperAdmin() {
   const [allowed, setAllowed] = useState(null);
   const [tab, setTab] = useState('orgs');
   const [orgs, setOrgs] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
   const [kpis, setKpis] = useState(null);
   const [costs, setCosts] = useState(null);
   const [costsLoadedAt, setCostsLoadedAt] = useState(null);
@@ -66,6 +68,9 @@ export default function V2SuperAdmin() {
 
   const reloadOrgs = () =>
     v2Admin.orgs().then((r) => setOrgs(r.orgs || [])).catch(() => toast.error('Failed to load orgs'));
+
+  const reloadUsers = () =>
+    v2Admin.users().then((r) => setUsers(r.users || [])).catch(() => toast.error('Failed to load users'));
 
   const reloadCosts = () =>
     v2Admin
@@ -100,6 +105,7 @@ export default function V2SuperAdmin() {
 
   useEffect(() => {
     if (tab === 'costs' && allowed) reloadCosts();
+    if (tab === 'users' && allowed) reloadUsers();
   }, [tab, allowed]);
 
   useEffect(() => {
@@ -292,8 +298,95 @@ export default function V2SuperAdmin() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="orgs">Organizations</TabsTrigger>
+          <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="costs">Costs & margin</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="users" className="mt-4 space-y-4">
+          <Card className="app-card overflow-hidden border-border/60">
+            <CardHeader>
+              <CardTitle className="text-lg">Users</CardTitle>
+              <CardDescription>
+                Every login identity, including people who signed up without a company name (their
+                workspace is auto-named “their-email&apos;s org”). Click a row to open the workspace.
+              </CardDescription>
+              <Input
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                placeholder="Search by email, name, or organization…"
+                className="mt-2 max-w-sm"
+              />
+            </CardHeader>
+            <div className="overflow-x-auto border-t border-border/60">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Email</th>
+                    <th className="px-4 py-3 font-medium">Name</th>
+                    <th className="px-4 py-3 font-medium">Organization</th>
+                    <th className="px-4 py-3 font-medium">Role</th>
+                    <th className="px-4 py-3 font-medium">Plan</th>
+                    <th className="px-4 py-3 font-medium" title="Org participant-minutes this month">
+                      Part.-min (month)
+                    </th>
+                    <th className="px-4 py-3 font-medium">Signed up</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users
+                    .filter((u) => {
+                      const q = userSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return [u.email, u.display_name, u.org_name]
+                        .some((v) => (v || '').toLowerCase().includes(q));
+                    })
+                    .map((u) => {
+                      const autoNamed =
+                        u.org_name && u.email && u.org_name === `${u.email.split('@')[0]}'s org`;
+                      return (
+                        <tr
+                          key={u.id}
+                          className={`border-b border-border/60 last:border-0 ${u.org_id ? 'cursor-pointer hover:bg-muted/30' : 'bg-destructive/5'}`}
+                          onClick={() => {
+                            if (u.org_id) {
+                              setTab('orgs');
+                              setSelectedOrg(u.org_id);
+                            }
+                          }}
+                        >
+                          <td className="px-4 py-3 font-medium">{u.email}</td>
+                          <td className="px-4 py-3">{u.display_name || '—'}</td>
+                          <td className="px-4 py-3">
+                            {u.org_name ? (
+                              <span className="inline-flex items-center gap-1.5">
+                                {u.org_name}
+                                {autoNamed && (
+                                  <Badge variant="outline" className="text-[10px]">
+                                    no company name
+                                  </Badge>
+                                )}
+                              </span>
+                            ) : (
+                              <Badge variant="destructive">no org — broken signup</Badge>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">{u.role || '—'}</td>
+                          <td className="px-4 py-3">
+                            {u.plan_id || '—'}
+                            {u.is_comp === 1 ? ' (comp)' : ''}
+                          </td>
+                          <td className="px-4 py-3 tabular-nums">{Math.round(u.mtd_meeting_minutes || 0)}</td>
+                          <td className="px-4 py-3 text-muted-foreground">
+                            {(u.created_at || '').slice(0, 10)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="orgs" className="mt-4 space-y-4">
           <Card className="app-card overflow-hidden border-border/60">
