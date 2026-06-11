@@ -42,6 +42,7 @@ import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
+import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
 import { defaultExpiryMode } from '../../lib/inviteExpiry';
 
 /** Click-to-edit meeting title for the header hero. */
@@ -461,43 +462,79 @@ export default function V2MeetingDetail() {
     onCopyInviteUrl: copyInviteUrl,
   };
 
-  const transcriptCard = (
-    <Card className="app-card border-border/60">
-      <CardHeader className="border-b border-border/60 pb-3">
-        <CardTitle className="text-base">Transcript</CardTitle>
-        <CardDescription>Read saved captions, generate AI reports, or export.</CardDescription>
-      </CardHeader>
-      <CardContent className="pt-4">
-        <MeetingTranscriptPanel
-          meetingId={id}
-          lineCount={meeting.transcriptLineCount}
-          storeTranscripts={policy.store_transcripts}
-          onDownloadJson={downloadTranscriptJson}
-          onDownloadTxt={downloadTranscriptTxt}
-        />
-      </CardContent>
-    </Card>
-  );
-
+  // Always-visible essentials: the guest link is the one thing hosts reach for.
   const guestLinkCard = (
     <Card className="app-card border-border/60">
       <CardHeader className="border-b border-border/60 pb-3">
         <CardTitle className="text-base">Invite guests</CardTitle>
-        <CardDescription>Share the link, or email it with an automatic reminder.</CardDescription>
+        <CardDescription>Share this link — guests click it to join.</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 pt-4">
+      <CardContent className="pt-4">
         <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
-        <div className="border-t border-border/60 pt-4">
-          <MeetingEmailInvites meetingId={meeting.id} />
-        </div>
       </CardContent>
     </Card>
   );
 
-  const settingsAccordion = (
-    <Accordion type="single" collapsible className="rounded-lg border border-border/60 bg-card px-4 shadow-sm">
-      <AccordionItem value="settings" className="border-0">
-        <AccordionTrigger className="text-sm font-medium hover:no-underline">Meeting settings</AccordionTrigger>
+  // Everything else lives in collapsible sections to keep the page scannable.
+  const transcriptCount = meeting.transcriptLineCount || 0;
+  const detailSections = (
+    <Accordion
+      type="multiple"
+      defaultValue={joinDemoted && hasTranscriptLines ? ['transcript'] : []}
+      className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm"
+    >
+      {!joinDemoted && (
+        <AccordionItem value="email" className="border-b border-border/60 px-4 last:border-b-0">
+          <AccordionTrigger className="text-sm font-medium hover:no-underline">
+            <span className="flex flex-col items-start gap-0.5 text-left">
+              Invite by email
+              <span className="text-xs font-normal text-muted-foreground">
+                Send the link with an automatic reminder.
+              </span>
+            </span>
+          </AccordionTrigger>
+          <AccordionContent className="pt-1">
+            <MeetingEmailInvites meetingId={meeting.id} />
+          </AccordionContent>
+        </AccordionItem>
+      )}
+      <AccordionItem value="transcript" className="border-b border-border/60 px-4 last:border-b-0">
+        <AccordionTrigger className="text-sm font-medium hover:no-underline">
+          <span className="flex flex-col items-start gap-0.5 text-left">
+            <span className="flex items-center gap-2">
+              Transcript
+              {hasTranscriptLines && (
+                <Badge variant="secondary" className="font-normal">
+                  {transcriptCount} lines
+                </Badge>
+              )}
+            </span>
+            <span className="text-xs font-normal text-muted-foreground">
+              {hasTranscriptLines
+                ? 'Read captions, generate AI reports, or export.'
+                : 'Captions appear here when transcript storage is on.'}
+            </span>
+          </span>
+        </AccordionTrigger>
+        <AccordionContent className="pt-1">
+          <MeetingTranscriptPanel
+            meetingId={id}
+            lineCount={meeting.transcriptLineCount}
+            storeTranscripts={policy.store_transcripts}
+            onDownloadJson={downloadTranscriptJson}
+            onDownloadTxt={downloadTranscriptTxt}
+          />
+        </AccordionContent>
+      </AccordionItem>
+      <AccordionItem value="settings" className="border-b border-border/60 px-4 last:border-b-0">
+        <AccordionTrigger className="text-sm font-medium hover:no-underline">
+          <span className="flex flex-col items-start gap-0.5 text-left">
+            Meeting settings
+            <span className="text-xs font-normal text-muted-foreground">
+              Access, policies, and advanced invite links.
+            </span>
+          </span>
+        </AccordionTrigger>
         <AccordionContent className="space-y-8 pt-1">
           <section className="space-y-3">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Access &amp; policy</h3>
@@ -513,7 +550,7 @@ export default function V2MeetingDetail() {
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Advanced invites</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Expiring or reusable invite tokens. Most meetings only need the guest link.
+                Expiring or single-guest invite links. Most meetings only need the guest link above.
               </p>
             </div>
             <MeetingInvitesPanel {...invitesPanelProps} />
@@ -614,45 +651,8 @@ export default function V2MeetingDetail() {
     </div>
   );
 
-  let mainColumn;
-  let sideColumn;
-  if (isEnded || isArchived) {
-    mainColumn = transcriptCard;
-    sideColumn = settingsAccordion;
-  } else if (isLive) {
-    mainColumn = (
-      <>
-        <MeetingPresenceCard presence={presence} />
-        {guestLinkCard}
-      </>
-    );
-    sideColumn = (
-      <>
-        {(policy.store_transcripts || hasTranscriptLines) && transcriptCard}
-        {settingsAccordion}
-      </>
-    );
-  } else {
-    mainColumn = (
-      <>
-        {guestLinkCard}
-        {hasTranscriptLines && transcriptCard}
-      </>
-    );
-    sideColumn = (
-      <>
-        {settingsAccordion}
-        {policy.store_transcripts && !hasTranscriptLines && (
-          <p className="px-1 text-xs text-muted-foreground">
-            Transcript will appear here after the meeting when storage is on.
-          </p>
-        )}
-      </>
-    );
-  }
-
   return (
-    <div className="mx-auto max-w-screen-xl space-y-6">
+    <div className="mx-auto max-w-3xl space-y-6">
       {hero}
 
       {isArchived && canManageMeeting && (
@@ -667,10 +667,9 @@ export default function V2MeetingDetail() {
         </div>
       )}
 
-      <div className="grid items-start gap-6 lg:grid-cols-5">
-        <div className="min-w-0 space-y-6 lg:col-span-3">{mainColumn}</div>
-        <div className="min-w-0 space-y-6 lg:col-span-2">{sideColumn}</div>
-      </div>
+      {isLive && <MeetingPresenceCard presence={presence} />}
+      {!joinDemoted && guestLinkCard}
+      {detailSections}
 
       <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
         <AlertDialogContent>
