@@ -1,4 +1,5 @@
 const db = require('../db/v2Database');
+const { orgIsSuspended } = require('./v2OrgLifecycle');
 const { planAllowsTeamWorkspace } = require('./v2PlanFeatures');
 
 function hardCapMultiplier(planId) {
@@ -20,6 +21,14 @@ async function getOrgEntitlements(orgId) {
     [orgId]
   );
   if (!sub) return null;
+  const meetingMinutes =
+    sub.custom_included_meeting_minutes != null
+      ? sub.custom_included_meeting_minutes
+      : sub.included_meeting_minutes;
+  const translationMinutes =
+    sub.custom_included_translation_minutes != null
+      ? sub.custom_included_translation_minutes
+      : sub.included_translation_minutes;
   return {
     planId: sub.plan_id,
     planName: sub.plan_name,
@@ -28,8 +37,8 @@ async function getOrgEntitlements(orgId) {
     status: sub.status,
     isComp: sub.is_comp === 1,
     compLabel: sub.comp_label || null,
-    includedMeetingMinutes: sub.included_meeting_minutes,
-    includedTranslationMinutes: sub.included_translation_minutes,
+    includedMeetingMinutes: meetingMinutes,
+    includedTranslationMinutes: translationMinutes,
     overageMeetingCentsPerMin: sub.overage_meeting_cents_per_min,
     overageTranslationCentsPerMin: sub.overage_translation_cents_per_min,
   };
@@ -57,6 +66,16 @@ async function getMonthToDateUsage(orgId) {
  * Returns { ok: true } or { ok: false, reason, ... }.
  */
 async function assertCanCreateMeeting(orgId) {
+  const org = await db.get(`SELECT id, suspended_at, billing_status FROM v2_organizations WHERE id = ?`, [orgId]);
+  if (!org) {
+    return { ok: false, code: 'no_org', message: 'Organization not found' };
+  }
+  if (orgIsSuspended(org)) {
+    return { ok: false, code: 'org_suspended', message: 'This workspace has been suspended' };
+  }
+  if (org.billing_status === 'suspended' || org.billing_status === 'canceled') {
+    return { ok: false, code: 'billing_inactive', message: 'Billing is not active for this workspace' };
+  }
   const ent = await getOrgEntitlements(orgId);
   if (!ent) {
     return { ok: false, code: 'no_subscription', message: 'Organization has no active plan' };

@@ -373,7 +373,47 @@ async function migrate() {
     await run(`ALTER TABLE v2_organizations ADD COLUMN brand_logo_file TEXT`);
   }
 
-  const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);
+  const orgCols3 = await all(`PRAGMA table_info(v2_organizations)`);
+  const orgColNames3 = new Set((orgCols3 || []).map((c) => c.name));
+  if (!orgColNames3.has('suspended_at')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN suspended_at TEXT`);
+  }
+  if (!orgColNames3.has('suspended_reason')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN suspended_reason TEXT`);
+  }
+
+  const userCols = await all(`PRAGMA table_info(v2_users)`);
+  const userColNames = new Set((userCols || []).map((c) => c.name));
+  if (!userColNames.has('disabled_at')) {
+    await run(`ALTER TABLE v2_users ADD COLUMN disabled_at TEXT`);
+  }
+  if (!userColNames.has('last_login_at')) {
+    await run(`ALTER TABLE v2_users ADD COLUMN last_login_at TEXT`);
+  }
+
+  const subCols2 = await all(`PRAGMA table_info(v2_org_subscriptions)`);
+  const subColNames2 = new Set((subCols2 || []).map((c) => c.name));
+  if (!subColNames2.has('custom_included_meeting_minutes')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN custom_included_meeting_minutes INTEGER`);
+  }
+  if (!subColNames2.has('custom_included_translation_minutes')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN custom_included_translation_minutes INTEGER`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_announcements (
+      id TEXT PRIMARY KEY,
+      message TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',
+      starts_at TEXT NOT NULL,
+      ends_at TEXT,
+      created_by TEXT,
+      disabled_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_announcements_active ON v2_announcements(starts_at, ends_at)`);
+
   if (!planCount || planCount.c === 0) {
     await run(
       `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,

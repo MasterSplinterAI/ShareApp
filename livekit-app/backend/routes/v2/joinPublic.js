@@ -7,6 +7,7 @@ const db = require('../../db/v2Database');
 const { ensureRoomAndAgent } = require('../../lib/livekitService');
 const { serializePublicBranding } = require('../../lib/v2Branding');
 const { inviteIsUsable, inviteEffectiveFromMs } = require('../../lib/inviteExpiry');
+const { orgIsSuspended } = require('../../lib/v2OrgLifecycle');
 
 const router = express.Router();
 
@@ -46,6 +47,15 @@ function meetingBranding(req, meeting) {
 }
 
 async function validateGuestAccess(meeting, inviteToken) {
+  const org = meeting.org_id
+    ? await db.get(`SELECT suspended_at, billing_status FROM v2_organizations WHERE id = ?`, [meeting.org_id])
+    : null;
+  if (org && orgIsSuspended(org)) {
+    return { ok: false, reason: 'org_suspended' };
+  }
+  if (org?.billing_status === 'suspended' || org?.billing_status === 'canceled') {
+    return { ok: false, reason: 'billing_inactive' };
+  }
   if (meeting.status === 'archived') {
     return { ok: false, reason: 'meeting_ended' };
   }

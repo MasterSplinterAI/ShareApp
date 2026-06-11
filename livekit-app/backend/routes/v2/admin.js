@@ -4,6 +4,15 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
 const { getMonthToDateUsage } = require('../../lib/v2Entitlements');
+const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
+const { sendEmail } = require('../../lib/mailer');
+const { sendPasswordResetEmail } = require('../../lib/passwordReset');
+
+function requireAuditReason(reason) {
+  const reasonTrim = typeof reason === 'string' ? reason.trim() : '';
+  if (reasonTrim.length < 4) return null;
+  return reasonTrim.slice(0, 2000);
+}
 
 /** Billing usage analytics for admin (participant-minutes = sum of each human's time in meetings). */
 async function getOrgUsageAnalytics(orgId) {
@@ -69,8 +78,9 @@ async function getOrgUsageAnalytics(orgId) {
 router.get('/users', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const rows = await db.all(
-      `SELECT u.id, u.email, u.display_name, u.created_at,
+      `SELECT u.id, u.email, u.display_name, u.created_at, u.disabled_at, u.last_login_at,
               m.org_id, m.role, o.name AS org_name, o.account_type AS org_account_type,
+              o.suspended_at AS org_suspended_at,
               s.plan_id, s.status AS sub_status, s.is_comp, s.comp_label,
               (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
                FROM v2_usage_events WHERE org_id = m.org_id AND created_at >= datetime('now', 'start of month')) AS mtd_meeting_minutes
@@ -91,9 +101,10 @@ router.get('/users', requireV2Auth, requireSuperadmin, async (req, res) => {
 router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const orgs = await db.all(
-      `SELECT o.id, o.name, o.billing_status, o.account_type, o.created_at,
+      `SELECT o.id, o.name, o.billing_status, o.account_type, o.created_at, o.suspended_at, o.suspended_reason,
         s.plan_id, s.status AS sub_status, s.is_comp, s.comp_label, s.comp_reason,
         p.monthly_price_cents, p.included_meeting_minutes,
+        s.stripe_customer_id, s.stripe_subscription_id,
         (SELECT COUNT(*) FROM v2_org_members m WHERE m.org_id = o.id) AS member_count,
         (SELECT COUNT(*) FROM v2_meetings mt WHERE mt.org_id = o.id) AS meeting_count,
         (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
@@ -120,7 +131,8 @@ router.get('/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) =>
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     const sub = await db.get(
-      `SELECT s.*, p.name AS plan_name, p.monthly_price_cents, p.included_meeting_minutes
+      `SELECT s.*, p.name AS plan_name, p.monthly_price_cents, p.included_meeting_minutes,
+              p.stripe_price_id
        FROM v2_org_subscriptions s
        LEFT JOIN v2_plans p ON p.id = s.plan_id
        WHERE s.org_id = ?`,
@@ -148,6 +160,7 @@ router.get('/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) =>
       usageThisMonth: usage,
       usageAnalytics,
       costThisMonthUsd: costRow?.total_usd || 0,
+      stripeDashboardBase: 'https://dashboard.stripe.com',
     });
   } catch (e) {
     console.error('[admin/org detail]', e);
@@ -487,6 +500,423 @@ router.get('/webhooks', requireV2Auth, requireSuperadmin, async (req, res) => {
     });
   } catch (e) {
     console.error('[admin/webhooks]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// --- Phase 1: Account lifecycle ---
+
+router.post('/orgs/:orgId/suspend', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
+    if (!org) return res.status(404).json({ error: 'Not found' });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_suspend_org', { orgId: req.params.orgId, reason });
+    await db.run(
+      `UPDATE v2_organizations SET suspended_at = datetime('now'), suspended_reason = ?, billing_status = 'suspended' WHERE id = ?`,
+      [reason, req.params.orgId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin/suspend org]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/orgs/:orgId/reactivate', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
+    if (!org) return res.status(404).json({ error: 'Not found' });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_reactivate_org', { orgId: req.params.orgId, reason });
+    await db.run(
+      `UPDATE v2_organizations SET suspended_at = NULL, suspended_reason = NULL, billing_status = 'active' WHERE id = ?`,
+      [req.params.orgId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin/reactivate org]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/users/:userId/disable', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_disable_user', { userId: req.params.userId, reason });
+    await db.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin/disable user]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/users/:userId/enable', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_enable_user', { userId: req.params.userId, reason });
+    await db.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[admin/enable user]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/orgs/:orgId/billing-status', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { billing_status, reason } = req.body || {};
+    if (!isValidBillingStatus(billing_status)) {
+      return res.status(400).json({
+        error: 'Invalid billing_status',
+        allowed: [...BILLING_STATUSES],
+      });
+    }
+    const reasonTrim = requireAuditReason(reason);
+    if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_org_billing_status', {
+      orgId: req.params.orgId,
+      billing_status,
+      reason: reasonTrim,
+    });
+    await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);
+    const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
+    if (!org) return res.status(404).json({ error: 'Not found' });
+    res.json({ org });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// --- Phase 2: Plan management ---
+
+router.get('/plans', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const plans = await db.all(`SELECT * FROM v2_plans ORDER BY monthly_price_cents ASC`);
+    res.json({ plans });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const plan = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [req.params.planId]);
+    if (!plan) return res.status(404).json({ error: 'Plan not found' });
+    const {
+      name,
+      monthly_price_cents,
+      included_meeting_minutes,
+      included_translation_minutes,
+      overage_meeting_cents_per_min,
+      overage_translation_cents_per_min,
+      stripe_price_id,
+    } = req.body || {};
+    const updates = [];
+    const params = [];
+    if (name != null) {
+      updates.push('name = ?');
+      params.push(String(name).slice(0, 80));
+    }
+    if (monthly_price_cents != null) {
+      updates.push('monthly_price_cents = ?');
+      params.push(Math.max(0, Number(monthly_price_cents) || 0));
+    }
+    if (included_meeting_minutes != null) {
+      updates.push('included_meeting_minutes = ?');
+      params.push(Math.max(0, Number(included_meeting_minutes) || 0));
+    }
+    if (included_translation_minutes != null) {
+      updates.push('included_translation_minutes = ?');
+      params.push(Math.max(0, Number(included_translation_minutes) || 0));
+    }
+    if (overage_meeting_cents_per_min != null) {
+      updates.push('overage_meeting_cents_per_min = ?');
+      params.push(Math.max(0, Number(overage_meeting_cents_per_min) || 0));
+    }
+    if (overage_translation_cents_per_min != null) {
+      updates.push('overage_translation_cents_per_min = ?');
+      params.push(Math.max(0, Number(overage_translation_cents_per_min) || 0));
+    }
+    if (stripe_price_id !== undefined) {
+      updates.push('stripe_price_id = ?');
+      params.push(stripe_price_id ? String(stripe_price_id).slice(0, 128) : null);
+    }
+    if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_plan', {
+      planId: req.params.planId,
+      reason,
+      body: req.body,
+    });
+    params.push(req.params.planId);
+    await db.run(`UPDATE v2_plans SET ${updates.join(', ')} WHERE id = ?`, params);
+    const fresh = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [req.params.planId]);
+    res.json({ plan: fresh });
+  } catch (e) {
+    console.error('[admin/patch plan]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/orgs/:orgId/limits', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const exists = await db.get(`SELECT org_id FROM v2_org_subscriptions WHERE org_id = ?`, [req.params.orgId]);
+    if (!exists) return res.status(404).json({ error: 'Org subscription not found' });
+    const { custom_included_meeting_minutes, custom_included_translation_minutes, clearCustom } = req.body || {};
+    let meetingVal = custom_included_meeting_minutes;
+    let translationVal = custom_included_translation_minutes;
+    if (clearCustom) {
+      meetingVal = null;
+      translationVal = null;
+    } else {
+      if (meetingVal != null) meetingVal = Math.max(0, Number(meetingVal) || 0);
+      if (translationVal != null) translationVal = Math.max(0, Number(translationVal) || 0);
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_org_limits', {
+      orgId: req.params.orgId,
+      reason,
+      custom_included_meeting_minutes: meetingVal,
+      custom_included_translation_minutes: translationVal,
+    });
+    await db.run(
+      `UPDATE v2_org_subscriptions SET custom_included_meeting_minutes = ?, custom_included_translation_minutes = ? WHERE org_id = ?`,
+      [meetingVal, translationVal, req.params.orgId]
+    );
+    const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.params.orgId]);
+    res.json({ subscription: sub });
+  } catch (e) {
+    console.error('[admin/patch org limits]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// --- Phase 3: Revenue ops ---
+
+router.get('/revenue', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const paidRow = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_org_subscriptions s
+       WHERE s.plan_id != 'free' AND COALESCE(s.is_comp, 0) = 0 AND lower(s.status) IN ('active', 'trialing')`
+    );
+    const trialRow = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_organizations WHERE billing_status = 'trial'`
+    );
+    const compRow = await db.get(`SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE is_comp = 1`);
+    const mrrRow = await db.get(
+      `SELECT COALESCE(SUM(p.monthly_price_cents), 0) AS mrr_cents
+       FROM v2_org_subscriptions s JOIN v2_plans p ON p.id = s.plan_id
+       WHERE lower(s.status) IN ('active', 'trialing') AND COALESCE(s.is_comp, 0) = 0 AND s.plan_id != 'free'`
+    );
+    const paidCount = paidRow?.c || 0;
+    const mrrCents = mrrRow?.mrr_cents || 0;
+    const webhookNew = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_webhook_events
+       WHERE type LIKE '%subscription.created%' AND received_at >= datetime('now', 'start of month')`
+    );
+    const webhookCanceled = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_webhook_events
+       WHERE type LIKE '%subscription.deleted%' AND received_at >= datetime('now', 'start of month')`
+    );
+    res.json({
+      paidOrgs: paidCount,
+      trialOrgs: trialRow?.c || 0,
+      compOrgs: compRow?.c || 0,
+      estimatedMrrCents: mrrCents,
+      arpuCents: paidCount > 0 ? Math.round(mrrCents / paidCount) : 0,
+      newSubscriptionsThisMonth: webhookNew?.c || 0,
+      cancellationsThisMonth: webhookCanceled?.c || 0,
+    });
+  } catch (e) {
+    console.error('[admin/revenue]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// --- Phase 4: Support tools ---
+
+router.get('/users/:userId', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const user = await db.get(
+      `SELECT id, email, display_name, created_at, disabled_at, last_login_at FROM v2_users WHERE id = ?`,
+      [req.params.userId]
+    );
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    const membership = await db.get(
+      `SELECT m.org_id, m.role, o.name AS org_name, o.billing_status, o.suspended_at, o.account_type,
+              s.plan_id, s.is_comp, s.stripe_customer_id
+       FROM v2_org_members m
+       LEFT JOIN v2_organizations o ON o.id = m.org_id
+       LEFT JOIN v2_org_subscriptions s ON s.org_id = m.org_id
+       WHERE m.user_id = ? LIMIT 1`,
+      [req.params.userId]
+    );
+    const recentMeetings = await db.all(
+      `SELECT id, title, status, created_at, scheduled_start FROM v2_meetings
+       WHERE org_id = ? ORDER BY datetime(created_at) DESC LIMIT 10`,
+      [membership?.org_id || '']
+    );
+    const usage = membership?.org_id ? await getMonthToDateUsage(membership.org_id) : null;
+    res.json({ user, membership, recentMeetings, usageThisMonth: usage });
+  } catch (e) {
+    console.error('[admin/user detail]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/users/:userId/send-password-reset', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    const result = await sendPasswordResetEmail(req, req.params.userId, { initiatedBy: req.v2Auth.email });
+    if (!result.ok) return res.status(404).json({ error: result.error });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_send_password_reset', {
+      userId: req.params.userId,
+      email: result.email,
+      sent: result.sent,
+      reason,
+    });
+    res.json({ ok: true, sent: result.sent, email: result.email });
+  } catch (e) {
+    console.error('[admin/send password reset]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+// --- Phase 5: Communication ---
+
+router.get('/announcements', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const rows = await db.all(
+      `SELECT * FROM v2_announcements ORDER BY datetime(created_at) DESC LIMIT 100`
+    );
+    res.json({ announcements: rows });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/announcements', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { message, level, starts_at, ends_at } = req.body || {};
+    if (!message || typeof message !== 'string' || message.trim().length < 4) {
+      return res.status(400).json({ error: 'message required (4+ chars)' });
+    }
+    const id = db.uuid();
+    const lvl = ['info', 'warning', 'critical'].includes(level) ? level : 'info';
+    const start = starts_at || new Date().toISOString();
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_create_announcement', { id, message: message.slice(0, 2000) });
+    await db.run(
+      `INSERT INTO v2_announcements (id, message, level, starts_at, ends_at, created_by) VALUES (?,?,?,?,?,?)`,
+      [id, message.trim().slice(0, 2000), lvl, start, ends_at || null, req.v2Auth.email]
+    );
+    const row = await db.get(`SELECT * FROM v2_announcements WHERE id = ?`, [id]);
+    res.status(201).json({ announcement: row });
+  } catch (e) {
+    console.error('[admin/create announcement]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/announcements/:id', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { disabled } = req.body || {};
+    const row = await db.get(`SELECT id FROM v2_announcements WHERE id = ?`, [req.params.id]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (disabled) {
+      await db.run(`UPDATE v2_announcements SET disabled_at = datetime('now') WHERE id = ?`, [req.params.id]);
+    } else {
+      await db.run(`UPDATE v2_announcements SET disabled_at = NULL WHERE id = ?`, [req.params.id]);
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_announcement', { id: req.params.id, disabled: Boolean(disabled) });
+    const fresh = await db.get(`SELECT * FROM v2_announcements WHERE id = ?`, [req.params.id]);
+    res.json({ announcement: fresh });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { subject, body, reason } = req.body || {};
+    const reasonTrim = requireAuditReason(reason);
+    if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    if (!subject?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: 'subject and body required' });
+    }
+    const owners = await db.all(
+      `SELECT u.email FROM v2_org_members m JOIN v2_users u ON u.id = m.user_id
+       WHERE m.org_id = ? AND m.role = 'owner'`,
+      [req.params.orgId]
+    );
+    if (!owners.length) return res.status(404).json({ error: 'No owners found' });
+    const emails = owners.map((o) => o.email).filter(Boolean);
+    const result = await sendEmail({
+      to: emails,
+      subject: subject.trim().slice(0, 200),
+      text: body.trim(),
+      html: `<p>${body.trim().replace(/\n/g, '<br/>')}</p>`,
+    });
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_email_org', {
+      orgId: req.params.orgId,
+      to: emails,
+      subject: subject.trim(),
+      sent: result.sent,
+      reason: reasonTrim,
+    });
+    res.json({ ok: true, sent: result.sent, recipients: emails });
+  } catch (e) {
+    console.error('[admin/email org]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/email/broadcast', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { subject, body, reason, confirm } = req.body || {};
+    if (confirm !== 'SEND_ALL') {
+      return res.status(400).json({ error: 'confirm must be SEND_ALL' });
+    }
+    const reasonTrim = requireAuditReason(reason);
+    if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    if (!subject?.trim() || !body?.trim()) {
+      return res.status(400).json({ error: 'subject and body required' });
+    }
+    const owners = await db.all(
+      `SELECT DISTINCT u.email FROM v2_org_members m JOIN v2_users u ON u.id = m.user_id WHERE m.role = 'owner'`
+    );
+    const emails = owners.map((o) => o.email).filter(Boolean);
+    let sentCount = 0;
+    for (const email of emails) {
+      const r = await sendEmail({
+        to: email,
+        subject: subject.trim().slice(0, 200),
+        text: body.trim(),
+        html: `<p>${body.trim().replace(/\n/g, '<br/>')}</p>`,
+      });
+      if (r.sent) sentCount += 1;
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_email_broadcast', {
+      recipientCount: emails.length,
+      sentCount,
+      subject: subject.trim(),
+      reason: reasonTrim,
+    });
+    res.json({ ok: true, recipientCount: emails.length, sentCount });
+  } catch (e) {
+    console.error('[admin/email broadcast]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

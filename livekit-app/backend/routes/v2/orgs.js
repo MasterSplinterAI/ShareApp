@@ -18,6 +18,7 @@ const {
 } = require('../../lib/v2Branding');
 
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
+const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
 const { TEAM } = require('../../lib/v2Workspace');
 
 function brandingPayload(req, org) {
@@ -251,14 +252,14 @@ router.get('/admin/kpis', requireV2Auth, requireSuperadmin, async (req, res) => 
 router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const { billing_status, reason } = req.body || {};
-    if (!billing_status || typeof billing_status !== 'string') {
-      return res.status(400).json({ error: 'billing_status required' });
+    if (!isValidBillingStatus(billing_status)) {
+      return res.status(400).json({ error: 'Invalid billing_status', allowed: [...BILLING_STATUSES] });
     }
     const reasonTrim = typeof reason === 'string' ? reason.trim() : '';
     if (reasonTrim.length < 4 || reasonTrim.length > 2000) {
       return res.status(400).json({ error: 'reason required (4–2000 characters)', code: 'reason_required' });
     }
-    const nextStatus = billing_status.slice(0, 64);
+    const nextStatus = billing_status.toLowerCase();
     const auditId = db.uuid();
     await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_org_billing_status', {
       orgId: req.params.orgId,

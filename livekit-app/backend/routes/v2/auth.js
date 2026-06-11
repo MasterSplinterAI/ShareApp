@@ -84,6 +84,9 @@ router.post('/login', async (req, res) => {
     if (!user) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
+    if (user.disabled_at) {
+      return res.status(403).json({ error: 'Account disabled', code: 'account_disabled' });
+    }
     const ok = await verifyPassword(password, user.password_hash);
     if (!ok) {
       return res.status(401).json({ error: 'Invalid credentials' });
@@ -101,6 +104,13 @@ router.post('/login', async (req, res) => {
       });
       membership = { org_id: orgId, role: 'owner' };
     }
+    const org = await db.get(`SELECT suspended_at, billing_status FROM v2_organizations WHERE id = ?`, [
+      membership.org_id,
+    ]);
+    if (org?.suspended_at) {
+      return res.status(403).json({ error: 'Workspace suspended', code: 'org_suspended' });
+    }
+    await db.run(`UPDATE v2_users SET last_login_at = datetime('now') WHERE id = ?`, [user.id]);
     const token = signSession({
       sub: user.id,
       email: user.email,

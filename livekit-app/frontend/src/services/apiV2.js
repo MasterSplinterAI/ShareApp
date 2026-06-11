@@ -127,10 +127,24 @@ export const v2Billing = {
 
 export const v2Admin = {
   users: () => apiV2.get('/admin/users').then((r) => r.data),
+  userDetail: (userId) => apiV2.get(`/admin/users/${encodeURIComponent(userId)}`).then((r) => r.data),
+  disableUser: (userId, body) => apiV2.post(`/admin/users/${encodeURIComponent(userId)}/disable`, body).then((r) => r.data),
+  enableUser: (userId, body) => apiV2.post(`/admin/users/${encodeURIComponent(userId)}/enable`, body).then((r) => r.data),
+  sendPasswordReset: (userId, body) =>
+    apiV2.post(`/admin/users/${encodeURIComponent(userId)}/send-password-reset`, body).then((r) => r.data),
   orgs: () => apiV2.get('/admin/orgs').then((r) => r.data),
   orgDetail: (orgId) => apiV2.get(`/admin/orgs/${encodeURIComponent(orgId)}`).then((r) => r.data),
+  suspendOrg: (orgId, body) => apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/suspend`, body).then((r) => r.data),
+  reactivateOrg: (orgId, body) => apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/reactivate`, body).then((r) => r.data),
+  patchBillingStatus: (orgId, body) =>
+    apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/billing-status`, body).then((r) => r.data),
+  patchOrgLimits: (orgId, body) => apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/limits`, body).then((r) => r.data),
+  emailOrg: (orgId, body) => apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/email`, body).then((r) => r.data),
   setPlan: (orgId, body) => apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/plan`, body).then((r) => r.data),
   setComp: (orgId, body) => apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/comp`, body).then((r) => r.data),
+  plans: () => apiV2.get('/admin/plans').then((r) => r.data),
+  patchPlan: (planId, body) => apiV2.patch(`/admin/plans/${encodeURIComponent(planId)}`, body).then((r) => r.data),
+  revenue: () => apiV2.get('/admin/revenue').then((r) => r.data),
   costsSummary: () => apiV2.get('/admin/costs/summary').then((r) => r.data),
   audit: () => apiV2.get('/admin/audit').then((r) => r.data),
   trends: (days = 30) => apiV2.get('/admin/trends', { params: { days } }).then((r) => r.data),
@@ -139,6 +153,14 @@ export const v2Admin = {
     apiV2.get(`/admin/meetings/${encodeURIComponent(meetingId)}/costs`).then((r) => r.data),
   guests: (days = 30) => apiV2.get('/admin/guests', { params: { days } }).then((r) => r.data),
   webhooks: (limit = 50) => apiV2.get('/admin/webhooks', { params: { limit } }).then((r) => r.data),
+  announcements: () => apiV2.get('/admin/announcements').then((r) => r.data),
+  createAnnouncement: (body) => apiV2.post('/admin/announcements', body).then((r) => r.data),
+  patchAnnouncement: (id, body) => apiV2.patch(`/admin/announcements/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
+};
+
+export const v2Announcements = {
+  active: () => apiV2.get('/announcements/active').then((r) => r.data),
 };
 
 export const v2Usage = {
