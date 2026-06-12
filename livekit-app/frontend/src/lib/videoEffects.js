@@ -113,6 +113,32 @@ export function useVideoEffectsSupport() {
   return supported;
 }
 
+let prewarmed = false;
+
+/**
+ * Prime every cache the effects pipeline needs BEFORE the user enables an effect:
+ * the lazy processor JS chunk, the MediaPipe WASM runtime (~3MB gzipped), and both
+ * segmentation models. Called on prejoin mount so toggling an effect — especially
+ * on mobile — starts in milliseconds instead of waiting on a multi-MB download.
+ */
+export function prewarmVideoEffects() {
+  if (prewarmed || typeof window === 'undefined') return;
+  prewarmed = true;
+  checkVideoEffectsSupport().then((supported) => {
+    if (!supported) return;
+    [
+      '/mediapipe/wasm/vision_wasm_internal.js',
+      '/mediapipe/wasm/vision_wasm_internal.wasm',
+      '/mediapipe/selfie_segmenter.tflite',
+      '/mediapipe/selfie_segmenter_landscape.tflite',
+    ].forEach((path) => {
+      fetch(new URL(path, window.location.origin).toString(), { cache: 'force-cache' }).catch(
+        () => {}
+      );
+    });
+  });
+}
+
 export function loadSavedEffectId() {
   try {
     const id = localStorage.getItem(STORAGE_KEY);

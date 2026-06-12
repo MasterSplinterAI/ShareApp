@@ -7,7 +7,8 @@ module.exports = {
     'plugin:react/jsx-runtime',
     'plugin:react-hooks/recommended',
   ],
-  ignorePatterns: ['dist', '.eslintrc.cjs', 'tests'],
+  // public/ holds vendored MediaPipe wasm loader JS — never lint vendor bundles
+  ignorePatterns: ['dist', '.eslintrc.cjs', 'tests', 'public'],
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   settings: { react: { version: '18.2' } },
   plugins: ['react-refresh'],

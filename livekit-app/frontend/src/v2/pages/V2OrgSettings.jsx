@@ -143,7 +143,6 @@ export default function V2OrgSettings() {
         { icon: 'ℹ️', duration: 6000 }
       );
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingSnap, searchParams]);
 
   const canManage = ['owner', 'admin'].includes(role);

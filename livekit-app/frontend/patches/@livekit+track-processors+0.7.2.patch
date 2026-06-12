@@ -1,0 +1,98 @@
+diff --git a/node_modules/@livekit/track-processors/dist/index.mjs b/node_modules/@livekit/track-processors/dist/index.mjs
+index 8c3efb1..5431d4e 100644
+--- a/node_modules/@livekit/track-processors/dist/index.mjs
++++ b/node_modules/@livekit/track-processors/dist/index.mjs
+@@ -734,6 +734,31 @@ var setupWebGL = (canvas) => {
+   const boxBlur = createBoxBlurProgram(gl);
+   const boxBlurProgram = boxBlur.program;
+   const boxBlurUniforms = boxBlur.uniforms;
++  const emaFragmentShader = glsl`#version 300 es
++  precision mediump float;
++  in vec2 texCoords;
++  uniform sampler2D u_current;
++  uniform sampler2D u_previous;
++  uniform float u_alpha;
++  out vec4 fragColor;
++  void main() {
++    float cur = texture(u_current, texCoords).r;
++    float prev = texture(u_previous, texCoords).r;
++    float v = mix(prev, cur, u_alpha);
++    fragColor = vec4(v, v, v, 1.0);
++  }
++`;
++  const emaVertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource(false));
++  const emaFragShader = createShader(gl, gl.FRAGMENT_SHADER, emaFragmentShader);
++  const emaProgram = createProgram(gl, emaVertexShader, emaFragShader);
++  const emaUniforms = {
++    position: gl.getAttribLocation(emaProgram, "position"),
++    current: gl.getUniformLocation(emaProgram, "u_current"),
++    previous: gl.getUniformLocation(emaProgram, "u_previous"),
++    alpha: gl.getUniformLocation(emaProgram, "u_alpha")
++  };
++  const maskTemporalAlpha = 0.5;
++  let firstMaskFrame = true;
+   const bgTexture = initTexture(gl, 0);
+   const frameTexture = initTexture(gl, 1);
+   const vertexBuffer = createVertexBuffer(gl);
+@@ -759,6 +784,8 @@ var setupWebGL = (canvas) => {
+   );
+   const tempMaskTexture = initTexture(gl, 5);
+   const tempMaskFrameBuffer = createFramebuffer(gl, tempMaskTexture, canvas.width, canvas.height);
++  const emaTempTexture = initTexture(gl, 8);
++  const emaTempFrameBuffer = createFramebuffer(gl, emaTempTexture, canvas.width, canvas.height);
+   finalMaskTextures.push(initTexture(gl, 6));
+   finalMaskTextures.push(initTexture(gl, 7));
+   const finalMaskFrameBuffers = [
+@@ -854,9 +881,7 @@ var setupWebGL = (canvas) => {
+     backgroundImageDisabled = disabled;
+   }
+   function updateMask(mask) {
+-    const tempFramebuffers = [tempMaskFrameBuffer, finalMaskFrameBuffers[writeMaskIndex]];
+-    const tempTextures = [tempMaskTexture, finalMaskTextures[writeMaskIndex]];
+-    applyBlur(
++    const blurredMask = applyBlur(
+       gl,
+       mask,
+       canvas.width,
+@@ -865,9 +890,25 @@ var setupWebGL = (canvas) => {
+       boxBlurProgram,
+       boxBlurUniforms,
+       vertexBuffer,
+-      tempFramebuffers,
+-      tempTextures
++      [tempMaskFrameBuffer, emaTempFrameBuffer],
++      [tempMaskTexture, emaTempTexture]
+     );
++    gl.useProgram(emaProgram);
++    gl.bindFramebuffer(gl.FRAMEBUFFER, finalMaskFrameBuffers[writeMaskIndex]);
++    gl.viewport(0, 0, canvas.width, canvas.height);
++    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
++    gl.vertexAttribPointer(emaUniforms.position, 2, gl.FLOAT, false, 0, 0);
++    gl.enableVertexAttribArray(emaUniforms.position);
++    gl.activeTexture(gl.TEXTURE0);
++    gl.bindTexture(gl.TEXTURE_2D, blurredMask);
++    gl.uniform1i(emaUniforms.current, 0);
++    gl.activeTexture(gl.TEXTURE1);
++    gl.bindTexture(gl.TEXTURE_2D, finalMaskTextures[readMaskIndex]);
++    gl.uniform1i(emaUniforms.previous, 1);
++    gl.uniform1f(emaUniforms.alpha, firstMaskFrame ? 1 : maskTemporalAlpha);
++    firstMaskFrame = false;
++    gl.drawArrays(gl.TRIANGLES, 0, 6);
++    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+     readMaskIndex = writeMaskIndex;
+     writeMaskIndex = 1 - writeMaskIndex;
+   }
+@@ -875,10 +916,13 @@ var setupWebGL = (canvas) => {
+     gl.deleteProgram(compositeProgram);
+     gl.deleteProgram(blurProgram);
+     gl.deleteProgram(boxBlurProgram);
++    gl.deleteProgram(emaProgram);
+     gl.deleteTexture(bgTexture);
+     gl.deleteTexture(frameTexture);
+     gl.deleteTexture(tempMaskTexture);
+     gl.deleteFramebuffer(tempMaskFrameBuffer);
++    gl.deleteTexture(emaTempTexture);
++    gl.deleteFramebuffer(emaTempFrameBuffer);
+     for (const texture of bgBlurTextures) {
+       gl.deleteTexture(texture);
+     }
