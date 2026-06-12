@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+  <head><title>Effects pipeline smoke test</title></head>
+  <body style="background:#111;color:#eee;font-family:monospace">
+    <h3>Effects pipeline smoke test</h3>
+    <div id="status">starting…</div>
+    <canvas id="src" width="640" height="360" style="display:none"></canvas>
+    <video id="vid" muted autoplay playsinline style="display:none"></video>
+    <canvas id="out" width="640" height="360" style="border:1px solid #555"></canvas>
+    <script type="module">
+      import { BackgroundTransformer } from '@livekit/track-processors';
+
+      const statusEl = document.getElementById('status');
+      const log = (m) => {
+        statusEl.textContent = m;
+        console.log('[smoke]', m);
+      };
+
+      const src = document.getElementById('src');
+      const ctx = src.getContext('2d');
+      const stream = src.captureStream(0); // manual frame emission
+      const streamTrack = stream.getVideoTracks()[0];
+      let t = 0;
+      // setInterval + explicit requestFrame: rAF is throttled in embedded views,
+      // which would starve captureStream and hang requestVideoFrameCallback.
+      setInterval(() => {
+        t += 1;
+        ctx.fillStyle = '#2266cc';
+        ctx.fillRect(0, 0, 640, 360);
+        // person-ish silhouette that moves
+        const x = 320 + Math.sin(t / 20) * 60;
+        ctx.fillStyle = '#e0b080';
+        ctx.beginPath();
+        ctx.arc(x, 140, 50, 0, Math.PI * 2); // head
+        ctx.fill();
+        ctx.fillRect(x - 80, 190, 160, 170); // torso
+        if (streamTrack.requestFrame) streamTrack.requestFrame();
+      }, 50);
+
+      const vid = document.getElementById('vid');
+      vid.srcObject = stream;
+
+      async function run() {
+        try {
+          await vid.play();
+          await new Promise((r) => setTimeout(r, 300));
+          const transformer = new BackgroundTransformer({
+            blurRadius: 10,
+            assetPaths: {
+              tasksVisionFileSet: new URL('/mediapipe/wasm', location.origin).toString(),
+              modelAssetPath: new URL('/mediapipe/selfie_segmenter.tflite', location.origin).toString(),
+            },
+          });
+          log('initializing transformer (wasm + model + shaders)…');
+          await transformer.init({
+            outputCanvas: document.getElementById('out'),
+            inputElement: vid,
+          });
+          log('init OK — pushing frames…');
+          // requestVideoFrameCallback never fires for hidden videos in embedded
+          // views; skip the first-frame sync (upstream code, not under test).
+          transformer.isFirstFrame = false;
+          let frames = 0;
+          const controller = { enqueue: (f) => f.close() };
+          const tick = async () => {
+            if (frames >= 30) {
+              const masks = transformer.segmentationResults?.confidenceMasks;
+              log(
+                `DONE: ${frames} frames processed, segTime=${transformer.segmentationTimeMs?.toFixed(1)}ms, ` +
+                  `confidenceMasks=${masks ? masks.length : 'none (closed)'} — PIPELINE OK`
+              );
+              window.__SMOKE_OK = true;
+              return;
+            }
+            const frame = new VideoFrame(vid);
+            await transformer.transform(frame, controller);
+            frames += 1;
+            if (frames % 10 === 0) log(`processed ${frames} frames…`);
+            setTimeout(tick, 66);
+          };
+          tick();
+        } catch (e) {
+          log('FAILED: ' + (e && e.message ? e.message : e));
+          window.__SMOKE_OK = false;
+          console.error(e);
+        }
+      }
+      run();
+    </script>
+  </body>
+</html>
