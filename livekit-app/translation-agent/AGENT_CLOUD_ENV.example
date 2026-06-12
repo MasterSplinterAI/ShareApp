@@ -30,8 +30,29 @@ VAD_MIN_SILENCE_SEC=1.1
 OPENAI_API_KEY=
 
 # --- Translation captions (cheap / low-latency default) ---
-# openai → openai.LLM() (~gpt-4o-mini) per transcription segment.
 LLM_PROVIDER=openai
+# Translation model (pinned; default gpt-4.1-mini) + sampling/timeout knobs.
+LLM_MODEL=gpt-4.1-mini
+LLM_TEMPERATURE=0.2
+# Per-attempt budget for one translation call (connect + full stream); 1 retry on failure.
+LLM_TIMEOUT_SEC=6.0
+
+# --- Live translation while speaking (simultaneous-MT local agreement) ---
+# Foreign-language readers see stable translated text during speech instead of
+# waiting for Deepgram is_final. Disable to fall back to final-only translation.
+INTERIM_TRANSLATION_ENABLED=true
+# Debounce between interim translation calls per target language (ms).
+INTERIM_TRANSLATION_MIN_INTERVAL_MS=600
+
+# --- Translation quality/consistency ---
+# Rolling (source → target) utterance pairs carried across turns (0 disables).
+TRANSLATION_CONTEXT_PAIRS=3
+# LRU cache for repeated utterances (0 disables).
+TRANSLATION_CACHE_SIZE=512
+# Comma-separated terms the LLM must keep verbatim (brand/product names).
+# TRANSLATION_KEYTERMS=ShareApp,LiveKit
+# Comma-separated Deepgram nova-3 keyterm prompts (boosts STT accuracy on domain terms).
+# DEEPGRAM_KEYTERMS=ShareApp,LiveKit
 
 # Optional (agent identity)
 AGENT_NAME=translation-cloud-prod
