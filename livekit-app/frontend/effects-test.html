@@ -20,20 +20,40 @@
       const ctx = src.getContext('2d');
       const stream = src.captureStream(0); // manual frame emission
       const streamTrack = stream.getVideoTracks()[0];
+      // Optional real-face fixture (drop any portrait at public/test-face.png);
+      // falls back to a synthetic silhouette when absent.
+      const faceImg = new Image();
+      faceImg.src = '/test-face.png';
+      const haveFace = await new Promise((r) => {
+        faceImg.onload = () => r(true);
+        faceImg.onerror = () => r(false);
+      });
       let t = 0;
       // setInterval + explicit requestFrame: rAF is throttled in embedded views,
       // which would starve captureStream and hang requestVideoFrameCallback.
       setInterval(() => {
         t += 1;
-        ctx.fillStyle = '#2266cc';
-        ctx.fillRect(0, 0, 640, 360);
-        // person-ish silhouette that moves
-        const x = 320 + Math.sin(t / 20) * 60;
-        ctx.fillStyle = '#e0b080';
-        ctx.beginPath();
-        ctx.arc(x, 140, 50, 0, Math.PI * 2); // head
-        ctx.fill();
-        ctx.fillRect(x - 80, 190, 160, 170); // torso
+        // Mid-stream resolution bump simulates publish-time constraint changes
+        // (the suspected staging failure: mask buffers sized for the old res).
+        if (t === 60 && src.width === 640) {
+          src.width = 960;
+          src.height = 540;
+          log('RESOLUTION CHANGED 640x360 -> 960x540');
+        }
+        const jx = Math.sin(t / 10) * 3; // small motion like a real webcam
+        if (haveFace) {
+          // crop the face band of the fixture (assumes ~683x812 tile)
+          ctx.drawImage(faceImg, 0, 60, 683, 384, jx, 0, src.width, src.height);
+        } else {
+          ctx.fillStyle = '#2266cc';
+          ctx.fillRect(0, 0, src.width, src.height);
+          const x = src.width / 2 + Math.sin(t / 20) * 60;
+          ctx.fillStyle = '#e0b080';
+          ctx.beginPath();
+          ctx.arc(x, src.height * 0.4, 50, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillRect(x - 80, src.height * 0.55, 160, src.height * 0.45);
+        }
         if (streamTrack.requestFrame) streamTrack.requestFrame();
       }, 50);
 
@@ -45,10 +65,10 @@
           await vid.play();
           await new Promise((r) => setTimeout(r, 300));
           const transformer = new BackgroundTransformer({
-            blurRadius: 10,
+            imagePath: new URL('/backgrounds/bg-cafe.jpg', location.origin).toString(),
             assetPaths: {
               tasksVisionFileSet: new URL('/mediapipe/wasm', location.origin).toString(),
-              modelAssetPath: new URL('/mediapipe/selfie_segmenter.tflite', location.origin).toString(),
+              modelAssetPath: new URL('/mediapipe/selfie_segmenter_landscape.tflite', location.origin).toString(),
             },
           });
           log('initializing transformer (wasm + model + shaders)…');
@@ -63,11 +83,10 @@
           let frames = 0;
           const controller = { enqueue: (f) => f.close() };
           const tick = async () => {
-            if (frames >= 30) {
-              const masks = transformer.segmentationResults?.confidenceMasks;
+            if (frames >= 90) {
               log(
-                `DONE: ${frames} frames processed, segTime=${transformer.segmentationTimeMs?.toFixed(1)}ms, ` +
-                  `confidenceMasks=${masks ? masks.length : 'none (closed)'} — PIPELINE OK`
+                `DONE: ${frames} frames processed (incl. resolution change), ` +
+                  `segTime=${transformer.segmentationTimeMs?.toFixed(1)}ms — PIPELINE OK`
               );
               window.__SMOKE_OK = true;
               return;

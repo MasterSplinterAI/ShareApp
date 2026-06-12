@@ -1,5 +1,5 @@
 diff --git a/node_modules/@livekit/track-processors/dist/index.mjs b/node_modules/@livekit/track-processors/dist/index.mjs
-index 8c3efb1..e759490 100644
+index 8c3efb1..9ea1b95 100644
 --- a/node_modules/@livekit/track-processors/dist/index.mjs
 +++ b/node_modules/@livekit/track-processors/dist/index.mjs
 @@ -606,18 +606,17 @@ var compositeFragmentShader = glsl`#version 300 es
@@ -129,7 +129,37 @@ index 8c3efb1..e759490 100644
    finalMaskTextures.push(initTexture(gl, 6));
    finalMaskTextures.push(initTexture(gl, 7));
    const finalMaskFrameBuffers = [
-@@ -853,21 +931,38 @@ var setupWebGL = (canvas) => {
+@@ -766,6 +844,29 @@ var setupWebGL = (canvas) => {
+     createFramebuffer(gl, finalMaskTextures[1], canvas.width, canvas.height)
+   ];
+   let backgroundImageDisabled = false;
++  // Camera resolution can change in place (republish with simulcast constraints,
++  // adaptive capture) without a processor restart. The mask framebuffers were
++  // sized once at setup; rendering a different-sized viewport into them displaces
++  // and scales the mask relative to the frame — the whole effect goes "weird".
++  // Reallocate on any size change and drop EMA history (it's the wrong size).
++  let maskTexWidth = canvas.width;
++  let maskTexHeight = canvas.height;
++  function ensureMaskBuffers() {
++    if (maskTexWidth === canvas.width && maskTexHeight === canvas.height) return;
++    maskTexWidth = canvas.width;
++    maskTexHeight = canvas.height;
++    const targets = [
++      tempMaskTexture,
++      emaTempTexture,
++      finalMaskTextures[0],
++      finalMaskTextures[1]
++    ];
++    for (const tex of targets) {
++      gl.bindTexture(gl.TEXTURE_2D, tex);
++      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, maskTexWidth, maskTexHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
++    }
++    firstMaskFrame = true;
++  }
+   gl.useProgram(compositeProgram);
+   gl.uniform1i(disableBackgroundLocation, backgroundImageDisabled ? 1 : 0);
+   gl.uniform1i(bgTextureLocation, 0);
+@@ -853,21 +954,39 @@ var setupWebGL = (canvas) => {
    function setBackgroundDisabled(disabled) {
      backgroundImageDisabled = disabled;
    }
@@ -149,6 +179,7 @@ index 8c3efb1..e759490 100644
 -      tempTextures
 -    );
 +  function updateMask(mask, inverted) {
++    ensureMaskBuffers();
 +    gl.useProgram(jbfProgram);
 +    gl.bindFramebuffer(gl.FRAMEBUFFER, tempMaskFrameBuffer);
 +    gl.viewport(0, 0, canvas.width, canvas.height);
@@ -183,7 +214,7 @@ index 8c3efb1..e759490 100644
      readMaskIndex = writeMaskIndex;
      writeMaskIndex = 1 - writeMaskIndex;
    }
-@@ -875,10 +970,14 @@ var setupWebGL = (canvas) => {
+@@ -875,10 +994,14 @@ var setupWebGL = (canvas) => {
      gl.deleteProgram(compositeProgram);
      gl.deleteProgram(blurProgram);
      gl.deleteProgram(boxBlurProgram);
@@ -198,7 +229,19 @@ index 8c3efb1..e759490 100644
      for (const texture of bgBlurTextures) {
        gl.deleteTexture(texture);
      }
-@@ -984,8 +1083,8 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -970,9 +1093,8 @@ var BackgroundProcessor = class extends VideoTransformer {
+   static get isSupported() {
+     return typeof OffscreenCanvas !== "undefined" && typeof VideoFrame !== "undefined" && typeof createImageBitmap !== "undefined" && !!document.createElement("canvas").getContext("webgl2");
+   }
+-  async init({ outputCanvas, inputElement: inputVideo }) {
+-    var _a, _b, _c, _d, _e, _f, _g, _h;
+-    await super.init({ outputCanvas, inputElement: inputVideo });
++  async createImageSegmenter() {
++    var _a, _b, _c, _d;
+     const fileSet = await vision.FilesetResolver.forVisionTasks(
+       (_b = (_a = this.options.assetPaths) == null ? void 0 : _a.tasksVisionFileSet) != null ? _b : `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${dependencies["@mediapipe/tasks-vision"]}/wasm`
+     );
+@@ -984,9 +1106,32 @@ var BackgroundProcessor = class extends VideoTransformer {
        },
        canvas: this.canvas,
        runningMode: "VIDEO",
@@ -207,9 +250,33 @@ index 8c3efb1..e759490 100644
 +      outputCategoryMask: false,
 +      outputConfidenceMasks: true
      });
++  }
++  async restart({ outputCanvas, inputElement: inputVideo }) {
++    var _a;
++    // The new output canvas means a NEW WebGL context; the segmenter's mask
++    // textures live in the old one and would sample as garbage. Rebind it.
++    await super.restart({ outputCanvas, inputElement: inputVideo });
++    await ((_a = this.imageSegmenter) == null ? void 0 : _a.close());
++    this.imageSegmenter = void 0;
++    await this.createImageSegmenter();
++    if (this.options.imagePath) {
++      await this.loadAndSetBackground(this.options.imagePath).catch(
++        (err) => this.log.error("Error while loading processor background image: ", err)
++      );
++    }
++    if (typeof this.options.blurRadius === "number") {
++      this.gl?.setBlurRadius(this.options.blurRadius);
++    }
++    this.gl?.setBackgroundDisabled(this.options.backgroundDisabled ?? false);
++  }
++  async init({ outputCanvas, inputElement: inputVideo }) {
++    var _e, _f, _g, _h;
++    await super.init({ outputCanvas, inputElement: inputVideo });
++    await this.createImageSegmenter();
      if ((_e = this.options) == null ? void 0 : _e.imagePath) {
        await this.loadAndSetBackground(this.options.imagePath).catch(
-@@ -1064,7 +1163,14 @@ var BackgroundProcessor = class extends VideoTransformer {
+         (err) => this.log.error("Error while loading processor background image: ", err)
+@@ -1064,7 +1209,14 @@ var BackgroundProcessor = class extends VideoTransformer {
            (_a2 = this.imageSegmenter) == null ? void 0 : _a2.segmentForVideo(frame, segmentationStartTimeMs, (result) => {
              this.segmentationTimeMs = performance.now() - segmentationStartTimeMs;
              this.segmentationResults = result;
@@ -225,7 +292,7 @@ index 8c3efb1..e759490 100644
              result.close();
              resolve();
            });
-@@ -1114,11 +1220,11 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -1114,11 +1266,11 @@ var BackgroundProcessor = class extends VideoTransformer {
        return;
      (_a = this.gl) == null ? void 0 : _a.renderFrame(frame);
    }
