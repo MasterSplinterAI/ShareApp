@@ -175,28 +175,45 @@ function JoinMeeting() {
   if (waitingHost) {
     return (
       <div
-        className="flex min-h-screen items-center justify-center bg-background px-4"
+        className="flex min-h-screen items-center justify-center bg-background px-4 py-8"
         style={brandingStyleVars(joinBranding)}
       >
-        <Card className="w-full max-w-md text-center">
-          <CardHeader>
+        <Card className="w-full max-w-md overflow-hidden border-border/60 shadow-sm">
+          <CardHeader className="space-y-5 pb-2 text-center">
             <MeetingBrandHeader branding={joinBranding} meetingTitle={meetingTitle} />
-            <div className="relative mx-auto mb-2 inline-flex h-16 w-16 items-center justify-center">
-              <Clock className="h-12 w-12 text-amber-500" />
-              <Loader2 className="absolute -right-1 -top-1 h-5 w-5 animate-spin text-primary" />
+            <div className="flex flex-col items-center gap-4">
+              <div
+                className="relative flex h-20 w-20 items-center justify-center"
+                role="status"
+                aria-live="polite"
+              >
+                <div
+                  className="absolute inset-0 rounded-full border-[3px] border-primary/15 border-t-primary animate-spin motion-reduce:animate-none"
+                  aria-hidden="true"
+                />
+                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/10">
+                  <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                </div>
+                <span className="sr-only">Waiting for the host to join the meeting</span>
+              </div>
+              <div className="space-y-2">
+                <CardTitle className="text-xl">Waiting for the host</CardTitle>
+                <CardDescription className="mx-auto max-w-sm text-sm leading-relaxed">
+                  You&apos;re in the queue. This page checks every few seconds and will let you in as soon as the host
+                  opens the room.
+                </CardDescription>
+                <p className="text-xs text-muted-foreground">Stay on this page — no need to refresh.</p>
+              </div>
             </div>
-            <CardTitle>Waiting for the host</CardTitle>
-            <CardDescription className="space-y-2">
-              <span className="block">
-                You&apos;re in the queue — this page checks every few seconds and will let you in as soon as the host opens the room.
-              </span>
-              <span className="block text-xs text-muted-foreground">
-                Stay on this page; you don&apos;t need to refresh manually.
-              </span>
-            </CardDescription>
           </CardHeader>
-          <CardFooter className="justify-center">
-            <Button type="button" variant="ghost" className="w-full" onClick={goHome}>
+          <CardFooter className="flex flex-col gap-2 border-t border-border/60 bg-muted/20 px-6 py-4">
+            <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground" aria-hidden="true">
+              <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-primary/60 [animation-delay:0ms]" />
+              <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-primary/60 [animation-delay:200ms]" />
+              <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-primary/60 [animation-delay:400ms]" />
+              <span className="ml-1">Checking for host…</span>
+            </div>
+            <Button type="button" variant="outline" className="w-full" onClick={goHome}>
               {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
                 ? 'Cancel and open workspace'
                 : 'Cancel and go home'}
