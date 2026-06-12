@@ -41,6 +41,30 @@ export const VIDEO_EFFECTS = [
     imagePath: '/backgrounds/bg-conference.jpg',
   },
   {
+    id: 'bg-loft',
+    label: 'Loft',
+    kind: 'image',
+    imagePath: '/backgrounds/bg-loft.jpg',
+  },
+  {
+    id: 'bg-cafe',
+    label: 'Café',
+    kind: 'image',
+    imagePath: '/backgrounds/bg-cafe.jpg',
+  },
+  {
+    id: 'bg-skyline',
+    label: 'Skyline',
+    kind: 'image',
+    imagePath: '/backgrounds/bg-skyline.jpg',
+  },
+  {
+    id: 'bg-beach',
+    label: 'Beach',
+    kind: 'image',
+    imagePath: '/backgrounds/bg-beach.jpg',
+  },
+  {
     id: 'bg-gradient',
     label: 'Gradient',
     kind: 'image',
@@ -139,7 +163,20 @@ export async function applyVideoEffect(track, effectId) {
       // No effect wanted and none attached — skip creating the pipeline entirely
       // (saves GPU on participants who never touch effects).
       if (effect.kind === 'none') return;
-      processor = BackgroundProcessor({ mode: 'disabled' });
+      processor = BackgroundProcessor({
+        mode: 'disabled',
+        // Self-hosted MediaPipe assets (no third-party CDN at call time, works on
+        // restricted enterprise networks). The landscape segmentation model is the
+        // variant built for 16:9 webcam framing — noticeably cleaner person/background
+        // edges (hair, shoulders) than the package's default square selfie model.
+        assetPaths: {
+          tasksVisionFileSet: new URL('/mediapipe/wasm', window.location.origin).toString(),
+          modelAssetPath: new URL(
+            '/mediapipe/selfie_segmenter_landscape.tflite',
+            window.location.origin
+          ).toString(),
+        },
+      });
       processorByTrack.set(track, processor);
       await track.setProcessor(processor);
     }
