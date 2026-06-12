@@ -1,14 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CaptionControls from './CaptionControls';
 import MeetingPanelMenu from './MeetingPanelMenu';
+import VideoEffectsPicker from './VideoEffectsPicker';
 import { useMeeting } from '../context/MeetingContext';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { controlLabel } from '../lib/controlLabels';
+import {
+  applyVideoEffect,
+  loadSavedEffectId,
+  saveEffectId,
+  useVideoEffectsSupport,
+} from '../lib/videoEffects';
 
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false);
@@ -30,6 +37,7 @@ export default function CustomControlBar({
   onShareClick,
   intentionalLeaveRef,
   onNavigateAfterLeave,
+  initialVideoEffectId = null,
 }) {
   const room = useRoomContext();
   const localParticipantHook = useLocalParticipant();
@@ -57,6 +65,7 @@ export default function CustomControlBar({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showMicMenu, setShowMicMenu] = useState(false);
   const [showCameraMenu, setShowCameraMenu] = useState(false);
+  const [showEffectsMenu, setShowEffectsMenu] = useState(false);
   const [micDevices, setMicDevices] = useState([]);
   const [cameraDevices, setCameraDevices] = useState([]);
   const [selectedMicId, setSelectedMicId] = useState(null);
@@ -64,6 +73,30 @@ export default function CustomControlBar({
 
   const micMenuRef = useRef(null);
   const cameraMenuRef = useRef(null);
+  const effectsMenuRef = useRef(null);
+
+  // --- Background effects (blur / virtual background) ---
+  const effectsSupported = useVideoEffectsSupport();
+  const [videoEffectId, setVideoEffectId] = useState(
+    () => initialVideoEffectId ?? loadSavedEffectId()
+  );
+
+  // Apply to every camera track instance: LiveKit creates a NEW LocalVideoTrack on
+  // camera re-enable and device switches, so this re-runs whenever the instance or
+  // the chosen effect changes (covers initial join via the prejoin choice too).
+  const camTrackInstance = cameraTrack?.publication?.track ?? cameraTrack?.track;
+  useEffect(() => {
+    if (!effectsSupported || !camTrackInstance) return;
+    applyVideoEffect(camTrackInstance, videoEffectId).catch((err) => {
+      console.warn('Video effect failed:', err);
+      toast.error('Could not apply background effect');
+    });
+  }, [camTrackInstance, videoEffectId, effectsSupported]);
+
+  const handleEffectSelect = (id) => {
+    setVideoEffectId(id);
+    saveEffectId(id);
+  };
 
   // Sync state with tracks (TrackReference uses publication.track)
   useEffect(() => {
@@ -214,6 +247,9 @@ export default function CustomControlBar({
       if (cameraMenuRef.current && !cameraMenuRef.current.contains(event.target)) {
         setShowCameraMenu(false);
       }
+      if (effectsMenuRef.current && !effectsMenuRef.current.contains(event.target)) {
+        setShowEffectsMenu(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -224,6 +260,7 @@ export default function CustomControlBar({
     const handleOrientationChange = () => {
       setShowMicMenu(false);
       setShowCameraMenu(false);
+      setShowEffectsMenu(false);
     };
     window.addEventListener('orientationchange', handleOrientationChange);
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
@@ -395,6 +432,40 @@ export default function CustomControlBar({
               </div>
             )}
           </div>
+
+          {/* Background effects (blur / virtual background) - hidden in compact mode;
+              the prejoin choice still applies on mobile, switching just needs desktop */}
+          {effectsSupported && !isCompact && (
+            <div className="relative" ref={effectsMenuRef}>
+              <Button
+                type="button"
+                variant={videoEffectId !== 'none' ? 'success' : 'secondary'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowEffectsMenu((v) => !v);
+                }}
+                className={cn(barBtn(false), videoEffectId !== 'none' && 'ring-2 ring-primary/40')}
+                aria-label="Background effects"
+                aria-expanded={showEffectsMenu}
+                title="Background effects"
+                disabled={!isCameraEnabled}
+              >
+                <Sparkles className="h-5 w-5" />
+                <span className="text-sm font-medium">Effects</span>
+              </Button>
+
+              {showEffectsMenu && (
+                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-72 rounded-lg border border-border bg-popover p-3 shadow-xl">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Background</p>
+                  <VideoEffectsPicker
+                    activeEffectId={videoEffectId}
+                    onSelect={handleEffectSelect}
+                    compact
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Screen Share - hidden in compact mode */}
           {!isCompact && (

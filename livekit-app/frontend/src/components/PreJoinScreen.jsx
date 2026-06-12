@@ -10,7 +10,14 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 import MeetingBrandHeader from './MeetingBrandHeader';
+import VideoEffectsPicker from './VideoEffectsPicker';
 import { brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding';
+import {
+  applyVideoEffect,
+  loadSavedEffectId,
+  saveEffectId,
+  useVideoEffectsSupport,
+} from '../lib/videoEffects';
 
 const MEETING_LANGUAGES = getMeetingLanguages();
 
@@ -116,6 +123,8 @@ function PreJoinScreen({
   const [videoDeviceId, setVideoDeviceId] = useState('');
   const [devices, setDevices] = useState({ audioinput: [], videoinput: [] });
   const [mediaError, setMediaError] = useState(null);
+  const effectsSupported = useVideoEffectsSupport();
+  const [effectId, setEffectId] = useState(() => loadSavedEffectId());
 
   const trackOptions = useMemo(
     () => ({
@@ -161,6 +170,20 @@ function PreJoinScreen({
     return undefined;
   }, [videoTrack]);
 
+  // Blur / virtual background on the live preview. usePreviewTracks re-acquires
+  // the track on device changes, so re-apply on every track instance.
+  useEffect(() => {
+    if (!videoTrack || !effectsSupported) return;
+    applyVideoEffect(videoTrack, effectId).catch((err) => {
+      console.warn('Preview video effect failed:', err);
+    });
+  }, [videoTrack, effectId, effectsSupported]);
+
+  const handleEffectSelect = useCallback((id) => {
+    setEffectId(id);
+    saveEffectId(id);
+  }, []);
+
   // Device lists (labels populate after permission is granted)
   useEffect(() => {
     let cancelled = false;
@@ -198,6 +221,7 @@ function PreJoinScreen({
       videoEnabled,
       audioDeviceId,
       videoDeviceId,
+      videoEffectId: effectId,
     });
   };
 
@@ -292,6 +316,17 @@ function PreJoinScreen({
                   can still join — live captions need a working microphone.
                 </span>
               </p>
+            )}
+
+            {effectsSupported && (
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium text-muted-foreground">Background</Label>
+                <VideoEffectsPicker
+                  activeEffectId={effectId}
+                  onSelect={handleEffectSelect}
+                  disabled={!videoEnabled || !videoTrack}
+                />
+              </div>
             )}
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

@@ -155,7 +155,7 @@ function MeetingRoom() {
   }, [isInitialized, participantInfo, prejoinChoices]);
 
   const handlePrejoinJoin = useCallback(
-    ({ name, language, audioEnabled, videoEnabled, audioDeviceId, videoDeviceId }) => {
+    ({ name, language, audioEnabled, videoEnabled, audioDeviceId, videoDeviceId, videoEffectId }) => {
       setParticipantInfo((prev) => {
         const next = {
           ...prev,
@@ -170,7 +170,7 @@ function MeetingRoom() {
         }
         return next;
       });
-      setPrejoinChoices({ audioEnabled, videoEnabled, audioDeviceId, videoDeviceId });
+      setPrejoinChoices({ audioEnabled, videoEnabled, audioDeviceId, videoDeviceId, videoEffectId });
     },
     [roomName]
   );
@@ -504,6 +504,7 @@ function MeetingRoomInner({
           onShareClick={() => setShowShareModal(true)}
           intentionalLeaveRef={intentionalLeaveRef}
           onNavigateAfterLeave={onNavigateAfterLeave}
+          initialVideoEffectId={prejoinChoices?.videoEffectId ?? null}
         />
 
         {/* Debug panel — add ?debug=1 to URL */}
