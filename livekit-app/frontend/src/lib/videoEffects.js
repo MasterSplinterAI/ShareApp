@@ -148,6 +148,25 @@ const processorByTrack = new WeakMap();
 const pendingByTrack = new WeakMap();
 
 /**
+ * Pick the segmentation model that matches the camera's actual framing.
+ * The landscape model (256×144) is trained for 16:9 desktop webcams; feeding it
+ * portrait phone frames squashes the person and shreds the mask edges. Portrait
+ * (and unknown) framing uses the square general model (256×256) instead.
+ */
+function pickModelPath(track) {
+  let landscape = false;
+  try {
+    const s = track?.mediaStreamTrack?.getSettings?.() || {};
+    if (s.width && s.height) landscape = s.width > s.height;
+  } catch {
+    /* settings unavailable — fall through to the square model */
+  }
+  return landscape
+    ? '/mediapipe/selfie_segmenter_landscape.tflite'
+    : '/mediapipe/selfie_segmenter.tflite';
+}
+
+/**
  * Ensure `track` renders with the given effect id. Safe to call repeatedly and on
  * fresh tracks (camera re-enable, device switch). Resolves when the switch lands.
  */
@@ -166,15 +185,12 @@ export async function applyVideoEffect(track, effectId) {
       processor = BackgroundProcessor({
         mode: 'disabled',
         // Self-hosted MediaPipe assets (no third-party CDN at call time, works on
-        // restricted enterprise networks). The landscape segmentation model is the
-        // variant built for 16:9 webcam framing — noticeably cleaner person/background
-        // edges (hair, shoulders) than the package's default square selfie model.
+        // restricted enterprise networks). Model is chosen per track: landscape
+        // (256×144) for 16:9 desktop webcams, square (256×256) for portrait phone
+        // cameras — using the wrong aspect noticeably degrades mask edges.
         assetPaths: {
           tasksVisionFileSet: new URL('/mediapipe/wasm', window.location.origin).toString(),
-          modelAssetPath: new URL(
-            '/mediapipe/selfie_segmenter_landscape.tflite',
-            window.location.origin
-          ).toString(),
+          modelAssetPath: new URL(pickModelPath(track), window.location.origin).toString(),
         },
       });
       processorByTrack.set(track, processor);

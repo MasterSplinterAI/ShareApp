@@ -591,7 +591,11 @@ function TranscriptionPanel() {
       target.isPartial,
       target.sourceLanguage,
     );
-    const line = pendingTranslation && !dominant ? 'Translating…' : dominant;
+    // Finalized but never translated (cold LLM / dropped lane): show the original
+    // rather than a permanent "Translating…" in the mobile caption bar.
+    const line = pendingTranslation && !dominant
+      ? (target.isPartial ? 'Translating…' : target.originalText)
+      : dominant;
     return line ? `${target.speaker}: ${line}` : null;
   }, [messages, selectedLanguage]);
 
@@ -752,7 +756,23 @@ function TranscriptionBubble({
   pendingTranslation = false,
   compact = false,
 }) {
-  const showTranslating = pendingTranslation && !dominant;
+  // A finalized bubble whose translation never arrived (cold LLM, dropped lane)
+  // must not say "Translating…" forever — fall back to the original text.
+  const [translationTimedOut, setTranslationTimedOut] = useState(false);
+  useEffect(() => {
+    if (!pendingTranslation || dominant || isPartial) {
+      setTranslationTimedOut(false);
+      return undefined;
+    }
+    const t = setTimeout(() => setTranslationTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, [pendingTranslation, dominant, isPartial]);
+
+  const showTranslating = pendingTranslation && !dominant && !translationTimedOut;
+  const fallbackToOriginal = pendingTranslation && !dominant && translationTimedOut;
+  const displayDominant = fallbackToOriginal ? secondary : dominant;
+  const displayDominantLang = fallbackToOriginal ? secondaryLang : dominantLang;
+  const displaySecondary = fallbackToOriginal ? null : secondary;
 
   return (
     <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0`}>
@@ -784,26 +804,26 @@ function TranscriptionBubble({
             <span className="inline-block w-1.5 h-4 bg-primary ml-1 animate-pulse rounded-sm align-middle" />
           )}
         </p>
-      ) : dominant ? (
+      ) : displayDominant ? (
         <p
           className={`break-words leading-relaxed bg-muted/40 rounded px-2.5 py-1.5 ${compact ? 'text-xs' : 'text-sm'} text-foreground`}
         >
-          {dominantLang && (
-            <span className="text-muted-foreground mr-1">[{getLanguageLabel(dominantLang)}]</span>
+          {displayDominantLang && (
+            <span className="text-muted-foreground mr-1">[{getLanguageLabel(displayDominantLang)}]</span>
           )}
-          {dominant}
+          {displayDominant}
           {isPartial && (
             <span className="inline-block w-1.5 h-4 bg-primary ml-1 animate-pulse rounded-sm align-middle" />
           )}
         </p>
       ) : null}
 
-      {secondary && (
+      {displaySecondary && (
         <p className={`text-muted-foreground break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} opacity-70`}>
           {secondaryLang && (
             <span className="text-muted-foreground mr-1">[{getLanguageLabel(secondaryLang)}]</span>
           )}
-          {secondary}
+          {displaySecondary}
         </p>
       )}
     </div>

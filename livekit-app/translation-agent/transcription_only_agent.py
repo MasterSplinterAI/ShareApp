@@ -1067,6 +1067,34 @@ class TranscriptionOnlyAgent:
         if llm_instance is None:
             logger.error(f"{L} No LLM available (LLM_PROVIDER={llm_provider})")
         return llm_instance, llm_provider_name
+
+    async def _prewarm_llm(self, llm_instance: Any, speaker_id: str, target_lang: str) -> None:
+        """Open the LLM's HTTPS connection before the first real utterance.
+
+        The first request on a cold client pays DNS + TLS + connection setup; on a
+        slow path that pushes the first translation past its timeout and the opening
+        utterance degrades to untranslated text (seen as a stuck 'Translating…').
+        A tiny throwaway request here makes the first real call hit a warm pool.
+        """
+        from livekit.agents.llm import ChatContext
+
+        L = f"[{speaker_id}→{target_lang}]"
+        try:
+            chat_ctx = ChatContext()
+            chat_ctx.add_message(role="user", content="ping")
+            t0 = time.perf_counter()
+            stream = llm_instance.chat(chat_ctx=chat_ctx)
+            try:
+                async for _chunk in stream:
+                    break  # first token proves the connection is up
+            finally:
+                await stream.aclose()
+            logger.info(
+                f"{L} LLM prewarmed in {round((time.perf_counter() - t0) * 1000)}ms"
+            )
+        except Exception as e:  # noqa: BLE001
+            # Best-effort: a failed prewarm just means the first call is cold.
+            logger.debug(f"{L} LLM prewarm failed: {e}")
     async def _run_speaker_pipeline(self, job_ctx: JobContext, run_ctx: SpeakerRunContext) -> None:
         """One STT + VAD per speaker; fan out FINAL segments to per-target LLM lanes."""
         from livekit.agents.llm import ChatContext
@@ -1136,6 +1164,9 @@ class TranscriptionOnlyAgent:
                         if llm is None:
                             logger.error(f"{L}→{tgt} No LLM — skipping translation lane")
                             continue
+                        # Warm the connection now so the FIRST utterance translates
+                        # within budget instead of paying cold-start inside the call.
+                        self._spawn_bg(self._prewarm_llm(llm, speaker_id, tgt))
                 lanes[tgt] = TargetLaneState(
                     target_lang=tgt,
                     is_same_language=is_same,
@@ -1560,6 +1591,32 @@ class TranscriptionOnlyAgent:
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                 else:
                     full_translated = lane.display_translation()
+                    if not (full_translated or "").strip() and lane.llm_instance is not None:
+                        # Lane joined mid-turn (listener language arrived after speech
+                        # started) so no translation was ever attempted — one direct
+                        # call here keeps the FIRST utterance from publishing
+                        # untranslated and sticking on 'Translating…' downstream.
+                        cached = self._translation_cache.get(speaker_lang, tgt, full_original)
+                        if cached is not None:
+                            full_translated = cached
+                        else:
+                            try:
+                                result, usage = await asyncio.wait_for(
+                                    run_llm_stream(lane, tgt, full_original, partial=False),
+                                    timeout=_llm_timeout_sec(),
+                                )
+                                if result:
+                                    full_translated = result
+                                    self._translation_cache.put(
+                                        speaker_lang, tgt, full_original, result
+                                    )
+                                    emit_llm_cost(lane, full_original, result, usage)
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as e:  # noqa: BLE001
+                                logger.warning(
+                                    f"{L}→{tgt} ⚠️ last-chance finalize translation failed: {e}"
+                                )
                 has_translation = full_original.strip().lower() != (full_translated or "").strip().lower()
                 await publish_lane(
                     {
