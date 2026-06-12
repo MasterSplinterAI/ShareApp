@@ -22,7 +22,11 @@ function frontendBaseUrl() {
 
 router.get('/plans', async (req, res) => {
   try {
-    const plans = await db.all(`SELECT * FROM v2_plans ORDER BY monthly_price_cents ASC`);
+    const rows = await db.all(`SELECT * FROM v2_plans ORDER BY monthly_price_cents ASC`);
+    const plans = rows.map((planRow) => ({
+      ...planRow,
+      teamWorkspace: planAllowsTeamWorkspace(planRow.id),
+    }));
     res.json({ plans, stripeEnabled: stripeEnabled() });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });

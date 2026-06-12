@@ -6,15 +6,20 @@ const { requireV2Auth } = require('../../middleware/v2Auth');
 const { hashPassword, verifyPassword, signSession } = require('../../lib/authAdapter');
 const { sendEmail } = require('../../lib/mailer');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
-const { PERSONAL, resolveNewWorkspace } = require('../../lib/v2Workspace');
+const { PERSONAL, TEAM, normalizeAccountTypeHint, resolveNewWorkspace } = require('../../lib/v2Workspace');
 
 function emailValid(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 }
 
 /** Org + owner membership + free subscription + billing cycle for a user. */
-async function provisionOrgForUser(userId, email, { orgName, displayName } = {}) {
-  const { accountType, name } = resolveNewWorkspace({ orgName, displayName, email });
+async function provisionOrgForUser(userId, email, { orgName, displayName, accountType: accountTypeHint } = {}) {
+  const { accountType, name } = resolveNewWorkspace({
+    orgName,
+    displayName,
+    email,
+    accountType: accountTypeHint,
+  });
   const orgId = db.uuid();
   await db.run(
     `INSERT INTO v2_organizations (id, name, billing_status, account_type) VALUES (?,?,?,?)`,
@@ -38,9 +43,14 @@ async function provisionOrgForUser(userId, email, { orgName, displayName } = {})
 router.post('/signup', async (req, res) => {
   const cleanup = [];
   try {
-    const { email, password, displayName, orgName } = req.body || {};
+    const { email, password, displayName, orgName, accountType: accountTypeRaw } = req.body || {};
     if (!emailValid(email) || !password || String(password).length < 8) {
       return res.status(400).json({ error: 'Invalid email or password (min 8 chars)' });
+    }
+    const accountTypeHint = normalizeAccountTypeHint(accountTypeRaw);
+    const trimmedOrgName = typeof orgName === 'string' ? orgName.trim() : '';
+    if (accountTypeHint === TEAM && !trimmedOrgName) {
+      return res.status(400).json({ error: 'Company name is required for company accounts' });
     }
     const existing = await db.get(`SELECT id FROM v2_users WHERE email = ?`, [email.trim().toLowerCase()]);
     if (existing) {
@@ -54,8 +64,9 @@ router.post('/signup', async (req, res) => {
     );
     cleanup.push(() => db.run(`DELETE FROM v2_users WHERE id = ?`, [userId]));
     const { orgId, orgName: org, accountType } = await provisionOrgForUser(userId, email, {
-      orgName,
+      orgName: trimmedOrgName || undefined,
       displayName: displayName || email.split('@')[0],
+      accountType: accountTypeHint,
     });
     const token = signSession({ sub: userId, email: email.trim().toLowerCase(), orgId, role: 'owner' });
     res.status(201).json({

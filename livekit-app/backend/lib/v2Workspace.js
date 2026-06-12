@@ -9,15 +9,33 @@ function isLegacyAutoOrgName(name, email) {
   return name === `${local}'s org`;
 }
 
+function normalizeAccountTypeHint(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const v = raw.trim().toLowerCase();
+  if (v === 'team' || v === 'company' || v === 'business') return TEAM;
+  if (v === 'personal' || v === 'individual') return PERSONAL;
+  return null;
+}
+
 /**
  * Decide account_type + stored org name at signup / repair.
  * @returns {{ accountType: 'personal'|'team', name: string }}
  */
-function resolveNewWorkspace({ orgName, displayName, email }) {
+function resolveNewWorkspace({ orgName, displayName, email, accountType: accountTypeHint }) {
   const trimmedOrg = orgName && String(orgName).trim();
   const trimmedDisplay = displayName && String(displayName).trim();
   const emailLocal = String(email || '').split('@')[0] || 'User';
+  const explicit = normalizeAccountTypeHint(accountTypeHint);
 
+  if (explicit === PERSONAL) {
+    return {
+      accountType: PERSONAL,
+      name: (trimmedDisplay || emailLocal).slice(0, 128),
+    };
+  }
+  if (explicit === TEAM) {
+    return { accountType: TEAM, name: trimmedOrg.slice(0, 128) };
+  }
   if (trimmedOrg) {
     return { accountType: TEAM, name: trimmedOrg.slice(0, 128) };
   }
@@ -40,6 +58,7 @@ module.exports = {
   PERSONAL,
   TEAM,
   isLegacyAutoOrgName,
+  normalizeAccountTypeHint,
   resolveNewWorkspace,
   workspaceDisplayLabel,
 };

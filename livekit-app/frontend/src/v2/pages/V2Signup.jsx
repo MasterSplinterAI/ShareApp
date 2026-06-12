@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Auth } from '../../services/apiV2';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -16,8 +17,9 @@ export default function V2Signup() {
   const planName = PAID_PLANS[planParam] || null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [teamName, setTeamName] = useState('');
+  const [companyName, setCompanyName] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [accountType, setAccountType] = useState('individual');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -33,13 +35,18 @@ export default function V2Signup() {
       toast.error('Please agree to the Terms of Service and Privacy Policy');
       return;
     }
+    if (accountType === 'company' && !companyName.trim()) {
+      toast.error('Company name is required for company accounts');
+      return;
+    }
     setLoading(true);
     try {
       const data = await v2Auth.signup({
         email,
         password,
         displayName: displayName.trim() || undefined,
-        orgName: teamName.trim() || undefined,
+        accountType,
+        orgName: accountType === 'company' ? companyName.trim() : undefined,
       });
       localStorage.setItem('v2_token', data.token);
       toast.success('Account created');
@@ -61,8 +68,8 @@ export default function V2Signup() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl">Create account</CardTitle>
           <CardDescription>
-            Start free with a personal account — host meetings, share guest links, and get live captions. No company name
-            required.
+            Start free as an individual, or sign up with your company. You can upgrade to a business plan later to invite
+            colleagues—even if you&apos;re already on a paid personal plan.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -74,6 +81,39 @@ export default function V2Signup() {
           )}
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
+              <Label>Account type</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAccountType('individual')}
+                  className={cn(
+                    'rounded-md border px-3 py-2.5 text-left text-sm transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    accountType === 'individual'
+                      ? 'border-primary bg-primary/5 font-medium text-foreground'
+                      : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                  )}
+                >
+                  <span className="block font-medium">Individual</span>
+                  <span className="mt-0.5 block text-xs opacity-80">Personal use — just your name</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAccountType('company')}
+                  className={cn(
+                    'rounded-md border px-3 py-2.5 text-left text-sm transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                    accountType === 'company'
+                      ? 'border-primary bg-primary/5 font-medium text-foreground'
+                      : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+                  )}
+                >
+                  <span className="block font-medium">Company</span>
+                  <span className="mt-0.5 block text-xs opacity-80">Shared workspace name</span>
+                </button>
+              </div>
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="display">Your name</Label>
               <Input
                 id="display"
@@ -84,6 +124,24 @@ export default function V2Signup() {
                 autoComplete="name"
               />
             </div>
+            {accountType === 'company' && (
+              <div className="space-y-2">
+                <Label htmlFor="company">Company name</Label>
+                <Input
+                  id="company"
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Acme Inc"
+                  required
+                  autoComplete="organization"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Shown to your team in meetings and settings. Upgrade to Pro later to invite colleagues with their own
+                  logins.
+                </p>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
@@ -100,22 +158,6 @@ export default function V2Signup() {
                 autoComplete="new-password"
               />
             </div>
-            {planName && (
-              <div className="space-y-2">
-                <Label htmlFor="team">Company or team name (optional)</Label>
-                <Input
-                  id="team"
-                  type="text"
-                  value={teamName}
-                  onChange={(e) => setTeamName(e.target.value)}
-                  placeholder="Acme Inc"
-                  autoComplete="organization"
-                />
-                <p className="text-xs text-muted-foreground">
-                  Skip this for a personal account. Add a name if you&apos;re setting up a shared team workspace.
-                </p>
-              </div>
-            )}
             <div className="flex items-start gap-2">
               <input
                 id="terms"

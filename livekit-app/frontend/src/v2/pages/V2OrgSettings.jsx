@@ -194,7 +194,7 @@ export default function V2OrgSettings() {
     setEnablingTeam(true);
     try {
       await v2Orgs.patchMe({ name: trimmed, makeTeam: true });
-      toast.success('Team workspace enabled');
+      toast.success('Company workspace enabled');
       const fresh = await v2Orgs.me();
       setOrg(fresh);
       setOrgNameDraft(fresh?.org?.name || trimmed);
@@ -430,17 +430,28 @@ export default function V2OrgSettings() {
               {!teamAccount && canRenameOrg && (
                 <Card className="app-card border-border/60">
                   <CardHeader>
-                    <CardTitle>Team workspace</CardTitle>
+                    <CardTitle>Company workspace</CardTitle>
                     <CardDescription>
                       {teamWorkspace
-                        ? 'Add a company or team name when you want a shared workspace and member invites.'
-                        : 'Upgrade to a team plan to invite colleagues. You can still set a team name now if you prefer.'}
+                        ? 'Switch from a personal account to a company workspace so your organization name appears across meetings and settings.'
+                        : 'On an individual or Starter plan you can host meetings and share guest links. Upgrade to Pro for a business workspace where you can invite colleagues with their own logins.'}
                     </CardDescription>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="space-y-4">
+                    {!teamWorkspace && (
+                      <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                        <p>
+                          You can upgrade anytime from Billing—even if you&apos;re already on a paid personal plan. Pro
+                          unlocks member invites and shared workspace features.
+                        </p>
+                        <Button type="button" variant="link" className="mt-1 h-auto p-0" onClick={() => setSection('billing')}>
+                          View plans in Billing →
+                        </Button>
+                      </div>
+                    )}
                     <form onSubmit={enableTeamWorkspace} className="max-w-md space-y-3">
                       <div className="space-y-2">
-                        <Label htmlFor="team-name">Company or team name</Label>
+                        <Label htmlFor="team-name">Company name</Label>
                         <Input
                           id="team-name"
                           value={teamNameDraft}
@@ -451,7 +462,7 @@ export default function V2OrgSettings() {
                         />
                       </div>
                       <Button type="submit" variant="outline" disabled={enablingTeam || !teamNameDraft.trim()}>
-                        {enablingTeam ? 'Enabling…' : 'Enable team workspace'}
+                        {enablingTeam ? 'Switching…' : 'Switch to company workspace'}
                       </Button>
                     </form>
                   </CardContent>
@@ -649,9 +660,21 @@ export default function V2OrgSettings() {
             <Card className="app-card border-border/60">
               <CardHeader>
                 <CardTitle>Billing</CardTitle>
-                <CardDescription>Plan, usage, and self-serve upgrade (Stripe test mode when enabled).</CardDescription>
+                <CardDescription>
+                  Plan, usage, and self-serve upgrade. Individual and Starter are for solo use; Pro is the business plan
+                  with team invites.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
+                {!teamWorkspace && canManage && billingSnap?.subscription?.is_comp !== 1 && (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-3 text-foreground">
+                    <p className="font-medium">Need to invite colleagues?</p>
+                    <p className="mt-1 text-muted-foreground">
+                      Upgrade to Pro for a business workspace—member invites, shared settings, and higher volume. Works
+                      whether you started as an individual or company, and whether you&apos;re on free or Starter today.
+                    </p>
+                  </div>
+                )}
                 {billingSnap?.subscription?.is_comp === 1 && (
                   <div className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-3 text-foreground">
                     Unlimited access ({billingSnap.subscription.comp_label || 'comp'}) — usage caps waived.
@@ -701,12 +724,14 @@ export default function V2OrgSettings() {
                           <Button
                             key={p.id}
                             type="button"
-                            variant="outline"
+                            variant={p.teamWorkspace ? 'default' : 'outline'}
                             size="sm"
                             disabled={!billingSnap?.stripeEnabled || checkoutLoading === p.id}
                             onClick={() => startCheckout(p.id)}
                           >
-                            {checkoutLoading === p.id ? 'Loading…' : `Upgrade to ${p.name}`}
+                            {checkoutLoading === p.id
+                              ? 'Loading…'
+                              : `Upgrade to ${p.name}${p.teamWorkspace ? ' (business)' : ''}`}
                           </Button>
                         ))}
                       {billingSnap?.subscription?.stripe_customer_id && billingSnap?.stripeEnabled && (
