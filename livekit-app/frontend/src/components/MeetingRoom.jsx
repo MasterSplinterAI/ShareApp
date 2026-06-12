@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext } from '@livekit/components-react';
+import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks } from '@livekit/components-react';
 import { ConnectionState, RoomEvent } from 'livekit-client';
 import { controlLabel } from '../lib/controlLabels';
 import toast from 'react-hot-toast';
@@ -18,9 +18,11 @@ import CustomControlBar from './CustomControlBar';
 import RoomConnectionGuard from './RoomConnectionGuard';
 import VideoGrid from './VideoGrid';
 import PreJoinScreen from './PreJoinScreen';
+import PublishPreviewTracks from './PublishPreviewTracks';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { autopilotTranslator } from '../lib/autopilot-translator';
+import { ROOM_PUBLISH_DEFAULTS } from '../lib/roomPublishDefaults';
 
 function HostSessionReporter({ meetingId, isHost }) {
   const room = useRoomContext();
@@ -59,6 +61,38 @@ function MeetingRoom() {
   const [reconnecting, setReconnecting] = useState(false);
   const intentionalLeaveRef = useRef(false);
   const reconnectingRef = useRef(false);
+  const [previewMedia, setPreviewMedia] = useState({
+    audioEnabled: true,
+    videoEnabled: true,
+    audioDeviceId: '',
+    videoDeviceId: '',
+  });
+  // Freeze preview track options at join so usePreviewTracks keeps the same instances
+  // (with any attached background processor) through the prejoin → room transition.
+  const [frozenPreviewTrackOptions, setFrozenPreviewTrackOptions] = useState(null);
+
+  const previewTrackOptions = useMemo(() => {
+    if (!isInitialized) return { audio: false, video: false };
+    if (frozenPreviewTrackOptions) return frozenPreviewTrackOptions;
+    return {
+      audio: previewMedia.audioEnabled
+        ? { deviceId: previewMedia.audioDeviceId || undefined }
+        : false,
+      video: previewMedia.videoEnabled
+        ? { deviceId: previewMedia.videoDeviceId || undefined }
+        : false,
+    };
+  }, [isInitialized, frozenPreviewTrackOptions, previewMedia]);
+
+  const onPreviewMediaError = useCallback((err) => {
+    console.warn('PreJoin media error:', err);
+  }, []);
+
+  const previewTracks = usePreviewTracks(previewTrackOptions, onPreviewMediaError);
+
+  const handlePreviewMediaChange = useCallback((partial) => {
+    setPreviewMedia((prev) => ({ ...prev, ...partial }));
+  }, []);
 
   // Initialize participant info on mount
   useEffect(() => {
@@ -156,6 +190,10 @@ function MeetingRoom() {
 
   const handlePrejoinJoin = useCallback(
     ({ name, language, audioEnabled, videoEnabled, audioDeviceId, videoDeviceId, videoEffectId }) => {
+      setFrozenPreviewTrackOptions({
+        audio: audioEnabled ? { deviceId: audioDeviceId || undefined } : false,
+        video: videoEnabled ? { deviceId: videoDeviceId || undefined } : false,
+      });
       setParticipantInfo((prev) => {
         const next = {
           ...prev,
@@ -318,6 +356,9 @@ function MeetingRoom() {
         participantCount={participantInfo.numParticipants}
         meetingTitle={meetingTitle}
         branding={meetingBranding}
+        previewTracks={previewTracks}
+        media={previewMedia}
+        onMediaChange={handlePreviewMediaChange}
         onJoin={handlePrejoinJoin}
       />
     );
@@ -352,6 +393,7 @@ function MeetingRoom() {
         token={token}
         livekitUrl={livekitUrl}
         prejoinChoices={prejoinChoices}
+        previewTracks={previewTracks}
         participantInfo={participantInfo}
         roomName={roomName}
         meetingId={participantInfo.meetingId}
@@ -372,6 +414,7 @@ function MeetingRoomInner({
   token,
   livekitUrl,
   prejoinChoices,
+  previewTracks,
   participantInfo,
   roomName,
   meetingId,
@@ -419,8 +462,8 @@ function MeetingRoomInner({
         </div>
       )}
       <LiveKitRoom
-        video={prejoinChoices?.videoEnabled ?? true}
-        audio={prejoinChoices?.audioEnabled ?? true}
+        video={false}
+        audio={false}
         token={token}
         serverUrl={livekitUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud'}
         onDisconnected={() => {
@@ -438,29 +481,16 @@ function MeetingRoomInner({
           videoCaptureDefaults: prejoinChoices?.videoDeviceId
             ? { deviceId: prejoinChoices.videoDeviceId }
             : undefined,
-          publishDefaults: {
-            // Camera: 3-layer simulcast for graceful degradation on low-bandwidth viewers
-            videoSimulcastLayers: [
-              { width: 320,  height: 180,  encoding: { maxBitrate: 150_000,  maxFramerate: 15 } },
-              { width: 640,  height: 360,  encoding: { maxBitrate: 500_000,  maxFramerate: 30 } },
-              { width: 1280, height: 720,  encoding: { maxBitrate: 1_700_000, maxFramerate: 30 } },
-            ],
-            // Screen share: prioritize clarity over motion
-            screenShareEncoding: {
-              maxBitrate: 3_000_000,
-              maxFramerate: 15,
-            },
-            // Screen share simulcast: 2 layers so 720p viewers don't drop the whole stream
-            screenShareSimulcastLayers: [
-              { width: 1280, height: 720,  encoding: { maxBitrate: 1_500_000, maxFramerate: 15 } },
-              { width: 1920, height: 1080, encoding: { maxBitrate: 3_000_000, maxFramerate: 15 } },
-            ],
-            // VP9 for cameras (~30% better quality at same bitrate)
-            videoCodec: 'vp9',
-          },
+          publishDefaults: ROOM_PUBLISH_DEFAULTS,
         }}
         className="h-full flex flex-col"
       >
+        <PublishPreviewTracks
+          tracks={previewTracks}
+          videoEnabled={prejoinChoices?.videoEnabled ?? false}
+          audioEnabled={prejoinChoices?.audioEnabled ?? false}
+          publishOptions={ROOM_PUBLISH_DEFAULTS}
+        />
         <RoomConnectionGuard
           intentionalLeaveRef={intentionalLeaveRef}
           reconnectingRef={reconnectingRef}

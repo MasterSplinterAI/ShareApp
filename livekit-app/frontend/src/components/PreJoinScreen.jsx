@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { usePreviewTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import {
   Mic, MicOff, Video, VideoOff, Globe, ChevronDown, Check, AlertCircle, Users,
@@ -110,6 +109,9 @@ function PreJoinScreen({
   participantCount = null,
   meetingTitle = null,
   branding = null,
+  previewTracks,
+  media,
+  onMediaChange,
   onJoin,
 }) {
   const [name, setName] = useState(defaultName);
@@ -117,32 +119,33 @@ function PreJoinScreen({
     normalizeMeetingLanguageCode(defaultLanguage)
   );
   const [langOpen, setLangOpen] = useState(false);
-  const [audioEnabled, setAudioEnabled] = useState(true);
-  const [videoEnabled, setVideoEnabled] = useState(true);
-  const [audioDeviceId, setAudioDeviceId] = useState('');
-  const [videoDeviceId, setVideoDeviceId] = useState('');
+  const { audioEnabled, videoEnabled, audioDeviceId, videoDeviceId } = media;
+  const setAudioEnabled = useCallback(
+    (value) => {
+      onMediaChange(typeof value === 'function' ? { audioEnabled: value(audioEnabled) } : { audioEnabled: value });
+    },
+    [onMediaChange, audioEnabled]
+  );
+  const setVideoEnabled = useCallback(
+    (value) => {
+      onMediaChange(typeof value === 'function' ? { videoEnabled: value(videoEnabled) } : { videoEnabled: value });
+    },
+    [onMediaChange, videoEnabled]
+  );
+  const setAudioDeviceId = useCallback(
+    (deviceId) => onMediaChange({ audioDeviceId: deviceId }),
+    [onMediaChange]
+  );
+  const setVideoDeviceId = useCallback(
+    (deviceId) => onMediaChange({ videoDeviceId: deviceId }),
+    [onMediaChange]
+  );
   const [devices, setDevices] = useState({ audioinput: [], videoinput: [] });
   const [mediaError, setMediaError] = useState(null);
   const effectsSupported = useVideoEffectsSupport();
   const [effectId, setEffectId] = useState(() => loadSavedEffectId());
 
-  const trackOptions = useMemo(
-    () => ({
-      audio: audioEnabled ? { deviceId: audioDeviceId || undefined } : false,
-      video: videoEnabled ? { deviceId: videoDeviceId || undefined } : false,
-    }),
-    [audioEnabled, videoEnabled, audioDeviceId, videoDeviceId]
-  );
-
-  // Identity MUST be stable: usePreviewTracks re-runs (destroying and re-acquiring
-  // the mic/camera) whenever this callback changes, which made the browser's
-  // permission indicator flash on every render.
-  const onMediaError = useCallback((err) => {
-    console.warn('PreJoin media error:', err);
-    setMediaError(err);
-  }, []);
-
-  const tracks = usePreviewTracks(trackOptions, onMediaError);
+  const tracks = previewTracks;
 
   const videoTrack = useMemo(
     () => tracks?.find((t) => t.kind === Track.Kind.Video),
