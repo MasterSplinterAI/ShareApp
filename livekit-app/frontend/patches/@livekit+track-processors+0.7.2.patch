@@ -1,32 +1,8 @@
 diff --git a/node_modules/@livekit/track-processors/dist/index.mjs b/node_modules/@livekit/track-processors/dist/index.mjs
-index 8c3efb1..f948ea0 100644
+index 8c3efb1..3b0025e 100644
 --- a/node_modules/@livekit/track-processors/dist/index.mjs
 +++ b/node_modules/@livekit/track-processors/dist/index.mjs
-@@ -606,18 +606,13 @@ var compositeFragmentShader = glsl`#version 300 es
-     } else {
-       vec4 bgTex = texture(background, texCoords);
- 
-+      // Mask is already refined (joint bilateral + sigmoid + temporal EMA):
-+      // soft float alpha where high = background. Use it directly.
-       float maskVal = texture(mask, texCoords).r;
- 
--      // Compute screen-space gradient to detect edge sharpness
--      float grad = length(vec2(dFdx(maskVal), dFdy(maskVal)));
--
--      float edgeSoftness = 2.0; // higher = softer
--
--      // Create a smooth edge around binary transition
--      float smoothAlpha = smoothstep(0.5 - grad * edgeSoftness, 0.5 + grad * edgeSoftness, maskVal);
--
--      // Optional: preserve frame alpha, or override as fully opaque
--      vec4 blended = mix(bgTex, vec4(frameTex.rgb, 1.0), 1.0 - smoothAlpha);
-+      // No light wrapping: on our wide upsampled edge ramp it reads as a halo,
-+      // not realism. The soft mask alpha alone gives a clean blend.
-+      vec4 blended = vec4(mix(frameTex.rgb, bgTex.rgb, maskVal), 1.0);
-       fragColor = blended;
-     }
-   
-@@ -717,6 +712,9 @@ var setupWebGL = (canvas) => {
+@@ -717,6 +717,9 @@ var setupWebGL = (canvas) => {
      log2.error("Failed to create WebGL context");
      return void 0;
    }
@@ -36,61 +12,10 @@ index 8c3efb1..f948ea0 100644
    gl.enable(gl.BLEND);
    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
    const composite = createCompositeProgram(gl);
-@@ -734,6 +732,84 @@ var setupWebGL = (canvas) => {
+@@ -734,6 +737,31 @@ var setupWebGL = (canvas) => {
    const boxBlur = createBoxBlurProgram(gl);
    const boxBlurProgram = boxBlur.program;
    const boxBlurUniforms = boxBlur.uniforms;
-+  const jbfFragmentShader = glsl`#version 300 es
-+  precision mediump float;
-+  in vec2 texCoords;
-+  uniform sampler2D u_mask;
-+  uniform sampler2D u_guide;
-+  uniform vec2 u_texelSize;
-+  uniform float u_invert;
-+  out vec4 fragColor;
-+  void main() {
-+    // Joint bilateral filter (Google Meet's refinement stage): upsample and
-+    // smooth the low-res segmentation mask while snapping its edges to color
-+    // edges in the full-res camera frame. Spatial sigma 2 taps, color sigma 0.1.
-+    // The raw MediaPipe mask is vertically flipped relative to the uploaded
-+    // frame, so mask samples flip Y while guide samples don't — the output is
-+    // stored frame-aligned, which is what the EMA and composite passes expect.
-+    vec3 centerColor = texture(u_guide, texCoords).rgb;
-+    float sum = 0.0;
-+    float totalWeight = 0.0;
-+    for (int i = -2; i <= 2; i++) {
-+      for (int j = -2; j <= 2; j++) {
-+        vec2 offset = vec2(float(i), float(j)) * u_texelSize * 2.0;
-+        vec2 coord = texCoords + offset;
-+        float m = texture(u_mask, vec2(coord.x, 1.0 - coord.y)).r;
-+        vec3 dc = texture(u_guide, coord).rgb - centerColor;
-+        float colorWeight = exp(-dot(dc, dc) / 0.02);
-+        float spatialWeight = exp(-float(i * i + j * j) / 8.0);
-+        float w = colorWeight * spatialWeight;
-+        sum += m * w;
-+        totalWeight += w;
-+      }
-+    }
-+    float v = sum / max(totalWeight, 1e-5);
-+    // Single-channel models emit PERSON confidence; pipeline wants background.
-+    v = mix(v, 1.0 - v, u_invert);
-+    // Steep sigmoid collapses the wide upsampled confidence ramp into a tight
-+    // edge. Center stays at 0.5 — biasing it outward widens the ramp's slow
-+    // tail into a visible haze band around the person.
-+    v = 1.0 / (1.0 + exp(-18.0 * (v - 0.5)));
-+    fragColor = vec4(v, v, v, 1.0);
-+  }
-+`;
-+  const jbfVertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource(false));
-+  const jbfFragShader = createShader(gl, gl.FRAGMENT_SHADER, jbfFragmentShader);
-+  const jbfProgram = createProgram(gl, jbfVertexShader, jbfFragShader);
-+  const jbfUniforms = {
-+    position: gl.getAttribLocation(jbfProgram, "position"),
-+    mask: gl.getUniformLocation(jbfProgram, "u_mask"),
-+    guide: gl.getUniformLocation(jbfProgram, "u_guide"),
-+    texelSize: gl.getUniformLocation(jbfProgram, "u_texelSize"),
-+    invert: gl.getUniformLocation(jbfProgram, "u_invert")
-+  };
 +  const emaFragmentShader = glsl`#version 300 es
 +  precision mediump float;
 +  in vec2 texCoords;
@@ -114,14 +39,12 @@ index 8c3efb1..f948ea0 100644
 +    previous: gl.getUniformLocation(emaProgram, "u_previous"),
 +    alpha: gl.getUniformLocation(emaProgram, "u_alpha")
 +  };
-+  // Weight of the CURRENT frame in the temporal blend. High enough that motion
-+  // doesn't leave a trailing smear, low enough to still damp frame jitter.
-+  const maskTemporalAlpha = 0.75;
++  const maskTemporalAlpha = 0.5;
 +  let firstMaskFrame = true;
    const bgTexture = initTexture(gl, 0);
    const frameTexture = initTexture(gl, 1);
    const vertexBuffer = createVertexBuffer(gl);
-@@ -759,6 +835,8 @@ var setupWebGL = (canvas) => {
+@@ -759,6 +787,8 @@ var setupWebGL = (canvas) => {
    );
    const tempMaskTexture = initTexture(gl, 5);
    const tempMaskFrameBuffer = createFramebuffer(gl, tempMaskTexture, canvas.width, canvas.height);
@@ -130,7 +53,7 @@ index 8c3efb1..f948ea0 100644
    finalMaskTextures.push(initTexture(gl, 6));
    finalMaskTextures.push(initTexture(gl, 7));
    const finalMaskFrameBuffers = [
-@@ -766,6 +844,29 @@ var setupWebGL = (canvas) => {
+@@ -766,6 +796,29 @@ var setupWebGL = (canvas) => {
      createFramebuffer(gl, finalMaskTextures[1], canvas.width, canvas.height)
    ];
    let backgroundImageDisabled = false;
@@ -160,42 +83,27 @@ index 8c3efb1..f948ea0 100644
    gl.useProgram(compositeProgram);
    gl.uniform1i(disableBackgroundLocation, backgroundImageDisabled ? 1 : 0);
    gl.uniform1i(bgTextureLocation, 0);
-@@ -853,21 +954,39 @@ var setupWebGL = (canvas) => {
-   function setBackgroundDisabled(disabled) {
+@@ -854,9 +907,8 @@ var setupWebGL = (canvas) => {
      backgroundImageDisabled = disabled;
    }
--  function updateMask(mask) {
+   function updateMask(mask) {
 -    const tempFramebuffers = [tempMaskFrameBuffer, finalMaskFrameBuffers[writeMaskIndex]];
 -    const tempTextures = [tempMaskTexture, finalMaskTextures[writeMaskIndex]];
 -    applyBlur(
--      gl,
--      mask,
--      canvas.width,
--      canvas.height,
--      maskBlurRadius || 1,
--      boxBlurProgram,
--      boxBlurUniforms,
--      vertexBuffer,
++    ensureMaskBuffers();
++    const blurredMask = applyBlur(
+       gl,
+       mask,
+       canvas.width,
+@@ -865,9 +917,25 @@ var setupWebGL = (canvas) => {
+       boxBlurProgram,
+       boxBlurUniforms,
+       vertexBuffer,
 -      tempFramebuffers,
 -      tempTextures
--    );
-+  function updateMask(mask, inverted) {
-+    ensureMaskBuffers();
-+    gl.useProgram(jbfProgram);
-+    gl.bindFramebuffer(gl.FRAMEBUFFER, tempMaskFrameBuffer);
-+    gl.viewport(0, 0, canvas.width, canvas.height);
-+    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
-+    gl.vertexAttribPointer(jbfUniforms.position, 2, gl.FLOAT, false, 0, 0);
-+    gl.enableVertexAttribArray(jbfUniforms.position);
-+    gl.activeTexture(gl.TEXTURE0);
-+    gl.bindTexture(gl.TEXTURE_2D, mask);
-+    gl.uniform1i(jbfUniforms.mask, 0);
-+    gl.activeTexture(gl.TEXTURE1);
-+    gl.bindTexture(gl.TEXTURE_2D, frameTexture);
-+    gl.uniform1i(jbfUniforms.guide, 1);
-+    gl.uniform2f(jbfUniforms.texelSize, 1 / canvas.width, 1 / canvas.height);
-+    gl.uniform1f(jbfUniforms.invert, inverted ? 1 : 0);
-+    gl.drawArrays(gl.TRIANGLES, 0, 6);
++      [tempMaskFrameBuffer, emaTempFrameBuffer],
++      [tempMaskTexture, emaTempTexture]
+     );
 +    gl.useProgram(emaProgram);
 +    gl.bindFramebuffer(gl.FRAMEBUFFER, finalMaskFrameBuffers[writeMaskIndex]);
 +    gl.viewport(0, 0, canvas.width, canvas.height);
@@ -203,7 +111,7 @@ index 8c3efb1..f948ea0 100644
 +    gl.vertexAttribPointer(emaUniforms.position, 2, gl.FLOAT, false, 0, 0);
 +    gl.enableVertexAttribArray(emaUniforms.position);
 +    gl.activeTexture(gl.TEXTURE0);
-+    gl.bindTexture(gl.TEXTURE_2D, tempMaskTexture);
++    gl.bindTexture(gl.TEXTURE_2D, blurredMask);
 +    gl.uniform1i(emaUniforms.current, 0);
 +    gl.activeTexture(gl.TEXTURE1);
 +    gl.bindTexture(gl.TEXTURE_2D, finalMaskTextures[readMaskIndex]);
@@ -215,12 +123,11 @@ index 8c3efb1..f948ea0 100644
      readMaskIndex = writeMaskIndex;
      writeMaskIndex = 1 - writeMaskIndex;
    }
-@@ -875,10 +994,14 @@ var setupWebGL = (canvas) => {
+@@ -875,10 +943,13 @@ var setupWebGL = (canvas) => {
      gl.deleteProgram(compositeProgram);
      gl.deleteProgram(blurProgram);
      gl.deleteProgram(boxBlurProgram);
 +    gl.deleteProgram(emaProgram);
-+    gl.deleteProgram(jbfProgram);
      gl.deleteTexture(bgTexture);
      gl.deleteTexture(frameTexture);
      gl.deleteTexture(tempMaskTexture);
@@ -230,7 +137,7 @@ index 8c3efb1..f948ea0 100644
      for (const texture of bgBlurTextures) {
        gl.deleteTexture(texture);
      }
-@@ -970,9 +1093,8 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -970,9 +1041,8 @@ var BackgroundProcessor = class extends VideoTransformer {
    static get isSupported() {
      return typeof OffscreenCanvas !== "undefined" && typeof VideoFrame !== "undefined" && typeof createImageBitmap !== "undefined" && !!document.createElement("canvas").getContext("webgl2");
    }
@@ -242,14 +149,9 @@ index 8c3efb1..f948ea0 100644
      const fileSet = await vision.FilesetResolver.forVisionTasks(
        (_b = (_a = this.options.assetPaths) == null ? void 0 : _a.tasksVisionFileSet) != null ? _b : `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${dependencies["@mediapipe/tasks-vision"]}/wasm`
      );
-@@ -984,9 +1106,32 @@ var BackgroundProcessor = class extends VideoTransformer {
-       },
-       canvas: this.canvas,
-       runningMode: "VIDEO",
--      outputCategoryMask: true,
--      outputConfidenceMasks: false
-+      outputCategoryMask: false,
-+      outputConfidenceMasks: true
+@@ -987,6 +1057,29 @@ var BackgroundProcessor = class extends VideoTransformer {
+       outputCategoryMask: true,
+       outputConfidenceMasks: false
      });
 +  }
 +  async restart({ outputCanvas, inputElement: inputVideo }) {
@@ -277,33 +179,3 @@ index 8c3efb1..f948ea0 100644
      if ((_e = this.options) == null ? void 0 : _e.imagePath) {
        await this.loadAndSetBackground(this.options.imagePath).catch(
          (err) => this.log.error("Error while loading processor background image: ", err)
-@@ -1064,7 +1209,14 @@ var BackgroundProcessor = class extends VideoTransformer {
-           (_a2 = this.imageSegmenter) == null ? void 0 : _a2.segmentForVideo(frame, segmentationStartTimeMs, (result) => {
-             this.segmentationTimeMs = performance.now() - segmentationStartTimeMs;
-             this.segmentationResults = result;
--            this.updateMask(result.categoryMask);
-+            const confidenceMasks = result.confidenceMasks;
-+            if (confidenceMasks && confidenceMasks.length > 1) {
-+              this.updateMask(confidenceMasks[0], false);
-+            } else if (confidenceMasks && confidenceMasks.length === 1) {
-+              this.updateMask(confidenceMasks[0], true);
-+            } else {
-+              this.updateMask(result.categoryMask, false);
-+            }
-             result.close();
-             resolve();
-           });
-@@ -1114,11 +1266,11 @@ var BackgroundProcessor = class extends VideoTransformer {
-       return;
-     (_a = this.gl) == null ? void 0 : _a.renderFrame(frame);
-   }
--  async updateMask(mask) {
-+  async updateMask(mask, inverted) {
-     var _a;
-     if (!mask)
-       return;
--    (_a = this.gl) == null ? void 0 : _a.updateMask(mask.getAsWebGLTexture());
-+    (_a = this.gl) == null ? void 0 : _a.updateMask(mask.getAsWebGLTexture(), inverted === true);
-   }
- };
- 
