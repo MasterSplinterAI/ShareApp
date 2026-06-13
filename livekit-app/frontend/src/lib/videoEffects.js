@@ -85,10 +85,33 @@ function loadProcessorsModule() {
 }
 
 let cachedSupport = null;
+let cachedBrowserSupport = null;
+
+function hasBackgroundProcessorBrowserSupport() {
+  if (cachedBrowserSupport !== null) return cachedBrowserSupport;
+  let gl = null;
+  try {
+    gl = document.createElement('canvas').getContext('webgl2');
+  } catch {
+    gl = null;
+  }
+  cachedBrowserSupport = Boolean(
+    typeof OffscreenCanvas !== 'undefined' &&
+      typeof VideoFrame !== 'undefined' &&
+      typeof createImageBitmap !== 'undefined' &&
+      gl
+  );
+  gl?.getExtension?.('WEBGL_lose_context')?.loseContext?.();
+  return cachedBrowserSupport;
+}
 
 /** Segmentation runs on WebGL/WASM — old Safari and some WebViews lack support. */
 export async function checkVideoEffectsSupport() {
   if (cachedSupport !== null) return cachedSupport;
+  if (!hasBackgroundProcessorBrowserSupport()) {
+    cachedSupport = false;
+    return cachedSupport;
+  }
   try {
     const mod = await loadProcessorsModule();
     cachedSupport = Boolean(mod.supportsBackgroundProcessors());
@@ -100,43 +123,16 @@ export async function checkVideoEffectsSupport() {
 
 /** React gate for effects UI; false until the (lazy) support check resolves. */
 export function useVideoEffectsSupport() {
-  const [supported, setSupported] = useState(cachedSupport === true);
+  const [supported, setSupported] = useState(
+    cachedSupport === true || (cachedSupport === null && hasBackgroundProcessorBrowserSupport())
+  );
   useEffect(() => {
-    let mounted = true;
-    checkVideoEffectsSupport().then((ok) => {
-      if (mounted) setSupported(ok);
-    });
-    return () => {
-      mounted = false;
-    };
+    if (cachedSupport === null && !hasBackgroundProcessorBrowserSupport()) {
+      cachedSupport = false;
+      setSupported(false);
+    }
   }, []);
   return supported;
-}
-
-let prewarmed = false;
-
-/**
- * Prime every cache the effects pipeline needs BEFORE the user enables an effect:
- * the lazy processor JS chunk, the MediaPipe WASM runtime (~3MB gzipped), and both
- * segmentation models. Called on prejoin mount so toggling an effect — especially
- * on mobile — starts in milliseconds instead of waiting on a multi-MB download.
- */
-export function prewarmVideoEffects() {
-  if (prewarmed || typeof window === 'undefined') return;
-  prewarmed = true;
-  checkVideoEffectsSupport().then((supported) => {
-    if (!supported) return;
-    [
-      '/mediapipe/wasm/vision_wasm_internal.js',
-      '/mediapipe/wasm/vision_wasm_internal.wasm',
-      '/mediapipe/selfie_segmenter.tflite',
-      '/mediapipe/selfie_segmenter_landscape.tflite',
-    ].forEach((path) => {
-      fetch(new URL(path, window.location.origin).toString(), { cache: 'force-cache' }).catch(
-        () => {}
-      );
-    });
-  });
 }
 
 export function loadSavedEffectId() {
@@ -198,10 +194,11 @@ function pickModelPath(track) {
  */
 export async function applyVideoEffect(track, effectId) {
   if (!track || track.isDisposed) return;
-  if (!(await checkVideoEffectsSupport())) return;
   const effect = getEffectById(effectId);
 
   const run = async () => {
+    if (effect.kind === 'none' && !processorByTrack.has(track)) return;
+    if (!(await checkVideoEffectsSupport())) return;
     const { BackgroundProcessor } = await loadProcessorsModule();
     let processor = processorByTrack.get(track);
     if (!processor) {

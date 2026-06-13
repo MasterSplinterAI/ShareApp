@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CaptionControls from './CaptionControls';
 import MeetingPanelMenu from './MeetingPanelMenu';
@@ -65,7 +65,6 @@ export default function CustomControlBar({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showMicMenu, setShowMicMenu] = useState(false);
   const [showCameraMenu, setShowCameraMenu] = useState(false);
-  const [showEffectsMenu, setShowEffectsMenu] = useState(false);
   const [micDevices, setMicDevices] = useState([]);
   const [cameraDevices, setCameraDevices] = useState([]);
   const [selectedMicId, setSelectedMicId] = useState(null);
@@ -73,7 +72,6 @@ export default function CustomControlBar({
 
   const micMenuRef = useRef(null);
   const cameraMenuRef = useRef(null);
-  const effectsMenuRef = useRef(null);
 
   // --- Background effects (blur / virtual background) ---
   const effectsSupported = useVideoEffectsSupport();
@@ -247,9 +245,6 @@ export default function CustomControlBar({
       if (cameraMenuRef.current && !cameraMenuRef.current.contains(event.target)) {
         setShowCameraMenu(false);
       }
-      if (effectsMenuRef.current && !effectsMenuRef.current.contains(event.target)) {
-        setShowEffectsMenu(false);
-      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -260,7 +255,6 @@ export default function CustomControlBar({
     const handleOrientationChange = () => {
       setShowMicMenu(false);
       setShowCameraMenu(false);
-      setShowEffectsMenu(false);
     };
     window.addEventListener('orientationchange', handleOrientationChange);
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
@@ -376,7 +370,7 @@ export default function CustomControlBar({
             )}
           </div>
 
-          {/* Camera Toggle */}
+          {/* Camera Toggle + settings/background menu */}
           <div className="flex items-center gap-1">
             <Button
               type="button"
@@ -394,78 +388,69 @@ export default function CustomControlBar({
               {!isCompact && <span className="text-sm font-medium">{t('camera')}</span>}
             </Button>
 
-            {cameraDevices.length > 1 && !isCompact && (
-              <div className="relative" ref={cameraMenuRef}>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="h-9 w-9 shrink-0 rounded-full"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowCameraMenu(!showCameraMenu);
-                  }}
-                  aria-label="Select camera device"
-                >
-                  <ChevronDown className={`h-4 w-4 transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
-                </Button>
+            <div className="relative" ref={cameraMenuRef}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className={cn('shrink-0 rounded-full', isCompact ? 'h-8 w-8' : 'h-9 w-9')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCameraMenu(!showCameraMenu);
+                }}
+                aria-label="Camera settings"
+                aria-expanded={showCameraMenu}
+              >
+                <ChevronDown className={`${isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4'} transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
+              </Button>
 
-                {showCameraMenu && (
-                  <div className="absolute bottom-full left-0 z-[9999] mb-2 w-56 rounded-lg border border-border bg-popover shadow-xl">
-                    <div className="p-2">
-                      {cameraDevices.map((device) => (
-                        <button
-                          key={device.deviceId}
-                          type="button"
-                          onClick={() => handleCameraDeviceChange(device.deviceId)}
-                          className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
-                            selectedCameraId === device.deviceId ? 'bg-accent' : ''
-                          }`}
-                        >
-                          <span className="truncate text-sm text-popover-foreground">{device.label || device.deviceId}</span>
-                          {selectedCameraId === device.deviceId && <span className="text-xs text-primary">✓</span>}
-                        </button>
-                      ))}
+              {showCameraMenu && (
+                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-72 rounded-lg border border-border bg-popover shadow-xl">
+                    <div className="border-b border-border p-2">
+                      <button
+                        type="button"
+                        onClick={toggleCamera}
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                      >
+                        {isCameraEnabled ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+                        <span>{isCameraEnabled ? 'Turn camera off' : 'Turn camera on'}</span>
+                      </button>
+                    </div>
+
+                    {cameraDevices.length > 1 && (
+                      <div className="border-b border-border p-2">
+                        <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Camera
+                        </p>
+                        {cameraDevices.map((device) => (
+                          <button
+                            key={device.deviceId}
+                            type="button"
+                            onClick={() => handleCameraDeviceChange(device.deviceId)}
+                            className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
+                              selectedCameraId === device.deviceId ? 'bg-accent' : ''
+                            }`}
+                          >
+                            <span className="truncate text-sm text-popover-foreground">{device.label || device.deviceId}</span>
+                            {selectedCameraId === device.deviceId && <span className="text-xs text-primary">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="p-3">
+                      <p className="mb-2 text-xs font-medium text-muted-foreground">Background</p>
+                      <VideoEffectsPicker
+                        activeEffectId={videoEffectId}
+                        onSelect={handleEffectSelect}
+                        disabled={!isCameraEnabled || !effectsSupported}
+                        compact
+                      />
                     </div>
                   </div>
                 )}
               </div>
-            )}
           </div>
-
-          {/* Background effects (blur / virtual background) - hidden in compact mode;
-              the prejoin choice still applies on mobile, switching just needs desktop */}
-          {effectsSupported && !isCompact && (
-            <div className="relative" ref={effectsMenuRef}>
-              <Button
-                type="button"
-                variant={videoEffectId !== 'none' ? 'success' : 'secondary'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowEffectsMenu((v) => !v);
-                }}
-                className={cn(barBtn(false), videoEffectId !== 'none' && 'ring-2 ring-primary/40')}
-                aria-label="Background effects"
-                aria-expanded={showEffectsMenu}
-                title="Background effects"
-                disabled={!isCameraEnabled}
-              >
-                <Sparkles className="h-5 w-5" />
-                <span className="text-sm font-medium">Effects</span>
-              </Button>
-
-              {showEffectsMenu && (
-                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-72 rounded-lg border border-border bg-popover p-3 shadow-xl">
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">Background</p>
-                  <VideoEffectsPicker
-                    activeEffectId={videoEffectId}
-                    onSelect={handleEffectSelect}
-                    compact
-                  />
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Screen Share - hidden in compact mode */}
           {!isCompact && (
@@ -486,7 +471,6 @@ export default function CustomControlBar({
               <span className="text-sm font-medium">{isScreenSharing ? t('stopSharing') : t('shareScreen')}</span>
             </Button>
           )}
-
         </div>
 
         {/* Right side - Captions / panels, share, leave */}

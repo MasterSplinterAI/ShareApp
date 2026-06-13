@@ -1,5 +1,33 @@
 import { test, expect } from '@playwright/test';
 
+async function gotoPrejoin(page, roomName = `test-${Date.now()}`) {
+  await page.addInitScript((room) => {
+    window.sessionStorage.setItem('participantInfo', JSON.stringify({
+      roomName: room,
+      participantName: '',
+      isHost: true,
+      selectedLanguage: 'en',
+      spokenLanguage: 'en',
+    }));
+  }, roomName);
+  await page.goto(`/room/${roomName}`);
+  await expect(page.getByRole('heading', { name: 'Ready to join?' })).toBeVisible();
+  return roomName;
+}
+
+async function joinFromPrejoin(page) {
+  await page.route('**/api/auth/token', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ token: 'fake-token', url: 'wss://example.invalid' }),
+    });
+  });
+  await page.getByLabel('Display name').fill('TestUser');
+  await page.getByRole('button', { name: 'Join meeting' }).click();
+  await expect(page.getByRole('button', { name: /turn .* camera/i })).toBeVisible();
+}
+
 test.describe('Home Screen', () => {
   test('renders correctly', async ({ page }) => {
     await page.goto('/');
@@ -145,5 +173,39 @@ test.describe('Meeting Room Layout', () => {
 
   test('leave button is visible', async ({ page }) => {
     await expect(page.getByRole('button', { name: /leave/i })).toBeVisible();
+  });
+
+});
+
+test.describe('Effects Runtime Loading', () => {
+  test('prejoin with no selected effect does not fetch MediaPipe assets', async ({ page }) => {
+    const requested = [];
+    page.on('request', (request) => {
+      const url = request.url();
+      if (url.includes('/mediapipe/') || url.includes('track-processors')) {
+        requested.push(url);
+      }
+    });
+
+    // No fake media is needed here: this catches eager prejoin prewarm/import
+    // regressions before a user selects any effect.
+    await gotoPrejoin(page, 'no-effects-room');
+    await page.waitForTimeout(1500);
+
+    expect(requested).toEqual([]);
+  });
+
+  test('camera menu owns background effects and standalone effects button is hidden', async ({ page }) => {
+    await gotoPrejoin(page, 'camera-effects-menu-room');
+    await joinFromPrejoin(page);
+
+    await expect(page.getByRole('button', { name: /background effects/i })).toHaveCount(0);
+
+    const cameraMenu = page.getByRole('button', { name: /camera settings/i });
+    await expect(cameraMenu).toBeVisible();
+    await cameraMenu.click();
+
+    await expect(page.getByText('Background')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Background effect: None/i })).toBeVisible();
   });
 });

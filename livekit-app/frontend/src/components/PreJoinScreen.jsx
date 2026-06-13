@@ -14,7 +14,6 @@ import { brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding'
 import {
   applyVideoEffect,
   loadSavedEffectId,
-  prewarmVideoEffects,
   saveEffectId,
   useVideoEffectsSupport,
 } from '../lib/videoEffects';
@@ -145,12 +144,6 @@ function PreJoinScreen({
   const [mediaError, setMediaError] = useState(null);
   const effectsSupported = useVideoEffectsSupport();
   const [effectId, setEffectId] = useState(() => loadSavedEffectId());
-
-  // Download the segmentation runtime (wasm + models) in the background now, so
-  // enabling an effect later is instant — matters most on mobile connections.
-  useEffect(() => {
-    prewarmVideoEffects();
-  }, []);
 
   const tracks = previewTracks;
 
