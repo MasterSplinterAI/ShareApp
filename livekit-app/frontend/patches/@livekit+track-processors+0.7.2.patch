@@ -1,8 +1,8 @@
 diff --git a/node_modules/@livekit/track-processors/dist/index.mjs b/node_modules/@livekit/track-processors/dist/index.mjs
-index 8c3efb1..cb64eef 100644
+index 8c3efb1..f948ea0 100644
 --- a/node_modules/@livekit/track-processors/dist/index.mjs
 +++ b/node_modules/@livekit/track-processors/dist/index.mjs
-@@ -606,18 +606,18 @@ var compositeFragmentShader = glsl`#version 300 es
+@@ -606,18 +606,13 @@ var compositeFragmentShader = glsl`#version 300 es
      } else {
        vec4 bgTex = texture(background, texCoords);
  
@@ -12,13 +12,7 @@ index 8c3efb1..cb64eef 100644
  
 -      // Compute screen-space gradient to detect edge sharpness
 -      float grad = length(vec2(dFdx(maskVal), dFdy(maskVal)));
-+      // Light wrapping (Google Meet technique): let background light spill onto
-+      // the person's edge band so the composite reads as one photograph instead
-+      // of a cutout. Band peaks where mask is ambiguous (0.5), zero elsewhere.
-+      // Kept subtle — strong wrap reads as a gray halo, not realism.
-+      float edgeBand = 4.0 * maskVal * (1.0 - maskVal);
-+      vec3 person = mix(frameTex.rgb, bgTex.rgb, edgeBand * 0.12);
- 
+-
 -      float edgeSoftness = 2.0; // higher = softer
 -
 -      // Create a smooth edge around binary transition
@@ -26,11 +20,13 @@ index 8c3efb1..cb64eef 100644
 -
 -      // Optional: preserve frame alpha, or override as fully opaque
 -      vec4 blended = mix(bgTex, vec4(frameTex.rgb, 1.0), 1.0 - smoothAlpha);
-+      vec4 blended = vec4(mix(person, bgTex.rgb, maskVal), 1.0);
++      // No light wrapping: on our wide upsampled edge ramp it reads as a halo,
++      // not realism. The soft mask alpha alone gives a clean blend.
++      vec4 blended = vec4(mix(frameTex.rgb, bgTex.rgb, maskVal), 1.0);
        fragColor = blended;
      }
    
-@@ -717,6 +717,9 @@ var setupWebGL = (canvas) => {
+@@ -717,6 +712,9 @@ var setupWebGL = (canvas) => {
      log2.error("Failed to create WebGL context");
      return void 0;
    }
@@ -40,7 +36,7 @@ index 8c3efb1..cb64eef 100644
    gl.enable(gl.BLEND);
    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
    const composite = createCompositeProgram(gl);
-@@ -734,6 +737,82 @@ var setupWebGL = (canvas) => {
+@@ -734,6 +732,84 @@ var setupWebGL = (canvas) => {
    const boxBlur = createBoxBlurProgram(gl);
    const boxBlurProgram = boxBlur.program;
    const boxBlurUniforms = boxBlur.uniforms;
@@ -78,10 +74,10 @@ index 8c3efb1..cb64eef 100644
 +    float v = sum / max(totalWeight, 1e-5);
 +    // Single-channel models emit PERSON confidence; pipeline wants background.
 +    v = mix(v, 1.0 - v, u_invert);
-+    // Steep sigmoid collapses the soft halo band into a tight edge. Center is
-+    // biased above 0.5 to dilate the person slightly — the model consistently
-+    // undershoots the silhouette, which otherwise reads as a gray halo.
-+    v = 1.0 / (1.0 + exp(-14.0 * (v - 0.56)));
++    // Steep sigmoid collapses the wide upsampled confidence ramp into a tight
++    // edge. Center stays at 0.5 — biasing it outward widens the ramp's slow
++    // tail into a visible haze band around the person.
++    v = 1.0 / (1.0 + exp(-18.0 * (v - 0.5)));
 +    fragColor = vec4(v, v, v, 1.0);
 +  }
 +`;
@@ -118,12 +114,14 @@ index 8c3efb1..cb64eef 100644
 +    previous: gl.getUniformLocation(emaProgram, "u_previous"),
 +    alpha: gl.getUniformLocation(emaProgram, "u_alpha")
 +  };
-+  const maskTemporalAlpha = 0.6;
++  // Weight of the CURRENT frame in the temporal blend. High enough that motion
++  // doesn't leave a trailing smear, low enough to still damp frame jitter.
++  const maskTemporalAlpha = 0.75;
 +  let firstMaskFrame = true;
    const bgTexture = initTexture(gl, 0);
    const frameTexture = initTexture(gl, 1);
    const vertexBuffer = createVertexBuffer(gl);
-@@ -759,6 +838,8 @@ var setupWebGL = (canvas) => {
+@@ -759,6 +835,8 @@ var setupWebGL = (canvas) => {
    );
    const tempMaskTexture = initTexture(gl, 5);
    const tempMaskFrameBuffer = createFramebuffer(gl, tempMaskTexture, canvas.width, canvas.height);
@@ -132,7 +130,7 @@ index 8c3efb1..cb64eef 100644
    finalMaskTextures.push(initTexture(gl, 6));
    finalMaskTextures.push(initTexture(gl, 7));
    const finalMaskFrameBuffers = [
-@@ -766,6 +847,29 @@ var setupWebGL = (canvas) => {
+@@ -766,6 +844,29 @@ var setupWebGL = (canvas) => {
      createFramebuffer(gl, finalMaskTextures[1], canvas.width, canvas.height)
    ];
    let backgroundImageDisabled = false;
@@ -162,7 +160,7 @@ index 8c3efb1..cb64eef 100644
    gl.useProgram(compositeProgram);
    gl.uniform1i(disableBackgroundLocation, backgroundImageDisabled ? 1 : 0);
    gl.uniform1i(bgTextureLocation, 0);
-@@ -853,21 +957,39 @@ var setupWebGL = (canvas) => {
+@@ -853,21 +954,39 @@ var setupWebGL = (canvas) => {
    function setBackgroundDisabled(disabled) {
      backgroundImageDisabled = disabled;
    }
@@ -217,7 +215,7 @@ index 8c3efb1..cb64eef 100644
      readMaskIndex = writeMaskIndex;
      writeMaskIndex = 1 - writeMaskIndex;
    }
-@@ -875,10 +997,14 @@ var setupWebGL = (canvas) => {
+@@ -875,10 +994,14 @@ var setupWebGL = (canvas) => {
      gl.deleteProgram(compositeProgram);
      gl.deleteProgram(blurProgram);
      gl.deleteProgram(boxBlurProgram);
@@ -232,7 +230,7 @@ index 8c3efb1..cb64eef 100644
      for (const texture of bgBlurTextures) {
        gl.deleteTexture(texture);
      }
-@@ -970,9 +1096,8 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -970,9 +1093,8 @@ var BackgroundProcessor = class extends VideoTransformer {
    static get isSupported() {
      return typeof OffscreenCanvas !== "undefined" && typeof VideoFrame !== "undefined" && typeof createImageBitmap !== "undefined" && !!document.createElement("canvas").getContext("webgl2");
    }
@@ -244,7 +242,7 @@ index 8c3efb1..cb64eef 100644
      const fileSet = await vision.FilesetResolver.forVisionTasks(
        (_b = (_a = this.options.assetPaths) == null ? void 0 : _a.tasksVisionFileSet) != null ? _b : `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${dependencies["@mediapipe/tasks-vision"]}/wasm`
      );
-@@ -984,9 +1109,32 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -984,9 +1106,32 @@ var BackgroundProcessor = class extends VideoTransformer {
        },
        canvas: this.canvas,
        runningMode: "VIDEO",
@@ -279,7 +277,7 @@ index 8c3efb1..cb64eef 100644
      if ((_e = this.options) == null ? void 0 : _e.imagePath) {
        await this.loadAndSetBackground(this.options.imagePath).catch(
          (err) => this.log.error("Error while loading processor background image: ", err)
-@@ -1064,7 +1212,14 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -1064,7 +1209,14 @@ var BackgroundProcessor = class extends VideoTransformer {
            (_a2 = this.imageSegmenter) == null ? void 0 : _a2.segmentForVideo(frame, segmentationStartTimeMs, (result) => {
              this.segmentationTimeMs = performance.now() - segmentationStartTimeMs;
              this.segmentationResults = result;
@@ -295,7 +293,7 @@ index 8c3efb1..cb64eef 100644
              result.close();
              resolve();
            });
-@@ -1114,11 +1269,11 @@ var BackgroundProcessor = class extends VideoTransformer {
+@@ -1114,11 +1266,11 @@ var BackgroundProcessor = class extends VideoTransformer {
        return;
      (_a = this.gl) == null ? void 0 : _a.renderFrame(frame);
    }
