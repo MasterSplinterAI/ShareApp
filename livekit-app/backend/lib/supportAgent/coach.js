@@ -1,4 +1,4 @@
-const { formatUserFacingReply } = require('../supportReplyFormat');
+const { formatUserContextForPrompt, buildUserContextSnapshot } = require('../supportUserContext');
 const { aiEnabled, callSupportLlm } = require('./llm');
 
 const COACH_SYSTEM = `You help users refine Parley feature requests before formal submission.
@@ -24,7 +24,17 @@ function formatCoachThread(messages) {
     .join('\n\n');
 }
 
-async function coachFeatureRequest(messages) {
+async function coachFeatureRequest(messages, { userContext: auth } = {}) {
+  let userBlock = '';
+  if (auth?.userId) {
+    const snapshot = await buildUserContextSnapshot({
+      userId: auth.userId,
+      orgId: auth.orgId,
+      email: auth.email,
+    });
+    userBlock = `\n\n${formatUserContextForPrompt(snapshot)}`;
+  }
+
   if (!aiEnabled()) {
     return {
       ok: false,
@@ -42,7 +52,7 @@ async function coachFeatureRequest(messages) {
   }
 
   const parsed = await callSupportLlm(
-    COACH_SYSTEM,
+    COACH_SYSTEM + userBlock,
     `Conversation so far:\n${formatCoachThread(messages)}\n\nRespond as JSON.`
   );
 

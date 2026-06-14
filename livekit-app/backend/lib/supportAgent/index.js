@@ -4,9 +4,10 @@ const { createProposal, getActivePendingForTicket } = require('../supportProposa
 const { notifyProposalReady } = require('../telegramSupport');
 const { postAgentMessage } = require('../proposalExecutor');
 const { decideCustomerSupportAction, userFacingReply } = require('./routing');
+const { aiEnabled, callSupportLlm } = require('./llm');
 const { formatUserFacingReply, REPLY_STYLE_RULES } = require('../supportReplyFormat');
 const { recordKnowledgeGap } = require('../supportKnowledgeGaps');
-const { aiEnabled, callSupportLlm } = require('./llm');
+const { formatUserContextForPrompt, buildUserContextSnapshot } = require('../supportUserContext');
 
 const debounceMs = parseInt(process.env.SUPPORT_AI_DEBOUNCE_MS || '8000', 10);
 const pendingTimers = new Map();
@@ -146,6 +147,18 @@ async function analyzeTicket(ticketId) {
   );
   const thread = messages.map((m) => `[${m.author_type}] ${m.body}`).join('\n\n');
   const context = ticketRow.context_json ? JSON.parse(ticketRow.context_json) : null;
+  let userSnapshot = context?.user;
+  if (ticketRow.user_id) {
+    userSnapshot = await buildUserContextSnapshot({
+      userId: ticketRow.user_id,
+      orgId: ticketRow.org_id,
+      email: userSnapshot?.email || null,
+      guestEmail: ticketRow.guest_email,
+    });
+  } else if (ticketRow.guest_email) {
+    userSnapshot = await buildUserContextSnapshot({ guestEmail: ticketRow.guest_email });
+  }
+  const userContextBlock = formatUserContextForPrompt(userSnapshot);
   const docQuery = [ticketRow.subject, thread.slice(0, 800)].filter(Boolean).join(' ');
   const docHits = searchSupportDocs(docQuery, { limit: 5 });
   const similar = await findSimilarTickets({
@@ -158,7 +171,8 @@ async function analyzeTicket(ticketId) {
     `Category: ${ticketRow.category}`,
     ticketRow.severity ? `Severity: ${ticketRow.severity}` : null,
     ticketRow.priority ? `Priority: ${ticketRow.priority}` : null,
-    context ? `Context: ${JSON.stringify(context)}` : null,
+    userContextBlock,
+    context?.url ? `Page: ${context.url}` : null,
     similar.length ? `Similar open tickets: ${JSON.stringify(similar)}` : null,
     '',
     'Knowledge base excerpts:',

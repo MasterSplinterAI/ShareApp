@@ -45,7 +45,7 @@ router.post('/coach', optionalV2Auth, async (req, res) => {
     if (!Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'messages required' });
     }
-    const result = await coachFeatureRequest(messages);
+    const result = await coachFeatureRequest(messages, { userContext: req.v2Auth });
     res.json(result);
   } catch (e) {
     console.error('[support/coach]', e);

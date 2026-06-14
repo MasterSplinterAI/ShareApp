@@ -3,6 +3,7 @@ const { sendEmail } = require('./mailer');
 const { notifyNewTicket, notifyUserMessage } = require('./telegramSupport');
 const { shouldNotifyOpsOnNewTicket, shouldNotifyOpsOnUserMessage, submitAckMessage } = require('./supportAgent/routing');
 const { isSuperadminEmail } = require('./v2Superadmin');
+const { buildUserContextSnapshot } = require('./supportUserContext');
 
 const CATEGORIES = new Set(['customer_support', 'bug_report', 'feature_request']);
 const STATUSES = new Set([
@@ -170,16 +171,21 @@ async function createTicket(req, body) {
   const context = buildContext(req, body.context || {});
 
   let orgId = auth?.orgId || null;
-  let planSnapshot = null;
-  if (orgId) {
-    const org = await db.get(
-      `SELECT o.name, o.billing_status, s.plan_id FROM v2_organizations o
-       LEFT JOIN v2_org_subscriptions s ON s.org_id = o.id WHERE o.id = ?`,
-      [orgId]
-    );
-    if (org) planSnapshot = { orgName: org.name, billingStatus: org.billing_status, planId: org.plan_id };
+  const userSnapshot = await buildUserContextSnapshot({
+    userId: auth?.userId || null,
+    orgId,
+    email: auth?.email || null,
+    guestEmail: guestEmail || null,
+  });
+  context.user = userSnapshot;
+  if (userSnapshot.plan) {
+    context.plan = {
+      orgName: userSnapshot.orgName,
+      billingStatus: userSnapshot.billingStatus,
+      planId: userSnapshot.plan.id,
+      planName: userSnapshot.plan.name,
+    };
   }
-  if (planSnapshot) context.plan = planSnapshot;
 
   await db.run(
     `INSERT INTO v2_support_tickets
