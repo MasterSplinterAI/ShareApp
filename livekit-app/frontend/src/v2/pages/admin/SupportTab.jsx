@@ -134,7 +134,9 @@ export function SupportTab({ initialTicketNumber }) {
       <Card className="app-card border-border/60 lg:col-span-2">
         <CardHeader>
           <CardTitle className="text-lg">Support inbox</CardTitle>
-          <CardDescription>New tickets from Help widget. Telegram alerts fire on create.</CardDescription>
+          <CardDescription>
+            Customer support chats with AI in-app; Telegram fires on escalation or proposals needing approval.
+          </CardDescription>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button
               type="button"

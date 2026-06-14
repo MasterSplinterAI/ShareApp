@@ -1,6 +1,7 @@
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
 const { notifyNewTicket, notifyUserMessage } = require('./telegramSupport');
+const { shouldNotifyOpsOnNewTicket, shouldNotifyOpsOnUserMessage } = require('./supportAgent/routing');
 const { isSuperadminEmail } = require('./v2Superadmin');
 
 const CATEGORIES = new Set(['customer_support', 'bug_report', 'feature_request']);
@@ -211,9 +212,17 @@ async function createTicket(req, body) {
 
   const ticket = await getTicketById(id);
   const submitterEmail = auth?.email || guestEmail;
-  notifyNewTicket(ticket, { submitterEmail, preview: messageBody }).catch((e) =>
-    console.error('[supportTickets] telegram notify failed', e)
-  );
+  let aiOn = false;
+  try {
+    aiOn = require('./supportAgent').aiEnabled();
+  } catch {
+    aiOn = false;
+  }
+  if (shouldNotifyOpsOnNewTicket(ticket, { aiEnabled: aiOn })) {
+    notifyNewTicket(ticket, { submitterEmail, preview: messageBody }).catch((e) =>
+      console.error('[supportTickets] telegram notify failed', e)
+    );
+  }
 
   try {
     const { queueTicketAnalysis } = require('./supportAgent');
@@ -264,7 +273,9 @@ async function addUserMessage(req, ticketId, bodyText) {
     ticketId,
   ]);
 
-  notifyUserMessage(ticket, body).catch(() => {});
+  if (shouldNotifyOpsOnUserMessage(ticket)) {
+    notifyUserMessage(ticket, body).catch(() => {});
+  }
 
   try {
     const { queueTicketAnalysis } = require('./supportAgent');

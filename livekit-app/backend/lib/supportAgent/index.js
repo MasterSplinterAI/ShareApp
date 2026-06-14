@@ -3,6 +3,8 @@ const db = require('../../db/v2Database');
 const { searchSupportDocs, formatSourcesForPrompt } = require('../supportKnowledge');
 const { createProposal, getActivePendingForTicket } = require('../supportProposals');
 const { notifyProposalReady } = require('../telegramSupport');
+const { postAgentMessage } = require('../proposalExecutor');
+const { decideCustomerSupportAction } = require('./routing');
 
 const debounceMs = parseInt(process.env.SUPPORT_AI_DEBOUNCE_MS || '8000', 10);
 const pendingTimers = new Map();
@@ -60,17 +62,26 @@ async function callSupportLlm(systemPrompt, userContent) {
 }
 
 function buildSystemPrompt(category) {
+  const supportRouting =
+    category === 'customer_support'
+      ? `
+For customer_support you MUST set "route":
+- reply_in_app — confident how-to answer from knowledge base; include draft_reply in body
+- propose_reply — answer needs human approval (sensitive, uncertain, or complex)
+- escalate — billing, legal, abuse, or user wants a human
+- close — user confirmed resolved; optional brief draft_reply
+
+Prefer reply_in_app when docs clearly answer the question.`
+      : '';
+
   return `You are Parley support triage AI. Output ONLY valid JSON (no markdown fences).
 
 Category is fixed by the user submission: ${category}.
-
-Choose proposal_type:
-- customer_support → support_reply (if you can answer from docs) OR escalation (billing, legal, angry user, low confidence)
-- bug_report → bug_fix
-- feature_request → feature
+${supportRouting}
 
 JSON shape:
 {
+  "route": "reply_in_app|propose_reply|escalate|close",
   "proposal_type": "support_reply|escalation|bug_fix|feature",
   "summary": "one line for ops",
   "confidence": 0.0-1.0,
@@ -82,7 +93,7 @@ For escalation body: reason, draft_reply (optional templated message to user), r
 For bug_fix body: user_intent, root_cause_hypothesis, affected_components (array), suggested_fix, repro_steps (array), test_plan (array), risks (array), github_issue_title, github_issue_body (markdown)
 For feature body: problem_statement, proposed_mvp, similar_tickets (array), effort_estimate (S|M|L), risk (low|medium|high), files_likely_touched (array), backlog_recommendation
 
-Never invent product features not in the knowledge base. If unsure, use escalation.`;
+Never invent product features not in the knowledge base. If unsure, use escalate or propose_reply.`;
 }
 
 async function findSimilarTickets(ticket) {
@@ -95,6 +106,52 @@ async function findSimilarTickets(ticket) {
     [ticket.id, `%${subject.slice(0, 40)}%`]
   );
   return rows.map((r) => ({ id: r.id, publicNumber: r.public_number, subject: r.subject, status: r.status }));
+}
+
+function rowToTicketBrief(ticketRow) {
+  return {
+    id: ticketRow.id,
+    publicNumber: ticketRow.public_number,
+    category: ticketRow.category,
+    subject: ticketRow.subject,
+    severity: ticketRow.severity,
+    priority: ticketRow.priority,
+  };
+}
+
+async function createProposalAndNotify(ticketRow, parsed, docHits) {
+  const proposalType =
+    parsed.proposal_type ||
+    (ticketRow.category === 'bug_report'
+      ? 'bug_fix'
+      : ticketRow.category === 'feature_request'
+        ? 'feature'
+        : 'support_reply');
+  const summary = String(parsed.summary || 'AI proposal').slice(0, 500);
+  const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
+  if (docHits.length && !body.sources) {
+    body.sources = docHits.map((h) => h.source);
+  }
+
+  const proposal = await createProposal({
+    ticketId: ticketRow.id,
+    proposalType,
+    summary,
+    body,
+    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
+  });
+
+  await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
+    'pending_review',
+    new Date().toISOString(),
+    ticketRow.id,
+  ]);
+
+  await notifyProposalReady(rowToTicketBrief(ticketRow), proposal).catch((e) =>
+    console.error('[supportAgent] telegram proposal notify failed', e)
+  );
+
+  return proposal;
 }
 
 async function analyzeTicket(ticketId) {
@@ -157,41 +214,41 @@ async function analyzeTicket(ticketId) {
     return { ok: false, error: e.message };
   }
 
-  const proposalType = parsed.proposal_type || (ticketRow.category === 'bug_report' ? 'bug_fix' : ticketRow.category === 'feature_request' ? 'feature' : 'escalation');
-  const summary = String(parsed.summary || 'AI proposal').slice(0, 500);
-  const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
-  if (docHits.length && !body.sources) {
-    body.sources = docHits.map((h) => h.source);
+  if (ticketRow.category !== 'customer_support') {
+    const proposal = await createProposalAndNotify(ticketRow, parsed, docHits);
+    return { ok: true, route: 'proposal', proposal };
   }
 
-  const proposal = await createProposal({
-    ticketId,
-    proposalType,
-    summary,
-    body,
-    confidence: typeof parsed.confidence === 'number' ? parsed.confidence : null,
-  });
+  const decision = decideCustomerSupportAction(parsed, { thread, docHits });
 
-  await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
-    'pending_review',
-    new Date().toISOString(),
-    ticketId,
-  ]);
+  if (decision.action === 'reply_in_app') {
+    const message = await postAgentMessage(ticketId, decision.draftReply.slice(0, 8000), {
+      status: 'waiting_user',
+    });
+    return { ok: true, route: 'reply_in_app', message };
+  }
 
-  const ticket = {
-    id: ticketRow.id,
-    publicNumber: ticketRow.public_number,
-    category: ticketRow.category,
-    subject: ticketRow.subject,
-    severity: ticketRow.severity,
-    priority: ticketRow.priority,
-  };
+  if (decision.action === 'close') {
+    if (decision.draftReply) {
+      await postAgentMessage(ticketId, decision.draftReply.slice(0, 8000), { status: 'resolved' });
+    } else {
+      await db.run(
+        `UPDATE v2_support_tickets SET status = ?, updated_at = ?, closed_at = ? WHERE id = ?`,
+        ['resolved', new Date().toISOString(), new Date().toISOString(), ticketId]
+      );
+    }
+    return { ok: true, route: 'close' };
+  }
 
-  notifyProposalReady(ticket, proposal).catch((e) =>
-    console.error('[supportAgent] telegram proposal notify failed', e)
+  const proposal = await createProposalAndNotify(
+    ticketRow,
+    {
+      ...parsed,
+      proposal_type: decision.proposalType || parsed.proposal_type || 'escalation',
+    },
+    docHits
   );
-
-  return { ok: true, proposal };
+  return { ok: true, route: 'proposal', proposal };
 }
 
 function queueTicketAnalysis(ticketId) {
