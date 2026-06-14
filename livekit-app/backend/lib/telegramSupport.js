@@ -110,6 +110,17 @@ function proposalKeyboard(proposal) {
       ],
     };
   }
+  if (proposal.proposalType === 'escalation') {
+    return {
+      inline_keyboard: [
+        [
+          { text: '✅ Send draft to user', callback_data: `prop:${id}:send_reply` },
+          { text: '👤 Take over', callback_data: `prop:${id}:take_over` },
+        ],
+        [{ text: '❌ Dismiss', callback_data: `prop:${id}:reject` }],
+      ],
+    };
+  }
   return {
     inline_keyboard: [[{ text: '👤 Assign me', callback_data: `prop:${id}:take_over` }]],
   };

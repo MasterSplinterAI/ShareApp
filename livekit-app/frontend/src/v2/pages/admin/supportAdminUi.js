@@ -145,10 +145,10 @@ export function getActionGuide(ticket, proposals = []) {
         icon: AlertTriangle,
         tone: 'escalation',
         title: 'Escalation — human required',
-        summary: 'Sensitive or high-risk issue. Take ownership and respond in the thread.',
+        summary: 'Sensitive or high-risk issue. Send the AI draft to keep the chat moving, or take over manually.',
         steps: [
           'Review escalation reason and user context',
-          'Take over the ticket and reply in Help chat or via staff reply below',
+          'Send AI draft to user, take over the ticket, or dismiss the escalation',
         ],
       };
     }

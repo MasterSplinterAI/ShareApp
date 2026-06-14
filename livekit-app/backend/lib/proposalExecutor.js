@@ -51,6 +51,39 @@ function normalizeAction(action, proposalType) {
   return a;
 }
 
+async function sendApprovedDraftReply(ticket, proposal, { reviewer, proposalId, now }) {
+  const draft = proposal.body?.draft_reply;
+  if (!draft) return { ok: false, status: 400, error: 'No draft_reply in proposal' };
+  const body = String(draft).slice(0, MAX_BODY);
+  const lastAgent = await db.get(
+    `SELECT body FROM v2_support_messages
+     WHERE ticket_id = ? AND author_type = 'agent'
+     ORDER BY datetime(created_at) DESC LIMIT 1`,
+    [ticket.id]
+  );
+  const alreadySent =
+    lastAgent?.body &&
+    !String(lastAgent.body).includes('give me a moment') &&
+    String(lastAgent.body).slice(0, 60) === body.slice(0, 60);
+  if (!alreadySent) {
+    await postAgentMessage(ticket.id, body, { status: 'waiting_user' });
+    await emailUser(ticket, body);
+  } else {
+    await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
+      'waiting_user',
+      now,
+      ticket.id,
+    ]);
+  }
+  await patchProposal(proposalId, {
+    status: 'approved',
+    reviewedBy: reviewer,
+    reviewedAt: now,
+    executionStatus: 'done',
+  });
+  return { ok: true, result: 'reply_sent' };
+}
+
 async function executeProposalAction(proposalId, action, reviewerId) {
   const proposal = await getProposalById(proposalId);
   if (!proposal) return { ok: false, status: 404, error: 'Proposal not found' };
@@ -111,51 +144,24 @@ async function executeProposalAction(proposalId, action, reviewerId) {
     return { ok: true, result: 'needs_info' };
   }
 
-  if (proposal.proposalType === 'support_reply' && (act === 'approve' || act === 'send_reply')) {
-    const draft = proposal.body?.draft_reply;
-    if (!draft) return { ok: false, status: 400, error: 'No draft_reply in proposal' };
-    const body = String(draft).slice(0, MAX_BODY);
-    const lastAgent = await db.get(
-      `SELECT body FROM v2_support_messages
-       WHERE ticket_id = ? AND author_type = 'agent'
-       ORDER BY datetime(created_at) DESC LIMIT 1`,
-      [ticket.id]
-    );
-    const alreadySent =
-      lastAgent?.body &&
-      !String(lastAgent.body).includes('give me a moment') &&
-      String(lastAgent.body).slice(0, 60) === body.slice(0, 60);
-    if (!alreadySent) {
-      await postAgentMessage(ticket.id, body, { status: 'waiting_user' });
-      await emailUser(ticket, body);
-    } else {
-      await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
-        'waiting_user',
-        now,
-        ticket.id,
-      ]);
+  if (
+    (proposal.proposalType === 'support_reply' || proposal.proposalType === 'escalation') &&
+    (act === 'approve' || act === 'send_reply')
+  ) {
+    if (proposal.proposalType === 'escalation' && act === 'approve') {
+      await patchProposal(proposalId, {
+        status: 'approved',
+        reviewedBy: reviewer,
+        reviewedAt: now,
+        executionStatus: 'done',
+      });
+      await db.run(
+        `UPDATE v2_support_tickets SET status = ?, assigned_to = ?, updated_at = ? WHERE id = ?`,
+        ['escalated', reviewer, now, ticket.id]
+      );
+      return { ok: true, result: 'escalated' };
     }
-    await patchProposal(proposalId, {
-      status: 'approved',
-      reviewedBy: reviewer,
-      reviewedAt: now,
-      executionStatus: 'done',
-    });
-    return { ok: true, result: 'reply_sent' };
-  }
-
-  if (proposal.proposalType === 'escalation' && act === 'approve') {
-    await patchProposal(proposalId, {
-      status: 'approved',
-      reviewedBy: reviewer,
-      reviewedAt: now,
-      executionStatus: 'done',
-    });
-    await db.run(
-      `UPDATE v2_support_tickets SET status = ?, assigned_to = ?, updated_at = ? WHERE id = ?`,
-      ['escalated', reviewer, now, ticket.id]
-    );
-    return { ok: true, result: 'escalated' };
+    return sendApprovedDraftReply(ticket, proposal, { reviewer, proposalId, now });
   }
 
   if ((proposal.proposalType === 'bug_fix' || proposal.proposalType === 'feature') && act === 'approve') {
