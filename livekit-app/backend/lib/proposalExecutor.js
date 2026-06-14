@@ -10,21 +10,23 @@ const {
 } = require('./telegramSupport');
 
 const MAX_BODY = 8000;
+const { formatUserFacingReply } = require('./supportReplyFormat');
 
 async function postAgentMessage(ticketId, body, { status = 'waiting_user' } = {}) {
+  const formatted = formatUserFacingReply(body);
   const now = new Date().toISOString();
   const messageId = db.uuid();
   await db.run(
     `INSERT INTO v2_support_messages (id, ticket_id, author_type, author_id, body, created_at)
      VALUES (?,?,?,?,?,?)`,
-    [messageId, ticketId, 'agent', 'parley-support-ai', body, now]
+    [messageId, ticketId, 'agent', 'parley-support-ai', formatted.slice(0, MAX_BODY), now]
   );
   await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
     status,
     now,
     ticketId,
   ]);
-  return { id: messageId, authorType: 'agent', body, createdAt: now };
+  return { id: messageId, authorType: 'agent', body: formatted, createdAt: now };
 }
 
 async function emailUser(ticket, body) {

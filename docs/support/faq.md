@@ -4,11 +4,16 @@ Quick answers for common Parley support questions. Prefer these over escalation 
 
 ## How do I change my password?
 
-Go to **Settings** (`/v2/app/settings`) → **Password** section. Enter current password, new password (8+ characters), confirm, and click **Update password**. Works for regular users and Super Admin accounts.
+1. Open the Parley app and click **Settings** in the left sidebar (gear icon).
+2. Scroll to the **Password** section.
+3. Enter your **current password**, your **new password** (at least 8 characters), and confirm it.
+4. Click **Update password**.
+
+You must know your current password. This is self-service in the app.
 
 ## I forgot my password
 
-Use **Forgot password** on the login page. Check your email for a reset link.
+On the sign-in screen, click **Forgot password** and check your email for a reset link.
 
 ## How do I enable video blur or backgrounds?
 
@@ -20,12 +25,12 @@ Toggle translation off and on in the meeting control bar. If still stuck, leave 
 
 ## How do billing and plans work?
 
-Org admins manage plans under **Settings → Billing**. See product/billing.md.
+Org admins manage plans under **Settings → Billing** in the left sidebar. See product/billing.md.
 
 ## How do I submit a bug or feature idea?
 
-Open **Help** (chat bubble) → choose **Bug** or **Feature**. Feature requests can be refined in chat before submitting.
+Open **Help** (blue chat bubble, bottom-right) → choose **Bug** or **Feature**. Feature requests can be refined in chat before submitting.
 
 ## When will someone reply to my support chat?
 
-Parley Support AI replies in the chat bubble first. A human joins only if your issue needs escalation (billing disputes, security, etc.). You always see replies in the same Help thread.
+Parley Support replies in the Help chat first. A teammate joins only if your issue needs escalation (billing disputes, security, etc.). You always see updates in the same thread.

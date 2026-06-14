@@ -4,6 +4,8 @@ const { createProposal, getActivePendingForTicket } = require('../supportProposa
 const { notifyProposalReady } = require('../telegramSupport');
 const { postAgentMessage } = require('../proposalExecutor');
 const { decideCustomerSupportAction, userFacingReply } = require('./routing');
+const { formatUserFacingReply, REPLY_STYLE_RULES } = require('../supportReplyFormat');
+const { recordKnowledgeGap } = require('../supportKnowledgeGaps');
 const { aiEnabled, callSupportLlm } = require('./llm');
 
 const debounceMs = parseInt(process.env.SUPPORT_AI_DEBOUNCE_MS || '8000', 10);
@@ -16,10 +18,8 @@ function buildSystemPrompt(category) {
 For customer_support you MUST set "route":
 - reply_in_app — confident how-to answer from knowledge base; include draft_reply in body
 - propose_reply — answer needs human approval (sensitive, uncertain, or complex)
-- escalate — billing disputes, legal, abuse, account compromise (NOT routine password change)
+- escalate — billing disputes, legal, abuse, account compromise
 - close — user confirmed resolved; optional brief draft_reply
-
-Password change: self-service at V2 Settings → Password (/v2/app/settings). All roles including Super Admin. Use reply_in_app with steps from account-settings or faq docs — do NOT escalate.
 
 Always include draft_reply with what the user should see in chat, even for escalate/propose_reply.`
       : '';
@@ -28,6 +28,7 @@ Always include draft_reply with what the user should see in chat, even for escal
 
 Category is fixed by the user submission: ${category}.
 ${supportRouting}
+${REPLY_STYLE_RULES}
 
 JSON shape:
 {
@@ -69,7 +70,7 @@ function rowToTicketBrief(ticketRow) {
   };
 }
 
-async function createProposalAndNotify(ticketRow, parsed, docHits) {
+async function createProposalAndNotify(ticketRow, parsed, docHits, { docQuery = '' } = {}) {
   const proposalType =
     parsed.proposal_type ||
     (ticketRow.category === 'bug_report'
@@ -100,6 +101,24 @@ async function createProposalAndNotify(ticketRow, parsed, docHits) {
   await notifyProposalReady(rowToTicketBrief(ticketRow), proposal).catch((e) =>
     console.error('[supportAgent] telegram proposal notify failed', e)
   );
+
+  const shouldLogGap =
+    proposalType === 'escalation' ||
+    docHits.length === 0 ||
+    parsed.route === 'propose_reply' ||
+    parsed.route === 'escalate';
+
+  if (shouldLogGap) {
+    recordKnowledgeGap({
+      ticketId: ticketRow.id,
+      proposalId: proposal.id,
+      proposalType,
+      summary: proposal.summary,
+      escalationReason: body.escalation_reason || body.reason || null,
+      docQuery,
+      docHits,
+    }).catch((e) => console.error('[supportAgent] knowledge gap log failed', e));
+  }
 
   return proposal;
 }
@@ -172,7 +191,7 @@ async function analyzeTicket(ticketId) {
       body.user_update ||
       `Thanks — I've reviewed ticket #${ticketRow.public_number}. Our team is looking at it and you'll see updates in this chat.`;
     await postAgentMessage(ticketId, String(userUpdate).slice(0, 8000), { status: 'pending_review' });
-    const proposal = await createProposalAndNotify(ticketRow, parsed, docHits);
+    const proposal = await createProposalAndNotify(ticketRow, parsed, docHits, { docQuery });
     return { ok: true, route: 'proposal', proposal };
   }
 
@@ -206,7 +225,8 @@ async function analyzeTicket(ticketId) {
       ...parsed,
       proposal_type: decision.proposalType || parsed.proposal_type || 'escalation',
     },
-    docHits
+    docHits,
+    { docQuery }
   );
   return { ok: true, route: 'proposal', proposal };
 }

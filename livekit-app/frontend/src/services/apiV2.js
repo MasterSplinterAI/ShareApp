@@ -54,6 +54,10 @@ export const v2Support = {
   adminProposalAction: (id, body) =>
     apiV2.post(`/support/admin/proposals/${encodeURIComponent(id)}/action`, body).then((r) => r.data),
   coachFeature: (body) => apiV2.post('/support/coach', body).then((r) => r.data),
+  adminListKnowledgeGaps: (params = {}) =>
+    apiV2.get('/support/admin/knowledge-gaps', { params }).then((r) => r.data),
+  adminPatchKnowledgeGap: (id, body) =>
+    apiV2.patch(`/support/admin/knowledge-gaps/${encodeURIComponent(id)}`, body).then((r) => r.data),
 };
 
 export const v2Orgs = {

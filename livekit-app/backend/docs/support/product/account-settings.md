@@ -2,18 +2,16 @@
 
 ## Change your password
 
-All Parley accounts — including **Super Admin** — change password the same way:
-
-1. Open the V2 app and go to **Settings** (gear icon in the sidebar, or `/v2/app/settings`).
+1. Open the Parley app and click **Settings** in the left sidebar (gear icon).
 2. Scroll to the **Password** card.
 3. Enter your **current password**, **new password** (at least 8 characters), and **confirm**.
 4. Click **Update password**.
 
-You must know your current password. This is self-service; support does not reset passwords from the help desk unless the forgot-password email flow is used.
+You must know your current password. This is self-service; use **Forgot password** on the sign-in screen if you cannot sign in.
 
 ## Forgot password
 
-Use **Forgot password** on the login page (`/v2/login`). A reset link is sent to your email.
+On the sign-in screen, click **Forgot password**. A reset link is sent to your email.
 
 ## Communication preferences
 
@@ -21,4 +19,4 @@ In **Settings**, under communication preferences, you can opt in or out of marke
 
 ## Organization settings
 
-Org admins manage billing, members, and branding from the same **Settings** page. Super Admin users use the same account settings for password; platform admin tools are separate under Super Admin in the app menu.
+Org admins manage billing, members, and branding from **Settings** in the left sidebar.

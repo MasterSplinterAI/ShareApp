@@ -51,6 +51,7 @@ export function SupportTab({ initialTicketNumber }) {
   const [detail, setDetail] = useState(null);
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
+  const [knowledgeGaps, setKnowledgeGaps] = useState([]);
 
   const reloadList = () =>
     v2Support
@@ -61,6 +62,13 @@ export function SupportTab({ initialTicketNumber }) {
   useEffect(() => {
     reloadList();
   }, [filterStatus]);
+
+  useEffect(() => {
+    v2Support
+      .adminListKnowledgeGaps({ status: 'open' })
+      .then((r) => setKnowledgeGaps(r.gaps || []))
+      .catch(() => {});
+  }, [detail?.ticket?.id, busy]);
 
   useEffect(() => {
     if (!initialTicketNumber || tickets.length === 0) return;
@@ -129,7 +137,22 @@ export function SupportTab({ initialTicketNumber }) {
     }
   };
 
+  const resolveGap = async (gapId, status) => {
+    setBusy(true);
+    try {
+      await v2Support.adminPatchKnowledgeGap(gapId, { status });
+      const r = await v2Support.adminListKnowledgeGaps({ status: 'open' });
+      setKnowledgeGaps(r.gaps || []);
+      toast.success(status === 'resolved' ? 'Marked resolved' : 'Dismissed');
+    } catch {
+      toast.error('Update failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
+    <div className="space-y-4">
     <div className="grid gap-4 lg:grid-cols-5">
       <Card className="app-card border-border/60 lg:col-span-2">
         <CardHeader>
@@ -317,6 +340,48 @@ export function SupportTab({ initialTicketNumber }) {
               </form>
             </>
           )}
+        </CardContent>
+      </Card>
+    </div>
+
+      <Card className="app-card border-border/60">
+        <CardHeader>
+          <CardTitle className="text-lg">Knowledge gaps</CardTitle>
+          <CardDescription>
+            Questions the AI escalated or could not answer confidently — use for weekly Q&amp;A updates in{' '}
+            <code className="text-xs">docs/support/faq.md</code>.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-2 border-t border-border/60 pt-4">
+          {knowledgeGaps.length === 0 && (
+            <p className="text-sm text-muted-foreground">No open gaps — nice work.</p>
+          )}
+          {knowledgeGaps.slice(0, 20).map((g) => (
+            <div key={g.id} className="rounded-lg border border-border/60 p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                {g.publicNumber != null && (
+                  <Badge variant="outline">#{g.publicNumber}</Badge>
+                )}
+                <Badge variant="secondary" className="capitalize">
+                  {g.proposalType?.replace('_', ' ') || 'gap'}
+                </Badge>
+                <span className="text-xs text-muted-foreground">{fmtDateTime(g.createdAt)}</span>
+              </div>
+              <p className="mt-2 font-medium text-foreground">{g.userQuestion}</p>
+              {g.summary && <p className="mt-1 text-muted-foreground">{g.summary}</p>}
+              {g.docHits?.length === 0 && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">No KB hits</p>
+              )}
+              <div className="mt-2 flex gap-2">
+                <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => resolveGap(g.id, 'resolved')}>
+                  Resolved in KB
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => resolveGap(g.id, 'dismissed')}>
+                  Dismiss
+                </Button>
+              </div>
+            </div>
+          ))}
         </CardContent>
       </Card>
     </div>

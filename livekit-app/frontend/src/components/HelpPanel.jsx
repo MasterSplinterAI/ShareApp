@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { cn } from '../lib/utils';
+import { ChatMessageContent } from '../lib/chatMarkdown';
 
 const textareaClass =
   'flex w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
@@ -42,6 +43,21 @@ function statusLabel(status) {
   return status.replace(/_/g, ' ');
 }
 
+function TypingIndicator() {
+  return (
+    <div className="flex flex-col items-start gap-0.5">
+      <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Parley Support
+      </span>
+      <div className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-muted px-3 py-3">
+        <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.3s]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.15s]" />
+        <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70" />
+      </div>
+    </div>
+  );
+}
+
 function ChatBubble({ message }) {
   const isStaff = message.authorType === 'staff' || message.authorType === 'agent';
   const isUser = message.authorType === 'user';
@@ -60,7 +76,7 @@ function ChatBubble({ message }) {
           !isStaff && !isUser && 'bg-muted/60 text-muted-foreground'
         )}
       >
-        {message.body}
+        <ChatMessageContent text={message.body} />
       </div>
     </div>
   );
@@ -513,9 +529,7 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
                 {featureChatMessages.map((m, i) => (
                   <CoachBubble key={`${i}-${m.role}`} message={m} />
                 ))}
-                {featureCoachBusy && (
-                  <p className="text-xs italic text-muted-foreground">Parley Support is typing…</p>
-                )}
+                {featureCoachBusy && <TypingIndicator />}
                 {featureReady && (
                   <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground">
                     Ready to submit — tap <strong>Submit feature request</strong> below when you are happy with the summary.
@@ -538,9 +552,7 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
                 {threadMessages.map((m) => (
                   <ChatBubble key={m.id} message={m} />
                 ))}
-                {activeTicket?.status === 'ai_reviewing' && (
-                  <p className="text-xs italic text-muted-foreground">Parley Support is typing…</p>
-                )}
+                {(replySending || activeTicket?.status === 'ai_reviewing') && <TypingIndicator />}
                 {activeTicket?.status === 'waiting_user' && threadMessages.length > 0 && (
                   <p className="text-center text-xs text-primary">New reply from our team</p>
                 )}

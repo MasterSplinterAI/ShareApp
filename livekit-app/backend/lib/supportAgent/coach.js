@@ -1,3 +1,4 @@
+const { formatUserFacingReply } = require('../supportReplyFormat');
 const { aiEnabled, callSupportLlm } = require('./llm');
 
 const COACH_SYSTEM = `You help users refine Parley feature requests before formal submission.
@@ -48,7 +49,7 @@ async function coachFeatureRequest(messages) {
   const draft = parsed.draft && typeof parsed.draft === 'object' ? parsed.draft : {};
   return {
     ok: true,
-    reply: String(parsed.reply || 'Tell me more about the problem you want to solve.').slice(0, 4000),
+    reply: formatUserFacingReply(String(parsed.reply || 'Tell me more about the problem you want to solve.').slice(0, 4000)),
     readyToSubmit: Boolean(parsed.ready_to_submit),
     draft: {
       problem: String(draft.problem || '').slice(0, 4000),

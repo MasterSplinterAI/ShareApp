@@ -1,3 +1,5 @@
+const { formatUserFacingReply } = require('../supportReplyFormat');
+
 const ESCALATION_KEYWORDS = [
   'refund',
   'chargeback',
@@ -41,7 +43,7 @@ function inferRoute(parsed) {
 
 function userFacingReply(parsed, { proposalType } = {}) {
   const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
-  if (body.draft_reply) return String(body.draft_reply).slice(0, 8000);
+  if (body.draft_reply) return formatUserFacingReply(String(body.draft_reply).slice(0, 8000));
   if (proposalType === 'escalation' || parsed.proposal_type === 'escalation') {
     return DEFAULT_ESCALATION_REPLY;
   }

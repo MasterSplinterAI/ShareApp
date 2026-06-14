@@ -591,6 +591,27 @@ async function migrate() {
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_proposals_ticket ON v2_support_proposals(ticket_id)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_proposals_status ON v2_support_proposals(status)`);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_knowledge_gaps (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      public_number INTEGER,
+      user_question TEXT NOT NULL,
+      escalation_reason TEXT,
+      doc_query TEXT,
+      doc_hits_json TEXT,
+      proposal_id TEXT,
+      proposal_type TEXT,
+      summary TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      resolved_at TEXT,
+      FOREIGN KEY (ticket_id) REFERENCES v2_support_tickets(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_knowledge_gaps_status ON v2_support_knowledge_gaps(status)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_knowledge_gaps_created ON v2_support_knowledge_gaps(created_at)`);
+
   // Scale / ops: billing + webhook + usage tables remain SQLite here; production should migrate
   // high-write paths (webhook_events, usage_events, overage_ledger) to Postgres for concurrency and backups.
 }

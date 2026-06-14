@@ -8,6 +8,7 @@ const { listProposals, listProposalsForTicket } = require('../../lib/supportProp
 const { executeProposalAction } = require('../../lib/proposalExecutor');
 const { handleTelegramUpdate } = require('../../lib/supportTelegramWebhook');
 const { coachFeatureRequest } = require('../../lib/supportAgent/coach');
+const { listKnowledgeGaps, patchKnowledgeGap } = require('../../lib/supportKnowledgeGaps');
 
 const TICKET_RATE_WINDOW_MS = 15 * 60 * 1000;
 const TICKET_RATE_MAX = 10;
@@ -190,6 +191,34 @@ router.post('/admin/proposals/:id/action', requireV2Auth, requireSuperadmin, asy
     res.json(result);
   } catch (e) {
     console.error('[support/admin proposal action]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/admin/knowledge-gaps', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const gaps = await listKnowledgeGaps({
+      status: req.query.status || 'open',
+      limit: req.query.limit,
+    });
+    res.json({ gaps });
+  } catch (e) {
+    console.error('[support/admin knowledge gaps]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/admin/knowledge-gaps/:id', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { status } = req.body || {};
+    if (!['open', 'resolved', 'dismissed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const gap = await patchKnowledgeGap(req.params.id, status);
+    if (!gap) return res.status(404).json({ error: 'Not found' });
+    res.json({ gap });
+  } catch (e) {
+    console.error('[support/admin knowledge gap patch]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

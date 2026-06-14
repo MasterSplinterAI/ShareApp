@@ -70,7 +70,7 @@ function scoreChunk(chunk, queryTokens) {
 
 function searchSupportDocs(query, { limit = 5 } = {}) {
   const queryTokens = tokenize(query);
-  if (queryTokens.length === 0) return [];
+  if (queryTokens.length === 0) return fallbackHits(limit);
 
   const ranked = loadChunks()
     .map((chunk) => ({ chunk, score: scoreChunk(chunk, queryTokens) }))
@@ -78,11 +78,45 @@ function searchSupportDocs(query, { limit = 5 } = {}) {
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
-  return ranked.map(({ chunk, score }) => ({
+  if (ranked.length > 0) {
+    return ranked.map(({ chunk, score }) => ({
+      source: chunk.source,
+      title: chunk.title,
+      excerpt: chunk.body.slice(0, 1200),
+      score,
+    }));
+  }
+
+  const questionTokens = queryTokens.filter((t) => t.length > 4);
+  if (questionTokens.length > 0) {
+    const retry = loadChunks()
+      .map((chunk) => ({ chunk, score: scoreChunk(chunk, questionTokens) }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+    if (retry.length > 0) {
+      return retry.map(({ chunk, score }) => ({
+        source: chunk.source,
+        title: chunk.title,
+        excerpt: chunk.body.slice(0, 1200),
+        score,
+      }));
+    }
+  }
+
+  return fallbackHits(limit);
+}
+
+function fallbackHits(limit) {
+  const preferred = loadChunks().filter(
+    (c) => c.source.includes('faq.md') || c.source.includes('account-settings')
+  );
+  const pool = preferred.length ? preferred : loadChunks();
+  return pool.slice(0, limit).map((chunk) => ({
     source: chunk.source,
     title: chunk.title,
     excerpt: chunk.body.slice(0, 1200),
-    score,
+    score: 0,
   }));
 }
 
