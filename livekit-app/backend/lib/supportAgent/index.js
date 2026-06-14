@@ -10,28 +10,34 @@ const pendingTimers = new Map();
 function aiEnabled() {
   if (process.env.SUPPORT_AI_ENABLED === 'false') return false;
   if (process.env.OPENAI_API_KEY) return true;
-  return Boolean(
-    process.env.TRANSLATION_API_KEY &&
-      (process.env.TRANSLATION_API_PROVIDER || '').toLowerCase() === 'openai'
-  );
+  return Boolean(process.env.TRANSLATION_API_KEY);
 }
 
-function resolveApiKey() {
-  return process.env.OPENAI_API_KEY || process.env.TRANSLATION_API_KEY || null;
-}
-
-function resolveModel() {
-  return process.env.SUPPORT_AI_MODEL || 'gpt-4o-mini';
+function resolveLlmConfig() {
+  const provider = (process.env.TRANSLATION_API_PROVIDER || 'openai').toLowerCase();
+  const useOpenai = Boolean(process.env.OPENAI_API_KEY) || provider === 'openai';
+  if (useOpenai) {
+    return {
+      url: 'https://api.openai.com/v1/chat/completions',
+      apiKey: process.env.OPENAI_API_KEY || process.env.TRANSLATION_API_KEY,
+      model: process.env.SUPPORT_AI_MODEL || 'gpt-4o-mini',
+    };
+  }
+  return {
+    url: process.env.TRANSLATION_API_URL || 'https://api.x.ai/v1/chat/completions',
+    apiKey: process.env.TRANSLATION_API_KEY,
+    model: process.env.SUPPORT_AI_MODEL || process.env.TRANSLATION_MODEL || 'grok-4-20-non-reasoning',
+  };
 }
 
 async function callSupportLlm(systemPrompt, userContent) {
-  const apiKey = resolveApiKey();
-  if (!apiKey) throw new Error('No OpenAI API key configured');
+  const { url, apiKey, model } = resolveLlmConfig();
+  if (!apiKey) throw new Error('No LLM API key configured');
 
   const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
+    url,
     {
-      model: resolveModel(),
+      model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userContent },
