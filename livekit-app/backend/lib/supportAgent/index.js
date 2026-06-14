@@ -1,65 +1,13 @@
-const axios = require('axios');
 const db = require('../../db/v2Database');
 const { searchSupportDocs, formatSourcesForPrompt } = require('../supportKnowledge');
 const { createProposal, getActivePendingForTicket } = require('../supportProposals');
 const { notifyProposalReady } = require('../telegramSupport');
 const { postAgentMessage } = require('../proposalExecutor');
-const { decideCustomerSupportAction } = require('./routing');
+const { decideCustomerSupportAction, userFacingReply } = require('./routing');
+const { aiEnabled, callSupportLlm } = require('./llm');
 
 const debounceMs = parseInt(process.env.SUPPORT_AI_DEBOUNCE_MS || '8000', 10);
 const pendingTimers = new Map();
-
-function aiEnabled() {
-  if (process.env.SUPPORT_AI_ENABLED === 'false') return false;
-  if (process.env.OPENAI_API_KEY) return true;
-  return Boolean(process.env.TRANSLATION_API_KEY);
-}
-
-function resolveLlmConfig() {
-  const provider = (process.env.TRANSLATION_API_PROVIDER || 'openai').toLowerCase();
-  const useOpenai = Boolean(process.env.OPENAI_API_KEY) || provider === 'openai';
-  if (useOpenai) {
-    return {
-      url: 'https://api.openai.com/v1/chat/completions',
-      apiKey: process.env.OPENAI_API_KEY || process.env.TRANSLATION_API_KEY,
-      model: process.env.SUPPORT_AI_MODEL || 'gpt-4o-mini',
-    };
-  }
-  return {
-    url: process.env.TRANSLATION_API_URL || 'https://api.x.ai/v1/chat/completions',
-    apiKey: process.env.TRANSLATION_API_KEY,
-    model: process.env.SUPPORT_AI_MODEL || process.env.TRANSLATION_MODEL || 'grok-4-20-non-reasoning',
-  };
-}
-
-async function callSupportLlm(systemPrompt, userContent) {
-  const { url, apiKey, model } = resolveLlmConfig();
-  if (!apiKey) throw new Error('No LLM API key configured');
-
-  const response = await axios.post(
-    url,
-    {
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent },
-      ],
-      temperature: 0.2,
-      max_tokens: 2500,
-      response_format: { type: 'json_object' },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 90000,
-    }
-  );
-  const content = response.data?.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Empty LLM response');
-  return JSON.parse(content);
-}
 
 function buildSystemPrompt(category) {
   const supportRouting =
@@ -68,10 +16,12 @@ function buildSystemPrompt(category) {
 For customer_support you MUST set "route":
 - reply_in_app — confident how-to answer from knowledge base; include draft_reply in body
 - propose_reply — answer needs human approval (sensitive, uncertain, or complex)
-- escalate — billing, legal, abuse, or user wants a human
+- escalate — billing disputes, legal, abuse, account compromise (NOT routine password change)
 - close — user confirmed resolved; optional brief draft_reply
 
-Prefer reply_in_app when docs clearly answer the question.`
+Password change: self-service at V2 Settings → Password (/v2/app/settings). All roles including Super Admin. Use reply_in_app with steps from account-settings or faq docs — do NOT escalate.
+
+Always include draft_reply with what the user should see in chat, even for escalate/propose_reply.`
       : '';
 
   return `You are Parley support triage AI. Output ONLY valid JSON (no markdown fences).
@@ -89,11 +39,11 @@ JSON shape:
 }
 
 For support_reply body: user_intent, draft_reply (customer-facing, friendly), sources (array of doc paths), escalation_reason (null or string)
-For escalation body: reason, draft_reply (optional templated message to user), recommended_assignee, urgency (low|medium|high)
-For bug_fix body: user_intent, root_cause_hypothesis, affected_components (array), suggested_fix, repro_steps (array), test_plan (array), risks (array), github_issue_title, github_issue_body (markdown)
-For feature body: problem_statement, proposed_mvp, similar_tickets (array), effort_estimate (S|M|L), risk (low|medium|high), files_likely_touched (array), backlog_recommendation
+For escalation body: reason, draft_reply (what to tell the user in chat), recommended_assignee, urgency (low|medium|high)
+For bug_fix body: user_intent, root_cause_hypothesis, affected_components (array), suggested_fix, repro_steps (array), test_plan (array), risks (array), github_issue_title, github_issue_body (markdown), user_update (short message for the user's chat thread)
+For feature body: problem_statement, proposed_mvp, similar_tickets (array), effort_estimate (S|M|L), risk (low|medium|high), files_likely_touched (array), backlog_recommendation, user_update (short message for the user's chat thread)
 
-Never invent product features not in the knowledge base. If unsure, use escalate or propose_reply.`;
+Never invent product features not in the knowledge base. If unsure, still provide a helpful draft_reply acknowledging the question and use propose_reply or escalate.`;
 }
 
 async function findSimilarTickets(ticket) {
@@ -206,8 +156,10 @@ async function analyzeTicket(ticketId) {
     parsed = await callSupportLlm(buildSystemPrompt(ticketRow.category), userPayload);
   } catch (e) {
     console.error('[supportAgent] LLM failed:', e.message);
+    const { DEFAULT_HOLD_REPLY } = require('./routing');
+    await postAgentMessage(ticketId, DEFAULT_HOLD_REPLY, { status: 'waiting_user' });
     await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
-      'open',
+      'waiting_user',
       new Date().toISOString(),
       ticketId,
     ]);
@@ -215,6 +167,11 @@ async function analyzeTicket(ticketId) {
   }
 
   if (ticketRow.category !== 'customer_support') {
+    const body = parsed.body && typeof parsed.body === 'object' ? parsed.body : parsed;
+    const userUpdate =
+      body.user_update ||
+      `Thanks — I've reviewed ticket #${ticketRow.public_number}. Our team is looking at it and you'll see updates in this chat.`;
+    await postAgentMessage(ticketId, String(userUpdate).slice(0, 8000), { status: 'pending_review' });
     const proposal = await createProposalAndNotify(ticketRow, parsed, docHits);
     return { ok: true, route: 'proposal', proposal };
   }
@@ -239,6 +196,9 @@ async function analyzeTicket(ticketId) {
     }
     return { ok: true, route: 'close' };
   }
+
+  const userReply = decision.userReply || userFacingReply(parsed, { proposalType: decision.proposalType });
+  await postAgentMessage(ticketId, userReply.slice(0, 8000), { status: 'waiting_user' });
 
   const proposal = await createProposalAndNotify(
     ticketRow,

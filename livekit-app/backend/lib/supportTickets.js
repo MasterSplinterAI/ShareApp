@@ -1,7 +1,7 @@
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
 const { notifyNewTicket, notifyUserMessage } = require('./telegramSupport');
-const { shouldNotifyOpsOnNewTicket, shouldNotifyOpsOnUserMessage } = require('./supportAgent/routing');
+const { shouldNotifyOpsOnNewTicket, shouldNotifyOpsOnUserMessage, submitAckMessage } = require('./supportAgent/routing');
 const { isSuperadminEmail } = require('./v2Superadmin');
 
 const CATEGORIES = new Set(['customer_support', 'bug_report', 'feature_request']);
@@ -210,6 +210,14 @@ async function createTicket(req, body) {
     [messageId, id, 'user', auth?.userId || guestEmail, messageBody, now]
   );
 
+  const ackId = db.uuid();
+  const ackBody = submitAckMessage(category, publicNumber);
+  await db.run(
+    `INSERT INTO v2_support_messages (id, ticket_id, author_type, author_id, body, created_at)
+     VALUES (?,?,?,?,?,?)`,
+    [ackId, id, 'agent', 'parley-support-ai', ackBody, now]
+  );
+
   const ticket = await getTicketById(id);
   const submitterEmail = auth?.email || guestEmail;
   let aiOn = false;
@@ -234,7 +242,10 @@ async function createTicket(req, body) {
   return {
     ok: true,
     ticket,
-    messages: [{ id: messageId, authorType: 'user', body: messageBody, createdAt: now }],
+    messages: [
+      { id: messageId, authorType: 'user', body: messageBody, createdAt: now },
+      { id: ackId, authorType: 'agent', body: ackBody, createdAt: now },
+    ],
   };
 }
 
@@ -268,7 +279,7 @@ async function addUserMessage(req, ticketId, bodyText) {
     [messageId, ticketId, 'user', req.v2Auth?.userId || ticket.guestEmail, body, now]
   );
   await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
-    'open',
+    'ai_reviewing',
     now,
     ticketId,
   ]);

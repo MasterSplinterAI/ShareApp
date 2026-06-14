@@ -7,6 +7,7 @@ const support = require('../../lib/supportTickets');
 const { listProposals, listProposalsForTicket } = require('../../lib/supportProposals');
 const { executeProposalAction } = require('../../lib/proposalExecutor');
 const { handleTelegramUpdate } = require('../../lib/supportTelegramWebhook');
+const { coachFeatureRequest } = require('../../lib/supportAgent/coach');
 
 const TICKET_RATE_WINDOW_MS = 15 * 60 * 1000;
 const TICKET_RATE_MAX = 10;
@@ -29,6 +30,27 @@ setInterval(() => {
     if (now - entry.windowStart > TICKET_RATE_WINDOW_MS) ticketAttempts.delete(ip);
   }
 }, TICKET_RATE_WINDOW_MS).unref();
+
+router.post('/coach', optionalV2Auth, async (req, res) => {
+  try {
+    const ip = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown';
+    if (ticketRateLimited(String(ip))) {
+      return res.status(429).json({ error: 'Too many requests. Try again later.' });
+    }
+    const { category, messages } = req.body || {};
+    if (category !== 'feature_request') {
+      return res.status(400).json({ error: 'Only feature_request coaching is supported' });
+    }
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return res.status(400).json({ error: 'messages required' });
+    }
+    const result = await coachFeatureRequest(messages);
+    res.json(result);
+  } catch (e) {
+    console.error('[support/coach]', e);
+    res.status(500).json({ error: 'Coach unavailable' });
+  }
+});
 
 router.post('/tickets', optionalV2Auth, async (req, res) => {
   try {

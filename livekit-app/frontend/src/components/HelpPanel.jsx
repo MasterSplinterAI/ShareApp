@@ -23,6 +23,9 @@ const CATEGORIES = [
   { id: 'feature_request', label: 'Feature', icon: Lightbulb },
 ];
 
+const FEATURE_INTRO =
+  "Hi! I'll help refine your feature idea before we send it to the team. What problem are you trying to solve?";
+
 function collectContext(extra = {}) {
   return {
     url: typeof window !== 'undefined' ? window.location.href : '',
@@ -63,6 +66,17 @@ function ChatBubble({ message }) {
   );
 }
 
+function CoachBubble({ message }) {
+  return (
+    <ChatBubble
+      message={{
+        authorType: message.role === 'user' ? 'user' : 'agent',
+        body: message.body,
+      }}
+    />
+  );
+}
+
 export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail }) {
   const [step, setStep] = useState('home');
   const [category, setCategory] = useState(null);
@@ -85,6 +99,16 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
   const [featureProblem, setFeatureProblem] = useState('');
   const [featureSolution, setFeatureSolution] = useState('');
   const [featurePriority, setFeaturePriority] = useState('nice_to_have');
+  const [featureChatMessages, setFeatureChatMessages] = useState([]);
+  const [featureChatDraft, setFeatureChatDraft] = useState('');
+  const [featureCoachBusy, setFeatureCoachBusy] = useState(false);
+  const [featureDraft, setFeatureDraft] = useState({
+    problem: '',
+    solution: '',
+    priority: 'nice_to_have',
+    subject: '',
+  });
+  const [featureReady, setFeatureReady] = useState(false);
 
   const unreadCount = useMemo(
     () => myTickets.filter((t) => t.status === 'waiting_user').length,
@@ -120,14 +144,15 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
   useEffect(() => {
     if (step !== 'thread' || !activeTicket?.id) return;
     loadThread(activeTicket.id);
-    const id = setInterval(() => loadThread(activeTicket.id), 20000);
+    const ms = activeTicket.status === 'ai_reviewing' ? 3000 : 20000;
+    const id = setInterval(() => loadThread(activeTicket.id), ms);
     return () => clearInterval(id);
-  }, [step, activeTicket?.id, loadThread]);
+  }, [step, activeTicket?.id, activeTicket?.status, loadThread]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [threadMessages, step]);
+  }, [threadMessages, featureChatMessages, step]);
 
   const resetFlow = () => {
     setStep('home');
@@ -142,6 +167,11 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
     setBugActual('');
     setFeatureProblem('');
     setFeatureSolution('');
+    setFeatureChatMessages([]);
+    setFeatureChatDraft('');
+    setFeatureCoachBusy(false);
+    setFeatureDraft({ problem: '', solution: '', priority: 'nice_to_have', subject: '' });
+    setFeatureReady(false);
   };
 
   const close = () => {
@@ -156,7 +186,82 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
 
   const pickCategory = (id) => {
     setCategory(id);
+    if (id === 'feature_request') {
+      setFeatureChatMessages([{ role: 'agent', body: FEATURE_INTRO }]);
+      setFeatureDraft({ problem: '', solution: '', priority: 'nice_to_have', subject: '' });
+      setFeatureReady(false);
+      setFeatureChatDraft('');
+      setStep('feature-chat');
+      return;
+    }
     setStep('compose');
+  };
+
+  const sendFeatureChat = async (e) => {
+    e.preventDefault();
+    const text = featureChatDraft.trim();
+    if (!text || featureCoachBusy) return;
+    const userMsg = { role: 'user', body: text };
+    const nextMessages = [...featureChatMessages, userMsg];
+    setFeatureChatMessages(nextMessages);
+    setFeatureChatDraft('');
+    setFeatureCoachBusy(true);
+    try {
+      const result = await v2Support.coachFeature({
+        category: 'feature_request',
+        messages: nextMessages,
+      });
+      setFeatureChatMessages((prev) => [...prev, { role: 'agent', body: result.reply }]);
+      if (result.draft) {
+        setFeatureDraft(result.draft);
+        if (result.draft.problem) setFeatureProblem(result.draft.problem);
+        if (result.draft.solution) setFeatureSolution(result.draft.solution);
+        if (result.draft.priority) setFeaturePriority(result.draft.priority);
+      }
+      setFeatureReady(Boolean(result.readyToSubmit));
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not reach coach');
+      setFeatureChatMessages((prev) => prev.slice(0, -1));
+      setFeatureChatDraft(text);
+    } finally {
+      setFeatureCoachBusy(false);
+    }
+  };
+
+  const submitFeatureTicket = async () => {
+    const problem = (featureDraft.problem || featureProblem).trim();
+    if (!problem) {
+      toast.error('Describe the problem first');
+      return;
+    }
+    if (!isLoggedIn && !guestEmail.trim()) {
+      toast.error('Enter your email below before submitting');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const data = await v2Support.createTicket({
+        category: 'feature_request',
+        problem,
+        solution: (featureDraft.solution || featureSolution).trim(),
+        priority: featureDraft.priority || featurePriority,
+        subject: featureDraft.subject || problem.slice(0, 120),
+        context: collectContext(),
+        ...(isLoggedIn ? {} : { guestEmail: guestEmail.trim() }),
+      });
+      toast.success(`Feature request #${data.ticket.publicNumber} submitted`);
+      await reloadTickets();
+      if (isLoggedIn) {
+        setThreadMessages(data.messages || []);
+        openThread(data.ticket);
+      } else {
+        setStep('guest-done');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not submit');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const submitTicket = async (e) => {
@@ -180,16 +285,13 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
         payload.expected = bugExpected.trim();
         payload.actual = bugActual.trim();
         payload.severity = bugSeverity;
-      } else {
-        payload.problem = featureProblem.trim();
-        payload.solution = featureSolution.trim();
-        payload.priority = featurePriority;
       }
 
       const data = await v2Support.createTicket(payload);
       toast.success(`Ticket #${data.ticket.publicNumber} submitted`);
       await reloadTickets();
       if (isLoggedIn) {
+        setThreadMessages(data.messages || []);
         openThread(data.ticket);
       } else {
         setStep('guest-done');
@@ -227,9 +329,11 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
   const headerTitle =
     step === 'thread' && activeTicket
       ? `#${activeTicket.publicNumber} · ${activeTicket.subject || 'Support'}`
-      : step === 'compose' && categoryMeta
-        ? categoryMeta.label
-        : 'Help & support';
+      : step === 'feature-chat'
+        ? 'Feature idea'
+        : step === 'compose' && categoryMeta
+          ? categoryMeta.label
+          : 'Help & support';
 
   return (
     <>
@@ -240,7 +344,7 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
           aria-label="Help and support chat"
         >
           <div className="flex shrink-0 items-center gap-2 border-b border-border/60 bg-muted/30 px-3 py-2.5">
-            {(step === 'compose' || step === 'thread') && (
+            {(step === 'compose' || step === 'thread' || step === 'feature-chat') && (
               <Button
                 type="button"
                 variant="ghost"
@@ -386,26 +490,38 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
                   </>
                 )}
 
-                {category === 'feature_request' && (
-                  <>
-                    <textarea
-                      className={textareaClass}
-                      value={featureProblem}
-                      onChange={(e) => setFeatureProblem(e.target.value)}
-                      rows={3}
-                      required
-                      placeholder="What problem should this solve?"
-                    />
-                    <textarea
-                      className={textareaClass}
-                      value={featureSolution}
-                      onChange={(e) => setFeatureSolution(e.target.value)}
-                      rows={2}
-                      placeholder="Your idea (optional)"
-                    />
-                  </>
-                )}
               </form>
+            )}
+
+            {step === 'feature-chat' && (
+              <div className="space-y-3">
+                {!isLoggedIn && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="feature-guest-email" className="text-xs">
+                      Email (for updates)
+                    </Label>
+                    <Input
+                      id="feature-guest-email"
+                      type="email"
+                      value={guestEmail}
+                      onChange={(e) => setGuestEmail(e.target.value)}
+                      autoComplete="email"
+                      placeholder="you@company.com"
+                    />
+                  </div>
+                )}
+                {featureChatMessages.map((m, i) => (
+                  <CoachBubble key={`${i}-${m.role}`} message={m} />
+                ))}
+                {featureCoachBusy && (
+                  <p className="text-xs italic text-muted-foreground">Parley Support is typing…</p>
+                )}
+                {featureReady && (
+                  <p className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-xs text-foreground">
+                    Ready to submit — tap <strong>Submit feature request</strong> below when you are happy with the summary.
+                  </p>
+                )}
+              </div>
             )}
 
             {step === 'guest-done' && (
@@ -422,12 +538,45 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
                 {threadMessages.map((m) => (
                   <ChatBubble key={m.id} message={m} />
                 ))}
+                {activeTicket?.status === 'ai_reviewing' && (
+                  <p className="text-xs italic text-muted-foreground">Parley Support is typing…</p>
+                )}
                 {activeTicket?.status === 'waiting_user' && threadMessages.length > 0 && (
                   <p className="text-center text-xs text-primary">New reply from our team</p>
                 )}
               </div>
             )}
           </div>
+
+          {step === 'feature-chat' && (
+            <div className="shrink-0 space-y-2 border-t border-border/60 p-3">
+              {featureReady && (
+                <Button type="button" className="w-full gap-2" disabled={submitting} onClick={submitFeatureTicket}>
+                  <Send className="h-4 w-4" />
+                  {submitting ? 'Submitting…' : 'Submit feature request'}
+                </Button>
+              )}
+              <form onSubmit={sendFeatureChat} className="flex gap-2">
+                <input
+                  type="text"
+                  value={featureChatDraft}
+                  onChange={(e) => setFeatureChatDraft(e.target.value)}
+                  placeholder="Describe your idea…"
+                  className="min-w-0 flex-1 rounded-full border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  maxLength={4000}
+                  disabled={featureCoachBusy}
+                />
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="shrink-0 rounded-full"
+                  disabled={featureCoachBusy || !featureChatDraft.trim()}
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              </form>
+            </div>
+          )}
 
           {step === 'compose' && (
             <div className="shrink-0 border-t border-border/60 p-3">

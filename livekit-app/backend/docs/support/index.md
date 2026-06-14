@@ -16,6 +16,8 @@ Internal corpus for AI triage and support replies. Update when product behavior 
 | Live translation | product/translation.md |
 | Video effects / backgrounds | product/video-effects.md |
 | Billing & plans | product/billing.md |
+| Password & account | product/account-settings.md |
+| Common questions | faq.md |
 | Audio/video issues | troubleshooting/audio-video.md |
 | Translation stuck | troubleshooting/translation-stuck.md |
 | Mobile effects delay | troubleshooting/effects-mobile.md |

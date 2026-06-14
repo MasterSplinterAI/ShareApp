@@ -53,6 +53,7 @@ export const v2Support = {
     apiV2.get('/support/admin/proposals', { params }).then((r) => r.data),
   adminProposalAction: (id, body) =>
     apiV2.post(`/support/admin/proposals/${encodeURIComponent(id)}/action`, body).then((r) => r.data),
+  coachFeature: (body) => apiV2.post('/support/coach', body).then((r) => r.data),
 };
 
 export const v2Orgs = {
