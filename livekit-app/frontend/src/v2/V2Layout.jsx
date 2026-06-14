@@ -44,6 +44,10 @@ export default function V2Layout() {
   }
 
   if (token) {
+    const isAdminArea = location.pathname.startsWith('/v2/app/admin');
+    if (isAdminArea) {
+      return <Outlet context={{ me, onLogout: logout }} />;
+    }
     return <V2AppShell me={me} onLogout={logout} />;
   }
 

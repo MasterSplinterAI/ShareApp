@@ -14,7 +14,7 @@ import V2AppHome from './v2/pages/V2AppHome'
 import V2MeetingsList from './v2/pages/V2MeetingsList'
 import V2MeetingDetail from './v2/pages/V2MeetingDetail'
 import V2OrgSettings from './v2/pages/V2OrgSettings'
-import V2SuperAdmin from './v2/pages/V2SuperAdmin'
+import AdminDashboard, { SuperAdminRedirect } from './v2/pages/AdminDashboard'
 import V2ResetPassword from './v2/pages/V2ResetPassword'
 import TermsPage from './components/legal/TermsPage'
 import PrivacyPage from './components/legal/PrivacyPage'
@@ -55,7 +55,8 @@ function App() {
             <Route path="meetings" element={<V2MeetingsList />} />
             <Route path="meetings/:id" element={<V2MeetingDetail />} />
             <Route path="settings" element={<V2OrgSettings />} />
-            <Route path="superadmin" element={<V2SuperAdmin />} />
+            <Route path="admin/*" element={<AdminDashboard />} />
+            <Route path="superadmin/*" element={<SuperAdminRedirect />} />
           </Route>
         </Route>
         <Route path="/" element={<HomeScreen />} />

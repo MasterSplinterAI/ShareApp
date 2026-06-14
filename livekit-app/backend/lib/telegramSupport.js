@@ -60,7 +60,7 @@ function adminTicketUrl(publicNumber) {
   const base = (process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'http://localhost:5174')
     .trim()
     .replace(/\/$/, '');
-  return `${base}/v2/app/superadmin?tab=support&ticket=${publicNumber}`;
+  return `${base}/v2/app/admin/support?ticket=${publicNumber}`;
 }
 
 function categoryEmoji(category) {

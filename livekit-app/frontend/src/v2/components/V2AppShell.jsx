@@ -43,7 +43,7 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
         Settings
       </NavLink>
       {isSuperadmin && (
-        <NavLink to="/v2/app/superadmin" className={navLinkClass}>
+        <NavLink to="/v2/app/admin" end className={navLinkClass}>
           <Shield className="h-4 w-4 shrink-0 opacity-70" />
           Admin
         </NavLink>
