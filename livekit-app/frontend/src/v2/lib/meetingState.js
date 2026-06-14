@@ -1,6 +1,28 @@
 /**
  * UI labels for V2 meeting rows (status + optional policy hints).
  */
+export function isGuestAccessActive(meeting) {
+  if (meeting?.guestAccessActive != null) return Boolean(meeting.guestAccessActive);
+  const requireInvite = meeting?.policy?.require_invite_token ?? meeting?.require_invite_token === 1;
+  if (!requireInvite) {
+    return meeting?.status !== 'ended' && meeting?.status !== 'archived';
+  }
+  if (Array.isArray(meeting?.invites)) {
+    return meeting.invites.some((inv) => inv.usable);
+  }
+  return true;
+}
+
+/** Meeting is over for guests: ended/archived, or empty room with no usable guest link. */
+export function isMeetingEffectivelyEnded(meeting, extras = {}) {
+  const s = meeting?.status;
+  if (s === 'archived' || s === 'ended') return true;
+  const inRoom = Number(meeting?.roomPresence?.humanCount ?? meeting?.room_human_count ?? extras.roomHumanCount ?? 0);
+  if (inRoom > 0) return false;
+  if (s === 'scheduled' || s === 'live') return !isGuestAccessActive(meeting);
+  return false;
+}
+
 export function getMeetingUiState(meeting, extras = {}) {
   const now = Date.now();
   const s = meeting.status;
@@ -9,6 +31,9 @@ export function getMeetingUiState(meeting, extras = {}) {
     return { label: 'Archived', tone: 'gray', key: 'archived' };
   }
   if (s === 'ended') {
+    return { label: 'Ended', tone: 'gray', key: 'ended' };
+  }
+  if (isMeetingEffectivelyEnded(meeting, extras)) {
     return { label: 'Ended', tone: 'gray', key: 'ended' };
   }
   if (s === 'scheduled' && meeting.scheduled_start) {

@@ -199,6 +199,15 @@ function describeInviteExpiry(inv, meeting) {
   }
 }
 
+/** True when guests can still join (open room URL or at least one usable invite). */
+function guestAccessActive(meeting, invites = [], requireInviteToken = true) {
+  if (!requireInviteToken) {
+    return meeting?.status !== 'ended' && meeting?.status !== 'archived';
+  }
+  if (!Array.isArray(invites) || invites.length === 0) return false;
+  return invites.some((inv) => inviteIsUsable(inv, meeting));
+}
+
 function parseCreateInviteBody(body = {}, meeting) {
   const linkType = LINK_TYPES.has(body.linkType) ? body.linkType : 'shared';
   const reusable = linkType === 'shared';
@@ -229,6 +238,7 @@ module.exports = {
   defaultExpiryModeForMeeting,
   computeInviteExpiresAt,
   inviteIsUsable,
+  guestAccessActive,
   inviteEffectiveFromMs,
   expiryModeLabel,
   linkTypeLabel,

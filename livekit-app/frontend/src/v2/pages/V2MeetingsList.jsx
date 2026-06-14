@@ -101,6 +101,7 @@ function MeetingCard({ meeting: m, isArchivedView, onArchive, onRestore, onDelet
   const live = isLiveState(ui.key);
   const lineCount = Number(m.transcript_line_count) || 0;
   const url = inviteUrlFor(m);
+  const canCopyInvite = Boolean(url) && m.guestAccessActive !== false;
   const timeLabel = friendlyTime(m.scheduled_start || m.created_at);
 
   const copyInvite = async () => {
@@ -144,7 +145,7 @@ function MeetingCard({ meeting: m, isArchivedView, onArchive, onRestore, onDelet
         </div>
 
         <div className="mt-auto flex items-center gap-1.5 border-t border-border/50 pt-3">
-          {url && (
+          {canCopyInvite && (
             <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={copyInvite}>
               <Link2 className="h-3.5 w-3.5" />
               Copy invite link

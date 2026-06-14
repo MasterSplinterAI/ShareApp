@@ -13,6 +13,7 @@ const {
   defaultExpiryModeForMeeting,
   computeInviteExpiresAt,
   inviteIsUsable,
+  guestAccessActive,
   describeInviteExpiry,
   expiryModeLabel,
   linkTypeLabel,
@@ -167,6 +168,34 @@ router.get('/', requireV2Auth, async (req, res) => {
         }));
       } catch {
         // LiveKit unreachable — leave room_human_count unset
+      }
+    }
+
+    const inviteRequiredIds = rows.filter((m) => m.require_invite_token === 1).map((m) => m.id);
+    if (inviteRequiredIds.length > 0) {
+      const placeholders = inviteRequiredIds.map(() => '?').join(',');
+      const inviteRows = await db.all(
+        `SELECT meeting_id, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode
+         FROM v2_meeting_invite_links
+         WHERE meeting_id IN (${placeholders}) AND revoked_at IS NULL`,
+        inviteRequiredIds
+      );
+      const invitesByMeeting = new Map();
+      for (const inv of inviteRows) {
+        const list = invitesByMeeting.get(inv.meeting_id) || [];
+        list.push(inv);
+        invitesByMeeting.set(inv.meeting_id, list);
+      }
+      for (const m of rows) {
+        if (m.require_invite_token === 1) {
+          m.guestAccessActive = guestAccessActive(m, invitesByMeeting.get(m.id) || [], true);
+        } else {
+          m.guestAccessActive = guestAccessActive(m, [], false);
+        }
+      }
+    } else {
+      for (const m of rows) {
+        m.guestAccessActive = guestAccessActive(m, [], false);
       }
     }
 
@@ -431,12 +460,14 @@ router.get('/:id', requireV2Auth, async (req, res) => {
     const tr = await db.get(`SELECT COUNT(*) AS c FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [req.params.id]);
     const transcriptLineCount = tr && Number.isFinite(Number(tr.c)) ? Number(tr.c) : 0;
 
+    const guestAccessActiveFlag = guestAccessActive(row, invites, policy.require_invite_token);
     const { host_required_to_start, require_invite_token, store_transcripts, ...meetingRow } = row;
     res.json({
       ...meetingRow,
       policy,
       joinUrl,
       guestLinkMeta,
+      guestAccessActive: guestAccessActiveFlag,
       invites: invitesEnriched,
       inviteMaxTtlDays: Math.floor(maxInviteTtlMs() / 86400000),
       defaultExpiryMode: defaultExpiryModeForMeeting(row),
