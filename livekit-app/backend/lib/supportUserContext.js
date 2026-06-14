@@ -11,7 +11,7 @@ async function buildUserContextSnapshot({ userId, orgId, email, guestEmail = nul
   }
   if (!userId) return { accountKind: 'anonymous' };
 
-  const user = await db.get(`SELECT id, email, name FROM v2_users WHERE id = ?`, [userId]);
+  const user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [userId]);
   const membership = orgId
     ? await db.get(
         `SELECT m.role, o.name AS org_name, o.account_type, o.billing_status, o.suspended_at
@@ -39,7 +39,7 @@ async function buildUserContextSnapshot({ userId, orgId, email, guestEmail = nul
     accountKind: 'registered',
     userId,
     email: email || user?.email || null,
-    displayName: user?.name || null,
+    displayName: user?.display_name || null,
     orgId: orgId || null,
     orgName: membership?.org_name || null,
     orgRole: membership?.role || null,
