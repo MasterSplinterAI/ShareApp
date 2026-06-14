@@ -33,12 +33,14 @@ function collectContext(extra = {}) {
 
 function statusLabel(status) {
   if (status === 'waiting_user') return 'Reply waiting';
+  if (status === 'ai_reviewing') return 'AI reviewing';
+  if (status === 'pending_review') return 'Pending review';
   if (status === 'resolved' || status === 'closed') return 'Closed';
   return status.replace(/_/g, ' ');
 }
 
 function ChatBubble({ message }) {
-  const isStaff = message.authorType === 'staff';
+  const isStaff = message.authorType === 'staff' || message.authorType === 'agent';
   const isUser = message.authorType === 'user';
   return (
     <div className={cn('flex flex-col gap-0.5', isUser ? 'items-end' : 'items-start')}>

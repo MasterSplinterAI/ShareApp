@@ -9,7 +9,34 @@ import { Badge } from '../../../components/ui/badge';
 import { cn } from '../../../lib/utils';
 import { fmtDateTime } from './formatters';
 
-const STATUS_OPTIONS = ['open', 'waiting_user', 'escalated', 'resolved', 'closed'];
+const STATUS_OPTIONS = [
+  'open',
+  'ai_reviewing',
+  'pending_review',
+  'waiting_user',
+  'escalated',
+  'resolved',
+  'closed',
+];
+
+function proposalActions(proposal) {
+  if (proposal.status !== 'pending_review') return [];
+  if (proposal.proposalType === 'bug_fix' || proposal.proposalType === 'feature') {
+    return [
+      { action: 'approve', label: 'Approve → GitHub' },
+      { action: 'reject', label: 'Reject' },
+      { action: 'need_info', label: 'Need info' },
+    ];
+  }
+  if (proposal.proposalType === 'support_reply') {
+    return [
+      { action: 'send_reply', label: 'Send reply' },
+      { action: 'take_over', label: 'Take over' },
+      { action: 'reject', label: 'Reject' },
+    ];
+  }
+  return [{ action: 'take_over', label: 'Assign me' }];
+}
 
 function categoryLabel(category) {
   if (category === 'bug_report') return 'Bug';
@@ -82,6 +109,21 @@ export function SupportTab({ initialTicketNumber }) {
       reloadList();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Update failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runProposalAction = async (proposalId, action) => {
+    setBusy(true);
+    try {
+      const result = await v2Support.adminProposalAction(proposalId, { action });
+      toast.success(result.result || 'Proposal updated');
+      const fresh = await v2Support.adminTicketDetail(selectedId);
+      setDetail(fresh);
+      reloadList();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Proposal action failed');
     } finally {
       setBusy(false);
     }
@@ -175,13 +217,79 @@ export function SupportTab({ initialTicketNumber }) {
                   {JSON.stringify(detail.ticket.context, null, 2)}
                 </pre>
               )}
+              {detail.ticket.githubIssueUrl && (
+                <p className="text-sm">
+                  <a
+                    href={detail.ticket.githubIssueUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-primary underline-offset-2 hover:underline"
+                  >
+                    GitHub issue
+                  </a>
+                </p>
+              )}
+              {(detail.proposals || []).length > 0 && (
+                <div className="space-y-3 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                  <p className="text-sm font-medium text-foreground">AI proposals</p>
+                  {(detail.proposals || []).map((p) => (
+                    <div key={p.id} className="rounded-md border border-border/60 bg-background p-3 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] capitalize">
+                          {p.proposalType.replace('_', ' ')}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px] capitalize">
+                          {p.status.replace('_', ' ')}
+                        </Badge>
+                        {typeof p.confidence === 'number' && (
+                          <span className="text-xs text-muted-foreground">
+                            {Math.round(p.confidence * 100)}% conf
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 font-medium">{p.summary}</p>
+                      {p.body?.draft_reply && (
+                        <p className="mt-2 whitespace-pre-wrap text-muted-foreground">{p.body.draft_reply}</p>
+                      )}
+                      {p.executionRef && (
+                        <a
+                          href={p.executionRef}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-block text-xs text-primary underline-offset-2 hover:underline"
+                        >
+                          Execution: {p.executionRef}
+                        </a>
+                      )}
+                      {proposalActions(p).length > 0 && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {proposalActions(p).map((a) => (
+                            <Button
+                              key={a.action}
+                              type="button"
+                              size="sm"
+                              variant={a.action === 'reject' ? 'outline' : 'default'}
+                              disabled={busy}
+                              onClick={() => runProposalAction(p.id, a.action)}
+                            >
+                              {a.label}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="max-h-64 space-y-3 overflow-y-auto rounded-lg border border-border/60 p-3">
                 {(detail.messages || []).map((m) => (
                   <div
                     key={m.id}
                     className={cn(
                       'rounded-md px-3 py-2 text-sm',
-                      m.authorType === 'staff' ? 'bg-primary/10' : 'bg-muted/50'
+                      m.authorType === 'staff' || m.authorType === 'agent'
+                        ? 'bg-primary/10'
+                        : 'bg-muted/50'
                     )}
                   >
                     <p className="text-xs font-medium capitalize text-muted-foreground">

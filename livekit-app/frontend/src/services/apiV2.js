@@ -49,6 +49,10 @@ export const v2Support = {
     apiV2.post(`/support/admin/tickets/${encodeURIComponent(id)}/reply`, body).then((r) => r.data),
   adminPatchStatus: (id, body) =>
     apiV2.patch(`/support/admin/tickets/${encodeURIComponent(id)}/status`, body).then((r) => r.data),
+  adminListProposals: (params = {}) =>
+    apiV2.get('/support/admin/proposals', { params }).then((r) => r.data),
+  adminProposalAction: (id, body) =>
+    apiV2.post(`/support/admin/proposals/${encodeURIComponent(id)}/action`, body).then((r) => r.data),
 };
 
 export const v2Orgs = {

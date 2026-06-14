@@ -4,6 +4,9 @@ const { requireV2Auth, optionalV2Auth } = require('../../middleware/v2Auth');
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
 const db = require('../../db/v2Database');
 const support = require('../../lib/supportTickets');
+const { listProposals, listProposalsForTicket } = require('../../lib/supportProposals');
+const { executeProposalAction } = require('../../lib/proposalExecutor');
+const { handleTelegramUpdate } = require('../../lib/supportTelegramWebhook');
 
 const TICKET_RATE_WINDOW_MS = 15 * 60 * 1000;
 const TICKET_RATE_MAX = 10;
@@ -100,7 +103,8 @@ router.get('/admin/tickets/:id', requireV2Auth, requireSuperadmin, async (req, r
     if (!ticket) return res.status(404).json({ error: 'Not found' });
     const messages = await support.listMessages(ticket.id);
     const submitterEmail = await support.resolveSubmitterEmail(ticket);
-    res.json({ ticket, messages, submitterEmail });
+    const proposals = await listProposalsForTicket(ticket.id);
+    res.json({ ticket, messages, submitterEmail, proposals });
   } catch (e) {
     console.error('[support/admin detail]', e);
     res.status(500).json({ error: 'Failed' });
@@ -133,6 +137,53 @@ router.patch('/admin/tickets/:id/status', requireV2Auth, requireSuperadmin, asyn
     res.json({ ticket: result.ticket });
   } catch (e) {
     console.error('[support/admin status]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/admin/proposals', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const proposals = await listProposals({
+      status: req.query.status || 'pending_review',
+      limit: req.query.limit,
+    });
+    res.json({ proposals });
+  } catch (e) {
+    console.error('[support/admin proposals]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/admin/proposals/:id/action', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const { action } = req.body || {};
+    if (!action) return res.status(400).json({ error: 'action required' });
+    const result = await executeProposalAction(req.params.id, action, req.v2Auth.email);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    await writeAdminAudit(db, req.v2Auth.email, 'support_proposal_action', {
+      proposalId: req.params.id,
+      action,
+      result: result.result,
+    });
+    res.json(result);
+  } catch (e) {
+    console.error('[support/admin proposal action]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/telegram/webhook', async (req, res) => {
+  try {
+    const secret = process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET;
+    if (secret && req.headers['x-telegram-bot-api-secret-token'] !== secret) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    res.status(200).json({ ok: true });
+    handleTelegramUpdate(req.body || {}).catch((e) =>
+      console.error('[support/telegram webhook]', e)
+    );
+  } catch (e) {
+    console.error('[support/telegram webhook]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

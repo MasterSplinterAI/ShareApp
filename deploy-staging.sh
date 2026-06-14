@@ -161,6 +161,16 @@ fi
 
 sudo chown -R ubuntu:ubuntu "$APP_DIR"
 
+# Support AI knowledge base (repo docs/support + backend/docs/support)
+if [ -d "$TEMP_DIR/docs/support" ]; then
+  sudo mkdir -p "$APP_DIR/docs"
+  sudo rsync -a "$TEMP_DIR/docs/support/" "$APP_DIR/docs/support/"
+fi
+if [ -d "$TEMP_DIR/livekit-app/backend/docs/support" ]; then
+  sudo mkdir -p "$BACKEND_DIR/docs"
+  sudo rsync -a "$TEMP_DIR/livekit-app/backend/docs/support/" "$BACKEND_DIR/docs/support/"
+fi
+
 # ---------- Services ----------
 echo "Restarting staging backend ($PM2_NAME)..."
 if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then

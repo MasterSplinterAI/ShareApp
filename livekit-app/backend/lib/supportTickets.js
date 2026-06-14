@@ -4,7 +4,15 @@ const { notifyNewTicket, notifyUserMessage } = require('./telegramSupport');
 const { isSuperadminEmail } = require('./v2Superadmin');
 
 const CATEGORIES = new Set(['customer_support', 'bug_report', 'feature_request']);
-const STATUSES = new Set(['open', 'waiting_user', 'escalated', 'resolved', 'closed']);
+const STATUSES = new Set([
+  'open',
+  'ai_reviewing',
+  'pending_review',
+  'waiting_user',
+  'escalated',
+  'resolved',
+  'closed',
+]);
 const BUG_SEVERITIES = new Set(['low', 'medium', 'high', 'critical']);
 const FEATURE_PRIORITIES = new Set(['nice_to_have', 'important', 'critical']);
 const MAX_BODY = 8000;
@@ -207,6 +215,13 @@ async function createTicket(req, body) {
     console.error('[supportTickets] telegram notify failed', e)
   );
 
+  try {
+    const { queueTicketAnalysis } = require('./supportAgent');
+    queueTicketAnalysis(id);
+  } catch (e) {
+    console.error('[supportTickets] queue analysis failed', e);
+  }
+
   return {
     ok: true,
     ticket,
@@ -250,6 +265,13 @@ async function addUserMessage(req, ticketId, bodyText) {
   ]);
 
   notifyUserMessage(ticket, body).catch(() => {});
+
+  try {
+    const { queueTicketAnalysis } = require('./supportAgent');
+    queueTicketAnalysis(ticketId);
+  } catch (e) {
+    console.error('[supportTickets] queue analysis failed', e);
+  }
 
   return { ok: true, message: { id: messageId, authorType: 'user', body, createdAt: now } };
 }

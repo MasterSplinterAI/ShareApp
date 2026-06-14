@@ -1,0 +1,103 @@
+const fs = require('fs');
+const path = require('path');
+
+const DOCS_CANDIDATES = [
+  path.resolve(__dirname, '../docs/support'),
+  path.resolve(__dirname, '../../../docs/support'),
+];
+
+function resolveDocsRoot() {
+  for (const candidate of DOCS_CANDIDATES) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return DOCS_CANDIDATES[0];
+}
+
+const DOCS_ROOT = resolveDocsRoot();
+let cache = { loadedAt: 0, chunks: [] };
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function tokenize(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+}
+
+function walkMarkdown(dir, base = dir) {
+  const files = [];
+  if (!fs.existsSync(dir)) return files;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkMarkdown(full, base));
+    else if (entry.name.endsWith('.md')) files.push(full);
+  }
+  return files;
+}
+
+function loadChunks() {
+  const now = Date.now();
+  if (cache.chunks.length && now - cache.loadedAt < CACHE_TTL_MS) return cache.chunks;
+
+  const chunks = [];
+  for (const file of walkMarkdown(DOCS_ROOT)) {
+    const rel = path.relative(DOCS_ROOT, file).replace(/\\/g, '/');
+    const raw = fs.readFileSync(file, 'utf8');
+    const sections = raw.split(/\n(?=#{1,3}\s)/);
+    for (const section of sections) {
+      const trimmed = section.trim();
+      if (trimmed.length < 40) continue;
+      chunks.push({
+        source: rel,
+        title: (trimmed.match(/^#{1,3}\s+(.+)/)?.[1] || rel).trim(),
+        body: trimmed.slice(0, 4000),
+        tokens: new Set(tokenize(trimmed)),
+      });
+    }
+  }
+  cache = { loadedAt: now, chunks };
+  return chunks;
+}
+
+function scoreChunk(chunk, queryTokens) {
+  let score = 0;
+  for (const t of queryTokens) {
+    if (chunk.tokens.has(t)) score += 1;
+  }
+  return score;
+}
+
+function searchSupportDocs(query, { limit = 5 } = {}) {
+  const queryTokens = tokenize(query);
+  if (queryTokens.length === 0) return [];
+
+  const ranked = loadChunks()
+    .map((chunk) => ({ chunk, score: scoreChunk(chunk, queryTokens) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  return ranked.map(({ chunk, score }) => ({
+    source: chunk.source,
+    title: chunk.title,
+    excerpt: chunk.body.slice(0, 1200),
+    score,
+  }));
+}
+
+function formatSourcesForPrompt(hits) {
+  if (!hits.length) return 'No matching support docs found.';
+  return hits
+    .map(
+      (h, i) =>
+        `[${i + 1}] ${h.source} — ${h.title}\n${h.excerpt}${h.excerpt.length >= 1200 ? '…' : ''}`
+    )
+    .join('\n\n---\n\n');
+}
+
+module.exports = {
+  searchSupportDocs,
+  formatSourcesForPrompt,
+  DOCS_ROOT,
+};
