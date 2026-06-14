@@ -7,6 +7,7 @@ const { hashPassword, verifyPassword, signSession } = require('../../lib/authAda
 const { sendEmail } = require('../../lib/mailer');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const { PERSONAL, TEAM, normalizeAccountTypeHint, resolveNewWorkspace } = require('../../lib/v2Workspace');
+const { getPrefs, setSignupPrefs, updatePrefs } = require('../../lib/communicationPrefs');
 
 function emailValid(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -43,7 +44,7 @@ async function provisionOrgForUser(userId, email, { orgName, displayName, accoun
 router.post('/signup', async (req, res) => {
   const cleanup = [];
   try {
-    const { email, password, displayName, orgName, accountType: accountTypeRaw } = req.body || {};
+    const { email, password, displayName, orgName, accountType: accountTypeRaw, marketingEmail } = req.body || {};
     if (!emailValid(email) || !password || String(password).length < 8) {
       return res.status(400).json({ error: 'Invalid email or password (min 8 chars)' });
     }
@@ -68,6 +69,7 @@ router.post('/signup', async (req, res) => {
       displayName: displayName || email.split('@')[0],
       accountType: accountTypeHint,
     });
+    await setSignupPrefs(userId, { marketingEmail: Boolean(marketingEmail) }, req);
     const token = signSession({ sub: userId, email: email.trim().toLowerCase(), orgId, role: 'owner' });
     res.status(201).json({
       token,
@@ -234,6 +236,78 @@ router.post('/reset-password', async (req, res) => {
 });
 
 const { isSuperadminEmail } = require('../../lib/v2Superadmin');
+
+const CHANGE_PW_WINDOW_MS = 15 * 60 * 1000;
+const CHANGE_PW_MAX = 5;
+const changePasswordAttempts = new Map();
+
+function changePasswordRateLimited(userId) {
+  const now = Date.now();
+  const entry = changePasswordAttempts.get(userId);
+  if (!entry || now - entry.windowStart > CHANGE_PW_WINDOW_MS) {
+    changePasswordAttempts.set(userId, { windowStart: now, count: 1 });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > CHANGE_PW_MAX;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [userId, entry] of changePasswordAttempts) {
+    if (now - entry.windowStart > CHANGE_PW_WINDOW_MS) changePasswordAttempts.delete(userId);
+  }
+}, CHANGE_PW_WINDOW_MS).unref();
+
+router.post('/change-password', requireV2Auth, async (req, res) => {
+  try {
+    if (changePasswordRateLimited(req.v2Auth.userId)) {
+      return res.status(429).json({ error: 'Too many attempts. Try again later.' });
+    }
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || typeof currentPassword !== 'string') {
+      return res.status(400).json({ error: 'Current password required' });
+    }
+    if (!newPassword || String(newPassword).length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters' });
+    }
+    const user = await db.get(`SELECT password_hash FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const ok = await verifyPassword(currentPassword, user.password_hash);
+    if (!ok) {
+      return res.status(401).json({ error: 'Current password is incorrect' });
+    }
+    const hash = await hashPassword(String(newPassword));
+    await db.run(`UPDATE v2_users SET password_hash = ? WHERE id = ?`, [hash, req.v2Auth.userId]);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[v2/auth/change-password]', e);
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+router.get('/communication-prefs', requireV2Auth, async (req, res) => {
+  try {
+    const prefs = await getPrefs(req.v2Auth.userId);
+    res.json({ prefs });
+  } catch (e) {
+    console.error('[v2/auth/communication-prefs GET]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/communication-prefs', requireV2Auth, async (req, res) => {
+  try {
+    const result = await updatePrefs(req.v2Auth.userId, req.body || {}, req);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({ prefs: result.prefs });
+  } catch (e) {
+    console.error('[v2/auth/communication-prefs PATCH]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
 
 router.get('/me', requireV2Auth, async (req, res) => {
   try {

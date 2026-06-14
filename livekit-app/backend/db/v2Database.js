@@ -414,6 +414,8 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_announcements_active ON v2_announcements(starts_at, ends_at)`);
 
+  const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);
+
   if (!planCount || planCount.c === 0) {
     await run(
       `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
@@ -500,6 +502,73 @@ async function migrate() {
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_password_resets_token ON v2_password_resets(token_hash)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_user_communication_prefs (
+      user_id TEXT PRIMARY KEY,
+      marketing_email INTEGER NOT NULL DEFAULT 0,
+      marketing_sms INTEGER NOT NULL DEFAULT 0,
+      marketing_phone INTEGER NOT NULL DEFAULT 0,
+      phone_e164 TEXT,
+      prefs_updated_at TEXT,
+      policy_version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_consent_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      consent_type TEXT NOT NULL,
+      granted INTEGER NOT NULL,
+      ip TEXT,
+      user_agent TEXT,
+      policy_version INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_consent_events_user ON v2_consent_events(user_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_tickets (
+      id TEXT PRIMARY KEY,
+      public_number INTEGER NOT NULL UNIQUE,
+      category TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      subject TEXT,
+      severity TEXT,
+      priority TEXT,
+      user_id TEXT,
+      org_id TEXT,
+      guest_email TEXT,
+      context_json TEXT,
+      duplicate_of_ticket_id TEXT,
+      assigned_to TEXT,
+      github_issue_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_tickets_status ON v2_support_tickets(status)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_tickets_user ON v2_support_tickets(user_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_tickets_created ON v2_support_tickets(created_at)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_messages (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      author_type TEXT NOT NULL,
+      author_id TEXT,
+      body TEXT NOT NULL,
+      attachments_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (ticket_id) REFERENCES v2_support_tickets(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_messages_ticket ON v2_support_messages(ticket_id)`);
 
   // Scale / ops: billing + webhook + usage tables remain SQLite here; production should migrate
   // high-write paths (webhook_events, usage_events, overage_ledger) to Postgres for concurrency and backups.

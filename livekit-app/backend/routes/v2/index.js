@@ -14,6 +14,7 @@ router.use('/billing', require('./billing'));
 router.use('/usage', require('./usage'));
 router.use('/admin', require('./admin'));
 router.use('/announcements', require('./announcements'));
+router.use('/support', require('./support'));
 router.use('/branding', require('./brandingPublic'));
 router.use('/rooms', require('./captionConfig'));
 // Org-scoped file uploads disabled for product UX; in-meeting chat file share (e.g. S3) is planned separately.

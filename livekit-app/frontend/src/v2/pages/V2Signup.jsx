@@ -21,6 +21,7 @@ export default function V2Signup() {
   const [displayName, setDisplayName] = useState('');
   const [accountType, setAccountType] = useState('individual');
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [marketingEmail, setMarketingEmail] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export default function V2Signup() {
         displayName: displayName.trim() || undefined,
         accountType,
         orgName: accountType === 'company' ? companyName.trim() : undefined,
+        marketingEmail: marketingEmail || undefined,
       });
       localStorage.setItem('v2_token', data.token);
       toast.success('Account created');
@@ -185,6 +187,21 @@ export default function V2Signup() {
                 >
                   Privacy Policy
                 </a>
+              </Label>
+            </div>
+            <div className="flex items-start gap-2">
+              <input
+                id="marketing-email"
+                type="checkbox"
+                checked={marketingEmail}
+                onChange={(e) => setMarketingEmail(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+              />
+              <Label
+                htmlFor="marketing-email"
+                className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground"
+              >
+                Email me product updates and tips (optional)
               </Label>
             </div>
             <Button type="submit" className="w-full" disabled={loading || !agreedToTerms}>

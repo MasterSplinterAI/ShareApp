@@ -5,7 +5,7 @@ import { MarketingFooter } from '../marketing/MarketingFooter';
 
 // TODO: replace with the final legal entity name once incorporated.
 const COMPANY_LEGAL_NAME = 'Parley';
-const LAST_UPDATED = 'June 10, 2026';
+const LAST_UPDATED = 'June 13, 2026';
 const CONTACT_EMAIL = 'hello@parley.app';
 
 function Section({ title, children }) {
@@ -160,7 +160,26 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section title="12. Contact">
+        <Section title="12. Support and Feedback">
+          <p>
+            When you contact us through in-app help, email, or other support channels, you may submit bug reports,
+            feature requests, or support messages. You grant us a non-exclusive license to use that feedback to
+            operate, troubleshoot, and improve the Service. Do not submit confidential or sensitive information you do
+            not want us to process for support purposes.
+          </p>
+          <p>
+            We may use automated tools to triage and draft responses to support requests. Human review is required
+            before we take account actions, billing adjustments, or engineering work on your behalf.
+          </p>
+          <p>
+            Plan tiers may include different support response priorities (for example, email support vs. priority
+            queue). Unless we agree otherwise in writing, support commitments are best-effort and not a guaranteed
+            service-level agreement.
+          </p>
+          <p>You agree not to abuse support channels, submit fraudulent reports, or harass our team.</p>
+        </Section>
+
+        <Section title="13. Contact">
           <p>
             Questions about these Terms? Contact us at{' '}
             <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>

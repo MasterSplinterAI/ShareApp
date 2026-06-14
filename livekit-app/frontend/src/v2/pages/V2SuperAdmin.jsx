@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Admin, v2Orgs } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
@@ -16,10 +16,14 @@ import { GuestsTab } from './admin/GuestsTab';
 import { AuditTab } from './admin/AuditTab';
 import { PlansTab } from './admin/PlansTab';
 import { CommsTab } from './admin/CommsTab';
+import { SupportTab } from './admin/SupportTab';
 
 export default function V2SuperAdmin() {
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'orgs';
+  const initialTicket = searchParams.get('ticket');
   const [allowed, setAllowed] = useState(null);
-  const [tab, setTab] = useState('orgs');
+  const [tab, setTab] = useState(initialTab);
   const [orgs, setOrgs] = useState([]);
   const [users, setUsers] = useState([]);
   const [kpis, setKpis] = useState(null);
@@ -173,6 +177,7 @@ export default function V2SuperAdmin() {
           <TabsTrigger value="trends">Trends</TabsTrigger>
           <TabsTrigger value="costs">Revenue & costs</TabsTrigger>
           <TabsTrigger value="comms">Comms</TabsTrigger>
+          <TabsTrigger value="support">Support</TabsTrigger>
           <TabsTrigger value="guests">Guests</TabsTrigger>
           <TabsTrigger value="audit">Audit</TabsTrigger>
         </TabsList>
@@ -229,6 +234,10 @@ export default function V2SuperAdmin() {
 
         <TabsContent value="comms" className="mt-4">
           <CommsTab selectedOrgId={selectedOrg} />
+        </TabsContent>
+
+        <TabsContent value="support" className="mt-4">
+          <SupportTab initialTicketNumber={initialTicket} />
         </TabsContent>
 
         <TabsContent value="guests" className="mt-4">

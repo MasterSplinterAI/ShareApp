@@ -5,7 +5,7 @@ import { MarketingFooter } from '../marketing/MarketingFooter';
 
 // TODO: replace with the final legal entity name once incorporated.
 const COMPANY_LEGAL_NAME = 'Parley';
-const LAST_UPDATED = 'June 10, 2026';
+const LAST_UPDATED = 'June 13, 2026';
 const CONTACT_EMAIL = 'hello@parley.app';
 
 function Section({ title, children }) {
@@ -64,6 +64,16 @@ export default function PrivacyPage() {
               <span className="font-medium text-foreground">Payment information.</span> Payments are handled by our
               payment processor. We do not store full payment card numbers.
             </li>
+            <li>
+              <span className="font-medium text-foreground">Support submissions.</span> When you contact us or use
+              in-app help, we collect your message, category (support, bug, or feature request), optional attachments,
+              and technical context such as browser type, page URL, and meeting settings to investigate and respond.
+            </li>
+            <li>
+              <span className="font-medium text-foreground">Communication preferences.</span> If you opt in, we may
+              store your preferences for product updates by email and, when available, text or phone. You can change
+              these preferences in account settings.
+            </li>
           </ul>
         </Section>
 
@@ -72,14 +82,27 @@ export default function PrivacyPage() {
             <li>Provide, operate, and maintain the Service, including real-time captions and translation;</li>
             <li>Manage accounts, subscriptions, billing, and plan limits;</li>
             <li>Communicate with you about the Service, including support and important notices;</li>
+            <li>Send optional product updates when you have opted in;</li>
             <li>Monitor performance, prevent abuse, and keep the Service secure;</li>
-            <li>Improve and develop the Service;</li>
+            <li>Improve and develop the Service, including triaging support with automated tools;</li>
             <li>Comply with legal obligations.</li>
           </ul>
           <p>We do not sell your personal information.</p>
         </Section>
 
-        <Section title="3. Data Retention">
+        <Section title="3. Marketing Communications">
+          <p>
+            Transactional messages (such as password resets, billing receipts, security alerts, and replies to your
+            support tickets) are sent as part of the Service and do not require separate marketing consent.
+          </p>
+          <p>
+            Product updates and promotional emails are sent only if you opt in. You can withdraw consent at any time in
+            account settings or by contacting us. SMS and phone marketing are not offered until we enable those channels
+            and obtain any additional consent required by law.
+          </p>
+        </Section>
+
+        <Section title="4. Data Retention">
           <p>
             Meeting audio and video are processed in real time and are not recorded by the Service. Transcripts are
             retained only when the host enables storage for a meeting, and hosts and organization admins can delete
@@ -89,7 +112,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="4. How We Share Information">
+        <Section title="5. How We Share Information">
           <p>We share information only with service providers that help us operate the Service, including:</p>
           <ul className="list-disc space-y-1 pl-6">
             <li>Hosting and infrastructure providers that run the Service and real-time media;</li>
@@ -103,7 +126,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="5. Security">
+        <Section title="6. Security">
           <p>
             We use industry-standard safeguards to protect your information. Data is encrypted in transit, account
             passwords are stored in hashed form, and access to production systems is restricted. No method of
@@ -112,7 +135,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="6. Your Rights">
+        <Section title="7. Your Rights">
           <p>
             Depending on where you live, you may have rights to access, correct, export, or delete your personal
             information, and to object to or restrict certain processing. You can manage much of your data directly in
@@ -124,7 +147,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="7. Children's Privacy">
+        <Section title="8. Children's Privacy">
           <p>
             The Service is not directed to children under 13 (or the applicable minimum age in your jurisdiction), and
             we do not knowingly collect personal information from them. If you believe a child has provided us with
@@ -132,7 +155,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="8. Changes to This Policy">
+        <Section title="9. Changes to This Policy">
           <p>
             We may update this Privacy Policy from time to time. If we make material changes, we will provide notice
             through the Service or by email. The &ldquo;Last updated&rdquo; date at the top reflects the most recent
@@ -140,7 +163,7 @@ export default function PrivacyPage() {
           </p>
         </Section>
 
-        <Section title="9. Contact">
+        <Section title="10. Contact">
           <p>
             Questions about this Privacy Policy or our data practices? Contact us at{' '}
             <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>

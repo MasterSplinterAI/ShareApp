@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Home, LayoutDashboard, LogOut, Menu, Settings, Shield, Video, X } from 'lucide-react';
+import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Settings, Shield, Video, X } from 'lucide-react';
 import { v2Announcements } from '../../services/apiV2';
+import HelpPanel, { HelpTriggerButton } from '../../components/HelpPanel';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import {
@@ -54,6 +55,7 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
 export default function V2AppShell({ me, onLogout }) {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [announcements, setAnnouncements] = useState([]);
   const [dismissed, setDismissed] = useState(() => {
     try {
@@ -141,6 +143,10 @@ export default function V2AppShell({ me, onLogout }) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setHelpOpen(true)}>
+              <LifeBuoy className="mr-2 h-4 w-4" />
+              Help & support
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 onLogout();
@@ -177,6 +183,7 @@ export default function V2AppShell({ me, onLogout }) {
           <Link to="/v2/app" className="truncate text-sm font-semibold">
             Parley
           </Link>
+          <HelpTriggerButton onClick={() => setHelpOpen(true)} className="ml-auto shrink-0" />
         </header>
 
         <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
@@ -203,6 +210,15 @@ export default function V2AppShell({ me, onLogout }) {
           )}
           <Outlet />
         </main>
+        <div className="pointer-events-none fixed bottom-6 right-6 z-40 hidden md:block">
+          <HelpTriggerButton onClick={() => setHelpOpen(true)} className="pointer-events-auto shadow-md" />
+        </div>
+        <HelpPanel
+          open={helpOpen}
+          onOpenChange={setHelpOpen}
+          isLoggedIn
+          userEmail={me?.user?.email}
+        />
       </div>
     </div>
   );

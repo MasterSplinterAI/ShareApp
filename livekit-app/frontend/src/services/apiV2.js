@@ -32,6 +32,23 @@ export const v2Auth = {
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
   me: () => apiV2.get('/auth/me').then((r) => r.data),
   patchMe: (body) => apiV2.patch('/auth/me', body).then((r) => r.data),
+  changePassword: (body) => apiV2.post('/auth/change-password', body).then((r) => r.data),
+  communicationPrefs: () => apiV2.get('/auth/communication-prefs').then((r) => r.data),
+  updateCommunicationPrefs: (body) => apiV2.patch('/auth/communication-prefs', body).then((r) => r.data),
+};
+
+export const v2Support = {
+  createTicket: (body) => apiV2.post('/support/tickets', body).then((r) => r.data),
+  listTickets: () => apiV2.get('/support/tickets').then((r) => r.data),
+  getTicket: (id) => apiV2.get(`/support/tickets/${encodeURIComponent(id)}`).then((r) => r.data),
+  addMessage: (id, body) =>
+    apiV2.post(`/support/tickets/${encodeURIComponent(id)}/messages`, body).then((r) => r.data),
+  adminListTickets: (params = {}) => apiV2.get('/support/admin/tickets', { params }).then((r) => r.data),
+  adminTicketDetail: (id) => apiV2.get(`/support/admin/tickets/${encodeURIComponent(id)}`).then((r) => r.data),
+  adminReply: (id, body) =>
+    apiV2.post(`/support/admin/tickets/${encodeURIComponent(id)}/reply`, body).then((r) => r.data),
+  adminPatchStatus: (id, body) =>
+    apiV2.patch(`/support/admin/tickets/${encodeURIComponent(id)}/status`, body).then((r) => r.data),
 };
 
 export const v2Orgs = {

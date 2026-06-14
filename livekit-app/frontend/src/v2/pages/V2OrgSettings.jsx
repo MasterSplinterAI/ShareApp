@@ -55,6 +55,12 @@ export default function V2OrgSettings() {
   const [teamNameDraft, setTeamNameDraft] = useState('');
   const [savingOrgName, setSavingOrgName] = useState(false);
   const [savingDisplayName, setSavingDisplayName] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [marketingEmailPref, setMarketingEmailPref] = useState(false);
+  const [savingCommPrefs, setSavingCommPrefs] = useState(false);
   const [enablingTeam, setEnablingTeam] = useState(false);
   const [brandingAccent, setBrandingAccent] = useState(DEFAULT_BRAND_ACCENT);
   const [brandingWelcome, setBrandingWelcome] = useState('');
@@ -94,8 +100,9 @@ export default function V2OrgSettings() {
       v2Billing.subscription().catch(() => null),
       v2Billing.plans().catch(() => null),
       v2Usage.summary().catch(() => null),
+      v2Auth.communicationPrefs().catch(() => null),
     ])
-      .then(([me, m, o, sub, plansRes, usage]) => {
+      .then(([me, m, o, sub, plansRes, usage, commPrefs]) => {
         setRole(me.role || '');
         setProfile(me);
         setMembers(m.members || []);
@@ -116,6 +123,9 @@ export default function V2OrgSettings() {
           setBrandingAccent(b.accentColor || DEFAULT_BRAND_ACCENT);
           setBrandingWelcome(b.welcomeMessage || '');
           setBrandingLogoUrl(b.logoUrl || '');
+        }
+        if (commPrefs?.prefs) {
+          setMarketingEmailPref(Boolean(commPrefs.prefs.marketingEmail));
         }
       })
       .catch((e) => toast.error(e.response?.data?.error || 'Failed to load'))
@@ -179,6 +189,44 @@ export default function V2OrgSettings() {
       toast.error(err.response?.data?.error || 'Could not update name');
     } finally {
       setSavingDisplayName(false);
+    }
+  };
+
+  const savePassword = async (e) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await v2Auth.changePassword({ currentPassword, newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      toast.success('Password updated');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not change password');
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const saveCommPrefs = async (e) => {
+    e.preventDefault();
+    setSavingCommPrefs(true);
+    try {
+      const { prefs } = await v2Auth.updateCommunicationPrefs({ marketingEmail: marketingEmailPref });
+      setMarketingEmailPref(Boolean(prefs?.marketingEmail));
+      toast.success('Communication preferences saved');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not save preferences');
+    } finally {
+      setSavingCommPrefs(false);
     }
   };
 
@@ -424,6 +472,88 @@ export default function V2OrgSettings() {
                       </Button>
                     </form>
                   )}
+                </CardContent>
+              </Card>
+              <Card className="app-card border-border/60">
+                <CardHeader>
+                  <CardTitle>Password</CardTitle>
+                  <CardDescription>Change the password for {userEmail}.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={savePassword} className="max-w-md space-y-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="current-password">Current password</Label>
+                      <Input
+                        id="current-password"
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        autoComplete="current-password"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="new-password">New password (min 8 characters)</Label>
+                      <Input
+                        id="new-password"
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="confirm-password">Confirm new password</Label>
+                      <Input
+                        id="confirm-password"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        autoComplete="new-password"
+                        minLength={8}
+                        required
+                      />
+                    </div>
+                    <Button type="submit" disabled={savingPassword}>
+                      {savingPassword ? 'Updating…' : 'Update password'}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+              <Card className="app-card border-border/60">
+                <CardHeader>
+                  <CardTitle>Communication preferences</CardTitle>
+                  <CardDescription>
+                    Choose how we may contact you about Parley. Transactional emails (password resets, billing,
+                    support replies) are always sent when needed.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={saveCommPrefs} className="max-w-md space-y-4">
+                    <div className="flex items-start gap-2">
+                      <input
+                        id="pref-marketing-email"
+                        type="checkbox"
+                        checked={marketingEmailPref}
+                        onChange={(e) => setMarketingEmailPref(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+                      />
+                      <Label
+                        htmlFor="pref-marketing-email"
+                        className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground"
+                      >
+                        Email me product updates, tips, and announcements
+                      </Label>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Text message and phone preferences are coming soon.
+                    </p>
+                    <Button type="submit" disabled={savingCommPrefs}>
+                      {savingCommPrefs ? 'Saving…' : 'Save preferences'}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
               {!teamAccount && canRenameOrg && (
