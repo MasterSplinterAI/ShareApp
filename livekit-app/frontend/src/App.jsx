@@ -1,4 +1,4 @@
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, useLocation, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
 import HomeScreen from './components/HomeScreen'
@@ -14,7 +14,22 @@ import V2AppHome from './v2/pages/V2AppHome'
 import V2MeetingsList from './v2/pages/V2MeetingsList'
 import V2MeetingDetail from './v2/pages/V2MeetingDetail'
 import V2OrgSettings from './v2/pages/V2OrgSettings'
-import AdminDashboard, { SuperAdminRedirect } from './v2/pages/AdminDashboard'
+import {
+  AdminGate,
+  AdminShellLayout,
+  AdminOverview,
+  AdminOrgsPage,
+  AdminUsersPage,
+  AdminMeetingsPage,
+  AdminCostsPage,
+  AdminCommsPage,
+  AdminSupportPage,
+  SuperAdminRedirect,
+} from './v2/pages/AdminDashboard'
+import { TrendsTab } from './v2/pages/admin/TrendsTab'
+import { GuestsTab } from './v2/pages/admin/GuestsTab'
+import { AuditTab } from './v2/pages/admin/AuditTab'
+import { PlansTab } from './v2/pages/admin/PlansTab'
 import V2ResetPassword from './v2/pages/V2ResetPassword'
 import TermsPage from './components/legal/TermsPage'
 import PrivacyPage from './components/legal/PrivacyPage'
@@ -55,7 +70,22 @@ function App() {
             <Route path="meetings" element={<V2MeetingsList />} />
             <Route path="meetings/:id" element={<V2MeetingDetail />} />
             <Route path="settings" element={<V2OrgSettings />} />
-            <Route path="admin/*" element={<AdminDashboard />} />
+            <Route path="admin" element={<AdminGate />}>
+              <Route element={<AdminShellLayout />}>
+                <Route index element={<Navigate to="overview" replace />} />
+                <Route path="overview" element={<AdminOverview />} />
+                <Route path="orgs" element={<AdminOrgsPage />} />
+                <Route path="users" element={<AdminUsersPage />} />
+                <Route path="plans" element={<PlansTab />} />
+                <Route path="meetings" element={<AdminMeetingsPage />} />
+                <Route path="trends" element={<TrendsTab />} />
+                <Route path="costs" element={<AdminCostsPage />} />
+                <Route path="comms" element={<AdminCommsPage />} />
+                <Route path="support" element={<AdminSupportPage />} />
+                <Route path="guests" element={<GuestsTab />} />
+                <Route path="audit" element={<AuditTab />} />
+              </Route>
+            </Route>
             <Route path="superadmin/*" element={<SuperAdminRedirect />} />
           </Route>
         </Route>
