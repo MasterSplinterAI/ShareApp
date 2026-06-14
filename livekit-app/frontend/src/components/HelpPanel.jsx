@@ -43,6 +43,20 @@ function statusLabel(status) {
   return status.replace(/_/g, ' ');
 }
 
+function isSubmitAck(body) {
+  const text = String(body || '');
+  return text.includes('give me a moment') || text.includes('Thanks for your message');
+}
+
+function awaitingFirstAiReply(ticket, messages) {
+  if (!ticket || ticket.category !== 'customer_support') return false;
+  if (ticket.status === 'ai_reviewing') return true;
+  if (ticket.status !== 'open' || messages.length < 2) return false;
+  const agentMsgs = messages.filter((m) => m.authorType === 'agent');
+  const hasUser = messages.some((m) => m.authorType === 'user');
+  return hasUser && agentMsgs.length > 0 && agentMsgs.every((m) => isSubmitAck(m.body));
+}
+
 function TypingIndicator() {
   return (
     <div className="flex flex-col items-start gap-0.5">
@@ -157,13 +171,25 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
     reloadTickets();
   }, [open, reloadTickets]);
 
+  const showTyping = useMemo(
+    () =>
+      replySending ||
+      featureCoachBusy ||
+      activeTicket?.status === 'ai_reviewing' ||
+      awaitingFirstAiReply(activeTicket, threadMessages),
+    [replySending, featureCoachBusy, activeTicket, threadMessages]
+  );
+
   useEffect(() => {
     if (step !== 'thread' || !activeTicket?.id) return;
     loadThread(activeTicket.id);
-    const ms = activeTicket.status === 'ai_reviewing' ? 3000 : 20000;
+    const ms =
+      activeTicket.status === 'ai_reviewing' || awaitingFirstAiReply(activeTicket, threadMessages)
+        ? 2500
+        : 20000;
     const id = setInterval(() => loadThread(activeTicket.id), ms);
     return () => clearInterval(id);
-  }, [step, activeTicket?.id, activeTicket?.status, loadThread]);
+  }, [step, activeTicket?.id, activeTicket?.status, threadMessages, loadThread]);
 
   useEffect(() => {
     if (!scrollRef.current) return;
@@ -552,7 +578,7 @@ export default function HelpPanel({ open, onOpenChange, isLoggedIn, userEmail })
                 {threadMessages.map((m) => (
                   <ChatBubble key={m.id} message={m} />
                 ))}
-                {(replySending || activeTicket?.status === 'ai_reviewing') && <TypingIndicator />}
+                {showTyping && <TypingIndicator />}
                 {activeTicket?.status === 'waiting_user' && threadMessages.length > 0 && (
                   <p className="text-center text-xs text-primary">New reply from our team</p>
                 )}

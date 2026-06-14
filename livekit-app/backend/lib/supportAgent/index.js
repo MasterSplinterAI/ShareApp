@@ -9,7 +9,7 @@ const { formatUserFacingReply, REPLY_STYLE_RULES } = require('../supportReplyFor
 const { recordKnowledgeGap } = require('../supportKnowledgeGaps');
 const { formatUserContextForPrompt, buildUserContextSnapshot } = require('../supportUserContext');
 
-const debounceMs = parseInt(process.env.SUPPORT_AI_DEBOUNCE_MS || '8000', 10);
+const debounceMs = parseInt(process.env.SUPPORT_AI_DEBOUNCE_MS || '3000', 10);
 const pendingTimers = new Map();
 
 function buildSystemPrompt(category) {

@@ -20,9 +20,11 @@ const DEFAULT_HOLD_REPLY =
 const DEFAULT_ESCALATION_REPLY =
   "I've shared this with our team for a closer look. You'll see updates here — we typically respond within one business day.";
 
-function minConfidence() {
-  const n = parseFloat(process.env.SUPPORT_AI_AUTO_REPLY_MIN_CONF || '0.85', 10);
-  return Number.isFinite(n) ? n : 0.85;
+function minConfidence({ docHits = 0 } = {}) {
+  const base = parseFloat(process.env.SUPPORT_AI_AUTO_REPLY_MIN_CONF || '0.85', 10);
+  const withKb = parseFloat(process.env.SUPPORT_AI_AUTO_REPLY_MIN_CONF_WITH_KB || '0.65', 10);
+  if (docHits > 0 && Number.isFinite(withKb)) return withKb;
+  return Number.isFinite(base) ? base : 0.85;
 }
 
 function inAppReplyEnabled() {
@@ -80,19 +82,21 @@ function decideCustomerSupportAction(parsed, { thread, docHits }) {
 
   if (
     inAppReplyEnabled() &&
-    route === 'reply_in_app' &&
+    (route === 'reply_in_app' || route === 'propose_reply') &&
     draft &&
-    confidence >= minConfidence() &&
+    route !== 'escalate' &&
+    confidence >= minConfidence({ docHits: docHits.length }) &&
     (docHits.length > 0 || confidence >= 0.92)
   ) {
     return { action: 'reply_in_app', draftReply: draft, notifyTelegram: false };
   }
 
+  // Ops must approve before the user sees the drafted answer.
   return {
     action: 'proposal',
     proposalType: 'support_reply',
     notifyTelegram: true,
-    userReply: userFacingReply(parsed, { proposalType: 'support_reply' }),
+    userReply: DEFAULT_HOLD_REPLY,
   };
 }
 

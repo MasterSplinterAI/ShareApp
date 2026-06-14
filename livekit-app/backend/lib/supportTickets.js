@@ -224,14 +224,23 @@ async function createTicket(req, body) {
     [ackId, id, 'agent', 'parley-support-ai', ackBody, now]
   );
 
-  const ticket = await getTicketById(id);
-  const submitterEmail = auth?.email || guestEmail;
   let aiOn = false;
   try {
     aiOn = require('./supportAgent').aiEnabled();
   } catch {
     aiOn = false;
   }
+
+  if (category === 'customer_support' && aiOn) {
+    await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
+      'ai_reviewing',
+      now,
+      id,
+    ]);
+  }
+
+  const ticket = await getTicketById(id);
+  const submitterEmail = auth?.email || guestEmail;
   if (shouldNotifyOpsOnNewTicket(ticket, { aiEnabled: aiOn })) {
     notifyNewTicket(ticket, { submitterEmail, preview: messageBody }).catch((e) =>
       console.error('[supportTickets] telegram notify failed', e)

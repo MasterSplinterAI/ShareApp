@@ -115,8 +115,26 @@ async function executeProposalAction(proposalId, action, reviewerId) {
     const draft = proposal.body?.draft_reply;
     if (!draft) return { ok: false, status: 400, error: 'No draft_reply in proposal' };
     const body = String(draft).slice(0, MAX_BODY);
-    await postAgentMessage(ticket.id, body, { status: 'waiting_user' });
-    await emailUser(ticket, body);
+    const lastAgent = await db.get(
+      `SELECT body FROM v2_support_messages
+       WHERE ticket_id = ? AND author_type = 'agent'
+       ORDER BY datetime(created_at) DESC LIMIT 1`,
+      [ticket.id]
+    );
+    const alreadySent =
+      lastAgent?.body &&
+      !String(lastAgent.body).includes('give me a moment') &&
+      String(lastAgent.body).slice(0, 60) === body.slice(0, 60);
+    if (!alreadySent) {
+      await postAgentMessage(ticket.id, body, { status: 'waiting_user' });
+      await emailUser(ticket, body);
+    } else {
+      await db.run(`UPDATE v2_support_tickets SET status = ?, updated_at = ? WHERE id = ?`, [
+        'waiting_user',
+        now,
+        ticket.id,
+      ]);
+    }
     await patchProposal(proposalId, {
       status: 'approved',
       reviewedBy: reviewer,
