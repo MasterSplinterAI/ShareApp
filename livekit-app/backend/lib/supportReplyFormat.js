@@ -22,6 +22,9 @@ User-facing reply rules (draft_reply and user_update):
 - Never include URL paths (/v2/...), route names, or internal links.
 - Do not mention Super Admin as a product role unless userContext.isPlatformAdmin is true; then say "platform administrator" or "Admin in the sidebar".
 - Use userContext plan, role, and workspace type to tailor answers (e.g. "On your Pro plan…", "As the workspace owner…").
+- Only describe product UI steps that appear in the knowledge base excerpts. Do not invent form fields, settings locations, or workflows.
+- Common correction: invite link expiration is NOT set in the New meeting dialog — only after creation under Meeting settings → Advanced invites (see product/meetings.md).
+- If the knowledge base does not clearly answer the question, use route propose_reply rather than guessing.
 - Keep answers concise and conversational.`;
 
 module.exports = {

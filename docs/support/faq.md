@@ -27,6 +27,19 @@ Toggle translation off and on in the meeting control bar. If still stuck, leave 
 
 Org admins manage plans under **Settings → Billing** in the left sidebar. See product/billing.md.
 
+## How do I schedule a meeting with a guest link that does not expire quickly?
+
+**You cannot set invite expiration when creating the meeting.** The New meeting dialog only has title, optional schedule, host-required, and transcript options.
+
+After the meeting is created:
+
+1. Open **Meetings** → click the meeting.
+2. Expand **Meeting settings**.
+3. Under **Advanced invites**, choose an expiration such as **Until archived** or **Custom hours**, then **Create invite**.
+4. Share the new link.
+
+The main guest link at the top of the meeting page uses a default expiration (often “through end of meeting” for scheduled meetings). See product/meetings.md for full detail.
+
 ## How do I submit a bug or feature idea?
 
 Open **Help** (blue chat bubble, bottom-right) → choose **Bug** or **Feature**. Feature requests can be refined in chat before submitting.
