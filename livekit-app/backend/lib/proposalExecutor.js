@@ -51,6 +51,40 @@ function normalizeAction(action, proposalType) {
   return a;
 }
 
+function buildNeedInfoMessage(proposal, ticket) {
+  const body = proposal.body || {};
+  if (body.need_info_message) {
+    return String(body.need_info_message).slice(0, MAX_BODY);
+  }
+
+  const type = proposal.proposalType;
+  const category = ticket.category;
+
+  if (type === 'feature' || category === 'feature_request') {
+    const problem = body.problem_statement ? String(body.problem_statement).trim().slice(0, 200) : '';
+    if (problem) {
+      return (
+        `Thanks for your feature idea about “${problem}”. To help us prioritize and scope it, could you share who would use this, how you imagine it working in your workflow, and how often you would need it?`
+      );
+    }
+    return (
+      'Thanks for your feature idea! To help us prioritize, could you share who would use this, what problem it solves, how you imagine it working, and how important it is to you day to day?'
+    );
+  }
+
+  if (type === 'bug_fix' || category === 'bug_report') {
+    return (
+      'Thanks for the report — we want to dig in. Could you share steps to reproduce, what you expected vs what happened, and any screenshots or screen recordings? Browser and device details help too.'
+    );
+  }
+
+  if (body.draft_reply) {
+    return String(body.draft_reply).slice(0, MAX_BODY);
+  }
+
+  return 'Could you share a bit more detail so we can help?';
+}
+
 async function sendApprovedDraftReply(ticket, proposal, { reviewer, proposalId, now }) {
   const draft = proposal.body?.draft_reply;
   if (!draft) return { ok: false, status: 400, error: 'No draft_reply in proposal' };
@@ -128,11 +162,10 @@ async function executeProposalAction(proposalId, action, reviewerId) {
   }
 
   if (act === 'need_info') {
-    const question =
-      proposal.body?.draft_reply ||
-      proposal.body?.need_info_message ||
-      'Could you share a bit more detail so we can help? (steps to reproduce, screenshots, or what you expected vs what happened)';
-    const body = String(question).slice(0, MAX_BODY);
+    if (proposal.proposalType !== 'bug_fix' && proposal.proposalType !== 'feature') {
+      return { ok: false, status: 400, error: `Action need_info not valid for ${proposal.proposalType}` };
+    }
+    const body = buildNeedInfoMessage(proposal, ticket);
     await postAgentMessage(ticket.id, body, { status: 'waiting_user' });
     await emailUser(ticket, body);
     await patchProposal(proposalId, {

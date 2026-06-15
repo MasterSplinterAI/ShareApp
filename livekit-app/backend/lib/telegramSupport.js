@@ -75,6 +75,28 @@ function categoryLabel(category) {
   return 'Customer support';
 }
 
+function proposalTypeLabel(proposalType) {
+  if (proposalType === 'bug_fix') return 'Bug triage';
+  if (proposalType === 'feature') return 'Feature backlog';
+  if (proposalType === 'support_reply') return 'CS reply approval';
+  if (proposalType === 'escalation') return 'Escalation';
+  return proposalType;
+}
+
+function proposalPreviewSnippet(proposal) {
+  const b = proposal.body || {};
+  if (proposal.proposalType === 'feature') {
+    return b.problem_statement || b.proposed_mvp || b.backlog_recommendation || '';
+  }
+  if (proposal.proposalType === 'bug_fix') {
+    return b.github_issue_title || b.root_cause_hypothesis || b.user_intent || '';
+  }
+  if (proposal.proposalType === 'escalation') {
+    return b.draft_reply || b.reason || b.escalation_reason || '';
+  }
+  return b.draft_reply || b.github_issue_title || b.problem_statement || '';
+}
+
 function proposalKeyboard(proposal) {
   const id = proposal.id;
   if (proposal.proposalType === 'bug_fix') {
@@ -84,7 +106,7 @@ function proposalKeyboard(proposal) {
           { text: '✅ Approve → GitHub issue', callback_data: `prop:${id}:approve` },
           { text: '❌ Reject', callback_data: `prop:${id}:reject` },
         ],
-        [{ text: '💬 Need info', callback_data: `prop:${id}:need_info` }],
+        [{ text: '💬 Ask for repro details', callback_data: `prop:${id}:need_info` }],
       ],
     };
   }
@@ -95,7 +117,7 @@ function proposalKeyboard(proposal) {
           { text: '✅ Approve backlog', callback_data: `prop:${id}:approve` },
           { text: '❌ Reject', callback_data: `prop:${id}:reject` },
         ],
-        [{ text: '💬 Need info', callback_data: `prop:${id}:need_info` }],
+        [{ text: '💬 Ask clarifying questions', callback_data: `prop:${id}:need_info` }],
       ],
     };
   }
@@ -166,14 +188,12 @@ async function notifyProposalReady(ticket, proposal) {
     typeof proposal.confidence === 'number'
       ? `\n<b>Confidence:</b> ${Math.round(proposal.confidence * 100)}%`
       : '';
-  const draft =
-    proposal.body?.draft_reply ||
-    proposal.body?.github_issue_title ||
-    proposal.body?.problem_statement ||
-    '';
+  const draft = proposalPreviewSnippet(proposal);
+  const typeLabel = proposalTypeLabel(proposal.proposalType);
+  const catLabel = categoryLabel(ticket.category);
   const lines = [
     `🤖 <b>AI proposal</b> — ticket #${num}`,
-    `<b>Type:</b> ${escapeHtml(proposal.proposalType)}`,
+    `<b>Category:</b> ${escapeHtml(catLabel)} · <b>Action:</b> ${escapeHtml(typeLabel)}`,
     `<b>Summary:</b> ${escapeHtml(proposal.summary)}${conf}`,
     draft ? `\n${escapeHtml(String(draft).slice(0, 600))}${String(draft).length > 600 ? '…' : ''}` : null,
     `\n<a href="${adminTicketUrl(num)}">Open in admin</a>`,

@@ -75,9 +75,17 @@ export function countByStatus(tickets) {
 export function proposalActions(proposal) {
   if (!proposal || proposal.status !== 'pending_review') return [];
   if (proposal.proposalType === 'bug_fix' || proposal.proposalType === 'feature') {
+    const needInfoLabel =
+      proposal.proposalType === 'feature'
+        ? 'Ask clarifying questions'
+        : 'Ask for repro details';
+    const approveLabel =
+      proposal.proposalType === 'feature'
+        ? 'Approve → add to GitHub backlog'
+        : 'Approve → create GitHub issue';
     return [
-      { action: 'approve', label: 'Approve → create GitHub issue', variant: 'default' },
-      { action: 'need_info', label: 'Ask user for more info', variant: 'outline' },
+      { action: 'approve', label: approveLabel, variant: 'default' },
+      { action: 'need_info', label: needInfoLabel, variant: 'outline' },
       { action: 'reject', label: 'Reject proposal', variant: 'outline' },
     ];
   }

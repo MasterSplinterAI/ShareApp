@@ -42,8 +42,8 @@ JSON shape:
 
 For support_reply body: user_intent, draft_reply (customer-facing, friendly), sources (array of doc paths), escalation_reason (null or string)
 For escalation body: reason, draft_reply (what to tell the user in chat), recommended_assignee, urgency (low|medium|high)
-For bug_fix body: user_intent, root_cause_hypothesis, affected_components (array), suggested_fix, repro_steps (array), test_plan (array), risks (array), github_issue_title, github_issue_body (markdown), user_update (short message for the user's chat thread)
-For feature body: problem_statement, proposed_mvp, similar_tickets (array), effort_estimate (S|M|L), risk (low|medium|high), files_likely_touched (array), backlog_recommendation, user_update (short message for the user's chat thread)
+For bug_fix body: user_intent, root_cause_hypothesis, affected_components (array), suggested_fix, repro_steps (array), test_plan (array), risks (array), github_issue_title, github_issue_body (markdown), user_update (short message for the user's chat thread), need_info_message (optional — friendly question to ask user if more detail is needed; bug-focused, not feature language)
+For feature body: problem_statement, proposed_mvp, similar_tickets (array), effort_estimate (S|M|L), risk (low|medium|high), files_likely_touched (array), backlog_recommendation, user_update (short message for the user's chat thread), need_info_message (optional — friendly clarifying questions about problem, users, and workflow; never ask for repro steps)
 
 Never invent product features not in the knowledge base. If unsure, still provide a helpful draft_reply acknowledging the question and use propose_reply or escalate.
 

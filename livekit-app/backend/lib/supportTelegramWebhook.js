@@ -45,10 +45,11 @@ async function handleTelegramUpdate(update) {
   }
 
   let msg = 'Done';
-  if (result.result === 'github_issue') msg = 'GitHub issue created';
-  else if (result.result === 'reply_sent') msg = 'Reply sent to user';
+  if (result.result === 'github_issue') {
+    msg = parsed.action === 'approve' ? 'GitHub issue created' : 'Done';
+  } else if (result.result === 'reply_sent') msg = 'Reply sent to user';
   else if (result.result === 'rejected') msg = 'Proposal rejected';
-  else if (result.result === 'needs_info') msg = 'Asked user for more info';
+  else if (result.result === 'needs_info') msg = 'Clarifying questions sent to user';
   else if (result.result === 'escalated') msg = 'Escalated to human';
 
   await answerCallbackQuery(cb.id, msg);
