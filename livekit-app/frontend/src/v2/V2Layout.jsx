@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { LayoutDashboard } from 'lucide-react';
 import { MarketingNav } from '../components/marketing/MarketingNav';
+import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { Button } from '../components/ui/button';
+import { useTranslation } from '../lib/i18n/I18nProvider';
 import V2AppShell from './components/V2AppShell';
 import { v2Auth } from '../services/apiV2';
 
 export default function V2Layout() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
@@ -60,11 +63,12 @@ export default function V2Layout() {
             Parley
           </Link>
           <div className="flex items-center gap-2">
+            <LanguageSwitcher />
             <Button variant="ghost" size="sm" asChild>
-              <Link to="/v2/login">Sign in</Link>
+              <Link to="/v2/login">{t('nav.signIn')}</Link>
             </Button>
             <Button size="sm" asChild>
-              <Link to="/v2/signup">Start free</Link>
+              <Link to="/v2/signup">{t('nav.startFree')}</Link>
             </Button>
           </div>
         </div>

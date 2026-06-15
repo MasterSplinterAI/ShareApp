@@ -1,0 +1,288 @@
+{
+  "_version": 2,
+  "nav": {
+    "features": "機能",
+    "aiReports": "AIレポート",
+    "pricing": "料金",
+    "faq": "よくある質問",
+    "openWorkspace": "ワークスペースを開く",
+    "signIn": "ログイン",
+    "startFree": "無料で始める"
+  },
+  "hero": {
+    "eyebrow": "ライブ字幕と翻訳",
+    "title": "誰もが自分の言語で追えるビデオ会議。",
+    "subtitle": "Parleyはすべての会議にライブ字幕とリアルタイム翻訳を追加し、グローバルチームの認識を揃えます。ゲストリンクを共有するだけ—アカウント不要—記録が必要なときはオプションの文字起こしも保存できます。",
+    "startFree": "無料で始める",
+    "seePricing": "料金を見る",
+    "footnote": "クレジットカード不要 · ゲストはワンクリックで参加 · ブラウザで動作"
+  },
+  "footer": {
+    "tagline": "ライブ字幕、リアルタイム翻訳、AI会議レポート—グローバルチームのために。",
+    "product": "プロダクト",
+    "company": "会社",
+    "features": "機能",
+    "aiReports": "AIレポート",
+    "pricing": "料金",
+    "faq": "よくある質問",
+    "signIn": "ログイン",
+    "terms": "利用規約",
+    "privacy": "プライバシー",
+    "contactSales": "営業に問い合わせ",
+    "copyright": "© {{year}} Parley. All rights reserved.",
+    "support": "サポート："
+  },
+  "meetingPreview": {
+    "windowTitle": "Parley — Q3ロールアウト · ライブ字幕 ON",
+    "captions": "字幕",
+    "chat": "チャット",
+    "people": "参加者",
+    "translating": "翻訳中 EN → ES, JA",
+    "presenting": "Kennyがプレゼン中",
+    "footnote": "シミュレーションルーム — 画面上部に画面共有、下部に参加者タイル、横に字幕。"
+  },
+  "features": {
+    "eyebrow": "機能",
+    "title": "明瞭さのために設計",
+    "subtitle": "すべてブラウザで動作—ホスト向けのシンプルな体験とワンクリックのゲストリンク。",
+    "items": {
+      "translation": {
+        "title": "リアルタイム翻訳",
+        "description": "参加者が言語を選択。発話は会議の流れの中で文字起こしと翻訳されます。"
+      },
+      "captions": {
+        "title": "ライブ字幕",
+        "description": "並列表示の字幕で全員が同じページに—騒がしい環境やアクセシビリティ重視のチームでも。"
+      },
+      "transcripts": {
+        "title": "自分で管理する文字起こし",
+        "description": "会議ごとのポリシーで確定行をサーバーに保存。記録が必要なときはJSONとプレーンテキストでダウンロード。"
+      },
+      "accounts": {
+        "title": "個人またはチームアカウント",
+        "description": "無料の個人アカウントで単独スタート、共有アクセスが必要ならロール付きのチームワークスペースを追加。"
+      }
+    }
+  },
+  "howItWorks": {
+    "eyebrow": "使い方",
+    "title": "登録から初めての翻訳通話まで",
+    "subtitle": "3つの簡単なステップ—ダウンロード不要、セットアップ不要。",
+    "steps": {
+      "one": {
+        "title": "アカウントを作成",
+        "body": "無料で登録 — 会社名は不要。個人アカウントを使うか、いつでもチームワークスペースを追加できます。"
+      },
+      "two": {
+        "title": "会議を予約または開始",
+        "body": "即時または予約セッション。ホストの在席ポリシーとゲストリンクに対応。"
+      },
+      "three": {
+        "title": "ゲストリンクを共有",
+        "body": "ゲストはワンクリックで参加。必要に応じて招待トークンでアクセスを制限。"
+      }
+    }
+  },
+  "aiReports": {
+    "eyebrow": "AI会議レポート",
+    "title": "会議の要点を—話された言語のまま凝縮。",
+    "subtitle": "文字起こし保存がオンのとき、Parleyは多言語の会話全体を洗練されたレポートに変換します：エグゼクティブサマリー、担当者付きアクション項目、決定事項と未解決の質問。実際に話された内容のみに基づき—欠落は指摘し、捏造しません。",
+    "templates": {
+      "executive": {
+        "label": "エグゼクティブサマリー",
+        "desc": "概要、要点、決定、リスク、次のステップ"
+      },
+      "actions": {
+        "label": "アクション項目",
+        "desc": "会話から抽出した担当者、アクション、期限"
+      },
+      "decisions": {
+        "label": "決定事項と未解決の質問",
+        "desc": "決まったことと、まだ答えが必要なこと"
+      }
+    },
+    "badges": {
+      "download": "PDFまたはMarkdownでダウンロード",
+      "email": "チームにメール送信"
+    },
+    "mock": {
+      "label": "Parley会議レポート",
+      "meta": "エグゼクティブサマリー · 12秒で生成 · 214行の文字起こし · EN / ES / FR",
+      "keyPoints": "要点",
+      "decisions": "決定事項",
+      "nextSteps": "次のステップ"
+    }
+  },
+  "pricing": {
+    "eyebrow": "料金",
+    "title": "無料で始めて、成長に合わせて拡張",
+    "subtitle": "月60参加者分の分数から開始。準備ができたらアップグレード—組織単位の課金。",
+    "popular": "人気",
+    "period": "/ 組織 / 月",
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "blurb": "月60参加者分の分数 — Parleyを試すのに最適。",
+        "cta": "無料で始める",
+        "features": {
+          "captions": "ライブ字幕と翻訳",
+          "meetings": "即時・予約会議",
+          "guests": "ゲストリンク",
+          "limit": "月60分でハードストップ"
+        }
+      },
+      "starter": {
+        "name": "Starter",
+        "blurb": "毎週多言語で会議する小規模チーム向け。",
+        "cta": "Starterを取得",
+        "features": {
+          "minutes": "2,000参加者分の分数",
+          "transcripts": "文字起こし保存",
+          "dashboard": "利用状況ダッシュボード",
+          "support": "メールサポート"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "blurb": "ワークスペースの席とより大きなボリュームが必要なチーム向け。",
+        "cta": "Proを取得",
+        "features": {
+          "minutes": "10,000参加者分の分数",
+          "workspace": "チームワークスペースと招待",
+          "insights": "AI文字起こしインサイト",
+          "support": "優先サポート"
+        }
+      }
+    }
+  },
+  "faq": {
+    "eyebrow": "よくある質問",
+    "title": "よくある質問",
+    "subtitle": "率直な回答、マーケティングの冗長さなし。",
+    "items": {
+      "guests": {
+        "q": "ゲストはアカウントが必要ですか？",
+        "a": "いいえ。ホストがゲスト参加URL（ポリシーで必要な場合は招待トークン付き）を共有します。ゲストは表示名を入力してLiveKitルームに参加します。"
+      },
+      "transcripts": {
+        "q": "文字起こしの保存は必須ですか？",
+        "a": "いいえ。各会議で確定した字幕行をサーバーに保存するかを選択できます。ホストと組織管理者は、行が存在するときに後からダウンロードできます。"
+      },
+      "trial": {
+        "q": "支払い前に試せますか？",
+        "a": "はい。Freeプランには月60参加者分の分数が含まれます—クレジットカード不要。必要になったらいつでもアップグレードできます。"
+      },
+      "storage": {
+        "q": "データはどこに保存されますか？",
+        "a": "会議はリアルタイムで処理されます。文字起こしはホストが会議ごとに保存を有効にした場合のみ保存され、いつでも削除できます。すべてのデータは転送中に暗号化されます。"
+      },
+      "accuracy": {
+        "q": "ライブ翻訳の精度はどのくらいですか？",
+        "a": "Parleyは多言語翻訳付きのリアルタイム音声認識を使用します。精度は音質に依存します—静かな環境でヘッドセットを使うと最も効果的です。"
+      }
+    }
+  },
+  "auth": {
+    "email": "メール",
+    "password": "パスワード",
+    "passwordMin": "パスワード（8文字以上）",
+    "newPassword": "新しいパスワード（8文字以上）",
+    "confirmPassword": "新しいパスワードを確認",
+    "forgotPassword": "パスワードをお忘れですか？",
+    "backHome": "ホームに戻る",
+    "backSignIn": "ログインに戻る",
+    "login": {
+      "title": "ログイン",
+      "description": "ログインして会議をホストし、ゲストリンクを管理し、文字起こしを表示します。",
+      "submit": "ログイン",
+      "submitting": "ログイン中…",
+      "noAccount": "アカウントをお持ちでないですか？",
+      "createAccount": "無料アカウントを作成",
+      "success": "ログインしました",
+      "failed": "ログインに失敗しました"
+    },
+    "signup": {
+      "title": "アカウント作成",
+      "description": "個人として無料で始めるか、会社で登録。後からビジネスプランにアップグレードして同僚を招待できます—有料の個人プランをご利用中でも可能です。",
+      "planBanner": "{{plan}}プランに登録しています — アカウント作成後に課金を確認します。",
+      "accountType": "アカウント種別",
+      "individual": "個人",
+      "individualHint": "個人利用 — お名前のみ",
+      "company": "会社",
+      "companyHint": "共有ワークスペース名",
+      "yourName": "お名前",
+      "companyName": "会社名",
+      "companyHintLong": "会議と設定でチームに表示されます。後からProにアップグレードして、各自のログインで同僚を招待できます。",
+      "termsPrefix": "以下に同意します：",
+      "terms": "利用規約",
+      "termsAnd": "および",
+      "privacy": "プライバシーポリシー",
+      "marketing": "製品アップデートとヒントをメールで受け取る（任意）",
+      "submit": "アカウントを作成",
+      "submitting": "作成中…",
+      "hasAccount": "すでにアカウントをお持ちですか？",
+      "success": "アカウントを作成しました",
+      "failed": "登録に失敗しました",
+      "termsRequired": "利用規約とプライバシーポリシーに同意してください",
+      "companyRequired": "会社アカウントには会社名が必要です"
+    },
+    "reset": {
+      "title": "パスワードをリセット",
+      "description": "アカウントのメールアドレスを入力すると、リセットリンクをお送りします。",
+      "sent": "そのメールが存在する場合、リセットリンクを送信しました。",
+      "submit": "リセットリンクを送信",
+      "submitting": "送信中…",
+      "remembered": "思い出しましたか？",
+      "newTitle": "新しいパスワードを選択",
+      "newDescription": "アカウントの新しいパスワードを入力してください。",
+      "updated": "パスワードが更新されました。",
+      "setPassword": "新しいパスワードを設定",
+      "updating": "更新中…",
+      "mismatch": "パスワードが一致しません",
+      "success": "パスワードを更新しました",
+      "failed": "パスワードのリセットに失敗しました",
+      "error": "問題が発生しました。もう一度お試しください。"
+    }
+  },
+  "appHome": {
+    "greetingMorning": "おはようございます",
+    "greetingAfternoon": "こんにちは",
+    "greetingEvening": "こんばんは",
+    "subtitleTeam": "{{workspace}} · ライブ字幕とゲストリンクで翻訳会議をホスト。",
+    "subtitlePersonal": "個人アカウント · ライブ字幕とゲストリンクで翻訳会議をホスト。",
+    "newMeeting": "新しい会議",
+    "schedule": "予約",
+    "allMeetings": "すべての会議",
+    "inviteTeammate": "チームメイトを招待",
+    "upNext": "次の予定",
+    "recentMeetings": "最近の会議",
+    "viewAll": "すべて表示",
+    "noMeetings": "まだ会議がありません",
+    "noMeetingsHint": "会議を作成すると、参加者と共有するゲストリンクが得られます。",
+    "createFirst": "最初の会議を作成",
+    "planUsage": "{{plan}}プラン",
+    "planUnknown": "プラン：—",
+    "minutesUsed": "今月 {{minutes}} 参加者分の分数を使用",
+    "manageBilling": "請求を管理",
+    "loadFailed": "ワークスペースを読み込めませんでした",
+    "todayAt": "今日 {{time}}",
+    "tomorrowAt": "明日 {{time}}"
+  },
+  "app": {
+    "home": "ホーム",
+    "meetings": "会議",
+    "settings": "設定",
+    "admin": "管理",
+    "helpSupport": "ヘルプとサポート",
+    "logOut": "ログアウト",
+    "member": "メンバー",
+    "account": "アカウント",
+    "role": "ロール：{{role}}",
+    "openMenu": "メニューを開く",
+    "dismissAnnouncement": "お知らせを閉じる"
+  },
+  "language": {
+    "label": "言語",
+    "choose": "言語を選択"
+  }
+}

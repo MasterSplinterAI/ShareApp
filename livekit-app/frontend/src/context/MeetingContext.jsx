@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { normalizeMeetingLanguageCode, writeStoredMeetingLanguage } from '../lib/languages';
 
 const MeetingContext = createContext(null);
 
@@ -9,7 +9,9 @@ export function MeetingProvider({ children, initialState = {} }) {
   );
 
   const setSelectedLanguage = useCallback((code) => {
-    setSelectedLanguageState(normalizeMeetingLanguageCode(code || 'en'));
+    const next = normalizeMeetingLanguageCode(code || 'en');
+    setSelectedLanguageState(next);
+    writeStoredMeetingLanguage(next);
   }, []);
 
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);

@@ -1,0 +1,288 @@
+{
+  "_version": 2,
+  "nav": {
+    "features": "Features",
+    "aiReports": "AI reports",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "openWorkspace": "Open workspace",
+    "signIn": "Sign in",
+    "startFree": "Start free"
+  },
+  "hero": {
+    "eyebrow": "Live captions & translation",
+    "title": "Video meetings everyone can follow—in their own language.",
+    "subtitle": "Parley adds live captions and real-time translation to every meeting, so global teams stay aligned. Share a guest link—no account needed—and keep an optional transcript when you want a record.",
+    "startFree": "Start free",
+    "seePricing": "See pricing",
+    "footnote": "No credit card required · Guests join in one click · Runs in your browser"
+  },
+  "footer": {
+    "tagline": "Live captions, real-time translation, and AI meeting reports—built for global teams.",
+    "product": "Product",
+    "company": "Company",
+    "features": "Features",
+    "aiReports": "AI reports",
+    "pricing": "Pricing",
+    "faq": "FAQ",
+    "signIn": "Sign in",
+    "terms": "Terms",
+    "privacy": "Privacy",
+    "contactSales": "Contact sales",
+    "copyright": "© {{year}} Parley. All rights reserved.",
+    "support": "Support:"
+  },
+  "meetingPreview": {
+    "windowTitle": "Parley — Q3 rollout · Live captions ON",
+    "captions": "Captions",
+    "chat": "Chat",
+    "people": "People",
+    "translating": "Translating EN → ES, JA",
+    "presenting": "Kenny is presenting",
+    "footnote": "Simulated room — screen share up top, participant tiles along the bottom, captions on the side."
+  },
+  "features": {
+    "eyebrow": "Features",
+    "title": "Built for clarity",
+    "subtitle": "Everything runs in your browser—a focused host experience and one-click guest links.",
+    "items": {
+      "translation": {
+        "title": "Real-time translation",
+        "description": "Participants choose a language lane; speech is transcribed and translated in the flow of the meeting."
+      },
+      "captions": {
+        "title": "Live captions",
+        "description": "Side-by-side captions keep everyone on the same page—even in noisy environments or accessibility-first teams."
+      },
+      "transcripts": {
+        "title": "Transcripts you control",
+        "description": "Per-meeting policy to save finalized lines on the server, with JSON and plain-text download when you need records."
+      },
+      "accounts": {
+        "title": "Personal or team accounts",
+        "description": "Start solo on a free personal account, or add a team workspace with roles when you need shared access."
+      }
+    }
+  },
+  "howItWorks": {
+    "eyebrow": "How it works",
+    "title": "From signup to your first translated call",
+    "subtitle": "Three quick steps—no downloads, no setup.",
+    "steps": {
+      "one": {
+        "title": "Create your account",
+        "body": "Sign up free — no company name required. Use a personal account or add a team workspace anytime."
+      },
+      "two": {
+        "title": "Schedule or start a meeting",
+        "body": "Instant or scheduled sessions with policies for host presence and guest links."
+      },
+      "three": {
+        "title": "Share the guest link",
+        "body": "Guests join in one click; optional invite tokens keep access tight when you need them."
+      }
+    }
+  },
+  "aiReports": {
+    "eyebrow": "AI meeting reports",
+    "title": "Your meeting, distilled—in any language it was spoken.",
+    "subtitle": "When transcript storage is on, Parley turns the full multilingual conversation into a polished report: executive summaries, action items with owners, decisions and open questions. Grounded only in what was actually said — gaps are flagged, never invented.",
+    "templates": {
+      "executive": {
+        "label": "Executive summary",
+        "desc": "Overview, key points, decisions, risks, next steps"
+      },
+      "actions": {
+        "label": "Action items",
+        "desc": "Owners, actions, and due dates pulled from the conversation"
+      },
+      "decisions": {
+        "label": "Decisions & open questions",
+        "desc": "What was decided vs. what still needs an answer"
+      }
+    },
+    "badges": {
+      "download": "Download as PDF or Markdown",
+      "email": "Email to your team"
+    },
+    "mock": {
+      "label": "Parley meeting report",
+      "meta": "Executive summary · Generated in 12s · 214 transcript lines · EN / ES / FR",
+      "keyPoints": "Key points",
+      "decisions": "Decisions",
+      "nextSteps": "Next steps"
+    }
+  },
+  "pricing": {
+    "eyebrow": "Pricing",
+    "title": "Start free, scale as you grow",
+    "subtitle": "Begin with 60 participant-minutes a month. Upgrade when you're ready—billed per organization.",
+    "popular": "Popular",
+    "period": "/ org / month",
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "blurb": "60 participant-minutes per month — perfect to try Parley.",
+        "cta": "Start free",
+        "features": {
+          "captions": "Live captions & translation",
+          "meetings": "Instant & scheduled meetings",
+          "guests": "Guest links",
+          "limit": "Hard stop at 60 min/mo"
+        }
+      },
+      "starter": {
+        "name": "Starter",
+        "blurb": "For small teams meeting across languages weekly.",
+        "cta": "Get Starter",
+        "features": {
+          "minutes": "2,000 participant-minutes",
+          "transcripts": "Transcript storage",
+          "dashboard": "Usage dashboard",
+          "support": "Email support"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "blurb": "For teams that need workspace seats and higher volume.",
+        "cta": "Get Pro",
+        "features": {
+          "minutes": "10,000 participant-minutes",
+          "workspace": "Team workspace & invites",
+          "insights": "AI transcript insights",
+          "support": "Priority support"
+        }
+      }
+    }
+  },
+  "faq": {
+    "eyebrow": "FAQ",
+    "title": "Frequently asked questions",
+    "subtitle": "Straight answers, no marketing fluff.",
+    "items": {
+      "guests": {
+        "q": "Do guests need an account?",
+        "a": "No. Hosts share a guest join URL (and an invite token when your policy requires it). Guests enter a display name and join the LiveKit room."
+      },
+      "transcripts": {
+        "q": "Is transcript storage required?",
+        "a": "No. Each meeting can opt in to saving finalized caption lines on the server. Hosts and org admins can download later when lines exist."
+      },
+      "trial": {
+        "q": "Can I try it before paying?",
+        "a": "Yes. The free plan includes 60 participant-minutes per month—no credit card required. Upgrade anytime when you need more."
+      },
+      "storage": {
+        "q": "Where is data stored?",
+        "a": "Meetings are processed in real time. Transcripts are stored only when the host enables storage for a meeting, and can be deleted at any time. All data is encrypted in transit."
+      },
+      "accuracy": {
+        "q": "How accurate is the live translation?",
+        "a": "Parley uses real-time speech recognition with multi-language translation. Accuracy depends on audio quality—it works best when speakers use a headset in a quiet environment."
+      }
+    }
+  },
+  "auth": {
+    "email": "Email",
+    "password": "Password",
+    "passwordMin": "Password (min 8 characters)",
+    "newPassword": "New password (min 8 characters)",
+    "confirmPassword": "Confirm new password",
+    "forgotPassword": "Forgot password?",
+    "backHome": "Back to home",
+    "backSignIn": "Back to sign in",
+    "login": {
+      "title": "Sign in",
+      "description": "Sign in to host meetings, manage guest links, and view transcripts.",
+      "submit": "Sign in",
+      "submitting": "Signing in…",
+      "noAccount": "No account?",
+      "createAccount": "Create free account",
+      "success": "Signed in",
+      "failed": "Login failed"
+    },
+    "signup": {
+      "title": "Create account",
+      "description": "Start free as an individual, or sign up with your company. You can upgrade to a business plan later to invite colleagues—even if you're already on a paid personal plan.",
+      "planBanner": "You're signing up for the {{plan}} plan — you'll confirm billing after creating your account.",
+      "accountType": "Account type",
+      "individual": "Individual",
+      "individualHint": "Personal use — just your name",
+      "company": "Company",
+      "companyHint": "Shared workspace name",
+      "yourName": "Your name",
+      "companyName": "Company name",
+      "companyHintLong": "Shown to your team in meetings and settings. Upgrade to Pro later to invite colleagues with their own logins.",
+      "termsPrefix": "I agree to the",
+      "terms": "Terms of Service",
+      "termsAnd": "and",
+      "privacy": "Privacy Policy",
+      "marketing": "Email me product updates and tips (optional)",
+      "submit": "Create account",
+      "submitting": "Creating…",
+      "hasAccount": "Already have an account?",
+      "success": "Account created",
+      "failed": "Signup failed",
+      "termsRequired": "Please agree to the Terms of Service and Privacy Policy",
+      "companyRequired": "Company name is required for company accounts"
+    },
+    "reset": {
+      "title": "Reset password",
+      "description": "Enter your account email and we'll send you a reset link.",
+      "sent": "If that email exists, we sent a reset link.",
+      "submit": "Send reset link",
+      "submitting": "Sending…",
+      "remembered": "Remembered it?",
+      "newTitle": "Choose a new password",
+      "newDescription": "Enter a new password for your account.",
+      "updated": "Your password has been updated.",
+      "setPassword": "Set new password",
+      "updating": "Updating…",
+      "mismatch": "Passwords do not match",
+      "success": "Password updated",
+      "failed": "Password reset failed",
+      "error": "Something went wrong. Please try again."
+    }
+  },
+  "appHome": {
+    "greetingMorning": "Good morning",
+    "greetingAfternoon": "Good afternoon",
+    "greetingEvening": "Good evening",
+    "subtitleTeam": "{{workspace}} · Host translated meetings with live captions and guest links.",
+    "subtitlePersonal": "Your personal account · Host translated meetings with live captions and guest links.",
+    "newMeeting": "New meeting",
+    "schedule": "Schedule",
+    "allMeetings": "All meetings",
+    "inviteTeammate": "Invite teammate",
+    "upNext": "Up next",
+    "recentMeetings": "Recent meetings",
+    "viewAll": "View all",
+    "noMeetings": "No meetings yet",
+    "noMeetingsHint": "Create one and you'll get a guest link to share with participants.",
+    "createFirst": "Create your first meeting",
+    "planUsage": "{{plan}} plan",
+    "planUnknown": "Plan: —",
+    "minutesUsed": "{{minutes}} participant-minutes used this month",
+    "manageBilling": "Manage billing",
+    "loadFailed": "Could not load workspace",
+    "todayAt": "Today {{time}}",
+    "tomorrowAt": "Tomorrow {{time}}"
+  },
+  "app": {
+    "home": "Home",
+    "meetings": "Meetings",
+    "settings": "Settings",
+    "admin": "Admin",
+    "helpSupport": "Help & support",
+    "logOut": "Log out",
+    "member": "Member",
+    "account": "Account",
+    "role": "Role: {{role}}",
+    "openMenu": "Open menu",
+    "dismissAnnouncement": "Dismiss announcement"
+  },
+  "language": {
+    "label": "Language",
+    "choose": "Choose language"
+  }
+}

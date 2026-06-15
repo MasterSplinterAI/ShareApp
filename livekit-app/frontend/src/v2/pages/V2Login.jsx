@@ -6,8 +6,10 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { useTranslation } from '../../lib/i18n/I18nProvider';
 
 export default function V2Login() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -25,10 +27,10 @@ export default function V2Login() {
     try {
       const data = await v2Auth.login({ email, password });
       localStorage.setItem('v2_token', data.token);
-      toast.success('Signed in');
+      toast.success(t('auth.login.success'));
       navigate('/v2/app', { replace: true });
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed');
+      toast.error(err.response?.data?.error || t('auth.login.failed'));
     } finally {
       setLoading(false);
     }
@@ -38,13 +40,13 @@ export default function V2Login() {
     <div className="mx-auto max-w-md">
       <Card className="border-border/80 shadow-lg">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Sign in</CardTitle>
-          <CardDescription>Sign in to host meetings, manage guest links, and view transcripts.</CardDescription>
+          <CardTitle className="text-2xl">{t('auth.login.title')}</CardTitle>
+          <CardDescription>{t('auth.login.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('auth.email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -56,9 +58,9 @@ export default function V2Login() {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Password</Label>
+                <Label htmlFor="password">{t('auth.password')}</Label>
                 <Link to="/v2/reset-password" className="text-xs font-medium text-primary hover:underline">
-                  Forgot password?
+                  {t('auth.forgotPassword')}
                 </Link>
               </div>
               <Input
@@ -71,18 +73,18 @@ export default function V2Login() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? t('auth.login.submitting') : t('auth.login.submit')}
             </Button>
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            No account?{' '}
+            {t('auth.login.noAccount')}{' '}
             <Link to="/v2/signup" className="font-medium text-primary hover:underline">
-              Create free account
+              {t('auth.login.createAccount')}
             </Link>
           </p>
           <p className="mt-4 text-center">
             <Link to="/" className="text-sm text-muted-foreground hover:text-foreground">
-              Back to home
+              {t('auth.backHome')}
             </Link>
           </p>
         </CardContent>

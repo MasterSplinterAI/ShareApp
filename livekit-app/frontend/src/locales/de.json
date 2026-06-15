@@ -1,0 +1,288 @@
+{
+  "_version": 2,
+  "nav": {
+    "features": "Funktionen",
+    "aiReports": "KI-Berichte",
+    "pricing": "Preise",
+    "faq": "FAQ",
+    "openWorkspace": "Arbeitsbereich öffnen",
+    "signIn": "Anmelden",
+    "startFree": "Kostenlos starten"
+  },
+  "hero": {
+    "eyebrow": "Live-Untertitel & Übersetzung",
+    "title": "Videomeetings, denen jeder folgen kann—in der eigenen Sprache.",
+    "subtitle": "Parley fügt jedem Meeting Live-Untertitel und Echtzeitübersetzung hinzu, damit globale Teams auf dem gleichen Stand bleiben. Teilen Sie einen Gastlink—kein Konto erforderlich—und behalten Sie optional ein Transkript, wenn Sie eine Aufzeichnung wünschen.",
+    "startFree": "Kostenlos starten",
+    "seePricing": "Preise ansehen",
+    "footnote": "Keine Kreditkarte erforderlich · Gäste treten mit einem Klick bei · Läuft im Browser"
+  },
+  "footer": {
+    "tagline": "Live-Untertitel, Echtzeitübersetzung und KI-Meetingberichte—für globale Teams.",
+    "product": "Produkt",
+    "company": "Unternehmen",
+    "features": "Funktionen",
+    "aiReports": "KI-Berichte",
+    "pricing": "Preise",
+    "faq": "FAQ",
+    "signIn": "Anmelden",
+    "terms": "AGB",
+    "privacy": "Datenschutz",
+    "contactSales": "Vertrieb kontaktieren",
+    "copyright": "© {{year}} Parley. Alle Rechte vorbehalten.",
+    "support": "Support:"
+  },
+  "meetingPreview": {
+    "windowTitle": "Parley — Q3-Rollout · Live-Untertitel AN",
+    "captions": "Untertitel",
+    "chat": "Chat",
+    "people": "Teilnehmer",
+    "translating": "Übersetzung EN → ES, JA",
+    "presenting": "Kenny präsentiert",
+    "footnote": "Simulierter Raum — Bildschirmfreigabe oben, Teilnehmerkacheln unten, Untertitel an der Seite."
+  },
+  "features": {
+    "eyebrow": "Funktionen",
+    "title": "Für Klarheit gebaut",
+    "subtitle": "Alles läuft im Browser—ein fokussiertes Host-Erlebnis und Gastlinks mit einem Klick.",
+    "items": {
+      "translation": {
+        "title": "Echtzeitübersetzung",
+        "description": "Teilnehmer wählen eine Sprache; Sprache wird im Meetingverlauf transkribiert und übersetzt."
+      },
+      "captions": {
+        "title": "Live-Untertitel",
+        "description": "Nebeneinander angezeigte Untertitel halten alle auf dem gleichen Stand—auch in lauten Umgebungen oder bei barrierefreien Teams."
+      },
+      "transcripts": {
+        "title": "Transkripte unter Ihrer Kontrolle",
+        "description": "Richtlinie pro Meeting zum Speichern finalisierter Zeilen auf dem Server, mit JSON- und Klartext-Download, wenn Sie Aufzeichnungen benötigen."
+      },
+      "accounts": {
+        "title": "Persönliche oder Team-Konten",
+        "description": "Starten Sie allein mit einem kostenlosen persönlichen Konto oder fügen Sie einen Team-Arbeitsbereich mit Rollen hinzu, wenn Sie gemeinsamen Zugriff benötigen."
+      }
+    }
+  },
+  "howItWorks": {
+    "eyebrow": "So funktioniert's",
+    "title": "Von der Anmeldung bis zum ersten übersetzten Anruf",
+    "subtitle": "Drei schnelle Schritte—keine Downloads, keine Einrichtung.",
+    "steps": {
+      "one": {
+        "title": "Konto erstellen",
+        "body": "Kostenlos registrieren — kein Firmenname erforderlich. Nutzen Sie ein persönliches Konto oder fügen Sie jederzeit einen Team-Arbeitsbereich hinzu."
+      },
+      "two": {
+        "title": "Meeting planen oder starten",
+        "body": "Sofort- oder geplante Sitzungen mit Richtlinien für Host-Anwesenheit und Gastlinks."
+      },
+      "three": {
+        "title": "Gastlink teilen",
+        "body": "Gäste treten mit einem Klick bei; optionale Einladungstoken halten den Zugang eng, wenn Sie das benötigen."
+      }
+    }
+  },
+  "aiReports": {
+    "eyebrow": "KI-Meetingberichte",
+    "title": "Ihr Meeting, destilliert—in jeder gesprochenen Sprache.",
+    "subtitle": "Wenn die Transkriptspeicherung aktiviert ist, verwandelt Parley das vollständige mehrsprachige Gespräch in einen ausgearbeiteten Bericht: Executive Summaries, Aufgaben mit Verantwortlichen, Entscheidungen und offene Fragen. Nur auf dem basierend, was tatsächlich gesagt wurde — Lücken werden markiert, nie erfunden.",
+    "templates": {
+      "executive": {
+        "label": "Executive Summary",
+        "desc": "Überblick, Kernpunkte, Entscheidungen, Risiken, nächste Schritte"
+      },
+      "actions": {
+        "label": "Aufgaben",
+        "desc": "Verantwortliche, Maßnahmen und Fristen aus dem Gespräch"
+      },
+      "decisions": {
+        "label": "Entscheidungen & offene Fragen",
+        "desc": "Was entschieden wurde vs. was noch beantwortet werden muss"
+      }
+    },
+    "badges": {
+      "download": "Als PDF oder Markdown herunterladen",
+      "email": "Per E-Mail an Ihr Team senden"
+    },
+    "mock": {
+      "label": "Parley-Meetingbericht",
+      "meta": "Executive Summary · In 12 s erstellt · 214 Transkriptzeilen · EN / ES / FR",
+      "keyPoints": "Kernpunkte",
+      "decisions": "Entscheidungen",
+      "nextSteps": "Nächste Schritte"
+    }
+  },
+  "pricing": {
+    "eyebrow": "Preise",
+    "title": "Kostenlos starten, mitwachsen",
+    "subtitle": "Beginnen Sie mit 60 Teilnehmerminuten pro Monat. Upgraden Sie, wenn Sie bereit sind—Abrechnung pro Organisation.",
+    "popular": "Beliebt",
+    "period": "/ Org / Monat",
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "blurb": "60 Teilnehmerminuten pro Monat — ideal zum Ausprobieren von Parley.",
+        "cta": "Kostenlos starten",
+        "features": {
+          "captions": "Live-Untertitel & Übersetzung",
+          "meetings": "Sofort- & geplante Meetings",
+          "guests": "Gastlinks",
+          "limit": "Hartes Limit bei 60 Min/Monat"
+        }
+      },
+      "starter": {
+        "name": "Starter",
+        "blurb": "Für kleine Teams, die wöchentlich mehrsprachig tagen.",
+        "cta": "Starter wählen",
+        "features": {
+          "minutes": "2.000 Teilnehmerminuten",
+          "transcripts": "Transkriptspeicherung",
+          "dashboard": "Nutzungs-Dashboard",
+          "support": "E-Mail-Support"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "blurb": "Für Teams, die Arbeitsbereichsplätze und höheres Volumen benötigen.",
+        "cta": "Pro wählen",
+        "features": {
+          "minutes": "10.000 Teilnehmerminuten",
+          "workspace": "Team-Arbeitsbereich & Einladungen",
+          "insights": "KI-Transkript-Einblicke",
+          "support": "Prioritäts-Support"
+        }
+      }
+    }
+  },
+  "faq": {
+    "eyebrow": "FAQ",
+    "title": "Häufig gestellte Fragen",
+    "subtitle": "Klare Antworten, kein Marketing-Geschwätz.",
+    "items": {
+      "guests": {
+        "q": "Brauchen Gäste ein Konto?",
+        "a": "Nein. Hosts teilen eine Gast-Beitritts-URL (und ein Einladungstoken, wenn Ihre Richtlinie es erfordert). Gäste geben einen Anzeigenamen ein und treten dem LiveKit-Raum bei."
+      },
+      "transcripts": {
+        "q": "Ist die Transkriptspeicherung erforderlich?",
+        "a": "Nein. Jedes Meeting kann optional finalisierte Untertitelzeilen auf dem Server speichern. Hosts und Org-Admins können sie später herunterladen, wenn Zeilen vorhanden sind."
+      },
+      "trial": {
+        "q": "Kann ich es vor dem Bezahlen testen?",
+        "a": "Ja. Der Free-Plan umfasst 60 Teilnehmerminuten pro Monat—ohne Kreditkarte. Upgraden Sie jederzeit, wenn Sie mehr benötigen."
+      },
+      "storage": {
+        "q": "Wo werden Daten gespeichert?",
+        "a": "Meetings werden in Echtzeit verarbeitet. Transkripte werden nur gespeichert, wenn der Host die Speicherung für ein Meeting aktiviert, und können jederzeit gelöscht werden. Alle Daten werden bei der Übertragung verschlüsselt."
+      },
+      "accuracy": {
+        "q": "Wie genau ist die Live-Übersetzung?",
+        "a": "Parley nutzt Echtzeit-Spracherkennung mit mehrsprachiger Übersetzung. Die Genauigkeit hängt von der Audioqualität ab—am besten funktioniert es mit Headset in einer ruhigen Umgebung."
+      }
+    }
+  },
+  "auth": {
+    "email": "E-Mail",
+    "password": "Passwort",
+    "passwordMin": "Passwort (mind. 8 Zeichen)",
+    "newPassword": "Neues Passwort (mind. 8 Zeichen)",
+    "confirmPassword": "Neues Passwort bestätigen",
+    "forgotPassword": "Passwort vergessen?",
+    "backHome": "Zur Startseite",
+    "backSignIn": "Zur Anmeldung",
+    "login": {
+      "title": "Anmelden",
+      "description": "Melden Sie sich an, um Meetings zu hosten, Gastlinks zu verwalten und Transkripte anzusehen.",
+      "submit": "Anmelden",
+      "submitting": "Anmeldung läuft…",
+      "noAccount": "Noch kein Konto?",
+      "createAccount": "Kostenloses Konto erstellen",
+      "success": "Angemeldet",
+      "failed": "Anmeldung fehlgeschlagen"
+    },
+    "signup": {
+      "title": "Konto erstellen",
+      "description": "Starten Sie kostenlos als Einzelperson oder registrieren Sie sich mit Ihrem Unternehmen. Sie können später auf einen Business-Plan upgraden, um Kollegen einzuladen—auch wenn Sie bereits einen bezahlten persönlichen Plan haben.",
+      "planBanner": "Sie registrieren sich für den {{plan}}-Plan — die Abrechnung bestätigen Sie nach der Kontoerstellung.",
+      "accountType": "Kontotyp",
+      "individual": "Einzelperson",
+      "individualHint": "Persönliche Nutzung — nur Ihr Name",
+      "company": "Unternehmen",
+      "companyHint": "Name des gemeinsamen Arbeitsbereichs",
+      "yourName": "Ihr Name",
+      "companyName": "Firmenname",
+      "companyHintLong": "Für Ihr Team in Meetings und Einstellungen sichtbar. Upgraden Sie später auf Pro, um Kollegen mit eigenen Logins einzuladen.",
+      "termsPrefix": "Ich stimme den",
+      "terms": "Nutzungsbedingungen",
+      "termsAnd": "und der",
+      "privacy": "Datenschutzrichtlinie",
+      "marketing": "Produktupdates und Tipps per E-Mail (optional)",
+      "submit": "Konto erstellen",
+      "submitting": "Wird erstellt…",
+      "hasAccount": "Bereits ein Konto?",
+      "success": "Konto erstellt",
+      "failed": "Registrierung fehlgeschlagen",
+      "termsRequired": "Bitte stimmen Sie den Nutzungsbedingungen und der Datenschutzrichtlinie zu",
+      "companyRequired": "Firmenname ist für Unternehmenskonten erforderlich"
+    },
+    "reset": {
+      "title": "Passwort zurücksetzen",
+      "description": "Geben Sie Ihre Konto-E-Mail ein und wir senden Ihnen einen Reset-Link.",
+      "sent": "Falls diese E-Mail existiert, haben wir einen Reset-Link gesendet.",
+      "submit": "Reset-Link senden",
+      "submitting": "Wird gesendet…",
+      "remembered": "Wieder eingefallen?",
+      "newTitle": "Neues Passwort wählen",
+      "newDescription": "Geben Sie ein neues Passwort für Ihr Konto ein.",
+      "updated": "Ihr Passwort wurde aktualisiert.",
+      "setPassword": "Neues Passwort festlegen",
+      "updating": "Wird aktualisiert…",
+      "mismatch": "Passwörter stimmen nicht überein",
+      "success": "Passwort aktualisiert",
+      "failed": "Passwort-Reset fehlgeschlagen",
+      "error": "Etwas ist schiefgelaufen. Bitte versuchen Sie es erneut."
+    }
+  },
+  "appHome": {
+    "greetingMorning": "Guten Morgen",
+    "greetingAfternoon": "Guten Tag",
+    "greetingEvening": "Guten Abend",
+    "subtitleTeam": "{{workspace}} · Hosten Sie übersetzte Meetings mit Live-Untertiteln und Gastlinks.",
+    "subtitlePersonal": "Ihr persönliches Konto · Hosten Sie übersetzte Meetings mit Live-Untertiteln und Gastlinks.",
+    "newMeeting": "Neues Meeting",
+    "schedule": "Planen",
+    "allMeetings": "Alle Meetings",
+    "inviteTeammate": "Teammitglied einladen",
+    "upNext": "Als Nächstes",
+    "recentMeetings": "Letzte Meetings",
+    "viewAll": "Alle anzeigen",
+    "noMeetings": "Noch keine Meetings",
+    "noMeetingsHint": "Erstellen Sie eines und erhalten Sie einen Gastlink zum Teilen mit Teilnehmern.",
+    "createFirst": "Erstes Meeting erstellen",
+    "planUsage": "{{plan}}-Plan",
+    "planUnknown": "Plan: —",
+    "minutesUsed": "{{minutes}} Teilnehmerminuten diesen Monat genutzt",
+    "manageBilling": "Abrechnung verwalten",
+    "loadFailed": "Arbeitsbereich konnte nicht geladen werden",
+    "todayAt": "Heute {{time}}",
+    "tomorrowAt": "Morgen {{time}}"
+  },
+  "app": {
+    "home": "Start",
+    "meetings": "Meetings",
+    "settings": "Einstellungen",
+    "admin": "Admin",
+    "helpSupport": "Hilfe & Support",
+    "logOut": "Abmelden",
+    "member": "Mitglied",
+    "account": "Konto",
+    "role": "Rolle: {{role}}",
+    "openMenu": "Menü öffnen",
+    "dismissAnnouncement": "Ankündigung schließen"
+  },
+  "language": {
+    "label": "Sprache",
+    "choose": "Sprache wählen"
+  }
+}

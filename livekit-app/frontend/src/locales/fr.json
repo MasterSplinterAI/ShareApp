@@ -1,0 +1,288 @@
+{
+  "_version": 2,
+  "nav": {
+    "features": "Fonctionnalités",
+    "aiReports": "Rapports IA",
+    "pricing": "Tarifs",
+    "faq": "FAQ",
+    "openWorkspace": "Ouvrir l'espace de travail",
+    "signIn": "Se connecter",
+    "startFree": "Commencer gratuitement"
+  },
+  "hero": {
+    "eyebrow": "Sous-titres et traduction en direct",
+    "title": "Des visioconférences que chacun peut suivre—dans sa langue.",
+    "subtitle": "Parley ajoute des sous-titres en direct et une traduction en temps réel à chaque réunion, pour que les équipes internationales restent alignées. Partagez un lien invité—sans compte requis—et conservez une transcription optionnelle si vous souhaitez un enregistrement.",
+    "startFree": "Commencer gratuitement",
+    "seePricing": "Voir les tarifs",
+    "footnote": "Sans carte bancaire · Les invités rejoignent en un clic · Fonctionne dans votre navigateur"
+  },
+  "footer": {
+    "tagline": "Sous-titres en direct, traduction en temps réel et rapports de réunion IA—pour les équipes internationales.",
+    "product": "Produit",
+    "company": "Entreprise",
+    "features": "Fonctionnalités",
+    "aiReports": "Rapports IA",
+    "pricing": "Tarifs",
+    "faq": "FAQ",
+    "signIn": "Se connecter",
+    "terms": "Conditions",
+    "privacy": "Confidentialité",
+    "contactSales": "Contacter les ventes",
+    "copyright": "© {{year}} Parley. Tous droits réservés.",
+    "support": "Assistance :"
+  },
+  "meetingPreview": {
+    "windowTitle": "Parley — Déploiement T3 · Sous-titres en direct ACTIVÉS",
+    "captions": "Sous-titres",
+    "chat": "Chat",
+    "people": "Participants",
+    "translating": "Traduction EN → ES, JA",
+    "presenting": "Kenny présente",
+    "footnote": "Salle simulée — partage d'écran en haut, vignettes des participants en bas, sous-titres sur le côté."
+  },
+  "features": {
+    "eyebrow": "Fonctionnalités",
+    "title": "Conçu pour la clarté",
+    "subtitle": "Tout fonctionne dans votre navigateur—une expérience hôte épurée et des liens invités en un clic.",
+    "items": {
+      "translation": {
+        "title": "Traduction en temps réel",
+        "description": "Les participants choisissent une langue ; la parole est transcrite et traduite au fil de la réunion."
+      },
+      "captions": {
+        "title": "Sous-titres en direct",
+        "description": "Des sous-titres côte à côte gardent tout le monde sur la même longueur d'onde—même dans un environnement bruyant ou pour les équipes soucieuses de l'accessibilité."
+      },
+      "transcripts": {
+        "title": "Transcriptions sous votre contrôle",
+        "description": "Politique par réunion pour enregistrer les lignes finalisées sur le serveur, avec téléchargement JSON et texte brut lorsque vous avez besoin d'archives."
+      },
+      "accounts": {
+        "title": "Comptes personnels ou d'équipe",
+        "description": "Commencez seul avec un compte personnel gratuit, ou ajoutez un espace de travail d'équipe avec des rôles lorsque vous avez besoin d'un accès partagé."
+      }
+    }
+  },
+  "howItWorks": {
+    "eyebrow": "Comment ça marche",
+    "title": "De l'inscription à votre premier appel traduit",
+    "subtitle": "Trois étapes rapides—sans téléchargement, sans configuration.",
+    "steps": {
+      "one": {
+        "title": "Créez votre compte",
+        "body": "Inscrivez-vous gratuitement — aucun nom d'entreprise requis. Utilisez un compte personnel ou ajoutez un espace de travail d'équipe à tout moment."
+      },
+      "two": {
+        "title": "Planifiez ou lancez une réunion",
+        "body": "Sessions instantanées ou planifiées avec des politiques de présence de l'hôte et des liens invités."
+      },
+      "three": {
+        "title": "Partagez le lien invité",
+        "body": "Les invités rejoignent en un clic ; des jetons d'invitation optionnels limitent l'accès lorsque vous en avez besoin."
+      }
+    }
+  },
+  "aiReports": {
+    "eyebrow": "Rapports de réunion IA",
+    "title": "Votre réunion, distillée—dans toutes les langues parlées.",
+    "subtitle": "Lorsque le stockage des transcriptions est activé, Parley transforme la conversation multilingue complète en un rapport soigné : résumés exécutifs, actions avec responsables, décisions et questions ouvertes. Basé uniquement sur ce qui a réellement été dit — les lacunes sont signalées, jamais inventées.",
+    "templates": {
+      "executive": {
+        "label": "Résumé exécutif",
+        "desc": "Vue d'ensemble, points clés, décisions, risques, prochaines étapes"
+      },
+      "actions": {
+        "label": "Actions à mener",
+        "desc": "Responsables, actions et échéances tirées de la conversation"
+      },
+      "decisions": {
+        "label": "Décisions et questions ouvertes",
+        "desc": "Ce qui a été décidé par rapport à ce qui reste à trancher"
+      }
+    },
+    "badges": {
+      "download": "Télécharger en PDF ou Markdown",
+      "email": "Envoyer par e-mail à votre équipe"
+    },
+    "mock": {
+      "label": "Rapport de réunion Parley",
+      "meta": "Résumé exécutif · Généré en 12 s · 214 lignes de transcription · EN / ES / FR",
+      "keyPoints": "Points clés",
+      "decisions": "Décisions",
+      "nextSteps": "Prochaines étapes"
+    }
+  },
+  "pricing": {
+    "eyebrow": "Tarifs",
+    "title": "Commencez gratuitement, évoluez avec votre croissance",
+    "subtitle": "Démarrez avec 60 minutes-participant par mois. Passez à un plan supérieur quand vous êtes prêt—facturation par organisation.",
+    "popular": "Populaire",
+    "period": "/ org / mois",
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "blurb": "60 minutes-participant par mois — idéal pour essayer Parley.",
+        "cta": "Commencer gratuitement",
+        "features": {
+          "captions": "Sous-titres en direct et traduction",
+          "meetings": "Réunions instantanées et planifiées",
+          "guests": "Liens invités",
+          "limit": "Arrêt strict à 60 min/mois"
+        }
+      },
+      "starter": {
+        "name": "Starter",
+        "blurb": "Pour les petites équipes qui se réunissent en plusieurs langues chaque semaine.",
+        "cta": "Choisir Starter",
+        "features": {
+          "minutes": "2 000 minutes-participant",
+          "transcripts": "Stockage des transcriptions",
+          "dashboard": "Tableau de bord d'utilisation",
+          "support": "Assistance par e-mail"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "blurb": "Pour les équipes qui ont besoin de sièges d'espace de travail et d'un volume plus élevé.",
+        "cta": "Choisir Pro",
+        "features": {
+          "minutes": "10 000 minutes-participant",
+          "workspace": "Espace de travail d'équipe et invitations",
+          "insights": "Analyses IA des transcriptions",
+          "support": "Assistance prioritaire"
+        }
+      }
+    }
+  },
+  "faq": {
+    "eyebrow": "FAQ",
+    "title": "Questions fréquentes",
+    "subtitle": "Des réponses directes, sans discours marketing.",
+    "items": {
+      "guests": {
+        "q": "Les invités ont-ils besoin d'un compte ?",
+        "a": "Non. Les hôtes partagent une URL de participation invité (et un jeton d'invitation lorsque votre politique l'exige). Les invités saisissent un nom d'affichage et rejoignent la salle LiveKit."
+      },
+      "transcripts": {
+        "q": "Le stockage des transcriptions est-il obligatoire ?",
+        "a": "Non. Chaque réunion peut choisir d'enregistrer les lignes de sous-titres finalisées sur le serveur. Les hôtes et administrateurs de l'organisation peuvent les télécharger ultérieurement lorsqu'elles existent."
+      },
+      "trial": {
+        "q": "Puis-je essayer avant de payer ?",
+        "a": "Oui. Le plan Free comprend 60 minutes-participant par mois—sans carte bancaire. Passez à un plan supérieur à tout moment lorsque vous en avez besoin."
+      },
+      "storage": {
+        "q": "Où sont stockées les données ?",
+        "a": "Les réunions sont traitées en temps réel. Les transcriptions ne sont stockées que lorsque l'hôte active le stockage pour une réunion, et peuvent être supprimées à tout moment. Toutes les données sont chiffrées en transit."
+      },
+      "accuracy": {
+        "q": "Quelle est la précision de la traduction en direct ?",
+        "a": "Parley utilise la reconnaissance vocale en temps réel avec traduction multilingue. La précision dépend de la qualité audio—elle est optimale lorsque les participants utilisent un casque dans un environnement calme."
+      }
+    }
+  },
+  "auth": {
+    "email": "E-mail",
+    "password": "Mot de passe",
+    "passwordMin": "Mot de passe (8 caractères min.)",
+    "newPassword": "Nouveau mot de passe (8 caractères min.)",
+    "confirmPassword": "Confirmer le nouveau mot de passe",
+    "forgotPassword": "Mot de passe oublié ?",
+    "backHome": "Retour à l'accueil",
+    "backSignIn": "Retour à la connexion",
+    "login": {
+      "title": "Se connecter",
+      "description": "Connectez-vous pour organiser des réunions, gérer les liens invités et consulter les transcriptions.",
+      "submit": "Se connecter",
+      "submitting": "Connexion en cours…",
+      "noAccount": "Pas de compte ?",
+      "createAccount": "Créer un compte gratuit",
+      "success": "Connecté",
+      "failed": "Échec de la connexion"
+    },
+    "signup": {
+      "title": "Créer un compte",
+      "description": "Commencez gratuitement en tant que particulier, ou inscrivez-vous avec votre entreprise. Vous pourrez passer à un plan professionnel plus tard pour inviter des collègues—même si vous êtes déjà sur un plan personnel payant.",
+      "planBanner": "Vous vous inscrivez au plan {{plan}} — vous confirmerez la facturation après la création de votre compte.",
+      "accountType": "Type de compte",
+      "individual": "Individuel",
+      "individualHint": "Usage personnel — votre nom uniquement",
+      "company": "Entreprise",
+      "companyHint": "Nom de l'espace de travail partagé",
+      "yourName": "Votre nom",
+      "companyName": "Nom de l'entreprise",
+      "companyHintLong": "Visible par votre équipe dans les réunions et les paramètres. Passez à Pro plus tard pour inviter des collègues avec leurs propres identifiants.",
+      "termsPrefix": "J'accepte les",
+      "terms": "Conditions d'utilisation",
+      "termsAnd": "et la",
+      "privacy": "Politique de confidentialité",
+      "marketing": "M'envoyer des mises à jour produit et des conseils (facultatif)",
+      "submit": "Créer un compte",
+      "submitting": "Création en cours…",
+      "hasAccount": "Vous avez déjà un compte ?",
+      "success": "Compte créé",
+      "failed": "Échec de l'inscription",
+      "termsRequired": "Veuillez accepter les Conditions d'utilisation et la Politique de confidentialité",
+      "companyRequired": "Le nom de l'entreprise est requis pour les comptes entreprise"
+    },
+    "reset": {
+      "title": "Réinitialiser le mot de passe",
+      "description": "Saisissez l'e-mail de votre compte et nous vous enverrons un lien de réinitialisation.",
+      "sent": "Si cet e-mail existe, nous avons envoyé un lien de réinitialisation.",
+      "submit": "Envoyer le lien de réinitialisation",
+      "submitting": "Envoi en cours…",
+      "remembered": "Vous vous en souvenez ?",
+      "newTitle": "Choisir un nouveau mot de passe",
+      "newDescription": "Saisissez un nouveau mot de passe pour votre compte.",
+      "updated": "Votre mot de passe a été mis à jour.",
+      "setPassword": "Définir le nouveau mot de passe",
+      "updating": "Mise à jour en cours…",
+      "mismatch": "Les mots de passe ne correspondent pas",
+      "success": "Mot de passe mis à jour",
+      "failed": "Échec de la réinitialisation du mot de passe",
+      "error": "Une erreur s'est produite. Veuillez réessayer."
+    }
+  },
+  "appHome": {
+    "greetingMorning": "Bonjour",
+    "greetingAfternoon": "Bon après-midi",
+    "greetingEvening": "Bonsoir",
+    "subtitleTeam": "{{workspace}} · Organisez des réunions traduites avec sous-titres en direct et liens invités.",
+    "subtitlePersonal": "Votre compte personnel · Organisez des réunions traduites avec sous-titres en direct et liens invités.",
+    "newMeeting": "Nouvelle réunion",
+    "schedule": "Planifier",
+    "allMeetings": "Toutes les réunions",
+    "inviteTeammate": "Inviter un collègue",
+    "upNext": "À venir",
+    "recentMeetings": "Réunions récentes",
+    "viewAll": "Tout voir",
+    "noMeetings": "Aucune réunion pour l'instant",
+    "noMeetingsHint": "Créez-en une et vous obtiendrez un lien invité à partager avec les participants.",
+    "createFirst": "Créez votre première réunion",
+    "planUsage": "Plan {{plan}}",
+    "planUnknown": "Plan : —",
+    "minutesUsed": "{{minutes}} minutes-participant utilisées ce mois-ci",
+    "manageBilling": "Gérer la facturation",
+    "loadFailed": "Impossible de charger l'espace de travail",
+    "todayAt": "Aujourd'hui {{time}}",
+    "tomorrowAt": "Demain {{time}}"
+  },
+  "app": {
+    "home": "Accueil",
+    "meetings": "Réunions",
+    "settings": "Paramètres",
+    "admin": "Admin",
+    "helpSupport": "Aide et assistance",
+    "logOut": "Se déconnecter",
+    "member": "Membre",
+    "account": "Compte",
+    "role": "Rôle : {{role}}",
+    "openMenu": "Ouvrir le menu",
+    "dismissAnnouncement": "Fermer l'annonce"
+  },
+  "language": {
+    "label": "Langue",
+    "choose": "Choisir la langue"
+  }
+}

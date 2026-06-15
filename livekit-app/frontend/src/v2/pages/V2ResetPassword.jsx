@@ -6,8 +6,8 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { useTranslation } from '../../lib/i18n/I18nProvider';
 
-// Base URL resolution mirrors src/services/apiV2.js (kept inline per module boundaries).
 const isNgrok =
   window.location.hostname.includes('ngrok.app') ||
   window.location.hostname.includes('ngrok-free.app') ||
@@ -35,6 +35,7 @@ export default function V2ResetPassword() {
 }
 
 function RequestResetForm() {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -46,8 +47,7 @@ function RequestResetForm() {
       await axios.post(`${API_V2_BASE}/auth/forgot-password`, { email });
       setSent(true);
     } catch {
-      // Endpoint always returns 200; only network failures land here.
-      toast.error('Something went wrong. Please try again.');
+      toast.error(t('auth.reset.error'));
     } finally {
       setLoading(false);
     }
@@ -56,18 +56,16 @@ function RequestResetForm() {
   return (
     <Card className="border-border/80 shadow-lg">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">Reset password</CardTitle>
-        <CardDescription>Enter your account email and we&apos;ll send you a reset link.</CardDescription>
+        <CardTitle className="text-2xl">{t('auth.reset.title')}</CardTitle>
+        <CardDescription>{t('auth.reset.description')}</CardDescription>
       </CardHeader>
       <CardContent>
         {sent ? (
-          <p className="rounded-md border border-border/80 bg-muted/50 p-4 text-sm text-foreground">
-            If that email exists, we sent a reset link.
-          </p>
+          <p className="rounded-md border border-border/80 bg-muted/50 p-4 text-sm text-foreground">{t('auth.reset.sent')}</p>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('auth.email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -78,14 +76,14 @@ function RequestResetForm() {
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Sending…' : 'Send reset link'}
+              {loading ? t('auth.reset.submitting') : t('auth.reset.submit')}
             </Button>
           </form>
         )}
         <p className="mt-6 text-center text-sm text-muted-foreground">
-          Remembered it?{' '}
+          {t('auth.reset.remembered')}{' '}
           <Link to="/v2/login" className="font-medium text-primary hover:underline">
-            Sign in
+            {t('nav.signIn')}
           </Link>
         </p>
       </CardContent>
@@ -94,6 +92,7 @@ function RequestResetForm() {
 }
 
 function NewPasswordForm({ token }) {
+  const { t } = useTranslation();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [loading, setLoading] = useState(false);
@@ -102,16 +101,16 @@ function NewPasswordForm({ token }) {
   const submit = async (e) => {
     e.preventDefault();
     if (password !== confirm) {
-      toast.error('Passwords do not match');
+      toast.error(t('auth.reset.mismatch'));
       return;
     }
     setLoading(true);
     try {
       await axios.post(`${API_V2_BASE}/auth/reset-password`, { token, password });
       setDone(true);
-      toast.success('Password updated');
+      toast.success(t('auth.reset.success'));
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Password reset failed');
+      toast.error(err.response?.data?.error || t('auth.reset.failed'));
     } finally {
       setLoading(false);
     }
@@ -120,23 +119,23 @@ function NewPasswordForm({ token }) {
   return (
     <Card className="border-border/80 shadow-lg">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl">Choose a new password</CardTitle>
-        <CardDescription>Enter a new password for your account.</CardDescription>
+        <CardTitle className="text-2xl">{t('auth.reset.newTitle')}</CardTitle>
+        <CardDescription>{t('auth.reset.newDescription')}</CardDescription>
       </CardHeader>
       <CardContent>
         {done ? (
           <div className="space-y-4">
             <p className="rounded-md border border-border/80 bg-muted/50 p-4 text-sm text-foreground">
-              Your password has been updated.
+              {t('auth.reset.updated')}
             </p>
             <Button className="w-full" asChild>
-              <Link to="/v2/login">Sign in</Link>
+              <Link to="/v2/login">{t('nav.signIn')}</Link>
             </Button>
           </div>
         ) : (
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="password">New password (min 8 characters)</Label>
+              <Label htmlFor="password">{t('auth.newPassword')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -148,7 +147,7 @@ function NewPasswordForm({ token }) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirm">Confirm new password</Label>
+              <Label htmlFor="confirm">{t('auth.confirmPassword')}</Label>
               <Input
                 id="confirm"
                 type="password"
@@ -160,13 +159,13 @@ function NewPasswordForm({ token }) {
               />
             </div>
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Updating…' : 'Set new password'}
+              {loading ? t('auth.reset.updating') : t('auth.reset.setPassword')}
             </Button>
           </form>
         )}
         <p className="mt-6 text-center text-sm text-muted-foreground">
           <Link to="/v2/login" className="font-medium text-primary hover:underline">
-            Back to sign in
+            {t('auth.backSignIn')}
           </Link>
         </p>
       </CardContent>

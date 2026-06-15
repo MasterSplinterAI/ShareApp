@@ -1,0 +1,288 @@
+{
+  "_version": 2,
+  "nav": {
+    "features": "功能",
+    "aiReports": "AI 报告",
+    "pricing": "定价",
+    "faq": "常见问题",
+    "openWorkspace": "打开工作区",
+    "signIn": "登录",
+    "startFree": "免费开始"
+  },
+  "hero": {
+    "eyebrow": "实时字幕与翻译",
+    "title": "人人都能跟上的视频会议——用自己的语言。",
+    "subtitle": "Parley 为每场会议添加实时字幕和即时翻译，让全球团队保持同步。分享访客链接——无需账号——需要记录时可选择保存文字稿。",
+    "startFree": "免费开始",
+    "seePricing": "查看定价",
+    "footnote": "无需信用卡 · 访客一键加入 · 在浏览器中运行"
+  },
+  "footer": {
+    "tagline": "实时字幕、即时翻译和 AI 会议报告——为全球团队打造。",
+    "product": "产品",
+    "company": "公司",
+    "features": "功能",
+    "aiReports": "AI 报告",
+    "pricing": "定价",
+    "faq": "常见问题",
+    "signIn": "登录",
+    "terms": "条款",
+    "privacy": "隐私",
+    "contactSales": "联系销售",
+    "copyright": "© {{year}} Parley. 保留所有权利。",
+    "support": "支持："
+  },
+  "meetingPreview": {
+    "windowTitle": "Parley — Q3 上线 · 实时字幕已开启",
+    "captions": "字幕",
+    "chat": "聊天",
+    "people": "参会者",
+    "translating": "正在翻译 EN → ES, JA",
+    "presenting": "Kenny 正在演示",
+    "footnote": "模拟会议室 — 顶部屏幕共享，底部参会者磁贴，侧边字幕。"
+  },
+  "features": {
+    "eyebrow": "功能",
+    "title": "为清晰而生",
+    "subtitle": "一切都在浏览器中运行——专注的主持人体验与一键访客链接。",
+    "items": {
+      "translation": {
+        "title": "实时翻译",
+        "description": "参会者选择语言通道；语音在会议进行中实时转写并翻译。"
+      },
+      "captions": {
+        "title": "实时字幕",
+        "description": "并排字幕让所有人保持同步——即使在嘈杂环境或注重无障碍的团队中。"
+      },
+      "transcripts": {
+        "title": "由您掌控的文字稿",
+        "description": "按会议设置是否在服务器保存定稿行，需要记录时可下载 JSON 和纯文本。"
+      },
+      "accounts": {
+        "title": "个人或团队账号",
+        "description": "先用免费个人账号单独开始，需要共享访问时再添加带角色的团队工作区。"
+      }
+    }
+  },
+  "howItWorks": {
+    "eyebrow": "使用方式",
+    "title": "从注册到第一次翻译通话",
+    "subtitle": "三个简单步骤——无需下载，无需配置。",
+    "steps": {
+      "one": {
+        "title": "创建账号",
+        "body": "免费注册 — 无需公司名称。使用个人账号，或随时添加团队工作区。"
+      },
+      "two": {
+        "title": "预约或开始会议",
+        "body": "即时或预约会议，支持主持人出席策略和访客链接。"
+      },
+      "three": {
+        "title": "分享访客链接",
+        "body": "访客一键加入；需要时可使用可选邀请令牌限制访问。"
+      }
+    }
+  },
+  "aiReports": {
+    "eyebrow": "AI 会议报告",
+    "title": "会议精华——以实际使用的任何语言呈现。",
+    "subtitle": "开启文字稿存储后，Parley 将完整的多语言对话整理为精炼报告：执行摘要、带负责人的行动项、决策与待解问题。仅基于实际发言内容——缺口会标注，绝不编造。",
+    "templates": {
+      "executive": {
+        "label": "执行摘要",
+        "desc": "概览、要点、决策、风险、后续步骤"
+      },
+      "actions": {
+        "label": "行动项",
+        "desc": "从对话中提取的负责人、行动与截止日期"
+      },
+      "decisions": {
+        "label": "决策与待解问题",
+        "desc": "已决定的事项与仍需回答的问题"
+      }
+    },
+    "badges": {
+      "download": "下载为 PDF 或 Markdown",
+      "email": "邮件发送给团队"
+    },
+    "mock": {
+      "label": "Parley 会议报告",
+      "meta": "执行摘要 · 12 秒生成 · 214 行文字稿 · EN / ES / FR",
+      "keyPoints": "要点",
+      "decisions": "决策",
+      "nextSteps": "后续步骤"
+    }
+  },
+  "pricing": {
+    "eyebrow": "定价",
+    "title": "免费起步，随业务增长扩展",
+    "subtitle": "每月 60 参与者分钟起步。准备好后再升级——按组织计费。",
+    "popular": "热门",
+    "period": "/ 组织 / 月",
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "blurb": "每月 60 参与者分钟 — 非常适合试用 Parley。",
+        "cta": "免费开始",
+        "features": {
+          "captions": "实时字幕与翻译",
+          "meetings": "即时与预约会议",
+          "guests": "访客链接",
+          "limit": "每月 60 分钟硬性上限"
+        }
+      },
+      "starter": {
+        "name": "Starter",
+        "blurb": "适合每周进行多语言会议的小团队。",
+        "cta": "获取 Starter",
+        "features": {
+          "minutes": "2,000 参与者分钟",
+          "transcripts": "文字稿存储",
+          "dashboard": "用量仪表板",
+          "support": "邮件支持"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "blurb": "适合需要工作区席位和更高用量的团队。",
+        "cta": "获取 Pro",
+        "features": {
+          "minutes": "10,000 参与者分钟",
+          "workspace": "团队工作区与邀请",
+          "insights": "AI 文字稿洞察",
+          "support": "优先支持"
+        }
+      }
+    }
+  },
+  "faq": {
+    "eyebrow": "常见问题",
+    "title": "常见问题",
+    "subtitle": "直截了当的回答，没有营销废话。",
+    "items": {
+      "guests": {
+        "q": "访客需要账号吗？",
+        "a": "不需要。主持人分享访客加入 URL（若策略要求则附带邀请令牌）。访客输入显示名称后加入 LiveKit 房间。"
+      },
+      "transcripts": {
+        "q": "必须存储文字稿吗？",
+        "a": "不必。每场会议可选择是否在服务器保存定稿字幕行。主持人和组织管理员可在有内容后下载。"
+      },
+      "trial": {
+        "q": "付款前可以试用吗？",
+        "a": "可以。Free 计划包含每月 60 参与者分钟——无需信用卡。需要更多时随时升级。"
+      },
+      "storage": {
+        "q": "数据存储在哪里？",
+        "a": "会议实时处理。仅当主持人为某场会议启用存储时才保存文字稿，且可随时删除。所有数据在传输中加密。"
+      },
+      "accuracy": {
+        "q": "实时翻译准确度如何？",
+        "a": "Parley 使用带多语言翻译的实时语音识别。准确度取决于音频质量——在安静环境中使用耳机效果最佳。"
+      }
+    }
+  },
+  "auth": {
+    "email": "邮箱",
+    "password": "密码",
+    "passwordMin": "密码（至少 8 个字符）",
+    "newPassword": "新密码（至少 8 个字符）",
+    "confirmPassword": "确认新密码",
+    "forgotPassword": "忘记密码？",
+    "backHome": "返回首页",
+    "backSignIn": "返回登录",
+    "login": {
+      "title": "登录",
+      "description": "登录以主持会议、管理访客链接并查看文字稿。",
+      "submit": "登录",
+      "submitting": "正在登录…",
+      "noAccount": "没有账号？",
+      "createAccount": "创建免费账号",
+      "success": "已登录",
+      "failed": "登录失败"
+    },
+    "signup": {
+      "title": "创建账号",
+      "description": "以个人身份免费开始，或用公司信息注册。之后可升级到商业计划邀请同事——即使您已在付费个人计划上也可以。",
+      "planBanner": "您正在注册 {{plan}} 计划 — 创建账号后将确认计费。",
+      "accountType": "账号类型",
+      "individual": "个人",
+      "individualHint": "个人使用 — 仅需您的姓名",
+      "company": "公司",
+      "companyHint": "共享工作区名称",
+      "yourName": "您的姓名",
+      "companyName": "公司名称",
+      "companyHintLong": "在会议和设置中对团队可见。之后升级到 Pro 可邀请同事使用独立登录。",
+      "termsPrefix": "我同意",
+      "terms": "服务条款",
+      "termsAnd": "和",
+      "privacy": "隐私政策",
+      "marketing": "通过邮件接收产品更新与技巧（可选）",
+      "submit": "创建账号",
+      "submitting": "正在创建…",
+      "hasAccount": "已有账号？",
+      "success": "账号已创建",
+      "failed": "注册失败",
+      "termsRequired": "请同意服务条款和隐私政策",
+      "companyRequired": "公司账号需要填写公司名称"
+    },
+    "reset": {
+      "title": "重置密码",
+      "description": "输入您的账号邮箱，我们将发送重置链接。",
+      "sent": "若该邮箱存在，我们已发送重置链接。",
+      "submit": "发送重置链接",
+      "submitting": "正在发送…",
+      "remembered": "想起来了？",
+      "newTitle": "设置新密码",
+      "newDescription": "为您的账号输入新密码。",
+      "updated": "您的密码已更新。",
+      "setPassword": "设置新密码",
+      "updating": "正在更新…",
+      "mismatch": "两次密码不一致",
+      "success": "密码已更新",
+      "failed": "密码重置失败",
+      "error": "出错了，请重试。"
+    }
+  },
+  "appHome": {
+    "greetingMorning": "早上好",
+    "greetingAfternoon": "下午好",
+    "greetingEvening": "晚上好",
+    "subtitleTeam": "{{workspace}} · 主持带实时字幕和访客链接的翻译会议。",
+    "subtitlePersonal": "您的个人账号 · 主持带实时字幕和访客链接的翻译会议。",
+    "newMeeting": "新会议",
+    "schedule": "预约",
+    "allMeetings": "全部会议",
+    "inviteTeammate": "邀请同事",
+    "upNext": "即将到来",
+    "recentMeetings": "最近会议",
+    "viewAll": "查看全部",
+    "noMeetings": "暂无会议",
+    "noMeetingsHint": "创建一个会议即可获得可分享给参会者的访客链接。",
+    "createFirst": "创建您的第一场会议",
+    "planUsage": "{{plan}} 计划",
+    "planUnknown": "计划：—",
+    "minutesUsed": "本月已使用 {{minutes}} 参与者分钟",
+    "manageBilling": "管理账单",
+    "loadFailed": "无法加载工作区",
+    "todayAt": "今天 {{time}}",
+    "tomorrowAt": "明天 {{time}}"
+  },
+  "app": {
+    "home": "首页",
+    "meetings": "会议",
+    "settings": "设置",
+    "admin": "管理",
+    "helpSupport": "帮助与支持",
+    "logOut": "退出登录",
+    "member": "成员",
+    "account": "账号",
+    "role": "角色：{{role}}",
+    "openMenu": "打开菜单",
+    "dismissAnnouncement": "关闭公告"
+  },
+  "language": {
+    "label": "语言",
+    "choose": "选择语言"
+  }
+}

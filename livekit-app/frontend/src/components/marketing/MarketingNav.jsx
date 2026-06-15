@@ -1,11 +1,14 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { Button } from '../ui/button';
+import { LanguageSwitcher } from '../LanguageSwitcher';
+import { useTranslation } from '../../lib/i18n/I18nProvider';
 
 const navLinkClass =
   'rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 export function MarketingNav() {
+  const { t } = useTranslation();
   const [hasToken, setHasToken] = useState(() =>
     typeof localStorage !== 'undefined' ? !!localStorage.getItem('v2_token') : false
   );
@@ -29,30 +32,31 @@ export function MarketingNav() {
         >
           Parley
         </Link>
-        <nav className="flex items-center gap-3 sm:gap-4" aria-label="Primary">
+        <nav className="flex items-center gap-1 sm:gap-2" aria-label="Primary">
           <a href="/#features" className={`hidden ${navLinkClass} sm:inline`}>
-            Features
+            {t('nav.features')}
           </a>
           <a href="/#ai-reports" className={`hidden ${navLinkClass} md:inline`}>
-            AI reports
+            {t('nav.aiReports')}
           </a>
           <a href="/#pricing" className={`hidden ${navLinkClass} sm:inline`}>
-            Pricing
+            {t('nav.pricing')}
           </a>
           <a href="/#faq" className={`hidden ${navLinkClass} md:inline`}>
-            FAQ
+            {t('nav.faq')}
           </a>
+          <LanguageSwitcher />
           {hasToken ? (
             <Button asChild size="sm">
-              <Link to="/v2/app">Open workspace</Link>
+              <Link to="/v2/app">{t('nav.openWorkspace')}</Link>
             </Button>
           ) : (
             <>
               <Button variant="ghost" size="sm" asChild>
-                <Link to="/v2/login">Sign in</Link>
+                <Link to="/v2/login">{t('nav.signIn')}</Link>
               </Button>
               <Button size="sm" asChild>
-                <Link to="/v2/signup">Start free</Link>
+                <Link to="/v2/signup">{t('nav.startFree')}</Link>
               </Button>
             </>
           )}

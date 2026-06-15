@@ -16,6 +16,8 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '../../components/ui/sheet';
 import { cn } from '../../lib/utils';
 import { workspaceLabel, workspaceKindLabel } from '../lib/workspaceDisplay';
+import { LanguageSwitcher } from '../../components/LanguageSwitcher';
+import { useTranslation } from '../../lib/i18n/I18nProvider';
 
 function navLinkClass({ isActive }) {
   return cn(
@@ -28,24 +30,25 @@ function navLinkClass({ isActive }) {
 }
 
 function SidebarNav({ onNavigate, isSuperadmin }) {
+  const { t } = useTranslation();
   return (
     <nav className="flex flex-1 flex-col gap-1 px-2 py-4" onClick={onNavigate}>
       <NavLink to="/v2/app" end className={navLinkClass}>
         <Home className="h-4 w-4 shrink-0" />
-        Home
+        {t('app.home')}
       </NavLink>
       <NavLink to="/v2/app/meetings" className={navLinkClass}>
         <Video className="h-4 w-4 shrink-0" />
-        Meetings
+        {t('app.meetings')}
       </NavLink>
       <NavLink to="/v2/app/settings" className={navLinkClass}>
         <Settings className="h-4 w-4 shrink-0" />
-        Settings
+        {t('app.settings')}
       </NavLink>
       {isSuperadmin && (
         <NavLink to="/v2/app/admin" end className={navLinkClass}>
           <Shield className="h-4 w-4 shrink-0 opacity-70" />
-          Admin
+          {t('app.admin')}
         </NavLink>
       )}
     </nav>
@@ -53,6 +56,7 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
 }
 
 export default function V2AppShell({ me, onLogout }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -122,30 +126,37 @@ export default function V2AppShell({ me, onLogout }) {
         </div>
       </div>
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
-      <div className="mt-auto border-t border-border/60 p-3">
+      <div className="mt-auto border-t border-border/60 p-3 space-y-2">
+        <div className="flex justify-center px-1">
+          <LanguageSwitcher className="w-full justify-center" />
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="h-auto w-full justify-start gap-2 rounded-lg border-border/60 px-3 py-2">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
                 {initial}
               </span>
-              <span className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">{me?.user?.email || 'Account'}</span>
+              <span className="min-w-0 flex-1 truncate text-left text-xs text-muted-foreground">
+                {me?.user?.email || t('app.account')}
+              </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="top" align="start" className="w-56">
             <DropdownMenuLabel className="font-normal">
               <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium leading-none">{displayName || 'Member'}</p>
+                <p className="text-sm font-medium leading-none">{displayName || t('app.member')}</p>
                 <p className="text-xs leading-none text-muted-foreground">{me?.user?.email}</p>
                 {me?.role && (
-                  <p className="pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">Role: {me.role}</p>
+                  <p className="pt-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+                    {t('app.role', { role: me.role })}
+                  </p>
                 )}
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => setHelpOpen(true)}>
               <LifeBuoy className="mr-2 h-4 w-4" />
-              Help & support
+              {t('app.helpSupport')}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
@@ -154,7 +165,7 @@ export default function V2AppShell({ me, onLogout }) {
               className="text-destructive focus:text-destructive"
             >
               <LogOut className="mr-2 h-4 w-4" />
-              Log out
+              {t('app.logOut')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -172,7 +183,7 @@ export default function V2AppShell({ me, onLogout }) {
         <header className="app-sidebar sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/70 px-4 backdrop-blur-md md:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
-              <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label="Open menu">
+              <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label={t('app.openMenu')}>
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
@@ -180,9 +191,10 @@ export default function V2AppShell({ me, onLogout }) {
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{sidebarBody}</div>
             </SheetContent>
           </Sheet>
-          <Link to="/v2/app" className="truncate text-sm font-semibold">
+          <Link to="/v2/app" className="min-w-0 flex-1 truncate text-sm font-semibold">
             Parley
           </Link>
+          <LanguageSwitcher compact />
         </header>
 
         <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
@@ -199,7 +211,7 @@ export default function V2AppShell({ me, onLogout }) {
                     type="button"
                     onClick={() => dismissAnnouncement(a.id)}
                     className="shrink-0 rounded p-1 opacity-70 hover:opacity-100"
-                    aria-label="Dismiss announcement"
+                    aria-label={t('app.dismissAnnouncement')}
                   >
                     <X className="h-4 w-4" />
                   </button>

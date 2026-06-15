@@ -7,14 +7,16 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { useTranslation } from '../../lib/i18n/I18nProvider';
 
-const PAID_PLANS = { starter: 'Starter', pro: 'Pro' };
+const PAID_PLANS = new Set(['starter', 'pro']);
 
 export default function V2Signup() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const planParam = (searchParams.get('plan') || '').toLowerCase();
-  const planName = PAID_PLANS[planParam] || null;
+  const planName = PAID_PLANS.has(planParam) ? t(`pricing.tiers.${planParam}.name`) : null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -33,11 +35,11 @@ export default function V2Signup() {
   const submit = async (e) => {
     e.preventDefault();
     if (!agreedToTerms) {
-      toast.error('Please agree to the Terms of Service and Privacy Policy');
+      toast.error(t('auth.signup.termsRequired'));
       return;
     }
     if (accountType === 'company' && !companyName.trim()) {
-      toast.error('Company name is required for company accounts');
+      toast.error(t('auth.signup.companyRequired'));
       return;
     }
     setLoading(true);
@@ -51,14 +53,14 @@ export default function V2Signup() {
         marketingEmail: marketingEmail || undefined,
       });
       localStorage.setItem('v2_token', data.token);
-      toast.success('Account created');
+      toast.success(t('auth.signup.success'));
       if (planName) {
         navigate(`/v2/app/settings?checkout=${planParam}`, { replace: true });
       } else {
         navigate('/v2/app', { replace: true });
       }
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Signup failed');
+      toast.error(err.response?.data?.error || t('auth.signup.failed'));
     } finally {
       setLoading(false);
     }
@@ -68,22 +70,18 @@ export default function V2Signup() {
     <div className="mx-auto max-w-md">
       <Card className="border-border/80 shadow-lg">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">Create account</CardTitle>
-          <CardDescription>
-            Start free as an individual, or sign up with your company. You can upgrade to a business plan later to invite
-            colleagues—even if you&apos;re already on a paid personal plan.
-          </CardDescription>
+          <CardTitle className="text-2xl">{t('auth.signup.title')}</CardTitle>
+          <CardDescription>{t('auth.signup.description')}</CardDescription>
         </CardHeader>
         <CardContent>
           {planName && (
             <div className="mb-4 rounded-md border border-primary/30 bg-primary/5 p-3 text-sm text-foreground">
-              You&apos;re signing up for the <span className="font-medium">{planName}</span> plan — you&apos;ll confirm
-              billing after creating your account.
+              {t('auth.signup.planBanner', { plan: planName })}
             </div>
           )}
           <form onSubmit={submit} className="space-y-4">
             <div className="space-y-2">
-              <Label>Account type</Label>
+              <Label>{t('auth.signup.accountType')}</Label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -96,8 +94,8 @@ export default function V2Signup() {
                       : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                   )}
                 >
-                  <span className="block font-medium">Individual</span>
-                  <span className="mt-0.5 block text-xs opacity-80">Personal use — just your name</span>
+                  <span className="block font-medium">{t('auth.signup.individual')}</span>
+                  <span className="mt-0.5 block text-xs opacity-80">{t('auth.signup.individualHint')}</span>
                 </button>
                 <button
                   type="button"
@@ -110,13 +108,13 @@ export default function V2Signup() {
                       : 'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground'
                   )}
                 >
-                  <span className="block font-medium">Company</span>
-                  <span className="mt-0.5 block text-xs opacity-80">Shared workspace name</span>
+                  <span className="block font-medium">{t('auth.signup.company')}</span>
+                  <span className="mt-0.5 block text-xs opacity-80">{t('auth.signup.companyHint')}</span>
                 </button>
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="display">Your name</Label>
+              <Label htmlFor="display">{t('auth.signup.yourName')}</Label>
               <Input
                 id="display"
                 type="text"
@@ -128,7 +126,7 @@ export default function V2Signup() {
             </div>
             {accountType === 'company' && (
               <div className="space-y-2">
-                <Label htmlFor="company">Company name</Label>
+                <Label htmlFor="company">{t('auth.signup.companyName')}</Label>
                 <Input
                   id="company"
                   type="text"
@@ -138,18 +136,15 @@ export default function V2Signup() {
                   required
                   autoComplete="organization"
                 />
-                <p className="text-xs text-muted-foreground">
-                  Shown to your team in meetings and settings. Upgrade to Pro later to invite colleagues with their own
-                  logins.
-                </p>
+                <p className="text-xs text-muted-foreground">{t('auth.signup.companyHintLong')}</p>
               </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('auth.email')}</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password (min 8 characters)</Label>
+              <Label htmlFor="password">{t('auth.passwordMin')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -169,23 +164,13 @@ export default function V2Signup() {
                 className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
               />
               <Label htmlFor="terms" className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground">
-                I agree to the{' '}
-                <a
-                  href="/terms"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-primary hover:underline"
-                >
-                  Terms of Service
+                {t('auth.signup.termsPrefix')}{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">
+                  {t('auth.signup.terms')}
                 </a>{' '}
-                and{' '}
-                <a
-                  href="/privacy"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-primary hover:underline"
-                >
-                  Privacy Policy
+                {t('auth.signup.termsAnd')}{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" className="font-medium text-primary hover:underline">
+                  {t('auth.signup.privacy')}
                 </a>
               </Label>
             </div>
@@ -197,21 +182,18 @@ export default function V2Signup() {
                 onChange={(e) => setMarketingEmail(e.target.checked)}
                 className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
               />
-              <Label
-                htmlFor="marketing-email"
-                className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground"
-              >
-                Email me product updates and tips (optional)
+              <Label htmlFor="marketing-email" className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground">
+                {t('auth.signup.marketing')}
               </Label>
             </div>
             <Button type="submit" className="w-full" disabled={loading || !agreedToTerms}>
-              {loading ? 'Creating…' : 'Create account'}
+              {loading ? t('auth.signup.submitting') : t('auth.signup.submit')}
             </Button>
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{' '}
+            {t('auth.signup.hasAccount')}{' '}
             <Link to="/v2/login" className="font-medium text-primary hover:underline">
-              Sign in
+              {t('nav.signIn')}
             </Link>
           </p>
         </CardContent>

@@ -10,30 +10,35 @@ import { workspaceLabel, isTeamWorkspace } from '../lib/workspaceDisplay';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
-
-function greetingForNow() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
-function friendlyTime(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  if (isToday(d)) return `Today ${format(d, 'h:mm a')}`;
-  if (isTomorrow(d)) return `Tomorrow ${format(d, 'h:mm a')}`;
-  if (isThisYear(d)) return format(d, 'EEE MMM d, h:mm a');
-  return format(d, 'MMM d, yyyy');
-}
+import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { dateFnsLocale } from '../../lib/i18n/dateLocale';
 
 export default function V2AppHome() {
+  const { t, locale } = useTranslation();
   const [me, setMe] = useState(null);
   const [orgData, setOrgData] = useState(null);
   const [sub, setSub] = useState(null);
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const dateLocale = dateFnsLocale(locale);
+
+  const greetingForNow = () => {
+    const h = new Date().getHours();
+    if (h < 12) return t('appHome.greetingMorning');
+    if (h < 18) return t('appHome.greetingAfternoon');
+    return t('appHome.greetingEvening');
+  };
+
+  const friendlyTime = (iso) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    if (isToday(d)) return t('appHome.todayAt', { time: format(d, 'p', { locale: dateLocale }) });
+    if (isTomorrow(d)) return t('appHome.tomorrowAt', { time: format(d, 'p', { locale: dateLocale }) });
+    if (isThisYear(d)) return format(d, 'EEE MMM d, p', { locale: dateLocale });
+    return format(d, 'MMM d, yyyy', { locale: dateLocale });
+  };
 
   useEffect(() => {
     Promise.all([v2Auth.me(), v2Orgs.me(), v2Billing.subscription(), v2Meetings.list()])
@@ -44,7 +49,7 @@ export default function V2AppHome() {
         setMeetings(mList.meetings || []);
       })
       .catch((e) => {
-        toast.error(e.response?.data?.error || 'Could not load workspace');
+        toast.error(e.response?.data?.error || t('appHome.loadFailed'));
       })
       .finally(() => setLoading(false));
   }, []);
@@ -59,8 +64,8 @@ export default function V2AppHome() {
     const now = Date.now();
     return meetings
       .filter((m) => {
-        const t = m.scheduled_start ? new Date(m.scheduled_start).getTime() : NaN;
-        return !Number.isNaN(t) && t > now;
+        const time = m.scheduled_start ? new Date(m.scheduled_start).getTime() : NaN;
+        return !Number.isNaN(time) && time > now;
       })
       .sort((a, b) => new Date(a.scheduled_start) - new Date(b.scheduled_start))[0] || null;
   }, [meetings]);
@@ -82,34 +87,34 @@ export default function V2AppHome() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {teamAccount
-              ? `${workspaceName} · Host translated meetings with live captions and guest links.`
-              : 'Your personal account · Host translated meetings with live captions and guest links.'}
+              ? t('appHome.subtitleTeam', { workspace: workspaceName })
+              : t('appHome.subtitlePersonal')}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button asChild className="gap-2">
             <Link to="/v2/app/meetings?create=1">
               <Plus className="h-4 w-4" />
-              New meeting
+              {t('appHome.newMeeting')}
             </Link>
           </Button>
           <Button variant="outline" asChild className="gap-2">
             <Link to="/v2/app/meetings?create=1">
               <CalendarClock className="h-4 w-4" />
-              Schedule
+              {t('appHome.schedule')}
             </Link>
           </Button>
           <Button variant="ghost" asChild className="gap-2">
             <Link to="/v2/app/meetings">
               <Video className="h-4 w-4" />
-              All meetings
+              {t('appHome.allMeetings')}
             </Link>
           </Button>
           {teamWorkspace && (
             <Button variant="ghost" asChild className="gap-2">
               <Link to="/v2/app/settings">
                 <UserPlus className="h-4 w-4" />
-                Invite teammate
+                {t('appHome.inviteTeammate')}
               </Link>
             </Button>
           )}
@@ -118,7 +123,7 @@ export default function V2AppHome() {
 
       {!loading && nextUpcoming && (
         <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Up next</h2>
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('appHome.upNext')}</h2>
           <Link to={`/v2/app/meetings/${nextUpcoming.id}`}>
             <Card className="app-card app-card-hover border-primary/30 bg-gradient-to-br from-card via-card to-primary/[0.04] hover:border-primary/50">
               <CardContent className="flex items-center justify-between gap-4 p-5">
@@ -145,9 +150,9 @@ export default function V2AppHome() {
 
       <section>
         <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recent meetings</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t('appHome.recentMeetings')}</h2>
           <Link to="/v2/app/meetings" className="text-xs font-medium text-primary hover:underline">
-            View all
+            {t('appHome.viewAll')}
           </Link>
         </div>
         {loading ? (
@@ -162,14 +167,12 @@ export default function V2AppHome() {
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
                 <Video className="h-5 w-5 text-primary" />
               </span>
-              <p className="mt-4 text-sm font-medium text-foreground">No meetings yet</p>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Create one and you&apos;ll get a guest link to share with participants.
-              </p>
+              <p className="mt-4 text-sm font-medium text-foreground">{t('appHome.noMeetings')}</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">{t('appHome.noMeetingsHint')}</p>
               <Button asChild className="mt-5 gap-2">
                 <Link to="/v2/app/meetings?create=1">
                   <Plus className="h-4 w-4" />
-                  Create your first meeting
+                  {t('appHome.createFirst')}
                 </Link>
               </Button>
             </CardContent>
@@ -204,12 +207,12 @@ export default function V2AppHome() {
 
       {!loading && (
         <p className="text-xs text-muted-foreground">
-          {planName ? `${planName} plan` : 'Plan: —'}
+          {planName ? t('appHome.planUsage', { plan: planName }) : t('appHome.planUnknown')}
           <span className="mx-1.5">·</span>
-          {usageMinutes} participant-minutes used this month
+          {t('appHome.minutesUsed', { minutes: usageMinutes })}
           <span className="mx-1.5">·</span>
           <Link to="/v2/app/settings?section=billing" className="text-primary hover:underline">
-            Manage billing
+            {t('appHome.manageBilling')}
           </Link>
         </p>
       )}

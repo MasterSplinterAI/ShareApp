@@ -1,0 +1,288 @@
+{
+  "_version": 2,
+  "nav": {
+    "features": "Recursos",
+    "aiReports": "Relatórios com IA",
+    "pricing": "Preços",
+    "faq": "Perguntas frequentes",
+    "openWorkspace": "Abrir espaço de trabalho",
+    "signIn": "Entrar",
+    "startFree": "Começar grátis"
+  },
+  "hero": {
+    "eyebrow": "Legendas e tradução ao vivo",
+    "title": "Videoconferências que todos podem acompanhar—no seu próprio idioma.",
+    "subtitle": "O Parley adiciona legendas ao vivo e tradução em tempo real a cada reunião, para que equipes globais permaneçam alinhadas. Compartilhe um link de convidado—sem conta necessária—e mantenha uma transcrição opcional quando quiser um registro.",
+    "startFree": "Começar grátis",
+    "seePricing": "Ver preços",
+    "footnote": "Sem cartão de crédito · Convidados entram com um clique · Funciona no seu navegador"
+  },
+  "footer": {
+    "tagline": "Legendas ao vivo, tradução em tempo real e relatórios de reunião com IA—para equipes globais.",
+    "product": "Produto",
+    "company": "Empresa",
+    "features": "Recursos",
+    "aiReports": "Relatórios com IA",
+    "pricing": "Preços",
+    "faq": "Perguntas frequentes",
+    "signIn": "Entrar",
+    "terms": "Termos",
+    "privacy": "Privacidade",
+    "contactSales": "Falar com vendas",
+    "copyright": "© {{year}} Parley. Todos os direitos reservados.",
+    "support": "Suporte:"
+  },
+  "meetingPreview": {
+    "windowTitle": "Parley — Lançamento Q3 · Legendas ao vivo ATIVAS",
+    "captions": "Legendas",
+    "chat": "Chat",
+    "people": "Pessoas",
+    "translating": "Traduzindo EN → ES, JA",
+    "presenting": "Kenny está apresentando",
+    "footnote": "Sala simulada — compartilhamento de tela no topo, participantes embaixo, legendas ao lado."
+  },
+  "features": {
+    "eyebrow": "Recursos",
+    "title": "Feito para clareza",
+    "subtitle": "Tudo funciona no seu navegador—uma experiência focada para o anfitrião e links de convidado com um clique.",
+    "items": {
+      "translation": {
+        "title": "Tradução em tempo real",
+        "description": "Os participantes escolhem um idioma; a fala é transcrita e traduzida durante a reunião."
+      },
+      "captions": {
+        "title": "Legendas ao vivo",
+        "description": "Legendas lado a lado mantêm todos na mesma página—inclusive em ambientes barulhentos ou equipes com foco em acessibilidade."
+      },
+      "transcripts": {
+        "title": "Transcrições sob seu controle",
+        "description": "Política por reunião para salvar linhas finalizadas no servidor, com download em JSON e texto simples quando precisar de registros."
+      },
+      "accounts": {
+        "title": "Contas pessoais ou de equipe",
+        "description": "Comece sozinho com uma conta pessoal gratuita, ou adicione um espaço de trabalho de equipe com funções quando precisar de acesso compartilhado."
+      }
+    }
+  },
+  "howItWorks": {
+    "eyebrow": "Como funciona",
+    "title": "Do cadastro à sua primeira chamada traduzida",
+    "subtitle": "Três passos rápidos—sem downloads, sem configuração.",
+    "steps": {
+      "one": {
+        "title": "Crie sua conta",
+        "body": "Cadastre-se grátis — sem nome de empresa obrigatório. Use uma conta pessoal ou adicione um espaço de trabalho de equipe a qualquer momento."
+      },
+      "two": {
+        "title": "Agende ou inicie uma reunião",
+        "body": "Sessões instantâneas ou agendadas com políticas de presença do anfitrião e links de convidado."
+      },
+      "three": {
+        "title": "Compartilhe o link de convidado",
+        "body": "Convidados entram com um clique; tokens de convite opcionais mantêm o acesso restrito quando necessário."
+      }
+    }
+  },
+  "aiReports": {
+    "eyebrow": "Relatórios de reunião com IA",
+    "title": "Sua reunião, destilada—em qualquer idioma falado.",
+    "subtitle": "Quando o armazenamento de transcrições está ativo, o Parley transforma a conversa multilíngue completa em um relatório refinado: resumos executivos, itens de ação com responsáveis, decisões e perguntas em aberto. Baseado apenas no que foi realmente dito — lacunas são sinalizadas, nunca inventadas.",
+    "templates": {
+      "executive": {
+        "label": "Resumo executivo",
+        "desc": "Visão geral, pontos-chave, decisões, riscos, próximos passos"
+      },
+      "actions": {
+        "label": "Itens de ação",
+        "desc": "Responsáveis, ações e prazos extraídos da conversa"
+      },
+      "decisions": {
+        "label": "Decisões e perguntas em aberto",
+        "desc": "O que foi decidido vs. o que ainda precisa de resposta"
+      }
+    },
+    "badges": {
+      "download": "Baixar em PDF ou Markdown",
+      "email": "Enviar por e-mail para sua equipe"
+    },
+    "mock": {
+      "label": "Relatório de reunião Parley",
+      "meta": "Resumo executivo · Gerado em 12 s · 214 linhas de transcrição · EN / ES / FR",
+      "keyPoints": "Pontos-chave",
+      "decisions": "Decisões",
+      "nextSteps": "Próximos passos"
+    }
+  },
+  "pricing": {
+    "eyebrow": "Preços",
+    "title": "Comece grátis, escale conforme cresce",
+    "subtitle": "Comece com 60 minutos-participante por mês. Faça upgrade quando estiver pronto—cobrança por organização.",
+    "popular": "Popular",
+    "period": "/ org / mês",
+    "tiers": {
+      "free": {
+        "name": "Free",
+        "blurb": "60 minutos-participante por mês — perfeito para experimentar o Parley.",
+        "cta": "Começar grátis",
+        "features": {
+          "captions": "Legendas ao vivo e tradução",
+          "meetings": "Reuniões instantâneas e agendadas",
+          "guests": "Links de convidado",
+          "limit": "Limite rígido em 60 min/mês"
+        }
+      },
+      "starter": {
+        "name": "Starter",
+        "blurb": "Para equipes pequenas que se reúnem em vários idiomas toda semana.",
+        "cta": "Obter Starter",
+        "features": {
+          "minutes": "2.000 minutos-participante",
+          "transcripts": "Armazenamento de transcrições",
+          "dashboard": "Painel de uso",
+          "support": "Suporte por e-mail"
+        }
+      },
+      "pro": {
+        "name": "Pro",
+        "blurb": "Para equipes que precisam de vagas no espaço de trabalho e maior volume.",
+        "cta": "Obter Pro",
+        "features": {
+          "minutes": "10.000 minutos-participante",
+          "workspace": "Espaço de trabalho de equipe e convites",
+          "insights": "Insights de transcrição com IA",
+          "support": "Suporte prioritário"
+        }
+      }
+    }
+  },
+  "faq": {
+    "eyebrow": "Perguntas frequentes",
+    "title": "Perguntas frequentes",
+    "subtitle": "Respostas diretas, sem enrolação de marketing.",
+    "items": {
+      "guests": {
+        "q": "Convidados precisam de uma conta?",
+        "a": "Não. Os anfitriões compartilham uma URL de entrada para convidados (e um token de convite quando sua política exige). Convidados informam um nome de exibição e entram na sala LiveKit."
+      },
+      "transcripts": {
+        "q": "O armazenamento de transcrições é obrigatório?",
+        "a": "Não. Cada reunião pode optar por salvar linhas de legenda finalizadas no servidor. Anfitriões e administradores da organização podem baixar depois, quando existirem."
+      },
+      "trial": {
+        "q": "Posso experimentar antes de pagar?",
+        "a": "Sim. O plano Free inclui 60 minutos-participante por mês—sem cartão de crédito. Faça upgrade a qualquer momento quando precisar de mais."
+      },
+      "storage": {
+        "q": "Onde os dados são armazenados?",
+        "a": "As reuniões são processadas em tempo real. As transcrições são armazenadas apenas quando o anfitrião ativa o armazenamento para uma reunião, e podem ser excluídas a qualquer momento. Todos os dados são criptografados em trânsito."
+      },
+      "accuracy": {
+        "q": "Qual a precisão da tradução ao vivo?",
+        "a": "O Parley usa reconhecimento de fala em tempo real com tradução multilíngue. A precisão depende da qualidade do áudio—funciona melhor quando os participantes usam headset em um ambiente silencioso."
+      }
+    }
+  },
+  "auth": {
+    "email": "E-mail",
+    "password": "Senha",
+    "passwordMin": "Senha (mín. 8 caracteres)",
+    "newPassword": "Nova senha (mín. 8 caracteres)",
+    "confirmPassword": "Confirmar nova senha",
+    "forgotPassword": "Esqueceu a senha?",
+    "backHome": "Voltar ao início",
+    "backSignIn": "Voltar para entrar",
+    "login": {
+      "title": "Entrar",
+      "description": "Entre para hospedar reuniões, gerenciar links de convidado e ver transcrições.",
+      "submit": "Entrar",
+      "submitting": "Entrando…",
+      "noAccount": "Não tem conta?",
+      "createAccount": "Criar conta gratuita",
+      "success": "Login realizado",
+      "failed": "Falha no login"
+    },
+    "signup": {
+      "title": "Criar conta",
+      "description": "Comece grátis como pessoa física ou cadastre-se com sua empresa. Você pode fazer upgrade para um plano empresarial depois para convidar colegas—inclusive se já estiver em um plano pessoal pago.",
+      "planBanner": "Você está se cadastrando no plano {{plan}} — confirmará a cobrança após criar sua conta.",
+      "accountType": "Tipo de conta",
+      "individual": "Individual",
+      "individualHint": "Uso pessoal — apenas seu nome",
+      "company": "Empresa",
+      "companyHint": "Nome do espaço de trabalho compartilhado",
+      "yourName": "Seu nome",
+      "companyName": "Nome da empresa",
+      "companyHintLong": "Visível para sua equipe em reuniões e configurações. Faça upgrade para Pro depois para convidar colegas com logins próprios.",
+      "termsPrefix": "Concordo com os",
+      "terms": "Termos de Serviço",
+      "termsAnd": "e a",
+      "privacy": "Política de Privacidade",
+      "marketing": "Enviar atualizações do produto e dicas por e-mail (opcional)",
+      "submit": "Criar conta",
+      "submitting": "Criando…",
+      "hasAccount": "Já tem conta?",
+      "success": "Conta criada",
+      "failed": "Falha no cadastro",
+      "termsRequired": "Aceite os Termos de Serviço e a Política de Privacidade",
+      "companyRequired": "Nome da empresa é obrigatório para contas empresariais"
+    },
+    "reset": {
+      "title": "Redefinir senha",
+      "description": "Informe o e-mail da sua conta e enviaremos um link de redefinição.",
+      "sent": "Se esse e-mail existir, enviamos um link de redefinição.",
+      "submit": "Enviar link de redefinição",
+      "submitting": "Enviando…",
+      "remembered": "Lembrou?",
+      "newTitle": "Escolha uma nova senha",
+      "newDescription": "Informe uma nova senha para sua conta.",
+      "updated": "Sua senha foi atualizada.",
+      "setPassword": "Definir nova senha",
+      "updating": "Atualizando…",
+      "mismatch": "As senhas não coincidem",
+      "success": "Senha atualizada",
+      "failed": "Falha ao redefinir senha",
+      "error": "Algo deu errado. Tente novamente."
+    }
+  },
+  "appHome": {
+    "greetingMorning": "Bom dia",
+    "greetingAfternoon": "Boa tarde",
+    "greetingEvening": "Boa noite",
+    "subtitleTeam": "{{workspace}} · Hospede reuniões traduzidas com legendas ao vivo e links de convidado.",
+    "subtitlePersonal": "Sua conta pessoal · Hospede reuniões traduzidas com legendas ao vivo e links de convidado.",
+    "newMeeting": "Nova reunião",
+    "schedule": "Agendar",
+    "allMeetings": "Todas as reuniões",
+    "inviteTeammate": "Convidar colega",
+    "upNext": "Em seguida",
+    "recentMeetings": "Reuniões recentes",
+    "viewAll": "Ver tudo",
+    "noMeetings": "Ainda não há reuniões",
+    "noMeetingsHint": "Crie uma e você receberá um link de convidado para compartilhar com os participantes.",
+    "createFirst": "Crie sua primeira reunião",
+    "planUsage": "Plano {{plan}}",
+    "planUnknown": "Plano: —",
+    "minutesUsed": "{{minutes}} minutos-participante usados este mês",
+    "manageBilling": "Gerenciar cobrança",
+    "loadFailed": "Não foi possível carregar o espaço de trabalho",
+    "todayAt": "Hoje {{time}}",
+    "tomorrowAt": "Amanhã {{time}}"
+  },
+  "app": {
+    "home": "Início",
+    "meetings": "Reuniões",
+    "settings": "Configurações",
+    "admin": "Admin",
+    "helpSupport": "Ajuda e suporte",
+    "logOut": "Sair",
+    "member": "Membro",
+    "account": "Conta",
+    "role": "Função: {{role}}",
+    "openMenu": "Abrir menu",
+    "dismissAnnouncement": "Dispensar anúncio"
+  },
+  "language": {
+    "label": "Idioma",
+    "choose": "Escolher idioma"
+  }
+}

@@ -1,30 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Subtitles, Globe, Check, ChevronDown } from 'lucide-react';
-import { getMeetingLanguages, normalizeMeetingLanguageCode } from '../lib/languages';
+import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
-
-const MEETING_LANGUAGES = getMeetingLanguages();
 
 const CAPTION_MODES = [
   { value: 'off', label: 'Captions off' },
   { value: 'transcription_only', label: 'Transcription only' },
   { value: 'transcription_translation', label: 'Transcription + Translation' },
-];
-
-const CAPTION_LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'zh-CN', name: 'Mandarin' },
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'hi', name: 'Hindi' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'tiv', name: 'Tiv' },
 ];
 
 /**
@@ -46,8 +30,7 @@ export default function CaptionControls({
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
   const normalizedValue = normalizeMeetingLanguageCode(value);
-  const selectedLanguage =
-    MEETING_LANGUAGES.find((lang) => lang.code === normalizedValue) || MEETING_LANGUAGES[0];
+  const selectedLanguage = getMeetingLanguageDisplay(normalizedValue);
 
   const isActive = translationEnabled || (isHost && captionMode !== 'off');
 
@@ -67,8 +50,8 @@ export default function CaptionControls({
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
 
-  const handleLanguageSelect = (language) => {
-    onChange(language.code);
+  const handleLanguageSelect = (code) => {
+    onChange(code);
     setIsOpen(false);
   };
 
@@ -123,28 +106,12 @@ export default function CaptionControls({
             <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Your language
             </p>
-            <div className="max-h-40 overflow-y-auto">
-              {MEETING_LANGUAGES.map((language) => (
-                <button
-                  key={language.code}
-                  type="button"
-                  onClick={() => handleLanguageSelect(language)}
-                  className={cn(
-                    'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent',
-                    language.code === normalizedValue && 'bg-accent',
-                    !translationEnabled && 'opacity-50'
-                  )}
-                  disabled={!translationEnabled}
-                  data-no-translate="true"
-                >
-                  <span className="flex items-center gap-2" data-no-translate="true">
-                    <span className="text-sm">{language.flag}</span>
-                    <span className="text-sm text-foreground">{language.name}</span>
-                  </span>
-                  {language.code === normalizedValue && <Check className="h-3.5 w-3.5 text-primary" />}
-                </button>
-              ))}
-            </div>
+            <MeetingLanguageList
+              value={normalizedValue}
+              onChange={handleLanguageSelect}
+              disabled={!translationEnabled}
+              maxHeightClass="max-h-44"
+            />
           </div>
 
           {isHost && (
@@ -176,23 +143,12 @@ export default function CaptionControls({
                   <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                     Broadcast languages
                   </p>
-                  <div className="flex flex-wrap gap-1 px-1 pb-1">
-                    {CAPTION_LANGUAGES.map((lang) => (
-                      <button
-                        key={lang.code}
-                        type="button"
-                        onClick={() => onToggleCaptionLanguage(lang.code)}
-                        className={cn(
-                          'rounded-full border px-2 py-0.5 text-xs transition-colors',
-                          captionLanguages.includes(lang.code)
-                            ? 'border-primary bg-primary text-primary-foreground'
-                            : 'border-border bg-transparent text-popover-foreground hover:bg-accent'
-                        )}
-                      >
-                        {lang.name}
-                      </button>
-                    ))}
-                  </div>
+                  <MeetingLanguageList
+                    mode="multi"
+                    values={captionLanguages}
+                    onToggle={onToggleCaptionLanguage}
+                    maxHeightClass="max-h-40"
+                  />
                 </>
               )}
             </div>

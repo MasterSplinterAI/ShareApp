@@ -1,129 +1,97 @@
 /**
- * Supported languages for Autopilot Translator
+ * Meeting + UI language helpers.
+ * Meeting caption languages follow Deepgram Nova-3; UI site locale uses i18n JSON separately.
  */
 
-export interface Language {
-    code: string;
-    name: string;
-    nativeName: string;
-    flag?: string; // Emoji flag for display
-}
+import {
+  DEEPGRAM_LANGUAGES,
+  getDeepgramLanguage,
+  sortMeetingLanguages,
+  type DeepgramLanguage,
+} from './deepgramLanguages';
 
-/**
- * Default set of supported languages
- */
-export const SUPPORTED_LANGUAGES: Language[] = [
-    { code: 'en', name: 'English', nativeName: 'English', flag: '🇺🇸' },
-    { code: 'es', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
-    { code: 'es-CO', name: 'Spanish (Colombia)', nativeName: 'Español (Colombia)', flag: '🇨🇴' },
-    { code: 'es-MX', name: 'Spanish (Mexico)', nativeName: 'Español (México)', flag: '🇲🇽' },
-    { code: 'fr', name: 'French', nativeName: 'Français', flag: '🇫🇷' },
-    { code: 'de', name: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
-    { code: 'it', name: 'Italian', nativeName: 'Italiano', flag: '🇮🇹' },
-    { code: 'pt', name: 'Portuguese', nativeName: 'Português', flag: '🇵🇹' },
-    { code: 'pt-BR', name: 'Portuguese (Brazil)', nativeName: 'Português (Brasil)', flag: '🇧🇷' },
-    { code: 'ja', name: 'Japanese', nativeName: '日本語', flag: '🇯🇵' },
-    // Mandarin (Simplified) — STT/LLM use ISO-style zh / zh-CN; agent maps to Deepgram/OpenAI "Chinese"
-    { code: 'zh-CN', name: 'Mandarin Chinese', nativeName: '中文（普通话，简体）', flag: '🇨🇳' },
-    { code: 'zh-TW', name: 'Chinese (Traditional)', nativeName: '中文 (繁體)', flag: '🇹🇼' },
-    { code: 'ko', name: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
-    { code: 'ar', name: 'Arabic', nativeName: 'العربية', flag: '🇸🇦' },
-    { code: 'hi', name: 'Hindi', nativeName: 'हिन्दी', flag: '🇮🇳' },
-    { code: 'tiv', name: 'Tiv', nativeName: 'Tiv', flag: '🇳🇬' },
-    { code: 'ru', name: 'Russian', nativeName: 'Русский', flag: '🇷🇺' },
-    { code: 'nl', name: 'Dutch', nativeName: 'Nederlands', flag: '🇳🇱' },
-    { code: 'pl', name: 'Polish', nativeName: 'Polski', flag: '🇵🇱' },
-    { code: 'tr', name: 'Turkish', nativeName: 'Türkçe', flag: '🇹🇷' },
-    { code: 'vi', name: 'Vietnamese', nativeName: 'Tiếng Việt', flag: '🇻🇳' },
-    { code: 'th', name: 'Thai', nativeName: 'ไทย', flag: '🇹🇭' },
-];
+export type Language = DeepgramLanguage;
 
-/**
- * Get language by code
- */
+/** Unified storage key (shared with autopilot translator). */
+export const MEETING_LANGUAGE_STORAGE_KEY = 'app_language';
+
+/** @deprecated Use DEEPGRAM_LANGUAGES via getMeetingLanguages() */
+export const SUPPORTED_LANGUAGES: Language[] = [...DEEPGRAM_LANGUAGES];
+
+const LEGACY_CODE_MAP: Record<string, string> = {
+  zh: 'zh-CN',
+  'zh-Hans': 'zh-CN',
+  'zh-Hant': 'zh-TW',
+  'en-US': 'en',
+  'en-GB': 'en',
+  'en-AU': 'en',
+  'en-IN': 'en',
+  'en-NZ': 'en',
+  'es-419': 'es',
+  'pt-PT': 'pt-PT',
+};
+
 export function getLanguage(code: string): Language | undefined {
-    return SUPPORTED_LANGUAGES.find(lang => lang.code === code);
+  return getDeepgramLanguage(normalizeMeetingLanguageCode(code));
 }
 
-/**
- * Get language name by code
- */
 export function getLanguageName(code: string): string {
-    const lang = getLanguage(code);
-    return lang ? lang.name : code;
+  return getLanguage(code)?.name ?? code;
 }
 
-/**
- * Get native language name by code
- */
 export function getNativeLanguageName(code: string): string {
-    const lang = getLanguage(code);
-    return lang ? lang.nativeName : code;
+  return getLanguage(code)?.nativeName ?? code;
 }
 
-/**
- * Check if a language code is supported
- */
 export function isLanguageSupported(code: string): boolean {
-    if (!code || typeof code !== 'string' || !code.trim()) {
-        return false;
-    }
-    const trimmed = code.trim();
-    const normalized = trimmed === 'zh' ? 'zh-CN' : trimmed;
-    return SUPPORTED_LANGUAGES.some((lang) => lang.code === normalized);
+  if (!code || typeof code !== 'string' || !code.trim()) return false;
+  return Boolean(getDeepgramLanguage(normalizeMeetingLanguageCode(code.trim())));
 }
 
-/**
- * Get all language codes
- */
 export function getAllLanguageCodes(): string[] {
-    return SUPPORTED_LANGUAGES.map(lang => lang.code);
+  return DEEPGRAM_LANGUAGES.map((lang) => lang.code);
 }
 
-/**
- * Ordered list for join modal + in-room language switcher (must stay identical).
- * Codes must exist in SUPPORTED_LANGUAGES.
- */
-export const MEETING_LANGUAGE_CODES: readonly string[] = [
-    'en',
-    'es',
-    'es-CO',
-    'fr',
-    'de',
-    'it',
-    'pt',
-    'ru',
-    'zh-CN',
-    'zh-TW',
-    'ja',
-    'ko',
-    'ar',
-    'hi',
-    'tiv',
-];
+/** Deepgram code for STT when it differs from picker code. */
+export function getDeepgramSttCode(code: string): string {
+  const lang = getLanguage(code);
+  return lang?.deepgramCode || normalizeMeetingLanguageCode(code).split('-')[0];
+}
 
-/**
- * Languages shown in NameModal and LanguageSelector (same order, same labels).
- */
+/** Ordered list for join modal + in-room language switcher. */
 export function getMeetingLanguages(): Language[] {
-    return MEETING_LANGUAGE_CODES.map((code) => {
-        const lang = SUPPORTED_LANGUAGES.find((l) => l.code === code);
-        if (!lang) {
-            throw new Error(`MEETING_LANGUAGE_CODES references missing language: ${code}`);
-        }
-        return lang;
-    });
+  return sortMeetingLanguages(DEEPGRAM_LANGUAGES);
 }
 
-/** Map legacy stored codes to current meeting codes (e.g. old generic zh → Mandarin). */
+export function readStoredMeetingLanguage(): string {
+  if (typeof localStorage === 'undefined') return 'en';
+  try {
+    return normalizeMeetingLanguageCode(localStorage.getItem(MEETING_LANGUAGE_STORAGE_KEY) || 'en');
+  } catch {
+    return 'en';
+  }
+}
+
+export function writeStoredMeetingLanguage(code: string): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(MEETING_LANGUAGE_STORAGE_KEY, normalizeMeetingLanguageCode(code));
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Map legacy stored codes to current meeting codes. */
 export function normalizeMeetingLanguageCode(code: string | undefined | null): string {
-    if (!code || typeof code !== 'string') {
-        return 'en';
-    }
-    const trimmed = code.trim();
-    if (trimmed === 'zh') {
-        return 'zh-CN';
-    }
-    return trimmed;
+  if (!code || typeof code !== 'string') return 'en';
+  const trimmed = code.trim();
+  if (LEGACY_CODE_MAP[trimmed]) return LEGACY_CODE_MAP[trimmed];
+  if (getDeepgramLanguage(trimmed)) return trimmed;
+  const base = trimmed.split('-')[0];
+  if (LEGACY_CODE_MAP[base]) return LEGACY_CODE_MAP[base];
+  if (getDeepgramLanguage(base)) return base;
+  return 'en';
 }
 
+/** @deprecated kept for imports — same as getMeetingLanguages() */
+export const MEETING_LANGUAGE_CODES = getMeetingLanguages().map((l) => l.code);

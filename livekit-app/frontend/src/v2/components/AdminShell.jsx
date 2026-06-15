@@ -30,6 +30,7 @@ import {
 import { Sheet, SheetContent, SheetTrigger } from '../../components/ui/sheet';
 import { cn } from '../../lib/utils';
 import { useAdmin } from '../context/AdminContext';
+import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 
 const NAV_SECTIONS = [
   {
@@ -131,7 +132,10 @@ export default function AdminShell({ me, onLogout }) {
         </Button>
       </div>
       <AdminSidebarNav onNavigate={() => setMobileOpen(false)} />
-      <div className="mt-auto border-t border-border/60 p-3">
+      <div className="mt-auto border-t border-border/60 p-3 space-y-2">
+        <div className="flex justify-center px-1">
+          <LanguageSwitcher className="w-full justify-center" />
+        </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" className="h-auto w-full justify-start gap-2 rounded-lg border-border/60 px-3 py-2">
@@ -186,8 +190,9 @@ export default function AdminShell({ me, onLogout }) {
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{sidebarBody}</div>
             </SheetContent>
           </Sheet>
-          <span className="truncate text-sm font-semibold">Parley Admin</span>
-          <Button type="button" variant="outline" size="sm" className="ml-auto h-8 text-xs" onClick={refreshAll}>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">Parley Admin</span>
+          <LanguageSwitcher compact />
+          <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 text-xs" onClick={refreshAll}>
             Refresh
           </Button>
         </header>
