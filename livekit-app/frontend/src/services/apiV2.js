@@ -58,6 +58,8 @@ export const v2Support = {
     apiV2.get('/support/admin/knowledge-gaps', { params }).then((r) => r.data),
   adminPatchKnowledgeGap: (id, body) =>
     apiV2.patch(`/support/admin/knowledge-gaps/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  adminSuggestKnowledgeGap: (id) =>
+    apiV2.post(`/support/admin/knowledge-gaps/${encodeURIComponent(id)}/suggest`).then((r) => r.data),
 };
 
 export const v2Orgs = {

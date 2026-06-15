@@ -102,6 +102,8 @@ export function SupportTab({ initialTicketNumber }) {
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
   const [knowledgeGaps, setKnowledgeGaps] = useState([]);
+  const [gapSuggestions, setGapSuggestions] = useState({});
+  const [suggestingGapId, setSuggestingGapId] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const replyRef = useRef(null);
@@ -243,6 +245,30 @@ export function SupportTab({ initialTicketNumber }) {
       toast.error('Update failed');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const suggestGap = async (gapId) => {
+    setSuggestingGapId(gapId);
+    try {
+      const result = await v2Support.adminSuggestKnowledgeGap(gapId);
+      setGapSuggestions((prev) => ({ ...prev, [gapId]: result.suggestion }));
+      toast.success('KB draft ready — review before adding to docs');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Suggestion failed');
+    } finally {
+      setSuggestingGapId(null);
+    }
+  };
+
+  const copyGapDraft = async (gapId) => {
+    const draft = gapSuggestions[gapId]?.draftMarkdown;
+    if (!draft) return;
+    try {
+      await navigator.clipboard.writeText(draft);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Copy failed');
     }
   };
 
@@ -595,7 +621,10 @@ export function SupportTab({ initialTicketNumber }) {
           {knowledgeGaps.length === 0 && (
             <p className="text-sm text-muted-foreground">No open gaps.</p>
           )}
-          {knowledgeGaps.slice(0, 15).map((g) => (
+          {knowledgeGaps.slice(0, 15).map((g) => {
+            const suggestion = gapSuggestions[g.id];
+            const suggesting = suggestingGapId === g.id;
+            return (
             <div key={g.id} className="rounded-lg border border-border/60 p-3 text-sm">
               <div className="flex flex-wrap items-center gap-2">
                 {g.publicNumber != null && <Badge variant="outline">#{g.publicNumber}</Badge>}
@@ -609,7 +638,16 @@ export function SupportTab({ initialTicketNumber }) {
               {g.docHits?.length === 0 && (
                 <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">No KB articles matched</p>
               )}
-              <div className="mt-2 flex gap-2">
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="default"
+                  disabled={busy || suggesting}
+                  onClick={() => suggestGap(g.id)}
+                >
+                  {suggesting ? 'Researching…' : 'Suggest KB entry'}
+                </Button>
                 <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => resolveGap(g.id, 'resolved')}>
                   Added to KB
                 </Button>
@@ -617,8 +655,40 @@ export function SupportTab({ initialTicketNumber }) {
                   Dismiss
                 </Button>
               </div>
+              {suggestion && (
+                <div className="mt-3 space-y-2 rounded-md border border-primary/20 bg-primary/5 p-3">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <Badge variant="outline">docs/support/{suggestion.targetFile}</Badge>
+                    {typeof suggestion.confidence === 'number' && (
+                      <Badge variant={suggestion.confidence >= 0.65 ? 'default' : 'secondary'}>
+                        AI confidence {Math.round(suggestion.confidence * 100)}%
+                      </Badge>
+                    )}
+                    {suggestion.retrieval?.wouldLikelyMatch ? (
+                      <span className="text-emerald-700 dark:text-emerald-400">Likely retrievable after add</span>
+                    ) : (
+                      <span className="text-amber-700 dark:text-amber-400">Review retrieval wording</span>
+                    )}
+                  </div>
+                  {suggestion.rationale && (
+                    <p className="text-xs text-muted-foreground">{suggestion.rationale}</p>
+                  )}
+                  {suggestion.sources?.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Sources: {suggestion.sources.slice(0, 4).join(' · ')}
+                    </p>
+                  )}
+                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded border border-border/60 bg-background p-2 text-xs">
+                    {suggestion.draftMarkdown}
+                  </pre>
+                  <Button type="button" size="sm" variant="outline" onClick={() => copyGapDraft(g.id)}>
+                    Copy draft
+                  </Button>
+                </div>
+              )}
             </div>
-          ))}
+            );
+          })}
         </CardContent>
       </Card>
     </div>

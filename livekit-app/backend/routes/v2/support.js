@@ -8,7 +8,8 @@ const { listProposals, listProposalsForTicket } = require('../../lib/supportProp
 const { executeProposalAction } = require('../../lib/proposalExecutor');
 const { handleTelegramUpdate } = require('../../lib/supportTelegramWebhook');
 const { coachFeatureRequest } = require('../../lib/supportAgent/coach');
-const { listKnowledgeGaps, patchKnowledgeGap } = require('../../lib/supportKnowledgeGaps');
+const { listKnowledgeGaps, patchKnowledgeGap, getKnowledgeGapById } = require('../../lib/supportKnowledgeGaps');
+const { suggestKbEntryForGap } = require('../../lib/supportKbSuggest');
 
 const TICKET_RATE_WINDOW_MS = 15 * 60 * 1000;
 const TICKET_RATE_MAX = 10;
@@ -220,6 +221,23 @@ router.patch('/admin/knowledge-gaps/:id', requireV2Auth, requireSuperadmin, asyn
   } catch (e) {
     console.error('[support/admin knowledge gap patch]', e);
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/admin/knowledge-gaps/:id/suggest', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const gap = await getKnowledgeGapById(req.params.id);
+    const result = await suggestKbEntryForGap(gap);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    await writeAdminAudit(db, req.v2Auth.email, 'support_kb_suggest', {
+      gapId: req.params.id,
+      targetFile: result.suggestion?.targetFile,
+      confidence: result.suggestion?.confidence,
+    });
+    res.json(result);
+  } catch (e) {
+    console.error('[support/admin knowledge gap suggest]', e);
+    res.status(500).json({ error: 'Suggestion failed' });
   }
 });
 

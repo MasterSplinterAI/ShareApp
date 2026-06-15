@@ -103,8 +103,13 @@ async function patchKnowledgeGap(id, status) {
   return rowToGap(await db.get(`SELECT * FROM v2_support_knowledge_gaps WHERE id = ?`, [id]));
 }
 
+async function getKnowledgeGapById(id) {
+  return rowToGap(await db.get(`SELECT * FROM v2_support_knowledge_gaps WHERE id = ?`, [id]));
+}
+
 module.exports = {
   recordKnowledgeGap,
   listKnowledgeGaps,
   patchKnowledgeGap,
+  getKnowledgeGapById,
 };
