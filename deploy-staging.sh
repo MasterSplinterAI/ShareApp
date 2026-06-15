@@ -170,6 +170,11 @@ if [ -d "$TEMP_DIR/livekit-app/backend/docs/support" ]; then
   sudo mkdir -p "$BACKEND_DIR/docs"
   sudo rsync -a "$TEMP_DIR/livekit-app/backend/docs/support/" "$BACKEND_DIR/docs/support/"
 fi
+# Frontend source (read-only) for support KB research on server — not served to users
+if [ -d "$TEMP_DIR/livekit-app/frontend/src" ]; then
+  sudo mkdir -p "$APP_DIR/livekit-app/frontend"
+  sudo rsync -a "$TEMP_DIR/livekit-app/frontend/src/" "$APP_DIR/livekit-app/frontend/src/"
+fi
 
 # ---------- Services ----------
 echo "Restarting staging backend ($PM2_NAME)..."

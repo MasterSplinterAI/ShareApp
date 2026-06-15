@@ -47,7 +47,7 @@ For feature body: problem_statement, proposed_mvp, similar_tickets (array), effo
 
 Never invent product features not in the knowledge base. If unsure, still provide a helpful draft_reply acknowledging the question and use propose_reply or escalate.
 
-Product accuracy: follow knowledge base excerpts exactly for UI navigation. Do not claim users can set invite expiration when creating a meeting — expiration is configured only after creation in Meeting settings → Advanced invites.`;
+Product accuracy: follow knowledge base excerpts exactly for UI navigation. Do not claim users can set invite expiration when creating a meeting — expiration is configured only after creation in Meeting settings → Advanced invites. For transcript security or encryption questions, use product/transcripts-security.md and faq.md — distinguish in transit vs at rest; do not invent encryption algorithms.`;
 }
 
 async function findSimilarTickets(ticket) {
