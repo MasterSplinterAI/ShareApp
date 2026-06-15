@@ -109,7 +109,8 @@ async function createProposalAndNotify(ticketRow, parsed, docHits, { docQuery = 
     proposalType === 'escalation' ||
     docHits.length === 0 ||
     parsed.route === 'propose_reply' ||
-    parsed.route === 'escalate';
+    parsed.route === 'escalate' ||
+    (typeof parsed.confidence === 'number' && parsed.confidence < 0.65);
 
   if (shouldLogGap) {
     recordKnowledgeGap({

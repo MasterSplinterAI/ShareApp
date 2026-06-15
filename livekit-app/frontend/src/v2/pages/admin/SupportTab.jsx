@@ -586,7 +586,9 @@ export function SupportTab({ initialTicketNumber }) {
         <CardHeader>
           <CardTitle className="text-lg">Knowledge gaps</CardTitle>
           <CardDescription>
-            AI could not answer confidently — add to <code className="text-xs">docs/support/faq.md</code> weekly.
+            Questions the AI could not answer confidently from the knowledge base. Review weekly and add answers to{' '}
+            <code className="text-xs">docs/support/</code> (especially <code className="text-xs">faq.md</code>), then
+            mark resolved.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-2 border-t border-border/60 pt-4">

@@ -97,50 +97,86 @@ function proposalPreviewSnippet(proposal) {
   return b.draft_reply || b.github_issue_title || b.problem_statement || '';
 }
 
+function getDraftSeedForProposal(proposal) {
+  const b = proposal.body || {};
+  return (
+    b.draft_reply ||
+    b.user_update ||
+    b.need_info_message ||
+    proposalPreviewSnippet(proposal) ||
+    ''
+  );
+}
+
+function shouldOfferTelegramDraft(proposal) {
+  const threshold = parseFloat(process.env.SUPPORT_TELEGRAM_DRAFT_CONFIDENCE_MAX || '0.75', 10);
+  const conf = proposal.confidence;
+  if (typeof conf === 'number' && conf < threshold) return true;
+  if (proposal.proposalType === 'support_reply' || proposal.proposalType === 'escalation') return true;
+  return false;
+}
+
+function appendDraftReplyRow(rows, proposal) {
+  if (!shouldOfferTelegramDraft(proposal)) return rows;
+  return [...rows, [{ text: '✏️ Draft custom reply', callback_data: `prop:${proposal.id}:draft_reply` }]];
+}
+
 function proposalKeyboard(proposal) {
   const id = proposal.id;
   if (proposal.proposalType === 'bug_fix') {
     return {
-      inline_keyboard: [
+      inline_keyboard: appendDraftReplyRow(
         [
-          { text: '✅ Approve → GitHub issue', callback_data: `prop:${id}:approve` },
-          { text: '❌ Reject', callback_data: `prop:${id}:reject` },
+          [
+            { text: '✅ Approve → GitHub issue', callback_data: `prop:${id}:approve` },
+            { text: '❌ Reject', callback_data: `prop:${id}:reject` },
+          ],
+          [{ text: '💬 Ask for repro details', callback_data: `prop:${id}:need_info` }],
         ],
-        [{ text: '💬 Ask for repro details', callback_data: `prop:${id}:need_info` }],
-      ],
+        proposal
+      ),
     };
   }
   if (proposal.proposalType === 'feature') {
     return {
-      inline_keyboard: [
+      inline_keyboard: appendDraftReplyRow(
         [
-          { text: '✅ Approve backlog', callback_data: `prop:${id}:approve` },
-          { text: '❌ Reject', callback_data: `prop:${id}:reject` },
+          [
+            { text: '✅ Approve backlog', callback_data: `prop:${id}:approve` },
+            { text: '❌ Reject', callback_data: `prop:${id}:reject` },
+          ],
+          [{ text: '💬 Ask clarifying questions', callback_data: `prop:${id}:need_info` }],
         ],
-        [{ text: '💬 Ask clarifying questions', callback_data: `prop:${id}:need_info` }],
-      ],
+        proposal
+      ),
     };
   }
   if (proposal.proposalType === 'support_reply') {
     return {
-      inline_keyboard: [
+      inline_keyboard: appendDraftReplyRow(
         [
-          { text: '✅ Send reply', callback_data: `prop:${id}:send_reply` },
-          { text: '👤 Take over', callback_data: `prop:${id}:take_over` },
+          [
+            { text: '✅ Send reply', callback_data: `prop:${id}:send_reply` },
+            { text: '👤 Take over', callback_data: `prop:${id}:take_over` },
+          ],
+          [{ text: '❌ Reject', callback_data: `prop:${id}:reject` }],
         ],
-        [{ text: '❌ Reject', callback_data: `prop:${id}:reject` }],
-      ],
+        proposal
+      ),
     };
   }
   if (proposal.proposalType === 'escalation') {
     return {
-      inline_keyboard: [
+      inline_keyboard: appendDraftReplyRow(
         [
-          { text: '✅ Send draft to user', callback_data: `prop:${id}:send_reply` },
-          { text: '👤 Take over', callback_data: `prop:${id}:take_over` },
+          [
+            { text: '✅ Send draft to user', callback_data: `prop:${id}:send_reply` },
+            { text: '👤 Take over', callback_data: `prop:${id}:take_over` },
+          ],
+          [{ text: '❌ Dismiss', callback_data: `prop:${id}:reject` }],
         ],
-        [{ text: '❌ Dismiss', callback_data: `prop:${id}:reject` }],
-      ],
+        proposal
+      ),
     };
   }
   return {
@@ -191,10 +227,13 @@ async function notifyProposalReady(ticket, proposal) {
   const draft = proposalPreviewSnippet(proposal);
   const typeLabel = proposalTypeLabel(proposal.proposalType);
   const catLabel = categoryLabel(ticket.category);
+  const lowConf =
+    typeof proposal.confidence === 'number' &&
+    proposal.confidence < parseFloat(process.env.SUPPORT_TELEGRAM_DRAFT_CONFIDENCE_MAX || '0.75', 10);
   const lines = [
     `🤖 <b>AI proposal</b> — ticket #${num}`,
     `<b>Category:</b> ${escapeHtml(catLabel)} · <b>Action:</b> ${escapeHtml(typeLabel)}`,
-    `<b>Summary:</b> ${escapeHtml(proposal.summary)}${conf}`,
+    `<b>Summary:</b> ${escapeHtml(proposal.summary)}${conf}${lowConf ? '\n⚠️ <b>Low confidence</b> — consider drafting your own reply' : ''}`,
     draft ? `\n${escapeHtml(String(draft).slice(0, 600))}${String(draft).length > 600 ? '…' : ''}` : null,
     `\n<a href="${adminTicketUrl(num)}">Open in admin</a>`,
   ].filter(Boolean);
@@ -229,4 +268,6 @@ module.exports = {
   adminTicketUrl,
   escapeHtml,
   ticketPublicNumber,
+  getDraftSeedForProposal,
+  shouldOfferTelegramDraft,
 };

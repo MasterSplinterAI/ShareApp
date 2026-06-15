@@ -332,6 +332,11 @@ async function adminListTickets({ status, category, limit = 100 } = {}) {
 }
 
 async function adminReply(req, ticketId, bodyText) {
+  const staffEmail = req.v2Auth.email;
+  return postStaffReply(ticketId, bodyText, staffEmail);
+}
+
+async function postStaffReply(ticketId, bodyText, staffLabel) {
   const ticket = await getTicketById(ticketId);
   if (!ticket) return { ok: false, status: 404, error: 'Not found' };
   const body = sanitizeText(bodyText, MAX_BODY);
@@ -339,15 +344,15 @@ async function adminReply(req, ticketId, bodyText) {
 
   const now = new Date().toISOString();
   const messageId = db.uuid();
-  const staffEmail = req.v2Auth.email;
+  const staffId = String(staffLabel || 'staff').slice(0, 200);
   await db.run(
     `INSERT INTO v2_support_messages (id, ticket_id, author_type, author_id, body, created_at)
      VALUES (?,?,?,?,?,?)`,
-    [messageId, ticketId, 'staff', staffEmail, body, now]
+    [messageId, ticketId, 'staff', staffId, body, now]
   );
   await db.run(
     `UPDATE v2_support_tickets SET status = ?, assigned_to = ?, updated_at = ? WHERE id = ?`,
-    ['waiting_user', staffEmail, now, ticketId]
+    ['waiting_user', staffId, now, ticketId]
   );
 
   const to = await resolveSubmitterEmail(ticket);
@@ -363,7 +368,8 @@ async function adminReply(req, ticketId, bodyText) {
 
   return {
     ok: true,
-    message: { id: messageId, authorType: 'staff', authorId: staffEmail, body, createdAt: now },
+    message: { id: messageId, authorType: 'staff', authorId: staffId, body, createdAt: now },
+    ticket,
   };
 }
 
@@ -392,6 +398,7 @@ module.exports = {
   canAccessTicket,
   adminListTickets,
   adminReply,
+  postStaffReply,
   adminPatchStatus,
   resolveSubmitterEmail,
 };
