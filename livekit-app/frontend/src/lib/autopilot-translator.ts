@@ -252,7 +252,12 @@ class AutopilotTranslator {
             return false;
         }
 
-        // Empty array means all pages are enabled
+        // DOM fallback only for authenticated workspace UI (see domTranslationSync.js).
+        if (!currentPath.startsWith('/v2/app')) {
+            return false;
+        }
+
+        // Empty array means all pages are enabled (within checks above).
         if (this.enabledPages.length === 0) {
             return true;
         }

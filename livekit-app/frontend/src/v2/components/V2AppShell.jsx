@@ -32,7 +32,7 @@ function navLinkClass({ isActive }) {
 function SidebarNav({ onNavigate, isSuperadmin }) {
   const { t } = useTranslation();
   return (
-    <nav className="flex flex-1 flex-col gap-1 px-2 py-4" onClick={onNavigate}>
+    <nav className="flex flex-1 flex-col gap-1 px-2 py-4" onClick={onNavigate} data-no-translate="true">
       <NavLink to="/v2/app" end className={navLinkClass}>
         <Home className="h-4 w-4 shrink-0" />
         {t('app.home')}
@@ -106,7 +106,7 @@ export default function V2AppShell({ me, onLogout }) {
 
   const sidebarBody = (
     <>
-      <div className="border-b border-border/60 px-4 py-4">
+      <div className="border-b border-border/60 px-4 py-4" data-no-translate="true">
         <Link to="/v2/app" className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
           <LayoutDashboard className="h-5 w-5 text-primary" />
           Parley
@@ -126,7 +126,7 @@ export default function V2AppShell({ me, onLogout }) {
         </div>
       </div>
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
-      <div className="mt-auto border-t border-border/60 p-3 space-y-2">
+      <div className="mt-auto border-t border-border/60 p-3 space-y-2" data-no-translate="true">
         <div className="flex justify-center px-1">
           <LanguageSwitcher className="w-full justify-center" />
         </div>

@@ -33,6 +33,7 @@ import { PlansTab } from './v2/pages/admin/PlansTab'
 import V2ResetPassword from './v2/pages/V2ResetPassword'
 import TermsPage from './components/legal/TermsPage'
 import PrivacyPage from './components/legal/PrivacyPage'
+import DomTranslationFallback from './components/DomTranslationFallback'
 
 function App() {
   const location = useLocation();
@@ -49,6 +50,7 @@ function App() {
 
   return (
     <>
+      <DomTranslationFallback />
       <Toaster
         position="top-right"
         toastOptions={{
