@@ -1,4 +1,5 @@
 const { formatUserContextForPrompt, buildUserContextSnapshot } = require('../supportUserContext');
+const { formatUserFacingReply } = require('../supportReplyFormat');
 const { aiEnabled, callSupportLlm } = require('./llm');
 
 const COACH_SYSTEM = `You help users refine Parley feature requests before formal submission.
