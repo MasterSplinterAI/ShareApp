@@ -1,5 +1,5 @@
 {
-  "_version": 2,
+  "_version": 3,
   "nav": {
     "features": "機能",
     "aiReports": "AIレポート",
@@ -284,5 +284,23 @@
   "language": {
     "label": "言語",
     "choose": "言語を選択"
+  },
+  "prejoin": {
+    "readyTitle": "参加の準備はできましたか？",
+    "inMeeting": "会議中 {{count}} 人",
+    "muteMic": "マイクをミュート",
+    "unmuteMic": "マイクのミュートを解除",
+    "turnOffCamera": "カメラをオフ",
+    "turnOnCamera": "カメラをオン",
+    "mediaError": "カメラまたはマイクを使用できません（{{reason}}）。参加は可能です — ライブ字幕には動作するマイクが必要です。",
+    "permissionDenied": "権限が拒否されました",
+    "background": "背景",
+    "microphone": "マイク",
+    "camera": "カメラ",
+    "displayName": "表示名",
+    "namePlaceholder": "お名前",
+    "myLanguage": "自分の言語（話す・聞く）",
+    "languageHint": "字幕と翻訳はこの言語で表示されます。",
+    "joinMeeting": "会議に参加"
   }
 }

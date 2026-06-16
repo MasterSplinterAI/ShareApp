@@ -1,5 +1,5 @@
 {
-  "_version": 2,
+  "_version": 3,
   "nav": {
     "features": "Funktionen",
     "aiReports": "KI-Berichte",
@@ -284,5 +284,23 @@
   "language": {
     "label": "Sprache",
     "choose": "Sprache wählen"
+  },
+  "prejoin": {
+    "readyTitle": "Bereit beizutreten?",
+    "inMeeting": "{{count}} im Meeting",
+    "muteMic": "Mikrofon stummschalten",
+    "unmuteMic": "Mikrofon aktivieren",
+    "turnOffCamera": "Kamera ausschalten",
+    "turnOnCamera": "Kamera einschalten",
+    "mediaError": "Kamera oder Mikrofon nicht verfügbar ({{reason}}). Sie können trotzdem beitreten — Live-Untertitel benötigen ein funktionierendes Mikrofon.",
+    "permissionDenied": "Berechtigung verweigert",
+    "background": "Hintergrund",
+    "microphone": "Mikrofon",
+    "camera": "Kamera",
+    "displayName": "Anzeigename",
+    "namePlaceholder": "Ihr Name",
+    "myLanguage": "Meine Sprache (sprechen & hören)",
+    "languageHint": "Untertitel und Übersetzungen erscheinen in dieser Sprache.",
+    "joinMeeting": "Meeting beitreten"
   }
 }

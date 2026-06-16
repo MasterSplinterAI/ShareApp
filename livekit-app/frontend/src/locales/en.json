@@ -1,5 +1,5 @@
 {
-  "_version": 2,
+  "_version": 3,
   "nav": {
     "features": "Features",
     "aiReports": "AI reports",
@@ -284,5 +284,23 @@
   "language": {
     "label": "Language",
     "choose": "Choose language"
+  },
+  "prejoin": {
+    "readyTitle": "Ready to join?",
+    "inMeeting": "{{count}} in meeting",
+    "muteMic": "Mute microphone",
+    "unmuteMic": "Unmute microphone",
+    "turnOffCamera": "Turn off camera",
+    "turnOnCamera": "Turn on camera",
+    "mediaError": "Camera or microphone unavailable ({{reason}}). You can still join — live captions need a working microphone.",
+    "permissionDenied": "permission denied",
+    "background": "Background",
+    "microphone": "Microphone",
+    "camera": "Camera",
+    "displayName": "Display name",
+    "namePlaceholder": "Your name",
+    "myLanguage": "My language (speak & hear)",
+    "languageHint": "Captions and translations will appear in this language.",
+    "joinMeeting": "Join meeting"
   }
 }

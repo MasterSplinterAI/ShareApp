@@ -20,10 +20,6 @@ const {
   parseCreateInviteBody,
 } = require('../../lib/inviteExpiry');
 
-function defaultRequireInvite() {
-  return process.env.V2_DEFAULT_REQUIRE_INVITE !== '0';
-}
-
 function enrichInvitesWithJoinUrls(invites, guestJoinBase, meeting) {
   return invites.map((inv) => {
     const usable = inviteIsUsable(inv, meeting);
@@ -53,6 +49,36 @@ async function assertMeetingAccess(row, auth) {
   return false;
 }
 
+/** Secure invite links are always required — upgrade legacy meetings and ensure a default link exists. */
+async function ensureSecureInviteForMeeting(meetingRow) {
+  const meetingId = meetingRow.id;
+  const pol = await db.get(`SELECT * FROM v2_meeting_policies WHERE meeting_id = ?`, [meetingId]);
+  if (!pol || pol.require_invite_token !== 1) {
+    if (pol) {
+      await db.run(`UPDATE v2_meeting_policies SET require_invite_token = 1 WHERE meeting_id = ?`, [meetingId]);
+    } else {
+      await db.run(
+        `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts) VALUES (?,?,?,?)`,
+        [meetingId, meetingRow.host_required_to_start ? 1 : 0, 1, meetingRow.store_transcripts === false || meetingRow.store_transcripts === 0 ? 0 : 1]
+      );
+    }
+  }
+  const active = await db.get(
+    `SELECT id FROM v2_meeting_invite_links WHERE meeting_id = ? AND revoked_at IS NULL LIMIT 1`,
+    [meetingId]
+  );
+  if (active) return;
+  const linkId = db.uuid();
+  const token = crypto.randomBytes(18).toString('base64url');
+  const expiryMode = defaultExpiryModeForMeeting(meetingRow);
+  const expiresAt = computeInviteExpiresAt(meetingRow, { mode: expiryMode });
+  await db.run(
+    `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [linkId, meetingId, token, 'Default guest link', expiresAt, null, 1, 0, null, expiryMode]
+  );
+}
+
 router.post('/', requireV2Auth, async (req, res) => {
   try {
     const gate = await assertCanCreateMeeting(req.v2Auth.orgId);
@@ -61,8 +87,8 @@ router.post('/', requireV2Auth, async (req, res) => {
     }
     const { title, scheduled_start, scheduled_end, host_required_to_start, store_transcripts } = req.body || {};
     const hostRequired = Boolean(host_required_to_start);
-    const requireInvite = defaultRequireInvite();
-    const storeTr = Boolean(store_transcripts) ? 1 : 0;
+    const requireInvite = true;
+    const storeTr = store_transcripts === false ? 0 : 1;
     const roomName = `v2-${db.uuid().replace(/-/g, '').slice(0, 12)}-${Date.now().toString(36)}`;
     await createLiveKitConferenceRoom(roomName, 'multi-language', req.v2Auth.orgId);
     const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -99,25 +125,21 @@ router.post('/', requireV2Auth, async (req, res) => {
 
     let defaultInviteToken = null;
     let defaultInviteExpiresAt = null;
-    if (requireInvite) {
-      const linkId = db.uuid();
-      defaultInviteToken = crypto.randomBytes(18).toString('base64url');
-      defaultInviteExpiresAt = computeInviteExpiresAt(
-        { scheduled_start: scheduled_start || null, scheduled_end: scheduled_end || null },
-        { mode: defaultExpiryModeForMeeting({ scheduled_start: scheduled_start || null }) }
-      );
-      const defaultExpiryMode = defaultExpiryModeForMeeting({ scheduled_start: scheduled_start || null });
-      await db.run(
-        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [linkId, meetingId, defaultInviteToken, 'Default guest link', defaultInviteExpiresAt, null, 1, 0, null, defaultExpiryMode]
-      );
-    }
+    const linkId = db.uuid();
+    defaultInviteToken = crypto.randomBytes(18).toString('base64url');
+    defaultInviteExpiresAt = computeInviteExpiresAt(
+      { scheduled_start: scheduled_start || null, scheduled_end: scheduled_end || null },
+      { mode: defaultExpiryModeForMeeting({ scheduled_start: scheduled_start || null }) }
+    );
+    const defaultExpiryMode = defaultExpiryModeForMeeting({ scheduled_start: scheduled_start || null });
+    await db.run(
+      `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [linkId, meetingId, defaultInviteToken, 'Default guest link', defaultInviteExpiresAt, null, 1, 0, null, defaultExpiryMode]
+    );
 
     const base = publicFrontendBaseUrl(req);
-    const guestPath = requireInvite
-      ? `${base}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(defaultInviteToken)}`
-      : `${base}/join/${encodeURIComponent(roomName)}`;
+    const guestPath = `${base}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(defaultInviteToken)}`;
     res.status(201).json({
       id: meetingId,
       livekitRoomName: roomName,
@@ -171,14 +193,14 @@ router.get('/', requireV2Auth, async (req, res) => {
       }
     }
 
-    const inviteRequiredIds = rows.filter((m) => m.require_invite_token === 1).map((m) => m.id);
-    if (inviteRequiredIds.length > 0) {
-      const placeholders = inviteRequiredIds.map(() => '?').join(',');
+    const allIds = rows.map((m) => m.id);
+    if (allIds.length > 0) {
+      const placeholders = allIds.map(() => '?').join(',');
       const inviteRows = await db.all(
         `SELECT meeting_id, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode
          FROM v2_meeting_invite_links
          WHERE meeting_id IN (${placeholders}) AND revoked_at IS NULL`,
-        inviteRequiredIds
+        allIds
       );
       const invitesByMeeting = new Map();
       for (const inv of inviteRows) {
@@ -187,15 +209,8 @@ router.get('/', requireV2Auth, async (req, res) => {
         invitesByMeeting.set(inv.meeting_id, list);
       }
       for (const m of rows) {
-        if (m.require_invite_token === 1) {
-          m.guestAccessActive = guestAccessActive(m, invitesByMeeting.get(m.id) || [], true);
-        } else {
-          m.guestAccessActive = guestAccessActive(m, [], false);
-        }
-      }
-    } else {
-      for (const m of rows) {
-        m.guestAccessActive = guestAccessActive(m, [], false);
+        m.require_invite_token = 1;
+        m.guestAccessActive = guestAccessActive(m, invitesByMeeting.get(m.id) || [], true);
       }
     }
 
@@ -229,7 +244,7 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
     const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
-    const { reusable, expiryMode, opts, linkType } = parseCreateInviteBody(req.body, row);
+    const { reusable, expiryMode, opts } = parseCreateInviteBody(req.body);
     const { label, maxUses } = req.body || {};
     const token = crypto.randomBytes(18).toString('base64url');
     const linkId = db.uuid();
@@ -241,7 +256,7 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
         linkId,
         req.params.id,
         token,
-        (label && String(label).slice(0, 80)) || (linkType === 'single_use' ? 'Single-guest link' : 'Guest link'),
+        (label && String(label).slice(0, 80)) || 'Guest link',
         expiresAt,
         null,
         reusable ? 1 : 0,
@@ -268,7 +283,7 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
       expiryMode,
       expiryLabel: expiry.short,
       expiryDetail: expiry.detail,
-      linkType,
+      linkType: 'shared',
       joinUrl,
       reusable: Boolean(reusable),
       inviteMaxTtlDays: Math.floor(maxInviteTtlMs() / 86400000),
@@ -411,6 +426,7 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       [req.params.id, req.v2Auth.orgId]
     );
     if (!row) return res.status(404).json({ error: 'Not found' });
+    await ensureSecureInviteForMeeting(row);
     const base = publicFrontendBaseUrl(req);
     const invites = await db.all(
       `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, created_at, token FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
@@ -418,29 +434,27 @@ router.get('/:id', requireV2Auth, async (req, res) => {
     );
     const policy = {
       host_required_to_start: row.host_required_to_start === 1,
-      require_invite_token: row.require_invite_token === 1,
+      require_invite_token: true,
       store_transcripts: row.store_transcripts === 1,
     };
     const guestJoinBase = `${base}/join/${encodeURIComponent(row.livekit_room_name)}`;
     const invitesEnriched = enrichInvitesWithJoinUrls(invites, guestJoinBase, row);
     let joinUrl = guestJoinBase;
     let guestLinkMeta = null;
-    if (policy.require_invite_token) {
-      const primary =
-        invitesEnriched.find((l) => l.label === 'Default guest link' && l.usable) ||
-        invitesEnriched.find((l) => l.usable);
-      if (primary?.joinUrl) {
-        joinUrl = primary.joinUrl;
-        guestLinkMeta = {
-          expiryLabel: primary.expiryLabel,
-          expiryDetail: primary.expiryDetail,
-          expiryMode: primary.expiry_mode,
-          expiryModeLabel: primary.expiryModeLabel,
-          linkTypeLabel: primary.linkTypeLabel,
-          expiresAt: primary.expires_at,
-          reusable: Boolean(primary.reusable),
-        };
-      }
+    const primary =
+      invitesEnriched.find((l) => l.label === 'Default guest link' && l.usable) ||
+      invitesEnriched.find((l) => l.usable);
+    if (primary?.joinUrl) {
+      joinUrl = primary.joinUrl;
+      guestLinkMeta = {
+        expiryLabel: primary.expiryLabel,
+        expiryDetail: primary.expiryDetail,
+        expiryMode: primary.expiry_mode,
+        expiryModeLabel: primary.expiryModeLabel,
+        linkTypeLabel: primary.linkTypeLabel,
+        expiresAt: primary.expires_at,
+        reusable: Boolean(primary.reusable),
+      };
     }
     let roomPresence = { humanCount: 0, participants: [] };
     try {
@@ -460,7 +474,7 @@ router.get('/:id', requireV2Auth, async (req, res) => {
     const tr = await db.get(`SELECT COUNT(*) AS c FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [req.params.id]);
     const transcriptLineCount = tr && Number.isFinite(Number(tr.c)) ? Number(tr.c) : 0;
 
-    const guestAccessActiveFlag = guestAccessActive(row, invites, policy.require_invite_token);
+    const guestAccessActiveFlag = guestAccessActive(row, invites, true);
     const { host_required_to_start, require_invite_token, store_transcripts, ...meetingRow } = row;
     res.json({
       ...meetingRow,
@@ -484,7 +498,7 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
     const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
-    const { title, status, host_required_to_start, require_invite_token, store_transcripts } = req.body || {};
+    const { title, status, host_required_to_start, store_transcripts } = req.body || {};
     if (title != null) await db.run(`UPDATE v2_meetings SET title = ? WHERE id = ?`, [String(title).slice(0, 200), req.params.id]);
     if (status && ['scheduled', 'live', 'ended', 'archived'].includes(status)) {
       const now = new Date().toISOString();
@@ -498,25 +512,19 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
         await db.run(`UPDATE v2_meetings SET status = ? WHERE id = ?`, [status, req.params.id]);
       }
     }
-    if (host_required_to_start !== undefined || require_invite_token !== undefined) {
+    if (host_required_to_start !== undefined) {
       const pol = await db.get(`SELECT meeting_id FROM v2_meeting_policies WHERE meeting_id = ?`, [req.params.id]);
-      const hr = host_required_to_start !== undefined ? (host_required_to_start ? 1 : 0) : null;
-      const ri = require_invite_token !== undefined ? (require_invite_token ? 1 : 0) : null;
+      const hr = host_required_to_start ? 1 : 0;
       if (pol) {
-        if (hr !== null && ri !== null) {
-          await db.run(`UPDATE v2_meeting_policies SET host_required_to_start = ?, require_invite_token = ? WHERE meeting_id = ?`, [hr, ri, req.params.id]);
-        } else if (hr !== null) {
-          await db.run(`UPDATE v2_meeting_policies SET host_required_to_start = ? WHERE meeting_id = ?`, [hr, req.params.id]);
-        } else if (ri !== null) {
-          await db.run(`UPDATE v2_meeting_policies SET require_invite_token = ? WHERE meeting_id = ?`, [ri, req.params.id]);
-        }
+        await db.run(
+          `UPDATE v2_meeting_policies SET host_required_to_start = ?, require_invite_token = 1 WHERE meeting_id = ?`,
+          [hr, req.params.id]
+        );
       } else {
-        await db.run(`INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts) VALUES (?,?,?,?)`, [
-          req.params.id,
-          hr !== null ? hr : 0,
-          ri !== null ? ri : defaultRequireInvite() ? 1 : 0,
-          0,
-        ]);
+        await db.run(
+          `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts) VALUES (?,?,?,?)`,
+          [req.params.id, hr, 1, 0]
+        );
       }
       if (hr === 1) {
         await db.run(`UPDATE v2_meetings SET host_present = 0 WHERE id = ?`, [req.params.id]);
@@ -533,7 +541,7 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
       } else {
         await db.run(
           `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts) VALUES (?,?,?,?)`,
-          [req.params.id, 0, defaultRequireInvite() ? 1 : 0, st]
+          [req.params.id, 0, 1, st]
         );
       }
     }
@@ -547,6 +555,7 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
        WHERE m.id = ?`,
       [req.params.id]
     );
+    await ensureSecureInviteForMeeting(updated);
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: 'Failed to update' });

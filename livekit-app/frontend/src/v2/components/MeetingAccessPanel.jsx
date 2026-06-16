@@ -26,16 +26,6 @@ export default function MeetingAccessPanel({
             </div>
             <Switch checked={!!policy.host_required_to_start} onCheckedChange={(v) => onPatchPolicy({ host_required_to_start: v })} />
           </div>
-          <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
-            <div>
-              <Label className="text-sm">Secure invite link</Label>
-              <p className="text-xs text-muted-foreground">
-                Recommended. Guests join only with your invite link — like a meeting passcode
-                built into the URL. Off means anyone who guesses the room name can join.
-              </p>
-            </div>
-            <Switch checked={!!policy.require_invite_token} onCheckedChange={(v) => onPatchPolicy({ require_invite_token: v })} />
-          </div>
           {canManageTranscriptPolicy && (
             <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
               <div>
@@ -50,7 +40,7 @@ export default function MeetingAccessPanel({
       {showGuestUrl && (
         <div>
           <p className="text-xs text-muted-foreground">
-            Share this link with guests{policy.require_invite_token ? ' — includes a secure invite token' : ''}.
+            Share this secure invite link with guests — it includes a token in the URL.
           </p>
           {guestLinkMeta?.expiryLabel && (
             <p className="mt-2 text-xs text-muted-foreground">

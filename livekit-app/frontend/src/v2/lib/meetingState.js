@@ -3,14 +3,10 @@
  */
 export function isGuestAccessActive(meeting) {
   if (meeting?.guestAccessActive != null) return Boolean(meeting.guestAccessActive);
-  const requireInvite = meeting?.policy?.require_invite_token ?? meeting?.require_invite_token === 1;
-  if (!requireInvite) {
-    return meeting?.status !== 'ended' && meeting?.status !== 'archived';
-  }
   if (Array.isArray(meeting?.invites)) {
     return meeting.invites.some((inv) => inv.usable);
   }
-  return true;
+  return meeting?.status !== 'ended' && meeting?.status !== 'archived';
 }
 
 /** Meeting is over for guests: ended/archived, or empty room with no usable guest link. */

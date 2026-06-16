@@ -65,12 +65,6 @@ async function validateGuestAccess(meeting, inviteToken) {
   if (meeting.host_required_to_start === 1 && meeting.host_present !== 1) {
     return { ok: false, reason: 'waiting_for_host' };
   }
-  if (meeting.require_invite_token !== 1) {
-    if (meeting.status === 'ended') {
-      return { ok: false, reason: 'meeting_ended' };
-    }
-    return { ok: true, link: null };
-  }
   if (!inviteToken || typeof inviteToken !== 'string') {
     return { ok: false, reason: 'invite_required' };
   }
@@ -127,7 +121,7 @@ router.get('/join-info', async (req, res) => {
       allowed: true,
       meetingId: meeting.id,
       title: meeting.title,
-      inviteRequired: meeting.require_invite_token === 1,
+      inviteRequired: true,
       branding: meetingBranding(req, meeting),
     });
   } catch (e) {

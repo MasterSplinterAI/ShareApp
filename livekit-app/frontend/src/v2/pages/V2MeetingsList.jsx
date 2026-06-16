@@ -77,11 +77,7 @@ function isLiveState(uiKey) {
 
 /** Guest link when derivable from list payload; otherwise null ("Open" covers it). */
 function inviteUrlFor(m) {
-  if (m.joinUrl) return m.joinUrl;
-  if (!m.require_invite_token && m.livekit_room_name) {
-    return `${window.location.origin}/join/${encodeURIComponent(m.livekit_room_name)}`;
-  }
-  return null;
+  return m.joinUrl || null;
 }
 
 function LiveBadge({ label }) {
@@ -237,7 +233,6 @@ export default function V2MeetingsList() {
   const [showCreate, setShowCreate] = useState(false);
   const [newTitle, setNewTitle] = useState('Instant meeting');
   const [hostRequired, setHostRequired] = useState(false);
-  const [storeTranscripts, setStoreTranscripts] = useState(false);
   const [scheduledDate, setScheduledDate] = useState(undefined);
   const [startingInstant, setStartingInstant] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -264,7 +259,6 @@ export default function V2MeetingsList() {
     if (searchParams.get('create') === '1') {
       setNewTitle('Instant meeting');
       setHostRequired(false);
-      setStoreTranscripts(false);
       setScheduledDate(undefined);
       setShowCreate(true);
       const next = new URLSearchParams(searchParams);
@@ -318,7 +312,6 @@ export default function V2MeetingsList() {
   const openCreateModal = () => {
     setNewTitle('Instant meeting');
     setHostRequired(false);
-    setStoreTranscripts(false);
     setScheduledDate(undefined);
     setShowCreate(true);
   };
@@ -331,7 +324,6 @@ export default function V2MeetingsList() {
       const m = await v2Meetings.create({
         title: newTitle.trim() || 'Meeting',
         host_required_to_start: hostRequired,
-        store_transcripts: storeTranscripts,
         ...(iso ? { scheduled_start: iso } : {}),
       });
       toast.success(m.status === 'scheduled' ? 'Meeting scheduled' : 'Meeting created');
@@ -350,7 +342,6 @@ export default function V2MeetingsList() {
       const m = await v2Meetings.create({
         title: 'Instant meeting',
         host_required_to_start: false,
-        store_transcripts: false,
       });
       toast.success('Meeting created');
       window.location.href = `/v2/app/meetings/${m.id}`;
@@ -546,7 +537,7 @@ export default function V2MeetingsList() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New meeting</DialogTitle>
-            <DialogDescription>Optional schedule, host gate, and transcript storage.</DialogDescription>
+            <DialogDescription>Optional schedule and host gate. Transcripts save on the server by default.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-2">
@@ -566,15 +557,6 @@ export default function V2MeetingsList() {
                 <p className="text-xs text-muted-foreground">Guests enter only after you open the session.</p>
               </div>
               <Switch id="host-wait" checked={hostRequired} onCheckedChange={setHostRequired} />
-            </div>
-            <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
-              <div className="space-y-0.5">
-                <Label htmlFor="store-tr" className="text-sm">
-                  Save transcript on server
-                </Label>
-                <p className="text-xs text-muted-foreground">Host uploads finalized captions during the meeting.</p>
-              </div>
-              <Switch id="store-tr" checked={storeTranscripts} onCheckedChange={setStoreTranscripts} />
             </div>
           </div>
           <DialogFooter className="gap-2 sm:gap-0">

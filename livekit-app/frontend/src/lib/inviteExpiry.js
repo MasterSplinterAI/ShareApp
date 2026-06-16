@@ -27,7 +27,6 @@ export function expiryOptionsForMeeting(meeting) {
 
 export function defaultExpiryMode(meeting) {
   if (meeting?.defaultExpiryMode) return meeting.defaultExpiryMode;
-  if (meeting?.scheduled_start) return 'through_meeting';
   return 'days_after_start';
 }
 
@@ -35,7 +34,6 @@ export function inviteStatusLine(inv) {
   if (inv.revoked_at) return 'Revoked';
   if (!inv.usable) return inv.expiryLabel || 'Expired';
   const parts = [inv.expiryLabel || expiryModeLabel(inv.expiry_mode)];
-  if (inv.linkTypeLabel) parts.push(inv.linkTypeLabel);
   parts.push(`uses ${inv.use_count ?? 0}`);
   return parts.filter(Boolean).join(' · ');
 }

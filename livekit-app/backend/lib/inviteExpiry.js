@@ -47,11 +47,7 @@ function clampExpiresMs(meeting, targetMs) {
   return Math.min(targetMs, cap);
 }
 
-function defaultExpiryModeForMeeting(meeting) {
-  if (meeting?.scheduled_start) {
-    const t = new Date(meeting.scheduled_start).getTime();
-    if (!Number.isNaN(t)) return 'through_meeting';
-  }
+function defaultExpiryModeForMeeting() {
   return 'days_after_start';
 }
 
@@ -63,7 +59,7 @@ function defaultExpiryModeForMeeting(meeting) {
  * @param {number} [opts.days] - for days_after_start
  */
 function computeInviteExpiresAt(meeting, opts = {}) {
-  const mode = EXPIRY_MODES.has(opts.mode) ? opts.mode : defaultExpiryModeForMeeting(meeting);
+  const mode = EXPIRY_MODES.has(opts.mode) ? opts.mode : defaultExpiryModeForMeeting();
   const now = Date.now();
 
   switch (mode) {
@@ -208,14 +204,13 @@ function guestAccessActive(meeting, invites = [], requireInviteToken = true) {
   return invites.some((inv) => inviteIsUsable(inv, meeting));
 }
 
-function parseCreateInviteBody(body = {}, meeting) {
-  const linkType = LINK_TYPES.has(body.linkType) ? body.linkType : 'shared';
-  const reusable = linkType === 'shared';
+function parseCreateInviteBody(body = {}) {
+  const reusable = true;
 
   let mode = body.expiryMode;
   if (!EXPIRY_MODES.has(mode)) {
     if (body.expiresInHours != null) mode = 'custom_hours';
-    else mode = defaultExpiryModeForMeeting(meeting);
+    else mode = defaultExpiryModeForMeeting();
   }
 
   const opts = { mode };
@@ -226,7 +221,7 @@ function parseCreateInviteBody(body = {}, meeting) {
     opts.days = Number(body.daysAfterStart ?? body.days ?? 7);
   }
 
-  return { reusable, expiryMode: mode, opts, linkType };
+  return { reusable, expiryMode: mode, opts };
 }
 
 module.exports = {

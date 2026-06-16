@@ -9,18 +9,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import {
-  expiryOptionsForMeeting,
-  inviteStatusLine,
-  linkTypeLabel,
-} from '../../lib/inviteExpiry';
+import { expiryOptionsForMeeting, inviteStatusLine } from '../../lib/inviteExpiry';
 
 export default function MeetingInvitesPanel({
   meeting,
   newInviteExpiryMode,
   setNewInviteExpiryMode,
-  newInviteLinkType,
-  setNewInviteLinkType,
   newInviteCustomHours,
   setNewInviteCustomHours,
   maxInviteDays,
@@ -35,34 +29,20 @@ export default function MeetingInvitesPanel({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Link type</Label>
-          <Select value={newInviteLinkType} onValueChange={setNewInviteLinkType}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="shared">{linkTypeLabel('shared')}</SelectItem>
-              <SelectItem value="single_use">{linkTypeLabel('single_use')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Expires</Label>
-          <Select value={newInviteExpiryMode} onValueChange={setNewInviteExpiryMode}>
-            <SelectTrigger className="h-9">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {expiryOptions.map((o) => (
-                <SelectItem key={o.value} value={o.value}>
-                  {o.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-1">
+        <Label className="text-xs text-muted-foreground">Expires</Label>
+        <Select value={newInviteExpiryMode} onValueChange={setNewInviteExpiryMode}>
+          <SelectTrigger className="h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {expiryOptions.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       {showCustomHours && (
         <div className="flex flex-wrap items-end gap-3">
@@ -93,8 +73,8 @@ export default function MeetingInvitesPanel({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Longest cap: {maxInviteDays ?? 90} days from scheduled start (or from now if unscheduled). Configured via{' '}
-        <code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>.
+        Anyone with the link can join. Longest cap: {maxInviteDays ?? 90} days from scheduled start (or from now if
+        unscheduled). Configured via <code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>.
       </p>
       <ul className="space-y-3 text-sm">
         {(meeting.invites || []).map((inv) => (

@@ -1,5 +1,5 @@
 {
-  "_version": 2,
+  "_version": 3,
   "nav": {
     "features": "Funciones",
     "aiReports": "Informes con IA",
@@ -284,5 +284,23 @@
   "language": {
     "label": "Idioma",
     "choose": "Elegir idioma"
+  },
+  "prejoin": {
+    "readyTitle": "¿Listo para unirte?",
+    "inMeeting": "{{count}} en la reunión",
+    "muteMic": "Silenciar micrófono",
+    "unmuteMic": "Activar micrófono",
+    "turnOffCamera": "Apagar cámara",
+    "turnOnCamera": "Encender cámara",
+    "mediaError": "Cámara o micrófono no disponible ({{reason}}). Aún puedes unirte — los subtítulos en vivo requieren un micrófono funcional.",
+    "permissionDenied": "permiso denegado",
+    "background": "Fondo",
+    "microphone": "Micrófono",
+    "camera": "Cámara",
+    "displayName": "Nombre para mostrar",
+    "namePlaceholder": "Tu nombre",
+    "myLanguage": "Mi idioma (hablar y escuchar)",
+    "languageHint": "Los subtítulos y traducciones aparecerán en este idioma.",
+    "joinMeeting": "Unirse a la reunión"
   }
 }

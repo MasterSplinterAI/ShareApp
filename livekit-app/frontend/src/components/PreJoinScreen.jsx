@@ -11,6 +11,8 @@ import { Label } from './ui/label';
 import MeetingBrandHeader from './MeetingBrandHeader';
 import VideoEffectsPicker from './VideoEffectsPicker';
 import { brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding';
+import { useTranslation } from '../lib/i18n/I18nProvider';
+import { isSupportedLocale, resolveLocale } from '../lib/i18n/constants';
 import {
   applyVideoEffect,
   loadSavedEffectId,
@@ -72,8 +74,8 @@ function MicLevelMeter({ audioTrack }) {
   );
 }
 
-function DeviceSelect({ kind, devices, activeDeviceId, onChange, disabled }) {
-  const label = kind === 'audioinput' ? 'Microphone' : 'Camera';
+function DeviceSelect({ kind, devices, activeDeviceId, onChange, disabled, microphoneLabel, cameraLabel }) {
+  const label = kind === 'audioinput' ? microphoneLabel : cameraLabel;
   if (!devices.length) return null;
   return (
     <div className="space-y-1.5">
@@ -112,10 +114,28 @@ function PreJoinScreen({
   onMediaChange,
   onJoin,
 }) {
+  const { t, setLocale } = useTranslation();
   const [name, setName] = useState(defaultName);
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
     normalizeMeetingLanguageCode(defaultLanguage || readStoredMeetingLanguage())
   );
+
+  const syncUiLocaleToMeetingLanguage = useCallback((code) => {
+    const uiLocale = resolveLocale(normalizeMeetingLanguageCode(code));
+    if (isSupportedLocale(uiLocale)) {
+      setLocale(uiLocale);
+    }
+  }, [setLocale]);
+
+  useEffect(() => {
+    syncUiLocaleToMeetingLanguage(selectedLanguage);
+  }, [selectedLanguage, syncUiLocaleToMeetingLanguage]);
+
+  const handleLanguageChange = useCallback((code) => {
+    const next = normalizeMeetingLanguageCode(code);
+    setSelectedLanguage(next);
+    syncUiLocaleToMeetingLanguage(next);
+  }, [syncUiLocaleToMeetingLanguage]);
   const { audioEnabled, videoEnabled, audioDeviceId, videoDeviceId } = media;
   const setAudioEnabled = useCallback(
     (value) => {
@@ -226,19 +246,18 @@ function PreJoinScreen({
   return (
     <div
       className="flex min-h-[100dvh] items-center justify-center bg-muted/40 px-4 py-6"
-      data-no-translate="true"
       style={brandingStyleVars(branding)}
     >
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border/70 bg-card shadow-lg">
         <div className="border-b border-border/60 px-4 py-4 text-center sm:px-6 sm:py-5">
           <MeetingBrandHeader branding={branding} meetingTitle={meetingTitle} />
-          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Ready to join?</h1>
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{t('prejoin.readyTitle')}</h1>
           <p className="mt-1 flex flex-wrap items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <span className="truncate">{roomName}</span>
             {participantCount !== null && participantCount > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
                 <Users className="h-3 w-3" />
-                {participantCount} in meeting
+                {t('prejoin.inMeeting', { count: participantCount })}
               </span>
             )}
           </p>
@@ -269,9 +288,9 @@ function PreJoinScreen({
                 <button
                   type="button"
                   onClick={() => setAudioEnabled((v) => !v)}
-                  aria-label={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                  aria-label={audioEnabled ? t('prejoin.muteMic') : t('prejoin.unmuteMic')}
                   aria-pressed={!audioEnabled}
-                  title={audioEnabled ? 'Mute microphone' : 'Unmute microphone'}
+                  title={audioEnabled ? t('prejoin.muteMic') : t('prejoin.unmuteMic')}
                   className={`flex h-11 w-11 items-center justify-center rounded-full shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90 focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 ${
                     audioEnabled
                       ? 'bg-white/90 text-zinc-900 hover:bg-white'
@@ -283,9 +302,9 @@ function PreJoinScreen({
                 <button
                   type="button"
                   onClick={() => setVideoEnabled((v) => !v)}
-                  aria-label={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+                  aria-label={videoEnabled ? t('prejoin.turnOffCamera') : t('prejoin.turnOnCamera')}
                   aria-pressed={!videoEnabled}
-                  title={videoEnabled ? 'Turn off camera' : 'Turn on camera'}
+                  title={videoEnabled ? t('prejoin.turnOffCamera') : t('prejoin.turnOnCamera')}
                   className={`flex h-11 w-11 items-center justify-center rounded-full shadow-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90 focus-visible:ring-offset-2 focus-visible:ring-offset-black/40 ${
                     videoEnabled
                       ? 'bg-white/90 text-zinc-900 hover:bg-white'
@@ -310,15 +329,16 @@ function PreJoinScreen({
               >
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
                 <span>
-                  Camera or microphone unavailable ({mediaError.name || 'permission denied'}). You
-                  can still join — live captions need a working microphone.
+                  {t('prejoin.mediaError', {
+                    reason: mediaError.name || t('prejoin.permissionDenied'),
+                  })}
                 </span>
               </p>
             )}
 
             {effectsSupported && (
               <div className="space-y-1.5">
-                <Label className="text-xs font-medium text-muted-foreground">Background</Label>
+                <Label className="text-xs font-medium text-muted-foreground">{t('prejoin.background')}</Label>
                 <VideoEffectsPicker
                   activeEffectId={effectId}
                   onSelect={handleEffectSelect}
@@ -334,6 +354,8 @@ function PreJoinScreen({
                 activeDeviceId={audioDeviceId || audioTrack?.mediaStreamTrack?.getSettings?.()?.deviceId}
                 onChange={setAudioDeviceId}
                 disabled={!audioEnabled}
+                microphoneLabel={t('prejoin.microphone')}
+                cameraLabel={t('prejoin.camera')}
               />
               <DeviceSelect
                 kind="videoinput"
@@ -341,6 +363,8 @@ function PreJoinScreen({
                 activeDeviceId={videoDeviceId || videoTrack?.mediaStreamTrack?.getSettings?.()?.deviceId}
                 onChange={setVideoDeviceId}
                 disabled={!videoEnabled}
+                microphoneLabel={t('prejoin.microphone')}
+                cameraLabel={t('prejoin.camera')}
               />
             </div>
           </div>
@@ -348,12 +372,12 @@ function PreJoinScreen({
           {/* Join form */}
           <form onSubmit={handleSubmit} className="flex flex-col justify-center space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="pj-name">Display name</Label>
+              <Label htmlFor="pj-name">{t('prejoin.displayName')}</Label>
               <Input
                 id="pj-name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Your name"
+                placeholder={t('prejoin.namePlaceholder')}
                 autoFocus={!defaultName}
                 required
               />
@@ -362,15 +386,15 @@ function PreJoinScreen({
             <div className="space-y-2">
               <Label className="flex items-center gap-1">
                 <Globe className="h-3.5 w-3.5" />
-                My language (speak &amp; hear)
+                {t('prejoin.myLanguage')}
               </Label>
               <MeetingLanguagePicker
                 value={selectedLanguage}
-                onChange={setSelectedLanguage}
+                onChange={handleLanguageChange}
                 align="start"
               />
               <p className="text-xs text-muted-foreground">
-                Captions and translations will appear in this language.
+                {t('prejoin.languageHint')}
               </p>
             </div>
 
@@ -380,7 +404,7 @@ function PreJoinScreen({
               className={branding ? brandButtonClassName('w-full border-0') : 'w-full'}
               disabled={!name.trim()}
             >
-              Join meeting
+              {t('prejoin.joinMeeting')}
             </Button>
           </form>
         </div>

@@ -116,8 +116,7 @@ export default function V2MeetingDetail() {
   const [me, setMe] = useState(null);
   const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
-  const [newInviteExpiryMode, setNewInviteExpiryMode] = useState('through_meeting');
-  const [newInviteLinkType, setNewInviteLinkType] = useState('shared');
+  const [newInviteExpiryMode, setNewInviteExpiryMode] = useState('days_after_start');
   const [newInviteCustomHours, setNewInviteCustomHours] = useState(72);
   const [ending, setEnding] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
@@ -273,8 +272,7 @@ export default function V2MeetingDetail() {
     try {
       const body = {
         expiryMode: newInviteExpiryMode,
-        linkType: newInviteLinkType,
-        label: newInviteLinkType === 'single_use' ? 'Single-guest link' : 'Guest link',
+        label: 'Guest link',
       };
       if (newInviteExpiryMode === 'custom_hours') {
         body.expiresInHours = newInviteCustomHours;
@@ -408,8 +406,8 @@ export default function V2MeetingDetail() {
     );
   }
 
-  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: false, store_transcripts: false };
-  const guestUrlNeedsToken = policy.require_invite_token && meeting.joinUrl && !meeting.joinUrl.includes('?i=');
+  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: true };
+  const guestUrlNeedsToken = meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteDays = meeting.inviteMaxTtlDays ?? 90;
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
   const canManageTranscriptPolicy = canManageMeeting;
@@ -452,8 +450,6 @@ export default function V2MeetingDetail() {
     meeting,
     newInviteExpiryMode,
     setNewInviteExpiryMode,
-    newInviteLinkType,
-    setNewInviteLinkType,
     newInviteCustomHours,
     setNewInviteCustomHours,
     maxInviteDays,

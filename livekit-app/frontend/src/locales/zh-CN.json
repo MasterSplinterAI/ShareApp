@@ -1,5 +1,5 @@
 {
-  "_version": 2,
+  "_version": 3,
   "nav": {
     "features": "功能",
     "aiReports": "AI 报告",
@@ -284,5 +284,23 @@
   "language": {
     "label": "语言",
     "choose": "选择语言"
+  },
+  "prejoin": {
+    "readyTitle": "准备好加入了吗？",
+    "inMeeting": "{{count}} 人在会议中",
+    "muteMic": "静音麦克风",
+    "unmuteMic": "取消静音",
+    "turnOffCamera": "关闭摄像头",
+    "turnOnCamera": "打开摄像头",
+    "mediaError": "摄像头或麦克风不可用（{{reason}}）。您仍可加入 — 实时字幕需要可用的麦克风。",
+    "permissionDenied": "权限被拒绝",
+    "background": "背景",
+    "microphone": "麦克风",
+    "camera": "摄像头",
+    "displayName": "显示名称",
+    "namePlaceholder": "您的姓名",
+    "myLanguage": "我的语言（说与听）",
+    "languageHint": "字幕和翻译将以此语言显示。",
+    "joinMeeting": "加入会议"
   }
 }

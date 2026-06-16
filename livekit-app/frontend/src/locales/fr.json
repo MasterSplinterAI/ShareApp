@@ -1,5 +1,5 @@
 {
-  "_version": 2,
+  "_version": 3,
   "nav": {
     "features": "Fonctionnalités",
     "aiReports": "Rapports IA",
@@ -284,5 +284,23 @@
   "language": {
     "label": "Langue",
     "choose": "Choisir la langue"
+  },
+  "prejoin": {
+    "readyTitle": "Prêt à rejoindre ?",
+    "inMeeting": "{{count}} dans la réunion",
+    "muteMic": "Couper le micro",
+    "unmuteMic": "Activer le micro",
+    "turnOffCamera": "Éteindre la caméra",
+    "turnOnCamera": "Allumer la caméra",
+    "mediaError": "Caméra ou micro indisponible ({{reason}}). Vous pouvez quand même rejoindre — les sous-titres en direct nécessitent un micro fonctionnel.",
+    "permissionDenied": "autorisation refusée",
+    "background": "Arrière-plan",
+    "microphone": "Microphone",
+    "camera": "Caméra",
+    "displayName": "Nom affiché",
+    "namePlaceholder": "Votre nom",
+    "myLanguage": "Ma langue (parler et écouter)",
+    "languageHint": "Les sous-titres et traductions s'afficheront dans cette langue.",
+    "joinMeeting": "Rejoindre la réunion"
   }
 }
