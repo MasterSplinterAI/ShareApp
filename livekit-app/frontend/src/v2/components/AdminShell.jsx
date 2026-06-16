@@ -55,7 +55,8 @@ const NAV_SECTIONS = [
   {
     label: 'Finance',
     items: [
-      { to: '/v2/app/admin/costs', label: 'Revenue & costs', icon: DollarSign },
+      { to: '/v2/app/admin/billing', label: 'Billing & Stripe', icon: DollarSign },
+      { to: '/v2/app/admin/costs', label: 'Revenue & costs', icon: BarChart3 },
       { to: '/v2/app/admin/trends', label: 'Trends', icon: TrendingUp },
     ],
   },
@@ -64,7 +65,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/v2/app/admin/support', label: 'Support', icon: Ticket },
       { to: '/v2/app/admin/comms', label: 'Comms', icon: Mail },
-      { to: '/v2/app/admin/audit', label: 'Audit log', icon: BarChart3 },
+      { to: '/v2/app/admin/audit', label: 'Audit log', icon: ScrollText },
     ],
   },
 ];

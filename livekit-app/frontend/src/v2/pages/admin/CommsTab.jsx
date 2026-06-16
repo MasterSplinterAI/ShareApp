@@ -330,9 +330,188 @@ function BroadcastSection() {
   );
 }
 
+function MarketingConsentSection() {
+  const [filter, setFilter] = useState('opted_in');
+  const [q, setQ] = useState('');
+  const [rows, setRows] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [offset, setOffset] = useState(0);
+  const [total, setTotal] = useState(0);
+  const limit = 50;
+
+  const reload = (nextOffset = offset) => {
+    setLoading(true);
+    return v2Admin
+      .marketingConsent({ filter, q: q.trim() || undefined, limit, offset: nextOffset })
+      .then((r) => {
+        setRows(r.users || []);
+        setSummary(r.summary || null);
+        setTotal(r.pagination?.total || 0);
+        setOffset(nextOffset);
+      })
+      .catch(() => toast.error('Failed to load marketing consent data'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reload(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
+
+  const exportCsv = () => {
+    if (!rows.length) {
+      toast.error('Nothing to export on this page.');
+      return;
+    }
+    const header = ['email', 'display_name', 'marketing_opt_in', 'prefs_updated_at', 'last_opt_in_at', 'created_at'];
+    const lines = [
+      header.join(','),
+      ...rows.map((u) =>
+        [
+          u.email,
+          (u.displayName || '').replace(/"/g, '""'),
+          u.marketingEmail ? 'yes' : 'no',
+          u.prefsUpdatedAt || '',
+          u.lastOptInAt || '',
+          u.createdAt || '',
+        ]
+          .map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`)
+          .join(',')
+      ),
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `marketing-consent-${filter}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <Card className="app-card overflow-hidden border-border/60">
+      <CardHeader>
+        <CardTitle className="text-lg">Marketing email opt-ins</CardTitle>
+        <CardDescription>
+          Users who agreed to product updates and announcements. Source: account signup checkbox and Settings → Account
+          preferences. Consent changes are also stored in the audit trail.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {summary && (
+          <div className="flex flex-wrap gap-3 text-sm">
+            <Badge variant="outline">{summary.optedIn?.toLocaleString()} opted in</Badge>
+            <Badge variant="secondary">{summary.optedOut?.toLocaleString()} opted out</Badge>
+            <Badge variant="secondary">{summary.total?.toLocaleString()} total users</Badge>
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: 'opted_in', label: 'Opted in' },
+            { id: 'opted_out', label: 'Opted out' },
+            { id: 'all', label: 'All users' },
+          ].map((opt) => (
+            <Button
+              key={opt.id}
+              type="button"
+              size="sm"
+              variant={filter === opt.id ? 'default' : 'outline'}
+              onClick={() => setFilter(opt.id)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search email or name…"
+            aria-label="Search marketing consent users"
+            className="max-w-xs"
+          />
+          <Button type="button" size="sm" variant="outline" onClick={() => reload(0)}>
+            Search
+          </Button>
+          <Button type="button" size="sm" variant="outline" onClick={exportCsv} disabled={!rows.length}>
+            Export page CSV
+          </Button>
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-border/60">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Email</th>
+                <th className="px-3 py-2 font-medium">Name</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Updated</th>
+                <th className="px-3 py-2 font-medium">Last opt-in</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                    Loading…
+                  </td>
+                </tr>
+              ) : rows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
+                    No users match this filter.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((u) => (
+                  <tr key={u.id} className="border-b border-border/60 last:border-0">
+                    <td className="px-3 py-2">{u.email}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{u.displayName || '—'}</td>
+                    <td className="px-3 py-2">
+                      {u.marketingEmail ? (
+                        <Badge className="bg-emerald-600 hover:bg-emerald-600">Opted in</Badge>
+                      ) : (
+                        <Badge variant="secondary">Opted out</Badge>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDateTime(u.prefsUpdatedAt)}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{fmtDateTime(u.lastOptInAt)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {total > limit && (
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}
+            </span>
+            <div className="flex gap-2">
+              <Button type="button" size="sm" variant="outline" disabled={offset <= 0 || loading} onClick={() => reload(Math.max(0, offset - limit))}>
+                Previous
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={offset + limit >= total || loading}
+                onClick={() => reload(offset + limit)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CommsTab({ selectedOrgId }) {
   return (
     <div className="space-y-4">
+      <MarketingConsentSection />
       <AnnouncementsSection />
       <div className="grid gap-4 lg:grid-cols-2">
         <EmailOrgSection selectedOrgId={selectedOrgId} />

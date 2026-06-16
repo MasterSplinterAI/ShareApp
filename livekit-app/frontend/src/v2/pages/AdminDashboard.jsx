@@ -14,6 +14,7 @@ import { CostsTab } from './admin/CostsTab';
 import { GuestsTab } from './admin/GuestsTab';
 import { AuditTab } from './admin/AuditTab';
 import { PlansTab } from './admin/PlansTab';
+import { BillingTab } from './admin/BillingTab';
 import { CommsTab } from './admin/CommsTab';
 import { SupportTab } from './admin/SupportTab';
 
@@ -120,6 +121,10 @@ export function AdminCommsPage() {
   return <CommsTab selectedOrgId={selectedOrg} />;
 }
 
+export function AdminBillingPage() {
+  return <BillingTab />;
+}
+
 export function AdminSupportPage() {
   const [searchParams] = useSearchParams();
   const initialTicket = searchParams.get('ticket');
@@ -140,6 +145,7 @@ export function SuperAdminRedirect() {
     meetings: 'meetings',
     trends: 'trends',
     costs: 'costs',
+    billing: 'billing',
     comms: 'comms',
     support: 'support',
     guests: 'guests',

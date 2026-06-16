@@ -71,6 +71,7 @@ export default function V2OrgSettings() {
   const [billingSnap, setBillingSnap] = useState(null);
   const [plans, setPlans] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
+  const [portalLoading, setPortalLoading] = useState(null);
 
   const startCheckout = async (planId) => {
     setCheckoutLoading(planId);
@@ -84,12 +85,16 @@ export default function V2OrgSettings() {
     }
   };
 
-  const openPortal = async () => {
+  const openPortal = async (flow) => {
+    setPortalLoading(flow || 'manage');
     try {
-      const { url } = await v2Billing.portal();
+      const body = flow === 'cancel' ? { flow: 'cancel' } : {};
+      const { url } = await v2Billing.portal(body);
       if (url) window.location.href = url;
     } catch (e) {
       toast.error(e.response?.data?.error || 'Billing portal unavailable');
+    } finally {
+      setPortalLoading(null);
     }
   };
 
@@ -905,35 +910,73 @@ export default function V2OrgSettings() {
                   )}
                 </div>
                 {canManage && billingSnap?.subscription?.is_comp !== 1 && (
-                  <div className="space-y-3 border-t border-border/60 pt-4">
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</div>
-                    <div className="flex flex-wrap gap-2">
-                      {plans
-                        .filter((p) => p.id !== 'free' && p.id !== billingSnap?.plan?.id)
-                        .map((p) => (
-                          <Button
-                            key={p.id}
-                            type="button"
-                            variant={p.teamWorkspace ? 'default' : 'outline'}
-                            size="sm"
-                            disabled={!billingSnap?.stripeEnabled || checkoutLoading === p.id}
-                            onClick={() => startCheckout(p.id)}
-                          >
-                            {checkoutLoading === p.id
-                              ? 'Loading…'
-                              : `Upgrade to ${p.name}${p.teamWorkspace ? ' (business)' : ''}`}
-                          </Button>
-                        ))}
-                      {billingSnap?.subscription?.stripe_customer_id && billingSnap?.stripeEnabled && (
-                        <Button type="button" variant="ghost" size="sm" onClick={openPortal}>
-                          Manage billing
-                        </Button>
+                  <div className="space-y-4 border-t border-border/60 pt-4">
+                    <div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Upgrade</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {plans
+                          .filter((p) => p.id !== 'free' && p.id !== billingSnap?.plan?.id)
+                          .map((p) => (
+                            <Button
+                              key={p.id}
+                              type="button"
+                              variant={p.teamWorkspace ? 'default' : 'outline'}
+                              size="sm"
+                              disabled={!billingSnap?.stripeEnabled || checkoutLoading === p.id}
+                              onClick={() => startCheckout(p.id)}
+                            >
+                              {checkoutLoading === p.id
+                                ? 'Loading…'
+                                : `Upgrade to ${p.name}${p.teamWorkspace ? ' (business)' : ''}`}
+                            </Button>
+                          ))}
+                      </div>
+                      {!billingSnap?.stripeEnabled && (
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          Stripe checkout is disabled on this server. Set STRIPE_ENABLED=true with API keys to enable.
+                        </p>
                       )}
                     </div>
-                    {!billingSnap?.stripeEnabled && (
-                      <p className="text-xs text-muted-foreground">
-                        Stripe checkout is disabled on this server. Set STRIPE_ENABLED=true with test API keys to enable.
-                      </p>
+
+                    {billingSnap?.subscription?.stripe_customer_id && billingSnap?.stripeEnabled && (
+                      <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
+                        <div>
+                          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Subscription management
+                          </div>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            Update your payment method, view invoices, or cancel your subscription. Cancellations are
+                            processed securely through Stripe.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={portalLoading === 'manage'}
+                            onClick={() => openPortal()}
+                          >
+                            {portalLoading === 'manage' ? 'Loading…' : 'Manage billing & invoices'}
+                          </Button>
+                          {billingSnap?.subscription?.stripe_subscription_id &&
+                            billingSnap?.plan?.id !== 'free' &&
+                            !['canceled', 'cancelled'].includes(
+                              String(billingSnap?.subscription?.status || '').toLowerCase()
+                            ) && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={portalLoading === 'cancel'}
+                                onClick={() => openPortal('cancel')}
+                              >
+                                {portalLoading === 'cancel' ? 'Loading…' : 'Cancel subscription'}
+                              </Button>
+                            )}
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

@@ -22,6 +22,7 @@ import {
   AdminUsersPage,
   AdminMeetingsPage,
   AdminCostsPage,
+  AdminBillingPage,
   AdminCommsPage,
   AdminSupportPage,
   SuperAdminRedirect,
@@ -82,6 +83,7 @@ function App() {
                 <Route path="meetings" element={<AdminMeetingsPage />} />
                 <Route path="trends" element={<TrendsTab />} />
                 <Route path="costs" element={<AdminCostsPage />} />
+                <Route path="billing" element={<AdminBillingPage />} />
                 <Route path="comms" element={<AdminCommsPage />} />
                 <Route path="support" element={<AdminSupportPage />} />
                 <Route path="guests" element={<GuestsTab />} />

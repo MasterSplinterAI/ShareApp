@@ -123,10 +123,19 @@ router.post('/portal', requireV2Auth, async (req, res) => {
     }
     const stripe = getStripe();
     const base = frontendBaseUrl();
-    const session = await stripe.billingPortal.sessions.create({
+    const { flow } = req.body || {};
+    const returnUrl = `${base}/v2/app/settings?section=billing`;
+    const sessionParams = {
       customer: sub.stripe_customer_id,
-      return_url: `${base}/v2/app/settings`,
-    });
+      return_url: returnUrl,
+    };
+    if (flow === 'cancel' && sub.stripe_subscription_id) {
+      sessionParams.flow_data = {
+        type: 'subscription_cancel',
+        subscription_cancel: { subscription: sub.stripe_subscription_id },
+      };
+    }
+    const session = await stripe.billingPortal.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) {
     console.error('[v2/billing/portal]', e);

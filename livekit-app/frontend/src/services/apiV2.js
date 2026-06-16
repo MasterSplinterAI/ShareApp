@@ -149,7 +149,7 @@ export const v2Billing = {
   plans: () => apiV2.get('/billing/plans').then((r) => r.data),
   subscription: () => apiV2.get('/billing/subscription').then((r) => r.data),
   checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
-  portal: () => apiV2.post('/billing/portal', {}).then((r) => r.data),
+  portal: (body) => apiV2.post('/billing/portal', body || {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),
 };
 
@@ -185,6 +185,10 @@ export const v2Admin = {
   createAnnouncement: (body) => apiV2.post('/admin/announcements', body).then((r) => r.data),
   patchAnnouncement: (id, body) => apiV2.patch(`/admin/announcements/${encodeURIComponent(id)}`, body).then((r) => r.data),
   broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
+  billingConfig: () => apiV2.get('/admin/billing/config').then((r) => r.data),
+  cancelOrgSubscription: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
+  marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),
 };
 
 export const v2Announcements = {

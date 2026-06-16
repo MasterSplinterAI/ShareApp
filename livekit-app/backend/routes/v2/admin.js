@@ -7,6 +7,30 @@ const { getMonthToDateUsage } = require('../../lib/v2Entitlements');
 const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
 const { sendEmail } = require('../../lib/mailer');
 const { sendPasswordResetEmail } = require('../../lib/passwordReset');
+const { getPrefs } = require('../../lib/communicationPrefs');
+
+function stripeEnabled() {
+  return process.env.STRIPE_ENABLED === 'true' && Boolean(process.env.STRIPE_SECRET_KEY);
+}
+
+function getStripe() {
+  if (!stripeEnabled()) return null;
+  // eslint-disable-next-line global-require
+  const Stripe = require('stripe');
+  return new Stripe(process.env.STRIPE_SECRET_KEY);
+}
+
+function stripeKeyMode() {
+  const key = process.env.STRIPE_SECRET_KEY || '';
+  if (key.startsWith('sk_live_')) return 'live';
+  if (key.startsWith('sk_test_')) return 'test';
+  if (key) return 'unknown';
+  return 'unset';
+}
+
+function backendBaseUrl() {
+  return (process.env.BACKEND_BASE_URL || process.env.PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
+}
 
 function requireAuditReason(reason) {
   const reasonTrim = typeof reason === 'string' ? reason.trim() : '';
@@ -769,7 +793,8 @@ router.get('/users/:userId', requireV2Auth, requireSuperadmin, async (req, res) 
       [membership?.org_id || '']
     );
     const usage = membership?.org_id ? await getMonthToDateUsage(membership.org_id) : null;
-    res.json({ user, membership, recentMeetings, usageThisMonth: usage });
+    const communicationPrefs = await getPrefs(req.params.userId);
+    res.json({ user, membership, recentMeetings, usageThisMonth: usage, communicationPrefs });
   } catch (e) {
     console.error('[admin/user detail]', e);
     res.status(500).json({ error: 'Failed' });
@@ -879,6 +904,166 @@ router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, 
     res.json({ ok: true, sent: result.sent, recipients: emails });
   } catch (e) {
     console.error('[admin/email org]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const plans = await db.all(
+      `SELECT id, name, stripe_price_id, monthly_price_cents FROM v2_plans ORDER BY monthly_price_cents ASC`
+    );
+    const withCustomer = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE stripe_customer_id IS NOT NULL AND stripe_customer_id != ''`
+    );
+    const withSubscription = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE stripe_subscription_id IS NOT NULL AND stripe_subscription_id != ''`
+    );
+    const base = backendBaseUrl();
+    res.json({
+      stripeEnabled: stripeEnabled(),
+      stripeKeyMode: stripeKeyMode(),
+      webhookUrl: base ? `${base}/api/v2/billing/webhook` : null,
+      autoChargeEnabled: process.env.V2_AUTO_CHARGE_ENABLED === 'true',
+      plansConfigured: plans.filter((p) => p.stripe_price_id).length,
+      plansTotal: plans.length,
+      plans,
+      stats: {
+        orgsWithStripeCustomer: withCustomer?.c || 0,
+        orgsWithStripeSubscription: withSubscription?.c || 0,
+      },
+      envChecklist: [
+        { key: 'STRIPE_ENABLED', ok: process.env.STRIPE_ENABLED === 'true' },
+        { key: 'STRIPE_SECRET_KEY', ok: Boolean(process.env.STRIPE_SECRET_KEY) },
+        { key: 'STRIPE_WEBHOOK_SECRET', ok: Boolean(process.env.STRIPE_WEBHOOK_SECRET) },
+        { key: 'BACKEND_BASE_URL', ok: Boolean(base) },
+        {
+          key: 'FRONTEND_URL',
+          ok: Boolean(process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL),
+        },
+      ],
+    });
+  } catch (e) {
+    console.error('[admin/billing/config]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/orgs/:orgId/cancel-subscription', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reasonTrim = requireAuditReason(req.body?.reason);
+    if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
+    if (!stripeEnabled()) {
+      return res.status(400).json({ error: 'Stripe billing is not enabled on this server' });
+    }
+
+    const org = await db.get(`SELECT id, name FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
+    if (!org) return res.status(404).json({ error: 'Org not found' });
+
+    const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.params.orgId]);
+    if (!sub?.stripe_subscription_id) {
+      return res.status(400).json({ error: 'No Stripe subscription on file for this org' });
+    }
+    if (sub.is_comp === 1) {
+      return res.status(400).json({ error: 'Comp accounts are not billed via Stripe' });
+    }
+
+    const cancelAtPeriodEnd = req.body?.cancelAtPeriodEnd !== false;
+    const stripe = getStripe();
+    const result = cancelAtPeriodEnd
+      ? await stripe.subscriptions.update(sub.stripe_subscription_id, { cancel_at_period_end: true })
+      : await stripe.subscriptions.cancel(sub.stripe_subscription_id);
+
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_cancel_subscription', {
+      orgId: req.params.orgId,
+      orgName: org.name,
+      subscriptionId: sub.stripe_subscription_id,
+      cancelAtPeriodEnd,
+      stripeStatus: result.status,
+      reason: reasonTrim,
+    });
+
+    res.json({
+      ok: true,
+      status: result.status,
+      cancelAtPeriodEnd: Boolean(result.cancel_at_period_end),
+      currentPeriodEnd: result.current_period_end
+        ? new Date(result.current_period_end * 1000).toISOString()
+        : null,
+    });
+  } catch (e) {
+    console.error('[admin/cancel-subscription]', e);
+    res.status(500).json({ error: e.message || 'Failed to cancel subscription' });
+  }
+});
+
+router.get('/consent/marketing', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const filter = String(req.query.filter || 'opted_in').toLowerCase();
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const limit = Math.min(500, Math.max(1, parseInt(req.query.limit, 10) || 100));
+    const offset = Math.max(0, parseInt(req.query.offset, 10) || 0);
+
+    const summaryRow = await db.get(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN COALESCE(p.marketing_email, 0) = 1 THEN 1 ELSE 0 END) AS opted_in,
+         SUM(CASE WHEN COALESCE(p.marketing_email, 0) = 0 THEN 1 ELSE 0 END) AS opted_out
+       FROM v2_users u
+       LEFT JOIN v2_user_communication_prefs p ON p.user_id = u.id
+       WHERE u.disabled_at IS NULL`
+    );
+
+    let where = `u.disabled_at IS NULL`;
+    const params = [];
+    if (filter === 'opted_in') where += ` AND COALESCE(p.marketing_email, 0) = 1`;
+    else if (filter === 'opted_out') where += ` AND COALESCE(p.marketing_email, 0) = 0`;
+    if (q) {
+      where += ` AND (lower(u.email) LIKE ? OR lower(COALESCE(u.display_name, '')) LIKE ?)`;
+      params.push(`%${q}%`, `%${q}%`);
+    }
+
+    const users = await db.all(
+      `SELECT u.id, u.email, u.display_name, u.created_at,
+              COALESCE(p.marketing_email, 0) AS marketing_email,
+              p.prefs_updated_at,
+              (SELECT MAX(ce.created_at) FROM v2_consent_events ce
+               WHERE ce.user_id = u.id AND ce.consent_type = 'marketing_email' AND ce.granted = 1) AS last_opt_in_at
+       FROM v2_users u
+       LEFT JOIN v2_user_communication_prefs p ON p.user_id = u.id
+       WHERE ${where}
+       ORDER BY COALESCE(p.prefs_updated_at, u.created_at) DESC
+       LIMIT ? OFFSET ?`,
+      [...params, limit, offset]
+    );
+
+    const countRow = await db.get(
+      `SELECT COUNT(*) AS c
+       FROM v2_users u
+       LEFT JOIN v2_user_communication_prefs p ON p.user_id = u.id
+       WHERE ${where}`,
+      params
+    );
+
+    res.json({
+      summary: {
+        total: summaryRow?.total || 0,
+        optedIn: summaryRow?.opted_in || 0,
+        optedOut: summaryRow?.opted_out || 0,
+      },
+      users: users.map((row) => ({
+        id: row.id,
+        email: row.email,
+        displayName: row.display_name,
+        createdAt: row.created_at,
+        marketingEmail: Boolean(row.marketing_email),
+        prefsUpdatedAt: row.prefs_updated_at,
+        lastOptInAt: row.last_opt_in_at,
+      })),
+      pagination: { limit, offset, total: countRow?.c || 0 },
+    });
+  } catch (e) {
+    console.error('[admin/consent/marketing]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

@@ -77,6 +77,16 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
     );
   };
 
+  const cancelStripeSubscription = (immediate = false) =>
+    runWithReason(
+      immediate ? 'Stripe subscription canceled immediately' : 'Stripe subscription set to cancel at period end',
+      (reason) =>
+        v2Admin.cancelOrgSubscription(selectedOrg, {
+          reason,
+          cancelAtPeriodEnd: !immediate,
+        })
+    );
+
   const saveLimits = (clear = false) => {
     const edit = limitsEdit[key] || {};
     const body = clear
@@ -388,6 +398,60 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
                 Save billing status
               </Button>
             </div>
+
+            {sub?.stripe_subscription_id && sub?.is_comp !== 1 && (
+              <div className="space-y-3 rounded-lg border border-border/60 p-4 lg:col-span-2">
+                <h3 className="font-medium">Stripe subscription</h3>
+                <div className="grid gap-2 text-sm sm:grid-cols-2">
+                  <div>
+                    <span className="text-muted-foreground">Subscription ID: </span>
+                    <code className="text-xs">{sub.stripe_subscription_id}</code>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Customer ID: </span>
+                    <code className="text-xs">{sub.stripe_customer_id || '—'}</code>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Status: </span>
+                    {sub.status || '—'}
+                  </div>
+                  {sub.current_period_end && (
+                    <div>
+                      <span className="text-muted-foreground">Period ends: </span>
+                      {sub.current_period_end.slice(0, 10)}
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Cancel via Stripe API (requires audit reason above). Webhooks sync status back to Parley.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => cancelStripeSubscription(false)}>
+                    Cancel at period end
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    disabled={busy}
+                    onClick={() => cancelStripeSubscription(true)}
+                  >
+                    Cancel immediately
+                  </Button>
+                  {orgDetail?.stripeDashboardBase && sub.stripe_customer_id && (
+                    <Button type="button" size="sm" variant="ghost" asChild>
+                      <a
+                        href={`${orgDetail.stripeDashboardBase}/customers/${sub.stripe_customer_id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open in Stripe →
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            )}
 
             <div className="space-y-3 rounded-lg border border-border/60 p-4">
               <h3 className="font-medium">Custom limits</h3>

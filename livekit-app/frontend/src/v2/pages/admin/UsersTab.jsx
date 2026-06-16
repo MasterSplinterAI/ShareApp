@@ -188,6 +188,21 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                   Org usage this month: {fmtMins(detail.usageThisMonth.meetingMinutes ?? detail.usageThisMonth)}
                 </p>
               )}
+              {detail.communicationPrefs && (
+                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Marketing email:</span>
+                  {detail.communicationPrefs.marketingEmail ? (
+                    <Badge className="bg-emerald-600 hover:bg-emerald-600">Opted in</Badge>
+                  ) : (
+                    <Badge variant="secondary">Opted out</Badge>
+                  )}
+                  {detail.communicationPrefs.prefsUpdatedAt && (
+                    <span className="text-muted-foreground">
+                      · Updated {fmtDateTime(detail.communicationPrefs.prefsUpdatedAt)}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {detail.recentMeetings?.length > 0 && (
