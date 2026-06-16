@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Settings, Shield, Video, X } from 'lucide-react';
+import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
 import { v2Announcements } from '../../services/apiV2';
 import HelpPanel from '../../components/HelpPanel';
 import { Badge } from '../../components/ui/badge';
@@ -18,6 +18,8 @@ import { cn } from '../../lib/utils';
 import { workspaceLabel, workspaceKindLabel } from '../lib/workspaceDisplay';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
+import { UpgradeSidebarCard } from './UpgradePrompt';
 
 function navLinkClass({ isActive }) {
   return cn(
@@ -57,6 +59,7 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
 
 export default function V2AppShell({ me, onLogout }) {
   const { t } = useTranslation();
+  const { offer, checkoutLoading, startCheckout } = useUpgradeOffer(me);
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -126,6 +129,7 @@ export default function V2AppShell({ me, onLogout }) {
         </div>
       </div>
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
+      <UpgradeSidebarCard offer={offer} checkoutLoading={checkoutLoading} onCheckout={startCheckout} />
       <div className="mt-auto border-t border-border/60 p-3 space-y-2" data-no-translate="true">
         <div className="flex justify-center px-1">
           <LanguageSwitcher className="w-full justify-center" />
@@ -154,6 +158,14 @@ export default function V2AppShell({ me, onLogout }) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {offer?.show && (
+              <DropdownMenuItem asChild>
+                <Link to="/v2/app/settings?section=billing" className="text-primary focus:text-primary">
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Upgrade plan
+                </Link>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => setHelpOpen(true)}>
               <LifeBuoy className="mr-2 h-4 w-4" />
               {t('app.helpSupport')}

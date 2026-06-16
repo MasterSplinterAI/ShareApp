@@ -18,8 +18,10 @@ import {
   Video,
   Zap,
 } from 'lucide-react';
-import { v2Meetings } from '../../services/apiV2';
+import { v2Auth, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
+import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
+import { UpgradeQuotaActions } from '../components/UpgradePrompt';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
@@ -226,6 +228,7 @@ function LoadingGrid() {
 
 export default function V2MeetingsList() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [me, setMe] = useState(null);
   const [view, setView] = useState('meetings'); // 'meetings' | 'archived'
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -239,8 +242,13 @@ export default function V2MeetingsList() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(null);
+  const { offer, checkoutLoading, startCheckout } = useUpgradeOffer(me);
 
   const archivedView = view === 'archived';
+
+  useEffect(() => {
+    v2Auth.me().then(setMe).catch(() => {});
+  }, []);
 
   const load = (archived = false) => {
     setLoading(true);
@@ -594,14 +602,16 @@ export default function V2MeetingsList() {
       <AlertDialog open={Boolean(quotaBlocked)} onOpenChange={(open) => !open && setQuotaBlocked(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Usage limit reached</AlertDialogTitle>
+            <AlertDialogTitle>{offer?.pressure?.level === 'over' ? 'Usage limit reached' : 'Upgrade to keep hosting'}</AlertDialogTitle>
             <AlertDialogDescription>{quotaBlocked}</AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Close</AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Link to="/v2/app/settings?section=billing">Upgrade plan</Link>
-            </AlertDialogAction>
+          <AlertDialogFooter className="sm:flex-col sm:space-x-0">
+            <UpgradeQuotaActions
+              offer={offer}
+              checkoutLoading={checkoutLoading}
+              onCheckout={startCheckout}
+              onDismiss={() => setQuotaBlocked(null)}
+            />
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

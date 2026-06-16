@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisYear } from 'date-fns';
 import { ArrowRight, CalendarClock, Clock, Plus, UserPlus, Video } from 'lucide-react';
-import { v2Auth, v2Orgs, v2Billing, v2Meetings } from '../../services/apiV2';
+import { v2Auth, v2Orgs, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { workspaceLabel, isTeamWorkspace } from '../lib/workspaceDisplay';
@@ -12,14 +12,16 @@ import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 import { dateFnsLocale } from '../../lib/i18n/dateLocale';
+import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
+import { UpgradeUsageCard } from '../components/UpgradePrompt';
 
 export default function V2AppHome() {
   const { t, locale } = useTranslation();
   const [me, setMe] = useState(null);
   const [orgData, setOrgData] = useState(null);
-  const [sub, setSub] = useState(null);
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { offer, checkoutLoading, startCheckout, subscription: sub, usage } = useUpgradeOffer(me);
 
   const dateLocale = dateFnsLocale(locale);
 
@@ -41,11 +43,10 @@ export default function V2AppHome() {
   };
 
   useEffect(() => {
-    Promise.all([v2Auth.me(), v2Orgs.me(), v2Billing.subscription(), v2Meetings.list()])
-      .then(([meRes, o, s, mList]) => {
+    Promise.all([v2Auth.me(), v2Orgs.me(), v2Meetings.list()])
+      .then(([meRes, o, mList]) => {
         setMe(meRes);
         setOrgData(o);
-        setSub(s);
         setMeetings(mList.meetings || []);
       })
       .catch((e) => {
@@ -75,11 +76,20 @@ export default function V2AppHome() {
     [meetings, nextUpcoming],
   );
 
-  const usageMinutes = Math.round(Number(orgData?.usageThisMonth?.meetingMinutes) || 0);
+  const usageMinutes = Math.round(Number(usage?.meetingMinutes ?? orgData?.usageThisMonth?.meetingMinutes) || 0);
   const planName = sub?.plan?.name;
 
   return (
     <div className="mx-auto max-w-4xl space-y-10">
+      {!loading && (offer?.show || sub?.plan) && (
+        <UpgradeUsageCard
+          offer={offer}
+          checkoutLoading={checkoutLoading}
+          onCheckout={startCheckout}
+          usage={usage ?? orgData?.usageThisMonth}
+          currentPlan={sub?.plan}
+        />
+      )}
       <section className="space-y-5 pt-2">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">

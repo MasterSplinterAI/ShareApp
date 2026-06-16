@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
+import { getRecommendedUpgrade, formatPlanPrice } from '../lib/upgradeOffers';
 import { cn } from '../../lib/utils';
 import { Loader2, ImagePlus, Trash2 } from 'lucide-react';
 import { DEFAULT_BRAND_ACCENT, brandingStyleVars, brandButtonClassName } from '../../lib/meetingBranding';
@@ -157,14 +158,28 @@ export default function V2OrgSettings() {
 
   const canManage = ['owner', 'admin'].includes(role);
   const canRenameOrg = canManage;
-  const teamWorkspace = hasTeamWorkspace(org?.entitlements);
+  const teamWorkspace = hasTeamWorkspace(org?.entitlements, billingSnap?.plan);
   const teamAccount = isTeamWorkspace(org?.org || profile?.org);
+  const upgradeOffer = useMemo(
+    () =>
+      getRecommendedUpgrade({
+        subscription: billingSnap
+          ? { plan: billingSnap.plan, subscription: billingSnap.subscription, stripeEnabled: billingSnap.stripeEnabled }
+          : null,
+        plans,
+        usage: org?.usageThisMonth,
+        role,
+      }),
+    [billingSnap, plans, role, org?.usageThisMonth],
+  );
   const navSections = useMemo(() => {
     const label = teamAccount ? 'Organization' : 'Account';
-    return BASE_SECTIONS.map((s) => (s.id === 'profile' ? { ...s, label } : s)).filter(
-      (s) => s.id !== 'members' || teamWorkspace
-    );
-  }, [teamWorkspace, teamAccount]);
+    return BASE_SECTIONS.map((s) => {
+      if (s.id === 'profile') return { ...s, label };
+      if (s.id === 'billing' && upgradeOffer?.show) return { ...s, label: 'Billing · Upgrade' };
+      return s;
+    }).filter((s) => s.id !== 'members' || teamWorkspace);
+  }, [teamWorkspace, teamAccount, upgradeOffer?.show]);
   const orgName = org?.org?.name || org?.organization?.name || org?.name || '—';
   const userEmail = profile?.user?.email || '—';
 
@@ -807,6 +822,52 @@ export default function V2OrgSettings() {
                 {billingSnap?.subscription?.is_comp === 1 && (
                   <div className="rounded-lg border border-primary/40 bg-primary/5 px-3 py-3 text-foreground">
                     Unlimited access ({billingSnap.subscription.comp_label || 'comp'}) — usage caps waived.
+                  </div>
+                )}
+                {canManage && billingSnap?.subscription?.is_comp !== 1 && plans.filter((p) => p.id !== 'free').length > 0 && (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {plans
+                      .filter((p) => p.id !== 'free')
+                      .map((p) => {
+                        const isCurrent = p.id === billingSnap?.plan?.id;
+                        const isRecommended = p.id === upgradeOffer?.primaryPlan?.id && !isCurrent;
+                        return (
+                          <div
+                            key={p.id}
+                            className={cn(
+                              'relative flex flex-col rounded-xl border border-border/60 p-4',
+                              isCurrent && 'border-primary/40 bg-primary/5',
+                              isRecommended && 'border-primary ring-1 ring-primary/25',
+                            )}
+                          >
+                            {isRecommended && (
+                              <span className="absolute -top-2.5 left-3 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                                Recommended
+                              </span>
+                            )}
+                            <div className="font-semibold text-foreground">{p.name}</div>
+                            <div className="mt-1 text-xl font-bold tracking-tight">{formatPlanPrice(p.monthly_price_cents)}</div>
+                            <ul className="mt-3 flex-1 space-y-1.5 text-xs text-muted-foreground">
+                              <li>{Number(p.included_meeting_minutes).toLocaleString()} participant-minutes/mo</li>
+                              <li>{Number(p.included_translation_minutes).toLocaleString()} translation minutes/mo</li>
+                              {p.teamWorkspace ? <li className="text-foreground/80">Team workspace + member invites</li> : null}
+                            </ul>
+                            <Button
+                              type="button"
+                              className="mt-4 w-full"
+                              variant={isRecommended ? 'default' : 'outline'}
+                              disabled={isCurrent || !billingSnap?.stripeEnabled || checkoutLoading === p.id}
+                              onClick={() => startCheckout(p.id)}
+                            >
+                              {isCurrent
+                                ? 'Current plan'
+                                : checkoutLoading === p.id
+                                  ? 'Loading…'
+                                  : `Upgrade to ${p.name}`}
+                            </Button>
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
                 <div className="grid gap-3 sm:grid-cols-2">
