@@ -38,6 +38,11 @@ export function I18nProvider({ children }) {
   const setLocale = useCallback((next) => {
     const resolved = resolveUiLocale(next);
     writeStoredLocale(resolved);
+    try {
+      localStorage.setItem('app_language', resolved);
+    } catch {
+      /* ignore */
+    }
     setLocaleState(resolved);
   }, []);
 

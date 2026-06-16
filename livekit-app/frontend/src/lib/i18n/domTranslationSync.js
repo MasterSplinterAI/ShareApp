@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { autopilotTranslator } from '../autopilot-translator';
+import { isCoreUiLocale } from './uiLanguages';
 
 /** Routes where DOM translation fills gaps (extended locales use English JSON + live translation). */
 export function isDomTranslationRoute(pathname) {
@@ -15,8 +16,8 @@ export function isDomTranslationExcludedRoute(pathname) {
 }
 
 /**
- * Sync autopilot DOM translator with UI locale on workspace routes.
- * Static `t()` strings should live under `data-no-translate` so only English gaps are translated.
+ * Sync autopilot DOM translator with UI locale.
+ * Core locales use JSON bundles; extended locales load English copy then translate via API.
  */
 export function syncDomTranslation(locale, pathname) {
   const path = pathname || window.location.pathname;
@@ -31,14 +32,22 @@ export function syncDomTranslation(locale, pathname) {
     return;
   }
 
+  // Core locales with full JSON bundles — skip DOM batch translation.
+  if (isCoreUiLocale(locale)) {
+    autopilotTranslator.setLanguage('en').catch(() => {});
+    return;
+  }
+
   try {
     localStorage.setItem('app_language', locale);
   } catch {
     /* ignore */
   }
 
-  // setLanguage('en') disconnects the observer — init again when leaving English.
-  if (autopilotTranslator.currentLanguageValue === 'en') {
+  const needsInit =
+    autopilotTranslator.currentLanguageValue === 'en' || !autopilotTranslator.isObserving();
+
+  if (needsInit) {
     autopilotTranslator.init(locale, []);
     return;
   }

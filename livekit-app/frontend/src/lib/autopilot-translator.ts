@@ -266,12 +266,7 @@ class AutopilotTranslator {
             return false;
         }
 
-        // DOM fallback only for authenticated workspace UI (see domTranslationSync.js).
-        if (!currentPath.startsWith('/v2/app')) {
-            return false;
-        }
-
-        // Empty array means all pages are enabled (within checks above).
+        // Empty array means all other pages are enabled (marketing, auth, workspace).
         if (this.enabledPages.length === 0) {
             return true;
         }
@@ -283,6 +278,11 @@ class AutopilotTranslator {
             if (currentPath.includes(page)) return true;
             return false;
         });
+    }
+
+    /** True when the mutation observer is active (init completed on an enabled route). */
+    public isObserving(): boolean {
+        return this.observer != null;
     }
 
     /**
@@ -298,9 +298,6 @@ class AutopilotTranslator {
         
         // Cancel any ongoing translations
         this.cancelOngoingTranslations();
-        
-        this.currentLanguage = language;
-        localStorage.setItem('app_language', language);
         
         if (language === 'en') {
             // For English, restore original text from data attributes
@@ -334,6 +331,12 @@ class AutopilotTranslator {
         // This ensures we're always translating from the original English text
         // Always restore before retranslating to ensure clean state
         this.restoreOriginalText();
+
+        // Observer may never have started (e.g. early init on a previously blocked route).
+        if (!this.observer && this.isPageEnabled()) {
+            this.init(language, this.enabledPages);
+            return;
+        }
 
         // Clear cache for new language (but keep data-original-text attributes)
         this.cache = {};
@@ -1269,7 +1272,11 @@ if (typeof window !== 'undefined') {
         }
         
         const urlParams = new URLSearchParams(window.location.search);
-        const lng = urlParams.get('lng') || localStorage.getItem('app_language') || 'en';
+        const lng =
+            urlParams.get('lng')
+            || localStorage.getItem('parley_locale')
+            || localStorage.getItem('app_language')
+            || 'en';
         
         // Get enabled pages from meta tag or default
         const enabledPagesMeta = document.querySelector('meta[name="translation-enabled-pages"]');
