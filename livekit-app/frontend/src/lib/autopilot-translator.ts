@@ -5,6 +5,8 @@ interface TranslationCache {
 }
 
 const BATCH_SEPARATOR = '---SEPARATOR---';
+const CHUNK_SIZE = 100;
+const MAX_PARALLEL_BATCHES = 2;
 
 function isPoisonedBatchTranslation(sourceText: string, translatedText: string): boolean {
     if (!translatedText?.includes(BATCH_SEPARATOR)) return false;
@@ -34,6 +36,15 @@ export interface AutopilotTranslatorConfig {
     enabledPages?: string[];
 }
 
+type TextNodeBinding = { node: Text; text: string; originalText: string };
+
+interface TranslationQueueJob {
+    pageId: string;
+    priority: number;
+    texts: string[];
+    textToNodes: Map<string, TextNodeBinding[]>;
+}
+
 class AutopilotTranslator {
     private currentLanguage: string = 'en';
     private cache: TranslationCache = {};
@@ -44,7 +55,10 @@ class AutopilotTranslator {
     private currentPageId: string = '';
     private apiEndpoint: string = '/api';
     private translateTimeout: ReturnType<typeof setTimeout> | null = null;
-    
+    private batchAbortController: AbortController | null = null;
+    private translationQueue: TranslationQueueJob[] = [];
+    private activeBatchWorkers = 0;
+
     /**
      * Get current language (for debugging)
      */
@@ -323,18 +337,223 @@ class AutopilotTranslator {
 
         // Clear cache for new language (but keep data-original-text attributes)
         this.cache = {};
-        this.saveCache();
+        this.loadCache();
         
         // Retranslate page (will use data-original-text attributes)
         await this.translatePageInternal();
     }
     
+    private abortInFlightBatches(): void {
+        if (this.batchAbortController) {
+            this.batchAbortController.abort();
+            this.batchAbortController = null;
+        }
+    }
+
+    /** Visible page wins: abort in-flight work and push other jobs to the back. */
+    private prioritizePage(pageId: string): void {
+        const pageChanged = pageId !== this.currentPageId;
+        this.currentPageId = pageId;
+
+        if (pageChanged) {
+            this.abortInFlightBatches();
+            this.batchAbortController = new AbortController();
+            this.translationQueue.forEach((job) => {
+                if (job.pageId !== pageId && job.priority === 0) {
+                    job.priority = 1;
+                }
+            });
+        } else if (!this.batchAbortController) {
+            this.batchAbortController = new AbortController();
+        }
+    }
+
+    private mergeQueueJob(
+        pageId: string,
+        priority: number,
+        texts: string[],
+        textToNodes: Map<string, TextNodeBinding[]>,
+    ): void {
+        const existing = this.translationQueue.find(
+            (job) => job.pageId === pageId && job.priority === priority,
+        );
+
+        if (existing) {
+            const merged = new Set(existing.texts);
+            texts.forEach((text) => merged.add(text));
+            existing.texts = Array.from(merged);
+            texts.forEach((text) => {
+                const nodes = textToNodes.get(text);
+                if (nodes) {
+                    existing.textToNodes.set(text, nodes);
+                }
+            });
+            return;
+        }
+
+        this.translationQueue.push({ pageId, priority, texts: [...texts], textToNodes });
+    }
+
+    private enqueuePageTranslation(
+        pageId: string,
+        texts: string[],
+        textToNodes: Map<string, TextNodeBinding[]>,
+    ): void {
+        if (texts.length === 0) return;
+
+        this.prioritizePage(pageId);
+        this.mergeQueueJob(pageId, 0, texts, textToNodes);
+        this.sortTranslationQueue();
+        this.drainTranslationQueue();
+    }
+
+    private sortTranslationQueue(): void {
+        this.translationQueue.sort((a, b) => {
+            if (a.priority !== b.priority) return a.priority - b.priority;
+            if (a.pageId === this.currentPageId && b.pageId !== this.currentPageId) return -1;
+            if (b.pageId === this.currentPageId && a.pageId !== this.currentPageId) return 1;
+            return 0;
+        });
+    }
+
+    private pickNextQueueJob(): TranslationQueueJob | null {
+        this.translationQueue.forEach((job) => {
+            if (job.priority === 0 && job.pageId !== this.currentPageId) {
+                job.priority = 1;
+            }
+        });
+        this.sortTranslationQueue();
+
+        const visibleIdx = this.translationQueue.findIndex(
+            (job) => job.priority === 0 && job.pageId === this.currentPageId,
+        );
+        if (visibleIdx !== -1) {
+            return this.translationQueue.splice(visibleIdx, 1)[0] ?? null;
+        }
+
+        const visiblePending = this.translationQueue.some(
+            (job) => job.priority === 0 && job.pageId === this.currentPageId,
+        );
+        if (visiblePending) return null;
+
+        const bgIdx = this.translationQueue.findIndex((job) => job.priority === 1);
+        if (bgIdx === -1) return null;
+
+        return this.translationQueue.splice(bgIdx, 1)[0] ?? null;
+    }
+
+    private drainTranslationQueue(): void {
+        while (
+            this.activeBatchWorkers < MAX_PARALLEL_BATCHES
+            && this.translationQueue.length > 0
+        ) {
+            const job = this.pickNextQueueJob();
+            if (!job || job.texts.length === 0) break;
+
+            this.activeBatchWorkers += 1;
+            this.runQueueJob(job).finally(() => {
+                this.activeBatchWorkers -= 1;
+                this.updateTranslatingFlag();
+                this.drainTranslationQueue();
+            });
+        }
+    }
+
+    private async runQueueJob(job: TranslationQueueJob): Promise<void> {
+        const isVisiblePage = job.pageId === this.currentPageId && job.priority === 0;
+        const signal = isVisiblePage ? this.batchAbortController?.signal : undefined;
+
+        try {
+            const translations = await this.translateBatch(job.texts, signal);
+            const applyToDom = job.pageId === this.currentPageId && job.priority === 0;
+
+            translations.forEach((translation, i) => {
+                if (i >= job.texts.length || !translation) return;
+
+                const originalText = job.texts[i];
+                if (
+                    translation === originalText
+                    || isPoisonedBatchTranslation(originalText, translation)
+                ) {
+                    return;
+                }
+
+                const cacheKey = `${this.currentLanguage}:${originalText}`;
+                this.cache[cacheKey] = translation;
+
+                if (!applyToDom) return;
+
+                const nodes = job.textToNodes.get(originalText);
+                nodes?.forEach(({ node, originalText: orig }) => {
+                    const parent = node.parentElement;
+                    if (parent) {
+                        const existingOriginal = parent.getAttribute('data-original-text');
+                        if (!existingOriginal || existingOriginal !== orig) {
+                            parent.setAttribute('data-original-text', orig);
+                        }
+                    }
+                    node.textContent = translation;
+                });
+            });
+
+            this.saveCache();
+        } catch (error: any) {
+            if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED') {
+                if (job.pageId === this.currentPageId && job.priority === 0) {
+                    this.mergeQueueJob(job.pageId, 0, job.texts, job.textToNodes);
+                } else {
+                    this.mergeQueueJob(job.pageId, 1, job.texts, job.textToNodes);
+                }
+                this.sortTranslationQueue();
+                return;
+            }
+            console.error('Translation queue job failed:', error);
+        }
+    }
+
+    private hasVisibleTranslationWork(): boolean {
+        return this.translationQueue.some(
+            (job) => job.priority === 0 && job.pageId === this.currentPageId,
+        );
+    }
+
+    private updateTranslatingFlag(): void {
+        if (!this.hasVisibleTranslationWork() && this.activeBatchWorkers === 0) {
+            this.isTranslating = false;
+        }
+    }
+
+    private applyCachedTranslations(
+        originalTexts: string[],
+        textToNodes: Map<string, TextNodeBinding[]>,
+    ): string[] {
+        const toTranslate: string[] = [];
+
+        originalTexts.forEach((originalText) => {
+            const cacheKey = `${this.currentLanguage}:${originalText}`;
+            if (this.cache[cacheKey]) {
+                const nodes = textToNodes.get(originalText);
+                nodes?.forEach(({ node, originalText: orig }) => {
+                    const parent = node.parentElement;
+                    if (parent && !parent.hasAttribute('data-original-text')) {
+                        parent.setAttribute('data-original-text', orig);
+                    }
+                    node.textContent = this.cache[cacheKey];
+                });
+            } else {
+                toTranslate.push(originalText);
+            }
+        });
+
+        return toTranslate;
+    }
+    
     /**
-     * Cancel any ongoing translation DOM updates (but let API calls finish for DB cache)
+     * Cancel visible-page work and clear queue priority for navigation/language changes.
      */
     private cancelOngoingTranslations(): void {
-        // Don't abort API calls - let them finish to update database cache
-        // Just reset the page ID so DOM updates won't be applied
+        this.abortInFlightBatches();
+        this.translationQueue = this.translationQueue.filter((job) => job.priority > 0);
         this.currentPageId = '';
         this.isTranslating = false;
     }
@@ -347,29 +566,19 @@ class AutopilotTranslator {
     }
 
     /**
-     * Translate entire page (internal) - Progressive, non-blocking
-     * Allows multiple pages to translate simultaneously - only DOM updates are page-specific
-     * API calls continue in background to update database cache even after navigation
+     * Translate entire page (internal) - cache first, then priority queue for API batches.
      */
     private async translatePageInternal(): Promise<void> {
         if (!this.isPageEnabled()) return;
         
-        // CRITICAL: Don't translate if language is English or observer is null (destroyed)
         if (this.currentLanguage === 'en' || !this.observer) {
             console.log('⏸️ Skipping translation: language is English or observer is destroyed');
             return;
         }
         
-        // Generate a unique page ID based on current URL
         const pageId = window.location.pathname + window.location.search;
         
-        // If we're already translating the same page, skip
-        if (this.isTranslating && this.currentPageId === pageId) {
-            return;
-        }
-        
-        // Update current page ID (don't cancel previous API calls - let them finish for DB cache)
-        this.currentPageId = pageId;
+        this.prioritizePage(pageId);
         this.isTranslating = true;
 
         const textNodes = this.extractTextNodes(document.body);
@@ -378,11 +587,10 @@ class AutopilotTranslator {
         if (textsToTranslate.length === 0) {
             console.log('⚠️ No text nodes found to translate. DOM might not be ready yet.');
             this.isTranslating = false;
-            // Retry after a short delay if no text was found (DOM might still be loading)
             setTimeout(() => {
-                if (!this.isTranslating && this.currentLanguage !== 'en') {
+                if (this.currentLanguage !== 'en') {
                     console.log('🔄 Retrying translation after delay...');
-                    this.translatePageInternal().catch(err => {
+                    this.translatePageInternal().catch((err) => {
                         console.error('Error in retry translation:', err);
                     });
                 }
@@ -392,110 +600,28 @@ class AutopilotTranslator {
         
         console.log(`📝 Found ${textsToTranslate.length} text nodes to translate`);
 
-        // Create a map of text to nodes for quick lookup
-        // IMPORTANT: Map by ORIGINAL text (from data-original-text if exists), not current translated text
-        const textToNodes = new Map<string, Array<{ node: Text; text: string; originalText: string }>>();
+        const textToNodes = new Map<string, TextNodeBinding[]>();
         textNodes.forEach(({ node, text }) => {
-            if (this.shouldTranslate(text)) {
-                const normalized = text.trim();
-                const parent = node.parentElement;
-                // Get original text from data-original-text if it exists, otherwise use current text
-                const originalText = parent?.getAttribute('data-original-text') || text;
-                
-                // Map by original text so we always translate from English
-                if (!textToNodes.has(originalText)) {
-                    textToNodes.set(originalText, []);
-                }
-                textToNodes.get(originalText)!.push({ node, text, originalText });
+            if (!this.shouldTranslate(text)) return;
+
+            const parent = node.parentElement;
+            const originalText = parent?.getAttribute('data-original-text') || text;
+
+            if (!textToNodes.has(originalText)) {
+                textToNodes.set(originalText, []);
             }
+            textToNodes.get(originalText)!.push({ node, text, originalText });
         });
 
-            // Apply cached translations immediately (non-blocking)
-            const cachedTranslations = new Map<string, string>();
-            const toTranslate: string[] = [];
-            
-            // Use original texts for translation (always translate from English)
-            const originalTexts = Array.from(textToNodes.keys());
-            
-            originalTexts.forEach((originalText) => {
-                // Always translate from the original English text
-                const cacheKey = `${this.currentLanguage}:${originalText}`;
-                if (this.cache[cacheKey]) {
-                    cachedTranslations.set(originalText, this.cache[cacheKey]);
-                    // Apply cached translation immediately
-                    const nodes = textToNodes.get(originalText);
-                    if (nodes) {
-                        nodes.forEach(({ node, originalText: orig }) => {
-                            // Store original text before translating (if not already stored)
-                            const parent = node.parentElement;
-                            if (parent && !parent.hasAttribute('data-original-text')) {
-                                parent.setAttribute('data-original-text', orig);
-                            }
-                            node.textContent = this.cache[cacheKey];
-                        });
-                    }
-                } else {
-                    toTranslate.push(originalText);
-                }
-            });
+        const originalTexts = Array.from(textToNodes.keys());
+        const toTranslate = this.applyCachedTranslations(originalTexts, textToNodes);
 
-        // If all translations are cached, we're done
         if (toTranslate.length === 0) {
             this.isTranslating = false;
             return;
         }
 
-        // Translate remaining texts in background (non-blocking)
-        // Store page ID reference for this batch - we'll check this before applying DOM updates
-        // BUT we'll still let API calls complete to update the database cache
-        const batchPageId = this.currentPageId;
-        
-        this.translateBatch(toTranslate)
-            .then((translations) => {
-                // Only apply DOM updates if this is still the current page
-                // But translations are still cached in localStorage/backend even if page changed
-                if (batchPageId !== this.currentPageId) {
-                    console.log('Page changed - translations cached but not applied to DOM');
-                    // Still save cache even though we're not applying to DOM
-                    this.saveCache();
-                    return;
-                }
-                
-                // Apply new translations as they arrive
-                translations.forEach((translation: string, i: number) => {
-                    if (i < toTranslate.length && translation) {
-                        const originalText = toTranslate[i]; // This is always the original English text
-                        const nodes = textToNodes.get(originalText);
-                        if (nodes && translation !== originalText && !isPoisonedBatchTranslation(originalText, translation)) {
-                            nodes.forEach(({ node, originalText: orig }) => {
-                                // Always store the original English text (never overwrite)
-                                const parent = node.parentElement;
-                                if (parent) {
-                                    const existingOriginal = parent.getAttribute('data-original-text');
-                                    // Only set if not already set, or if current value is not the true original
-                                    if (!existingOriginal || existingOriginal !== orig) {
-                                        parent.setAttribute('data-original-text', orig);
-                                    }
-                                }
-                                node.textContent = translation;
-                            });
-                            // Cache it (always cache by original English text)
-                            const cacheKey = `${this.currentLanguage}:${originalText}`;
-                            this.cache[cacheKey] = translation;
-                        }
-                    }
-                });
-                this.saveCache();
-            })
-            .catch((error: any) => {
-                console.error('Background translation error:', error);
-            })
-            .finally(() => {
-                // Only reset flag if this is still the current page
-                if (batchPageId === this.currentPageId) {
-                    this.isTranslating = false;
-                }
-            });
+        this.enqueuePageTranslation(pageId, toTranslate, textToNodes);
     }
 
     /**
@@ -731,13 +857,16 @@ class AutopilotTranslator {
     }
 
     /**
-     * Translate batch of texts (non-blocking, returns immediately for cached items)
-     * Handles large batches by chunking them (backend also chunks, but frontend chunking
-     * helps with very large pages like chart of accounts with 200+ items)
-     * Note: API calls are NOT cancelled - they continue to update database cache even after navigation
+     * Translate batch of texts — cache first, then API with optional cancel signal.
+     * Large batches run up to two chunk requests in parallel for the visible page.
      */
-    private async translateBatch(texts: string[]): Promise<string[]> {
-        // Check cache first
+    private async translateBatch(texts: string[], signal?: AbortSignal): Promise<string[]> {
+        if (signal?.aborted) {
+            const err = new Error('Translation batch aborted');
+            (err as any).code = 'ERR_CANCELED';
+            throw err;
+        }
+
         const cached: string[] = [];
         const toTranslate: string[] = [];
         const indices: number[] = [];
@@ -752,147 +881,115 @@ class AutopilotTranslator {
             }
         });
 
-        // If all cached, return
         if (toTranslate.length === 0) {
             return cached;
         }
 
-        // Chunk large batches to avoid overwhelming the API
-        // Backend also chunks, but frontend chunking helps with very large pages
-        const CHUNK_SIZE = 100; // Frontend chunk size (backend chunks at 50)
-        
-        // If batch is small, process normally
+        const requestConfig = signal ? { signal } : undefined;
+
+        const applyApiResults = (
+            chunkTexts: string[],
+            chunkIndices: number[],
+            translations: string[],
+        ) => {
+            translations.forEach((translation, i) => {
+                if (i >= chunkTexts.length || i >= chunkIndices.length) return;
+
+                const originalIndex = chunkIndices[i];
+                const originalText = chunkTexts[i];
+
+                if (
+                    translation
+                    && typeof translation === 'string'
+                    && translation.trim()
+                    && !isPoisonedBatchTranslation(originalText, translation)
+                ) {
+                    cached[originalIndex] = translation;
+                    this.cache[`${this.currentLanguage}:${originalText}`] = translation;
+                } else {
+                    cached[originalIndex] = originalText;
+                }
+            });
+        };
+
+        const postBatch = async (batchTexts: string[]) => {
+            const response = await axios.post(
+                `${this.apiEndpoint}/translate/batch`,
+                {
+                    texts: batchTexts,
+                    target_language: this.currentLanguage,
+                    source_language: 'en',
+                },
+                requestConfig,
+            );
+
+            let translations = response.data?.translations;
+            if (!Array.isArray(translations)) {
+                console.warn('Translations response is not an array:', response.data);
+                translations = [];
+            }
+            return translations as string[];
+        };
+
         if (toTranslate.length <= CHUNK_SIZE) {
             try {
-                const response = await axios.post(`${this.apiEndpoint}/translate/batch`, {
-                    texts: toTranslate,
-                    target_language: this.currentLanguage,
-                    source_language: 'en',
-                });
-
-                // Ensure translations is an array
-                let translations = response.data?.translations;
-                
-                // Debug logging
-                if (!Array.isArray(translations)) {
-                    console.warn('Translations response is not an array:', {
-                        translations,
-                        responseData: response.data,
-                        type: typeof translations,
-                        isArray: Array.isArray(translations)
-                    });
-                    translations = [];
-                }
-                
-                // Map translations back to original indices
-                if (Array.isArray(translations) && translations.length > 0) {
-                    translations.forEach((translation: string, i: number) => {
-                        if (i < indices.length && i < toTranslate.length) {
-                            const originalIndex = indices[i];
-                            const originalText = toTranslate[i];
-                            
-                            // Use translation if valid, otherwise use original
-                            if (translation && typeof translation === 'string' && translation.trim()
-                                && !isPoisonedBatchTranslation(originalText, translation)) {
-                                cached[originalIndex] = translation;
-                                
-                                // Cache it
-                                const cacheKey = `${this.currentLanguage}:${originalText}`;
-                                this.cache[cacheKey] = translation;
-                            } else {
-                                // Fallback to original text if translation is invalid
-                                cached[originalIndex] = originalText;
-                            }
-                        }
-                    });
-                }
-                
-                // Fill in any missing translations with original text
-                indices.forEach((index, i) => {
-                    if (cached[index] === undefined && i < toTranslate.length) {
-                        cached[index] = toTranslate[i];
-                    }
-                });
-
-                this.saveCache();
-                
-                return cached;
+                const translations = await postBatch(toTranslate);
+                applyApiResults(toTranslate, indices, translations);
             } catch (error: any) {
+                if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED') {
+                    throw error;
+                }
                 console.error('Batch translation failed:', error);
-                // Return original texts on error, filling in cached where available
                 indices.forEach((index, i) => {
-                    if (!cached[index] && i < toTranslate.length) {
+                    if (cached[index] === undefined) {
                         cached[index] = toTranslate[i];
                     }
                 });
-                return cached;
             }
-        }
-
-        // For large batches, process in chunks sequentially
-        const chunks: Array<{ texts: string[]; indices: number[] }> = [];
-        
-        for (let i = 0; i < toTranslate.length; i += CHUNK_SIZE) {
-            const chunkTexts = toTranslate.slice(i, i + CHUNK_SIZE);
-            const chunkIndices = indices.slice(i, i + CHUNK_SIZE);
-            chunks.push({ texts: chunkTexts, indices: chunkIndices });
-        }
-
-        // Process chunks sequentially
-        // Note: We don't cancel these - they continue to update database cache even after navigation
-        for (const chunk of chunks) {
-            try {
-                const response = await axios.post(`${this.apiEndpoint}/translate/batch`, {
-                    texts: chunk.texts,
-                    target_language: this.currentLanguage,
-                    source_language: 'en',
+        } else {
+            const chunks: Array<{ texts: string[]; indices: number[] }> = [];
+            for (let i = 0; i < toTranslate.length; i += CHUNK_SIZE) {
+                chunks.push({
+                    texts: toTranslate.slice(i, i + CHUNK_SIZE),
+                    indices: indices.slice(i, i + CHUNK_SIZE),
                 });
+            }
 
-                // Ensure translations is an array
-                let translations = response.data?.translations;
-                
-                if (!Array.isArray(translations)) {
-                    console.warn('Translations response is not an array for chunk:', {
-                        chunkSize: chunk.texts.length,
-                        responseData: response.data
-                    });
-                    translations = [];
+            const PARALLEL_CHUNKS = 2;
+            for (let i = 0; i < chunks.length; i += PARALLEL_CHUNKS) {
+                if (signal?.aborted) {
+                    const err = new Error('Translation batch aborted');
+                    (err as any).code = 'ERR_CANCELED';
+                    throw err;
                 }
-                
-                // Map chunk translations back to original indices
-                if (Array.isArray(translations) && translations.length > 0) {
-                    translations.forEach((translation: string, i: number) => {
-                        if (i < chunk.texts.length && i < chunk.indices.length) {
-                            const originalIndex = chunk.indices[i];
-                            const originalText = chunk.texts[i];
-                            
-                            // Use translation if valid, otherwise use original
-                            if (translation && typeof translation === 'string' && translation.trim()
-                                && !isPoisonedBatchTranslation(originalText, translation)) {
-                                cached[originalIndex] = translation;
-                                
-                                // Cache it
-                                const cacheKey = `${this.currentLanguage}:${originalText}`;
-                                this.cache[cacheKey] = translation;
-                            } else {
-                                // Fallback to original text if translation is invalid
-                                cached[originalIndex] = originalText;
-                            }
-                        }
+
+                const slice = chunks.slice(i, i + PARALLEL_CHUNKS);
+                try {
+                    const results = await Promise.all(
+                        slice.map(async (chunk) => {
+                            const translations = await postBatch(chunk.texts);
+                            return { chunk, translations };
+                        }),
+                    );
+                    results.forEach(({ chunk, translations }) => {
+                        applyApiResults(chunk.texts, chunk.indices, translations);
                     });
-                }
-            } catch (error: any) {
-                console.error('Chunk translation failed:', error);
-                // On error, use original texts for this chunk
-                chunk.indices.forEach((index, i) => {
-                    if (!cached[index]) {
-                        cached[index] = chunk.texts[i];
+                } catch (error: any) {
+                    if (axios.isCancel?.(error) || error?.code === 'ERR_CANCELED') {
+                        throw error;
                     }
-                });
+                    console.error('Chunk translation failed:', error);
+                    slice.forEach((chunk) => {
+                        chunk.indices.forEach((index, j) => {
+                            if (cached[index] === undefined) {
+                                cached[index] = chunk.texts[j];
+                            }
+                        });
+                    });
+                }
             }
         }
-        
-        // Fill in any missing translations with original text
+
         indices.forEach((index, i) => {
             if (cached[index] === undefined) {
                 cached[index] = toTranslate[i];
@@ -900,7 +997,6 @@ class AutopilotTranslator {
         });
 
         this.saveCache();
-        
         return cached;
     }
 
@@ -1113,6 +1209,8 @@ class AutopilotTranslator {
         // Cancel any ongoing translations
         this.isTranslating = false;
         this.currentPageId = '';
+        this.translationQueue = [];
+        this.abortInFlightBatches();
         
         // Clear pending translations
         this.pendingTranslations.clear();
