@@ -286,10 +286,34 @@ class AutopilotTranslator {
     }
 
     /**
+     * Stop DOM translation and remove stored originals without rewriting text.
+     * Use when React/i18n owns the page (built-in locale bundles).
+     */
+    public clearTranslationArtifacts(): void {
+        this.cancelOngoingTranslations();
+
+        if (this.observer) {
+            this.observer.disconnect();
+            this.observer = null;
+        }
+
+        document.querySelectorAll('[data-original-text]').forEach((element) => {
+            element.removeAttribute('data-original-text');
+        });
+
+        this.currentLanguage = 'en';
+        try {
+            localStorage.setItem('app_language', 'en');
+        } catch {
+            /* ignore */
+        }
+    }
+
+    /**
      * Change language and retranslate
      */
     public async setLanguage(language: string): Promise<void> {
-        if (this.currentLanguage === language) {
+        if (this.currentLanguage === language && language !== 'en' && this.observer) {
             console.log(`🔄 Language already set to ${language}, skipping`);
             return;
         }
@@ -298,6 +322,13 @@ class AutopilotTranslator {
         
         // Cancel any ongoing translations
         this.cancelOngoingTranslations();
+
+        this.currentLanguage = language;
+        try {
+            localStorage.setItem('app_language', language);
+        } catch {
+            /* ignore */
+        }
         
         if (language === 'en') {
             // For English, restore original text from data attributes

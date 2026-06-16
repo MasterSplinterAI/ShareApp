@@ -15,6 +15,21 @@ export function isDomTranslationExcludedRoute(pathname) {
   );
 }
 
+function runExtendedDomTranslation(locale) {
+  try {
+    localStorage.setItem('app_language', locale);
+  } catch {
+    /* ignore */
+  }
+
+  if (!autopilotTranslator.isObserving()) {
+    autopilotTranslator.init(locale, []);
+    return;
+  }
+
+  autopilotTranslator.setLanguage(locale).catch(() => {});
+}
+
 /**
  * Sync autopilot DOM translator with UI locale.
  * Core locales use JSON bundles; extended locales load English copy then translate via API.
@@ -32,32 +47,18 @@ export function syncDomTranslation(locale, pathname) {
     return;
   }
 
-  // Core locales with full JSON bundles — skip DOM batch translation.
+  // Built-in JSON locale — React owns copy; strip DOM translation state only.
   if (isCoreUiLocale(locale)) {
-    autopilotTranslator.setLanguage('en').catch(() => {});
+    autopilotTranslator.clearTranslationArtifacts();
     return;
   }
 
-  try {
-    localStorage.setItem('app_language', locale);
-  } catch {
-    /* ignore */
-  }
-
-  const needsInit =
-    autopilotTranslator.currentLanguageValue === 'en' || !autopilotTranslator.isObserving();
-
-  if (needsInit) {
-    autopilotTranslator.init(locale, []);
-    return;
-  }
-
-  if (autopilotTranslator.currentLanguageValue === locale) {
-    autopilotTranslator.translatePage().catch(() => {});
-    return;
-  }
-
-  autopilotTranslator.setLanguage(locale).catch(() => {});
+  // Extended locale — wait for React to paint English source strings, then translate.
+  window.requestAnimationFrame(() => {
+    window.requestAnimationFrame(() => {
+      runExtendedDomTranslation(locale);
+    });
+  });
 }
 
 /** Re-run DOM translation after React paints new route content. */

@@ -32,10 +32,13 @@ export function LanguageSwitcher({ className, compact = false }) {
           size={compact ? 'icon' : 'sm'}
           className={cn('shrink-0 gap-1.5', className)}
           aria-label={t('language.choose')}
+          data-no-translate="true"
         >
           <Globe className="h-4 w-4 shrink-0" />
           {!compact && (
-            <span className="hidden max-w-[7rem] truncate sm:inline">{current.nativeName}</span>
+            <span className="hidden max-w-[7rem] truncate sm:inline" data-no-translate="true">
+              {current.nativeName}
+            </span>
           )}
         </Button>
       </PopoverTrigger>
