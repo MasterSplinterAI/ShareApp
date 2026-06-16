@@ -12,7 +12,7 @@ import MeetingBrandHeader from './MeetingBrandHeader';
 import VideoEffectsPicker from './VideoEffectsPicker';
 import { brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding';
 import { useTranslation } from '../lib/i18n/I18nProvider';
-import { isSupportedLocale, resolveLocale } from '../lib/i18n/constants';
+import { isUiLocale, resolveUiLocale } from '../lib/i18n/uiLanguages';
 import {
   applyVideoEffect,
   loadSavedEffectId,
@@ -121,8 +121,8 @@ function PreJoinScreen({
   );
 
   const syncUiLocaleToMeetingLanguage = useCallback((code) => {
-    const uiLocale = resolveLocale(normalizeMeetingLanguageCode(code));
-    if (isSupportedLocale(uiLocale)) {
+    const uiLocale = resolveUiLocale(normalizeMeetingLanguageCode(code));
+    if (isUiLocale(uiLocale)) {
       setLocale(uiLocale);
     }
   }, [setLocale]);

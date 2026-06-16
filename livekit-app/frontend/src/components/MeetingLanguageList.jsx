@@ -17,6 +17,7 @@ function LanguageRow({
   disabled,
   mode,
   multiSelected,
+  showCoreBadge,
 }) {
   const isSelected = mode === 'multi' ? multiSelected : selected;
 
@@ -39,7 +40,14 @@ function LanguageRow({
           </span>
         ) : null}
         <span className="min-w-0">
-          <span className="block truncate text-foreground">{language.name}</span>
+          <span className="flex items-center gap-1.5">
+            <span className="block truncate text-foreground">{language.name}</span>
+            {showCoreBadge ? (
+              <span className="shrink-0 rounded bg-primary/15 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary">
+                Built-in
+              </span>
+            ) : null}
+          </span>
           {language.nativeName !== language.name ? (
             <span className="block truncate text-xs text-muted-foreground">{language.nativeName}</span>
           ) : null}
@@ -64,14 +72,17 @@ export function MeetingLanguageList({
   searchPlaceholder = 'Search languages…',
   showSearch = true,
   className,
+  languages: languagesProp,
+  coreLocaleCodes,
 }) {
   const [query, setQuery] = useState('');
+  const baseLanguages = languagesProp ?? ALL_LANGUAGES;
   const normalizedValue = normalizeMeetingLanguageCode(value);
   const selectedSet = useMemo(() => new Set((values || []).map(normalizeMeetingLanguageCode)), [values]);
 
   const filtered = useMemo(
-    () => filterMeetingLanguages(ALL_LANGUAGES, query),
-    [query]
+    () => filterMeetingLanguages(baseLanguages, query),
+    [baseLanguages, query]
   );
   const { popular, other } = useMemo(
     () => splitPopularLanguages(filtered, query),
@@ -123,6 +134,7 @@ export function MeetingLanguageList({
                     onSelect={handleSelect}
                     disabled={disabled}
                     mode={mode}
+                    showCoreBadge={coreLocaleCodes?.has(language.code)}
                   />
                 ))}
                 {other.length > 0 && <div className="my-1 border-t border-border/60" />}
@@ -144,6 +156,7 @@ export function MeetingLanguageList({
                     onSelect={handleSelect}
                     disabled={disabled}
                     mode={mode}
+                    showCoreBadge={coreLocaleCodes?.has(language.code)}
                   />
                 ))}
               </>

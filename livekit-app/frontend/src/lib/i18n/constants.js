@@ -5,6 +5,7 @@ export const LOCALE_STORAGE_KEY = 'parley_locale';
 
 export const DEFAULT_LOCALE = 'en';
 
+/** Pre-translated site locales (JSON bundles). Extended locales use Deepgram catalog + DOM translation. */
 export const SUPPORTED_LOCALES = [
   { code: 'en', label: 'English', nativeLabel: 'English' },
   { code: 'es', label: 'Spanish', nativeLabel: 'Español' },
@@ -29,6 +30,7 @@ export function isSupportedLocale(code) {
   return Boolean(code && LOCALE_LOADERS[code]);
 }
 
+/** @deprecated Use resolveUiLocale from uiLanguages.js */
 export function resolveLocale(code) {
   if (isSupportedLocale(code)) return code;
   if (code?.includes('-')) {
@@ -39,22 +41,13 @@ export function resolveLocale(code) {
 }
 
 export function detectBrowserLocale() {
-  if (typeof navigator === 'undefined') return DEFAULT_LOCALE;
-  const languages = navigator.languages?.length ? navigator.languages : [navigator.language];
-  for (const lang of languages) {
-    if (!lang) continue;
-    const normalized = lang.replace('_', '-');
-    if (isSupportedLocale(normalized)) return normalized;
-    const base = normalized.split('-')[0];
-    if (isSupportedLocale(base)) return base;
-  }
+  // Re-exported via uiLanguages.detectBrowserUiLocale in I18nProvider
   return DEFAULT_LOCALE;
 }
 
 export function readStoredLocale() {
   try {
-    const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-    return stored ? resolveLocale(stored) : null;
+    return localStorage.getItem(LOCALE_STORAGE_KEY);
   } catch {
     return null;
   }

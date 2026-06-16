@@ -2,9 +2,9 @@ import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { autopilotTranslator } from '../autopilot-translator';
 
-/** Routes where DOM translation fills gaps after static i18n (post-login workspace). */
+/** Routes where DOM translation fills gaps (extended locales use English JSON + live translation). */
 export function isDomTranslationRoute(pathname) {
-  return pathname.startsWith('/v2/app');
+  return !isDomTranslationExcludedRoute(pathname);
 }
 
 export function isDomTranslationExcludedRoute(pathname) {

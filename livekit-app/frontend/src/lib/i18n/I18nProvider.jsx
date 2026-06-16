@@ -1,18 +1,17 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   DEFAULT_LOCALE,
-  detectBrowserLocale,
   readStoredLocale,
-  resolveLocale,
   writeStoredLocale,
 } from './constants';
+import { detectBrowserUiLocale, resolveUiLocale } from './uiLanguages';
 import { loadLocalePair } from './loadLocale';
 import { createTranslator } from './translate';
 
 const I18nContext = createContext(null);
 
 export function I18nProvider({ children }) {
-  const [locale, setLocaleState] = useState(() => readStoredLocale() || detectBrowserLocale());
+  const [locale, setLocaleState] = useState(() => resolveUiLocale(readStoredLocale() || detectBrowserUiLocale()));
   const [messages, setMessages] = useState(null);
   const [fallbackMessages, setFallbackMessages] = useState(null);
   const [ready, setReady] = useState(false);
@@ -32,11 +31,12 @@ export function I18nProvider({ children }) {
   }, [locale]);
 
   useEffect(() => {
-    document.documentElement.lang = locale === 'zh-CN' ? 'zh-Hans' : locale;
+    const lang = locale === 'zh-CN' ? 'zh-Hans' : locale === 'zh-TW' ? 'zh-Hant' : locale.split('-')[0];
+    document.documentElement.lang = lang;
   }, [locale]);
 
   const setLocale = useCallback((next) => {
-    const resolved = resolveLocale(next);
+    const resolved = resolveUiLocale(next);
     writeStoredLocale(resolved);
     setLocaleState(resolved);
   }, []);

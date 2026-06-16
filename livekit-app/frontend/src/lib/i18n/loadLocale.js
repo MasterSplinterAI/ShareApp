@@ -1,8 +1,8 @@
 import {
   DEFAULT_LOCALE,
   LOCALE_LOADERS,
-  resolveLocale,
 } from './constants';
+import { resolveLocaleForMessages, resolveUiLocale } from './uiLanguages';
 import {
   getMemoryCached,
   getPersistedCached,
@@ -13,7 +13,7 @@ import {
 const loadPromises = new Map();
 
 export async function loadLocaleMessages(localeCode) {
-  const locale = resolveLocale(localeCode);
+  const locale = resolveLocaleForMessages(localeCode);
 
   const mem = getMemoryCached(locale);
   if (mem) return mem;
@@ -47,10 +47,11 @@ export async function loadLocaleMessages(localeCode) {
 
 /** Load English fallback in parallel for missing keys. */
 export async function loadLocalePair(localeCode) {
-  const locale = resolveLocale(localeCode);
+  const uiLocale = resolveUiLocale(localeCode);
+  const messageLocale = resolveLocaleForMessages(uiLocale);
   const [messages, fallback] = await Promise.all([
-    loadLocaleMessages(locale),
-    locale === DEFAULT_LOCALE ? Promise.resolve(null) : loadLocaleMessages(DEFAULT_LOCALE),
+    loadLocaleMessages(messageLocale),
+    messageLocale === DEFAULT_LOCALE ? Promise.resolve(null) : loadLocaleMessages(DEFAULT_LOCALE),
   ]);
-  return { messages, fallback: locale === DEFAULT_LOCALE ? messages : fallback };
+  return { messages, fallback: messageLocale === DEFAULT_LOCALE ? messages : fallback, uiLocale };
 }
