@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../../db/v2Database');
+const { getStripeSettings } = require('../../lib/v2StripeSettings');
 
 const MAX_PAYLOAD_CHARS = 500_000;
 
@@ -143,9 +144,10 @@ async function processStripeEvent(event) {
 
 async function handleV2BillingWebhook(req, res) {
   try {
+    const settings = await getStripeSettings();
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || '', 'utf8');
     const sig = req.headers['stripe-signature'];
-    const secret = process.env.STRIPE_WEBHOOK_SECRET;
+    const secret = settings.webhookSecret;
     if (secret) {
       const v = verifyStripeSignature(rawBody, sig, secret);
       if (!v.ok) {

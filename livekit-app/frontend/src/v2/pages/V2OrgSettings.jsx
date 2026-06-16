@@ -933,7 +933,7 @@ export default function V2OrgSettings() {
                       </div>
                       {!billingSnap?.stripeEnabled && (
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Stripe checkout is disabled on this server. Set STRIPE_ENABLED=true with API keys to enable.
+                          Payments are disabled. A platform admin can enable Stripe under Admin → Billing & Stripe.
                         </p>
                       )}
                     </div>

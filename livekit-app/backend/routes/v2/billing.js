@@ -4,17 +4,11 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { planAllowsTeamWorkspace } = require('../../lib/v2PlanFeatures');
 const { writeOverageLedgerForCycle } = require('../../lib/v2OverageLedger');
-
-function stripeEnabled() {
-  return process.env.STRIPE_ENABLED === 'true' && Boolean(process.env.STRIPE_SECRET_KEY);
-}
-
-function getStripe() {
-  if (!stripeEnabled()) return null;
-  // eslint-disable-next-line global-require
-  const Stripe = require('stripe');
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
-}
+const {
+  getStripeSettings,
+  isStripeBillingActive,
+  getStripeClient,
+} = require('../../lib/v2StripeSettings');
 
 function frontendBaseUrl() {
   return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -22,12 +16,13 @@ function frontendBaseUrl() {
 
 router.get('/plans', async (req, res) => {
   try {
+    const settings = await getStripeSettings();
     const rows = await db.all(`SELECT * FROM v2_plans ORDER BY monthly_price_cents ASC`);
     const plans = rows.map((planRow) => ({
       ...planRow,
       teamWorkspace: planAllowsTeamWorkspace(planRow.id),
     }));
-    res.json({ plans, stripeEnabled: stripeEnabled() });
+    res.json({ plans, stripeEnabled: isStripeBillingActive(settings) });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -35,6 +30,7 @@ router.get('/plans', async (req, res) => {
 
 router.get('/subscription', requireV2Auth, async (req, res) => {
   try {
+    const settings = await getStripeSettings();
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
     const planRow = sub ? await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [sub.plan_id]) : null;
     const plan = planRow
@@ -43,7 +39,7 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
           teamWorkspace: planAllowsTeamWorkspace(planRow.id),
         }
       : null;
-    res.json({ subscription: sub, plan, stripeEnabled: stripeEnabled() });
+    res.json({ subscription: sub, plan, stripeEnabled: isStripeBillingActive(settings) });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -51,7 +47,8 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
 
 router.post('/checkout', requireV2Auth, async (req, res) => {
   try {
-    if (!stripeEnabled()) {
+    const settings = await getStripeSettings();
+    if (!isStripeBillingActive(settings)) {
       return res.status(400).json({ error: 'billing_not_enabled', code: 'stripe_disabled', message: 'Stripe billing is not enabled' });
     }
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
@@ -75,7 +72,7 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
       return res.status(400).json({ error: 'Comp accounts cannot change plan via checkout' });
     }
 
-    const stripe = getStripe();
+    const stripe = getStripeClient(settings);
     let customerId = sub.stripe_customer_id;
     if (!customerId) {
       const customer = await stripe.customers.create({
@@ -111,7 +108,8 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
 
 router.post('/portal', requireV2Auth, async (req, res) => {
   try {
-    if (!stripeEnabled()) {
+    const settings = await getStripeSettings();
+    if (!isStripeBillingActive(settings)) {
       return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
     }
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
@@ -121,7 +119,7 @@ router.post('/portal', requireV2Auth, async (req, res) => {
     if (!sub?.stripe_customer_id) {
       return res.status(400).json({ error: 'No Stripe customer on file' });
     }
-    const stripe = getStripe();
+    const stripe = getStripeClient(settings);
     const base = frontendBaseUrl();
     const { flow } = req.body || {};
     const returnUrl = `${base}/v2/app/settings?section=billing`;
@@ -145,6 +143,7 @@ router.post('/portal', requireV2Auth, async (req, res) => {
 
 router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
   try {
+    const settings = await getStripeSettings();
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -193,7 +192,7 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
         translationMinutes: overT,
       },
       estimatedChargeCents: amountMeeting + amountTrans,
-      autoChargeEnabled: process.env.V2_AUTO_CHARGE_ENABLED === 'true',
+      autoChargeEnabled: settings.autoChargeEnabled,
       ledger,
     });
   } catch (e) {

@@ -5,6 +5,8 @@ import { v2Admin } from '../../../services/apiV2';
 import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
 import { Badge } from '../../../components/ui/badge';
+import { Input } from '../../../components/ui/input';
+import { Label } from '../../../components/ui/label';
 import { fmtCents } from './formatters';
 
 function StatusBadge({ ok, label }) {
@@ -18,12 +20,24 @@ function StatusBadge({ ok, label }) {
 export function BillingTab() {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [stripeEnabled, setStripeEnabled] = useState(false);
+  const [autoChargeEnabled, setAutoChargeEnabled] = useState(false);
+  const [stripeSecretKey, setStripeSecretKey] = useState('');
+  const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
+  const [auditReason, setAuditReason] = useState('');
 
   const reload = () => {
     setLoading(true);
     return v2Admin
       .billingConfig()
-      .then(setConfig)
+      .then((data) => {
+        setConfig(data);
+        setStripeEnabled(Boolean(data.settings?.stripeEnabledPreference ?? data.stripeEnabled));
+        setAutoChargeEnabled(Boolean(data.settings?.autoChargePreference ?? data.autoChargeEnabled));
+        setStripeSecretKey('');
+        setStripeWebhookSecret('');
+      })
       .catch(() => toast.error('Failed to load billing config'))
       .finally(() => setLoading(false));
   };
@@ -32,10 +46,36 @@ export function BillingTab() {
     reload();
   }, []);
 
+  const saveSettings = async () => {
+    if (auditReason.trim().length < 4) {
+      toast.error('Audit reason required (4+ characters).');
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        reason: auditReason.trim(),
+        stripeEnabled,
+        autoChargeEnabled,
+      };
+      if (stripeSecretKey.trim()) body.stripeSecretKey = stripeSecretKey.trim();
+      if (stripeWebhookSecret.trim()) body.stripeWebhookSecret = stripeWebhookSecret.trim();
+      await v2Admin.patchBillingConfig(body);
+      toast.success(stripeEnabled ? 'Payments enabled' : 'Billing settings saved');
+      setAuditReason('');
+      await reload();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to save billing settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (loading && !config) {
     return <p className="text-sm text-muted-foreground">Loading billing configuration…</p>;
   }
 
+  const settings = config?.settings || {};
   const modeLabel =
     config?.stripeKeyMode === 'live'
       ? 'Live'
@@ -49,23 +89,128 @@ export function BillingTab() {
     <div className="space-y-4">
       <Card className="app-card border-border/60">
         <CardHeader>
-          <CardTitle className="text-lg">Stripe & payments</CardTitle>
+          <CardTitle className="text-lg">Payment settings</CardTitle>
           <CardDescription>
-            Billing is controlled by server environment variables. This panel shows live status — keys are never stored
-            in the database or editable here.
+            Enable Stripe checkout and subscriptions from here. Secrets are stored in the platform database (superadmin
+            only). Server <code>.env</code> values still work as fallback when not set below.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge ok={config?.stripeEnabled} label={config?.stripeEnabled ? 'Payments enabled' : 'Payments disabled'} />
             <Badge variant="outline">{modeLabel} mode</Badge>
-            {config?.autoChargeEnabled ? (
-              <Badge variant="outline">Overage auto-charge on</Badge>
-            ) : (
-              <Badge variant="secondary">Overage auto-charge off</Badge>
+            {settings.source && (
+              <Badge variant="secondary">Config source: {settings.source}</Badge>
             )}
           </div>
 
+          <form
+            className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              saveSettings();
+            }}
+          >
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={stripeEnabled}
+                onChange={(e) => setStripeEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+              />
+              <span>
+                <span className="font-medium text-foreground">Accept payments (Stripe checkout & portal)</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Requires a valid secret key. Users can upgrade plans and manage billing when enabled.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoChargeEnabled}
+                onChange={(e) => setAutoChargeEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+              />
+              <span>
+                <span className="font-medium text-foreground">Auto-charge usage overages</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  When on, settled overage amounts can be charged automatically (requires Stripe + payment methods on
+                  file).
+                </span>
+              </span>
+            </label>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="stripe-secret-key">Stripe secret key</Label>
+                <Input
+                  id="stripe-secret-key"
+                  type="password"
+                  autoComplete="off"
+                  value={stripeSecretKey}
+                  onChange={(e) => setStripeSecretKey(e.target.value)}
+                  placeholder={
+                    settings.hasStripeSecretKey
+                      ? `Saved: ${settings.stripeSecretKeyMasked || '••••'}`
+                      : 'sk_test_… or sk_live_…'
+                  }
+                />
+                {settings.usingEnvSecret && (
+                  <p className="text-xs text-muted-foreground">Using key from server environment until you save one here.</p>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="stripe-webhook-secret">Webhook signing secret</Label>
+                <Input
+                  id="stripe-webhook-secret"
+                  type="password"
+                  autoComplete="off"
+                  value={stripeWebhookSecret}
+                  onChange={(e) => setStripeWebhookSecret(e.target.value)}
+                  placeholder={
+                    settings.hasWebhookSecret
+                      ? `Saved: ${settings.stripeWebhookSecretMasked || '••••'}`
+                      : 'whsec_…'
+                  }
+                />
+                {settings.usingEnvWebhook && (
+                  <p className="text-xs text-muted-foreground">Using webhook secret from server environment.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="billing-audit-reason">Audit reason</Label>
+              <Input
+                id="billing-audit-reason"
+                value={auditReason}
+                onChange={(e) => setAuditReason(e.target.value)}
+                placeholder="Why are you changing billing settings? (required)"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Saving…' : stripeEnabled ? 'Save & enable payments' : 'Save settings'}
+              </Button>
+              {settings.updatedAt && (
+                <span className="self-center text-xs text-muted-foreground">
+                  Last updated {new Date(settings.updatedAt).toLocaleString()}
+                  {settings.updatedBy ? ` by ${settings.updatedBy}` : ''}
+                </span>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card className="app-card border-border/60">
+        <CardHeader>
+          <CardTitle className="text-lg">Status overview</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
             <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plans with Stripe price</div>
@@ -90,8 +235,7 @@ export function BillingTab() {
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Webhook URL (Stripe Dashboard)</div>
               <code className="mt-1 block break-all text-xs">{config.webhookUrl}</code>
               <p className="mt-2 text-xs text-muted-foreground">
-                Subscribe to checkout.session.completed, customer.subscription.*, and invoice.* events. Set{' '}
-                <code>STRIPE_WEBHOOK_SECRET</code> from the signing secret Stripe gives you.
+                Subscribe to checkout.session.completed, customer.subscription.*, and invoice.* events.
               </p>
             </div>
           ) : (
@@ -99,18 +243,6 @@ export function BillingTab() {
               Set <code>BACKEND_BASE_URL</code> on the server to show the webhook URL here.
             </p>
           )}
-
-          <div>
-            <div className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Environment checklist</div>
-            <ul className="space-y-1 text-sm">
-              {(config?.envChecklist || []).map((item) => (
-                <li key={item.key} className="flex items-center gap-2">
-                  <span className={item.ok ? 'text-emerald-600' : 'text-muted-foreground'}>{item.ok ? '✓' : '○'}</span>
-                  <code>{item.key}</code>
-                </li>
-              ))}
-            </ul>
-          </div>
 
           <div className="flex flex-wrap gap-2 border-t border-border/60 pt-4">
             <Button type="button" variant="outline" size="sm" onClick={reload}>
@@ -130,9 +262,7 @@ export function BillingTab() {
         <Card className="app-card overflow-hidden border-border/60">
           <CardHeader>
             <CardTitle className="text-lg">Plan → Stripe mapping</CardTitle>
-            <CardDescription>
-              Edit price IDs on the Plans tab. Checkout uses these IDs when users upgrade.
-            </CardDescription>
+            <CardDescription>Edit price IDs on the Plans tab. Checkout uses these when users upgrade.</CardDescription>
           </CardHeader>
           <div className="overflow-x-auto border-t border-border/60">
             <table className="w-full text-left text-sm">
@@ -162,28 +292,6 @@ export function BillingTab() {
           </div>
         </Card>
       )}
-
-      <Card className="app-card border-border/60">
-        <CardHeader>
-          <CardTitle className="text-lg">Enable live payments (server steps)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-muted-foreground">
-          <ol className="list-decimal space-y-2 pl-5">
-            <li>
-              On the backend host, set <code>STRIPE_ENABLED=true</code>, <code>STRIPE_SECRET_KEY=sk_live_…</code>, and{' '}
-              <code>STRIPE_WEBHOOK_SECRET=whsec_…</code>, then restart the server.
-            </li>
-            <li>Create recurring Products/Prices in Stripe Dashboard and paste Price IDs into Admin → Plans.</li>
-            <li>
-              Add the webhook URL above in Stripe. Enable the Customer portal (Settings → Billing → Customer portal) so
-              users can cancel and update cards.
-            </li>
-            <li>
-              Optional: set <code>V2_AUTO_CHARGE_ENABLED=true</code> for overage auto-charging after usage settlement.
-            </li>
-          </ol>
-        </CardContent>
-      </Card>
     </div>
   );
 }

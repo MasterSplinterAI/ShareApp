@@ -303,6 +303,18 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_admin_audit_created ON v2_admin_audit_log(created_at)`);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_billing_settings (
+      id TEXT PRIMARY KEY,
+      stripe_enabled INTEGER NOT NULL DEFAULT 0,
+      stripe_secret_key TEXT,
+      stripe_webhook_secret TEXT,
+      auto_charge_enabled INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+
   const usageCols = await all(`PRAGMA table_info(v2_usage_events)`);
   const usageColNames = new Set((usageCols || []).map((c) => c.name));
   if (!usageColNames.has('idempotency_key')) {

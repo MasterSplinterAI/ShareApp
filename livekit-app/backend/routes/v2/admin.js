@@ -8,25 +8,13 @@ const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifec
 const { sendEmail } = require('../../lib/mailer');
 const { sendPasswordResetEmail } = require('../../lib/passwordReset');
 const { getPrefs } = require('../../lib/communicationPrefs');
-
-function stripeEnabled() {
-  return process.env.STRIPE_ENABLED === 'true' && Boolean(process.env.STRIPE_SECRET_KEY);
-}
-
-function getStripe() {
-  if (!stripeEnabled()) return null;
-  // eslint-disable-next-line global-require
-  const Stripe = require('stripe');
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
-}
-
-function stripeKeyMode() {
-  const key = process.env.STRIPE_SECRET_KEY || '';
-  if (key.startsWith('sk_live_')) return 'live';
-  if (key.startsWith('sk_test_')) return 'test';
-  if (key) return 'unknown';
-  return 'unset';
-}
+const {
+  getStripeSettings,
+  saveStripeSettings,
+  isStripeBillingActive,
+  getStripeClient,
+  toAdminView,
+} = require('../../lib/v2StripeSettings');
 
 function backendBaseUrl() {
   return (process.env.BACKEND_BASE_URL || process.env.PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
@@ -910,6 +898,7 @@ router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, 
 
 router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
+    const settings = await getStripeSettings();
     const plans = await db.all(
       `SELECT id, name, stripe_price_id, monthly_price_cents FROM v2_plans ORDER BY monthly_price_cents ASC`
     );
@@ -920,11 +909,13 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
       `SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE stripe_subscription_id IS NOT NULL AND stripe_subscription_id != ''`
     );
     const base = backendBaseUrl();
+    const adminSettings = toAdminView(settings);
     res.json({
-      stripeEnabled: stripeEnabled(),
-      stripeKeyMode: stripeKeyMode(),
+      stripeEnabled: isStripeBillingActive(settings),
+      stripeKeyMode: settings.stripeKeyMode,
       webhookUrl: base ? `${base}/api/v2/billing/webhook` : null,
-      autoChargeEnabled: process.env.V2_AUTO_CHARGE_ENABLED === 'true',
+      autoChargeEnabled: settings.autoChargeEnabled,
+      settings: adminSettings,
       plansConfigured: plans.filter((p) => p.stripe_price_id).length,
       plansTotal: plans.length,
       plans,
@@ -933,9 +924,9 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
         orgsWithStripeSubscription: withSubscription?.c || 0,
       },
       envChecklist: [
-        { key: 'STRIPE_ENABLED', ok: process.env.STRIPE_ENABLED === 'true' },
-        { key: 'STRIPE_SECRET_KEY', ok: Boolean(process.env.STRIPE_SECRET_KEY) },
-        { key: 'STRIPE_WEBHOOK_SECRET', ok: Boolean(process.env.STRIPE_WEBHOOK_SECRET) },
+        { key: 'STRIPE_ENABLED (env fallback)', ok: process.env.STRIPE_ENABLED === 'true' },
+        { key: 'STRIPE_SECRET_KEY (env fallback)', ok: Boolean(process.env.STRIPE_SECRET_KEY) },
+        { key: 'STRIPE_WEBHOOK_SECRET (env fallback)', ok: Boolean(process.env.STRIPE_WEBHOOK_SECRET) },
         { key: 'BACKEND_BASE_URL', ok: Boolean(base) },
         {
           key: 'FRONTEND_URL',
@@ -949,11 +940,38 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
   }
 });
 
+router.patch('/billing/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveStripeSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_billing_config', {
+      stripeEnabled: result.settings.stripeEnabled,
+      autoChargeEnabled: result.settings.autoChargeEnabled,
+      stripeKeyMode: result.settings.stripeKeyMode,
+      source: result.settings.source,
+      reason: result.reason,
+    });
+
+    res.json({
+      ok: true,
+      settings: toAdminView(result.settings),
+      stripeEnabled: isStripeBillingActive(result.settings),
+    });
+  } catch (e) {
+    console.error('[admin/billing/config patch]', e);
+    res.status(500).json({ error: 'Failed to save billing settings' });
+  }
+});
+
 router.post('/orgs/:orgId/cancel-subscription', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const reasonTrim = requireAuditReason(req.body?.reason);
     if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
-    if (!stripeEnabled()) {
+    const settings = await getStripeSettings();
+    if (!isStripeBillingActive(settings)) {
       return res.status(400).json({ error: 'Stripe billing is not enabled on this server' });
     }
 
@@ -969,7 +987,7 @@ router.post('/orgs/:orgId/cancel-subscription', requireV2Auth, requireSuperadmin
     }
 
     const cancelAtPeriodEnd = req.body?.cancelAtPeriodEnd !== false;
-    const stripe = getStripe();
+    const stripe = getStripeClient(settings);
     const result = cancelAtPeriodEnd
       ? await stripe.subscriptions.update(sub.stripe_subscription_id, { cancel_at_period_end: true })
       : await stripe.subscriptions.cancel(sub.stripe_subscription_id);

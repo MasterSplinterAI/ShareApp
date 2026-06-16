@@ -186,6 +186,7 @@ export const v2Admin = {
   patchAnnouncement: (id, body) => apiV2.patch(`/admin/announcements/${encodeURIComponent(id)}`, body).then((r) => r.data),
   broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
   billingConfig: () => apiV2.get('/admin/billing/config').then((r) => r.data),
+  patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),
   cancelOrgSubscription: (orgId, body) =>
     apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
   marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),
