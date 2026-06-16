@@ -1,43 +1,121 @@
 import { Mic, Video, MonitorUp, MessageSquare, Users, Phone, Subtitles } from 'lucide-react';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { DEFAULT_LOCALE } from '../../lib/i18n/constants';
 
-const TRANSCRIPT = [
+/** Caption/chat lines — source language + translations keyed like in-room chat. */
+const CAPTION_LINES = [
   {
     speaker: 'Kenny',
-    lang: 'EN',
-    original: "Thanks everyone — let's walk through the Q3 rollout timeline.",
-    translated: null,
+    sourceLang: 'en',
+    originalText: "Thanks everyone — let's walk through the global rollout timeline.",
+    translations: {
+      es: 'Gracias a todos — repasemos la cronología del despliegue global.',
+      fr: 'Merci à tous — passons en revue le calendrier de déploiement mondial.',
+      de: 'Danke an alle — gehen wir den globalen Rollout-Zeitplan durch.',
+      pt: 'Obrigado a todos — vamos revisar o cronograma de lançamento global.',
+      ja: '皆さん、ありがとうございます。グローバル展開のタイムラインを確認しましょう。',
+      'zh-CN': '谢谢大家——我们来过一遍全球推广时间表。',
+    },
     highlight: true,
   },
   {
     speaker: 'María',
-    lang: 'ES',
-    original: 'Perfecto. ¿Cuándo empezamos el piloto en Madrid?',
-    translated: 'Perfect. When do we start the pilot in Madrid?',
+    sourceLang: 'es',
+    originalText: 'Perfecto. ¿Cuándo empezamos el piloto en Madrid?',
+    translations: {
+      en: 'Perfect. When do we start the pilot in Madrid?',
+      fr: 'Parfait. Quand commençons-nous le pilote à Madrid ?',
+      de: 'Perfekt. Wann starten wir den Pilot in Madrid?',
+      pt: 'Perfeito. Quando começamos o piloto em Madrid?',
+      ja: '了解です。マドリードでのパイロットはいつ始めますか？',
+      'zh-CN': '好的。马德里试点什么时候开始？',
+    },
   },
   {
     speaker: 'Kenny',
-    lang: 'EN',
-    original: "Pilot kicks off June 16. I'll share the deck after this call.",
-    translated: 'El piloto comienza el 16 de junio. Compartiré la presentación después de esta llamada.',
+    sourceLang: 'en',
+    originalText: "Pilot kicks off June 16. I'll share the deck after this call.",
+    translations: {
+      es: 'El piloto comienza el 16 de junio. Compartiré la presentación después de esta llamada.',
+      fr: 'Le pilote commence le 16 juin. Je partagerai la présentation après cet appel.',
+      de: 'Der Pilot startet am 16. Juni. Ich teile die Präsentation nach dem Call.',
+      pt: 'O piloto começa em 16 de junho. Compartilharei a apresentação após esta call.',
+      ja: 'パイロットは6月16日開始です。この通話の後に資料を共有します。',
+      'zh-CN': '试点于6月16日开始。通话结束后我会分享演示文稿。',
+    },
   },
   {
     speaker: 'Yuki',
-    lang: 'JA',
-    original: '資料の日本語版も必要ですか？',
-    translated: 'Do you need a Japanese version of the materials as well?',
+    sourceLang: 'ja',
+    originalText: '資料の日本語版も必要ですか？',
+    translations: {
+      en: 'Do you need a Japanese version of the materials as well?',
+      es: '¿También necesitan una versión en japonés de los materiales?',
+      fr: 'Avez-vous aussi besoin d’une version japonaise des documents ?',
+      de: 'Benötigen Sie auch eine japanische Version der Unterlagen?',
+      pt: 'Vocês também precisam de uma versão em japonês dos materiais?',
+      'zh-CN': '材料也需要日文版吗？',
+    },
   },
   {
     speaker: 'Kenny',
-    lang: 'EN',
-    original: 'Yes — Parley will caption and translate live for the APAC team.',
-    translated: 'Sí — Parley subtitulará y traducirá en vivo para el equipo de APAC.',
+    sourceLang: 'en',
+    originalText: 'Yes — Parley will caption and translate live for the APAC team.',
+    translations: {
+      es: 'Sí — Parley subtitulará y traducirá en vivo para el equipo de APAC.',
+      fr: 'Oui — Parley sous-titrera et traduira en direct pour l’équipe APAC.',
+      de: 'Ja — Parley untertitelt und übersetzt live für das APAC-Team.',
+      pt: 'Sim — o Parley legendará e traduzirá ao vivo para a equipe APAC.',
+      ja: 'はい — ParleyがAPACチーム向けにライブ字幕と翻訳を提供します。',
+      'zh-CN': '是的——Parley 会为 APAC 团队提供实时字幕和翻译。',
+    },
   },
 ];
 
+const CHAT_PEEK = {
+  speaker: 'Yuki',
+  sourceLang: 'ja',
+  originalText: '資料を共有できますか？',
+  translations: {
+    en: 'Can you share the materials?',
+    es: '¿Puedes compartir los materiales?',
+    fr: 'Pouvez-vous partager les documents ?',
+    de: 'Können Sie die Unterlagen teilen?',
+    pt: 'Você pode compartilhar os materiais?',
+    'zh-CN': '可以分享材料吗？',
+  },
+};
+
+function normalizeViewerLocale(locale) {
+  return locale || DEFAULT_LOCALE;
+}
+
+/** Match in-room chat: viewer locale primary, original source below when different. */
+function getChatDisplay(line, viewerLocale) {
+  const tgt = normalizeViewerLocale(viewerLocale);
+  const src = line.sourceLang;
+
+  if (src === tgt) {
+    return {
+      primary: line.originalText,
+      secondary: null,
+      sourceLang: src,
+    };
+  }
+
+  const primary = line.translations[tgt] || line.originalText;
+  const secondary = primary !== line.originalText ? line.originalText : null;
+
+  return { primary, secondary, sourceLang: src };
+}
+
+function sourceLangLabel(code) {
+  return (code || 'en').split('-')[0].toUpperCase();
+}
+
 /** CSS + static assets product mock for marketing hero — mirrors in-room screen-share layout. */
 export function MeetingPreview() {
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
 
   return (
     <div className="mx-auto mt-14 max-w-5xl px-2 sm:mt-20">
@@ -99,21 +177,40 @@ export function MeetingPreview() {
                 {t('meetingPreview.translating')}
               </p>
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 text-[9px] leading-snug sm:text-[10px]">
-                {TRANSCRIPT.map((line) => (
-                  <div key={`${line.speaker}-${line.original.slice(0, 12)}`} className="space-y-0.5">
-                    <p className={line.highlight ? 'rounded-md bg-primary/10 px-1.5 py-1' : ''}>
-                      <span className="font-semibold text-primary">{line.speaker}</span>
-                      <span className="ml-1 text-[8px] uppercase text-muted-foreground">{line.lang}</span>
-                      <span className="text-foreground">: {line.original}</span>
-                    </p>
-                    {line.translated && <p className="pl-2 text-muted-foreground">{line.translated}</p>}
-                  </div>
-                ))}
+                {CAPTION_LINES.map((line) => {
+                  const { primary, secondary, sourceLang } = getChatDisplay(line, locale);
+                  return (
+                    <div key={`${line.speaker}-${line.originalText.slice(0, 12)}`} className="space-y-0.5">
+                      <p className={line.highlight ? 'rounded-md bg-primary/10 px-1.5 py-1' : ''}>
+                        <span className="font-semibold text-primary">{line.speaker}</span>
+                        {secondary && (
+                          <span className="ml-1 text-[8px] uppercase text-muted-foreground">
+                            {sourceLangLabel(sourceLang)}
+                          </span>
+                        )}
+                        <span className="text-foreground">: {primary}</span>
+                      </p>
+                      {secondary && (
+                        <p className="border-t border-border/40 pl-2 pt-0.5 text-muted-foreground">{secondary}</p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
               <div className="border-t border-border/50 bg-muted/30 px-2 py-1.5">
-                <p className="text-[8px] text-muted-foreground sm:text-[9px]">
-                  <span className="font-medium text-foreground">Chat · Yuki:</span> 資料を共有できますか？
-                </p>
+                {(() => {
+                  const chat = getChatDisplay(CHAT_PEEK, locale);
+                  return (
+                    <div className="space-y-0.5 text-[8px] sm:text-[9px]">
+                      <p className="text-foreground">
+                        <span className="font-medium">Chat · {CHAT_PEEK.speaker}:</span> {chat.primary}
+                      </p>
+                      {chat.secondary && (
+                        <p className="text-muted-foreground">{chat.secondary}</p>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </div>
@@ -184,20 +281,12 @@ function VideoTile({ label, sub, image, fallback, badge, compact = false }) {
 function ScreenShareTile({ presentingLabel }) {
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-100">
-      <div className="absolute inset-0 bg-[linear-gradient(135deg,#f1f5f9_0%,#e2e8f0_100%)]" />
-      {/* Mock slide — centered like object-contain screen share */}
-      <div className="absolute inset-2 flex items-center justify-center sm:inset-3">
-        <div className="flex h-full max-h-full w-full max-w-[92%] flex-col rounded border border-border/60 bg-white p-2 shadow-md sm:p-3">
-          <div className="mb-1 h-1 w-10 rounded bg-sky-500/80" />
-          <p className="text-[9px] font-semibold leading-tight text-slate-800 sm:text-[11px]">Q3 Rollout</p>
-          <div className="mt-2 flex min-h-[3rem] flex-1 items-end gap-1 sm:min-h-[4rem]">
-            {[40, 65, 50, 80, 72].map((h, i) => (
-              <div key={i} className="flex-1 rounded-t bg-sky-500/70" style={{ height: `${h}%` }} />
-            ))}
-          </div>
-          <p className="mt-1 text-[7px] text-slate-500 sm:text-[8px]">Screen share · Kenny</p>
-        </div>
-      </div>
+      <img
+        src="/marketing/hero-screenshare.png"
+        alt=""
+        className="absolute inset-0 h-full w-full object-contain bg-slate-100 p-1 sm:p-2"
+        loading="lazy"
+      />
       <div className="absolute bottom-2 left-2 rounded-md border border-border/60 bg-background/90 px-2 py-0.5 text-[9px] text-foreground shadow-sm sm:text-[10px]">
         {presentingLabel}
       </div>
