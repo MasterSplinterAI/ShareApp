@@ -202,11 +202,12 @@ class AutopilotTranslator {
                         return NodeFilter.FILTER_REJECT;
                     }
 
-                    // Meeting controls are translated via React labels — avoid batch DOM translation here.
+                    // Live meeting controls use React/room-label translations. Avoid
+                    // batch DOM translation in the room where LiveKit owns fast DOM updates.
                     if (parent.closest('.meeting-control-strip')) {
                         return NodeFilter.FILTER_REJECT;
                     }
-                    
+
                     // Skip if already has data-original-text (already stored)
                     // BUT: If it exists, verify it's actually English (not a translation)
                     if (parent.hasAttribute('data-original-text')) {
@@ -743,11 +744,12 @@ class AutopilotTranslator {
                         return NodeFilter.FILTER_REJECT;
                     }
 
-                    // Meeting controls are translated via React labels — avoid batch DOM translation here.
+                    // Live meeting controls use React/room-label translations. Avoid
+                    // batch DOM translation in the room where LiveKit owns fast DOM updates.
                     if (parent.closest('.meeting-control-strip')) {
                         return NodeFilter.FILTER_REJECT;
                     }
-                    
+
                     return NodeFilter.FILTER_ACCEPT;
                 }
             }

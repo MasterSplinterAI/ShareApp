@@ -9,7 +9,7 @@ import VideoEffectsPicker from './VideoEffectsPicker';
 import { useMeeting } from '../context/MeetingContext';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
-import { controlLabel } from '../lib/controlLabels';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import {
   applyVideoEffect,
   loadSavedEffectId,
@@ -297,10 +297,10 @@ export default function CustomControlBar({
       compact ? 'h-11 w-11 shrink-0 px-0' : 'h-11 gap-2 px-5'
     );
 
-  const t = (key) => controlLabel(selectedLanguage, key);
+  const t = useRoomControlLabels(selectedLanguage);
 
   return (
-    <div className={`relative z-50 w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`} data-no-translate>
+    <div className={`relative z-50 w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`} data-no-translate="true">
       <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
         {/* Left side - Standard controls */}
         <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>

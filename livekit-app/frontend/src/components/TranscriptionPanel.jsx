@@ -838,6 +838,7 @@ function PanelContent({ messages, scrollRef, bottomAnchorRef, onScroll, selected
       ref={scrollRef}
       onScroll={onScroll}
       className={`flex-1 min-h-0 overflow-y-auto ${compact ? 'p-2 space-y-1.5' : 'p-4 space-y-3'}`}
+      data-no-translate="true"
     >
       {!hasContent && (
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">

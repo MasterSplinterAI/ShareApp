@@ -1,5 +1,6 @@
 import { MessageSquare, MessageCircle, Users, X, Download, ChevronDown } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 
 /**
  * Shared tab header used by TranscriptionPanel and ChatPanel so both tabs are
@@ -8,7 +9,8 @@ import { useMeeting } from '../context/MeetingContext';
  * the sheet back to its compact bar instead of closing the panel entirely.
  */
 export default function PanelTabs({ onDownload, canDownload = false, compact = false, onMinimize }) {
-  const { sidePanelTab, setSidePanelTab, closeSidePanel, unreadCount, isHost } = useMeeting();
+  const { sidePanelTab, setSidePanelTab, closeSidePanel, unreadCount, isHost, selectedLanguage } = useMeeting();
+  const t = useRoomControlLabels(selectedLanguage);
 
   const padding = compact ? 'px-3 py-2' : 'px-3 py-2 sm:px-4 sm:py-3';
   const tabText = compact ? 'text-xs' : 'text-sm';
@@ -34,7 +36,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
           role="tab"
         >
           <MessageSquare className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-          <span>Captions</span>
+          <span>{t('captions')}</span>
         </button>
         <button
           type="button"
@@ -45,7 +47,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
           role="tab"
         >
           <MessageCircle className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-          <span>Chat</span>
+          <span>{t('chat')}</span>
           {sidePanelTab !== 'chat' && unreadCount > 0 && (
             <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
               {unreadCount > 99 ? '99+' : unreadCount}
@@ -62,7 +64,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             role="tab"
           >
             <Users className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
-            <span>People</span>
+            <span>{t('people')}</span>
           </button>
         )}
       </div>

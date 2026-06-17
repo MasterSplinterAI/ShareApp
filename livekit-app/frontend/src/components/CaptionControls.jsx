@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { Subtitles, Globe, Check, ChevronDown } from 'lucide-react';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 
 const CAPTION_MODES = [
-  { value: 'off', label: 'Captions off' },
-  { value: 'transcription_only', label: 'Transcription only' },
-  { value: 'transcription_translation', label: 'Transcription + Translation' },
+  { value: 'off', labelKey: 'captionsOff' },
+  { value: 'transcription_only', labelKey: 'transcriptionOnly' },
+  { value: 'transcription_translation', labelKey: 'transcriptionTranslation' },
 ];
 
 /**
@@ -29,6 +30,7 @@ export default function CaptionControls({
   const menuRef = useRef(null);
   const normalizedValue = normalizeMeetingLanguageCode(value);
   const selectedLanguage = getMeetingLanguageDisplay(normalizedValue);
+  const t = useRoomControlLabels(normalizedValue);
 
   const isActive = translationEnabled || (isHost && captionMode !== 'off');
 
@@ -62,10 +64,9 @@ export default function CaptionControls({
         className={cn(barBtnClass, 'gap-1.5')}
         aria-label="Caption settings"
         aria-expanded={isOpen}
-        data-no-translate="true"
       >
         <Subtitles className="h-5 w-5" />
-        <span className="text-sm font-medium">Captions</span>
+        <span className="text-sm font-medium">{t('captions')}</span>
         <span className="text-base leading-none" data-no-translate="true">
           {selectedLanguage.flag}
         </span>
@@ -75,7 +76,6 @@ export default function CaptionControls({
       {isOpen && (
         <div
           className="absolute bottom-full right-0 z-[9999] mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
-          data-no-translate="true"
         >
           <button
             type="button"
@@ -86,10 +86,9 @@ export default function CaptionControls({
               'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent',
               translationEnabled && 'bg-primary/10'
             )}
-            data-no-translate="true"
           >
             <Globe className="h-4 w-4 shrink-0" />
-            <span className="flex-1 text-sm">Show my captions</span>
+            <span className="flex-1 text-sm">{t('showMyCaptions')}</span>
             <span
               className={cn(
                 'rounded px-1.5 py-0.5 text-xs font-medium',
@@ -102,7 +101,7 @@ export default function CaptionControls({
 
           <div className="border-b border-border px-2 py-2">
             <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-              Your language
+              {t('yourLanguage')}
             </p>
             <MeetingLanguageList
               value={normalizedValue}
@@ -115,7 +114,7 @@ export default function CaptionControls({
           {isHost && (
             <div className="p-2">
               <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                Room broadcast
+                {t('roomBroadcast')}
               </p>
               {CAPTION_MODES.map((mode) => (
                 <button
@@ -130,7 +129,7 @@ export default function CaptionControls({
                     captionMode === mode.value && 'bg-accent'
                   )}
                 >
-                  <span>{mode.label}</span>
+                  <span>{t(mode.labelKey)}</span>
                   {captionMode === mode.value && <Check className="h-3.5 w-3.5 text-primary" />}
                 </button>
               ))}

@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks } from '@livekit/components-react';
 import { ConnectionState, RoomEvent } from 'livekit-client';
-import { controlLabel } from '../lib/controlLabels';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
@@ -22,6 +21,7 @@ import PublishPreviewTracks from './PublishPreviewTracks';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { autopilotTranslator } from '../lib/autopilot-translator';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { ROOM_PUBLISH_DEFAULTS } from '../lib/roomPublishDefaults';
 
 function HostSessionReporter({ meetingId, isHost }) {
@@ -434,13 +434,14 @@ function MeetingRoomInner({
     setTranslationEnabled,
     isPanelOpen,
   } = useMeeting();
+  const t = useRoomControlLabels(selectedLanguage);
 
   const [showShareModal, setShowShareModal] = useState(false);
 
   // Live meetings are React-heavy (captions, chat, video tiles). AutopilotTranslator
   // mutates text nodes in the DOM and causes React removeChild crashes when users pick
   // a non-English caption language. Caption/translation is handled by the agent; UI
-  // chrome uses controlLabel() instead.
+  // chrome uses room-label translations instead.
   useEffect(() => {
     autopilotTranslator.destroy();
   }, []);
@@ -548,8 +549,8 @@ function MeetingRoomInner({
         />
 
         <RoomAudioRenderer />
-        <div data-no-translate>
-          <StartAudio label={controlLabel(selectedLanguage, 'startAudio')} />
+        <div>
+          <StartAudio label={t('startAudio')} />
         </div>
       </LiveKitRoom>
 

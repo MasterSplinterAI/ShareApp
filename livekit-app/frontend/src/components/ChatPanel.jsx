@@ -4,6 +4,7 @@ import { MessageCircle, Send, Loader2 } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 import { chatService } from '../services/api';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import PanelTabs from './PanelTabs';
 import { Button } from './ui/button';
 
@@ -60,6 +61,7 @@ function ChatPanel() {
   const messagesRef = useRef(messages);
   const isChatOpenRef = useRef(isChatOpen);
   const selectedLanguageRef = useRef(selectedLanguage);
+  const t = useRoomControlLabels(selectedLanguage);
 
   messagesRef.current = messages;
   isChatOpenRef.current = isChatOpen;
@@ -293,7 +295,7 @@ function ChatPanel() {
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <MessageCircle className="w-8 h-8 mb-3 opacity-50" />
-            <p className="text-center text-sm">No messages yet. Say hi.</p>
+            <p className="text-center text-sm">{t('noMessages')}</p>
           </div>
         )}
         {messages.map((msg) => {
@@ -305,9 +307,15 @@ function ChatPanel() {
               className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}
             >
               <div className="mb-1 flex max-w-[95%] items-baseline gap-2">
-                <span className="truncate text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                  {msg.isOwn ? 'You' : msg.senderName}
-                </span>
+                {msg.isOwn ? (
+                  <span className="truncate text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    {t('you')}
+                  </span>
+                ) : (
+                  <span className="truncate text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-no-translate="true">
+                    {msg.senderName}
+                  </span>
+                )}
                 <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80">
                   {new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',
@@ -325,13 +333,13 @@ function ChatPanel() {
                 {msg.translating && !msg.isOwn ? (
                   <span className="inline-flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Translating…
+                    {t('translating')}
                   </span>
                 ) : (
                   <>
-                    <div className="leading-relaxed">{linkifyText(primary)}</div>
+                    <div className="leading-relaxed" data-no-translate="true">{linkifyText(primary)}</div>
                     {secondary && (
-                      <div className="mt-1 text-xs text-muted-foreground leading-relaxed border-t border-border/50 pt-1">
+                      <div className="mt-1 text-xs text-muted-foreground leading-relaxed border-t border-border/50 pt-1" data-no-translate="true">
                         {linkifyText(secondary)}
                       </div>
                     )}
@@ -347,9 +355,9 @@ function ChatPanel() {
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_CHARS))}
           onKeyDown={onKeyDown}
-          placeholder="Message…"
+          placeholder={t('messagePlaceholder')}
           rows={2}
-          aria-label="Message"
+          aria-label={t('messagePlaceholder')}
           className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
           maxLength={MAX_CHARS}
         />
@@ -359,7 +367,7 @@ function ChatPanel() {
           className="self-end shrink-0"
           onClick={sendMessage}
           disabled={!draft.trim()}
-          aria-label="Send message"
+          aria-label={t('sendMessage')}
         >
           <Send className="h-5 w-5" />
         </Button>

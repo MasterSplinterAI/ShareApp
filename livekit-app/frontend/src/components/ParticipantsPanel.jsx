@@ -161,7 +161,7 @@ export default function ParticipantsPanel({ meetingId }) {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto py-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1" data-no-translate="true">
         {humanParticipants.map((p) => (
           <ParticipantRow
             key={p.identity}
