@@ -11,7 +11,6 @@ export function isDomTranslationRoute(pathname) {
 export function isDomTranslationExcludedRoute(pathname) {
   return (
     pathname.startsWith('/room/')
-    || pathname.startsWith('/join/')
   );
 }
 

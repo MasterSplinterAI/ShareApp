@@ -260,14 +260,11 @@ class AutopilotTranslator {
     private isPageEnabled(): boolean {
         const currentPath = window.location.pathname;
         // Live meetings: React owns the DOM; batch DOM translation causes removeChild crashes.
-        if (
-            currentPath.startsWith('/room/')
-            || currentPath.startsWith('/join/')
-        ) {
+        if (currentPath.startsWith('/room/')) {
             return false;
         }
 
-        // Empty array means all other pages are enabled (marketing, auth, workspace).
+        // Empty array means all other pages are enabled (marketing, auth, workspace, pre-join).
         if (this.enabledPages.length === 0) {
             return true;
         }
