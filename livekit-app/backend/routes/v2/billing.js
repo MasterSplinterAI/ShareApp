@@ -9,6 +9,7 @@ const {
   isStripeBillingActive,
   getStripeClient,
 } = require('../../lib/v2StripeSettings');
+const { getOverageAutoChargeState, setOverageAutoChargeOptIn } = require('../../lib/v2OrgBillingPrefs');
 
 function frontendBaseUrl() {
   return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -39,8 +40,34 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
           teamWorkspace: planAllowsTeamWorkspace(planRow.id),
         }
       : null;
-    res.json({ subscription: sub, plan, stripeEnabled: isStripeBillingActive(settings) });
+    const overageAutoCharge = await getOverageAutoChargeState(req.v2Auth.orgId);
+    res.json({
+      subscription: sub,
+      plan,
+      stripeEnabled: isStripeBillingActive(settings),
+      overageAutoCharge,
+    });
   } catch (e) {
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/overage-auto-charge', requireV2Auth, async (req, res) => {
+  try {
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { optIn } = req.body || {};
+    if (optIn === undefined) {
+      return res.status(400).json({ error: 'optIn required' });
+    }
+    const result = await setOverageAutoChargeOptIn(req.v2Auth.orgId, req.v2Auth.userId, Boolean(optIn), req);
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.json({ overageAutoCharge: result.state });
+  } catch (e) {
+    console.error('[v2/billing/overage-auto-charge]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });
@@ -143,7 +170,6 @@ router.post('/portal', requireV2Auth, async (req, res) => {
 
 router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
   try {
-    const settings = await getStripeSettings();
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -179,6 +205,7 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
     if (persistLedger) {
       ledger = await writeOverageLedgerForCycle(req.v2Auth.orgId, cycle.id);
     }
+    const overageAutoCharge = await getOverageAutoChargeState(req.v2Auth.orgId);
     res.json({
       dryRun: true,
       cycle,
@@ -192,7 +219,8 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
         translationMinutes: overT,
       },
       estimatedChargeCents: amountMeeting + amountTrans,
-      autoChargeEnabled: settings.autoChargeEnabled,
+      overageAutoCharge,
+      autoChargeEnabled: overageAutoCharge.effective,
       ledger,
     });
   } catch (e) {

@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Set, Tuple
 
 from cost_reporter import CostReporter
+from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
 from residual_guard import is_residual_repeat
 from translation_helpers import (
@@ -773,15 +774,11 @@ class TranscriptionOnlyAgent:
             if any(pub.kind == rtc.TrackKind.KIND_AUDIO for pub in p.track_publications.values())
             and not is_likely_agent_identity(p.identity)
         ]
-        targets = {
-            lang for pid, lang in self.participant_languages.items()
-            if self.translation_enabled.get(pid, False)
-        }
-
-        # caption_languages restricts which target languages are active when non-empty
-        if self.caption_languages:
-            allowed_norm = {self._normalize_language_code(l) for l in self.caption_languages}
-            targets = {t for t in targets if self._normalize_language_code(t) in allowed_norm}
+        targets = compute_caption_targets(
+            self.participant_languages,
+            self.translation_enabled,
+            caption_languages=self.caption_languages,
+        )
 
         logger.info(
             f"📊 update_assistants: speakers={speakers}, targets={targets}, "

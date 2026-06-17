@@ -30,8 +30,6 @@ export default function MeetingPanelMenu({
   isHost = false,
   captionMode,
   onCaptionModeChange,
-  captionLanguages = [],
-  onToggleCaptionLanguage,
   barBtnClass,
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -192,20 +190,6 @@ export default function MeetingPanelMenu({
                   {captionMode === mode.value && <Check className="h-3.5 w-3.5 text-primary" />}
                 </button>
               ))}
-
-              {captionMode !== 'off' && onToggleCaptionLanguage && (
-                <div className="mt-1 border-t border-border pt-1">
-                  <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Broadcast languages
-                  </p>
-                  <MeetingLanguageList
-                    mode="multi"
-                    values={captionLanguages}
-                    onToggle={onToggleCaptionLanguage}
-                    maxHeightClass="max-h-36"
-                  />
-                </div>
-              )}
             </div>
           )}
         </div>

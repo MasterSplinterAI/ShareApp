@@ -7,14 +7,11 @@ const { getRoomService } = require('../../lib/livekitService');
 router.post('/:name/caption-config', requireV2Auth, async (req, res) => {
   try {
     const { name } = req.params;
-    const { mode, languages } = req.body;
+    const { mode } = req.body;
 
     const validModes = ['off', 'transcription_only', 'transcription_translation'];
     if (!validModes.includes(mode)) {
       return res.status(400).json({ error: `mode must be one of: ${validModes.join(', ')}` });
-    }
-    if (!Array.isArray(languages)) {
-      return res.status(400).json({ error: 'languages must be an array' });
     }
 
     const svc = getRoomService();
@@ -30,7 +27,7 @@ router.post('/:name/caption-config', requireV2Auth, async (req, res) => {
       // Room may not exist yet or metadata may be empty — continue
     }
 
-    const newMeta = { ...existingMeta, caption_config: { mode, languages } };
+    const newMeta = { ...existingMeta, caption_config: { mode, languages: [] } };
     await svc.updateRoomMetadata(name, JSON.stringify(newMeta));
 
     res.json({ ok: true });

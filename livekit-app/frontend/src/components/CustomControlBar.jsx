@@ -54,7 +54,6 @@ export default function CustomControlBar({
   const isCompact = useIsCompact();
 
   const [captionMode, setCaptionMode] = useState('transcription_translation');
-  const [captionLanguages, setCaptionLanguages] = useState([selectedLanguage || 'en']);
 
   const cameraTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Camera);
   const micTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Microphone);
@@ -260,8 +259,9 @@ export default function CustomControlBar({
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
 
-  const publishCaptionConfig = async (mode, languages) => {
+  const publishCaptionConfig = async (mode) => {
     if (!localParticipant) return;
+    const languages = [];
     try {
       const payload = JSON.stringify({ type: 'caption_config', mode, languages });
       await localParticipant.publishData(
@@ -287,17 +287,8 @@ export default function CustomControlBar({
 
   const handleCaptionModeChange = async (mode) => {
     setCaptionMode(mode);
-    await publishCaptionConfig(mode, captionLanguages);
+    await publishCaptionConfig(mode);
     toast(mode === 'off' ? 'Captions disabled' : 'Caption mode updated');
-  };
-
-  const toggleCaptionLanguage = async (code) => {
-    const next = captionLanguages.includes(code)
-      ? captionLanguages.filter(c => c !== code)
-      : [...captionLanguages, code];
-    const langs = next.length > 0 ? next : [code];
-    setCaptionLanguages(langs);
-    await publishCaptionConfig(captionMode, langs);
   };
 
   const barBtn = (compact) =>
@@ -494,8 +485,6 @@ export default function CustomControlBar({
               isHost={isHost}
               captionMode={captionMode}
               onCaptionModeChange={handleCaptionModeChange}
-              captionLanguages={captionLanguages}
-              onToggleCaptionLanguage={toggleCaptionLanguage}
               barBtnClass={barBtn(isCompact)}
             />
           ) : (
@@ -518,8 +507,6 @@ export default function CustomControlBar({
                 isHost={isHost}
                 captionMode={captionMode}
                 onCaptionModeChange={handleCaptionModeChange}
-                captionLanguages={captionLanguages}
-                onToggleCaptionLanguage={toggleCaptionLanguage}
                 barBtnClass={barBtn(false)}
               />
 

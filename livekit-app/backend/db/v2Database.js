@@ -347,6 +347,15 @@ async function migrate() {
   if (!subColNames.has('comp_set_at')) {
     await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_set_at TEXT`);
   }
+  if (!subColNames.has('overage_auto_charge_opt_in')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!subColNames.has('overage_auto_charge_opt_in_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in_at TEXT`);
+  }
+  if (!subColNames.has('overage_auto_charge_opt_in_by')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in_by TEXT`);
+  }
 
   const orgCols = await all(`PRAGMA table_info(v2_organizations)`);
   const orgColNames = new Set((orgCols || []).map((c) => c.name));

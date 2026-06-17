@@ -72,6 +72,8 @@ export default function V2OrgSettings() {
   const [plans, setPlans] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
   const [portalLoading, setPortalLoading] = useState(null);
+  const [overageAutoChargeOptIn, setOverageAutoChargeOptIn] = useState(false);
+  const [savingOverageAutoCharge, setSavingOverageAutoCharge] = useState(false);
 
   const startCheckout = async (planId) => {
     setCheckoutLoading(planId);
@@ -95,6 +97,21 @@ export default function V2OrgSettings() {
       toast.error(e.response?.data?.error || 'Billing portal unavailable');
     } finally {
       setPortalLoading(null);
+    }
+  };
+
+  const saveOverageAutoCharge = async (nextOptIn) => {
+    setSavingOverageAutoCharge(true);
+    try {
+      const { overageAutoCharge } = await v2Billing.updateOverageAutoCharge({ optIn: nextOptIn });
+      setOverageAutoChargeOptIn(Boolean(overageAutoCharge?.orgOptIn));
+      setBillingSnap((prev) => (prev ? { ...prev, overageAutoCharge } : prev));
+      toast.success(nextOptIn ? 'Overage auto-charge enabled' : 'Overage auto-charge disabled');
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to update overage billing preference');
+      setOverageAutoChargeOptIn(Boolean(billingSnap?.overageAutoCharge?.orgOptIn));
+    } finally {
+      setSavingOverageAutoCharge(false);
     }
   };
 
@@ -122,8 +139,10 @@ export default function V2OrgSettings() {
           subscription: sub?.subscription,
           plan: sub?.plan,
           stripeEnabled: sub?.stripeEnabled,
+          overageAutoCharge: sub?.overageAutoCharge,
           usageSummary: usage?.byType || [],
         });
+        setOverageAutoChargeOptIn(Boolean(sub?.overageAutoCharge?.orgOptIn));
         const b = o?.branding;
         if (b) {
           setBrandingAccent(b.accentColor || DEFAULT_BRAND_ACCENT);
@@ -978,6 +997,47 @@ export default function V2OrgSettings() {
                         </div>
                       </div>
                     )}
+
+                    {billingSnap?.overageAutoCharge?.platformEnabled &&
+                      billingSnap?.stripeEnabled &&
+                      billingSnap?.subscription?.is_comp !== 1 && (
+                        <div className="rounded-lg border border-border/60 bg-muted/20 p-4 space-y-3">
+                          <div>
+                            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                              Usage overages
+                            </div>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              If you exceed included minutes on your plan, overages may be billed at the rates shown on
+                              your plan. Opt in only if you want us to charge your saved payment method automatically
+                              when a billing period closes.
+                            </p>
+                          </div>
+                          <label className="flex items-start gap-2 text-sm">
+                            <input
+                              id="overage-auto-charge"
+                              type="checkbox"
+                              checked={overageAutoChargeOptIn}
+                              disabled={savingOverageAutoCharge}
+                              onChange={(e) => {
+                                setOverageAutoChargeOptIn(e.target.checked);
+                                saveOverageAutoCharge(e.target.checked);
+                              }}
+                              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary disabled:opacity-50"
+                            />
+                            <span className="cursor-pointer text-muted-foreground">
+                              <span className="font-medium text-foreground">
+                                Automatically charge overages to my payment method
+                              </span>
+                              <span className="mt-1 block text-xs">
+                                You can turn this off anytime. Without opt-in, overages are tracked but not auto-charged.
+                                {billingSnap?.overageAutoCharge?.optedInAt && overageAutoChargeOptIn
+                                  ? ` Opted in ${new Date(billingSnap.overageAutoCharge.optedInAt).toLocaleString()}.`
+                                  : ''}
+                              </span>
+                            </span>
+                          </label>
+                        </div>
+                      )}
                   </div>
                 )}
               </CardContent>

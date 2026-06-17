@@ -23,8 +23,6 @@ export default function CaptionControls({
   isHost = false,
   captionMode,
   onCaptionModeChange,
-  captionLanguages,
-  onToggleCaptionLanguage,
   barBtnClass,
 }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -136,21 +134,6 @@ export default function CaptionControls({
                   {captionMode === mode.value && <Check className="h-3.5 w-3.5 text-primary" />}
                 </button>
               ))}
-
-              {captionMode !== 'off' && (
-                <>
-                  <div className="my-1.5 border-t border-border" />
-                  <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Broadcast languages
-                  </p>
-                  <MeetingLanguageList
-                    mode="multi"
-                    values={captionLanguages}
-                    onToggle={onToggleCaptionLanguage}
-                    maxHeightClass="max-h-40"
-                  />
-                </>
-              )}
             </div>
           )}
         </div>

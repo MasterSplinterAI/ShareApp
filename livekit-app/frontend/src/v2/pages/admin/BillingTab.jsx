@@ -134,10 +134,10 @@ export function BillingTab() {
                 className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
               />
               <span>
-                <span className="font-medium text-foreground">Auto-charge usage overages</span>
+                <span className="font-medium text-foreground">Allow customers to opt in to overage auto-charge</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  When on, settled overage amounts can be charged automatically (requires Stripe + payment methods on
-                  file).
+                  Platform capability only. Each org owner must separately opt in under Settings → Billing before
+                  overages can be charged automatically.
                 </span>
               </span>
             </label>

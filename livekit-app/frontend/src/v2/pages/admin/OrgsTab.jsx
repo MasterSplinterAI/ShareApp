@@ -421,6 +421,19 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
                       {sub.current_period_end.slice(0, 10)}
                     </div>
                   )}
+                  <div>
+                    <span className="text-muted-foreground">Overage auto-charge: </span>
+                    {sub.overage_auto_charge_opt_in === 1 ? (
+                      <span className="text-emerald-700 dark:text-emerald-400">
+                        Opted in
+                        {sub.overage_auto_charge_opt_in_at
+                          ? ` (${sub.overage_auto_charge_opt_in_at.slice(0, 10)})`
+                          : ''}
+                      </span>
+                    ) : (
+                      <span>Not opted in</span>
+                    )}
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Cancel via Stripe API (requires audit reason above). Webhooks sync status back to Parley.
