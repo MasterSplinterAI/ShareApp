@@ -104,6 +104,24 @@ def join_nonempty(*parts: str) -> str:
     return " ".join(p.strip() for p in parts if p and p.strip())
 
 
+def context_pairs_for_translation_call(
+    context_pairs: Sequence[Tuple[str, str]],
+    *,
+    partial: bool,
+) -> List[Tuple[str, str]]:
+    """Few-shot examples are useful for finals, but wasteful for interim calls."""
+    if partial:
+        return []
+    return list(context_pairs)
+
+
+def llm_completion_token_cap(source_text: str) -> int:
+    """Length-proportional output cap for translation completions."""
+    word_cap = 16 + 4 * len(source_text.split())
+    char_cap = 8 + len(source_text) // 2
+    return min(768, max(64, word_cap, char_cap))
+
+
 def build_translation_messages(
     *,
     target_lang_name: str,

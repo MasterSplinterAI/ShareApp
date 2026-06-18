@@ -24,8 +24,10 @@ from residual_guard import is_residual_repeat
 from translation_helpers import (
     TranslationCache,
     build_translation_messages,
+    context_pairs_for_translation_call,
     ends_sentence,
     join_nonempty,
+    llm_completion_token_cap,
     split_tail,
     stable_common_prefix,
 )
@@ -124,11 +126,11 @@ def _llm_model() -> str:
 
 
 def _llm_temperature() -> float:
-    raw = os.getenv("LLM_TEMPERATURE", "0.2").strip()
+    raw = os.getenv("LLM_TEMPERATURE", "0.0").strip()
     try:
         return max(0.0, min(float(raw), 2.0))
     except ValueError:
-        return 0.2
+        return 0.0
 
 
 def _llm_timeout_sec() -> float:
@@ -187,9 +189,27 @@ def _translation_keyterms() -> List[str]:
     return _csv_env("TRANSLATION_KEYTERMS")
 
 
+DEFAULT_DEEPGRAM_KEYTERMS = [
+    "Cassiterite", "Rutile", "Ilmenite", "Bauxite", "Chalcopyrite", "Galena",
+    "Sphalerite", "Pentlandite", "Magnetite", "Hematite", "Chromite", "Molybdenite",
+    "Scheelite", "Wolframite", "Coltan", "Monazite", "Sperrylite", "Cooperite",
+    "Laurite", "Braggite", "Kimberlite", "Zircon", "Xenotime", "Tin ore",
+    "Copper", "Aluminum", "Zinc", "Lead", "Nickel", "Cobalt", "Molybdenum",
+    "Tungsten", "Lithium", "Gold", "Silver", "Platinum", "Palladium", "Rhodium",
+    "Iridium", "Ruthenium", "Osmium", "PGM", "Platinum Group Metals", "Rare earth",
+    "LME", "London Metal Exchange", "Backwardation", "Contango", "Spot price",
+    "Futures", "Arbitrage", "Assay", "Concentrate", "Cathode", "Anode", "Bullion",
+    "Ingot", "Dore", "Refining", "Smelting", "Warehousing", "Hedging", "Liquidity",
+    "Volatility", "Leverage", "Margin", "Settlement", "Collateral", "Escrow",
+    "KYC", "AML", "Compliance", "Derivatives", "SaaS", "API", "Fintech", "BaaS",
+    "FaaS",
+]
+
+
 def _deepgram_keyterms() -> List[str]:
     """Nova-3 keyterm prompting (improves STT accuracy on domain terms)."""
-    return _csv_env("DEEPGRAM_KEYTERMS")
+    configured = _csv_env("DEEPGRAM_KEYTERMS")
+    return configured or list(DEFAULT_DEEPGRAM_KEYTERMS)
 
 
 def _speech_times(speech_data: Any) -> Tuple[float, float]:
@@ -904,20 +924,6 @@ class TranscriptionOnlyAgent:
             return None, "unknown"
         is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
-        _default_keyterms = (
-            "Cassiterite,Rutile,Ilmenite,Bauxite,Chalcopyrite,Galena,Sphalerite,Pentlandite,"
-            "Magnetite,Hematite,Chromite,Molybdenite,Scheelite,Wolframite,Coltan,Monazite,"
-            "Sperrylite,Cooperite,Laurite,Braggite,Kimberlite,Zircon,Xenotime,"
-            "Tin ore,Copper,Aluminum,Zinc,Lead,Nickel,Cobalt,Molybdenum,Tungsten,Lithium,"
-            "Gold,Silver,Platinum,Palladium,Rhodium,Iridium,Ruthenium,Osmium,"
-            "PGM,Platinum Group Metals,Rare earth,"
-            "LME,London Metal Exchange,Backwardation,Contango,Spot price,Futures,Arbitrage,"
-            "Assay,Concentrate,Cathode,Anode,Bullion,Ingot,Dore,Refining,Smelting,Warehousing,Hedging,"
-            "Liquidity,Volatility,Leverage,Margin,Settlement,Collateral,Escrow,KYC,AML,Compliance,Derivatives,"
-            "SaaS,API,Fintech,BaaS,FaaS"
-        )
-        keyterms_raw = os.getenv("DEEPGRAM_KEYTERMS", _default_keyterms)
-        keyterms = [t.strip() for t in keyterms_raw.split(",") if t.strip()]
         stt_provider = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
         normalized_lang = self._normalize_language_code(stt_lang)
         stt_instance: Optional[Any] = None
@@ -941,13 +947,21 @@ class TranscriptionOnlyAgent:
             )
             keyterms = _deepgram_keyterms()
             if keyterms:
-                stt_kwargs["keyterms"] = keyterms
+                stt_kwargs["keyterm"] = keyterms
             try:
                 inst = deepgram.STT(**stt_kwargs)
             except TypeError:
-                # Older plugin without keyterms kwarg
-                stt_kwargs.pop("keyterms", None)
-                inst = deepgram.STT(**stt_kwargs)
+                # Older plugin compatibility: keyterms plural was supported before
+                # the SDK standardized on Deepgram's nova-3 `keyterm` argument.
+                if "keyterm" in stt_kwargs:
+                    stt_kwargs["keyterms"] = stt_kwargs.pop("keyterm")
+                    try:
+                        inst = deepgram.STT(**stt_kwargs)
+                    except TypeError:
+                        stt_kwargs.pop("keyterms", None)
+                        inst = deepgram.STT(**stt_kwargs)
+                else:
+                    inst = deepgram.STT(**stt_kwargs)
             logger.info(
                 f"{L} STT: Deepgram nova-3 lang=multi (auto-detect) "
                 f"endpointing_ms={endpointing_ms} "
@@ -1333,10 +1347,14 @@ class TranscriptionOnlyAgent:
             on_delta: Optional[Callable[[str], Awaitable[None]]] = None,
         ) -> Tuple[str, Any]:
             """One LLM streaming call. Returns (text, usage). Raises on failure."""
+            context_pairs = context_pairs_for_translation_call(
+                lane_context_pairs(lane),
+                partial=partial,
+            )
             messages = build_translation_messages(
                 target_lang_name=lane.target_lang_name,
                 source_text=source_text,
-                context_pairs=lane_context_pairs(lane),
+                context_pairs=context_pairs,
                 keyterms=_translation_keyterms(),
                 partial=partial,
             )
@@ -1347,7 +1365,15 @@ class TranscriptionOnlyAgent:
             last_usage = None
             t0 = time.perf_counter()
             ttft_ms: Optional[float] = None
-            stream = lane.llm_instance.chat(chat_ctx=chat_ctx)
+            completion_cap = llm_completion_token_cap(source_text)
+            try:
+                stream = lane.llm_instance.chat(
+                    chat_ctx=chat_ctx,
+                    extra_kwargs={"max_completion_tokens": completion_cap},
+                )
+            except TypeError:
+                # Older LiveKit OpenAI plugin without per-call extra_kwargs.
+                stream = lane.llm_instance.chat(chat_ctx=chat_ctx)
             try:
                 async for chunk in stream:
                     if getattr(chunk, "usage", None) is not None:
@@ -1366,7 +1392,7 @@ class TranscriptionOnlyAgent:
             logger.info(
                 f"{L}→{tgt_lang} 📊 translation_latency ttft_ms={ttft_ms and round(ttft_ms) or -1} "
                 f"total_ms={round(total_ms)} chars={len(source_text)} partial={partial} "
-                f"model={_llm_model()}"
+                f"max_completion_tokens={completion_cap} model={_llm_model()}"
             )
             return accumulated.strip(), last_usage
 

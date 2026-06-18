@@ -3,8 +3,10 @@
 from translation_helpers import (
     TranslationCache,
     build_translation_messages,
+    context_pairs_for_translation_call,
     ends_sentence,
     join_nonempty,
+    llm_completion_token_cap,
     split_tail,
     stable_common_prefix,
 )
@@ -175,3 +177,26 @@ class TestBuildTranslationMessages:
             partial=True,
         )
         assert "incomplete" in msgs[0][1].lower() or "partial" in msgs[0][1].lower()
+
+
+# ------------------------------------------------------- LLM call helpers
+
+class TestContextPairsForTranslationCall:
+    def test_final_calls_keep_context_pairs(self):
+        pairs = [("Hello.", "Hola."), ("Thanks.", "Gracias.")]
+        assert context_pairs_for_translation_call(pairs, partial=False) == pairs
+
+    def test_interim_calls_drop_fewshot_context(self):
+        pairs = [("Hello.", "Hola."), ("Thanks.", "Gracias.")]
+        assert context_pairs_for_translation_call(pairs, partial=True) == []
+
+
+class TestLlmCompletionTokenCap:
+    def test_short_source_gets_safe_minimum_cap(self):
+        assert llm_completion_token_cap("hello world") == 64
+
+    def test_long_source_is_capped(self):
+        assert llm_completion_token_cap("word " * 1000) == 768
+
+    def test_empty_source_still_has_minimum_cap(self):
+        assert llm_completion_token_cap("   ") == 64

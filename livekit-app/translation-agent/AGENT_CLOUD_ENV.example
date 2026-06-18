@@ -33,7 +33,7 @@ OPENAI_API_KEY=
 LLM_PROVIDER=openai
 # Translation model (pinned; default gpt-4.1-mini) + sampling/timeout knobs.
 LLM_MODEL=gpt-4.1-mini
-LLM_TEMPERATURE=0.2
+LLM_TEMPERATURE=0.0
 # Per-attempt budget for one translation call (connect + full stream); 1 retry on failure.
 LLM_TIMEOUT_SEC=6.0
 
