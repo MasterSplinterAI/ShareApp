@@ -115,12 +115,13 @@ export default function V2OrgSettings() {
     }
   };
 
-  const load = () => {
+  const load = (opts = {}) => {
+    const reconcileBilling = opts.reconcileBilling || searchParams.get('billing') === 'success';
     Promise.all([
       v2Auth.me(),
       v2Orgs.listMembers(),
       v2Orgs.me().catch(() => null),
-      v2Billing.subscription().catch(() => null),
+      v2Billing.subscription({ reconcile: reconcileBilling }).catch(() => null),
       v2Billing.plans().catch(() => null),
       v2Usage.summary().catch(() => null),
       v2Auth.communicationPrefs().catch(() => null),

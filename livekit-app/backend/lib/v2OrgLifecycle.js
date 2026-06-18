@@ -39,7 +39,14 @@ async function assertAccountActive(userId, orgId) {
   if (org.billing_status === 'canceled') {
     return { ok: false, code: 'billing_canceled', message: 'Subscription canceled' };
   }
-  return { ok: true, user, org };
+  const membership = await db.get(
+    `SELECT role FROM v2_org_members WHERE user_id = ? AND org_id = ?`,
+    [userId, orgId]
+  );
+  if (!membership) {
+    return { ok: false, code: 'not_a_member', message: 'You are no longer a member of this workspace' };
+  }
+  return { ok: true, user, org, role: membership.role || 'member' };
 }
 
 module.exports = {

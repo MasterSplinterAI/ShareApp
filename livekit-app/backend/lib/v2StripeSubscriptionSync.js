@@ -1,0 +1,136 @@
+const db = require('../db/v2Database');
+
+const DOWNGRADE_STRIPE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
+
+function orgBillingStatusFromStripe(stripeStatus) {
+  const s = String(stripeStatus || '').toLowerCase();
+  if (s === 'active' || s === 'trialing') return 'active';
+  if (s === 'past_due') return 'past_due';
+  if (DOWNGRADE_STRIPE_STATUSES.has(s)) return 'canceled';
+  return 'active';
+}
+
+function resolvePlanIdFromStripe(stripeSub, planIdMeta) {
+  const stripeStatus = String(stripeSub.status || 'active');
+  if (DOWNGRADE_STRIPE_STATUSES.has(stripeStatus)) {
+    return 'free';
+  }
+  if (planIdMeta) return planIdMeta;
+  return null;
+}
+
+/**
+ * Apply Stripe subscription object to local v2_org_subscriptions + v2_organizations.billing_status.
+ */
+async function applyStripeSubscriptionToOrg(stripeSub) {
+  const stripeSubId = stripeSub.id;
+  const customerId =
+    typeof stripeSub.customer === 'string' ? stripeSub.customer : stripeSub.customer?.id || null;
+  let orgId = stripeSub.metadata?.org_id ? String(stripeSub.metadata.org_id) : null;
+  const planIdMeta = stripeSub.metadata?.plan_id ? String(stripeSub.metadata.plan_id) : null;
+
+  const bySub = await db.get(`SELECT org_id, is_comp FROM v2_org_subscriptions WHERE stripe_subscription_id = ?`, [
+    stripeSubId,
+  ]);
+  if (bySub) orgId = bySub.org_id;
+  if (!orgId) {
+    return { ok: false, reason: 'no_org_mapping' };
+  }
+
+  const exists = await db.get(`SELECT org_id, is_comp FROM v2_org_subscriptions WHERE org_id = ?`, [orgId]);
+  if (!exists) return { ok: false, reason: 'no_local_subscription' };
+
+  const stripeStatus = String(stripeSub.status || 'active').slice(0, 32);
+  if (
+    exists.is_comp === 1 &&
+    ['canceled', 'unpaid', 'past_due', 'incomplete_expired'].includes(stripeStatus)
+  ) {
+    return { ok: true, skipped: 'comp_account' };
+  }
+
+  const cps = unixToIso(stripeSub.current_period_start);
+  const cpe = unixToIso(stripeSub.current_period_end);
+  const planId = resolvePlanIdFromStripe(stripeSub, planIdMeta);
+  const orgBillingStatus = orgBillingStatusFromStripe(stripeStatus);
+
+  if (planId) {
+    await db.run(
+      `UPDATE v2_org_subscriptions SET
+         stripe_subscription_id = ?,
+         stripe_customer_id = COALESCE(?, stripe_customer_id),
+         status = ?,
+         plan_id = ?,
+         current_period_start = COALESCE(?, current_period_start),
+         current_period_end = COALESCE(?, current_period_end)
+       WHERE org_id = ?`,
+      [stripeSubId, customerId, stripeStatus, planId, cps, cpe, orgId]
+    );
+  } else {
+    await db.run(
+      `UPDATE v2_org_subscriptions SET
+         stripe_subscription_id = ?,
+         stripe_customer_id = COALESCE(?, stripe_customer_id),
+         status = ?,
+         current_period_start = COALESCE(?, current_period_start),
+         current_period_end = COALESCE(?, current_period_end)
+       WHERE org_id = ?`,
+      [stripeSubId, customerId, stripeStatus, cps, cpe, orgId]
+    );
+  }
+
+  await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [orgBillingStatus, orgId]);
+
+  return { ok: true, orgId, planId, orgBillingStatus, stripeStatus };
+}
+
+async function applyCheckoutSessionToOrg(session) {
+  const orgId = session.metadata?.org_id ? String(session.metadata.org_id) : null;
+  const planId = session.metadata?.plan_id ? String(session.metadata.plan_id) : null;
+  const subId =
+    typeof session.subscription === 'string' ? session.subscription : session.subscription?.id || null;
+  const custId = typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
+
+  if (!orgId || !custId) return { ok: false, reason: 'missing_metadata' };
+
+  const row = await db.get(`SELECT is_comp FROM v2_org_subscriptions WHERE org_id = ?`, [orgId]);
+  if (row?.is_comp === 1) {
+    return { ok: true, skipped: 'comp_account' };
+  }
+
+  if (planId) {
+    await db.run(
+      `UPDATE v2_org_subscriptions SET
+         stripe_customer_id = COALESCE(?, stripe_customer_id),
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
+         plan_id = ?,
+         status = 'active'
+       WHERE org_id = ?`,
+      [custId, subId, planId, orgId]
+    );
+    await db.run(`UPDATE v2_organizations SET billing_status = 'active' WHERE id = ?`, [orgId]);
+  } else {
+    await db.run(
+      `UPDATE v2_org_subscriptions SET
+         stripe_customer_id = COALESCE(?, stripe_customer_id),
+         stripe_subscription_id = COALESCE(?, stripe_subscription_id)
+       WHERE org_id = ?`,
+      [custId, subId, orgId]
+    );
+  }
+
+  return { ok: true, orgId, planId };
+}
+
+function unixToIso(sec) {
+  if (sec == null) return null;
+  const n = Number(sec);
+  if (!Number.isFinite(n)) return null;
+  return new Date(Math.floor(n * 1000)).toISOString();
+}
+
+module.exports = {
+  applyStripeSubscriptionToOrg,
+  applyCheckoutSessionToOrg,
+  orgBillingStatusFromStripe,
+  resolvePlanIdFromStripe,
+};

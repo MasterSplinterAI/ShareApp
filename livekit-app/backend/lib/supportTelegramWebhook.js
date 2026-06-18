@@ -24,8 +24,13 @@ function parseAllowedUserIds() {
 
 function isAllowedTelegramUser(userId) {
   const allowed = parseAllowedUserIds();
-  if (allowed.length === 0) return true;
+  if (allowed.length === 0) return false;
   return allowed.includes(String(userId));
+}
+
+function isTelegramWebhookConfigured() {
+  const secret = String(process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET || '').trim();
+  return Boolean(secret) && parseAllowedUserIds().length > 0;
 }
 
 function parseCallbackData(data) {
@@ -197,6 +202,7 @@ module.exports = {
   handleTelegramUpdate,
   handleTelegramMessage,
   isAllowedTelegramUser,
+  isTelegramWebhookConfigured,
   parseCallbackData,
   startTelegramDraftReply,
 };

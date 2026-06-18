@@ -28,7 +28,7 @@ async function requireV2Auth(req, res, next) {
     userId: payload.sub,
     email: payload.email,
     orgId: payload.orgId,
-    role: payload.role || 'member',
+    role: check.role || payload.role || 'member',
   };
   next();
 }

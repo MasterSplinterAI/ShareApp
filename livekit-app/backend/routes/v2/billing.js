@@ -11,6 +11,7 @@ const {
 } = require('../../lib/v2StripeSettings');
 const { getOverageAutoChargeState, setOverageAutoChargeOptIn } = require('../../lib/v2OrgBillingPrefs');
 const { settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
+const { reconcileOrgSubscriptionFromStripe } = require('../../lib/v2StripeReconcile');
 
 function frontendBaseUrl() {
   return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -33,6 +34,19 @@ router.get('/plans', async (req, res) => {
 router.get('/subscription', requireV2Auth, async (req, res) => {
   try {
     const settings = await getStripeSettings();
+    const shouldReconcile =
+      req.query.reconcile === '1' ||
+      req.query.billing === 'success' ||
+      req.get('Referer')?.includes('billing=success');
+
+    if (shouldReconcile) {
+      try {
+        await reconcileOrgSubscriptionFromStripe(req.v2Auth.orgId);
+      } catch (e) {
+        console.warn('[v2/billing/subscription] stripe reconcile failed:', e.message);
+      }
+    }
+
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
     const planRow = sub ? await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [sub.plan_id]) : null;
     const plan = planRow

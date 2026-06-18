@@ -172,7 +172,12 @@ export const v2Host = {
 
 export const v2Billing = {
   plans: () => apiV2.get('/billing/plans').then((r) => r.data),
-  subscription: () => apiV2.get('/billing/subscription').then((r) => r.data),
+  subscription: (opts = {}) =>
+    apiV2
+      .get('/billing/subscription', {
+        params: opts.reconcile ? { reconcile: '1' } : undefined,
+      })
+      .then((r) => r.data),
   checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
   portal: (body) => apiV2.post('/billing/portal', body || {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),

@@ -6,7 +6,7 @@ const db = require('../../db/v2Database');
 const support = require('../../lib/supportTickets');
 const { listProposals, listProposalsForTicket } = require('../../lib/supportProposals');
 const { executeProposalAction } = require('../../lib/proposalExecutor');
-const { handleTelegramUpdate } = require('../../lib/supportTelegramWebhook');
+const { handleTelegramUpdate, isTelegramWebhookConfigured } = require('../../lib/supportTelegramWebhook');
 const { coachFeatureRequest } = require('../../lib/supportAgent/coach');
 const { listKnowledgeGaps, patchKnowledgeGap, getKnowledgeGapById } = require('../../lib/supportKnowledgeGaps');
 const { suggestKbEntryForGap } = require('../../lib/supportKbSuggest');
@@ -243,8 +243,11 @@ router.post('/admin/knowledge-gaps/:id/suggest', requireV2Auth, requireSuperadmi
 
 router.post('/telegram/webhook', async (req, res) => {
   try {
-    const secret = process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET;
-    if (secret && req.headers['x-telegram-bot-api-secret-token'] !== secret) {
+    const secret = String(process.env.SUPPORT_TELEGRAM_WEBHOOK_SECRET || '').trim();
+    if (!isTelegramWebhookConfigured()) {
+      return res.status(503).json({ error: 'Telegram webhook not configured' });
+    }
+    if (req.headers['x-telegram-bot-api-secret-token'] !== secret) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     res.status(200).json({ ok: true });
