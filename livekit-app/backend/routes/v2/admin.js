@@ -15,6 +15,7 @@ const {
   getStripeClient,
   toAdminView,
 } = require('../../lib/v2StripeSettings');
+const { settleDueOverageCycles, settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
 
 function backendBaseUrl() {
   return (process.env.BACKEND_BASE_URL || process.env.PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
@@ -1121,6 +1122,33 @@ router.post('/email/broadcast', requireV2Auth, requireSuperadmin, async (req, re
   } catch (e) {
     console.error('[admin/email broadcast]', e);
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/billing/settle-overages', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const reason = requireAuditReason(req.body?.reason);
+    if (!reason) return res.status(400).json({ error: 'reason required (4+ chars)' });
+
+    const { orgId, cycleId } = req.body || {};
+    let result;
+    if (orgId && cycleId) {
+      result = await settlePendingOverageForOrgCycle(String(orgId), String(cycleId));
+    } else {
+      result = await settleDueOverageCycles({ orgId: orgId ? String(orgId) : null });
+    }
+
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_settle_overages', {
+      orgId: orgId || null,
+      cycleId: cycleId || null,
+      reason,
+      resultSummary: Array.isArray(result.results) ? result.results.length : 1,
+    });
+
+    res.json({ ok: true, result });
+  } catch (e) {
+    console.error('[admin/billing/settle-overages]', e);
+    res.status(500).json({ error: 'Settlement failed' });
   }
 });
 

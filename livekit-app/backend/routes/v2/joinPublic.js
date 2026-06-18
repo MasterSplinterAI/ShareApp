@@ -8,6 +8,7 @@ const { ensureRoomAndAgent } = require('../../lib/livekitService');
 const { serializePublicBranding } = require('../../lib/v2Branding');
 const { inviteIsUsable, inviteEffectiveFromMs } = require('../../lib/inviteExpiry');
 const { orgIsSuspended } = require('../../lib/v2OrgLifecycle');
+const { assertGuestJoinAllowed } = require('../../lib/v2Entitlements');
 
 const router = express.Router();
 
@@ -55,6 +56,12 @@ async function validateGuestAccess(meeting, inviteToken) {
   }
   if (org?.billing_status === 'suspended' || org?.billing_status === 'canceled') {
     return { ok: false, reason: 'billing_inactive' };
+  }
+  if (meeting.org_id) {
+    const gate = await assertGuestJoinAllowed(meeting.org_id);
+    if (!gate.ok) {
+      return { ok: false, reason: gate.code || 'usage_blocked', message: gate.message };
+    }
   }
   if (meeting.status === 'archived') {
     return { ok: false, reason: 'meeting_ended' };
@@ -111,6 +118,7 @@ router.get('/join-info', async (req, res) => {
         mode: 'v2',
         allowed: false,
         reason: v.reason,
+        message: v.message || null,
         meetingId: meeting.id,
         title: meeting.title,
         branding: meetingBranding(req, meeting),
@@ -142,7 +150,14 @@ router.post('/guest-token', async (req, res) => {
     }
     const v = await validateGuestAccess(meeting, inviteToken || '');
     if (!v.ok) {
-      return res.status(403).json({ error: 'Join not allowed', code: v.reason });
+      const status =
+        v.reason === 'hard_cap_meeting' || v.reason === 'billing_inactive' || v.reason === 'org_suspended'
+          ? 402
+          : 403;
+      return res.status(status).json({
+        error: v.message || 'Join not allowed',
+        code: v.reason,
+      });
     }
     if (v.link) {
       await db.run(`UPDATE v2_meeting_invite_links SET use_count = use_count + 1 WHERE id = ?`, [v.link.id]);

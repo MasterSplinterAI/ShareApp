@@ -10,6 +10,7 @@ const {
   getStripeClient,
 } = require('../../lib/v2StripeSettings');
 const { getOverageAutoChargeState, setOverageAutoChargeOptIn } = require('../../lib/v2OrgBillingPrefs');
+const { settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
 
 function frontendBaseUrl() {
   return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
@@ -226,6 +227,34 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/billing/settle-dry-run]', e);
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/settle-overages', requireV2Auth, async (req, res) => {
+  try {
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const { cycleId } = req.body || {};
+    let cycle = null;
+    if (cycleId) {
+      cycle = await db.get(`SELECT * FROM v2_billing_cycles WHERE id = ? AND org_id = ?`, [
+        cycleId,
+        req.v2Auth.orgId,
+      ]);
+    } else {
+      cycle = await db.get(
+        `SELECT * FROM v2_billing_cycles WHERE org_id = ? ORDER BY datetime(period_end) DESC LIMIT 1`,
+        [req.v2Auth.orgId]
+      );
+    }
+    if (!cycle) return res.status(404).json({ error: 'No billing cycle' });
+
+    const result = await settlePendingOverageForOrgCycle(req.v2Auth.orgId, cycle.id);
+    res.json({ ok: true, cycle, result });
+  } catch (e) {
+    console.error('[v2/billing/settle-overages]', e);
+    res.status(500).json({ error: 'Settlement failed' });
   }
 });
 

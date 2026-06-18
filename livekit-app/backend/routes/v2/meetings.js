@@ -294,6 +294,78 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
   }
 });
 
+router.patch('/:id/invites/default', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+
+    const { expiryMode, opts } = parseCreateInviteBody(req.body);
+    const expiresAt = computeInviteExpiresAt(row, opts);
+    const base = publicFrontendBaseUrl(req);
+
+    const requestedLinkId = typeof req.body?.linkId === 'string' ? req.body.linkId : null;
+    let link = requestedLinkId
+      ? await db.get(
+          `SELECT * FROM v2_meeting_invite_links WHERE id = ? AND meeting_id = ? AND revoked_at IS NULL`,
+          [requestedLinkId, req.params.id]
+        )
+      : null;
+    if (!link) {
+      link = await db.get(
+        `SELECT * FROM v2_meeting_invite_links
+         WHERE meeting_id = ? AND label = 'Default guest link' AND revoked_at IS NULL
+         ORDER BY datetime(created_at) DESC LIMIT 1`,
+        [req.params.id]
+      );
+    }
+
+    if (link) {
+      await db.run(
+        `UPDATE v2_meeting_invite_links
+         SET expires_at = ?, expiry_mode = ?, reusable = 1, max_uses = NULL
+         WHERE id = ?`,
+        [expiresAt, expiryMode, link.id]
+      );
+      link = { ...link, expires_at: expiresAt, expiry_mode: expiryMode, reusable: 1, max_uses: null };
+    } else {
+      const token = crypto.randomBytes(18).toString('base64url');
+      const linkId = db.uuid();
+      await db.run(
+        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [linkId, req.params.id, token, 'Default guest link', expiresAt, null, 1, 0, null, expiryMode]
+      );
+      link = {
+        id: linkId,
+        token,
+        label: 'Default guest link',
+        expires_at: expiresAt,
+        expiry_mode: expiryMode,
+        reusable: 1,
+        use_count: 0,
+        max_uses: null,
+        revoked_at: null,
+      };
+    }
+
+    const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
+    const expiry = describeInviteExpiry(link, row);
+    res.json({
+      ok: true,
+      id: link.id,
+      expiresAt,
+      expiryMode,
+      expiryLabel: expiry.short,
+      expiryDetail: expiry.detail,
+      joinUrl,
+    });
+  } catch (e) {
+    console.error('[v2/invites default PATCH]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
   try {
     const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
@@ -447,6 +519,8 @@ router.get('/:id', requireV2Auth, async (req, res) => {
     if (primary?.joinUrl) {
       joinUrl = primary.joinUrl;
       guestLinkMeta = {
+        id: primary.id,
+        label: primary.label,
         expiryLabel: primary.expiryLabel,
         expiryDetail: primary.expiryDetail,
         expiryMode: primary.expiry_mode,

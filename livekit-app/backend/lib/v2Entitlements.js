@@ -2,6 +2,10 @@ const db = require('../db/v2Database');
 const { orgIsSuspended } = require('./v2OrgLifecycle');
 const { planAllowsTeamWorkspace } = require('./v2PlanFeatures');
 
+/**
+ * Hard stop multiplier on included meeting participant-minutes before blocking new joins / ending live rooms.
+ * Free plans: 1× (strict 60-min ceiling). Paid plans: default 2× included quota (override via V2_HARD_CAP_MULTIPLIER).
+ */
 function hardCapMultiplier(planId) {
   if (planId === 'free') return 1;
   const raw = Number(process.env.V2_HARD_CAP_MULTIPLIER || 2);
@@ -105,9 +109,15 @@ async function assertCanCreateMeeting(orgId) {
   return { ok: true, entitlements: ent, usage, cap };
 }
 
+/** Same usage-cap gate as meeting create — used for guest join and in-meeting enforcement. */
+async function assertGuestJoinAllowed(orgId) {
+  return assertCanCreateMeeting(orgId);
+}
+
 module.exports = {
   getOrgEntitlements,
   getMonthToDateUsage,
   assertCanCreateMeeting,
+  assertGuestJoinAllowed,
   hardCapMultiplier,
 };

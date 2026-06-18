@@ -154,6 +154,9 @@ async function handleV2BillingWebhook(req, res) {
         console.warn('[v2/billing/webhook] signature verification failed:', v.reason);
         return res.status(400).json({ error: 'Invalid signature' });
       }
+    } else if (process.env.NODE_ENV === 'production') {
+      console.error('[v2/billing/webhook] STRIPE_WEBHOOK_SECRET unset in production');
+      return res.status(400).json({ error: 'Webhook secret not configured' });
     } else {
       console.warn('[v2/billing/webhook] STRIPE_WEBHOOK_SECRET unset — accepting unsigned webhook (development only)');
     }

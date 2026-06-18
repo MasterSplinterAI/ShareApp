@@ -1,7 +1,12 @@
 const { WebhookReceiver } = require('livekit-server-sdk');
 const { run, get, all, uuid } = require('../db/v2Database');
+const { reconcileTranslationMinutesForMeeting } = require('../lib/v2TranslationUsage');
+const { checkAndEnforceUsageCap } = require('../lib/v2UsageCapEnforcement');
 
-const VERIFY = process.env.LIVEKIT_WEBHOOK_VERIFY !== 'false';
+function isLiveKitWebhookVerifyRequired() {
+  if (process.env.NODE_ENV === 'production') return true;
+  return process.env.LIVEKIT_WEBHOOK_VERIFY !== 'false';
+}
 
 let receiver = null;
 function getReceiver() {
@@ -298,7 +303,7 @@ async function handleLiveKitWebhook(req, res) {
     const authHeader = req.get('Authorization') || '';
 
     let event;
-    if (VERIFY) {
+    if (isLiveKitWebhookVerifyRequired()) {
       try {
         event = await getReceiver().receive(body, authHeader);
       } catch (err) {
@@ -336,13 +341,29 @@ async function handleLiveKitWebhook(req, res) {
       ]
     );
 
+    if (eventType === 'participant_joined' && participantIdentity && orgId && !isAgentIdentity(participantIdentity)) {
+      checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
+        console.error('[webhook/livekit] usage cap check:', err.message)
+      );
+    }
+
     if (eventType === 'participant_left' && participantIdentity && orgId) {
       await recordParticipantSessionUsage(roomName, participantIdentity, ts, orgId, meetingUuid);
+      if (!isAgentIdentity(participantIdentity)) {
+        checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
+          console.error('[webhook/livekit] usage cap check:', err.message)
+        );
+      }
     }
 
     if (eventType === 'room_finished') {
       if (orgId) {
         await flushOpenParticipants(roomName, ts, orgId, meetingUuid);
+        try {
+          await reconcileTranslationMinutesForMeeting(roomName, orgId, meetingUuid);
+        } catch (err) {
+          console.error('[webhook/livekit] translation usage reconcile:', err.message);
+        }
       }
       aggregateRollup(roomName).catch((err) =>
         console.error('[webhook/livekit] rollup error:', err.message)
@@ -356,4 +377,4 @@ async function handleLiveKitWebhook(req, res) {
   }
 }
 
-module.exports = { handleLiveKitWebhook, aggregateRollup, computeParticipantMinutes };
+module.exports = { handleLiveKitWebhook, aggregateRollup, computeParticipantMinutes, isLiveKitWebhookVerifyRequired };

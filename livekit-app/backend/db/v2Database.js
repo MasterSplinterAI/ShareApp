@@ -357,6 +357,18 @@ async function migrate() {
     await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in_by TEXT`);
   }
 
+  const ledgerCols = await all(`PRAGMA table_info(v2_overage_ledger)`);
+  const ledgerColNames = new Set((ledgerCols || []).map((c) => c.name));
+  if (!ledgerColNames.has('stripe_invoice_item_id')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN stripe_invoice_item_id TEXT`);
+  }
+  if (!ledgerColNames.has('settled_at')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN settled_at TEXT`);
+  }
+  if (!ledgerColNames.has('failure_reason')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN failure_reason TEXT`);
+  }
+
   const orgCols = await all(`PRAGMA table_info(v2_organizations)`);
   const orgColNames = new Set((orgCols || []).map((c) => c.name));
   if (!orgColNames.has('account_type')) {

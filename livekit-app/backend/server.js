@@ -115,6 +115,20 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[guestInvites] scheduler start failed:', e.message);
   }
+  try {
+    const { settleDueOverageCycles } = require('./lib/v2OverageSettlement');
+    const intervalMs = Number(process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS || 0);
+    if (intervalMs > 0) {
+      const tick = () => {
+        settleDueOverageCycles().catch((err) => console.error('[overage-settlement]', err.message));
+      };
+      tick();
+      setInterval(tick, intervalMs);
+      console.log(`[overage-settlement] scheduler every ${intervalMs}ms`);
+    }
+  } catch (e) {
+    console.error('[overage-settlement] scheduler start failed:', e.message);
+  }
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
