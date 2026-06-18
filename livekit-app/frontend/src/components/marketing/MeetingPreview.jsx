@@ -118,7 +118,7 @@ export function MeetingPreview() {
   const { t, locale } = useTranslation();
 
   return (
-    <div className="mx-auto mt-14 max-w-5xl px-2 sm:mt-20">
+    <div id="preview" className="mx-auto mt-14 max-w-5xl scroll-mt-24 px-2 sm:mt-20">
       <div className="relative mx-auto w-full max-w-4xl -rotate-1 transition-transform duration-500 hover:rotate-0 sm:-rotate-2">
         <div className="relative flex aspect-[16/9] w-full flex-col overflow-hidden rounded-xl border border-border/80 bg-card shadow-2xl ring-1 ring-black/5 sm:rounded-2xl">
           {/* Window chrome */}

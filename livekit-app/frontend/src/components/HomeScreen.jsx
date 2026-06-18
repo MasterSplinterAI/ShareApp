@@ -1,5 +1,6 @@
 import { MarketingNav } from './marketing/MarketingNav';
 import { Hero } from './marketing/Hero';
+import { TrustStrip } from './marketing/TrustStrip';
 import { FeatureGrid } from './marketing/FeatureGrid';
 import AiReports from './marketing/AiReports';
 import { HowItWorks } from './marketing/HowItWorks';
@@ -13,6 +14,7 @@ export default function HomeScreen() {
       <MarketingNav />
       <main>
         <Hero />
+        <TrustStrip />
         <FeatureGrid />
         <AiReports />
         <HowItWorks />

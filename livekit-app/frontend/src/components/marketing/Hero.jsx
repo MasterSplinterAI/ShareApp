@@ -28,6 +28,9 @@ export function Hero() {
             </Link>
           </Button>
           <Button size="lg" variant="outline" className="min-w-[200px]" asChild>
+            <a href="/#preview">{t('hero.seeDemo')}</a>
+          </Button>
+          <Button size="lg" variant="ghost" className="min-w-[200px]" asChild>
             <a href="/#pricing">{t('hero.seePricing')}</a>
           </Button>
         </div>

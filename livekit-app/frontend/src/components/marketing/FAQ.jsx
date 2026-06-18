@@ -1,7 +1,18 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../ui/accordion';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 
-const FAQ_KEYS = ['guests', 'transcripts', 'trial', 'storage', 'accuracy'];
+const FAQ_KEYS = [
+  'guests',
+  'languages',
+  'participants',
+  'planLimit',
+  'transcripts',
+  'recording',
+  'aiTraining',
+  'trial',
+  'storage',
+  'accuracy',
+];
 
 export function FAQ() {
   const { t } = useTranslation();

@@ -10,19 +10,96 @@
     />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%232563eb' rx='8'/><text x='16' y='22' text-anchor='middle' fill='white' font-family='system-ui,sans-serif' font-size='14' font-weight='700'>P</text></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="description" content="Parley – Video meetings with real-time translation and live captions for global teams." />
+    <meta
+      name="description"
+      content="Video meetings everyone can follow—in their own language. Live captions, real-time translation, and guest links. No download required."
+    />
     <meta name="autopilot-no-auto-init" content="true" />
-    <meta property="og:title" content="Parley" />
-    <meta property="og:description" content="Video meetings everyone can follow—in their own language." />
+    <meta property="og:title" content="Parley — Video meetings everyone can follow" />
+    <meta
+      property="og:description"
+      content="Video meetings everyone can follow—in their own language. Live captions, real-time translation, and one-click guest links."
+    />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://parley.app/" />
-    <!-- TODO: replace with a branded 1200x630 og-card.png once designed -->
-    <meta property="og:image" content="https://parley.app/marketing/hero-kenny.jpg" />
+    <meta property="og:image" content="https://parley.app/marketing/og-card.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Parley — Multilingual video meetings" />
-    <meta name="twitter:description" content="Video meetings everyone can follow—in their own language." />
+    <meta name="twitter:title" content="Parley — Video meetings everyone can follow" />
+    <meta
+      name="twitter:description"
+      content="Video meetings everyone can follow—in their own language. Live captions, real-time translation, and one-click guest links."
+    />
+    <meta name="twitter:image" content="https://parley.app/marketing/og-card.png" />
     <link rel="canonical" href="https://parley.app/" />
-    <title>Parley — Multilingual video meetings</title>
+    <title>Parley — Video meetings everyone can follow</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://parley.app/#organization",
+            "name": "Parley",
+            "url": "https://parley.app/",
+            "email": "hello@parley.app"
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://parley.app/#software",
+            "name": "Parley",
+            "applicationCategory": "BusinessApplication",
+            "operatingSystem": "Web",
+            "offers": {
+              "@type": "Offer",
+              "price": "0",
+              "priceCurrency": "USD"
+            },
+            "description": "Video meetings with live captions and real-time translation for global teams.",
+            "publisher": { "@id": "https://parley.app/#organization" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://parley.app/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Do guests need an account?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Hosts share a guest join URL and invite token when required. Guests enter a display name and join in the browser."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Which languages are supported?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Parley supports 30+ meeting languages for live captions and cross-language translation."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Are meetings recorded?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Audio and video are not recorded. Optional transcript text is stored only when the host enables it for a meeting."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Do you use my meetings to train AI models?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Parley does not use meeting content to train its own models. Providers process data under contract to operate the service."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>

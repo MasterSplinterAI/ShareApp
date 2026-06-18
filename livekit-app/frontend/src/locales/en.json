@@ -7,7 +7,9 @@
     "faq": "FAQ",
     "openWorkspace": "Open workspace",
     "signIn": "Sign in",
-    "startFree": "Start free"
+    "startFree": "Start free",
+    "openMenu": "Open menu",
+    "menuTitle": "Menu"
   },
   "hero": {
     "eyebrow": "Live captions & translation",
@@ -15,7 +17,17 @@
     "subtitle": "Parley adds live captions and real-time translation to every meeting, so global teams stay aligned. Share a guest link—no account needed—and keep an optional transcript when you want a record.",
     "startFree": "Start free",
     "seePricing": "See pricing",
+    "seeDemo": "See live demo",
     "footnote": "No credit card required · Guests join in one click · Runs in your browser"
+  },
+  "trust": {
+    "ariaLabel": "Security and trust",
+    "items": {
+      "encrypted": "Encrypted in transit",
+      "transcripts": "Transcripts off by default",
+      "retention": "You control retention"
+    },
+    "poweredBy": "Powered by LiveKit real-time infrastructure"
   },
   "footer": {
     "tagline": "Live captions, real-time translation, and AI meeting reports—built for global teams.",
@@ -119,6 +131,13 @@
     "subtitle": "Begin with 60 participant-minutes a month. Upgrade when you're ready—billed per organization.",
     "popular": "Popular",
     "period": "/ org / month",
+    "periodAnnual": "/ org / mo · billed yearly",
+    "monthly": "Monthly",
+    "annual": "Annual",
+    "annualSave": "save 20%",
+    "billingToggleLabel": "Billing period",
+    "billedAnnually": "{{total}} billed once per year",
+    "participantMinutesFootnote": "Participant-minutes = the sum of each person's time in your meetings (e.g. 3 people × 10 min = 30 participant-minutes).",
     "tiers": {
       "free": {
         "name": "Free",
@@ -152,6 +171,19 @@
           "insights": "AI transcript insights",
           "support": "Priority support"
         }
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "blurb": "Higher volume, custom terms, and hands-on onboarding.",
+        "priceLabel": "Custom",
+        "ctaDemo": "Book a demo",
+        "ctaSales": "Talk to sales",
+        "features": {
+          "volume": "Custom participant-minute & translation pools",
+          "security": "Security review & DPA support",
+          "support": "Dedicated success contact",
+          "terms": "Invoicing & custom contract terms"
+        }
       }
     }
   },
@@ -179,6 +211,26 @@
       "accuracy": {
         "q": "How accurate is the live translation?",
         "a": "Parley uses real-time speech recognition with multi-language translation. Accuracy depends on audio quality—it works best when speakers use a headset in a quiet environment."
+      },
+      "languages": {
+        "q": "Which languages are supported?",
+        "a": "Parley supports 30+ meeting languages for live captions and cross-language translation—including English, Spanish, French, German, Portuguese, Japanese, Chinese, Arabic, Hebrew, and more. Hosts and guests each pick their own language lane in the meeting."
+      },
+      "participants": {
+        "q": "How many participants can join a meeting?",
+        "a": "Parley is built for team calls and client meetings with multiple speakers. Typical group sizes work well on all plans. Need a large event or webinar-style session? Contact us—we'll help you size the right plan."
+      },
+      "planLimit": {
+        "q": "What happens when I hit my plan limit?",
+        "a": "Free plans stop new usage at 60 participant-minutes per month. Paid plans include a monthly pool; you can enable overage auto-charge for usage above your included minutes, or meetings may be limited when you reach your policy cap. See Pricing for included amounts."
+      },
+      "recording": {
+        "q": "Are meetings recorded?",
+        "a": "No. Parley does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+      },
+      "aiTraining": {
+        "q": "Do you use my meetings to train AI models?",
+        "a": "No—we do not use your meeting content to train Parley's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
       }
     }
   },
