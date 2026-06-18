@@ -37,13 +37,20 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../../components/ui/accordion';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import MeetingJoinCard from '../components/MeetingJoinCard';
 import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
-import { defaultExpiryMode } from '../../lib/inviteExpiry';
+import { defaultExpiryMode, expiryOptionsForMeeting } from '../../lib/inviteExpiry';
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -118,6 +125,9 @@ export default function V2MeetingDetail() {
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteExpiryMode, setNewInviteExpiryMode] = useState('days_after_start');
   const [newInviteCustomHours, setNewInviteCustomHours] = useState(72);
+  const [guestExpiryMode, setGuestExpiryMode] = useState('days_after_start');
+  const [guestCustomHours, setGuestCustomHours] = useState(72);
+  const [updatingGuestLink, setUpdatingGuestLink] = useState(false);
   const [ending, setEnding] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -172,6 +182,29 @@ export default function V2MeetingDetail() {
     const maxDays = meeting.inviteMaxTtlDays ?? 90;
     setNewInviteCustomHours((h) => Math.min(Math.max(1, h), maxDays * 24));
   }, [meeting?.id, meeting?.scheduled_start, meeting?.defaultExpiryMode, meeting?.inviteMaxTtlDays]);
+
+  useEffect(() => {
+    if (!meeting) return;
+    const mode = meeting.guestLinkMeta?.expiryMode || defaultExpiryMode(meeting);
+    setGuestExpiryMode(mode);
+    const maxHours = Math.max(1, (meeting.inviteMaxTtlDays ?? 90) * 24);
+    if (mode === 'custom_hours' && meeting.guestLinkMeta?.expiresAt) {
+      const expiresMs = new Date(meeting.guestLinkMeta.expiresAt).getTime();
+      const scheduledMs = meeting.scheduled_start ? new Date(meeting.scheduled_start).getTime() : NaN;
+      const anchorMs = Number.isFinite(scheduledMs) && scheduledMs > Date.now() ? scheduledMs : Date.now();
+      if (Number.isFinite(expiresMs) && expiresMs > anchorMs) {
+        setGuestCustomHours(Math.min(maxHours, Math.max(1, Math.ceil((expiresMs - anchorMs) / 3600000))));
+        return;
+      }
+    }
+    setGuestCustomHours((h) => Math.min(Math.max(1, h), maxHours));
+  }, [
+    meeting?.id,
+    meeting?.scheduled_start,
+    meeting?.inviteMaxTtlDays,
+    meeting?.guestLinkMeta?.expiryMode,
+    meeting?.guestLinkMeta?.expiresAt,
+  ]);
 
   useEffect(() => {
     if (!meeting || !['live', 'scheduled'].includes(meeting.status)) return undefined;
@@ -284,6 +317,26 @@ export default function V2MeetingDetail() {
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
+    }
+  };
+
+  const updateDefaultInvite = async () => {
+    setUpdatingGuestLink(true);
+    try {
+      const body = {
+        expiryMode: guestExpiryMode,
+        linkId: meeting?.guestLinkMeta?.id,
+      };
+      if (guestExpiryMode === 'custom_hours') {
+        body.expiresInHours = guestCustomHours;
+      }
+      await v2Meetings.updateDefaultInvite(id, body);
+      toast.success('Guest link expiration updated');
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to update guest link');
+    } finally {
+      setUpdatingGuestLink(false);
     }
   };
 
@@ -409,6 +462,9 @@ export default function V2MeetingDetail() {
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: true };
   const guestUrlNeedsToken = meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteDays = meeting.inviteMaxTtlDays ?? 90;
+  const guestExpiryOptions = expiryOptionsForMeeting(meeting);
+  const showGuestCustomHours = guestExpiryMode === 'custom_hours';
+  const maxGuestCustomHours = Math.max(1, maxInviteDays * 24);
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
   const canManageTranscriptPolicy = canManageMeeting;
   const hasTranscriptLines = (meeting.transcriptLineCount || 0) > 0;
@@ -465,8 +521,57 @@ export default function V2MeetingDetail() {
         <CardTitle className="text-base">Invite guests</CardTitle>
         <CardDescription>Share this link — guests click it to join.</CardDescription>
       </CardHeader>
-      <CardContent className="pt-4">
+      <CardContent className="space-y-4 pt-4">
         <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
+        {!joinDemoted && canManageMeeting && (
+          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
+            <div className="mb-2">
+              <h3 className="text-sm font-medium text-foreground">Guest link expiration</h3>
+              <p className="text-xs text-muted-foreground">
+                {meeting.guestLinkMeta?.id
+                  ? 'Update the visible guest link in place. The URL and token stay the same.'
+                  : 'Create a reusable guest link with the selected expiration.'}
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+              <div className="space-y-1">
+                <Select value={guestExpiryMode} onValueChange={setGuestExpiryMode}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {guestExpiryOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {guestExpiryOptions.find((o) => o.value === guestExpiryMode)?.hint && (
+                  <p className="text-xs text-muted-foreground">
+                    {guestExpiryOptions.find((o) => o.value === guestExpiryMode)?.hint}
+                  </p>
+                )}
+              </div>
+              {showGuestCustomHours && (
+                <Input
+                  type="number"
+                  min={1}
+                  max={maxGuestCustomHours}
+                  aria-label="Custom guest link duration in hours"
+                  className="h-9 w-32"
+                  value={guestCustomHours}
+                  onChange={(e) =>
+                    setGuestCustomHours(Math.min(maxGuestCustomHours, Math.max(1, Number(e.target.value) || 72)))
+                  }
+                />
+              )}
+            </div>
+            <Button type="button" size="sm" className="mt-3" disabled={updatingGuestLink} onClick={updateDefaultInvite}>
+              {updatingGuestLink ? 'Updating…' : 'Update guest link'}
+            </Button>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

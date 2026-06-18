@@ -69,12 +69,12 @@ export default function MeetingInvitesPanel({
       )}
       <div>
         <Button type="button" onClick={onCreateInvite}>
-          Create invite
+          Create additional invite
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        Anyone with the link can join. Longest cap: {maxInviteDays ?? 90} days from scheduled start (or from now if
-        unscheduled). Configured via <code className="text-foreground/70">V2_MAX_INVITE_TTL_DAYS</code>.
+        This creates a new URL/token. To extend the main guest link without changing the URL, use Guest link expiration
+        above. Longest cap: {maxInviteDays ?? 90} days from scheduled start (or from now if unscheduled).
       </p>
       <ul className="space-y-3 text-sm">
         {(meeting.invites || []).map((inv) => (

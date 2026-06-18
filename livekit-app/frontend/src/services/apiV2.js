@@ -27,6 +27,30 @@ apiV2.interceptors.request.use((config) => {
   return config;
 });
 
+let handling401 = false;
+
+apiV2.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error.response?.status;
+    const requestUrl = String(error.config?.url || '');
+    const isAuthAttempt = /\/auth\/(login|signup|reset-password)/.test(requestUrl);
+
+    if (status === 401 && !isAuthAttempt && !handling401) {
+      handling401 = true;
+      localStorage.removeItem('v2_token');
+      const path = window.location.pathname;
+      if (!path.startsWith('/v2/login') && !path.startsWith('/v2/signup')) {
+        window.location.replace('/v2/login?session=expired');
+      } else {
+        handling401 = false;
+      }
+    }
+
+    return Promise.reject(error);
+  }
+);
+
 export const v2Auth = {
   signup: (body) => apiV2.post('/auth/signup', body).then((r) => r.data),
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
@@ -97,6 +121,7 @@ export const v2Meetings = {
   hostSessionOpen: (id) => apiV2.post(`/meetings/${id}/host-session-open`, {}).then((r) => r.data),
   listInvites: (id) => apiV2.get(`/meetings/${id}/invites`).then((r) => r.data),
   createInvite: (id, body) => apiV2.post(`/meetings/${id}/invites`, body).then((r) => r.data),
+  updateDefaultInvite: (id, body) => apiV2.patch(`/meetings/${id}/invites/default`, body).then((r) => r.data),
   revokeInvite: (id, linkId) => apiV2.delete(`/meetings/${id}/invites/${encodeURIComponent(linkId)}`).then((r) => r.data),
   appendTranscriptLines: (id, lines) =>
     apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript-lines`, { lines }).then((r) => r.data),

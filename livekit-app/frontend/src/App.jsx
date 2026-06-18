@@ -62,6 +62,7 @@ function App() {
           },
         }}
       />
+      <ErrorBoundary>
       <Routes>
         <Route path="/v2" element={<V2Layout />}>
           <Route index element={<V2RootRedirect />} />
@@ -96,11 +97,7 @@ function App() {
         <Route path="/" element={<HomeScreen />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
-        <Route path="/room/:roomName" element={
-          <ErrorBoundary>
-            <MeetingRoom />
-          </ErrorBoundary>
-        } />
+        <Route path="/room/:roomName" element={<MeetingRoom />} />
         <Route path="/join/:roomName" element={<JoinMeeting />} />
         <Route path="*" element={
           <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -111,6 +108,7 @@ function App() {
           </div>
         } />
       </Routes>
+      </ErrorBoundary>
     </>
   )
 }
