@@ -15,8 +15,9 @@ async function requireV2Auth(req, res, next) {
   if (!payload || !payload.sub || !payload.orgId) {
     return res.status(401).json({ error: 'Unauthorized', code: 'invalid_token' });
   }
+  let check;
   try {
-    const check = await assertAccountActive(payload.sub, payload.orgId);
+    check = await assertAccountActive(payload.sub, payload.orgId);
     if (!check.ok) {
       return res.status(403).json({ error: check.message, code: check.code });
     }
