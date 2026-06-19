@@ -1,19 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
-  DEFAULT_LOCALE,
   readStoredLocale,
   writeStoredLocale,
 } from './constants';
 import { detectBrowserUiLocale, resolveUiLocale } from './uiLanguages';
 import { loadLocalePair } from './loadLocale';
 import { createTranslator } from './translate';
+import defaultMessages from '../../locales/en.json';
 
 const I18nContext = createContext(null);
 
 export function I18nProvider({ children }) {
   const [locale, setLocaleState] = useState(() => resolveUiLocale(readStoredLocale() || detectBrowserUiLocale()));
-  const [messages, setMessages] = useState(null);
-  const [fallbackMessages, setFallbackMessages] = useState(null);
+  const [messages, setMessages] = useState(defaultMessages);
+  const [fallbackMessages, setFallbackMessages] = useState(defaultMessages);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -47,7 +47,6 @@ export function I18nProvider({ children }) {
   }, []);
 
   const t = useMemo(() => {
-    if (!messages) return (key) => key;
     return createTranslator(messages, fallbackMessages);
   }, [messages, fallbackMessages]);
 
