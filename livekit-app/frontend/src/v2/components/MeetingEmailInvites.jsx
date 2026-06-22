@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { Loader2, Mail, Check, Clock } from 'lucide-react';
@@ -143,8 +144,12 @@ export default function MeetingEmailInvites({ meetingId }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Guests get the join link now (you&apos;re CC&apos;d when enabled in account settings) and automatic reminders
-        {reminderSummary ? ` ${reminderSummary}` : ' before the meeting'}. Times in emails use your account timezone.
-        No account needed for guests.
+        {reminderSummary ? ` ${reminderSummary}` : ' before the meeting'}. Times in emails use your account timezone
+        {settings?.timezone ? ` (${settings.timezone})` : ''}.{' '}
+        <Link to="/v2/app/settings" className="text-primary hover:underline">
+          Change timezone in Settings
+        </Link>
+        . No account needed for guests.
       </p>
 
       <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">

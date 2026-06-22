@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
-import { v2Announcements } from '../../services/apiV2';
+import { v2Announcements, v2Auth } from '../../services/apiV2';
+import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
 import HelpPanel from '../../components/HelpPanel';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -75,6 +76,18 @@ export default function V2AppShell({ me, onLogout }) {
   useEffect(() => {
     v2Announcements.active().then((r) => setAnnouncements(r.announcements || [])).catch(() => {});
   }, []);
+
+  // Persist browser timezone once so guest invite emails don't fall back to UTC.
+  useEffect(() => {
+    if (!me?.user?.id) return;
+    v2Auth
+      .communicationPrefs()
+      .then((r) => {
+        if (r.prefs?.timezone) return;
+        return v2Auth.updateCommunicationPrefs({ timezone: detectBrowserTimezone() });
+      })
+      .catch(() => {});
+  }, [me?.user?.id]);
 
   const visibleAnnouncements = announcements.filter((a) => !dismissed.has(a.id));
 

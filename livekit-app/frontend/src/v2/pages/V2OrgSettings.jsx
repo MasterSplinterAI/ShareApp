@@ -622,6 +622,7 @@ export default function V2OrgSettings() {
                       </Select>
                       <p className="text-xs text-muted-foreground">
                         Guest invite and reminder emails show meeting times in this timezone with an explicit label.
+                        Click <strong>Save preferences</strong> after changing it.
                       </p>
                     </div>
                     <div className="space-y-2 border-t border-border/60 pt-3">
