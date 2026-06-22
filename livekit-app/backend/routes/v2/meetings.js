@@ -484,18 +484,29 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
          VALUES (?,?,?,?,?,?)`,
         [db.uuid(), req.params.id, link.id, email, req.v2Auth.userId, sendResult?.sent ? new Date().toISOString() : null]
       );
-      results.push({ email, sent: Boolean(sendResult?.sent) });
+      results.push({ email, sent: Boolean(sendResult?.sent), error: sendResult?.error || undefined });
     }
 
     const anySent = results.some((r) => r.sent);
+    const configured = await isMailerConfigured();
+    const firstError = results.find((r) => r.error)?.error;
+    let message;
+    if (!anySent) {
+      if (!configured) {
+        message =
+          'Invites recorded, but email delivery is not configured on this server yet — share the link directly.';
+      } else if (firstError) {
+        message = `Email could not be sent: ${firstError}`;
+      } else {
+        message = 'Invites recorded, but email delivery failed — share the link directly.';
+      }
+    }
     res.status(201).json({
       ok: true,
       results,
       joinUrl,
-      mailerConfigured: anySent || (await isMailerConfigured()),
-      message: anySent
-        ? undefined
-        : 'Invites recorded, but email delivery is not configured on this server yet — share the link directly.',
+      mailerConfigured: configured,
+      message,
     });
   } catch (e) {
     console.error('[v2/invites/email POST]', e);

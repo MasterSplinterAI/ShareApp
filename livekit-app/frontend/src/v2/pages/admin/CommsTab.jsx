@@ -92,7 +92,18 @@ function EmailSettingsSection() {
           <StatusBadge ok={config?.emailEnabled} label={config?.emailEnabled ? 'Email enabled' : 'Email disabled'} />
           {settings.source && <Badge variant="secondary">Config source: {settings.source}</Badge>}
           {settings.usingEnvKey && <Badge variant="outline">Using env API key</Badge>}
+          {settings.usingPlaceholderFrom && (
+            <Badge variant="destructive">From domain not verified in Resend</Badge>
+          )}
         </div>
+
+        {settings.usingPlaceholderFrom && (
+          <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            Resend will reject mail from <code>@parley.app</code> until that domain is verified. Set a From address on a
+            domain you&apos;ve verified in Resend — for quick testing use{' '}
+            <code>Parley &lt;onboarding@resend.dev&gt;</code>.
+          </p>
+        )}
 
         <form
           className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-4"
@@ -141,7 +152,10 @@ function EmailSettingsSection() {
               onChange={(e) => setMailFrom(e.target.value)}
               placeholder="Parley <no-reply@yourdomain.com>"
             />
-            <p className="text-xs text-muted-foreground">Must use a domain verified in your Resend account.</p>
+            <p className="text-xs text-muted-foreground">
+              Must use a domain verified in your Resend account. For testing without your own domain, use{' '}
+              <code className="text-foreground">Parley &lt;onboarding@resend.dev&gt;</code>.
+            </p>
           </div>
 
           <div className="space-y-1">

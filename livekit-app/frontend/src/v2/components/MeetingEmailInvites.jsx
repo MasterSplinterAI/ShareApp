@@ -59,7 +59,11 @@ export default function MeetingEmailInvites({ meetingId }) {
     try {
       const res = await v2Meetings.sendEmailInvites(meetingId, emails);
       if (res.message) {
-        toast(res.message, { icon: 'ℹ️', duration: 6000 });
+        const failed = (res.results || []).filter((r) => !r.sent);
+        toast(res.message, {
+          icon: failed.length ? '⚠️' : 'ℹ️',
+          duration: 8000,
+        });
       } else {
         const sent = (res.results || []).filter((r) => r.sent).length;
         toast.success(`Invite sent to ${sent} guest${sent === 1 ? '' : 's'}`);

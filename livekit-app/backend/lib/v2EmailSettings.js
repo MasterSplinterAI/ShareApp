@@ -2,6 +2,7 @@ const db = require('../db/v2Database');
 
 const SETTINGS_ID = 'default';
 const DEFAULT_FROM = 'Parley <no-reply@parley.app>';
+const PLACEHOLDER_FROM_DOMAIN = 'parley.app';
 let cache = null;
 let cacheAt = 0;
 const CACHE_MS = 3000;
@@ -86,11 +87,26 @@ function validateResendApiKey(key) {
   return null;
 }
 
+function extractEmailAddress(fromValue) {
+  if (!fromValue) return '';
+  const trimmed = String(fromValue).trim();
+  const match = trimmed.match(/<([^>]+)>$/) || trimmed.match(/^([^\s@<>]+@[^\s@<>]+)$/);
+  return match ? match[1].toLowerCase() : '';
+}
+
+function isPlaceholderFromAddress(fromValue) {
+  const email = extractEmailAddress(fromValue);
+  return email.endsWith(`@${PLACEHOLDER_FROM_DOMAIN}`);
+}
+
 function validateMailFrom(value) {
   if (!value) return null;
   const trimmed = String(value).trim();
   if (!/^[^<>\n]+<[^\s@<>]+@[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+$/.test(trimmed)) {
     return 'From address should look like "Parley <no-reply@yourdomain.com>"';
+  }
+  if (isPlaceholderFromAddress(trimmed)) {
+    return `Use a domain verified in Resend (not @${PLACEHOLDER_FROM_DOMAIN}). For testing, try onboarding@resend.dev`;
   }
   return null;
 }
@@ -140,6 +156,13 @@ async function saveEmailSettings(actorEmail, body = {}) {
     return { ok: false, error: 'Enter a Resend API key before enabling email delivery' };
   }
 
+  if (next.email_enabled && isPlaceholderFromAddress(mergedPreview.mailFrom)) {
+    return {
+      ok: false,
+      error: `Set a From address on a domain verified in Resend (not @${PLACEHOLDER_FROM_DOMAIN}). For testing, use onboarding@resend.dev`,
+    };
+  }
+
   const now = new Date().toISOString();
   if (row) {
     await db.run(
@@ -178,12 +201,16 @@ async function saveEmailSettings(actorEmail, body = {}) {
 
 function toAdminView(settings) {
   const row = settings.dbRow;
+  const storedMailFrom = row?.mail_from ? String(row.mail_from).trim() : envMailFrom() || '';
   return {
     emailEnabled: settings.emailEnabled,
     emailEnabledPreference: row ? Boolean(row.email_enabled) : envEmailEnabled(),
     hasResendApiKey: Boolean(settings.resendApiKey),
     resendApiKeyMasked: maskResendKey(settings.resendApiKey),
-    mailFrom: settings.mailFrom,
+    mailFrom: storedMailFrom,
+    effectiveMailFrom: settings.mailFrom,
+    usingDefaultFrom: !storedMailFrom,
+    usingPlaceholderFrom: isPlaceholderFromAddress(settings.mailFrom),
     usingEnvKey: settings.hasEnvKey && !settings.hasDbKey,
     source: settings.source,
     updatedAt: settings.updatedAt,
@@ -193,7 +220,9 @@ function toAdminView(settings) {
 
 async function isMailerConfigured() {
   const settings = await getEmailSettings();
-  return Boolean(settings.emailEnabled && settings.resendApiKey);
+  return Boolean(
+    settings.emailEnabled && settings.resendApiKey && !isPlaceholderFromAddress(settings.mailFrom)
+  );
 }
 
 module.exports = {
@@ -203,5 +232,6 @@ module.exports = {
   maskResendKey,
   toAdminView,
   isMailerConfigured,
+  isPlaceholderFromAddress,
   DEFAULT_FROM,
 };
