@@ -18,6 +18,7 @@ import {
 export default function MeetingEmailInvites({ meetingId }) {
   const [value, setValue] = useState('');
   const [sending, setSending] = useState(false);
+  const [resendingQueued, setResendingQueued] = useState(false);
   const [guests, setGuests] = useState([]);
   const [settings, setSettings] = useState(null);
   const [useAccountDefaults, setUseAccountDefaults] = useState(true);
@@ -77,6 +78,28 @@ export default function MeetingEmailInvites({ meetingId }) {
     }
   };
 
+  const resendQueued = async () => {
+    setResendingQueued(true);
+    try {
+      const res = await v2Meetings.resendQueuedEmailInvites(meetingId);
+      if (res.message) {
+        const failed = (res.results || []).filter((r) => !r.sent && !r.skipped);
+        toast(res.message, {
+          icon: failed.length ? '⚠️' : 'ℹ️',
+          duration: 8000,
+        });
+      } else {
+        const sent = (res.results || []).filter((r) => r.sent).length;
+        toast.success(`Sent ${sent} queued invite${sent === 1 ? '' : 's'}`);
+      }
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to resend queued invites');
+    } finally {
+      setResendingQueued(false);
+    }
+  };
+
   const saveReminderSettings = async () => {
     setSavingReminders(true);
     try {
@@ -99,6 +122,7 @@ export default function MeetingEmailInvites({ meetingId }) {
 
   const activeOffsets = settings?.reminderOffsets || [];
   const reminderSummary = activeOffsets.map(reminderOffsetLabel).join(' and ');
+  const queuedCount = guests.filter((g) => !g.sent_at).length;
 
   return (
     <div className="space-y-4">
@@ -175,6 +199,24 @@ export default function MeetingEmailInvites({ meetingId }) {
 
       {guests.length > 0 && (
         <ul className="space-y-1 border-t border-border/60 pt-2">
+          {queuedCount > 0 && (
+            <li className="flex flex-wrap items-center justify-between gap-2 pb-2">
+              <span className="text-xs text-amber-700">
+                {queuedCount} invite{queuedCount === 1 ? '' : 's'} queued (email not sent yet)
+              </span>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 gap-1.5 text-xs"
+                disabled={resendingQueued || sending}
+                onClick={resendQueued}
+              >
+                {resendingQueued ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+                Send queued
+              </Button>
+            </li>
+          )}
           {guests.map((g) => {
             const sentReminders = g.reminders_sent ? Object.keys(g.reminders_sent) : [];
             return (

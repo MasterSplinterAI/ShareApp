@@ -49,6 +49,108 @@ async function assertMeetingAccess(row, auth) {
   return false;
 }
 
+async function ensureEmailInviteLink(row, meetingId) {
+  let link = await db.get(
+    `SELECT * FROM v2_meeting_invite_links
+     WHERE meeting_id = ? AND revoked_at IS NULL AND reusable = 1 AND datetime(expires_at) > datetime('now')
+     ORDER BY datetime(expires_at) DESC LIMIT 1`,
+    [meetingId]
+  );
+  if (link) return link;
+
+  const token = crypto.randomBytes(18).toString('base64url');
+  const linkId = db.uuid();
+  const expiresAt = computeInviteExpiresAt(row, {
+    mode: defaultExpiryModeForMeeting(row),
+  });
+  const emailExpiryMode = defaultExpiryModeForMeeting(row);
+  await db.run(
+    `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [linkId, meetingId, token, 'Email invite link', expiresAt, null, 1, 0, null, emailExpiryMode]
+  );
+  return { id: linkId, token };
+}
+
+async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, resendAlreadySent = false }) {
+  const link = await ensureEmailInviteLink(row, meetingId);
+  const { sendGuestInvite } = require('../../lib/guestInvites');
+  const { getGuestInvitePrefs } = require('../../lib/guestInviteReminderPrefs');
+  const base = publicFrontendBaseUrl(req);
+  const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
+  const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [userId]);
+  const invitePrefs = await getGuestInvitePrefs(userId);
+  const cc = invitePrefs.ccHost && inviter?.email ? inviter.email : undefined;
+
+  const results = [];
+  for (const email of emails) {
+    const existing = await db.get(
+      `SELECT id, sent_at FROM v2_meeting_guest_invites
+       WHERE meeting_id = ? AND email = ?
+       ORDER BY CASE WHEN sent_at IS NULL THEN 0 ELSE 1 END, datetime(created_at) DESC
+       LIMIT 1`,
+      [meetingId, email]
+    );
+
+    if (existing?.sent_at && !resendAlreadySent) {
+      results.push({ email, sent: true, skipped: true });
+      continue;
+    }
+
+    const sendResult = await sendGuestInvite({
+      email,
+      meetingTitle: row.title || 'Meeting',
+      scheduledStart: row.scheduled_start,
+      scheduledEnd: row.scheduled_end,
+      joinUrl,
+      inviterName: inviter?.display_name || inviter?.email,
+      meetingId,
+      timeZone: invitePrefs.timezone,
+      cc,
+    });
+    const sentAt = sendResult?.sent ? new Date().toISOString() : null;
+
+    if (existing) {
+      await db.run(
+        `UPDATE v2_meeting_guest_invites SET invite_link_id = ?, invited_by = ?, sent_at = ? WHERE id = ?`,
+        [link.id, userId, sentAt, existing.id]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
+         VALUES (?,?,?,?,?,?)`,
+        [db.uuid(), meetingId, link.id, email, userId, sentAt]
+      );
+    }
+
+    results.push({ email, sent: Boolean(sendResult?.sent), error: sendResult?.error || undefined });
+  }
+
+  return { results, joinUrl };
+}
+
+async function buildGuestInviteSendResponse(results, joinUrl) {
+  const { isMailerConfigured } = require('../../lib/v2EmailSettings');
+  const attempted = results.filter((r) => !r.skipped);
+  const anySent = attempted.some((r) => r.sent);
+  const configured = await isMailerConfigured();
+  const firstError = attempted.find((r) => r.error)?.error;
+  let message;
+  if (!attempted.length) {
+    message = 'All listed guests were already invited.';
+  } else if (!anySent) {
+    if (!configured) {
+      message =
+        'Invites recorded, but email delivery is not configured on this server yet — share the link directly.';
+    } else if (firstError) {
+      message = `Email could not be sent: ${firstError}`;
+    } else {
+      message = 'Invites recorded, but email delivery failed — share the link directly.';
+    }
+  }
+  return { ok: true, results, joinUrl, mailerConfigured: configured, message };
+}
+
 /** Secure invite links are always required — upgrade legacy meetings and ensure a default link exists. */
 async function ensureSecureInviteForMeeting(meetingRow) {
   const meetingId = meetingRow.id;
@@ -434,83 +536,51 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
     const valid = emails.filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
     if (!valid.length) return res.status(400).json({ error: 'At least one valid email is required' });
 
-    // Reuse the best usable reusable link, or mint one valid through the meeting.
-    let link = await db.get(
-      `SELECT * FROM v2_meeting_invite_links
-       WHERE meeting_id = ? AND revoked_at IS NULL AND reusable = 1 AND datetime(expires_at) > datetime('now')
-       ORDER BY datetime(expires_at) DESC LIMIT 1`,
-      [req.params.id]
-    );
-    if (!link) {
-      const token = crypto.randomBytes(18).toString('base64url');
-      const linkId = db.uuid();
-      const expiresAt = computeInviteExpiresAt(row, {
-        mode: defaultExpiryModeForMeeting(row),
-      });
-      const emailExpiryMode = defaultExpiryModeForMeeting(row);
-      await db.run(
-        `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
-        [linkId, req.params.id, token, 'Email invite link', expiresAt, null, 1, 0, null, emailExpiryMode]
-      );
-      link = { id: linkId, token };
-    }
-
-    const { sendGuestInvite } = require('../../lib/guestInvites');
-    const { getGuestInvitePrefs } = require('../../lib/guestInviteReminderPrefs');
-    const { isMailerConfigured } = require('../../lib/v2EmailSettings');
-    const base = publicFrontendBaseUrl(req);
-    const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
-    const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
-    const invitePrefs = await getGuestInvitePrefs(req.v2Auth.userId);
-    const cc =
-      invitePrefs.ccHost && inviter?.email ? inviter.email : undefined;
-
-    const results = [];
-    for (const email of valid) {
-      const sendResult = await sendGuestInvite({
-        email,
-        meetingTitle: row.title || 'Meeting',
-        scheduledStart: row.scheduled_start,
-        scheduledEnd: row.scheduled_end,
-        joinUrl,
-        inviterName: inviter?.display_name || inviter?.email,
-        meetingId: req.params.id,
-        timeZone: invitePrefs.timezone,
-        cc,
-      });
-      await db.run(
-        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
-         VALUES (?,?,?,?,?,?)`,
-        [db.uuid(), req.params.id, link.id, email, req.v2Auth.userId, sendResult?.sent ? new Date().toISOString() : null]
-      );
-      results.push({ email, sent: Boolean(sendResult?.sent), error: sendResult?.error || undefined });
-    }
-
-    const anySent = results.some((r) => r.sent);
-    const configured = await isMailerConfigured();
-    const firstError = results.find((r) => r.error)?.error;
-    let message;
-    if (!anySent) {
-      if (!configured) {
-        message =
-          'Invites recorded, but email delivery is not configured on this server yet — share the link directly.';
-      } else if (firstError) {
-        message = `Email could not be sent: ${firstError}`;
-      } else {
-        message = 'Invites recorded, but email delivery failed — share the link directly.';
-      }
-    }
-    res.status(201).json({
-      ok: true,
-      results,
-      joinUrl,
-      mailerConfigured: configured,
-      message,
+    const { results, joinUrl } = await deliverGuestEmailInvites({
+      row,
+      meetingId: req.params.id,
+      emails: valid,
+      userId: req.v2Auth.userId,
+      req,
+      resendAlreadySent: Boolean(req.body?.resend),
     });
+    const payload = await buildGuestInviteSendResponse(results, joinUrl);
+    res.status(201).json(payload);
   } catch (e) {
     console.error('[v2/invites/email POST]', e);
     res.status(500).json({ error: 'Failed to send invites' });
+  }
+});
+
+router.post('/:id/invites/email/resend-queued', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+
+    const queued = await db.all(
+      `SELECT DISTINCT email FROM v2_meeting_guest_invites
+       WHERE meeting_id = ? AND sent_at IS NULL
+       ORDER BY email ASC`,
+      [req.params.id]
+    );
+    if (!queued.length) {
+      return res.status(400).json({ error: 'No queued invites for this meeting' });
+    }
+
+    const emails = queued.map((q) => q.email);
+    const { results, joinUrl } = await deliverGuestEmailInvites({
+      row,
+      meetingId: req.params.id,
+      emails,
+      userId: req.v2Auth.userId,
+      req,
+    });
+    const payload = await buildGuestInviteSendResponse(results, joinUrl);
+    res.json(payload);
+  } catch (e) {
+    console.error('[v2/invites/email/resend-queued POST]', e);
+    res.status(500).json({ error: 'Failed to resend queued invites' });
   }
 });
 
