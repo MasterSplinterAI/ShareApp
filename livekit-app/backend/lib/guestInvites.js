@@ -1,99 +1,151 @@
 /**
- * Guest email invites: send join links on invite, and a reminder shortly
- * before the scheduled start.
+ * Guest email invites: send join links on invite, and reminders before
+ * the scheduled start at configurable offsets (default: 1 day + 15 min).
  *
  * Reminder scheduler: lightweight in-process interval (single PM2 instance).
- * Every poll it finds meetings starting within the reminder window whose
- * emailed guests haven't been reminded, and sends one reminder per guest.
  */
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
+const { renderGuestInvite, renderGuestReminder } = require('./emailTemplates');
+const {
+  DEFAULT_REMINDER_OFFSETS,
+  parseRemindersSent,
+  getGuestInvitePrefs,
+  getEffectiveReminderOffsets,
+  getHostTimezoneForMeeting,
+} = require('./guestInviteReminderPrefs');
 
-const REMINDER_WINDOW_MIN = Number(process.env.V2_INVITE_REMINDER_MINUTES || 60);
 const POLL_MS = 5 * 60 * 1000;
 
-function friendlyWhen(iso) {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleString('en-US', {
-      weekday: 'long',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZoneName: 'short',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-function inviteEmailBody({ meetingTitle, scheduledStart, joinUrl, inviterName, isReminder }) {
-  const when = friendlyWhen(scheduledStart);
-  const lines = [
-    isReminder
-      ? `Reminder: "${meetingTitle}" is starting soon.`
-      : `${inviterName || 'Your host'} invited you to "${meetingTitle}" on Parley.`,
-    '',
-    when ? `When: ${when}` : 'This meeting can start at any time.',
-    '',
-    `Join from your browser (no account needed):`,
+async function sendGuestInvite({
+  email,
+  meetingTitle,
+  scheduledStart,
+  scheduledEnd,
+  joinUrl,
+  inviterName,
+  meetingId,
+  timeZone,
+  cc,
+}) {
+  const rendered = renderGuestInvite({
+    meetingTitle,
+    scheduledStart,
+    scheduledEnd,
     joinUrl,
-    '',
-    'Parley provides live captions and real-time translation — pick your language when you join.',
-  ];
-  return lines.join('\n');
-}
-
-async function sendGuestInvite({ email, meetingTitle, scheduledStart, joinUrl, inviterName }) {
+    inviterName,
+    meetingId,
+    timeZone,
+  });
+  const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter((c) => c && c.toLowerCase() !== email.toLowerCase()) : [];
   return sendEmail({
     to: email,
-    subject: `You're invited: ${meetingTitle} — Parley`,
-    text: inviteEmailBody({ meetingTitle, scheduledStart, joinUrl, inviterName, isReminder: false }),
+    cc: ccList.length ? ccList : undefined,
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    attachments: rendered.attachments,
   });
 }
 
-async function sendGuestReminder({ email, meetingTitle, scheduledStart, joinUrl }) {
+async function sendGuestReminder({
+  email,
+  meetingTitle,
+  scheduledStart,
+  scheduledEnd,
+  joinUrl,
+  meetingId,
+  timeZone,
+  offsetMinutes,
+}) {
+  const rendered = renderGuestReminder({
+    meetingTitle,
+    scheduledStart,
+    scheduledEnd,
+    joinUrl,
+    meetingId,
+    timeZone,
+    offsetMinutes,
+  });
   return sendEmail({
     to: email,
-    subject: `Starting soon: ${meetingTitle} — Parley`,
-    text: inviteEmailBody({ meetingTitle, scheduledStart, joinUrl, isReminder: true }),
+    subject: rendered.subject,
+    text: rendered.text,
+    html: rendered.html,
+    attachments: rendered.attachments,
   });
 }
 
 async function runReminderPass(buildJoinUrl) {
-  const due = await db.all(
-    `SELECT gi.id, gi.email, gi.meeting_id, m.title, m.scheduled_start, m.livekit_room_name, il.token
+  const candidates = await db.all(
+    `SELECT gi.id, gi.email, gi.meeting_id, gi.reminders_sent_json, gi.reminder_sent_at,
+            m.title, m.scheduled_start, m.scheduled_end, m.livekit_room_name, m.host_user_id,
+            m.guest_invite_reminder_offsets_json, il.token
      FROM v2_meeting_guest_invites gi
      JOIN v2_meetings m ON m.id = gi.meeting_id
      LEFT JOIN v2_meeting_invite_links il ON il.id = gi.invite_link_id
      WHERE gi.sent_at IS NOT NULL
-       AND gi.reminder_sent_at IS NULL
        AND m.scheduled_start IS NOT NULL
        AND m.status IN ('scheduled', 'ready')
        AND datetime(m.scheduled_start) > datetime('now')
-       AND datetime(m.scheduled_start) <= datetime('now', '+' || ? || ' minutes')
-     LIMIT 100`,
-    [REMINDER_WINDOW_MIN]
+     LIMIT 500`
   );
-  for (const row of due) {
-    const joinUrl = buildJoinUrl(row.livekit_room_name, row.token);
-    const result = await sendGuestReminder({
-      email: row.email,
-      meetingTitle: row.title || 'Meeting',
-      scheduledStart: row.scheduled_start,
-      joinUrl,
-    });
-    if (result?.sent) {
-      await db.run(`UPDATE v2_meeting_guest_invites SET reminder_sent_at = datetime('now') WHERE id = ?`, [row.id]);
-    } else {
-      // Mailer not configured — mark anyway so we don't loop forever; the
-      // initial invite already carried the link.
-      await db.run(`UPDATE v2_meeting_guest_invites SET reminder_sent_at = datetime('now') WHERE id = ?`, [row.id]);
-      break; // no point iterating the rest without a mailer
+
+  const offsetsCache = new Map();
+  const timezoneCache = new Map();
+  let sentCount = 0;
+
+  for (const row of candidates) {
+    let offsets = offsetsCache.get(row.meeting_id);
+    if (!offsets) {
+      offsets = await getEffectiveReminderOffsets(row.meeting_id);
+      offsetsCache.set(row.meeting_id, offsets);
+    }
+
+    let timeZone = timezoneCache.get(row.meeting_id);
+    if (!timeZone) {
+      timeZone = await getHostTimezoneForMeeting(row.meeting_id);
+      timezoneCache.set(row.meeting_id, timeZone);
+    }
+
+    const sentMap = parseRemindersSent(row);
+    const startMs = new Date(row.scheduled_start).getTime();
+    const nowMs = Date.now();
+
+    for (const offsetMin of offsets) {
+      const key = String(offsetMin);
+      if (sentMap[key]) continue;
+
+      const remindAtMs = startMs - offsetMin * 60 * 1000;
+      if (nowMs < remindAtMs) continue;
+      if (nowMs >= startMs) continue;
+
+      const joinUrl = buildJoinUrl(row.livekit_room_name, row.token);
+      const result = await sendGuestReminder({
+        email: row.email,
+        meetingTitle: row.title || 'Meeting',
+        scheduledStart: row.scheduled_start,
+        scheduledEnd: row.scheduled_end,
+        joinUrl,
+        meetingId: row.meeting_id,
+        timeZone,
+        offsetMinutes: offsetMin,
+      });
+
+      if (result?.sent) {
+        sentMap[key] = new Date().toISOString();
+        await db.run(`UPDATE v2_meeting_guest_invites SET reminders_sent_json = ? WHERE id = ?`, [
+          JSON.stringify(sentMap),
+          row.id,
+        ]);
+        sentCount += 1;
+      } else {
+        return sentCount;
+      }
     }
   }
-  return due.length;
+
+  return sentCount;
 }
 
 let timer = null;
@@ -104,7 +156,9 @@ function startGuestInviteReminders(buildJoinUrl) {
     runReminderPass(buildJoinUrl).catch((e) => console.error('[guestInvites] reminder pass failed:', e.message));
   }, POLL_MS);
   timer.unref?.();
-  console.log(`[guestInvites] reminder scheduler started (window: ${REMINDER_WINDOW_MIN} min before start)`);
+  console.log(
+    `[guestInvites] reminder scheduler started (default offsets: ${DEFAULT_REMINDER_OFFSETS.join(', ')} min before start)`
+  );
 }
 
-module.exports = { sendGuestInvite, startGuestInviteReminders, runReminderPass };
+module.exports = { sendGuestInvite, sendGuestReminder, startGuestInviteReminders, runReminderPass };

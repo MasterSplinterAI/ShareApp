@@ -12,9 +12,10 @@ import { cn } from '../lib/utils';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import {
   applyVideoEffect,
+  isMobileViewport,
   loadSavedEffectId,
   saveEffectId,
-  useVideoEffectsSupport,
+  useVideoEffectsAvailable,
 } from '../lib/videoEffects';
 
 function useIsCompact() {
@@ -73,22 +74,30 @@ export default function CustomControlBar({
   const cameraMenuRef = useRef(null);
 
   // --- Background effects (blur / virtual background) ---
-  const effectsSupported = useVideoEffectsSupport();
-  const [videoEffectId, setVideoEffectId] = useState(
-    () => initialVideoEffectId ?? loadSavedEffectId()
-  );
+  const effectsAvailable = useVideoEffectsAvailable();
+  const [videoEffectId, setVideoEffectId] = useState(() => {
+    if (isMobileViewport()) return 'none';
+    return initialVideoEffectId ?? loadSavedEffectId();
+  });
 
   // Apply to every camera track instance: LiveKit creates a NEW LocalVideoTrack on
   // camera re-enable and device switches, so this re-runs whenever the instance or
   // the chosen effect changes (covers initial join via the prejoin choice too).
   const camTrackInstance = cameraTrack?.publication?.track ?? cameraTrack?.track;
   useEffect(() => {
-    if (!effectsSupported || !camTrackInstance) return;
+    if (!effectsAvailable || !camTrackInstance) return;
     applyVideoEffect(camTrackInstance, videoEffectId).catch((err) => {
       console.warn('Video effect failed:', err);
       toast.error('Could not apply background effect');
     });
-  }, [camTrackInstance, videoEffectId, effectsSupported]);
+  }, [camTrackInstance, videoEffectId, effectsAvailable]);
+
+  useEffect(() => {
+    if (effectsAvailable || !camTrackInstance) return;
+    applyVideoEffect(camTrackInstance, 'none').catch((err) => {
+      console.warn('Video effect clear failed:', err);
+    });
+  }, [camTrackInstance, effectsAvailable]);
 
   const handleEffectSelect = (id) => {
     setVideoEffectId(id);
@@ -429,15 +438,17 @@ export default function CustomControlBar({
                       </div>
                     )}
 
-                    <div className="p-3">
-                      <p className="mb-2 text-xs font-medium text-muted-foreground">Background</p>
-                      <VideoEffectsPicker
-                        activeEffectId={videoEffectId}
-                        onSelect={handleEffectSelect}
-                        disabled={!isCameraEnabled || !effectsSupported}
-                        compact
-                      />
-                    </div>
+                    {effectsAvailable && (
+                      <div className="p-3">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">Background</p>
+                        <VideoEffectsPicker
+                          activeEffectId={videoEffectId}
+                          onSelect={handleEffectSelect}
+                          disabled={!isCameraEnabled}
+                          compact
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

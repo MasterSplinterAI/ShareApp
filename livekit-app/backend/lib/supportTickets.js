@@ -1,5 +1,6 @@
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
+const { renderSupportReply } = require('./emailTemplates');
 const { notifyNewTicket, notifyUserMessage } = require('./telegramSupport');
 const { shouldNotifyOpsOnNewTicket, shouldNotifyOpsOnUserMessage, submitAckMessage } = require('./supportAgent/routing');
 const { isSuperadminEmail } = require('./v2Superadmin');
@@ -357,12 +358,16 @@ async function postStaffReply(ticketId, bodyText, staffLabel) {
 
   const to = await resolveSubmitterEmail(ticket);
   if (to) {
-    const subject = `Re: Parley support #${ticket.publicNumber} — ${ticket.subject || 'your request'}`;
+    const email = renderSupportReply({
+      body,
+      ticketNumber: ticket.publicNumber,
+      ticketSubject: ticket.subject,
+    });
     await sendEmail({
       to,
-      subject,
-      text: `${body}\n\n— Parley Support\n\nReply from the app: Help → My requests (ticket #${ticket.publicNumber}).`,
-      html: `<p>${body.replace(/\n/g, '<br>')}</p><p>— Parley Support</p><p><small>Ticket #${ticket.publicNumber}</small></p>`,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
     });
   }
 

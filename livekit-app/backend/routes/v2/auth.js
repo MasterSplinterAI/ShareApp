@@ -4,8 +4,7 @@ const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { hashPassword, verifyPassword, signSession } = require('../../lib/authAdapter');
-const { sendEmail } = require('../../lib/mailer');
-const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
+const { sendPasswordResetEmail } = require('../../lib/passwordReset');
 const { PERSONAL, TEAM, normalizeAccountTypeHint, resolveNewWorkspace } = require('../../lib/v2Workspace');
 const { getPrefs, setSignupPrefs, updatePrefs } = require('../../lib/communicationPrefs');
 
@@ -143,12 +142,6 @@ function sha256Hex(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function resetLinkBase(req) {
-  const fromEnv = (process.env.PUBLIC_FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
-  if (fromEnv) return fromEnv;
-  return publicFrontendBaseUrl(req) || 'https://staging.jarmetals.com';
-}
-
 // Light in-memory rate limit for reset attempts (per IP, 5 per 15 min).
 const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
 const RESET_RATE_MAX = 5;
@@ -180,27 +173,13 @@ router.post('/forgot-password', async (req, res) => {
     if (!emailValid(email)) {
       return res.json({ ok: true });
     }
-    const user = await db.get(`SELECT id, email FROM v2_users WHERE email = ?`, [email.trim().toLowerCase()]);
-    if (!user) {
-      return res.json({ ok: true });
+    const user = await db.get(`SELECT id FROM v2_users WHERE email = ?`, [email.trim().toLowerCase()]);
+    if (user) {
+      await sendPasswordResetEmail(req, user.id);
     }
-    const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
-    await db.run(
-      `INSERT INTO v2_password_resets (id, user_id, token_hash, expires_at) VALUES (?,?,?,?)`,
-      [db.uuid(), user.id, sha256Hex(token), expiresAt]
-    );
-    const resetUrl = `${resetLinkBase(req)}/v2/reset-password?token=${token}`;
-    await sendEmail({
-      to: user.email,
-      subject: 'Reset your Parley password',
-      text: `We received a request to reset your Parley password.\n\nReset it here (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
-      html: `<p>We received a request to reset your Parley password.</p><p><a href="${resetUrl}">Reset your password</a> (link expires in 1 hour).</p><p>If you didn't request this, you can safely ignore this email.</p>`,
-    });
     res.json({ ok: true });
   } catch (e) {
     console.error('[v2/auth/forgot-password]', e);
-    // Still 200 — never leak internal state or account existence.
     res.json({ ok: true });
   }
 });

@@ -1,4 +1,12 @@
 const db = require('../db/v2Database');
+const {
+  DEFAULT_REMINDER_OFFSETS,
+  normalizeOffsets,
+  parseOffsetsJson,
+  offsetsToJson,
+  isValidIanaTimezone,
+  sanitizeTimezone,
+} = require('./guestInviteReminderPrefs');
 
 const POLICY_VERSION = Math.max(1, parseInt(process.env.POLICY_VERSION || '1', 10) || 1);
 
@@ -35,9 +43,9 @@ async function ensureDefaultPrefs(userId, { marketingEmail = false } = {}) {
   const now = new Date().toISOString();
   await db.run(
     `INSERT INTO v2_user_communication_prefs
-     (user_id, marketing_email, marketing_sms, marketing_phone, phone_e164, prefs_updated_at, policy_version)
-     VALUES (?,?,?,?,?,?,?)`,
-    [userId, marketingEmail ? 1 : 0, 0, 0, null, now, POLICY_VERSION]
+     (user_id, marketing_email, marketing_sms, marketing_phone, phone_e164, prefs_updated_at, policy_version, guest_invite_cc_host)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [userId, marketingEmail ? 1 : 0, 0, 0, null, now, POLICY_VERSION, 1]
   );
 }
 
@@ -48,6 +56,9 @@ function rowToPrefs(row) {
       marketingSms: false,
       marketingPhone: false,
       phoneE164: null,
+      timezone: null,
+      guestInviteReminderOffsets: [...DEFAULT_REMINDER_OFFSETS],
+      guestInviteCcHost: true,
       policyVersion: POLICY_VERSION,
       prefsUpdatedAt: null,
     };
@@ -57,6 +68,10 @@ function rowToPrefs(row) {
     marketingSms: Boolean(row.marketing_sms),
     marketingPhone: Boolean(row.marketing_phone),
     phoneE164: row.phone_e164 || null,
+    timezone: row.timezone || null,
+    guestInviteReminderOffsets:
+      parseOffsetsJson(row.guest_invite_reminder_offsets_json) || [...DEFAULT_REMINDER_OFFSETS],
+    guestInviteCcHost: row.guest_invite_cc_host !== 0,
     policyVersion: row.policy_version ?? POLICY_VERSION,
     prefsUpdatedAt: row.prefs_updated_at || null,
   };
@@ -80,6 +95,18 @@ async function setSignupPrefs(userId, { marketingEmail = false }, req) {
 async function updatePrefs(userId, body, req) {
   await ensureDefaultPrefs(userId);
   const current = await db.get(`SELECT * FROM v2_user_communication_prefs WHERE user_id = ?`, [userId]);
+
+  if (body.timezone !== undefined && body.timezone !== null && body.timezone !== '' && !isValidIanaTimezone(body.timezone)) {
+    return { ok: false, error: 'Invalid timezone — use an IANA name like America/New_York' };
+  }
+
+  if (body.guestInviteReminderOffsets !== undefined) {
+    const normalized = normalizeOffsets(body.guestInviteReminderOffsets);
+    if (!normalized?.length) {
+      return { ok: false, error: 'At least one valid reminder offset is required (5 minutes to 7 days before)' };
+    }
+  }
+
   const next = {
     marketingEmail:
       body.marketingEmail !== undefined ? Boolean(body.marketingEmail) : Boolean(current.marketing_email),
@@ -92,6 +119,18 @@ async function updatePrefs(userId, body, req) {
           ? null
           : String(body.phoneE164).trim()
         : current.phone_e164,
+    timezone:
+      body.timezone !== undefined
+        ? body.timezone === null || body.timezone === ''
+          ? null
+          : sanitizeTimezone(body.timezone)
+        : current.timezone,
+    guestInviteReminderOffsets:
+      body.guestInviteReminderOffsets !== undefined
+        ? normalizeOffsets(body.guestInviteReminderOffsets)
+        : parseOffsetsJson(current.guest_invite_reminder_offsets_json) || [...DEFAULT_REMINDER_OFFSETS],
+    guestInviteCcHost:
+      body.guestInviteCcHost !== undefined ? Boolean(body.guestInviteCcHost) : current.guest_invite_cc_host !== 0,
   };
 
   if (next.marketingSms || next.marketingPhone) {
@@ -102,6 +141,7 @@ async function updatePrefs(userId, body, req) {
   await db.run(
     `UPDATE v2_user_communication_prefs
      SET marketing_email = ?, marketing_sms = ?, marketing_phone = ?, phone_e164 = ?,
+         timezone = ?, guest_invite_reminder_offsets_json = ?, guest_invite_cc_host = ?,
          prefs_updated_at = ?, policy_version = ?
      WHERE user_id = ?`,
     [
@@ -109,6 +149,9 @@ async function updatePrefs(userId, body, req) {
       next.marketingSms ? 1 : 0,
       next.marketingPhone ? 1 : 0,
       next.phoneE164,
+      next.timezone,
+      offsetsToJson(next.guestInviteReminderOffsets),
+      next.guestInviteCcHost ? 1 : 0,
       now,
       POLICY_VERSION,
       userId,

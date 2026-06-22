@@ -139,6 +139,8 @@ export const v2Meetings = {
     apiV2.get(`/meetings/${encodeURIComponent(id)}/invites/email`).then((r) => r.data),
   sendEmailInvites: (id, emails) =>
     apiV2.post(`/meetings/${encodeURIComponent(id)}/invites/email`, { emails }).then((r) => r.data),
+  updateEmailInviteReminderSettings: (id, body) =>
+    apiV2.patch(`/meetings/${encodeURIComponent(id)}/invites/reminder-settings`, body).then((r) => r.data),
   exportTranscriptReport: (id, reportId, format) =>
     apiV2
       .get(`/meetings/${encodeURIComponent(id)}/transcript/reports/${encodeURIComponent(reportId)}/export`, {
@@ -218,6 +220,8 @@ export const v2Admin = {
   broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
   billingConfig: () => apiV2.get('/admin/billing/config').then((r) => r.data),
   patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),
+  emailConfig: () => apiV2.get('/admin/email/config').then((r) => r.data),
+  patchEmailConfig: (body) => apiV2.patch('/admin/email/config', body).then((r) => r.data),
   cancelOrgSubscription: (orgId, body) =>
     apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
   marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),

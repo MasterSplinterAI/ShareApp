@@ -1,5 +1,6 @@
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
+const { renderSupportReply } = require('./emailTemplates');
 const { getProposalById, patchProposal } = require('./supportProposals');
 const { getTicketById, resolveSubmitterEmail } = require('./supportTickets');
 const { createSupportIssue } = require('./githubIssues');
@@ -32,12 +33,16 @@ async function postAgentMessage(ticketId, body, { status = 'waiting_user' } = {}
 async function emailUser(ticket, body) {
   const to = await resolveSubmitterEmail(ticket);
   if (!to) return;
-  const subject = `Re: Parley support #${ticket.publicNumber} — ${ticket.subject || 'your request'}`;
+  const email = renderSupportReply({
+    body,
+    ticketNumber: ticket.publicNumber,
+    ticketSubject: ticket.subject,
+  });
   await sendEmail({
     to,
-    subject,
-    text: `${body}\n\n— Parley Support\n\nReply from the app: Help → My requests (ticket #${ticket.publicNumber}).`,
-    html: `<p>${body.replace(/\n/g, '<br>')}</p><p>— Parley Support</p><p><small>Ticket #${ticket.publicNumber}</small></p>`,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
   });
 }
 

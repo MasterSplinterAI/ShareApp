@@ -1,33 +1,40 @@
 /**
  * Transactional email via Resend (https://resend.com).
- * Falls back to console logging when RESEND_API_KEY is not configured so
- * dev/staging flows (e.g. password reset) remain testable without a key.
+ * API key and from-address can be set in admin console or via env.
+ * Falls back to console logging when not configured.
  * Never throws into callers — returns { sent: boolean }.
  */
 const axios = require('axios');
+const { getEmailSettings, DEFAULT_FROM } = require('./v2EmailSettings');
 
-const DEFAULT_FROM = 'Parley <no-reply@parley.app>';
+async function sendEmail({ to, subject, text, html, attachments, cc }) {
+  const settings = await getEmailSettings();
+  const apiKey = settings.resendApiKey;
+  const from = settings.mailFrom || DEFAULT_FROM;
 
-async function sendEmail({ to, subject, text, html, attachments }) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
-    console.warn('[mailer] RESEND_API_KEY not set — email not sent');
+  if (!settings.emailEnabled || !apiKey) {
+    console.warn('[mailer] Email delivery not configured — email not sent');
     console.log(
       '[mailer] Would have sent email:',
-      JSON.stringify({ to, subject, attachments: (attachments || []).map((a) => a.filename) }, null, 2)
+      JSON.stringify(
+        { to, cc, subject, from, attachments: (attachments || []).map((a) => a.filename) },
+        null,
+        2
+      )
     );
     return { sent: false };
   }
   try {
+    const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter(Boolean) : [];
     const res = await axios.post(
       'https://api.resend.com/emails',
       {
-        from: process.env.MAIL_FROM || DEFAULT_FROM,
+        from,
         to: Array.isArray(to) ? to : [to],
+        ...(ccList.length ? { cc: ccList } : {}),
         subject,
         ...(text ? { text } : {}),
         ...(html ? { html } : {}),
-        // Resend attachment shape: [{ filename, content (base64) }]
         ...(attachments?.length ? { attachments } : {}),
       },
       {

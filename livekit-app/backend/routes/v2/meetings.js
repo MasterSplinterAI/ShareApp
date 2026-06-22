@@ -372,13 +372,53 @@ router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const guests = await db.all(
-      `SELECT id, email, sent_at, reminder_sent_at, created_at
+      `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, created_at
        FROM v2_meeting_guest_invites WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`,
       [req.params.id]
     );
-    res.json({ guests });
+    const { getMeetingInviteEmailSettings, parseRemindersSent } = require('../../lib/guestInviteReminderPrefs');
+    const settings = await getMeetingInviteEmailSettings(req.params.id, req.v2Auth.userId);
+    res.json({
+      guests: guests.map((g) => ({
+        ...g,
+        reminders_sent: parseRemindersSent(g),
+      })),
+      settings,
+    });
   } catch (e) {
     console.error('[v2/invites/email GET]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/:id/invites/reminder-settings', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+
+    const { offsetsToJson, normalizeOffsets, getMeetingInviteEmailSettings } = require('../../lib/guestInviteReminderPrefs');
+    const { useAccountDefaults, reminderOffsets } = req.body || {};
+
+    if (useAccountDefaults) {
+      await db.run(`UPDATE v2_meetings SET guest_invite_reminder_offsets_json = NULL WHERE id = ?`, [req.params.id]);
+    } else if (reminderOffsets !== undefined) {
+      const normalized = normalizeOffsets(reminderOffsets);
+      if (!normalized?.length) {
+        return res.status(400).json({ error: 'At least one valid reminder offset is required (5 minutes to 7 days before)' });
+      }
+      await db.run(`UPDATE v2_meetings SET guest_invite_reminder_offsets_json = ? WHERE id = ?`, [
+        offsetsToJson(normalized),
+        req.params.id,
+      ]);
+    } else {
+      return res.status(400).json({ error: 'Provide useAccountDefaults or reminderOffsets' });
+    }
+
+    const settings = await getMeetingInviteEmailSettings(req.params.id, req.v2Auth.userId);
+    res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('[v2/invites/reminder-settings PATCH]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });
@@ -417,9 +457,14 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
     }
 
     const { sendGuestInvite } = require('../../lib/guestInvites');
+    const { getGuestInvitePrefs } = require('../../lib/guestInviteReminderPrefs');
+    const { isMailerConfigured } = require('../../lib/v2EmailSettings');
     const base = publicFrontendBaseUrl(req);
     const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
     const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    const invitePrefs = await getGuestInvitePrefs(req.v2Auth.userId);
+    const cc =
+      invitePrefs.ccHost && inviter?.email ? inviter.email : undefined;
 
     const results = [];
     for (const email of valid) {
@@ -427,8 +472,12 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
         email,
         meetingTitle: row.title || 'Meeting',
         scheduledStart: row.scheduled_start,
+        scheduledEnd: row.scheduled_end,
         joinUrl,
         inviterName: inviter?.display_name || inviter?.email,
+        meetingId: req.params.id,
+        timeZone: invitePrefs.timezone,
+        cc,
       });
       await db.run(
         `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
@@ -443,7 +492,7 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
       ok: true,
       results,
       joinUrl,
-      mailerConfigured: anySent || Boolean(process.env.RESEND_API_KEY),
+      mailerConfigured: anySent || (await isMailerConfigured()),
       message: anySent
         ? undefined
         : 'Invites recorded, but email delivery is not configured on this server yet — share the link directly.',
@@ -840,17 +889,25 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
 
     const { reportToPdfBuffer, reportToMarkdown, templateLabel, safeFilename } = require('../../lib/reportExport');
     const { sendEmail } = require('../../lib/mailer');
+    const { isMailerConfigured } = require('../../lib/v2EmailSettings');
+    const { renderTranscriptReport } = require('../../lib/emailTemplates');
     const org = await db.get(`SELECT name FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     const pdf = await reportToPdfBuffer({ report, meetingTitle: row.title, orgName: org?.name });
     const md = reportToMarkdown({ report, meetingTitle: row.title, orgName: org?.name });
     const label = templateLabel(report.template_id);
     const base = safeFilename(`${row.title || 'meeting'}-${label}`);
+    const email = renderTranscriptReport({
+      meetingTitle: row.title,
+      label,
+      orgName: org?.name,
+      summaryExcerpt: md,
+    });
 
     const result = await sendEmail({
       to,
-      subject: `${label}: ${row.title || 'Meeting'} — Parley`,
-      text: `Attached is the ${label.toLowerCase()} for "${row.title || 'your meeting'}", generated by Parley.\n\n${md}`,
-      html: undefined,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
       attachments: [
         { filename: `${base}.pdf`, content: pdf.toString('base64') },
       ],

@@ -15,9 +15,10 @@ import { useTranslation } from '../lib/i18n/I18nProvider';
 import { isUiLocale, resolveUiLocale } from '../lib/i18n/uiLanguages';
 import {
   applyVideoEffect,
+  isMobileViewport,
   loadSavedEffectId,
   saveEffectId,
-  useVideoEffectsSupport,
+  useVideoEffectsAvailable,
 } from '../lib/videoEffects';
 
 /** Live input-level meter driven by the preview audio track. */
@@ -159,8 +160,10 @@ function PreJoinScreen({
   );
   const [devices, setDevices] = useState({ audioinput: [], videoinput: [] });
   const [mediaError, setMediaError] = useState(null);
-  const effectsSupported = useVideoEffectsSupport();
-  const [effectId, setEffectId] = useState(() => loadSavedEffectId());
+  const effectsAvailable = useVideoEffectsAvailable();
+  const [effectId, setEffectId] = useState(() =>
+    isMobileViewport() ? 'none' : loadSavedEffectId()
+  );
 
   const tracks = previewTracks;
 
@@ -193,11 +196,17 @@ function PreJoinScreen({
   // Blur / virtual background on the live preview. usePreviewTracks re-acquires
   // the track on device changes, so re-apply on every track instance.
   useEffect(() => {
-    if (!videoTrack || !effectsSupported) return;
+    if (!videoTrack) return;
+    if (!effectsAvailable) {
+      applyVideoEffect(videoTrack, 'none').catch((err) => {
+        console.warn('Preview video effect clear failed:', err);
+      });
+      return;
+    }
     applyVideoEffect(videoTrack, effectId).catch((err) => {
       console.warn('Preview video effect failed:', err);
     });
-  }, [videoTrack, effectId, effectsSupported]);
+  }, [videoTrack, effectId, effectsAvailable]);
 
   const handleEffectSelect = useCallback((id) => {
     setEffectId(id);
@@ -239,7 +248,7 @@ function PreJoinScreen({
       videoEnabled,
       audioDeviceId,
       videoDeviceId,
-      videoEffectId: effectId,
+      videoEffectId: effectsAvailable ? effectId : 'none',
     });
   };
 
@@ -336,7 +345,7 @@ function PreJoinScreen({
               </p>
             )}
 
-            {effectsSupported && (
+            {effectsAvailable && (
               <div className="space-y-1.5">
                 <Label className="text-xs font-medium text-muted-foreground">{t('prejoin.background')}</Label>
                 <VideoEffectsPicker

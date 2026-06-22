@@ -590,7 +590,7 @@ export default function V2MeetingDetail() {
             <span className="flex flex-col items-start gap-0.5 text-left">
               Invite by email
               <span className="text-xs font-normal text-muted-foreground">
-                Send the link with an automatic reminder.
+                Send the link with reminders (1 day and 15 min before by default).
               </span>
             </span>
           </AccordionTrigger>

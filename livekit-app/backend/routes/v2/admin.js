@@ -15,6 +15,12 @@ const {
   getStripeClient,
   toAdminView,
 } = require('../../lib/v2StripeSettings');
+const {
+  getEmailSettings,
+  saveEmailSettings,
+  toAdminView: toEmailAdminView,
+} = require('../../lib/v2EmailSettings');
+const { renderAdminMessage } = require('../../lib/emailTemplates');
 const { settleDueOverageCycles, settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
 
 function backendBaseUrl() {
@@ -877,11 +883,12 @@ router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, 
     );
     if (!owners.length) return res.status(404).json({ error: 'No owners found' });
     const emails = owners.map((o) => o.email).filter(Boolean);
+    const email = renderAdminMessage({ subject: subject.trim(), body: body.trim() });
     const result = await sendEmail({
       to: emails,
-      subject: subject.trim().slice(0, 200),
-      text: body.trim(),
-      html: `<p>${body.trim().replace(/\n/g, '<br/>')}</p>`,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
     });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_email_org', {
       orgId: req.params.orgId,
@@ -964,6 +971,49 @@ router.patch('/billing/config', requireV2Auth, requireSuperadmin, async (req, re
   } catch (e) {
     console.error('[admin/billing/config patch]', e);
     res.status(500).json({ error: 'Failed to save billing settings' });
+  }
+});
+
+router.get('/email/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const settings = await getEmailSettings();
+    res.json({
+      emailEnabled: settings.emailEnabled,
+      settings: toEmailAdminView(settings),
+      envChecklist: [
+        { key: 'RESEND_API_KEY (env fallback)', ok: Boolean(process.env.RESEND_API_KEY) },
+        { key: 'MAIL_FROM (env fallback)', ok: Boolean(process.env.MAIL_FROM) },
+        { key: 'PUBLIC_FRONTEND_BASE_URL', ok: Boolean(process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL) },
+      ],
+    });
+  } catch (e) {
+    console.error('[admin/email/config]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/email/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveEmailSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_email_config', {
+      emailEnabled: result.settings.emailEnabled,
+      source: result.settings.source,
+      mailFrom: result.settings.mailFrom,
+      reason: result.reason,
+    });
+
+    res.json({
+      ok: true,
+      settings: toEmailAdminView(result.settings),
+      emailEnabled: result.settings.emailEnabled,
+    });
+  } catch (e) {
+    console.error('[admin/email/config patch]', e);
+    res.status(500).json({ error: 'Failed to save email settings' });
   }
 });
 
@@ -1103,12 +1153,13 @@ router.post('/email/broadcast', requireV2Auth, requireSuperadmin, async (req, re
     );
     const emails = owners.map((o) => o.email).filter(Boolean);
     let sentCount = 0;
-    for (const email of emails) {
+    const email = renderAdminMessage({ subject: subject.trim(), body: body.trim() });
+    for (const emailAddress of emails) {
       const r = await sendEmail({
-        to: email,
-        subject: subject.trim().slice(0, 200),
-        text: body.trim(),
-        html: `<p>${body.trim().replace(/\n/g, '<br/>')}</p>`,
+        to: emailAddress,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
       });
       if (r.sent) sentCount += 1;
     }

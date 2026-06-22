@@ -232,6 +232,12 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_guest_invites_meeting ON v2_meeting_guest_invites(meeting_id)`);
 
+  const guestInviteCols = await all(`PRAGMA table_info(v2_meeting_guest_invites)`);
+  const guestInviteColNames = new Set((guestInviteCols || []).map((c) => c.name));
+  if (!guestInviteColNames.has('reminders_sent_json')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN reminders_sent_json TEXT`);
+  }
+
   const polCols = await all(`PRAGMA table_info(v2_meeting_policies)`);
   const polColNames = new Set((polCols || []).map((c) => c.name));
   if (!polColNames.has('store_transcripts')) {
@@ -280,6 +286,9 @@ async function migrate() {
   if (!colNames.has('host_present')) {
     await run(`ALTER TABLE v2_meetings ADD COLUMN host_present INTEGER NOT NULL DEFAULT 1`);
   }
+  if (!colNames.has('guest_invite_reminder_offsets_json')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN guest_invite_reminder_offsets_json TEXT`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_webhook_events (
@@ -310,6 +319,17 @@ async function migrate() {
       stripe_secret_key TEXT,
       stripe_webhook_secret TEXT,
       auto_charge_enabled INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_email_settings (
+      id TEXT PRIMARY KEY,
+      email_enabled INTEGER NOT NULL DEFAULT 1,
+      resend_api_key TEXT,
+      mail_from TEXT,
       updated_at TEXT NOT NULL,
       updated_by TEXT
     )
@@ -548,6 +568,18 @@ async function migrate() {
       FOREIGN KEY (user_id) REFERENCES v2_users(id)
     )
   `);
+
+  const commPrefCols = await all(`PRAGMA table_info(v2_user_communication_prefs)`);
+  const commPrefColNames = new Set((commPrefCols || []).map((c) => c.name));
+  if (!commPrefColNames.has('timezone')) {
+    await run(`ALTER TABLE v2_user_communication_prefs ADD COLUMN timezone TEXT`);
+  }
+  if (!commPrefColNames.has('guest_invite_reminder_offsets_json')) {
+    await run(`ALTER TABLE v2_user_communication_prefs ADD COLUMN guest_invite_reminder_offsets_json TEXT`);
+  }
+  if (!commPrefColNames.has('guest_invite_cc_host')) {
+    await run(`ALTER TABLE v2_user_communication_prefs ADD COLUMN guest_invite_cc_host INTEGER NOT NULL DEFAULT 1`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_consent_events (

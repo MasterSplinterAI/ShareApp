@@ -15,6 +15,12 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import {
+  detectBrowserTimezone,
+  offsetsFromToggles,
+  togglesFromOffsets,
+  timezoneOptions,
+} from '../lib/guestInvitePrefsUi';
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -61,6 +67,10 @@ export default function V2OrgSettings() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
   const [marketingEmailPref, setMarketingEmailPref] = useState(false);
+  const [timezonePref, setTimezonePref] = useState('');
+  const [guestInviteCcHost, setGuestInviteCcHost] = useState(true);
+  const [reminderDayBefore, setReminderDayBefore] = useState(true);
+  const [reminder15Min, setReminder15Min] = useState(true);
   const [savingCommPrefs, setSavingCommPrefs] = useState(false);
   const [enablingTeam, setEnablingTeam] = useState(false);
   const [brandingAccent, setBrandingAccent] = useState(DEFAULT_BRAND_ACCENT);
@@ -152,6 +162,12 @@ export default function V2OrgSettings() {
         }
         if (commPrefs?.prefs) {
           setMarketingEmailPref(Boolean(commPrefs.prefs.marketingEmail));
+          const browserTz = detectBrowserTimezone();
+          setTimezonePref(commPrefs.prefs.timezone || browserTz);
+          setGuestInviteCcHost(commPrefs.prefs.guestInviteCcHost !== false);
+          const toggles = togglesFromOffsets(commPrefs.prefs.guestInviteReminderOffsets || []);
+          setReminderDayBefore(toggles.dayBefore);
+          setReminder15Min(toggles.fifteenMin);
         }
       })
       .catch((e) => toast.error(e.response?.data?.error || 'Failed to load'))
@@ -258,10 +274,25 @@ export default function V2OrgSettings() {
 
   const saveCommPrefs = async (e) => {
     e.preventDefault();
+    const reminderOffsets = offsetsFromToggles({ dayBefore: reminderDayBefore, fifteenMin: reminder15Min });
+    if (!reminderOffsets.length) {
+      toast.error('Select at least one guest invite reminder');
+      return;
+    }
     setSavingCommPrefs(true);
     try {
-      const { prefs } = await v2Auth.updateCommunicationPrefs({ marketingEmail: marketingEmailPref });
+      const { prefs } = await v2Auth.updateCommunicationPrefs({
+        marketingEmail: marketingEmailPref,
+        timezone: timezonePref || detectBrowserTimezone(),
+        guestInviteCcHost,
+        guestInviteReminderOffsets: reminderOffsets,
+      });
       setMarketingEmailPref(Boolean(prefs?.marketingEmail));
+      setTimezonePref(prefs?.timezone || detectBrowserTimezone());
+      setGuestInviteCcHost(prefs?.guestInviteCcHost !== false);
+      const toggles = togglesFromOffsets(prefs?.guestInviteReminderOffsets || []);
+      setReminderDayBefore(toggles.dayBefore);
+      setReminder15Min(toggles.fifteenMin);
       toast.success('Communication preferences saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not save preferences');
@@ -269,6 +300,8 @@ export default function V2OrgSettings() {
       setSavingCommPrefs(false);
     }
   };
+
+  const timezoneSelectOptions = useMemo(() => timezoneOptions(timezonePref), [timezonePref]);
 
   const enableTeamWorkspace = async (e) => {
     e.preventDefault();
@@ -572,7 +605,66 @@ export default function V2OrgSettings() {
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={saveCommPrefs} className="max-w-md space-y-4">
-                    <div className="flex items-start gap-2">
+                    <div className="space-y-2">
+                      <Label htmlFor="pref-timezone">Your timezone</Label>
+                      <Select value={timezonePref} onValueChange={setTimezonePref}>
+                        <SelectTrigger id="pref-timezone" className="h-9">
+                          <SelectValue placeholder="Select timezone" />
+                        </SelectTrigger>
+                        <SelectContent className="max-h-72">
+                          {timezoneSelectOptions.map((tz) => (
+                            <SelectItem key={tz} value={tz}>
+                              {tz}
+                              {tz === detectBrowserTimezone() ? ' (browser)' : ''}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        Guest invite and reminder emails show meeting times in this timezone with an explicit label.
+                      </p>
+                    </div>
+                    <div className="space-y-2 border-t border-border/60 pt-3">
+                      <p className="text-sm font-medium">Guest invite emails</p>
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="pref-guest-cc"
+                          type="checkbox"
+                          checked={guestInviteCcHost}
+                          onChange={(e) => setGuestInviteCcHost(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+                        />
+                        <Label htmlFor="pref-guest-cc" className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground">
+                          CC me when I send guest invites
+                        </Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Default reminder schedule for new meetings:</p>
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="pref-reminder-day"
+                          type="checkbox"
+                          checked={reminderDayBefore}
+                          onChange={(e) => setReminderDayBefore(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+                        />
+                        <Label htmlFor="pref-reminder-day" className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground">
+                          1 day before
+                        </Label>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="pref-reminder-15m"
+                          type="checkbox"
+                          checked={reminder15Min}
+                          onChange={(e) => setReminder15Min(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+                        />
+                        <Label htmlFor="pref-reminder-15m" className="cursor-pointer text-sm font-normal leading-snug text-muted-foreground">
+                          15 minutes before
+                        </Label>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2 border-t border-border/60 pt-3">
                       <input
                         id="pref-marketing-email"
                         type="checkbox"

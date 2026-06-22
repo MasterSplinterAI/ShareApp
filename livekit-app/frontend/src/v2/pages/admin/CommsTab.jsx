@@ -7,6 +7,185 @@ import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { fmtDateTime } from './formatters';
 
+function StatusBadge({ ok, label }) {
+  return (
+    <Badge variant={ok ? 'default' : 'secondary'} className={ok ? 'bg-emerald-600 hover:bg-emerald-600' : ''}>
+      {label}
+    </Badge>
+  );
+}
+
+function EmailSettingsSection() {
+  const [config, setConfig] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [emailEnabled, setEmailEnabled] = useState(true);
+  const [mailFrom, setMailFrom] = useState('');
+  const [resendApiKey, setResendApiKey] = useState('');
+  const [auditReason, setAuditReason] = useState('');
+
+  const reload = () => {
+    setLoading(true);
+    return v2Admin
+      .emailConfig()
+      .then((data) => {
+        setConfig(data);
+        setEmailEnabled(Boolean(data.settings?.emailEnabledPreference ?? data.emailEnabled));
+        setMailFrom(data.settings?.mailFrom || '');
+        setResendApiKey('');
+      })
+      .catch(() => toast.error('Failed to load email config'))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    reload();
+  }, []);
+
+  const saveSettings = async () => {
+    if (auditReason.trim().length < 4) {
+      toast.error('Audit reason required (4+ characters).');
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        reason: auditReason.trim(),
+        emailEnabled,
+      };
+      if (resendApiKey.trim()) body.resendApiKey = resendApiKey.trim();
+      if (mailFrom.trim()) body.mailFrom = mailFrom.trim();
+      await v2Admin.patchEmailConfig(body);
+      toast.success(emailEnabled ? 'Email delivery enabled' : 'Email settings saved');
+      setAuditReason('');
+      await reload();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to save email settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading && !config) {
+    return (
+      <Card className="app-card border-border/60">
+        <CardContent className="py-8">
+          <p className="text-sm text-muted-foreground">Loading email configuration…</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const settings = config?.settings || {};
+
+  return (
+    <Card className="app-card border-border/60">
+      <CardHeader>
+        <CardTitle className="text-lg">Email delivery (Resend)</CardTitle>
+        <CardDescription>
+          Configure transactional email for password resets, meeting invites, reminders, transcript reports, and
+          support replies. Secrets can be stored here (superadmin only) or in server <code>.env</code> as fallback.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusBadge ok={config?.emailEnabled} label={config?.emailEnabled ? 'Email enabled' : 'Email disabled'} />
+          {settings.source && <Badge variant="secondary">Config source: {settings.source}</Badge>}
+          {settings.usingEnvKey && <Badge variant="outline">Using env API key</Badge>}
+        </div>
+
+        <form
+          className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            saveSettings();
+          }}
+        >
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={emailEnabled}
+              onChange={(e) => setEmailEnabled(e.target.checked)}
+              className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+            />
+            <span>
+              <span className="font-medium">Enable email delivery</span>
+              <span className="mt-1 block text-muted-foreground">
+                Requires a valid Resend API key. When disabled, emails are logged but not sent.
+              </span>
+            </span>
+          </label>
+
+          <div className="space-y-1">
+            <label htmlFor="resend-api-key" className="text-xs font-medium text-muted-foreground">
+              Resend API key
+            </label>
+            <Input
+              id="resend-api-key"
+              type="password"
+              autoComplete="off"
+              value={resendApiKey}
+              onChange={(e) => setResendApiKey(e.target.value)}
+              placeholder={settings.hasResendApiKey ? `Configured (${settings.resendApiKeyMasked})` : 're_...'}
+            />
+            <p className="text-xs text-muted-foreground">Leave blank to keep the current key. Get one at resend.com.</p>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="mail-from" className="text-xs font-medium text-muted-foreground">
+              From address
+            </label>
+            <Input
+              id="mail-from"
+              value={mailFrom}
+              onChange={(e) => setMailFrom(e.target.value)}
+              placeholder="Parley <no-reply@yourdomain.com>"
+            />
+            <p className="text-xs text-muted-foreground">Must use a domain verified in your Resend account.</p>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="email-audit-reason" className="text-xs font-medium text-muted-foreground">
+              Audit reason
+            </label>
+            <Input
+              id="email-audit-reason"
+              value={auditReason}
+              onChange={(e) => setAuditReason(e.target.value)}
+              placeholder="Rotating Resend key for launch"
+            />
+          </div>
+
+          <Button type="submit" disabled={saving}>
+            {saving ? 'Saving…' : 'Save email settings'}
+          </Button>
+        </form>
+
+        {config?.envChecklist?.length > 0 && (
+          <div className="rounded-lg border border-border/60 p-4">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Environment checklist</p>
+            <ul className="space-y-1 text-sm">
+              {config.envChecklist.map((item) => (
+                <li key={item.key} className="flex items-center justify-between gap-3">
+                  <span>{item.key}</span>
+                  <Badge variant={item.ok ? 'success' : 'muted'}>{item.ok ? 'set' : 'missing'}</Badge>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {settings.updatedAt && (
+          <p className="text-xs text-muted-foreground">
+            Last updated {fmtDateTime(settings.updatedAt)}
+            {settings.updatedBy ? ` by ${settings.updatedBy}` : ''}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 const ANNOUNCEMENT_LEVELS = ['info', 'warning', 'critical'];
 
 function levelVariant(level) {
@@ -511,6 +690,7 @@ function MarketingConsentSection() {
 export function CommsTab({ selectedOrgId }) {
   return (
     <div className="space-y-4">
+      <EmailSettingsSection />
       <MarketingConsentSection />
       <AnnouncementsSection />
       <div className="grid gap-4 lg:grid-cols-2">

@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
 const { publicFrontendBaseUrl } = require('./publicFrontendBaseUrl');
+const { renderPasswordReset } = require('./emailTemplates');
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
 
@@ -27,11 +28,12 @@ async function sendPasswordResetEmail(req, userId, { initiatedBy } = {}) {
     [db.uuid(), user.id, sha256Hex(token), expiresAt]
   );
   const resetUrl = `${resetLinkBase(req)}/v2/reset-password?token=${token}`;
+  const email = renderPasswordReset({ resetUrl, initiatedBy });
   const result = await sendEmail({
     to: user.email,
-    subject: 'Reset your Parley password',
-    text: `We received a request to reset your Parley password${initiatedBy ? ` (requested by ${initiatedBy})` : ''}.\n\nReset it here (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`,
-    html: `<p>We received a request to reset your Parley password${initiatedBy ? ` (requested by ${initiatedBy})` : ''}.</p><p><a href="${resetUrl}">Reset your password</a> (link expires in 1 hour).</p><p>If you didn't request this, you can safely ignore this email.</p>`,
+    subject: email.subject,
+    text: email.text,
+    html: email.html,
   });
   return { ok: true, sent: result.sent, email: user.email };
 }

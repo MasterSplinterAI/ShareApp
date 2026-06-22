@@ -17,6 +17,7 @@
 import { useEffect, useState } from 'react';
 
 const STORAGE_KEY = 'parley_video_effect';
+const MOBILE_MAX_WIDTH = 640;
 
 export const VIDEO_EFFECTS = [
   { id: 'none', label: 'None', kind: 'none' },
@@ -135,6 +136,30 @@ export function useVideoEffectsSupport() {
   return supported;
 }
 
+export function isMobileViewport() {
+  if (typeof window === 'undefined') return false;
+  return window.innerWidth < MOBILE_MAX_WIDTH;
+}
+
+/** Matches meeting layout mobile breakpoint (VideoGrid, control bar compact mode). */
+export function useIsMobileViewport() {
+  const [isMobile, setIsMobile] = useState(() => isMobileViewport());
+  useEffect(() => {
+    const check = () => setIsMobile(isMobileViewport());
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+  return isMobile;
+}
+
+/** Browser support plus non-mobile viewport — use to gate effects UI and application. */
+export function useVideoEffectsAvailable() {
+  const supported = useVideoEffectsSupport();
+  const isMobile = useIsMobileViewport();
+  return supported && !isMobile;
+}
+
 export function loadSavedEffectId() {
   try {
     const id = localStorage.getItem(STORAGE_KEY);
@@ -194,6 +219,9 @@ function pickModelPath(track) {
  */
 export async function applyVideoEffect(track, effectId) {
   if (!track || track.isDisposed) return;
+  if (isMobileViewport()) {
+    effectId = 'none';
+  }
   const effect = getEffectById(effectId);
 
   const run = async () => {
