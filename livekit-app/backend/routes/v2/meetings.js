@@ -107,6 +107,34 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
       scheduledEnd: row.scheduled_end,
       joinUrl,
       inviterName: hostName || inviter?.display_name || inviter?.email,
+      meetingId,
+      timeZone: invitePrefs.timezone,
+      cc,
+      hostName,
+      icsSequence,
+    });
+    const sentAt = sendResult?.sent ? new Date().toISOString() : null;
+
+    if (existing) {
+      await db.run(
+        `UPDATE v2_meeting_guest_invites SET invite_link_id = ?, invited_by = ?, sent_at = ? WHERE id = ?`,
+        [link.id, userId, sentAt, existing.id]
+      );
+    } else {
+      await db.run(
+        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
+         VALUES (?,?,?,?,?,?)`,
+        [db.uuid(), meetingId, link.id, email, userId, sentAt]
+      );
+    }
+
+    results.push({ email, sent: Boolean(sendResult?.sent), error: sendResult?.error || undefined });
+  }
+
+  return { results, joinUrl };
+}
+
+async function buildGuestInviteSendResponse(results, joinUrl) {
   const { isMailerConfigured } = require('../../lib/v2EmailSettings');
   const attempted = results.filter((r) => !r.skipped);
   const anySent = attempted.some((r) => r.sent);
