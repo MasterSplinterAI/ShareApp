@@ -1,6 +1,7 @@
 const db = require('../../db/v2Database');
 const { verifySvixWebhook } = require('../../lib/resendWebhookVerify');
 const { processInboundRsvpEmail, recordInboundEvent } = require('../../lib/guestInviteRsvp');
+const { getEmailSettings } = require('../../lib/v2EmailSettings');
 
 async function handleResendInboundWebhook(req, res) {
   const rawBody = req.body;
@@ -9,7 +10,16 @@ async function handleResendInboundWebhook(req, res) {
   }
 
   const bodyText = rawBody.toString('utf8');
-  const secret = process.env.RESEND_WEBHOOK_SECRET || '';
+  // Signing secret is stored (encrypted at rest) via Admin → Communications,
+  // falling back to RESEND_WEBHOOK_SECRET env if set.
+  let secret = '';
+  try {
+    const settings = await getEmailSettings();
+    secret = settings.resendWebhookSecret || '';
+  } catch (e) {
+    console.error('[resend/inbound] failed to load webhook secret from settings:', e);
+    secret = process.env.RESEND_WEBHOOK_SECRET || '';
+  }
 
   if (secret) {
     const check = verifySvixWebhook(bodyText, req.headers, secret);
@@ -18,7 +28,7 @@ async function handleResendInboundWebhook(req, res) {
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
   } else {
-    console.warn('[resend/inbound] RESEND_WEBHOOK_SECRET not set — accepting webhook without verification');
+    console.warn('[resend/inbound] no webhook signing secret configured (Admin → Communications or RESEND_WEBHOOK_SECRET) — accepting webhook without verification');
   }
 
   let event;

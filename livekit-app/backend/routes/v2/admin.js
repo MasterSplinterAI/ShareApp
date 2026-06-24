@@ -983,6 +983,8 @@ router.get('/email/config', requireV2Auth, requireSuperadmin, async (req, res) =
       envChecklist: [
         { key: 'RESEND_API_KEY (env fallback)', ok: Boolean(process.env.RESEND_API_KEY) },
         { key: 'MAIL_FROM (env fallback)', ok: Boolean(process.env.MAIL_FROM) },
+        { key: 'RESEND_WEBHOOK_SECRET (env fallback)', ok: Boolean(process.env.RESEND_WEBHOOK_SECRET) },
+        { key: 'PARLEY_ICS_ORGANIZER_DOMAIN (env fallback)', ok: Boolean(process.env.PARLEY_ICS_ORGANIZER_DOMAIN) },
         { key: 'PUBLIC_FRONTEND_BASE_URL', ok: Boolean(process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL) },
       ],
     });

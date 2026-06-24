@@ -339,10 +339,21 @@ async function migrate() {
       email_enabled INTEGER NOT NULL DEFAULT 1,
       resend_api_key TEXT,
       mail_from TEXT,
+      resend_webhook_secret TEXT,
+      ics_organizer_domain TEXT,
       updated_at TEXT NOT NULL,
       updated_by TEXT
     )
   `);
+
+  const emailSettingsCols = await all(`PRAGMA table_info(v2_platform_email_settings)`);
+  const emailSettingsColNames = new Set((emailSettingsCols || []).map((c) => c.name));
+  if (!emailSettingsColNames.has('resend_webhook_secret')) {
+    await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN resend_webhook_secret TEXT`);
+  }
+  if (!emailSettingsColNames.has('ics_organizer_domain')) {
+    await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN ics_organizer_domain TEXT`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_resend_inbound_events (

@@ -22,6 +22,8 @@ function EmailSettingsSection() {
   const [emailEnabled, setEmailEnabled] = useState(true);
   const [mailFrom, setMailFrom] = useState('');
   const [resendApiKey, setResendApiKey] = useState('');
+  const [resendWebhookSecret, setResendWebhookSecret] = useState('');
+  const [icsOrganizerDomain, setIcsOrganizerDomain] = useState('');
   const [auditReason, setAuditReason] = useState('');
 
   const reload = () => {
@@ -32,7 +34,9 @@ function EmailSettingsSection() {
         setConfig(data);
         setEmailEnabled(Boolean(data.settings?.emailEnabledPreference ?? data.emailEnabled));
         setMailFrom(data.settings?.mailFrom || '');
+        setIcsOrganizerDomain(data.settings?.icsOrganizerDomain || '');
         setResendApiKey('');
+        setResendWebhookSecret('');
       })
       .catch(() => toast.error('Failed to load email config'))
       .finally(() => setLoading(false));
@@ -55,6 +59,12 @@ function EmailSettingsSection() {
       };
       if (resendApiKey.trim()) body.resendApiKey = resendApiKey.trim();
       if (mailFrom.trim()) body.mailFrom = mailFrom.trim();
+      if (resendWebhookSecret.trim()) body.resendWebhookSecret = resendWebhookSecret.trim();
+      if (icsOrganizerDomain.trim()) {
+        body.icsOrganizerDomain = icsOrganizerDomain.trim();
+      } else if (config?.settings?.icsOrganizerDomain) {
+        body.clearIcsOrganizerDomain = true;
+      }
       await v2Admin.patchEmailConfig(body);
       toast.success(emailEnabled ? 'Email delivery enabled' : 'Email settings saved');
       setAuditReason('');
@@ -92,6 +102,12 @@ function EmailSettingsSection() {
           <StatusBadge ok={config?.emailEnabled} label={config?.emailEnabled ? 'Email enabled' : 'Email disabled'} />
           {settings.source && <Badge variant="secondary">Config source: {settings.source}</Badge>}
           {settings.usingEnvKey && <Badge variant="outline">Using env API key</Badge>}
+          <StatusBadge
+            ok={settings.hasResendWebhookSecret}
+            label={settings.hasResendWebhookSecret ? 'Inbound RSVP verified' : 'Inbound RSVP unverified'}
+          />
+          {settings.usingEnvWebhookSecret && <Badge variant="outline">Using env webhook secret</Badge>}
+          {settings.usingEnvIcsDomain && <Badge variant="outline">Using env organizer domain</Badge>}
           {settings.usingPlaceholderFrom && (
             <Badge variant="destructive">From domain not verified in Resend</Badge>
           )}
@@ -155,6 +171,45 @@ function EmailSettingsSection() {
             <p className="text-xs text-muted-foreground">
               Must use a domain verified in your Resend account. For testing without your own domain, use{' '}
               <code className="text-foreground">Parley &lt;onboarding@resend.dev&gt;</code>.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="resend-webhook-secret" className="text-xs font-medium text-muted-foreground">
+              Resend webhook signing secret
+            </label>
+            <Input
+              id="resend-webhook-secret"
+              type="password"
+              autoComplete="off"
+              value={resendWebhookSecret}
+              onChange={(e) => setResendWebhookSecret(e.target.value)}
+              placeholder={
+                settings.hasResendWebhookSecret
+                  ? `Configured (${settings.resendWebhookSecretMasked})`
+                  : 'whsec_...'
+              }
+            />
+            <p className="text-xs text-muted-foreground">
+              Verifies inbound RSVP webhooks from Resend (Webhooks → your endpoint → Signing secret). Leave blank to keep
+              the current secret. Stored encrypted at rest.
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="ics-organizer-domain" className="text-xs font-medium text-muted-foreground">
+              Calendar organizer domain (optional)
+            </label>
+            <Input
+              id="ics-organizer-domain"
+              value={icsOrganizerDomain}
+              onChange={(e) => setIcsOrganizerDomain(e.target.value)}
+              placeholder={settings.effectiveIcsOrganizerDomain || 'meetings.yourdomain.com'}
+            />
+            <p className="text-xs text-muted-foreground">
+              Domain used for calendar invite organizer/RSVP addresses (<code>meetings+&lt;id&gt;@domain</code>). Defaults
+              to the domain of your From address
+              {settings.effectiveIcsOrganizerDomain ? ` (currently ${settings.effectiveIcsOrganizerDomain})` : ''}.
             </p>
           </div>
 

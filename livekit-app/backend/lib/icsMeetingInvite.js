@@ -17,9 +17,12 @@ function extractDomainFromAddress(emailOrFrom) {
 }
 
 async function resolveIcsDomain() {
-  const envDomain = process.env.PARLEY_ICS_ORGANIZER_DOMAIN?.trim();
-  if (envDomain) return envDomain.toLowerCase();
+  // Prefer the organizer domain stored (encrypted at rest) via Admin →
+  // Communications. settings.icsOrganizerDomain already merges the admin value
+  // with the PARLEY_ICS_ORGANIZER_DOMAIN env fallback. If neither is set, derive
+  // the domain from the configured From address.
   const settings = await getEmailSettings();
+  if (settings.icsOrganizerDomain) return settings.icsOrganizerDomain.toLowerCase();
   return extractDomainFromAddress(settings.mailFrom) || 'staging.jarmetals.com';
 }
 
