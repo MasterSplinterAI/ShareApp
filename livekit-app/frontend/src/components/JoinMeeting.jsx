@@ -72,10 +72,11 @@ function JoinMeeting() {
       goToPrejoin(info, v2Ctx, joinMeta);
     } catch (e) {
       if (e.response?.status === 404) {
-        setError('Meeting room is not available yet. Ask the host to start the meeting from the dashboard.');
-      } else {
-        setError('Failed to connect to the meeting.');
+        // join-info should have provisioned the room; proceed with defaults if still racing.
+        goToPrejoin({ roomMode: 'multi-language', numParticipants: null }, v2Ctx, joinMeta);
+        return;
       }
+      setError('Failed to connect to the meeting.');
     }
   };
 

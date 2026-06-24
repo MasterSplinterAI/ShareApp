@@ -124,6 +124,9 @@ router.get('/join-info', async (req, res) => {
         branding: meetingBranding(req, meeting),
       });
     }
+    // Guest is allowed — ensure LiveKit room exists before the client calls GET /rooms/:name.
+    // Without this, host-not-required meetings fail with 404 even though join-info said allowed.
+    await ensureRoomAndAgent(meeting.livekit_room_name, 'multi-language', meeting.org_id);
     return res.json({
       mode: 'v2',
       allowed: true,
