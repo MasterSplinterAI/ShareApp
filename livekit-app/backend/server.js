@@ -63,10 +63,12 @@ app.use(cors({
 }));
 const { handleV2BillingWebhook } = require('./routes/v2/billingWebhook');
 const { handleLiveKitWebhook } = require('./routes/webhooks');
+const { handleResendInboundWebhook } = require('./routes/v2/resendInboundWebhook');
 
 // Raw-body routes must come before express.json()
 app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
 app.post('/api/webhooks/livekit', express.raw({ type: '*/*' }), handleLiveKitWebhook);
+app.post('/api/v2/webhooks/resend/inbound', express.raw({ type: 'application/json' }), handleResendInboundWebhook);
 app.use(express.json());
 
 // Routes

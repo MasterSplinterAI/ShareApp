@@ -4,7 +4,7 @@ const { meetingIcsAttachment } = require('./calendar');
 const { friendlyWhen, timezoneNoteHtml } = require('./formatMeetingTime');
 const { reminderOffsetLabel } = require('../guestInviteReminderPrefs');
 
-function renderGuestInvite({
+async function renderGuestInvite({
   meetingTitle,
   scheduledStart,
   scheduledEnd,
@@ -12,6 +12,9 @@ function renderGuestInvite({
   inviterName,
   meetingId,
   timeZone,
+  hostName,
+  guestEmail,
+  icsSequence,
 }) {
   const title = meetingTitle || 'Meeting';
   const when = friendlyWhen(scheduledStart, timeZone);
@@ -44,7 +47,7 @@ function renderGuestInvite({
     ctaLabel: 'Join meeting',
     secondaryHtml: [
       scheduledStart
-        ? '<p style="margin:0;">A calendar invite is attached so you can add this meeting to your schedule.</p>'
+        ? '<p style="margin:0;">A calendar invite is attached — your Yes/No/Maybe response updates the host in Parley.</p>'
         : '',
       when ? timezoneNoteHtml(timeZone) : '',
     ]
@@ -53,13 +56,17 @@ function renderGuestInvite({
   });
 
   const attachments = [];
-  if (scheduledStart) {
-    const ics = meetingIcsAttachment({
+  if (scheduledStart && guestEmail) {
+    const ics = await meetingIcsAttachment({
       meetingId,
       title,
       startIso: scheduledStart,
       endIso: scheduledEnd,
       joinUrl,
+      hostName: hostName || inviter,
+      guestEmail,
+      sequence: icsSequence,
+      description: `${inviter} invited you to a Parley meeting. Live captions and real-time translation. Join: ${joinUrl}`,
     });
     if (ics) attachments.push(ics);
   }
@@ -67,7 +74,7 @@ function renderGuestInvite({
   return { subject, text, html, attachments };
 }
 
-function renderGuestReminder({
+async function renderGuestReminder({
   meetingTitle,
   scheduledStart,
   scheduledEnd,
@@ -75,6 +82,9 @@ function renderGuestReminder({
   meetingId,
   timeZone,
   offsetMinutes,
+  hostName,
+  guestEmail,
+  icsSequence,
 }) {
   const title = meetingTitle || 'Meeting';
   const when = friendlyWhen(scheduledStart, timeZone);
@@ -108,13 +118,16 @@ function renderGuestReminder({
   });
 
   const attachments = [];
-  if (scheduledStart) {
-    const ics = meetingIcsAttachment({
+  if (scheduledStart && guestEmail) {
+    const ics = await meetingIcsAttachment({
       meetingId,
       title,
       startIso: scheduledStart,
       endIso: scheduledEnd,
       joinUrl,
+      hostName,
+      guestEmail,
+      sequence: icsSequence,
     });
     if (ics) attachments.push(ics);
   }

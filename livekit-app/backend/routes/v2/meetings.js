@@ -78,9 +78,12 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
   const { getGuestInvitePrefs } = require('../../lib/guestInviteReminderPrefs');
   const base = publicFrontendBaseUrl(req);
   const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
+  const host = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [row.host_user_id]);
   const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [userId]);
   const invitePrefs = await getGuestInvitePrefs(userId);
   const cc = invitePrefs.ccHost && inviter?.email ? inviter.email : undefined;
+  const hostName = host?.display_name || host?.email;
+  const icsSequence = row.ics_sequence || 0;
 
   const results = [];
   for (const email of emails) {
@@ -103,33 +106,7 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
       scheduledStart: row.scheduled_start,
       scheduledEnd: row.scheduled_end,
       joinUrl,
-      inviterName: inviter?.display_name || inviter?.email,
-      meetingId,
-      timeZone: invitePrefs.timezone,
-      cc,
-    });
-    const sentAt = sendResult?.sent ? new Date().toISOString() : null;
-
-    if (existing) {
-      await db.run(
-        `UPDATE v2_meeting_guest_invites SET invite_link_id = ?, invited_by = ?, sent_at = ? WHERE id = ?`,
-        [link.id, userId, sentAt, existing.id]
-      );
-    } else {
-      await db.run(
-        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
-         VALUES (?,?,?,?,?,?)`,
-        [db.uuid(), meetingId, link.id, email, userId, sentAt]
-      );
-    }
-
-    results.push({ email, sent: Boolean(sendResult?.sent), error: sendResult?.error || undefined });
-  }
-
-  return { results, joinUrl };
-}
-
-async function buildGuestInviteSendResponse(results, joinUrl) {
+      inviterName: hostName || inviter?.display_name || inviter?.email,
   const { isMailerConfigured } = require('../../lib/v2EmailSettings');
   const attempted = results.filter((r) => !r.skipped);
   const anySent = attempted.some((r) => r.sent);
@@ -474,7 +451,7 @@ router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const guests = await db.all(
-      `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, created_at
+      `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, rsvp_status, rsvp_updated_at, created_at
        FROM v2_meeting_guest_invites WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`,
       [req.params.id]
     );

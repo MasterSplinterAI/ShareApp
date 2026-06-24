@@ -22,6 +22,21 @@ export function reminderOffsetLabel(offsetMin) {
   return offsetMin === 1 ? '1 minute before' : `${offsetMin} minutes before`;
 }
 
+export function rsvpStatusLabel(status) {
+  switch (status) {
+    case 'accepted':
+      return 'Accepted';
+    case 'declined':
+      return 'Declined';
+    case 'tentative':
+      return 'Maybe';
+    case 'needs_action':
+      return 'Awaiting';
+    default:
+      return null;
+  }
+}
+
 export function offsetsFromToggles({ dayBefore, fifteenMin }) {
   const offsets = [];
   if (dayBefore) offsets.push(REMINDER_DAY_BEFORE);

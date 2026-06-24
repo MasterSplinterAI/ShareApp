@@ -237,6 +237,12 @@ async function migrate() {
   if (!guestInviteColNames.has('reminders_sent_json')) {
     await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN reminders_sent_json TEXT`);
   }
+  if (!guestInviteColNames.has('rsvp_status')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN rsvp_status TEXT`);
+  }
+  if (!guestInviteColNames.has('rsvp_updated_at')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN rsvp_updated_at TEXT`);
+  }
 
   const polCols = await all(`PRAGMA table_info(v2_meeting_policies)`);
   const polColNames = new Set((polCols || []).map((c) => c.name));
@@ -289,6 +295,9 @@ async function migrate() {
   if (!colNames.has('guest_invite_reminder_offsets_json')) {
     await run(`ALTER TABLE v2_meetings ADD COLUMN guest_invite_reminder_offsets_json TEXT`);
   }
+  if (!colNames.has('ics_sequence')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN ics_sequence INTEGER NOT NULL DEFAULT 0`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_webhook_events (
@@ -332,6 +341,14 @@ async function migrate() {
       mail_from TEXT,
       updated_at TEXT NOT NULL,
       updated_by TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_resend_inbound_events (
+      id TEXT PRIMARY KEY,
+      payload_json TEXT,
+      processed_at TEXT NOT NULL
     )
   `);
 

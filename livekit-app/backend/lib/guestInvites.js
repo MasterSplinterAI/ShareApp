@@ -27,8 +27,10 @@ async function sendGuestInvite({
   meetingId,
   timeZone,
   cc,
+  hostName,
+  icsSequence,
 }) {
-  const rendered = renderGuestInvite({
+  const rendered = await renderGuestInvite({
     meetingTitle,
     scheduledStart,
     scheduledEnd,
@@ -36,6 +38,9 @@ async function sendGuestInvite({
     inviterName,
     meetingId,
     timeZone,
+    hostName,
+    guestEmail: email,
+    icsSequence,
   });
   const ccList = cc ? (Array.isArray(cc) ? cc : [cc]).filter((c) => c && c.toLowerCase() !== email.toLowerCase()) : [];
   return sendEmail({
@@ -57,8 +62,10 @@ async function sendGuestReminder({
   meetingId,
   timeZone,
   offsetMinutes,
+  hostName,
+  icsSequence,
 }) {
-  const rendered = renderGuestReminder({
+  const rendered = await renderGuestReminder({
     meetingTitle,
     scheduledStart,
     scheduledEnd,
@@ -66,6 +73,9 @@ async function sendGuestReminder({
     meetingId,
     timeZone,
     offsetMinutes,
+    hostName,
+    guestEmail: email,
+    icsSequence,
   });
   return sendEmail({
     to: email,
@@ -80,10 +90,12 @@ async function runReminderPass(buildJoinUrl) {
   const candidates = await db.all(
     `SELECT gi.id, gi.email, gi.meeting_id, gi.reminders_sent_json, gi.reminder_sent_at,
             m.title, m.scheduled_start, m.scheduled_end, m.livekit_room_name, m.host_user_id,
-            m.guest_invite_reminder_offsets_json, il.token
+            m.guest_invite_reminder_offsets_json, m.ics_sequence, il.token,
+            u.display_name AS host_display_name, u.email AS host_email
      FROM v2_meeting_guest_invites gi
      JOIN v2_meetings m ON m.id = gi.meeting_id
      LEFT JOIN v2_meeting_invite_links il ON il.id = gi.invite_link_id
+     LEFT JOIN v2_users u ON u.id = m.host_user_id
      WHERE gi.sent_at IS NOT NULL
        AND m.scheduled_start IS NOT NULL
        AND m.status IN ('scheduled', 'ready')
@@ -130,6 +142,8 @@ async function runReminderPass(buildJoinUrl) {
         meetingId: row.meeting_id,
         timeZone,
         offsetMinutes: offsetMin,
+        hostName: row.host_display_name || row.host_email,
+        icsSequence: row.ics_sequence || 0,
       });
 
       if (result?.sent) {

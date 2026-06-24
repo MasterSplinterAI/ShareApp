@@ -9,6 +9,7 @@ import { Label } from '../../components/ui/label';
 import {
   offsetsFromToggles,
   reminderOffsetLabel,
+  rsvpStatusLabel,
   togglesFromOffsets,
 } from '../lib/guestInvitePrefsUi';
 
@@ -242,6 +243,19 @@ export default function MeetingEmailInvites({ meetingId }) {
                       <Check className="h-3 w-3" /> {reminderOffsetLabel(Number(offset))}
                     </span>
                   ))}
+                  {rsvpStatusLabel(g.rsvp_status) && (
+                    <span
+                      className={`inline-flex items-center gap-1 ${
+                        g.rsvp_status === 'accepted'
+                          ? 'text-emerald-600'
+                          : g.rsvp_status === 'declined'
+                            ? 'text-red-600'
+                            : 'text-muted-foreground'
+                      }`}
+                    >
+                      {rsvpStatusLabel(g.rsvp_status)}
+                    </span>
+                  )}
                 </span>
               </li>
             );
