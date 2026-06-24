@@ -1,5 +1,5 @@
 /** @deprecated Use icsMeetingInvite.js — kept for backward-compatible imports. */
-const ics = require('./icsMeetingInvite');
+const ics = require('../icsMeetingInvite');
 
 function buildMeetingIcs(params) {
   return ics.buildMeetingIcs(params);
