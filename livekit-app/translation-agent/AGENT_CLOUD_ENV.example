@@ -56,6 +56,9 @@ TRANSLATION_CACHE_SIZE=512
 
 # Optional (agent identity)
 AGENT_NAME=translation-cloud-prod
+# Experimental Deepgram code-switch A/B worker (livekit-codeswitch.toml):
+# AGENT_MODULE=transcription_codeswitch_agent
+# AGENT_NAME=translation-cloud-deepgram-codeswitch
 
 # --- Applying to LiveKit ---
 # Do NOT pass all vars as one comma-separated lk --secrets string; commas break parsing.

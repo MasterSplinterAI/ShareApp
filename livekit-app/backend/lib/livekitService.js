@@ -8,6 +8,7 @@ const { readRoomMetadata, mergeRoomMetadata } = require('./livekitRoomMetadata')
 /** LiveKit worker names for STT pipeline A/B testing (host switch on staging). */
 const STT_PIPELINE_AGENTS = {
   deepgram: 'translation-cloud-prod',
+  deepgram_codeswitch: 'translation-cloud-deepgram-codeswitch',
   gladia: 'translation-cloud-gladia',
 };
 

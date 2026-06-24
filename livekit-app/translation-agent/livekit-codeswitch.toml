@@ -1,0 +1,5 @@
+[project]
+  subdomain = "production-uiycx4ku"
+
+[agent]
+  name = "translation-cloud-deepgram-codeswitch"
