@@ -2,4 +2,5 @@
   subdomain = "production-uiycx4ku"
 
 [agent]
+  id = "CA_do6qoLXhxqA7"
   name = "translation-cloud-deepgram-codeswitch"
