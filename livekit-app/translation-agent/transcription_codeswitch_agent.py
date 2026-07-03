@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Transcription-Only Translation Agent - STT → LLM → Publish (no TTS)
+Transcription-only translation agent (STT → LLM captions) with optional TTS lanes.
 
 No spoken translation - transcriptions only. Nothing is lost on interruptions.
 One shared STT+VAD pipeline per speaking participant; each target language is a translation lane.
@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Set, T
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
+from tts_lane import TtsLane
 from codeswitch_source_language import (
     effective_source_language,
     lane_is_same_language,
@@ -234,6 +235,30 @@ def _gladia_translation_enabled() -> bool:
     )
 
 
+def _tts_enabled() -> bool:
+    return os.getenv("TTS_ENABLED", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def _tts_max_lanes() -> int:
+    raw = os.getenv("TTS_MAX_LANES", "4").strip()
+    try:
+        return max(1, min(int(raw), 16))
+    except ValueError:
+        return 4
+
+
+def _tts_stale_sec() -> float:
+    raw = os.getenv("TTS_STALE_SEC", "8.0").strip()
+    try:
+        return max(1.0, min(float(raw), 20.0))
+    except ValueError:
+        return 8.0
+
+
 def _gladia_cross_lang_targets(speaker_lang: str, targets: Set[str]) -> List[str]:
     """Distinct listener languages that differ from the speaker (Gladia translation targets)."""
     sl = (speaker_lang or "en").split("-")[0].lower()
@@ -393,8 +418,10 @@ class TranscriptionOnlyAgent:
         # One language per user: STT when they speak + translation target for what they read.
         self.participant_languages: Dict[str, str] = {}
         self.translation_enabled: Dict[str, bool] = {}
+        self.voice_enabled: Dict[str, bool] = {}
         # One asyncio task per speaker: shared STT/VAD, fan-out to per-target translation lanes.
         self.speaker_pipelines: Dict[str, asyncio.Task] = {}
+        self.tts_lanes: Dict[str, TtsLane] = {}
         self._speaker_ctx: Dict[str, SpeakerRunContext] = {}
         self.host_vad_sensitivity = "normal"
         self._update_debounce_task: asyncio.Task | None = None
@@ -494,6 +521,82 @@ class TranscriptionOnlyAgent:
                 out.append(pid)
         return out
 
+    def _voice_targets(self) -> Set[str]:
+        """Target languages with at least one voice-enabled listener."""
+        if self.caption_mode == "off":
+            return set()
+        return {
+            lang
+            for pid, lang in self.participant_languages.items()
+            if lang
+            and self.translation_enabled.get(pid, False)
+            and self.voice_enabled.get(pid, False)
+        }
+
+    async def _emit_tts_cost(
+        self,
+        chars: int,
+        provider: str,
+        language: str,
+        participant: str,
+    ) -> None:
+        if not self.cost_reporter or chars <= 0:
+            return
+        await self.cost_reporter.emit_tts(
+            chars=chars,
+            provider=provider,
+            language=language,
+            participant=participant,
+        )
+
+    async def _reconcile_tts_lanes(self, ctx: JobContext) -> None:
+        if not _tts_enabled():
+            if self.tts_lanes:
+                logger.info("🔇 TTS_ENABLED=false — tearing down all TTS lanes")
+            for lang in list(self.tts_lanes.keys()):
+                lane = self.tts_lanes.pop(lang, None)
+                if lane is not None:
+                    await lane.aclose()
+            return
+
+        desired = sorted(self._voice_targets())
+        max_lanes = _tts_max_lanes()
+        if len(desired) > max_lanes:
+            logger.warning(
+                "TTS lane limit reached (%d): requested=%s using=%s",
+                max_lanes,
+                desired,
+                desired[:max_lanes],
+            )
+            desired = desired[:max_lanes]
+        desired_set = set(desired)
+
+        for lang in list(self.tts_lanes.keys()):
+            if lang in desired_set:
+                continue
+            lane = self.tts_lanes.pop(lang, None)
+            if lane is not None:
+                await lane.aclose()
+                logger.info("🔈 TTS lane removed: %s", lang)
+
+        for lang in desired:
+            if lang in self.tts_lanes:
+                continue
+            lane = TtsLane(
+                room=ctx.room,
+                language=lang,
+                stale_after_sec=_tts_stale_sec(),
+                emit_cost_hook=self._emit_tts_cost,
+            )
+            try:
+                await lane.start()
+            except Exception as e:
+                logger.warning("TTS lane start failed for %s: %s", lang, e)
+                await lane.aclose()
+                continue
+            self.tts_lanes[lang] = lane
+            logger.info("🔈 TTS lane ready: %s track=tts-%s", lang, lang)
+
     async def _shutdown_all_assistants(self, ctx: JobContext) -> None:
         """Cancel every pipeline task on agent shutdown (SIGTERM / room end)."""
         keys = list(self.speaker_pipelines.keys())
@@ -508,6 +611,10 @@ class TranscriptionOnlyAgent:
                 await tok.aclose()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        tts_lanes = list(self.tts_lanes.items())
+        self.tts_lanes.clear()
+        for _, lane in tts_lanes:
+            await lane.aclose()
         logger.info(f"🛑 Shutdown: cancelled {len(tasks)} speaker pipeline task(s)")
 
     async def _cancel_speaker_pipeline(self, speaker_id: str) -> None:
@@ -585,7 +692,10 @@ class TranscriptionOnlyAgent:
 
     async def entrypoint(self, ctx: JobContext):
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-        logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
+        logger.info(
+            f"📋 Room: {ctx.room.name} - Codeswitch captions agent "
+            f"(TTS {'enabled' if _tts_enabled() else 'disabled'})"
+        )
 
         org_id: Optional[str] = None
         # Read caption_config and org_id from room metadata (persisted by host, supports late-joining agent)
@@ -650,6 +760,10 @@ class TranscriptionOnlyAgent:
                         or "en"
                     )
                     enabled = msg.get("enabled", False)
+                    voice_enabled = msg.get(
+                        "voiceEnabled",
+                        msg.get("voice_enabled", self.voice_enabled.get(participant_id, False)),
+                    )
                 elif msg_type == "language_preference":
                     lang = (
                         msg.get("target_language")
@@ -659,6 +773,10 @@ class TranscriptionOnlyAgent:
                         or "en"
                     )
                     enabled = msg.get("translation_enabled", msg.get("enabled", False))
+                    voice_enabled = msg.get(
+                        "voiceEnabled",
+                        msg.get("voice_enabled", self.voice_enabled.get(participant_id, False)),
+                    )
                 elif msg_type == "caption_config":
                     # Room-global control — only honored via room metadata, which the
                     # backend writes after authenticating the host (POST /v2/rooms/:name/
@@ -684,8 +802,12 @@ class TranscriptionOnlyAgent:
 
                 self.participant_languages[participant_id] = lang
                 self.translation_enabled[participant_id] = bool(enabled)
+                self.voice_enabled[participant_id] = bool(enabled) and bool(voice_enabled)
 
-                logger.info(f"📥 Language update: {participant_id} → {lang} (was {old_lang!r}), enabled={enabled}")
+                logger.info(
+                    f"📥 Language update: {participant_id} → {lang} (was {old_lang!r}), "
+                    f"enabled={enabled}, voiceEnabled={self.voice_enabled[participant_id]}"
+                )
 
                 if lang_changed:
                     await self._cancel_speaker_pipeline(participant_id)
@@ -753,6 +875,7 @@ class TranscriptionOnlyAgent:
             await self._cancel_speaker_pipeline(pid)
             self.participant_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
+            self.voice_enabled.pop(pid, None)
             await self.update_assistants(ctx)
 
         ctx.room.on("data_received", on_data)
@@ -791,6 +914,7 @@ class TranscriptionOnlyAgent:
         if self.caption_mode == "off":
             for sid in list(self.speaker_pipelines.keys()):
                 await self._cancel_speaker_pipeline(sid)
+            await self._reconcile_tts_lanes(ctx)
             logger.info("⏸️ caption_mode='off' — all speaker pipelines stopped")
             return
 
@@ -807,7 +931,8 @@ class TranscriptionOnlyAgent:
 
         logger.info(
             f"📊 update_assistants: speakers={speakers}, targets={targets}, "
-            f"participant_langs={dict(self.participant_languages)}, enabled={dict(self.translation_enabled)}"
+            f"participant_langs={dict(self.participant_languages)}, "
+            f"enabled={dict(self.translation_enabled)}, voice={dict(self.voice_enabled)}"
         )
 
         expected = set()
@@ -891,6 +1016,8 @@ class TranscriptionOnlyAgent:
             else:
                 await self._speaker_ctx[speaker].set_targets(ts)
                 logger.debug(f"📎 Updated translation targets for {speaker}: {sorted(ts)}")
+
+        await self._reconcile_tts_lanes(ctx)
 
     def _create_stt_instance(
         self,
@@ -1673,6 +1800,17 @@ class TranscriptionOnlyAgent:
                 # Rolling context for the next utterance (foreign lanes only).
                 if not lane.is_same_language and has_translation and full_translated:
                     lane.context_pairs.append((full_original, full_translated))
+                tts_lane = self.tts_lanes.get(tgt)
+                if tts_lane is not None and not lane.is_same_language:
+                    tts_text = (full_translated or full_original).strip()
+                    if tts_text:
+                        try:
+                            await tts_lane.enqueue_final(
+                                speaker_id=speaker_id,
+                                text=tts_text,
+                            )
+                        except Exception as e:
+                            logger.warning(f"{L}→{tgt} TTS enqueue failed: {e}")
                 logger.info(
                     f"{L}→{tgt} ✅ Turn final ({round((time.perf_counter() - finalize_t0) * 1000)}ms): "
                     f"'{full_original[:50]}...' → '{full_translated[:50]}...'"
@@ -2240,6 +2378,12 @@ def log_resolved_inference_config() -> None:
         "  INTERIM_TRANSLATION_ENABLED=%s min_interval_ms=%d (live local-agreement translation)",
         _interim_translation_enabled(),
         _interim_translation_min_interval_ms(),
+    )
+    logger.info(
+        "  TTS_ENABLED=%s TTS_MAX_LANES=%d TTS_STALE_SEC=%.1f",
+        _tts_enabled(),
+        _tts_max_lanes(),
+        _tts_stale_sec(),
     )
     logger.info(
         "  TRANSLATION_CONTEXT_PAIRS=%d TRANSLATION_CACHE_SIZE=%d "

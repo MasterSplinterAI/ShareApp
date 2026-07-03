@@ -15,6 +15,9 @@ export function MeetingProvider({ children, initialState = {} }) {
   }, []);
 
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);
+  const [voiceTranslationEnabled, setVoiceTranslationEnabled] = useState(
+    initialState.voiceTranslationEnabled ?? false
+  );
 
   // Unified side panel: one panel, two tabs.
   const [sidePanelOpen, setSidePanelOpen] = useState(initialState.translationEnabled ?? true);
@@ -108,6 +111,8 @@ export function MeetingProvider({ children, initialState = {} }) {
     setSelectedLanguage,
     translationEnabled,
     setTranslationEnabled,
+    voiceTranslationEnabled,
+    setVoiceTranslationEnabled,
 
     // Unified side panel
     sidePanelOpen,
@@ -146,6 +151,7 @@ export function MeetingProvider({ children, initialState = {} }) {
     selectedLanguage,
     setSelectedLanguage,
     translationEnabled,
+    voiceTranslationEnabled,
     sidePanelOpen,
     sidePanelTab,
     setSidePanelTab,

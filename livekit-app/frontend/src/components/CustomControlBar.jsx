@@ -34,6 +34,8 @@ export default function CustomControlBar({
   setSelectedLanguage,
   translationEnabled,
   setTranslationEnabled,
+  voiceTranslationEnabled,
+  setVoiceTranslationEnabled,
   isHost,
   onShareClick,
   intentionalLeaveRef,
@@ -69,6 +71,7 @@ export default function CustomControlBar({
   const [cameraDevices, setCameraDevices] = useState([]);
   const [selectedMicId, setSelectedMicId] = useState(null);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const voiceHintShownRef = useRef(false);
 
   const micMenuRef = useRef(null);
   const cameraMenuRef = useRef(null);
@@ -300,6 +303,33 @@ export default function CustomControlBar({
     toast(mode === 'off' ? 'Captions disabled' : 'Caption mode updated');
   };
 
+  const handleTranslationToggle = () => {
+    const next = !translationEnabled;
+    setTranslationEnabled(next);
+
+    if (next) {
+      openSidePanel('captions');
+      toast.success('Captions enabled');
+      return;
+    }
+
+    setVoiceTranslationEnabled(false);
+    closeSidePanel();
+    toast('Captions disabled');
+  };
+
+  const handleVoiceTranslationToggle = () => {
+    if (!translationEnabled) return;
+
+    const next = !voiceTranslationEnabled;
+    setVoiceTranslationEnabled(next);
+
+    if (next && !voiceHintShownRef.current) {
+      voiceHintShownRef.current = true;
+      toast('Use headphones for best voice translation audio');
+    }
+  };
+
   const barBtn = (compact) =>
     cn(
       'rounded-full transition-transform duration-150 hover:-translate-y-0.5',
@@ -481,17 +511,7 @@ export default function CustomControlBar({
             <MeetingPanelMenu
               value={selectedLanguage}
               onChange={setSelectedLanguage}
-              onTranslationToggle={() => {
-                const next = !translationEnabled;
-                setTranslationEnabled(next);
-                if (next) {
-                  openSidePanel('captions');
-                  toast.success('Captions enabled');
-                } else {
-                  closeSidePanel();
-                  toast('Captions disabled');
-                }
-              }}
+              onTranslationToggle={handleTranslationToggle}
               translationEnabled={translationEnabled}
               isHost={isHost}
               captionMode={captionMode}
@@ -503,18 +523,10 @@ export default function CustomControlBar({
               <CaptionControls
                 value={selectedLanguage}
                 onChange={setSelectedLanguage}
-                onTranslationToggle={() => {
-                  const next = !translationEnabled;
-                  setTranslationEnabled(next);
-                  if (next) {
-                    openSidePanel('captions');
-                    toast.success('Captions enabled');
-                  } else {
-                    closeSidePanel();
-                    toast('Captions disabled');
-                  }
-                }}
+                onTranslationToggle={handleTranslationToggle}
                 translationEnabled={translationEnabled}
+                voiceTranslationEnabled={voiceTranslationEnabled}
+                onVoiceTranslationToggle={handleVoiceTranslationToggle}
                 isHost={isHost}
                 captionMode={captionMode}
                 onCaptionModeChange={handleCaptionModeChange}

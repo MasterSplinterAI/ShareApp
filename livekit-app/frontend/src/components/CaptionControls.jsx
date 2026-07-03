@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Subtitles, Globe, Check, ChevronDown } from 'lucide-react';
+import { Subtitles, Globe, Headphones, Check, ChevronDown } from 'lucide-react';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
@@ -21,6 +21,8 @@ export default function CaptionControls({
   onChange,
   onTranslationToggle,
   translationEnabled = false,
+  voiceTranslationEnabled = false,
+  onVoiceTranslationToggle,
   isHost = false,
   captionMode,
   onCaptionModeChange,
@@ -96,6 +98,33 @@ export default function CaptionControls({
               )}
             >
               {translationEnabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!translationEnabled || !onVoiceTranslationToggle) return;
+              onVoiceTranslationToggle();
+            }}
+            disabled={!translationEnabled}
+            className={cn(
+              'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors',
+              translationEnabled ? 'hover:bg-accent' : 'cursor-not-allowed opacity-60',
+              translationEnabled && voiceTranslationEnabled && 'bg-primary/10'
+            )}
+          >
+            <Headphones className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-sm">Voice translation</span>
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-xs font-medium',
+                voiceTranslationEnabled
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {voiceTranslationEnabled ? 'ON' : 'OFF'}
             </span>
           </button>
 

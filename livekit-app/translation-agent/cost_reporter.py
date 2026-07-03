@@ -24,6 +24,10 @@ _LLM_EVENT_TYPES = {
     "openai": ("openai_llm_input_mtok", "openai_llm_output_mtok"),
 }
 
+_TTS_EVENT_TYPES = {
+    "deepgram": "deepgram_tts_char",
+}
+
 _warned_once = False
 
 
@@ -132,3 +136,22 @@ class CostReporter:
             await self._post(in_event, input_tokens / 1_000_000, meta=meta)
         if output_tokens > 0:
             await self._post(out_event, output_tokens / 1_000_000, meta=meta)
+
+    async def emit_tts(
+        self,
+        chars: int,
+        provider: str,
+        language: str,
+        participant: str,
+    ) -> None:
+        if not self._enabled or chars <= 0:
+            return
+        event_type = _TTS_EVENT_TYPES.get(provider)
+        if not event_type:
+            logger.debug(f"CostReporter: no TTS event type for provider={provider!r} — skipping")
+            return
+        await self._post(
+            event_type,
+            float(chars),
+            meta={"participant": participant, "language": language, "provider": provider},
+        )

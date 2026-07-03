@@ -14,6 +14,7 @@ import ParticipantsPanel from './ParticipantsPanel';
 import RoomControls from './RoomControls';
 import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
+import TtsAudioController from './TtsAudioController';
 import RoomConnectionGuard from './RoomConnectionGuard';
 import VideoGrid from './VideoGrid';
 import PreJoinScreen from './PreJoinScreen';
@@ -386,6 +387,7 @@ function MeetingRoom() {
         selectedLanguage: participantInfo.selectedLanguage,
         spokenLanguage: participantInfo.spokenLanguage,
         translationEnabled: true,
+        voiceTranslationEnabled: false,
         meetingMode: 'translation',
       }}
     >
@@ -432,6 +434,8 @@ function MeetingRoomInner({
     setSelectedLanguage,
     translationEnabled,
     setTranslationEnabled,
+    voiceTranslationEnabled,
+    setVoiceTranslationEnabled,
     isPanelOpen,
   } = useMeeting();
   const t = useRoomControlLabels(selectedLanguage);
@@ -521,6 +525,7 @@ function MeetingRoomInner({
         <RoomControls
           selectedLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
+          voiceTranslationEnabled={voiceTranslationEnabled}
           participantName={participantInfo?.participantName || ''}
           isHost={participantInfo?.isHost || false}
         />
@@ -531,6 +536,8 @@ function MeetingRoomInner({
           setSelectedLanguage={setSelectedLanguage}
           translationEnabled={translationEnabled}
           setTranslationEnabled={setTranslationEnabled}
+          voiceTranslationEnabled={voiceTranslationEnabled}
+          setVoiceTranslationEnabled={setVoiceTranslationEnabled}
           isHost={participantInfo?.isHost || false}
           onShareClick={() => setShowShareModal(true)}
           intentionalLeaveRef={intentionalLeaveRef}
@@ -548,6 +555,11 @@ function MeetingRoomInner({
           isHost={participantInfo?.isHost || false}
         />
 
+        <TtsAudioController
+          selectedLanguage={selectedLanguage}
+          translationEnabled={translationEnabled}
+          voiceTranslationEnabled={voiceTranslationEnabled}
+        />
         <RoomAudioRenderer />
         <div>
           <StartAudio label={t('startAudio')} />

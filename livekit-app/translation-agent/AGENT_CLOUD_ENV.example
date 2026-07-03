@@ -44,6 +44,12 @@ INTERIM_TRANSLATION_ENABLED=true
 # Debounce between interim translation calls per target language (ms).
 INTERIM_TRANSLATION_MIN_INTERVAL_MS=600
 
+# --- Optional spoken translation (experimental codeswitch agent only) ---
+# Keep false for caption-only behavior; enable on the experimental worker first.
+TTS_ENABLED=false
+# Hard cap for concurrent per-language TTS tracks (cost guard).
+TTS_MAX_LANES=4
+
 # --- Translation quality/consistency ---
 # Rolling (source → target) utterance pairs carried across turns (0 disables).
 TRANSLATION_CONTEXT_PAIRS=3
