@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 
-from tts_lane import TtsLane
+from tts_lane import TtsLane, resolve_tts_provider
 
 
 class _FakeLocalParticipant:
@@ -147,3 +147,27 @@ def test_lane_serializes_speakers_and_emits_cost() -> None:
         ]
 
     asyncio.run(_run())
+
+
+def test_resolve_tts_provider(monkeypatch) -> None:
+    # No ElevenLabs key: always Deepgram, even for unsupported languages.
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("TTS_PROVIDER", raising=False)
+    assert resolve_tts_provider("es") == "deepgram"
+    assert resolve_tts_provider("ko") == "deepgram"
+
+    # Key present + auto: ElevenLabs for its languages and for Aura gaps.
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
+    assert resolve_tts_provider("es") == "elevenlabs"
+    assert resolve_tts_provider("ko") == "elevenlabs"
+    assert resolve_tts_provider("pt-BR") == "elevenlabs"
+
+    # Explicit overrides win.
+    monkeypatch.setenv("TTS_PROVIDER", "deepgram")
+    assert resolve_tts_provider("es") == "deepgram"
+    monkeypatch.setenv("TTS_PROVIDER", "elevenlabs")
+    assert resolve_tts_provider("es") == "elevenlabs"
+
+    # elevenlabs requested but no key: degrade to deepgram.
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    assert resolve_tts_provider("es") == "deepgram"

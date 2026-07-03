@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Set, T
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
-from tts_lane import TtsLane
+from tts_lane import TtsLane, resolve_tts_provider
 from codeswitch_source_language import (
     effective_source_language,
     lane_is_same_language,
@@ -586,6 +586,7 @@ class TranscriptionOnlyAgent:
                 room=ctx.room,
                 language=lang,
                 stale_after_sec=_tts_stale_sec(),
+                provider=resolve_tts_provider(lang),
                 emit_cost_hook=self._emit_tts_cost,
             )
             try:
@@ -595,7 +596,12 @@ class TranscriptionOnlyAgent:
                 await lane.aclose()
                 continue
             self.tts_lanes[lang] = lane
-            logger.info("🔈 TTS lane ready: %s track=tts-%s", lang, lang)
+            logger.info(
+                "🔈 TTS lane ready: %s track=tts-%s provider=%s",
+                lang,
+                lang,
+                lane.provider,
+            )
 
     async def _shutdown_all_assistants(self, ctx: JobContext) -> None:
         """Cancel every pipeline task on agent shutdown (SIGTERM / room end)."""

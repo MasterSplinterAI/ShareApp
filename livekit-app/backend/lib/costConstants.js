@@ -24,6 +24,8 @@ const COSTS = {
   deepgram_stt_minute:         { provider: 'deepgram',  unit_cost_usd: 0.0043  },
   // Deepgram Aura TTS (per character)
   deepgram_tts_char:           { provider: 'deepgram',  unit_cost_usd: 0.000015 },
+  // ElevenLabs Flash v2.5 TTS (per character, $0.05/1k chars API rate)
+  elevenlabs_tts_char:         { provider: 'elevenlabs', unit_cost_usd: 0.00005 },
   gladia_stt_minute:           { provider: 'gladia',    unit_cost_usd: 0.0125 },
 };
 

@@ -49,6 +49,13 @@ INTERIM_TRANSLATION_MIN_INTERVAL_MS=600
 TTS_ENABLED=false
 # Hard cap for concurrent per-language TTS tracks (cost guard).
 TTS_MAX_LANES=4
+# TTS provider routing: auto | elevenlabs | deepgram (default auto).
+# auto = ElevenLabs Flash v2.5 (32 languages, ~75ms) when ELEVENLABS_API_KEY is
+# set, falling back to Deepgram Aura-2 (en/es/fr/de/it/ja/nl only) otherwise.
+TTS_PROVIDER=auto
+ELEVENLABS_API_KEY=
+# Optional voice override (default: George, multilingual).
+# ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb
 
 # --- Translation quality/consistency ---
 # Rolling (source → target) utterance pairs carried across turns (0 disables).

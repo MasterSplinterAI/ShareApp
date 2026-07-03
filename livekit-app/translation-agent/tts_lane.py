@@ -12,6 +12,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Deque, Optional
 
+import aiohttp
+
 from livekit import rtc
 
 try:
@@ -36,6 +38,38 @@ _AURA_VOICE_BY_LANG = {
     "ja": "aura-2-izanami-ja",
     "nl": "aura-2-daphne-nl",
 }
+_AURA_SUPPORTED_LANGS = set(_AURA_VOICE_BY_LANG)
+
+# ElevenLabs Flash v2.5: one multilingual voice covers all 32 supported languages.
+_ELEVENLABS_MODEL = "eleven_flash_v2_5"
+_ELEVENLABS_DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # "George" — neutral multilingual
+# ISO 639-1 codes Flash v2.5 accepts as language_code (per ElevenLabs docs).
+_ELEVENLABS_LANGS = {
+    "en", "es", "fr", "de", "it", "pt", "pl", "nl", "sv", "da", "no", "fi",
+    "cs", "sk", "uk", "ru", "ro", "bg", "hr", "el", "hu", "tr", "ar", "hi",
+    "ja", "ko", "zh", "vi", "id", "ms", "ta", "fil",
+}
+
+
+def resolve_tts_provider(language: str) -> str:
+    """Pick the TTS provider for a target language.
+
+    Honors TTS_PROVIDER env ("elevenlabs" | "deepgram" | "auto", default auto).
+    Auto prefers ElevenLabs (broader coverage, faster) when a key is configured,
+    keeping Deepgram for its 7 natively supported languages if no key exists.
+    """
+    base = (language or "en").split("-")[0].lower()
+    pref = os.getenv("TTS_PROVIDER", "auto").strip().lower()
+    has_eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+
+    if pref == "deepgram":
+        return "deepgram"
+    if pref == "elevenlabs":
+        return "elevenlabs" if has_eleven else "deepgram"
+    # auto
+    if has_eleven and (base in _ELEVENLABS_LANGS or base not in _AURA_SUPPORTED_LANGS):
+        return "elevenlabs"
+    return "deepgram"
 
 
 @dataclass
@@ -88,6 +122,7 @@ class TtsLane:
         self._latest_sequence_by_speaker: dict[str, int] = {}
 
         self._deepgram_tts: Any = None
+        self._http_session: aiohttp.ClientSession | None = None
         self._audio_source: Any = None
         self._local_track: Any = None
         self._publication: Any = None
@@ -117,6 +152,9 @@ class TtsLane:
 
         await self._unpublish_track()
         await self._close_audio_source()
+        if self._http_session is not None and not self._http_session.closed:
+            await self._http_session.close()
+        self._http_session = None
 
     async def enqueue_final(self, speaker_id: str, text: str) -> None:
         clean_text = " ".join((text or "").split())
@@ -229,6 +267,9 @@ class TtsLane:
         if self._synthesize_hook is not None:
             return self._synthesize_hook(text, self.language, playback_rate)
 
+        if self.provider == "elevenlabs":
+            return self._synthesize_elevenlabs(text, playback_rate)
+
         if not DEEPGRAM_AVAILABLE or deepgram is None:
             raise RuntimeError("Deepgram plugin unavailable for TTS lane")
 
@@ -280,6 +321,54 @@ class TtsLane:
             except TypeError:
                 continue
         return deepgram.TTS()
+
+    def _http(self) -> aiohttp.ClientSession:
+        if self._http_session is None or self._http_session.closed:
+            self._http_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30, sock_connect=5)
+            )
+        return self._http_session
+
+    async def _synthesize_elevenlabs(self, text: str, playback_rate: float):
+        """Stream raw PCM from ElevenLabs Flash v2.5, yielding frame-aligned byte blocks."""
+        api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
+        if not api_key:
+            raise RuntimeError("ELEVENLABS_API_KEY not set for ElevenLabs TTS lane")
+
+        voice = os.getenv("ELEVENLABS_VOICE_ID", _ELEVENLABS_DEFAULT_VOICE).strip()
+        base_lang = self.language.split("-")[0].lower()
+
+        body: dict[str, Any] = {"text": text, "model_id": _ELEVENLABS_MODEL}
+        if base_lang in _ELEVENLABS_LANGS:
+            body["language_code"] = base_lang
+        # ElevenLabs supports 0.7-1.2 speed; used for mild backlog catch-up.
+        speed = max(0.7, min(playback_rate, 1.2))
+        if abs(speed - 1.0) > 0.01:
+            body["voice_settings"] = {"speed": speed}
+
+        url = (
+            f"https://api.elevenlabs.io/v1/text-to-speech/{voice}/stream"
+            f"?output_format=pcm_{self.sample_rate}"
+        )
+        # Yield only whole 20ms frames so _frames_from_chunk never zero-pads
+        # mid-stream (padding inside the stream causes audible clicks).
+        frame_bytes = max(1, int(self.sample_rate * 0.02)) * self.num_channels * 2
+        buf = bytearray()
+
+        async with self._http().post(
+            url, json=body, headers={"xi-api-key": api_key}
+        ) as resp:
+            if resp.status != 200:
+                detail = (await resp.text())[:200]
+                raise RuntimeError(f"ElevenLabs TTS HTTP {resp.status}: {detail}")
+            async for chunk in resp.content.iter_chunked(4096):
+                buf.extend(chunk)
+                aligned = len(buf) - (len(buf) % frame_bytes)
+                if aligned:
+                    yield bytes(buf[:aligned])
+                    del buf[:aligned]
+        if buf:
+            yield bytes(buf)
 
     async def _iter_audio_frames(self, synthesis: Any):
         value = await synthesis if inspect.isawaitable(synthesis) else synthesis
