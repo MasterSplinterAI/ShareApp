@@ -24,14 +24,17 @@ except ImportError:  # pragma: no cover - local test stubs often omit plugin pac
 
 logger = logging.getLogger(__name__)
 
-# Reasonable Aura defaults; unknown languages fall back to a neutral English voice.
+# Aura-2 voices verified against the Deepgram /v1/speak API (2026-07).
+# Aura-2 supports en/es/fr/de/it/ja/nl only; other languages (e.g. pt, zh)
+# fall back to the English voice, which is degraded but still audible.
 _AURA_VOICE_BY_LANG = {
     "en": "aura-2-thalia-en",
-    "es": "aura-2-luna-es",
-    "fr": "aura-2-asteria-fr",
-    "de": "aura-2-orpheus-de",
-    "it": "aura-2-callista-it",
-    "pt": "aura-2-orpheus-pt",
+    "es": "aura-2-celeste-es",
+    "fr": "aura-2-agathe-fr",
+    "de": "aura-2-julius-de",
+    "it": "aura-2-livia-it",
+    "ja": "aura-2-izanami-ja",
+    "nl": "aura-2-daphne-nl",
 }
 
 
