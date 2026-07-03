@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useRoomContext } from '@livekit/components-react';
-import { DisconnectReason, RoomEvent } from 'livekit-client';
+import { ConnectionState, DisconnectReason, RoomEvent } from 'livekit-client';
 import toast from 'react-hot-toast';
 
 const MAX_RECONNECT_ATTEMPTS = 6;
@@ -9,6 +9,10 @@ const RECONNECT_BASE_MS = 800;
 /**
  * Handles unexpected disconnects with token refresh + reconnect.
  * Intentional leave (leave button) should set intentionalLeaveRef before room.disconnect().
+ *
+ * Also surfaces LiveKit's built-in reconnect (Reconnecting/Reconnected) so a brief
+ * network blip shows "Reconnecting…" and we don't leave a zombie UI that looks
+ * connected while mic/camera/data channels are dead.
  */
 export default function RoomConnectionGuard({
   intentionalLeaveRef,
@@ -16,6 +20,7 @@ export default function RoomConnectionGuard({
   onFetchToken,
   onReconnected,
   onGiveUp,
+  onReconnectingChange,
 }) {
   const room = useRoomContext();
   const attemptsRef = useRef(0);
@@ -23,6 +28,11 @@ export default function RoomConnectionGuard({
 
   useEffect(() => {
     if (!room) return undefined;
+
+    const setReconnectingUi = (value) => {
+      if (reconnectingRef) reconnectingRef.current = value;
+      onReconnectingChange?.(value);
+    };
 
     const tryReconnect = async (reason) => {
       if (intentionalLeaveRef?.current) return;
@@ -40,7 +50,7 @@ export default function RoomConnectionGuard({
       }
 
       busyRef.current = true;
-      if (reconnectingRef) reconnectingRef.current = true;
+      setReconnectingUi(true);
 
       while (attemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
         if (intentionalLeaveRef?.current) break;
@@ -48,6 +58,15 @@ export default function RoomConnectionGuard({
         const waitMs = Math.min(RECONNECT_BASE_MS * attemptsRef.current, 5000);
         await new Promise((r) => setTimeout(r, waitMs));
         try {
+          // Drop a half-dead peer connection before connecting again.
+          if (room.state !== ConnectionState.Disconnected) {
+            try {
+              await room.disconnect(true);
+            } catch {
+              /* ignore */
+            }
+          }
+
           const { token, url } = await onFetchToken();
           if (!token) throw new Error('No token');
           const serverUrl =
@@ -68,19 +87,46 @@ export default function RoomConnectionGuard({
       }
 
       busyRef.current = false;
-      if (reconnectingRef) reconnectingRef.current = false;
+      setReconnectingUi(false);
     };
 
-    const onDisconnected = (reason) => {
+    const handleDisconnected = (reason) => {
       if (intentionalLeaveRef?.current) return;
-      tryReconnect(reason);
+      void tryReconnect(reason);
     };
 
-    room.on(RoomEvent.Disconnected, onDisconnected);
-    return () => {
-      room.off(RoomEvent.Disconnected, onDisconnected);
+    // LiveKit's internal ICE/signal recovery (brief blip) — show overlay, then
+    // let PublishPreviewTracks restore media on RoomEvent.Reconnected.
+    const handleReconnecting = () => {
+      if (intentionalLeaveRef?.current) return;
+      setReconnectingUi(true);
     };
-  }, [room, intentionalLeaveRef, reconnectingRef, onFetchToken, onReconnected, onGiveUp]);
+
+    const handleReconnected = () => {
+      if (intentionalLeaveRef?.current) return;
+      attemptsRef.current = 0;
+      setReconnectingUi(false);
+      toast.success('Reconnected');
+      onReconnected?.();
+    };
+
+    room.on(RoomEvent.Disconnected, handleDisconnected);
+    room.on(RoomEvent.Reconnecting, handleReconnecting);
+    room.on(RoomEvent.Reconnected, handleReconnected);
+    return () => {
+      room.off(RoomEvent.Disconnected, handleDisconnected);
+      room.off(RoomEvent.Reconnecting, handleReconnecting);
+      room.off(RoomEvent.Reconnected, handleReconnected);
+    };
+  }, [
+    room,
+    intentionalLeaveRef,
+    reconnectingRef,
+    onFetchToken,
+    onReconnected,
+    onGiveUp,
+    onReconnectingChange,
+  ]);
 
   return null;
 }

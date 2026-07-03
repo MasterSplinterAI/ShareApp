@@ -513,6 +513,8 @@ export default function CustomControlBar({
               onChange={setSelectedLanguage}
               onTranslationToggle={handleTranslationToggle}
               translationEnabled={translationEnabled}
+              voiceTranslationEnabled={voiceTranslationEnabled}
+              onVoiceTranslationToggle={handleVoiceTranslationToggle}
               isHost={isHost}
               captionMode={captionMode}
               onCaptionModeChange={handleCaptionModeChange}

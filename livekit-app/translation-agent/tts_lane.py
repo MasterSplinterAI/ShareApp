@@ -631,19 +631,26 @@ class TtsLane:
 
         publish_fn = self.room.local_participant.publish_track
         track_opts_cls = getattr(rtc, "TrackPublishOptions", None)
+        # Prefer SOURCE_UNKNOWN so clients don't treat TTS as a participant mic
+        # (SOURCE_MICROPHONE auto-subscribes and plays for everyone via RoomAudioRenderer).
+        source = getattr(rtc.TrackSource, "SOURCE_UNKNOWN", None)
         if track_opts_cls is not None:
-            try:
-                opts = track_opts_cls(
-                    source=getattr(rtc.TrackSource, "SOURCE_MICROPHONE", None),
-                    name=self.track_name,
-                )
-                self._publication = await publish_fn(self._local_track, opts)
-                return
-            except TypeError:
-                pass
-            except Exception:
-                # Fall through to call without options.
-                pass
+            for kwargs in (
+                {"source": source, "name": self.track_name},
+                {"name": self.track_name},
+                {"source": source},
+            ):
+                if kwargs.get("source") is None and "source" in kwargs:
+                    continue
+                try:
+                    self._publication = await publish_fn(
+                        self._local_track, track_opts_cls(**kwargs)
+                    )
+                    return
+                except TypeError:
+                    continue
+                except Exception:
+                    break
 
         self._publication = await publish_fn(self._local_track)
 

@@ -27,6 +27,10 @@ function isTtsPublication(publication) {
   return getPublicationName(publication).startsWith('tts-');
 }
 
+function isAudioPublication(publication) {
+  return publication?.kind === Track.Kind.Audio || publication?.kind === 'audio';
+}
+
 function getTrackVolume(track) {
   if (typeof track?.getVolume === 'function') {
     const current = track.getVolume();
@@ -35,6 +39,11 @@ function getTrackVolume(track) {
     }
   }
   return 1;
+}
+
+function setTrackAudible(track, audible) {
+  if (!track || typeof track.setVolume !== 'function') return;
+  track.setVolume(audible ? 1 : 0);
 }
 
 function findSpeakerParticipant(room, speakerId) {
@@ -71,6 +80,12 @@ function getSpeakerMicTrack(participant) {
   return null;
 }
 
+/**
+ * Each listener must only hear tts-{theirLanguage}. The agent publishes one track
+ * per language for everyone with voice on; LiveKit auto-subscribes, so without
+ * hard unsubscribe+mute both participants hear every translator track (especially
+ * after language switches).
+ */
 export default function TtsAudioController({
   selectedLanguage,
   translationEnabled,
@@ -115,24 +130,28 @@ export default function TtsAudioController({
 
     const reconcileSubscriptions = () => {
       for (const participant of room.remoteParticipants.values()) {
-        const agentParticipant = isAgentParticipant(participant);
+        if (!isAgentParticipant(participant)) continue;
 
         for (const publication of participant.trackPublications.values()) {
+          if (!isAudioPublication(publication) && !isTtsPublication(publication)) continue;
           if (!isTtsPublication(publication)) continue;
 
           const publicationName = getPublicationName(publication);
-          const shouldSubscribe =
-            activeVoicePlayback &&
-            agentParticipant &&
-            publicationName === targetTrackName;
-
-          if (publication.isSubscribed === shouldSubscribe) continue;
+          const shouldHear =
+            activeVoicePlayback && publicationName === targetTrackName;
 
           try {
-            publication.setSubscribed(shouldSubscribe);
+            // Always drive subscription explicitly (don't trust auto-subscribe).
+            if (publication.isSubscribed !== shouldHear) {
+              publication.setSubscribed(shouldHear);
+            }
           } catch (error) {
             console.warn('Failed to update TTS subscription', error);
           }
+
+          // Belt-and-suspenders: mute non-target tracks even if still subscribed
+          // (race after language switch, or setSubscribed lag).
+          setTrackAudible(publication.track, shouldHear);
         }
       }
     };
@@ -143,12 +162,23 @@ export default function TtsAudioController({
     room.on(RoomEvent.ParticipantDisconnected, reconcileSubscriptions);
     room.on(RoomEvent.TrackPublished, reconcileSubscriptions);
     room.on(RoomEvent.TrackUnpublished, reconcileSubscriptions);
+    room.on(RoomEvent.TrackSubscribed, reconcileSubscriptions);
+    room.on(RoomEvent.TrackUnsubscribed, reconcileSubscriptions);
+
+    // Language switches can leave a brief window where the old track is still
+    // playing; re-reconcile shortly after target changes.
+    const retryId = window.setTimeout(reconcileSubscriptions, 250);
+    const retryId2 = window.setTimeout(reconcileSubscriptions, 1000);
 
     return () => {
+      window.clearTimeout(retryId);
+      window.clearTimeout(retryId2);
       room.off(RoomEvent.ParticipantConnected, reconcileSubscriptions);
       room.off(RoomEvent.ParticipantDisconnected, reconcileSubscriptions);
       room.off(RoomEvent.TrackPublished, reconcileSubscriptions);
       room.off(RoomEvent.TrackUnpublished, reconcileSubscriptions);
+      room.off(RoomEvent.TrackSubscribed, reconcileSubscriptions);
+      room.off(RoomEvent.TrackUnsubscribed, reconcileSubscriptions);
     };
   }, [room, activeVoicePlayback, targetTrackName]);
 

@@ -502,6 +502,7 @@ function MeetingRoomInner({
           onFetchToken={handleFetchTokenForReconnect}
           onReconnected={onReconnected}
           onGiveUp={onGiveUpConnection}
+          onReconnectingChange={setReconnecting}
         />
         <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content area: video grid + optional transcription panel */}
