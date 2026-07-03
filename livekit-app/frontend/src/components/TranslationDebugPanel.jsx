@@ -34,6 +34,7 @@ function TranslationDebugPanel({
   selectedLanguage,
   spokenLanguage,
   translationEnabled,
+  voiceTranslationEnabled = false,
   participantName,
   meetingId,
   isHost,
@@ -48,13 +49,22 @@ function TranslationDebugPanel({
   const [agentInRoom, setAgentInRoom] = useState(false);
   const [agentIdentities, setAgentIdentities] = useState([]);
   const [roomPipeline, setRoomPipeline] = useState(null);
-  const [pipelineOptions, setPipelineOptions] = useState(['deepgram', 'gladia']);
+  const [pipelineOptions, setPipelineOptions] = useState(['deepgram', 'deepgram_codeswitch']);
   const [pipelineSwitching, setPipelineSwitching] = useState(false);
   const [pipelineError, setPipelineError] = useState(null);
+  const [ttsErrors, setTtsErrors] = useState([]);
   const countRef = useRef(0);
 
   const showDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
   const showPipelineSwitch = showDebug && isHost && isStagingHost() && Boolean(meetingId);
+  const inferredPipeline = agentIdentities.some((id) => id.toLowerCase().includes('codeswitch'))
+    ? 'deepgram_codeswitch'
+    : agentIdentities.some((id) => id.toLowerCase().includes('translation'))
+      ? 'deepgram'
+      : null;
+  const effectivePipeline = roomPipeline || inferredPipeline;
+  const voicePipelineReady = effectivePipeline === 'deepgram_codeswitch';
+  const voiceOnButWrongPipeline = voiceTranslationEnabled && effectivePipeline && !voicePipelineReady;
 
   const refreshRoomPipeline = useCallback(async () => {
     if (!showPipelineSwitch) return;
@@ -82,6 +92,21 @@ function TranslationDebugPanel({
         const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
         if (!raw) return;
         const msg = JSON.parse(new TextDecoder().decode(raw));
+        if (msg.type === 'tts_error') {
+          setTtsErrors((prev) => [
+            {
+              at: msg.timestamp || Date.now() / 1000,
+              provider: msg.provider || '—',
+              language: msg.language || '—',
+              code: msg.code || 'unknown',
+              message: msg.message || 'TTS error',
+              httpStatus: msg.http_status ?? null,
+              speaker: msg.speaker_id || participant?.identity || '?',
+            },
+            ...prev.slice(0, 7),
+          ]);
+          return;
+        }
         if (msg.type !== 'transcription') return;
 
         countRef.current += 1;
@@ -215,8 +240,63 @@ function TranslationDebugPanel({
                 {pipelineError && (
                   <div className="mt-1 text-[10px] text-destructive">{pipelineError}</div>
                 )}
+                <div className="mt-2 rounded border border-blue-500/30 bg-blue-500/5 p-2 text-[10px] text-foreground/90">
+                  <div className="font-semibold text-blue-600">Voice translation</div>
+                  <p className="mt-1 text-muted-foreground">
+                    Spoken translation (TTS) only runs on the{' '}
+                    <span className="font-medium text-foreground">deepgram_codeswitch</span>{' '}
+                    pipeline. Switch above, then enable captions → Voice translation in the menu.
+                  </p>
+                  {voiceTranslationEnabled && voicePipelineReady && (
+                    <p className="mt-1 text-emerald-600">✅ Voice on + codeswitch pipeline active</p>
+                  )}
+                  {voiceOnButWrongPipeline && (
+                    <p className="mt-1 text-destructive">
+                      ⚠ Voice translation is ON but pipeline is &quot;{effectivePipeline}&quot; — no TTS audio will play.
+                    </p>
+                  )}
+                </div>
               </section>
             )}
+
+            <section className="rounded border border-border/60 bg-muted/30 p-2">
+              <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Voice / TTS
+              </div>
+              <div>
+                <span className="text-muted-foreground">voice translation:</span>{' '}
+                {String(voiceTranslationEnabled)}
+              </div>
+              <div>
+                <span className="text-muted-foreground">pipeline for TTS:</span>{' '}
+                {effectivePipeline || '—'}
+                {voicePipelineReady ? ' ✅' : ' (needs deepgram_codeswitch)'}
+              </div>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Voice translation requires the codeswitch agent. Host: switch pipeline above (staging + ?debug=1).
+              </p>
+              {ttsErrors.length === 0 ? (
+                <div className="mt-1 text-muted-foreground">No TTS API errors yet</div>
+              ) : (
+                <div className="mt-2 space-y-1.5">
+                  {ttsErrors.map((err, i) => (
+                    <div
+                      key={`${err.at}-${err.code}-${i}`}
+                      className="rounded border border-destructive/30 bg-destructive/5 p-1.5"
+                    >
+                      <div className="flex flex-wrap gap-x-2 text-[10px] text-destructive">
+                        <span>{formatTime(err.at)}</span>
+                        <span>{err.provider}</span>
+                        <span>{err.language}</span>
+                        {err.httpStatus != null && <span>HTTP {err.httpStatus}</span>}
+                        <span>{err.code}</span>
+                      </div>
+                      <div className="text-foreground">{err.message}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
 
             <section className="rounded border border-border/60 bg-muted/30 p-2">
               <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Session</div>

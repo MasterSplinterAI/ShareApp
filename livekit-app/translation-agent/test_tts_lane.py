@@ -6,7 +6,7 @@ import asyncio
 import json
 import time
 
-from tts_lane import TtsLane, resolve_tts_provider
+from tts_lane import TtsLane, classify_tts_api_error, resolve_tts_provider
 
 
 class _FakeLocalParticipant:
@@ -171,3 +171,50 @@ def test_resolve_tts_provider(monkeypatch) -> None:
     # elevenlabs requested but no key: degrade to deepgram.
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
     assert resolve_tts_provider("es") == "deepgram"
+
+
+def test_classify_tts_api_error() -> None:
+    code, msg = classify_tts_api_error("elevenlabs", 401, "invalid api key")
+    assert code == "auth_failed"
+    assert "invalid" in msg.lower() or "unauthorized" in msg.lower()
+
+    code, msg = classify_tts_api_error("elevenlabs", 402, "quota exceeded")
+    assert code == "credits_exhausted"
+    assert "credit" in msg.lower() or "quota" in msg.lower()
+
+    code, msg = classify_tts_api_error("elevenlabs", 429, "rate limit")
+    assert code == "rate_limited"
+
+    code, msg = classify_tts_api_error("elevenlabs", 500, "")
+    assert code == "provider_error"
+
+
+def test_tts_error_event_emitted_on_failure() -> None:
+    async def _run() -> None:
+        room = _FakeRoom()
+
+        async def failing_synth(text: str, language: str, playback_rate: float):
+            raise RuntimeError("boom")
+
+        lane = TtsLane(
+            room=room,
+            language="es",
+            publish_track=False,
+            provider="elevenlabs",
+            synthesize_hook=failing_synth,
+        )
+        await lane.enqueue_final("speaker-a", "hola")
+        await lane.start()
+        await _wait_for(
+            lambda: any(e["payload"].get("type") == "tts_error" for e in room.local_participant.events)
+        )
+        await lane.aclose()
+
+        error_events = [e for e in room.local_participant.events if e["payload"].get("type") == "tts_error"]
+        assert len(error_events) == 1
+        payload = error_events[0]["payload"]
+        assert payload["provider"] == "elevenlabs"
+        assert payload["code"] == "synthesis_failed"
+        assert payload["language"] == "es"
+
+    asyncio.run(_run())

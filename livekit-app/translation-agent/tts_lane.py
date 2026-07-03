@@ -51,6 +51,62 @@ _ELEVENLABS_LANGS = {
 }
 
 
+class TtsApiError(RuntimeError):
+    """Structured TTS provider failure for debug telemetry."""
+
+    def __init__(
+        self,
+        *,
+        provider: str,
+        message: str,
+        code: str = "unknown",
+        http_status: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.provider = provider
+        self.code = code
+        self.http_status = http_status
+        self.message = message
+
+
+def classify_tts_api_error(
+    provider: str,
+    http_status: int | None,
+    detail: str = "",
+) -> tuple[str, str]:
+    """Map provider HTTP failures to short debug codes + human messages."""
+    detail_l = (detail or "").lower()
+    provider_label = "ElevenLabs" if provider == "elevenlabs" else "Deepgram"
+
+    if http_status == 401 or "invalid api key" in detail_l or "unauthorized" in detail_l:
+        return (
+            "auth_failed",
+            f"{provider_label} API key invalid or unauthorized",
+        )
+    if http_status == 402 or any(
+        token in detail_l
+        for token in ("quota", "credit", "payment", "subscription", "billing", "insufficient")
+    ):
+        return (
+            "credits_exhausted",
+            f"{provider_label} credits or quota exhausted — check billing",
+        )
+    if http_status == 429 or "rate limit" in detail_l or "too many requests" in detail_l:
+        return (
+            "rate_limited",
+            f"{provider_label} rate limit exceeded — retry shortly",
+        )
+    if http_status == 403:
+        return ("forbidden", f"{provider_label} request forbidden — check account permissions")
+    if http_status == 400:
+        return ("bad_request", f"{provider_label} rejected request — voice or language may be invalid")
+    if http_status is not None and http_status >= 500:
+        return ("provider_error", f"{provider_label} server error (HTTP {http_status})")
+    if http_status is not None:
+        return ("http_error", f"{provider_label} HTTP {http_status}")
+    return ("unknown", f"{provider_label} synthesis failed")
+
+
 def resolve_tts_provider(language: str) -> str:
     """Pick the TTS provider for a target language.
 
@@ -120,6 +176,8 @@ class TtsLane:
 
         self._sequence = 0
         self._latest_sequence_by_speaker: dict[str, int] = {}
+        self._last_error_sig: str | None = None
+        self._last_error_at: float = 0.0
 
         self._deepgram_tts: Any = None
         self._http_session: aiohttp.ClientSession | None = None
@@ -205,12 +263,33 @@ class TtsLane:
                 await self._speak_item(item)
             except asyncio.CancelledError:
                 raise
+            except TtsApiError as exc:
+                logger.warning(
+                    "[TTS:%s] provider error speaker=%s code=%s: %s",
+                    self.language,
+                    item.speaker_id,
+                    exc.code,
+                    exc.message,
+                )
+                await self._emit_tts_error(
+                    speaker_id=item.speaker_id,
+                    provider=exc.provider,
+                    code=exc.code,
+                    message=exc.message,
+                    http_status=exc.http_status,
+                )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "[TTS:%s] synthesis/playback failed for speaker=%s: %s",
                     self.language,
                     item.speaker_id,
                     exc,
+                )
+                await self._emit_tts_error(
+                    speaker_id=item.speaker_id,
+                    provider=self.provider,
+                    code="synthesis_failed",
+                    message=str(exc),
                 )
             finally:
                 await self._emit_tts_event("tts_end", item.speaker_id)
@@ -333,7 +412,11 @@ class TtsLane:
         """Stream raw PCM from ElevenLabs Flash v2.5, yielding frame-aligned byte blocks."""
         api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
         if not api_key:
-            raise RuntimeError("ELEVENLABS_API_KEY not set for ElevenLabs TTS lane")
+            raise TtsApiError(
+                provider="elevenlabs",
+                code="missing_api_key",
+                message="ElevenLabs API key not configured on agent",
+            )
 
         voice = os.getenv("ELEVENLABS_VOICE_ID", _ELEVENLABS_DEFAULT_VOICE).strip()
         base_lang = self.language.split("-")[0].lower()
@@ -360,7 +443,13 @@ class TtsLane:
         ) as resp:
             if resp.status != 200:
                 detail = (await resp.text())[:200]
-                raise RuntimeError(f"ElevenLabs TTS HTTP {resp.status}: {detail}")
+                code, message = classify_tts_api_error("elevenlabs", resp.status, detail)
+                raise TtsApiError(
+                    provider="elevenlabs",
+                    code=code,
+                    message=message,
+                    http_status=resp.status,
+                )
             async for chunk in resp.content.iter_chunked(4096):
                 buf.extend(chunk)
                 aligned = len(buf) - (len(buf) % frame_bytes)
@@ -464,15 +553,46 @@ class TtsLane:
             await result
 
     async def _emit_tts_event(self, event_type: str, speaker_id: str) -> None:
-        if self.room is None or getattr(self.room, "local_participant", None) is None:
-            return
-        payload = json.dumps(
+        await self._publish_tts_data(
             {
                 "type": event_type,
                 "speaker_id": speaker_id,
                 "language": self.language,
             }
-        ).encode("utf-8")
+        )
+
+    async def _emit_tts_error(
+        self,
+        *,
+        speaker_id: str,
+        provider: str,
+        code: str,
+        message: str,
+        http_status: int | None = None,
+    ) -> None:
+        sig = f"{provider}:{code}:{http_status}"
+        now = self._now()
+        if sig == self._last_error_sig and (now - self._last_error_at) < 10.0:
+            return
+        self._last_error_sig = sig
+        self._last_error_at = now
+        await self._publish_tts_data(
+            {
+                "type": "tts_error",
+                "speaker_id": speaker_id,
+                "language": self.language,
+                "provider": provider,
+                "code": code,
+                "message": message,
+                "http_status": http_status,
+                "timestamp": time.time(),
+            }
+        )
+
+    async def _publish_tts_data(self, payload_dict: dict[str, Any]) -> None:
+        if self.room is None or getattr(self.room, "local_participant", None) is None:
+            return
+        payload = json.dumps(payload_dict).encode("utf-8")
         try:
             await self.room.local_participant.publish_data(
                 payload,

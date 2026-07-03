@@ -550,6 +550,7 @@ function MeetingRoomInner({
           selectedLanguage={selectedLanguage}
           spokenLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
+          voiceTranslationEnabled={voiceTranslationEnabled}
           participantName={participantInfo?.participantName || ''}
           meetingId={meetingId}
           isHost={participantInfo?.isHost || false}
