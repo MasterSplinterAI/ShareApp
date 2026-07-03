@@ -243,9 +243,11 @@ function TranslationDebugPanel({
                 <div className="mt-2 rounded border border-blue-500/30 bg-blue-500/5 p-2 text-[10px] text-foreground/90">
                   <div className="font-semibold text-blue-600">Voice translation</div>
                   <p className="mt-1 text-muted-foreground">
-                    Spoken translation (TTS) only runs on the{' '}
+                    Default pipeline is{' '}
                     <span className="font-medium text-foreground">deepgram_codeswitch</span>{' '}
-                    pipeline. Switch above, then enable captions → Voice translation in the menu.
+                    (code-switch routing + voice TTS). Switch to{' '}
+                    <span className="font-medium text-foreground">deepgram</span> for the
+                    stable captions-only agent. Enable captions → Voice translation in the menu.
                   </p>
                   {voiceTranslationEnabled && voicePipelineReady && (
                     <p className="mt-1 text-emerald-600">✅ Voice on + codeswitch pipeline active</p>
@@ -273,7 +275,7 @@ function TranslationDebugPanel({
                 {voicePipelineReady ? ' ✅' : ' (needs deepgram_codeswitch)'}
               </div>
               <p className="mt-1 text-[10px] text-muted-foreground">
-                Voice translation requires the codeswitch agent. Host: switch pipeline above (staging + ?debug=1).
+                Voice translation runs on deepgram_codeswitch (default). Switching to deepgram disables TTS.
               </p>
               {ttsErrors.length === 0 ? (
                 <div className="mt-1 text-muted-foreground">No TTS API errors yet</div>

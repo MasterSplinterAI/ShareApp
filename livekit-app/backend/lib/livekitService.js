@@ -13,13 +13,15 @@ const STT_PIPELINE_AGENTS = {
 
 const VALID_STT_PIPELINES = Object.keys(STT_PIPELINE_AGENTS);
 
-// Default pipeline for new rooms. Deepgram for launch: Gladia finalizes utterances
-// noticeably slower, which delays translation. Gladia stays host-switchable per room
-// (debug panel) while we tune its endpointing; flip via DEFAULT_STT_PIPELINE env.
-const _rawDefaultPipeline = String(process.env.DEFAULT_STT_PIPELINE || 'deepgram').toLowerCase();
+// Default pipeline for new rooms: codeswitch agent (detected source language +
+// optional voice translation). Stable profile-only agent remains host-switchable
+// via debug panel as `deepgram`. Override with DEFAULT_STT_PIPELINE env.
+const _rawDefaultPipeline = String(
+  process.env.DEFAULT_STT_PIPELINE || 'deepgram_codeswitch'
+).toLowerCase();
 const DEFAULT_STT_PIPELINE = VALID_STT_PIPELINES.includes(_rawDefaultPipeline)
   ? _rawDefaultPipeline
-  : 'deepgram';
+  : 'deepgram_codeswitch';
 
 function getLivekitHttpHost() {
   const url = process.env.LIVEKIT_URL;
