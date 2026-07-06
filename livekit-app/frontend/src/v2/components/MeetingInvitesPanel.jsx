@@ -73,8 +73,8 @@ export default function MeetingInvitesPanel({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        This creates a new URL/token. To extend the main guest link without changing the URL, use Guest link expiration
-        above. Longest cap: {maxInviteDays ?? 90} days from scheduled start (or from now if unscheduled).
+        This creates an additional guest invite link. Longest cap: {maxInviteDays ?? 90} days from scheduled start
+        (or from now if unscheduled).
       </p>
       <ul className="space-y-3 text-sm">
         {(meeting.invites || []).map((inv) => (

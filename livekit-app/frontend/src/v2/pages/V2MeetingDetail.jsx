@@ -5,11 +5,16 @@ import { format, isFuture } from 'date-fns';
 import {
   Archive,
   Copy,
+  FileText,
+  Globe,
   MoreHorizontal,
   Pencil,
   PhoneOff,
   RotateCcw,
+  Sparkles,
   Trash2,
+  UserPlus,
+  Users,
   Video,
 } from 'lucide-react';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
@@ -37,20 +42,13 @@ import {
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../../components/ui/accordion';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../../components/ui/select';
 import MeetingJoinCard from '../components/MeetingJoinCard';
 import MeetingPresenceCard from '../components/MeetingPresenceCard';
 import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
-import { defaultExpiryMode, expiryOptionsForMeeting } from '../../lib/inviteExpiry';
+import { defaultExpiryMode } from '../../lib/inviteExpiry';
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -125,9 +123,6 @@ export default function V2MeetingDetail() {
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteExpiryMode, setNewInviteExpiryMode] = useState('days_after_start');
   const [newInviteCustomHours, setNewInviteCustomHours] = useState(72);
-  const [guestExpiryMode, setGuestExpiryMode] = useState('days_after_start');
-  const [guestCustomHours, setGuestCustomHours] = useState(72);
-  const [updatingGuestLink, setUpdatingGuestLink] = useState(false);
   const [ending, setEnding] = useState(false);
   const [endOpen, setEndOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -182,29 +177,6 @@ export default function V2MeetingDetail() {
     const maxDays = meeting.inviteMaxTtlDays ?? 90;
     setNewInviteCustomHours((h) => Math.min(Math.max(1, h), maxDays * 24));
   }, [meeting?.id, meeting?.scheduled_start, meeting?.defaultExpiryMode, meeting?.inviteMaxTtlDays]);
-
-  useEffect(() => {
-    if (!meeting) return;
-    const mode = meeting.guestLinkMeta?.expiryMode || defaultExpiryMode(meeting);
-    setGuestExpiryMode(mode);
-    const maxHours = Math.max(1, (meeting.inviteMaxTtlDays ?? 90) * 24);
-    if (mode === 'custom_hours' && meeting.guestLinkMeta?.expiresAt) {
-      const expiresMs = new Date(meeting.guestLinkMeta.expiresAt).getTime();
-      const scheduledMs = meeting.scheduled_start ? new Date(meeting.scheduled_start).getTime() : NaN;
-      const anchorMs = Number.isFinite(scheduledMs) && scheduledMs > Date.now() ? scheduledMs : Date.now();
-      if (Number.isFinite(expiresMs) && expiresMs > anchorMs) {
-        setGuestCustomHours(Math.min(maxHours, Math.max(1, Math.ceil((expiresMs - anchorMs) / 3600000))));
-        return;
-      }
-    }
-    setGuestCustomHours((h) => Math.min(Math.max(1, h), maxHours));
-  }, [
-    meeting?.id,
-    meeting?.scheduled_start,
-    meeting?.inviteMaxTtlDays,
-    meeting?.guestLinkMeta?.expiryMode,
-    meeting?.guestLinkMeta?.expiresAt,
-  ]);
 
   useEffect(() => {
     if (!meeting || !['live', 'scheduled'].includes(meeting.status)) return undefined;
@@ -317,26 +289,6 @@ export default function V2MeetingDetail() {
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed');
-    }
-  };
-
-  const updateDefaultInvite = async () => {
-    setUpdatingGuestLink(true);
-    try {
-      const body = {
-        expiryMode: guestExpiryMode,
-        linkId: meeting?.guestLinkMeta?.id,
-      };
-      if (guestExpiryMode === 'custom_hours') {
-        body.expiresInHours = guestCustomHours;
-      }
-      await v2Meetings.updateDefaultInvite(id, body);
-      toast.success('Guest link expiration updated');
-      load();
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed to update guest link');
-    } finally {
-      setUpdatingGuestLink(false);
     }
   };
 
@@ -462,12 +414,8 @@ export default function V2MeetingDetail() {
   const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: true };
   const guestUrlNeedsToken = meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteDays = meeting.inviteMaxTtlDays ?? 90;
-  const guestExpiryOptions = expiryOptionsForMeeting(meeting);
-  const showGuestCustomHours = guestExpiryMode === 'custom_hours';
-  const maxGuestCustomHours = Math.max(1, maxInviteDays * 24);
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
   const canManageTranscriptPolicy = canManageMeeting;
-  const hasTranscriptLines = (meeting.transcriptLineCount || 0) > 0;
 
   // State machine for layout: archived > ended > live (people in room or status
   // 'live') > upcoming (scheduled/ready, nobody joined yet).
@@ -514,119 +462,139 @@ export default function V2MeetingDetail() {
     onCopyInviteUrl: copyInviteUrl,
   };
 
-  // Always-visible essentials: the guest link is the one thing hosts reach for.
-  const guestLinkCard = (
-    <Card className="app-card border-border/60">
-      <CardHeader className="border-b border-border/60 pb-3">
-        <CardTitle className="text-base">Invite guests</CardTitle>
-        <CardDescription>Share this link — guests click it to join.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 pt-4">
-        <MeetingAccessPanel {...accessPanelProps} showPolicyToggles={false} showGuestUrl />
-        {!joinDemoted && canManageMeeting && (
-          <div className="rounded-lg border border-border/60 bg-muted/30 p-3">
-            <div className="mb-2">
-              <h3 className="text-sm font-medium text-foreground">Guest link expiration</h3>
-              <p className="text-xs text-muted-foreground">
-                {meeting.guestLinkMeta?.id
-                  ? 'Update the visible guest link in place. The URL and token stay the same.'
-                  : 'Create a reusable guest link with the selected expiration.'}
-              </p>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <div className="space-y-1">
-                <Select value={guestExpiryMode} onValueChange={setGuestExpiryMode}>
-                  <SelectTrigger className="h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {guestExpiryOptions.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {guestExpiryOptions.find((o) => o.value === guestExpiryMode)?.hint && (
-                  <p className="text-xs text-muted-foreground">
-                    {guestExpiryOptions.find((o) => o.value === guestExpiryMode)?.hint}
-                  </p>
-                )}
-              </div>
-              {showGuestCustomHours && (
-                <Input
-                  type="number"
-                  min={1}
-                  max={maxGuestCustomHours}
-                  aria-label="Custom guest link duration in hours"
-                  className="h-9 w-32"
-                  value={guestCustomHours}
-                  onChange={(e) =>
-                    setGuestCustomHours(Math.min(maxGuestCustomHours, Math.max(1, Number(e.target.value) || 72)))
-                  }
-                />
-              )}
-            </div>
-            <Button type="button" size="sm" className="mt-3" disabled={updatingGuestLink} onClick={updateDefaultInvite}>
-              {updatingGuestLink ? 'Updating…' : 'Update guest link'}
+  const transcriptCount = meeting.transcriptLineCount || 0;
+  const hostControls = (
+    <div className="rounded-2xl border border-border/70 bg-muted/25 p-4">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Host controls</p>
+      <div className="flex flex-col gap-2">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button type="button" size="lg" variant={joinDemoted ? 'outline' : 'default'} className="justify-start gap-2">
+              <Video className="h-4 w-4" />
+              Join as host
             </Button>
-          </div>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80">
+            <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
+          </PopoverContent>
+        </Popover>
+        {!joinDemoted && meeting.joinUrl && (
+          <Button type="button" variant="outline" size="lg" className="justify-start gap-2" onClick={copyGuestUrl}>
+            <Copy className="h-4 w-4" />
+            Copy guest link
+          </Button>
         )}
+        {!joinDemoted && canManageMeeting && (
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button type="button" variant="outline" size="lg" className="justify-start gap-2">
+                <UserPlus className="h-4 w-4" />
+                Invite guests
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[min(92vw,34rem)]">
+              <MeetingEmailInvites meetingId={meeting.id} />
+            </PopoverContent>
+          </Popover>
+        )}
+        {isLive && canEndMeeting && (
+          <Button
+            type="button"
+            variant="destructive"
+            size="lg"
+            className="justify-start gap-2"
+            disabled={ending}
+            onClick={() => setEndOpen(true)}
+          >
+            <PhoneOff className="h-4 w-4" />
+            {ending ? 'Ending…' : 'End for everyone'}
+          </Button>
+        )}
+        {canManageMeeting && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="ghost" size="lg" className="justify-start gap-2">
+                <MoreHorizontal className="h-4 w-4" />
+                More actions
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {!isArchived && (
+                <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Archive
+                </DropdownMenuItem>
+              )}
+              {isArchived && (
+                <DropdownMenuItem disabled={restoring} onSelect={runRestore}>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  {restoring ? 'Restoring…' : 'Restore'}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setDeleteOpen(true)}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete permanently
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+      </div>
+    </div>
+  );
+
+  const metricCards = (
+    <div className="grid gap-3 sm:grid-cols-3">
+      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
+        <Users className="mb-2 h-4 w-4 text-muted-foreground" />
+        <div className="text-xl font-semibold text-foreground">{presence.humanCount || 0}</div>
+        <div className="text-xs text-muted-foreground">People live</div>
+      </div>
+      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
+        <Globe className="mb-2 h-4 w-4 text-muted-foreground" />
+        <div className="text-xl font-semibold text-foreground">Live</div>
+        <div className="text-xs text-muted-foreground">Translation ready</div>
+      </div>
+      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
+        <FileText className="mb-2 h-4 w-4 text-muted-foreground" />
+        <div className="text-xl font-semibold text-foreground">{transcriptCount}</div>
+        <div className="text-xs text-muted-foreground">Caption lines</div>
+      </div>
+    </div>
+  );
+
+  const transcriptCard = (
+    <Card className="app-card border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card">
+      <CardHeader className="border-b border-border/60 pb-3">
+        <CardTitle className="flex items-center gap-2 text-lg">
+          <Sparkles className="h-5 w-5 text-primary" />
+          AI insights & transcript
+        </CardTitle>
+        <CardDescription>
+          Meeting summary, action items, exports, and saved caption lines.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <MeetingTranscriptPanel
+          meetingId={id}
+          lineCount={meeting.transcriptLineCount}
+          storeTranscripts={policy.store_transcripts}
+          onDownloadJson={downloadTranscriptJson}
+          onDownloadTxt={downloadTranscriptTxt}
+        />
       </CardContent>
     </Card>
   );
 
-  // Everything else lives in collapsible sections to keep the page scannable.
-  const transcriptCount = meeting.transcriptLineCount || 0;
-  const detailSections = (
+  const settingsSections = (
     <Accordion
       type="multiple"
-      defaultValue={joinDemoted && hasTranscriptLines ? ['transcript'] : []}
+      defaultValue={[]}
       className="overflow-hidden rounded-xl border border-border/60 bg-card shadow-sm"
     >
-      {!joinDemoted && (
-        <AccordionItem value="email" className="border-b border-border/60 px-4 last:border-b-0">
-          <AccordionTrigger className="text-sm font-medium hover:no-underline">
-            <span className="flex flex-col items-start gap-0.5 text-left">
-              Invite by email
-              <span className="text-xs font-normal text-muted-foreground">
-                Send the link with reminders (1 day and 15 min before by default).
-              </span>
-            </span>
-          </AccordionTrigger>
-          <AccordionContent className="pt-1">
-            <MeetingEmailInvites meetingId={meeting.id} />
-          </AccordionContent>
-        </AccordionItem>
-      )}
-      <AccordionItem value="transcript" className="border-b border-border/60 px-4 last:border-b-0">
-        <AccordionTrigger className="text-sm font-medium hover:no-underline">
-          <span className="flex flex-col items-start gap-0.5 text-left">
-            <span className="flex items-center gap-2">
-              Transcript
-              {hasTranscriptLines && (
-                <Badge variant="secondary" className="font-normal">
-                  {transcriptCount} lines
-                </Badge>
-              )}
-            </span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {hasTranscriptLines
-                ? 'Read captions, generate AI reports, or export.'
-                : 'Captions appear here when transcript storage is on.'}
-            </span>
-          </span>
-        </AccordionTrigger>
-        <AccordionContent className="pt-1">
-          <MeetingTranscriptPanel
-            meetingId={id}
-            lineCount={meeting.transcriptLineCount}
-            storeTranscripts={policy.store_transcripts}
-            onDownloadJson={downloadTranscriptJson}
-            onDownloadTxt={downloadTranscriptTxt}
-          />
-        </AccordionContent>
-      </AccordionItem>
       <AccordionItem value="settings" className="border-b border-border/60 px-4 last:border-b-0">
         <AccordionTrigger className="text-sm font-medium hover:no-underline">
           <span className="flex flex-col items-start gap-0.5 text-left">
@@ -651,7 +619,7 @@ export default function V2MeetingDetail() {
             <div>
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Advanced invites</h3>
               <p className="mt-1 text-xs text-muted-foreground">
-                Expiring or single-guest invite links. Most meetings only need the guest link above.
+                Optional extra links for one-off guests, expirations, or revocation.
               </p>
             </div>
             <MeetingInvitesPanel {...invitesPanelProps} />
@@ -665,96 +633,38 @@ export default function V2MeetingDetail() {
     </Accordion>
   );
 
-  const headerActions = (
-    <div className="flex shrink-0 flex-wrap items-center gap-2">
-      {isLive && canEndMeeting && (
-        <Button type="button" variant="destructive" className="gap-2" disabled={ending} onClick={() => setEndOpen(true)}>
-          <PhoneOff className="h-4 w-4" />
-          {ending ? 'Ending…' : 'End for everyone'}
-        </Button>
-      )}
-      {!joinDemoted && meeting.joinUrl && (
-        <Button type="button" variant="outline" className="gap-2" onClick={copyGuestUrl}>
-          <Copy className="h-4 w-4" />
-          Copy guest link
-        </Button>
-      )}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button type="button" variant={joinDemoted ? 'outline' : 'default'} className="gap-2">
-            <Video className="h-4 w-4" />
-            Join as host
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="end" className="w-80">
-          <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
-        </PopoverContent>
-      </Popover>
-      {canManageMeeting && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="icon" aria-label="More actions">
-              <MoreHorizontal className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {!isArchived && (
-              <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
-                <Archive className="mr-2 h-4 w-4" />
-                Archive
-              </DropdownMenuItem>
-            )}
-            {isArchived && (
-              <DropdownMenuItem disabled={restoring} onSelect={runRestore}>
-                <RotateCcw className="mr-2 h-4 w-4" />
-                {restoring ? 'Restoring…' : 'Restore'}
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onSelect={() => setDeleteOpen(true)}
-            >
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete permanently
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-    </div>
-  );
-
-  const hero = (
-    <div className="space-y-3">
-      <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
-        ← Meetings
-      </Link>
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0 space-y-2">
-          <EditableTitle
-            value={titleEdit}
-            onChange={setTitleEdit}
-            onCommit={onTitleBlur}
-            onCancel={() => setTitleEdit(meeting.title || '')}
-          />
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            {ui && (
-              <Badge variant={toneToBadgeVariant(ui.tone)} className="uppercase tracking-wide">
-                {ui.label}
-              </Badge>
-            )}
-            {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
-          </div>
-          {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
-        </div>
-        {headerActions}
-      </div>
-    </div>
-  );
-
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      {hero}
+    <div className="mx-auto max-w-5xl space-y-6">
+      <div className="rounded-[1.5rem] border border-border/70 bg-card p-5 shadow-sm sm:p-6">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+          <div className="space-y-5">
+            <div className="space-y-3">
+              <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
+                ← Meetings
+              </Link>
+              <div className="min-w-0 space-y-2">
+                <EditableTitle
+                  value={titleEdit}
+                  onChange={setTitleEdit}
+                  onCommit={onTitleBlur}
+                  onCancel={() => setTitleEdit(meeting.title || '')}
+                />
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  {ui && (
+                    <Badge variant={toneToBadgeVariant(ui.tone)} className="uppercase tracking-wide">
+                      {ui.label}
+                    </Badge>
+                  )}
+                  {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
+                </div>
+                {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
+              </div>
+            </div>
+            {metricCards}
+          </div>
+          {hostControls}
+        </div>
+      </div>
 
       {isArchived && canManageMeeting && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/40 px-4 py-3">
@@ -768,9 +678,24 @@ export default function V2MeetingDetail() {
         </div>
       )}
 
-      {isLive && <MeetingPresenceCard presence={presence} />}
-      {!joinDemoted && guestLinkCard}
-      {detailSections}
+      {transcriptCard}
+
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        {isLive ? (
+          <MeetingPresenceCard presence={presence} />
+        ) : (
+          <Card className="app-card border-border/60">
+            <CardHeader className="border-b border-border/60 pb-3">
+              <CardTitle className="text-base">Participants</CardTitle>
+              <CardDescription>No one is connected right now.</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <p className="text-sm text-muted-foreground">Participants appear here when the meeting is live.</p>
+            </CardContent>
+          </Card>
+        )}
+        {settingsSections}
+      </div>
 
       <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
         <AlertDialogContent>
