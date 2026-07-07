@@ -464,27 +464,30 @@ export default function V2MeetingDetail() {
   };
 
   const transcriptCount = meeting.transcriptLineCount || 0;
-  const hostControls = (
-    <div className="rounded-2xl border border-border/70 bg-muted/25 p-4">
-      <p className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Host controls</p>
-      <div className="flex flex-col gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button type="button" size="lg" variant={joinDemoted ? 'outline' : 'default'} className="justify-start gap-2">
-              <Video className="h-4 w-4" />
-              Join as host
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="end" className="w-80">
-            <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
-          </PopoverContent>
-        </Popover>
+  const joinHostButton = (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button type="button" variant={joinDemoted ? 'outline' : 'default'} className="gap-2">
+          <Video className="h-4 w-4" />
+          Join as host
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-80">
+        <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
+      </PopoverContent>
+    </Popover>
+  );
+
+  const hostActionBar = (
+    <div className="flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:flex-wrap sm:items-center">
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:mr-1">Host controls</p>
+      <div className="flex flex-wrap gap-2">
+        <div className="sm:hidden">{joinHostButton}</div>
         {!joinDemoted && meeting.joinUrl && (
           <Button
             type="button"
             variant="outline"
-            size="lg"
-            className="justify-start gap-2 border-sky-500/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300"
+            className="gap-2 border-sky-500/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300"
             onClick={copyGuestUrl}
           >
             <Copy className="h-4 w-4" />
@@ -497,14 +500,13 @@ export default function V2MeetingDetail() {
               <Button
                 type="button"
                 variant="outline"
-                size="lg"
-                className="justify-start gap-2 border-violet-500/35 bg-violet-500/10 text-violet-700 hover:bg-violet-500/15 dark:text-violet-300"
+                className="gap-2 border-violet-500/35 bg-violet-500/10 text-violet-700 hover:bg-violet-500/15 dark:text-violet-300"
               >
                 <UserPlus className="h-4 w-4" />
                 Invite guests
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-[min(92vw,34rem)]">
+            <PopoverContent align="start" className="w-[min(92vw,34rem)]">
               <MeetingEmailInvites meetingId={meeting.id} />
             </PopoverContent>
           </Popover>
@@ -513,8 +515,7 @@ export default function V2MeetingDetail() {
           <Button
             type="button"
             variant="destructive"
-            size="lg"
-            className="justify-start gap-2"
+            className="gap-2"
             disabled={ending}
             onClick={() => setEndOpen(true)}
           >
@@ -525,12 +526,12 @@ export default function V2MeetingDetail() {
         {canManageMeeting && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" size="lg" className="justify-start gap-2">
+              <Button type="button" variant="ghost" className="gap-2">
                 <MoreHorizontal className="h-4 w-4" />
                 More actions
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="start">
               {!isArchived && (
                 <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
                   <Archive className="mr-2 h-4 w-4" />
@@ -697,9 +698,9 @@ export default function V2MeetingDetail() {
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="rounded-[1.5rem] border border-border/70 bg-card p-5 shadow-sm sm:p-6">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-          <div className="space-y-5">
-            <div className="space-y-3">
+        <div className="space-y-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 space-y-3">
               <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
                 ← Meetings
               </Link>
@@ -721,9 +722,10 @@ export default function V2MeetingDetail() {
                 {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
               </div>
             </div>
-            {metricCards}
+            <div className="hidden shrink-0 sm:block">{joinHostButton}</div>
           </div>
-          {hostControls}
+          {metricCards}
+          {hostActionBar}
         </div>
       </div>
 
