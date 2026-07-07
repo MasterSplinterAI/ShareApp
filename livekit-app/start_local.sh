@@ -19,7 +19,7 @@ pkill -f "realtime_agent" 2>/dev/null
 sleep 2
 
 # Start Backend
-echo -e "${GREEN}Starting Backend (port 3000)...${NC}"
+echo -e "${GREEN}Starting Backend (port 3001)...${NC}"
 cd backend
 # Set NODE_ENV and AGENT_NAME for local development
 export NODE_ENV=development
@@ -60,7 +60,7 @@ echo "╔═══════════════════════�
 echo "║          SERVICES STARTED                                    ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
-echo "Backend:  http://localhost:3000 (PID: $BACKEND_PID)"
+echo "Backend:  http://localhost:3001 (PID: $BACKEND_PID)"
 echo "Frontend: http://localhost:5174 (PID: $FRONTEND_PID)"
 echo "Agent:    Running (PID: $AGENT_PID)"
 echo ""
