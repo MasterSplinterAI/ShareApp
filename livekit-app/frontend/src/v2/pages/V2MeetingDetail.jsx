@@ -129,6 +129,7 @@ export default function V2MeetingDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
 
   const load = () =>
     v2Meetings
@@ -479,7 +480,13 @@ export default function V2MeetingDetail() {
           </PopoverContent>
         </Popover>
         {!joinDemoted && meeting.joinUrl && (
-          <Button type="button" variant="outline" size="lg" className="justify-start gap-2" onClick={copyGuestUrl}>
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="justify-start gap-2 border-sky-500/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300"
+            onClick={copyGuestUrl}
+          >
             <Copy className="h-4 w-4" />
             Copy guest link
           </Button>
@@ -487,7 +494,12 @@ export default function V2MeetingDetail() {
         {!joinDemoted && canManageMeeting && (
           <Popover>
             <PopoverTrigger asChild>
-              <Button type="button" variant="outline" size="lg" className="justify-start gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="lg"
+                className="justify-start gap-2 border-violet-500/35 bg-violet-500/10 text-violet-700 hover:bg-violet-500/15 dark:text-violet-300"
+              >
                 <UserPlus className="h-4 w-4" />
                 Invite guests
               </Button>
@@ -568,23 +580,72 @@ export default function V2MeetingDetail() {
 
   const transcriptCard = (
     <Card className="app-card border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card">
-      <CardHeader className="border-b border-border/60 pb-3">
-        <CardTitle className="flex items-center gap-2 text-lg">
-          <Sparkles className="h-5 w-5 text-primary" />
-          AI insights & transcript
-        </CardTitle>
-        <CardDescription>
-          Meeting summary, action items, exports, and saved caption lines.
-        </CardDescription>
+      <CardHeader className="border-b border-border/60 pb-4">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Sparkles className="h-5 w-5 text-primary" />
+              AI insights & transcript
+            </CardTitle>
+            <CardDescription>
+              Meeting summary, action items, exports, and saved caption lines.
+            </CardDescription>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button type="button" size="sm" className="gap-1.5" onClick={() => setTranscriptOpen(true)}>
+              <Sparkles className="h-3.5 w-3.5" />
+              Open insights
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setTranscriptOpen((v) => !v)}
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {transcriptOpen ? 'Hide transcript' : 'View transcript'}
+            </Button>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="pt-4">
-        <MeetingTranscriptPanel
-          meetingId={id}
-          lineCount={meeting.transcriptLineCount}
-          storeTranscripts={policy.store_transcripts}
-          onDownloadJson={downloadTranscriptJson}
-          onDownloadTxt={downloadTranscriptTxt}
-        />
+      <CardContent className="space-y-4 pt-4">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-border/60 bg-background/65 p-3">
+            <div className="text-xs text-muted-foreground">Transcript</div>
+            <div className="mt-1 text-lg font-semibold text-foreground">{transcriptCount} lines</div>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/65 p-3">
+            <div className="text-xs text-muted-foreground">Insights</div>
+            <div className="mt-1 text-lg font-semibold text-foreground">
+              {policy.store_transcripts ? 'Ready' : 'Off'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-border/60 bg-background/65 p-3">
+            <div className="text-xs text-muted-foreground">Exports</div>
+            <div className="mt-1 text-lg font-semibold text-foreground">TXT / JSON</div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
+          <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
+            <Sparkles className="h-4 w-4 text-primary" />
+            What you can do here
+          </div>
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Generate an AI report, review the saved captions, or export the transcript after the meeting.
+          </p>
+        </div>
+        {transcriptOpen && (
+          <div className="border-t border-border/60 pt-4">
+            <MeetingTranscriptPanel
+              meetingId={id}
+              lineCount={meeting.transcriptLineCount}
+              storeTranscripts={policy.store_transcripts}
+              onDownloadJson={downloadTranscriptJson}
+              onDownloadTxt={downloadTranscriptTxt}
+            />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -680,7 +741,7 @@ export default function V2MeetingDetail() {
 
       {transcriptCard}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
         {isLive ? (
           <MeetingPresenceCard presence={presence} />
         ) : (
