@@ -167,7 +167,7 @@ export function getActionGuide(ticket, proposals = []) {
       icon: Sparkles,
       tone: 'ai',
       title: `${cat.short} — AI is working`,
-      summary: 'Parley Support is reading the thread. This page refreshes automatically.',
+      summary: 'Lalia Support is reading the thread. This page refreshes automatically.',
       steps: ['Wait for AI to reply in-app or queue a proposal', 'You will be notified via Telegram for approvals'],
     };
   }

@@ -152,10 +152,10 @@ export function PricingTable() {
             </CardContent>
             <CardFooter className="flex flex-col gap-2">
               <Button className="w-full" variant="outline" asChild>
-                <a href="mailto:hello@parley.app?subject=Enterprise%20demo%20request">{t('pricing.tiers.enterprise.ctaDemo')}</a>
+                <a href="mailto:hello@lalia.cloud?subject=Enterprise%20demo%20request">{t('pricing.tiers.enterprise.ctaDemo')}</a>
               </Button>
               <Button className="w-full" variant="ghost" asChild>
-                <a href="mailto:hello@parley.app?subject=Enterprise%20pricing">{t('pricing.tiers.enterprise.ctaSales')}</a>
+                <a href="mailto:hello@lalia.cloud?subject=Enterprise%20pricing">{t('pricing.tiers.enterprise.ctaSales')}</a>
               </Button>
             </CardFooter>
           </Card>

@@ -12,7 +12,7 @@
   "hero": {
     "eyebrow": "Live-Untertitel & Übersetzung",
     "title": "Videomeetings, denen jeder folgen kann—in der eigenen Sprache.",
-    "subtitle": "Parley fügt jedem Meeting Live-Untertitel und Echtzeitübersetzung hinzu, damit globale Teams auf dem gleichen Stand bleiben. Teilen Sie einen Gastlink—kein Konto erforderlich—und behalten Sie optional ein Transkript, wenn Sie eine Aufzeichnung wünschen.",
+    "subtitle": "Lalia fügt jedem Meeting Live-Untertitel und Echtzeitübersetzung hinzu, damit globale Teams auf dem gleichen Stand bleiben. Teilen Sie einen Gastlink—kein Konto erforderlich—und behalten Sie optional ein Transkript, wenn Sie eine Aufzeichnung wünschen.",
     "startFree": "Kostenlos starten",
     "seePricing": "Preise ansehen",
     "seeDemo": "Live-Demo ansehen",
@@ -30,11 +30,11 @@
     "terms": "AGB",
     "privacy": "Datenschutz",
     "contactSales": "Vertrieb kontaktieren",
-    "copyright": "© {{year}} Parley. Alle Rechte vorbehalten.",
+    "copyright": "© {{year}} Lalia. Alle Rechte vorbehalten.",
     "support": "Support:"
   },
   "meetingPreview": {
-    "windowTitle": "Parley — Q3-Rollout · Live-Untertitel AN",
+    "windowTitle": "Lalia — Q3-Rollout · Live-Untertitel AN",
     "captions": "Untertitel",
     "chat": "Chat",
     "people": "Teilnehmer",
@@ -87,7 +87,7 @@
   "aiReports": {
     "eyebrow": "KI-Meetingberichte",
     "title": "Ihr Meeting, destilliert—in jeder gesprochenen Sprache.",
-    "subtitle": "Wenn die Transkriptspeicherung aktiviert ist, verwandelt Parley das vollständige mehrsprachige Gespräch in einen ausgearbeiteten Bericht: Executive Summaries, Aufgaben mit Verantwortlichen, Entscheidungen und offene Fragen. Nur auf dem basierend, was tatsächlich gesagt wurde — Lücken werden markiert, nie erfunden.",
+    "subtitle": "Wenn die Transkriptspeicherung aktiviert ist, verwandelt Lalia das vollständige mehrsprachige Gespräch in einen ausgearbeiteten Bericht: Executive Summaries, Aufgaben mit Verantwortlichen, Entscheidungen und offene Fragen. Nur auf dem basierend, was tatsächlich gesagt wurde — Lücken werden markiert, nie erfunden.",
     "templates": {
       "executive": {
         "label": "Executive Summary",
@@ -107,7 +107,7 @@
       "email": "Per E-Mail an Ihr Team senden"
     },
     "mock": {
-      "label": "Parley-Meetingbericht",
+      "label": "Lalia-Meetingbericht",
       "meta": "Executive Summary · In 12 s erstellt · 214 Transkriptzeilen · EN / ES / FR",
       "keyPoints": "Kernpunkte",
       "decisions": "Entscheidungen",
@@ -123,7 +123,7 @@
     "tiers": {
       "free": {
         "name": "Free",
-        "blurb": "60 Teilnehmerminuten pro Monat — ideal zum Ausprobieren von Parley.",
+        "blurb": "60 Teilnehmerminuten pro Monat — ideal zum Ausprobieren von Lalia.",
         "cta": "Kostenlos starten",
         "features": {
           "captions": "Live-Untertitel & Übersetzung",
@@ -179,7 +179,7 @@
       },
       "accuracy": {
         "q": "Wie genau ist die Live-Übersetzung?",
-        "a": "Parley nutzt Echtzeit-Spracherkennung mit mehrsprachiger Übersetzung. Die Genauigkeit hängt von der Audioqualität ab—am besten funktioniert es mit Headset in einer ruhigen Umgebung."
+        "a": "Lalia nutzt Echtzeit-Spracherkennung mit mehrsprachiger Übersetzung. Die Genauigkeit hängt von der Audioqualität ab—am besten funktioniert es mit Headset in einer ruhigen Umgebung."
       }
     }
   },

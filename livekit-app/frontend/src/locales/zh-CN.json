@@ -12,7 +12,7 @@
   "hero": {
     "eyebrow": "实时字幕与翻译",
     "title": "人人都能跟上的视频会议——用自己的语言。",
-    "subtitle": "Parley 为每场会议添加实时字幕和即时翻译，让全球团队保持同步。分享访客链接——无需账号——需要记录时可选择保存文字稿。",
+    "subtitle": "Lalia 为每场会议添加实时字幕和即时翻译，让全球团队保持同步。分享访客链接——无需账号——需要记录时可选择保存文字稿。",
     "startFree": "免费开始",
     "seePricing": "查看定价",
     "seeDemo": "查看实时演示",
@@ -30,11 +30,11 @@
     "terms": "条款",
     "privacy": "隐私",
     "contactSales": "联系销售",
-    "copyright": "© {{year}} Parley. 保留所有权利。",
+    "copyright": "© {{year}} Lalia. 保留所有权利。",
     "support": "支持："
   },
   "meetingPreview": {
-    "windowTitle": "Parley — Q3 上线 · 实时字幕已开启",
+    "windowTitle": "Lalia — Q3 上线 · 实时字幕已开启",
     "captions": "字幕",
     "chat": "聊天",
     "people": "参会者",
@@ -87,7 +87,7 @@
   "aiReports": {
     "eyebrow": "AI 会议报告",
     "title": "会议精华——以实际使用的任何语言呈现。",
-    "subtitle": "开启文字稿存储后，Parley 将完整的多语言对话整理为精炼报告：执行摘要、带负责人的行动项、决策与待解问题。仅基于实际发言内容——缺口会标注，绝不编造。",
+    "subtitle": "开启文字稿存储后，Lalia 将完整的多语言对话整理为精炼报告：执行摘要、带负责人的行动项、决策与待解问题。仅基于实际发言内容——缺口会标注，绝不编造。",
     "templates": {
       "executive": {
         "label": "执行摘要",
@@ -107,7 +107,7 @@
       "email": "邮件发送给团队"
     },
     "mock": {
-      "label": "Parley 会议报告",
+      "label": "Lalia 会议报告",
       "meta": "执行摘要 · 12 秒生成 · 214 行文字稿 · EN / ES / FR",
       "keyPoints": "要点",
       "decisions": "决策",
@@ -123,7 +123,7 @@
     "tiers": {
       "free": {
         "name": "Free",
-        "blurb": "每月 60 参与者分钟 — 非常适合试用 Parley。",
+        "blurb": "每月 60 参与者分钟 — 非常适合试用 Lalia。",
         "cta": "免费开始",
         "features": {
           "captions": "实时字幕与翻译",
@@ -179,7 +179,7 @@
       },
       "accuracy": {
         "q": "实时翻译准确度如何？",
-        "a": "Parley 使用带多语言翻译的实时语音识别。准确度取决于音频质量——在安静环境中使用耳机效果最佳。"
+        "a": "Lalia 使用带多语言翻译的实时语音识别。准确度取决于音频质量——在安静环境中使用耳机效果最佳。"
       }
     }
   },

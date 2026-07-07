@@ -47,7 +47,7 @@ test('validateIcsOrganizerDomain rejects a full email or URL', () => {
 });
 
 test('extractDomainFromMailFrom parses display-name addresses', () => {
-  assert.equal(extractDomainFromMailFrom('Parley <no-reply@example.com>'), 'example.com');
+  assert.equal(extractDomainFromMailFrom('Lalia <no-reply@example.com>'), 'example.com');
   assert.equal(extractDomainFromMailFrom('no-reply@example.com'), 'example.com');
   assert.equal(extractDomainFromMailFrom(''), '');
 });

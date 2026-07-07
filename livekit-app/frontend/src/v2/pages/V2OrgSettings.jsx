@@ -599,7 +599,7 @@ export default function V2OrgSettings() {
                 <CardHeader>
                   <CardTitle>Communication preferences</CardTitle>
                   <CardDescription>
-                    Choose how we may contact you about Parley. Transactional emails (password resets, billing,
+                    Choose how we may contact you about Lalia. Transactional emails (password resets, billing,
                     support replies) are always sent when needed.
                   </CardDescription>
                 </CardHeader>

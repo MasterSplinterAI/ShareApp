@@ -122,7 +122,7 @@ export default function AdminShell({ me, onLogout }) {
       <div className="border-b border-border/60 px-4 py-4">
         <div className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
           <Shield className="h-5 w-5 text-primary" />
-          Parley Admin
+          Lalia Admin
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">Platform operations dashboard</p>
         <Button variant="ghost" size="sm" className="mt-3 h-8 gap-1.5 px-2 text-xs" asChild>
@@ -191,7 +191,7 @@ export default function AdminShell({ me, onLogout }) {
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{sidebarBody}</div>
             </SheetContent>
           </Sheet>
-          <span className="min-w-0 flex-1 truncate text-sm font-semibold">Parley Admin</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-semibold">Lalia Admin</span>
           <LanguageSwitcher compact />
           <Button type="button" variant="outline" size="sm" className="h-8 shrink-0 text-xs" onClick={refreshAll}>
             Refresh

@@ -12,7 +12,7 @@ export function MarketingFooter() {
     <footer className="border-t border-border/60 bg-muted/10 py-12">
       <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         <div className="sm:col-span-2">
-          <p className="text-sm font-semibold text-foreground">Parley</p>
+          <p className="text-sm font-semibold text-foreground">Lalia</p>
           <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{t('footer.tagline')}</p>
         </div>
         <nav className="text-sm" aria-label="Product">
@@ -59,7 +59,7 @@ export function MarketingFooter() {
               </Link>
             </li>
             <li>
-              <a href="mailto:hello@parley.app?subject=Sales%20inquiry" className={linkClass}>
+              <a href="mailto:hello@lalia.cloud?subject=Sales%20inquiry" className={linkClass}>
                 {t('footer.contactSales')}
               </a>
             </li>
@@ -71,10 +71,10 @@ export function MarketingFooter() {
         <p>
           {t('footer.support')}{' '}
           <a
-            href="mailto:hello@parley.app"
+            href="mailto:hello@lalia.cloud"
             className="rounded-sm font-medium text-foreground transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            hello@parley.app
+            hello@lalia.cloud
           </a>
         </p>
       </div>

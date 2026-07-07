@@ -4,9 +4,9 @@ import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 
 // TODO: replace with the final legal entity name once incorporated.
-const COMPANY_LEGAL_NAME = 'Parley';
+const COMPANY_LEGAL_NAME = 'Lalia';
 const LAST_UPDATED = 'June 13, 2026';
-const CONTACT_EMAIL = 'hello@parley.app';
+const CONTACT_EMAIL = 'hello@lalia.cloud';
 
 function Section({ title, children }) {
   return (
@@ -33,7 +33,7 @@ export default function TermsPage() {
         <p className="mt-2 text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
         <p className="mt-8 text-base leading-relaxed text-muted-foreground">
-          These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Parley, a video-conferencing
+          These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Lalia, a video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;), operated by{' '}
           {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). Please read these Terms
           carefully before using the Service.
@@ -50,7 +50,7 @@ export default function TermsPage() {
 
         <Section title="2. Description of the Service">
           <p>
-            Parley provides video meetings with real-time speech recognition, live captions, and multi-language
+            Lalia provides video meetings with real-time speech recognition, live captions, and multi-language
             translation, along with workspace tools for organizing teams and meetings. Translation and transcription
             are generated automatically and provided on a best-effort basis; accuracy may vary depending on audio
             quality, language, and other factors. We may modify, add, or remove features of the Service from time to

@@ -1,6 +1,6 @@
 # Billing
 
-Organizations subscribe to Parley plans with usage limits for meetings, translation minutes, and seats.
+Organizations subscribe to Lalia plans with usage limits for meetings, translation minutes, and seats.
 
 ## Plans and upgrades
 

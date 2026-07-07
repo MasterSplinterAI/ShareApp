@@ -55,7 +55,7 @@ export function MarketingNav() {
           to="/"
           className="rounded-sm text-sm font-semibold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
         >
-          Parley
+          Lalia
         </Link>
 
         <nav className="hidden items-center gap-1 sm:flex sm:gap-2" aria-label="Primary">

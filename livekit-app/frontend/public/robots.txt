@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://parley.app/sitemap.xml
+Sitemap: https://lalia.cloud/sitemap.xml

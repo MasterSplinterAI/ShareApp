@@ -86,7 +86,7 @@ function buildMeetingIcs({
     : new Date(new Date(startIso).getTime() + 60 * 60 * 1000);
   const dtEnd = formatIcsUtc(endDate.toISOString());
   const dtStamp = formatIcsUtc(new Date().toISOString());
-  const summary = escapeIcsText(title || 'Parley meeting');
+  const summary = escapeIcsText(title || 'Lalia meeting');
   const desc = escapeIcsText(description || `Join in your browser: ${joinUrl}`);
   const location = escapeIcsText(joinUrl || 'Online');
   const uid = escapeIcsText(eventUid(meetingId, domain));
@@ -98,7 +98,7 @@ function buildMeetingIcs({
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Parley//Meeting Invite//EN',
+    'PRODID:-//Lalia//Meeting Invite//EN',
     'CALSCALE:GREGORIAN',
     'METHOD:REQUEST',
     'BEGIN:VEVENT',

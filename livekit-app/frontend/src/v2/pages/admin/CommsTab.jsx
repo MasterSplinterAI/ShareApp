@@ -115,9 +115,9 @@ function EmailSettingsSection() {
 
         {settings.usingPlaceholderFrom && (
           <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            Resend will reject mail from <code>@parley.app</code> until that domain is verified. Set a From address on a
+            Resend will reject mail from <code>@lalia.cloud</code> until that domain is verified. Set a From address on a
             domain you&apos;ve verified in Resend — for quick testing use{' '}
-            <code>Parley &lt;onboarding@resend.dev&gt;</code>.
+            <code>Lalia &lt;onboarding@resend.dev&gt;</code>.
           </p>
         )}
 
@@ -166,11 +166,11 @@ function EmailSettingsSection() {
               id="mail-from"
               value={mailFrom}
               onChange={(e) => setMailFrom(e.target.value)}
-              placeholder="Parley <no-reply@yourdomain.com>"
+              placeholder="Lalia <no-reply@yourdomain.com>"
             />
             <p className="text-xs text-muted-foreground">
               Must use a domain verified in your Resend account. For testing without your own domain, use{' '}
-              <code className="text-foreground">Parley &lt;onboarding@resend.dev&gt;</code>.
+              <code className="text-foreground">Lalia &lt;onboarding@resend.dev&gt;</code>.
             </p>
           </div>
 

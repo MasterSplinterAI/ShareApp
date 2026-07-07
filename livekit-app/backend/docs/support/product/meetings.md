@@ -1,6 +1,6 @@
 # Meetings
 
-Parley provides hosted video meetings with optional translation, captions, and video effects.
+Lalia provides hosted video meetings with optional translation, captions, and video effects.
 
 ## Creating a meeting (New meeting dialog)
 

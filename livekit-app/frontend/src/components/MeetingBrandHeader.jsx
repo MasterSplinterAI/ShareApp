@@ -1,7 +1,7 @@
 import { DEFAULT_BRAND_ACCENT } from '../lib/meetingBranding';
 
 /** Header block shown on guest join, waiting, and prejoin when branding is configured. */
-export default function MeetingBrandHeader({ branding, meetingTitle, fallbackTitle = 'Parley' }) {
+export default function MeetingBrandHeader({ branding, meetingTitle, fallbackTitle = 'Lalia' }) {
   if (!branding) return null;
   const { logoUrl, hostName, welcomeMessage, accentColor } = branding;
   const title = meetingTitle || hostName || fallbackTitle;

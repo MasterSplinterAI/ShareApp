@@ -19,9 +19,9 @@ async function renderGuestInvite({
   const title = meetingTitle || 'Meeting';
   const when = friendlyWhen(scheduledStart, timeZone);
   const inviter = inviterName || 'Your host';
-  const subject = `You're invited: ${title} — Parley`;
+  const subject = `You're invited: ${title} — Lalia`;
   const text = [
-    `${inviter} invited you to "${title}" on Parley.`,
+    `${inviter} invited you to "${title}" on Lalia.`,
     '',
     when ? `Scheduled for: ${when}` : 'This meeting can start at any time.',
     ...(when ? ['', 'Times shown in the host\'s timezone.'] : []),
@@ -29,7 +29,7 @@ async function renderGuestInvite({
     'Join from your browser (no account needed):',
     joinUrl,
     '',
-    'Parley provides live captions and real-time translation — pick your language when you join.',
+    'Lalia provides live captions and real-time translation — pick your language when you join.',
   ].join('\n');
 
   const detailRows = [
@@ -39,15 +39,15 @@ async function renderGuestInvite({
   ];
 
   const html = renderEmailLayout({
-    preheader: `${inviter} invited you to a Parley meeting.`,
+    preheader: `${inviter} invited you to a Lalia meeting.`,
     title: `You're invited to ${title}`,
-    introHtml: `<p style="margin:0;">${escapeHtml(inviter)} invited you to join a Parley video meeting with live captions and real-time translation. No account is required — just open the link in your browser.</p>`,
+    introHtml: `<p style="margin:0;">${escapeHtml(inviter)} invited you to join a Lalia video meeting with live captions and real-time translation. No account is required — just open the link in your browser.</p>`,
     detailRows,
     ctaUrl: joinUrl,
     ctaLabel: 'Join meeting',
     secondaryHtml: [
       scheduledStart
-        ? '<p style="margin:0;">A calendar invite is attached — your Yes/No/Maybe response updates the host in Parley.</p>'
+        ? '<p style="margin:0;">A calendar invite is attached — your Yes/No/Maybe response updates the host in Lalia.</p>'
         : '',
       when ? timezoneNoteHtml(timeZone) : '',
     ]
@@ -66,7 +66,7 @@ async function renderGuestInvite({
       hostName: hostName || inviter,
       guestEmail,
       sequence: icsSequence,
-      description: `${inviter} invited you to a Parley meeting. Live captions and real-time translation. Join: ${joinUrl}`,
+      description: `${inviter} invited you to a Lalia meeting. Live captions and real-time translation. Join: ${joinUrl}`,
     });
     if (ics) attachments.push(ics);
   }
@@ -90,7 +90,7 @@ async function renderGuestReminder({
   const when = friendlyWhen(scheduledStart, timeZone);
   const lead = offsetMinutes != null ? reminderOffsetLabel(offsetMinutes) : 'before start';
   const isDayBefore = offsetMinutes != null && offsetMinutes >= 1440;
-  const subject = isDayBefore ? `Tomorrow: ${title} — Parley` : `Starting soon: ${title} — Parley`;
+  const subject = isDayBefore ? `Tomorrow: ${title} — Lalia` : `Starting soon: ${title} — Lalia`;
   const text = [
     `Reminder (${lead}): "${title}" is coming up.`,
     '',
@@ -100,13 +100,13 @@ async function renderGuestReminder({
     'Join from your browser:',
     joinUrl,
     '',
-    'Parley provides live captions and real-time translation — pick your language when you join.',
+    'Lalia provides live captions and real-time translation — pick your language when you join.',
   ]
     .filter(Boolean)
     .join('\n');
 
   const html = renderEmailLayout({
-    preheader: `Your Parley meeting "${title}" is coming up (${lead}).`,
+    preheader: `Your Lalia meeting "${title}" is coming up (${lead}).`,
     title: isDayBefore ? 'Your meeting is tomorrow' : 'Your meeting is starting soon',
     introHtml: `<p style="margin:0;">This is a reminder (${escapeHtml(lead)}) that <strong>${escapeHtml(title)}</strong> is coming up. Join from your browser — live captions and translation are ready when you arrive.</p>`,
     detailRows: when

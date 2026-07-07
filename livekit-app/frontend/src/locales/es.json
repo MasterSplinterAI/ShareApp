@@ -12,7 +12,7 @@
   "hero": {
     "eyebrow": "Subtítulos y traducción en vivo",
     "title": "Videollamadas que todos pueden seguir—en su propio idioma.",
-    "subtitle": "Parley añade subtítulos en vivo y traducción en tiempo real a cada reunión, para que los equipos globales sigan alineados. Comparte un enlace de invitado—sin cuenta necesaria—y guarda una transcripción opcional cuando quieras un registro.",
+    "subtitle": "Lalia añade subtítulos en vivo y traducción en tiempo real a cada reunión, para que los equipos globales sigan alineados. Comparte un enlace de invitado—sin cuenta necesaria—y guarda una transcripción opcional cuando quieras un registro.",
     "startFree": "Empezar gratis",
     "seePricing": "Ver precios",
     "seeDemo": "Ver demo en vivo",
@@ -30,11 +30,11 @@
     "terms": "Términos",
     "privacy": "Privacidad",
     "contactSales": "Contactar ventas",
-    "copyright": "© {{year}} Parley. Todos los derechos reservados.",
+    "copyright": "© {{year}} Lalia. Todos los derechos reservados.",
     "support": "Soporte:"
   },
   "meetingPreview": {
-    "windowTitle": "Parley — Lanzamiento Q3 · Subtítulos en vivo ACTIVOS",
+    "windowTitle": "Lalia — Lanzamiento Q3 · Subtítulos en vivo ACTIVOS",
     "captions": "Subtítulos",
     "chat": "Chat",
     "people": "Personas",
@@ -87,7 +87,7 @@
   "aiReports": {
     "eyebrow": "Informes de reuniones con IA",
     "title": "Tu reunión, destilada—en cualquier idioma en que se habló.",
-    "subtitle": "Cuando el almacenamiento de transcripciones está activo, Parley convierte la conversación multilingüe completa en un informe pulido: resúmenes ejecutivos, tareas con responsables, decisiones y preguntas abiertas. Basado solo en lo que realmente se dijo — las lagunas se señalan, nunca se inventan.",
+    "subtitle": "Cuando el almacenamiento de transcripciones está activo, Lalia convierte la conversación multilingüe completa en un informe pulido: resúmenes ejecutivos, tareas con responsables, decisiones y preguntas abiertas. Basado solo en lo que realmente se dijo — las lagunas se señalan, nunca se inventan.",
     "templates": {
       "executive": {
         "label": "Resumen ejecutivo",
@@ -107,7 +107,7 @@
       "email": "Enviar por correo a tu equipo"
     },
     "mock": {
-      "label": "Informe de reunión Parley",
+      "label": "Informe de reunión Lalia",
       "meta": "Resumen ejecutivo · Generado en 12 s · 214 líneas de transcripción · EN / ES / FR",
       "keyPoints": "Puntos clave",
       "decisions": "Decisiones",
@@ -123,7 +123,7 @@
     "tiers": {
       "free": {
         "name": "Free",
-        "blurb": "60 minutos-participante al mes — perfecto para probar Parley.",
+        "blurb": "60 minutos-participante al mes — perfecto para probar Lalia.",
         "cta": "Empezar gratis",
         "features": {
           "captions": "Subtítulos en vivo y traducción",
@@ -179,7 +179,7 @@
       },
       "accuracy": {
         "q": "¿Qué precisión tiene la traducción en vivo?",
-        "a": "Parley utiliza reconocimiento de voz en tiempo real con traducción multilingüe. La precisión depende de la calidad del audio—funciona mejor cuando los participantes usan auriculares en un entorno tranquilo."
+        "a": "Lalia utiliza reconocimiento de voz en tiempo real con traducción multilingüe. La precisión depende de la calidad del audio—funciona mejor cuando los participantes usan auriculares en un entorno tranquilo."
       }
     }
   },

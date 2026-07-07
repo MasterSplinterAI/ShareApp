@@ -60,7 +60,7 @@ export default function V2Layout() {
         <div className="mx-auto flex h-14 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2 text-sm font-semibold tracking-tight">
             <LayoutDashboard className="h-5 w-5 text-primary" />
-            Parley
+            Lalia
           </Link>
           <div className="flex items-center gap-2">
             <LanguageSwitcher />

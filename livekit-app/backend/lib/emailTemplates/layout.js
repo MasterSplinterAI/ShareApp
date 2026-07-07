@@ -11,7 +11,7 @@ function renderEmailLayout({
   ctaUrl,
   ctaLabel,
   secondaryHtml = '',
-  footerNote = 'You received this email because of activity on your Parley account or a meeting you were invited to.',
+  footerNote = 'You received this email because of activity on your Lalia account or a meeting you were invited to.',
 }) {
   const detailsBlock =
     detailRows.length > 0
@@ -63,7 +63,7 @@ function renderEmailLayout({
         <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:560px;">
           <tr>
             <td style="padding:0 0 16px;text-align:center;">
-              <span style="font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#0f172a;">Parley</span>
+              <span style="font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#0f172a;">Lalia</span>
             </td>
           </tr>
           <tr>
@@ -78,7 +78,7 @@ function renderEmailLayout({
           <tr>
             <td class="email-muted" style="padding:20px 8px 0;text-align:center;font-size:12px;line-height:1.6;color:#64748b;">
               ${escapeHtml(footerNote)}<br />
-              <a href="mailto:hello@parley.app" style="color:#2563eb;text-decoration:none;">hello@parley.app</a>
+              <a href="mailto:hello@lalia.cloud" style="color:#2563eb;text-decoration:none;">hello@lalia.cloud</a>
             </td>
           </tr>
         </table>

@@ -2,7 +2,7 @@
  * Deepgram Nova-3 language catalog for meeting caption / STT selection.
  * @see https://developers.deepgram.com/docs/models-languages-overview
  *
- * `code` is Parley's canonical picker code; `deepgramCode` when set is sent to STT.
+ * `code` is Lalia's canonical picker code; `deepgramCode` when set is sent to STT.
  */
 
 export interface DeepgramLanguage {

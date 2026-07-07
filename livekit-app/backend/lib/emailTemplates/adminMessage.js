@@ -9,7 +9,7 @@ function renderAdminMessage({ subject, body }) {
     preheader: trimmedSubject,
     title: trimmedSubject,
     introHtml: `<div style="margin:0;">${nl2br(trimmedBody)}</div>`,
-    footerNote: 'This message was sent by the Parley team.',
+    footerNote: 'This message was sent by the Lalia team.',
   });
   return { subject: trimmedSubject, text, html };
 }

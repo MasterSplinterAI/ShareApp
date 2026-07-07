@@ -1,4 +1,4 @@
-# Parley Support Knowledge Base
+# Lalia Support Knowledge Base
 
 Internal corpus for AI triage and support replies. Update when product behavior changes.
 

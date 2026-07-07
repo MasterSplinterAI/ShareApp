@@ -29,8 +29,8 @@ def test_deepgram_keyterms_use_domain_defaults_when_env_unset(monkeypatch):
 
 
 def test_deepgram_keyterms_env_overrides_defaults(monkeypatch):
-    monkeypatch.setenv("DEEPGRAM_KEYTERMS", "Parley,LiveKit")
-    assert _deepgram_keyterms() == ["Parley", "LiveKit"]
+    monkeypatch.setenv("DEEPGRAM_KEYTERMS", "Lalia,LiveKit")
+    assert _deepgram_keyterms() == ["Lalia", "LiveKit"]
 
 
 def test_deepgram_stt_prefers_current_keyterm_argument(monkeypatch):

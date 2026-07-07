@@ -125,7 +125,7 @@ export default function V2AppShell({ me, onLogout }) {
       <div className="border-b border-border/60 px-4 py-4" data-no-translate="true">
         <Link to="/v2/app" className="flex items-center gap-2 text-sm font-semibold tracking-tight text-foreground">
           <LayoutDashboard className="h-5 w-5 text-primary" />
-          Parley
+          Lalia
         </Link>
         <div className="mt-2.5 flex flex-col gap-0.5">
           <p className="min-w-0 truncate text-xs font-medium text-foreground" title={sidebarTitle}>
@@ -217,7 +217,7 @@ export default function V2AppShell({ me, onLogout }) {
             </SheetContent>
           </Sheet>
           <Link to="/v2/app" className="min-w-0 flex-1 truncate text-sm font-semibold">
-            Parley
+            Lalia
           </Link>
           <LanguageSwitcher compact />
         </header>

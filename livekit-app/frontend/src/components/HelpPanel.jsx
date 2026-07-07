@@ -61,7 +61,7 @@ function TypingIndicator() {
   return (
     <div className="flex flex-col items-start gap-0.5">
       <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Parley Support
+        Lalia Support
       </span>
       <div className="flex items-center gap-1 rounded-2xl rounded-bl-md bg-muted px-3 py-3">
         <span className="h-2 w-2 animate-bounce rounded-full bg-muted-foreground/70 [animation-delay:-0.3s]" />
@@ -79,7 +79,7 @@ function ChatBubble({ message }) {
     <div className={cn('flex flex-col gap-0.5', isUser ? 'items-end' : 'items-start')}>
       {isStaff && (
         <span className="px-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Parley Support
+          Lalia Support
         </span>
       )}
       <div

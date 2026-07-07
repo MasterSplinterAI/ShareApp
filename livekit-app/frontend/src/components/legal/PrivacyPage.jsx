@@ -4,9 +4,9 @@ import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 
 // TODO: replace with the final legal entity name once incorporated.
-const COMPANY_LEGAL_NAME = 'Parley';
+const COMPANY_LEGAL_NAME = 'Lalia';
 const LAST_UPDATED = 'June 13, 2026';
-const CONTACT_EMAIL = 'hello@parley.app';
+const CONTACT_EMAIL = 'hello@lalia.cloud';
 
 function Section({ title, children }) {
   return (
@@ -34,7 +34,7 @@ export default function PrivacyPage() {
 
         <p className="mt-8 text-base leading-relaxed text-muted-foreground">
           This Privacy Policy explains how {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
-          &ldquo;our&rdquo;) collects, uses, and shares information when you use Parley, our video-conferencing
+          &ldquo;our&rdquo;) collects, uses, and shares information when you use Lalia, our video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;).
         </p>
 

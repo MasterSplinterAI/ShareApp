@@ -571,7 +571,7 @@ function TranscriptionPanel() {
     const now = new Date();
     const dateStr = now.toISOString().slice(0, 10);
     const timeStr = `${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-    const filename = `Parley-Transcript-${dateStr}-${timeStr}.json`;
+    const filename = `Lalia-Transcript-${dateStr}-${timeStr}.json`;
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;

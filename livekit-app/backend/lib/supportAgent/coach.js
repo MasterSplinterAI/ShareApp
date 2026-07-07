@@ -2,7 +2,7 @@ const { formatUserContextForPrompt, buildUserContextSnapshot } = require('../sup
 const { formatUserFacingReply } = require('../supportReplyFormat');
 const { aiEnabled, callSupportLlm } = require('./llm');
 
-const COACH_SYSTEM = `You help users refine Parley feature requests before formal submission.
+const COACH_SYSTEM = `You help users refine Lalia feature requests before formal submission.
 Output ONLY valid JSON:
 {
   "reply": "friendly chat message to the user (1-3 short paragraphs max)",

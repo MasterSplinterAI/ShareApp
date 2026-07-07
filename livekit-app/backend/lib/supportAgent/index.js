@@ -25,7 +25,7 @@ For customer_support you MUST set "route":
 Always include draft_reply with what the user should see in chat, even for escalate/propose_reply.`
       : '';
 
-  return `You are Parley support triage AI. Output ONLY valid JSON (no markdown fences).
+  return `You are Lalia support triage AI. Output ONLY valid JSON (no markdown fences).
 
 Category is fixed by the user submission: ${category}.
 ${supportRouting}

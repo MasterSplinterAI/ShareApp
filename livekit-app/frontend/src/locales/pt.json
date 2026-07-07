@@ -12,7 +12,7 @@
   "hero": {
     "eyebrow": "Legendas e tradução ao vivo",
     "title": "Videoconferências que todos podem acompanhar—no seu próprio idioma.",
-    "subtitle": "O Parley adiciona legendas ao vivo e tradução em tempo real a cada reunião, para que equipes globais permaneçam alinhadas. Compartilhe um link de convidado—sem conta necessária—e mantenha uma transcrição opcional quando quiser um registro.",
+    "subtitle": "O Lalia adiciona legendas ao vivo e tradução em tempo real a cada reunião, para que equipes globais permaneçam alinhadas. Compartilhe um link de convidado—sem conta necessária—e mantenha uma transcrição opcional quando quiser um registro.",
     "startFree": "Começar grátis",
     "seePricing": "Ver preços",
     "seeDemo": "Ver demo ao vivo",
@@ -30,11 +30,11 @@
     "terms": "Termos",
     "privacy": "Privacidade",
     "contactSales": "Falar com vendas",
-    "copyright": "© {{year}} Parley. Todos os direitos reservados.",
+    "copyright": "© {{year}} Lalia. Todos os direitos reservados.",
     "support": "Suporte:"
   },
   "meetingPreview": {
-    "windowTitle": "Parley — Lançamento Q3 · Legendas ao vivo ATIVAS",
+    "windowTitle": "Lalia — Lançamento Q3 · Legendas ao vivo ATIVAS",
     "captions": "Legendas",
     "chat": "Chat",
     "people": "Pessoas",
@@ -87,7 +87,7 @@
   "aiReports": {
     "eyebrow": "Relatórios de reunião com IA",
     "title": "Sua reunião, destilada—em qualquer idioma falado.",
-    "subtitle": "Quando o armazenamento de transcrições está ativo, o Parley transforma a conversa multilíngue completa em um relatório refinado: resumos executivos, itens de ação com responsáveis, decisões e perguntas em aberto. Baseado apenas no que foi realmente dito — lacunas são sinalizadas, nunca inventadas.",
+    "subtitle": "Quando o armazenamento de transcrições está ativo, o Lalia transforma a conversa multilíngue completa em um relatório refinado: resumos executivos, itens de ação com responsáveis, decisões e perguntas em aberto. Baseado apenas no que foi realmente dito — lacunas são sinalizadas, nunca inventadas.",
     "templates": {
       "executive": {
         "label": "Resumo executivo",
@@ -107,7 +107,7 @@
       "email": "Enviar por e-mail para sua equipe"
     },
     "mock": {
-      "label": "Relatório de reunião Parley",
+      "label": "Relatório de reunião Lalia",
       "meta": "Resumo executivo · Gerado em 12 s · 214 linhas de transcrição · EN / ES / FR",
       "keyPoints": "Pontos-chave",
       "decisions": "Decisões",
@@ -123,7 +123,7 @@
     "tiers": {
       "free": {
         "name": "Free",
-        "blurb": "60 minutos-participante por mês — perfeito para experimentar o Parley.",
+        "blurb": "60 minutos-participante por mês — perfeito para experimentar o Lalia.",
         "cta": "Começar grátis",
         "features": {
           "captions": "Legendas ao vivo e tradução",
@@ -179,7 +179,7 @@
       },
       "accuracy": {
         "q": "Qual a precisão da tradução ao vivo?",
-        "a": "O Parley usa reconhecimento de fala em tempo real com tradução multilíngue. A precisão depende da qualidade do áudio—funciona melhor quando os participantes usam headset em um ambiente silencioso."
+        "a": "O Lalia usa reconhecimento de fala em tempo real com tradução multilíngue. A precisão depende da qualidade do áudio—funciona melhor quando os participantes usam headset em um ambiente silencioso."
       }
     }
   },

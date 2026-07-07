@@ -1,10 +1,10 @@
 # Frequently asked questions
 
-Quick answers for common Parley support questions. Prefer these over escalation when the user question matches.
+Quick answers for common Lalia support questions. Prefer these over escalation when the user question matches.
 
 ## How do I change my password?
 
-1. Open the Parley app and click **Settings** in the left sidebar (gear icon).
+1. Open the Lalia app and click **Settings** in the left sidebar (gear icon).
 2. Scroll to the **Password** section.
 3. Enter your **current password**, your **new password** (at least 8 characters), and confirm it.
 4. Click **Update password**.
@@ -46,11 +46,11 @@ Open **Help** (blue chat bubble, bottom-right) → choose **Bug** or **Feature**
 
 ## When will someone reply to my support chat?
 
-Parley Support replies in the Help chat first. A teammate joins only if your issue needs escalation (billing disputes, security, etc.). You always see updates in the same thread.
+Lalia Support replies in the Help chat first. A teammate joins only if your issue needs escalation (billing disputes, security, etc.). You always see updates in the same thread.
 
 ## Are my transcripts secure? What encryption is used?
 
-**Short answer:** Captions in the meeting are protected in transit with **HTTPS/TLS** (app/API) and **WebRTC encryption** (live media/captions). Stored transcript **text** is saved only when **Save transcript on server** is enabled; it is kept in your org's data on Parley infrastructure. Our Privacy Policy describes industry-standard safeguards and **encryption in transit** — we do not publish a separate at-rest encryption algorithm for stored transcript fields.
+**Short answer:** Captions in the meeting are protected in transit with **HTTPS/TLS** (app/API) and **WebRTC encryption** (live media/captions). Stored transcript **text** is saved only when **Save transcript on server** is enabled; it is kept in your org's data on Lalia infrastructure. Our Privacy Policy describes industry-standard safeguards and **encryption in transit** — we do not publish a separate at-rest encryption algorithm for stored transcript fields.
 
 **Details:** See product/transcripts-security.md (in transit vs at rest, who can access, bcrypt for passwords, deletion).
 

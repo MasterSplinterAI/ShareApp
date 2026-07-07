@@ -12,7 +12,7 @@
   "hero": {
     "eyebrow": "Sous-titres et traduction en direct",
     "title": "Des visioconférences que chacun peut suivre—dans sa langue.",
-    "subtitle": "Parley ajoute des sous-titres en direct et une traduction en temps réel à chaque réunion, pour que les équipes internationales restent alignées. Partagez un lien invité—sans compte requis—et conservez une transcription optionnelle si vous souhaitez un enregistrement.",
+    "subtitle": "Lalia ajoute des sous-titres en direct et une traduction en temps réel à chaque réunion, pour que les équipes internationales restent alignées. Partagez un lien invité—sans compte requis—et conservez une transcription optionnelle si vous souhaitez un enregistrement.",
     "startFree": "Commencer gratuitement",
     "seePricing": "Voir les tarifs",
     "seeDemo": "Voir la démo en direct",
@@ -30,11 +30,11 @@
     "terms": "Conditions",
     "privacy": "Confidentialité",
     "contactSales": "Contacter les ventes",
-    "copyright": "© {{year}} Parley. Tous droits réservés.",
+    "copyright": "© {{year}} Lalia. Tous droits réservés.",
     "support": "Assistance :"
   },
   "meetingPreview": {
-    "windowTitle": "Parley — Déploiement T3 · Sous-titres en direct ACTIVÉS",
+    "windowTitle": "Lalia — Déploiement T3 · Sous-titres en direct ACTIVÉS",
     "captions": "Sous-titres",
     "chat": "Chat",
     "people": "Participants",
@@ -87,7 +87,7 @@
   "aiReports": {
     "eyebrow": "Rapports de réunion IA",
     "title": "Votre réunion, distillée—dans toutes les langues parlées.",
-    "subtitle": "Lorsque le stockage des transcriptions est activé, Parley transforme la conversation multilingue complète en un rapport soigné : résumés exécutifs, actions avec responsables, décisions et questions ouvertes. Basé uniquement sur ce qui a réellement été dit — les lacunes sont signalées, jamais inventées.",
+    "subtitle": "Lorsque le stockage des transcriptions est activé, Lalia transforme la conversation multilingue complète en un rapport soigné : résumés exécutifs, actions avec responsables, décisions et questions ouvertes. Basé uniquement sur ce qui a réellement été dit — les lacunes sont signalées, jamais inventées.",
     "templates": {
       "executive": {
         "label": "Résumé exécutif",
@@ -107,7 +107,7 @@
       "email": "Envoyer par e-mail à votre équipe"
     },
     "mock": {
-      "label": "Rapport de réunion Parley",
+      "label": "Rapport de réunion Lalia",
       "meta": "Résumé exécutif · Généré en 12 s · 214 lignes de transcription · EN / ES / FR",
       "keyPoints": "Points clés",
       "decisions": "Décisions",
@@ -123,7 +123,7 @@
     "tiers": {
       "free": {
         "name": "Free",
-        "blurb": "60 minutes-participant par mois — idéal pour essayer Parley.",
+        "blurb": "60 minutes-participant par mois — idéal pour essayer Lalia.",
         "cta": "Commencer gratuitement",
         "features": {
           "captions": "Sous-titres en direct et traduction",
@@ -179,7 +179,7 @@
       },
       "accuracy": {
         "q": "Quelle est la précision de la traduction en direct ?",
-        "a": "Parley utilise la reconnaissance vocale en temps réel avec traduction multilingue. La précision dépend de la qualité audio—elle est optimale lorsque les participants utilisent un casque dans un environnement calme."
+        "a": "Lalia utilise la reconnaissance vocale en temps réel avec traduction multilingue. La précision dépend de la qualité audio—elle est optimale lorsque les participants utilisent un casque dans un environnement calme."
       }
     }
   },

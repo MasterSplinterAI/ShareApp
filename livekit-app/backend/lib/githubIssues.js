@@ -52,7 +52,7 @@ function buildIssueBody(ticket, proposal) {
     lines.push('', '---', '', body.github_issue_body);
   }
 
-  lines.push('', '_Created from Parley support platform (Option A — issue only, no auto-PR)._');
+  lines.push('', '_Created from Lalia support platform (Option A — issue only, no auto-PR)._');
   return lines.join('\n');
 }
 

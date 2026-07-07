@@ -60,14 +60,14 @@ const CAPTION_LINES = [
   {
     speaker: 'Kenny',
     sourceLang: 'en',
-    originalText: 'Yes — Parley will caption and translate live for the APAC team.',
+    originalText: 'Yes — Lalia will caption and translate live for the APAC team.',
     translations: {
-      es: 'Sí — Parley subtitulará y traducirá en vivo para el equipo de APAC.',
-      fr: 'Oui — Parley sous-titrera et traduira en direct pour l’équipe APAC.',
-      de: 'Ja — Parley untertitelt und übersetzt live für das APAC-Team.',
-      pt: 'Sim — o Parley legendará e traduzirá ao vivo para a equipe APAC.',
-      ja: 'はい — ParleyがAPACチーム向けにライブ字幕と翻訳を提供します。',
-      'zh-CN': '是的——Parley 会为 APAC 团队提供实时字幕和翻译。',
+      es: 'Sí — Lalia subtitulará y traducirá en vivo para el equipo de APAC.',
+      fr: 'Oui — Lalia sous-titrera et traduira en direct pour l’équipe APAC.',
+      de: 'Ja — Lalia untertitelt und übersetzt live für das APAC-Team.',
+      pt: 'Sim — o Lalia legendará e traduzirá ao vivo para a equipe APAC.',
+      ja: 'はい — LaliaがAPACチーム向けにライブ字幕と翻訳を提供します。',
+      'zh-CN': '是的——Lalia 会为 APAC 团队提供实时字幕和翻译。',
     },
   },
 ];

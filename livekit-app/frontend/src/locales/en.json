@@ -14,7 +14,7 @@
   "hero": {
     "eyebrow": "Live captions & translation",
     "title": "Video meetings everyone can follow—in their own language.",
-    "subtitle": "Parley adds live captions and real-time translation to every meeting, so global teams stay aligned. Share a guest link—no account needed—and keep an optional transcript when you want a record.",
+    "subtitle": "Lalia adds live captions and real-time translation to every meeting, so global teams stay aligned. Share a guest link—no account needed—and keep an optional transcript when you want a record.",
     "startFree": "Start free",
     "seePricing": "See pricing",
     "seeDemo": "See live demo",
@@ -41,11 +41,11 @@
     "terms": "Terms",
     "privacy": "Privacy",
     "contactSales": "Contact sales",
-    "copyright": "© {{year}} Parley. All rights reserved.",
+    "copyright": "© {{year}} Lalia. All rights reserved.",
     "support": "Support:"
   },
   "meetingPreview": {
-    "windowTitle": "Parley — Q3 rollout · Live captions ON",
+    "windowTitle": "Lalia — Q3 rollout · Live captions ON",
     "captions": "Captions",
     "chat": "Chat",
     "people": "People",
@@ -98,7 +98,7 @@
   "aiReports": {
     "eyebrow": "AI meeting reports",
     "title": "Your meeting, distilled—in any language it was spoken.",
-    "subtitle": "When transcript storage is on, Parley turns the full multilingual conversation into a polished report: executive summaries, action items with owners, decisions and open questions. Grounded only in what was actually said — gaps are flagged, never invented.",
+    "subtitle": "When transcript storage is on, Lalia turns the full multilingual conversation into a polished report: executive summaries, action items with owners, decisions and open questions. Grounded only in what was actually said — gaps are flagged, never invented.",
     "templates": {
       "executive": {
         "label": "Executive summary",
@@ -118,7 +118,7 @@
       "email": "Email to your team"
     },
     "mock": {
-      "label": "Parley meeting report",
+      "label": "Lalia meeting report",
       "meta": "Executive summary · Generated in 12s · 214 transcript lines · EN / ES / FR",
       "keyPoints": "Key points",
       "decisions": "Decisions",
@@ -141,7 +141,7 @@
     "tiers": {
       "free": {
         "name": "Free",
-        "blurb": "60 participant-minutes per month — perfect to try Parley.",
+        "blurb": "60 participant-minutes per month — perfect to try Lalia.",
         "cta": "Start free",
         "features": {
           "captions": "Live captions & translation",
@@ -210,15 +210,15 @@
       },
       "accuracy": {
         "q": "How accurate is the live translation?",
-        "a": "Parley uses real-time speech recognition with multi-language translation. Accuracy depends on audio quality—it works best when speakers use a headset in a quiet environment."
+        "a": "Lalia uses real-time speech recognition with multi-language translation. Accuracy depends on audio quality—it works best when speakers use a headset in a quiet environment."
       },
       "languages": {
         "q": "Which languages are supported?",
-        "a": "Parley supports 30+ meeting languages for live captions and cross-language translation—including English, Spanish, French, German, Portuguese, Japanese, Chinese, Arabic, Hebrew, and more. Hosts and guests each pick their own language lane in the meeting."
+        "a": "Lalia supports 30+ meeting languages for live captions and cross-language translation—including English, Spanish, French, German, Portuguese, Japanese, Chinese, Arabic, Hebrew, and more. Hosts and guests each pick their own language lane in the meeting."
       },
       "participants": {
         "q": "How many participants can join a meeting?",
-        "a": "Parley is built for team calls and client meetings with multiple speakers. Typical group sizes work well on all plans. Need a large event or webinar-style session? Contact us—we'll help you size the right plan."
+        "a": "Lalia is built for team calls and client meetings with multiple speakers. Typical group sizes work well on all plans. Need a large event or webinar-style session? Contact us—we'll help you size the right plan."
       },
       "planLimit": {
         "q": "What happens when I hit my plan limit?",
@@ -226,11 +226,11 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Parley does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
-        "a": "No—we do not use your meeting content to train Parley's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
+        "a": "No—we do not use your meeting content to train Lalia's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
       }
     }
   },

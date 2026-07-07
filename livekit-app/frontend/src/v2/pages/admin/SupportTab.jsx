@@ -567,7 +567,7 @@ export function SupportTab({ initialTicketNumber }) {
                         )}
                       >
                         <p className="text-xs font-medium capitalize text-muted-foreground">
-                          {m.authorType === 'agent' ? 'Parley Support' : m.authorType}
+                          {m.authorType === 'agent' ? 'Lalia Support' : m.authorType}
                           {m.authorType === 'staff' && m.authorId ? ` · ${m.authorId}` : ''} · {fmtDateTime(m.createdAt)}
                         </p>
                         <div className="mt-1 text-foreground">

@@ -75,7 +75,7 @@ if [ -f "$LOCAL_SECRET_FILE" ]; then
 fi
 
 {
-  echo "# Parley staging — JWT_SECRET_V2"
+  echo "# Lalia staging — JWT_SECRET_V2"
   echo "# Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "# Host: $REMOTE_HOST"
   echo "JWT_SECRET_V2=$(cat "$TMP_SECRET")"

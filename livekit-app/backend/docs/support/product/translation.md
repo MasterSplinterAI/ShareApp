@@ -1,6 +1,6 @@
 # Live translation
 
-Parley can translate spoken audio in real time during meetings when the feature is enabled for your organization plan.
+Lalia can translate spoken audio in real time during meetings when the feature is enabled for your organization plan.
 
 ## Enabling translation
 

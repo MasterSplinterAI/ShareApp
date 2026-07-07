@@ -436,7 +436,7 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Cancel via Stripe API (requires audit reason above). Webhooks sync status back to Parley.
+                  Cancel via Stripe API (requires audit reason above). Webhooks sync status back to Lalia.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <Button type="button" size="sm" variant="outline" disabled={busy} onClick={() => cancelStripeSubscription(false)}>

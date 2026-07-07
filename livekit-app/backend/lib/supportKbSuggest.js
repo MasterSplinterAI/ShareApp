@@ -207,7 +207,7 @@ function estimateRetrievalImprovement(question, draftMarkdown) {
   };
 }
 
-const SUGGEST_SYSTEM = `You help Parley ops draft knowledge-base entries for docs/support/.
+const SUGGEST_SYSTEM = `You help Lalia ops draft knowledge-base entries for docs/support/.
 Output ONLY valid JSON:
 {
   "target_file": "faq.md or product/meetings.md etc — relative to docs/support/",

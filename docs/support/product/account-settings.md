@@ -2,7 +2,7 @@
 
 ## Change your password
 
-1. Open the Parley app and click **Settings** in the left sidebar (gear icon).
+1. Open the Lalia app and click **Settings** in the left sidebar (gear icon).
 2. Scroll to the **Password** card.
 3. Enter your **current password**, **new password** (at least 8 characters), and **confirm**.
 4. Click **Update password**.

@@ -2,7 +2,7 @@
 
 ## When are transcripts stored?
 
-Parley does **not** record meeting audio or video. **Text transcripts** (captions) are stored on our servers **only when**:
+Lalia does **not** record meeting audio or video. **Text transcripts** (captions) are stored on our servers **only when**:
 
 1. Your workspace allows transcript storage, and  
 2. **Save transcript on server** is enabled for that meeting (in the **New meeting** dialog or under **Meeting settings → Access & policy**).
@@ -11,19 +11,19 @@ If storage is off, captions may still appear live in the meeting but are not sav
 
 ## Who can access stored transcripts?
 
-Stored transcripts belong to your **organization**. They are available to users who can access that meeting in the Parley app (typically org members). Hosts and org admins can export or delete them from meeting history.
+Stored transcripts belong to your **organization**. They are available to users who can access that meeting in the Lalia app (typically org members). Hosts and org admins can export or delete them from meeting history.
 
 ## What encryption is used?
 
 ### In transit
 
-- **Web app and API:** All communication with Parley uses **HTTPS (TLS)**.
+- **Web app and API:** All communication with Lalia uses **HTTPS (TLS)**.
 - **Live meeting media and captions:** Real-time audio, video, and caption data use **WebRTC encryption** (DTLS-SRTP) via LiveKit — industry-standard protection for data in flight during the meeting.
 - **Saving transcript lines:** When captions are persisted, the client sends them to our backend over **HTTPS/TLS**.
 
 ### At rest (stored transcript text)
 
-When **Save transcript on server** is on, transcript text is stored in Parley's database on our infrastructure, scoped to your organization.
+When **Save transcript on server** is on, transcript text is stored in Lalia's database on our infrastructure, scoped to your organization.
 
 Our **Privacy Policy** (Settings → legal links, or `/privacy`) states that we use industry-standard safeguards and that **data is encrypted in transit**. We do **not** document a separate application-level encryption scheme (for example AES-256 field encryption) specifically for stored transcript content. Infrastructure providers may encrypt disks at the host level; contact us if you need details for a security review or RFP.
 

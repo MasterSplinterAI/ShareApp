@@ -1,8 +1,8 @@
 const db = require('../db/v2Database');
 
 const SETTINGS_ID = 'default';
-const DEFAULT_FROM = 'Parley <no-reply@parley.app>';
-const PLACEHOLDER_FROM_DOMAIN = 'parley.app';
+const DEFAULT_FROM = 'Lalia <no-reply@lalia.cloud>';
+const PLACEHOLDER_FROM_DOMAIN = 'lalia.cloud';
 let cache = null;
 let cacheAt = 0;
 const CACHE_MS = 3000;
@@ -162,7 +162,7 @@ function validateMailFrom(value) {
   if (!value) return null;
   const trimmed = String(value).trim();
   if (!/^[^<>\n]+<[^\s@<>]+@[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+$/.test(trimmed)) {
-    return 'From address should look like "Parley <no-reply@yourdomain.com>"';
+    return 'From address should look like "Lalia <no-reply@yourdomain.com>"';
   }
   if (isPlaceholderFromAddress(trimmed)) {
     return `Use a domain verified in Resend (not @${PLACEHOLDER_FROM_DOMAIN}). For testing, try onboarding@resend.dev`;
