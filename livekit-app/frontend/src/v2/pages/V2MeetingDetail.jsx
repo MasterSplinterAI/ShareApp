@@ -49,6 +49,51 @@ import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
 import { defaultExpiryMode } from '../../lib/inviteExpiry';
+import { cn } from '../../lib/utils';
+
+const hostActionTileStyles = {
+  primary:
+    'border-primary/30 bg-primary/[0.035] hover:border-primary/45 hover:bg-primary/[0.06] focus-visible:ring-primary/30',
+  sky: 'border-sky-500/25 bg-sky-500/[0.04] hover:border-sky-500/40 hover:bg-sky-500/[0.08] focus-visible:ring-sky-500/25',
+  violet:
+    'border-violet-500/25 bg-violet-500/[0.04] hover:border-violet-500/40 hover:bg-violet-500/[0.08] focus-visible:ring-violet-500/25',
+};
+
+const hostActionIconStyles = {
+  primary: 'bg-primary text-primary-foreground',
+  sky: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
+  violet: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
+};
+
+/** Large clickable host action tile — primary CTAs on the meeting detail hero. */
+function HostActionTile({ icon: Icon, title, description, tone = 'primary', className, ...props }) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        'group flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2',
+        hostActionTileStyles[tone],
+        className
+      )}
+      {...props}
+    >
+      <div
+        className={cn(
+          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-[1.02]',
+          hostActionIconStyles[tone]
+        )}
+      >
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="min-w-0 pt-0.5">
+        <div className="text-sm font-semibold text-foreground">{title}</div>
+        {description ? (
+          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</div>
+        ) : null}
+      </div>
+    </button>
+  );
+}
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -464,10 +509,104 @@ export default function V2MeetingDetail() {
   };
 
   const transcriptCount = meeting.transcriptLineCount || 0;
-  const joinHostButton = (
+
+  const primaryHostActions = !joinDemoted && (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <Popover>
+        <PopoverTrigger asChild>
+          <HostActionTile
+            icon={Video}
+            tone="primary"
+            title="Join as host"
+            description="Enter with host controls and start the session"
+          />
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80">
+          <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
+        </PopoverContent>
+      </Popover>
+      {meeting.joinUrl && (
+        <HostActionTile
+          icon={Copy}
+          tone="sky"
+          title="Copy guest link"
+          description="Share a one-click link — no account needed"
+          onClick={copyGuestUrl}
+        />
+      )}
+      {canManageMeeting && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <HostActionTile
+              icon={UserPlus}
+              tone="violet"
+              title="Invite guests"
+              description="Email invites or create custom links"
+              className={!meeting.joinUrl ? 'sm:col-span-2 lg:col-span-1' : undefined}
+            />
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[min(92vw,34rem)]">
+            <MeetingEmailInvites meetingId={meeting.id} />
+          </PopoverContent>
+        </Popover>
+      )}
+    </div>
+  );
+
+  const secondaryHostActions = (isLive && canEndMeeting) || canManageMeeting ? (
+    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
+      {isLive && canEndMeeting && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+          disabled={ending}
+          onClick={() => setEndOpen(true)}
+        >
+          <PhoneOff className="h-3.5 w-3.5" />
+          {ending ? 'Ending…' : 'End for everyone'}
+        </Button>
+      )}
+      {canManageMeeting && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="ghost" size="sm" className="gap-2 text-muted-foreground">
+              <MoreHorizontal className="h-3.5 w-3.5" />
+              More actions
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {!isArchived && (
+              <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
+                <Archive className="mr-2 h-4 w-4" />
+                Archive
+              </DropdownMenuItem>
+            )}
+            {isArchived && (
+              <DropdownMenuItem disabled={restoring} onSelect={runRestore}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                {restoring ? 'Restoring…' : 'Restore'}
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => setDeleteOpen(true)}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete permanently
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  ) : null;
+
+  const joinHostButtonDemoted = joinDemoted && (
     <Popover>
       <PopoverTrigger asChild>
-        <Button type="button" variant={joinDemoted ? 'outline' : 'default'} className="gap-2">
+        <Button type="button" variant="outline" className="gap-2">
           <Video className="h-4 w-4" />
           Join as host
         </Button>
@@ -476,87 +615,6 @@ export default function V2MeetingDetail() {
         <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
       </PopoverContent>
     </Popover>
-  );
-
-  const hostActionBar = (
-    <div className="flex flex-col gap-3 border-t border-border/60 pt-4 sm:flex-row sm:flex-wrap sm:items-center">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground sm:mr-1">Host controls</p>
-      <div className="flex flex-wrap gap-2">
-        <div className="sm:hidden">{joinHostButton}</div>
-        {!joinDemoted && meeting.joinUrl && (
-          <Button
-            type="button"
-            variant="outline"
-            className="gap-2 border-sky-500/35 bg-sky-500/10 text-sky-700 hover:bg-sky-500/15 dark:text-sky-300"
-            onClick={copyGuestUrl}
-          >
-            <Copy className="h-4 w-4" />
-            Copy guest link
-          </Button>
-        )}
-        {!joinDemoted && canManageMeeting && (
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-2 border-violet-500/35 bg-violet-500/10 text-violet-700 hover:bg-violet-500/15 dark:text-violet-300"
-              >
-                <UserPlus className="h-4 w-4" />
-                Invite guests
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-[min(92vw,34rem)]">
-              <MeetingEmailInvites meetingId={meeting.id} />
-            </PopoverContent>
-          </Popover>
-        )}
-        {isLive && canEndMeeting && (
-          <Button
-            type="button"
-            variant="destructive"
-            className="gap-2"
-            disabled={ending}
-            onClick={() => setEndOpen(true)}
-          >
-            <PhoneOff className="h-4 w-4" />
-            {ending ? 'Ending…' : 'End for everyone'}
-          </Button>
-        )}
-        {canManageMeeting && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="ghost" className="gap-2">
-                <MoreHorizontal className="h-4 w-4" />
-                More actions
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
-              {!isArchived && (
-                <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
-                  <Archive className="mr-2 h-4 w-4" />
-                  Archive
-                </DropdownMenuItem>
-              )}
-              {isArchived && (
-                <DropdownMenuItem disabled={restoring} onSelect={runRestore}>
-                  <RotateCcw className="mr-2 h-4 w-4" />
-                  {restoring ? 'Restoring…' : 'Restore'}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={() => setDeleteOpen(true)}
-              >
-                <Trash2 className="mr-2 h-4 w-4" />
-                Delete permanently
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
-      </div>
-    </div>
   );
 
   const metricCards = (
@@ -699,33 +757,32 @@ export default function V2MeetingDetail() {
     <div className="mx-auto max-w-5xl space-y-6">
       <div className="rounded-[1.5rem] border border-border/70 bg-card p-5 shadow-sm sm:p-6">
         <div className="space-y-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="min-w-0 space-y-3">
-              <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
-                ← Meetings
-              </Link>
-              <div className="min-w-0 space-y-2">
-                <EditableTitle
-                  value={titleEdit}
-                  onChange={setTitleEdit}
-                  onCommit={onTitleBlur}
-                  onCancel={() => setTitleEdit(meeting.title || '')}
-                />
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  {ui && (
-                    <Badge variant={toneToBadgeVariant(ui.tone)} className="uppercase tracking-wide">
-                      {ui.label}
-                    </Badge>
-                  )}
-                  {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
-                </div>
-                {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
+          <div className="space-y-3">
+            <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
+              ← Meetings
+            </Link>
+            <div className="min-w-0 space-y-2">
+              <EditableTitle
+                value={titleEdit}
+                onChange={setTitleEdit}
+                onCommit={onTitleBlur}
+                onCancel={() => setTitleEdit(meeting.title || '')}
+              />
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                {ui && (
+                  <Badge variant={toneToBadgeVariant(ui.tone)} className="uppercase tracking-wide">
+                    {ui.label}
+                  </Badge>
+                )}
+                {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
               </div>
+              {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
             </div>
-            <div className="hidden shrink-0 sm:block">{joinHostButton}</div>
           </div>
+          {primaryHostActions}
+          {joinHostButtonDemoted}
           {metricCards}
-          {hostActionBar}
+          {secondaryHostActions}
         </div>
       </div>
 
