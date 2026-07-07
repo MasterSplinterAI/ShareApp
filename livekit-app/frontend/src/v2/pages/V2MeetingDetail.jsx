@@ -49,51 +49,6 @@ import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
 import { defaultExpiryMode } from '../../lib/inviteExpiry';
-import { cn } from '../../lib/utils';
-
-const hostActionTileStyles = {
-  primary:
-    'border-primary/30 bg-primary/[0.035] hover:border-primary/45 hover:bg-primary/[0.06] focus-visible:ring-primary/30',
-  sky: 'border-sky-500/25 bg-sky-500/[0.04] hover:border-sky-500/40 hover:bg-sky-500/[0.08] focus-visible:ring-sky-500/25',
-  violet:
-    'border-violet-500/25 bg-violet-500/[0.04] hover:border-violet-500/40 hover:bg-violet-500/[0.08] focus-visible:ring-violet-500/25',
-};
-
-const hostActionIconStyles = {
-  primary: 'bg-primary text-primary-foreground',
-  sky: 'bg-sky-500/15 text-sky-700 dark:text-sky-300',
-  violet: 'bg-violet-500/15 text-violet-700 dark:text-violet-300',
-};
-
-/** Large clickable host action tile — primary CTAs on the meeting detail hero. */
-function HostActionTile({ icon: Icon, title, description, tone = 'primary', className, ...props }) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        'group flex w-full items-start gap-3 rounded-xl border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2',
-        hostActionTileStyles[tone],
-        className
-      )}
-      {...props}
-    >
-      <div
-        className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-transform group-hover:scale-[1.02]',
-          hostActionIconStyles[tone]
-        )}
-      >
-        <Icon className="h-4 w-4" />
-      </div>
-      <div className="min-w-0 pt-0.5">
-        <div className="text-sm font-semibold text-foreground">{title}</div>
-        {description ? (
-          <div className="mt-1 text-xs leading-relaxed text-muted-foreground">{description}</div>
-        ) : null}
-      </div>
-    </button>
-  );
-}
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -511,39 +466,40 @@ export default function V2MeetingDetail() {
   const transcriptCount = meeting.transcriptLineCount || 0;
 
   const primaryHostActions = !joinDemoted && (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-stretch">
       <Popover>
         <PopoverTrigger asChild>
-          <HostActionTile
-            icon={Video}
-            tone="primary"
-            title="Join as host"
-            description="Enter with host controls and start the session"
-          />
+          <Button type="button" size="lg" className="h-12 flex-1 gap-2.5 text-base font-semibold shadow-sm">
+            <Video className="h-4 w-4 shrink-0" />
+            Join as host
+          </Button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-80">
           <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
         </PopoverContent>
       </Popover>
       {meeting.joinUrl && (
-        <HostActionTile
-          icon={Copy}
-          tone="sky"
-          title="Copy guest link"
-          description="Share a one-click link — no account needed"
+        <Button
+          type="button"
+          size="lg"
+          className="h-12 flex-1 gap-2.5 bg-sky-600 text-base font-semibold text-white shadow-sm hover:bg-sky-700"
           onClick={copyGuestUrl}
-        />
+        >
+          <Copy className="h-4 w-4 shrink-0" />
+          Copy guest link
+        </Button>
       )}
       {canManageMeeting && (
         <Popover>
           <PopoverTrigger asChild>
-            <HostActionTile
-              icon={UserPlus}
-              tone="violet"
-              title="Invite guests"
-              description="Email invites or create custom links"
-              className={!meeting.joinUrl ? 'sm:col-span-2 lg:col-span-1' : undefined}
-            />
+            <Button
+              type="button"
+              size="lg"
+              className="h-12 flex-1 gap-2.5 bg-violet-600 text-base font-semibold text-white shadow-sm hover:bg-violet-700"
+            >
+              <UserPlus className="h-4 w-4 shrink-0" />
+              Invite guests
+            </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-[min(92vw,34rem)]">
             <MeetingEmailInvites meetingId={meeting.id} />
