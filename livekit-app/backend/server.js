@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
 // Load environment variables
@@ -7,6 +9,30 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Trust the first proxy hop (nginx) so express-rate-limit / req.ip see the real client IP.
+app.set('trust proxy', 1);
+
+// Security headers. CSP/CORP are disabled because this process only serves a
+// JSON API (the SPA is served statically by nginx) and CORS is handled below.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
+
+// Throttle auth + public endpoints to blunt credential stuffing / brute force.
+// In-memory store is sufficient for the current single-instance PM2 deploy.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+});
+const publicJoinLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a moment and try again.' },
+});
 
 // Middleware
 // Allow CORS from localhost, network IP, and ngrok domains
@@ -78,6 +104,18 @@ const translateRoutes = require('./routes/translate');
 
 const v2Routes = require('./routes/v2');
 const v2Database = require('./db/v2Database');
+
+// Rate limits on sensitive auth + public join endpoints (mounted before the
+// route handlers so they run first, then fall through). /me and prefs are left
+// unthrottled since the app polls them.
+app.use('/api/v2/auth/login', authLimiter);
+app.use('/api/v2/auth/signup', authLimiter);
+app.use('/api/v2/auth/forgot-password', authLimiter);
+app.use('/api/v2/auth/reset-password', authLimiter);
+app.use('/api/v2/auth/change-password', authLimiter);
+app.use('/api/v2/join-info', publicJoinLimiter);
+app.use('/api/v2/guest-token', publicJoinLimiter);
+app.use('/api/auth', authLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomsRoutes);
