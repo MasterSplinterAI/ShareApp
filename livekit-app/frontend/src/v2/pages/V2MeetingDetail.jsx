@@ -495,7 +495,7 @@ export default function V2MeetingDetail() {
             <Button
               type="button"
               size="lg"
-              className="h-12 flex-1 gap-2.5 bg-violet-600 text-base font-semibold text-white shadow-sm hover:bg-violet-700"
+              className="h-12 flex-1 gap-2.5 bg-emerald-600 text-base font-semibold text-white shadow-sm hover:bg-emerald-700"
             >
               <UserPlus className="h-4 w-4 shrink-0" />
               Invite guests
