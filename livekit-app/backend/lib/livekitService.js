@@ -143,7 +143,7 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     createdAt: new Date().toISOString(),
     type: 'demo',
     roomMode: 'multi-language',
-    stt_pipeline: DEFAULT_STT_PIPELINE,
+    stt_pipeline: 'deepgram_codeswitch',
     demo: true,
     ...demoMeta,
   };
@@ -154,7 +154,7 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     maxParticipants: 10,
     metadata: JSON.stringify(metadata),
   });
-  const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
+  const agentName = agentNameForPipeline('deepgram_codeswitch');
   try {
     await getAgentDispatch().createDispatch(roomName, agentName);
   } catch (e) {

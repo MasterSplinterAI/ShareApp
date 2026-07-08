@@ -116,7 +116,6 @@ router.post('/orchestrate', async (req, res) => {
       demoSessionId: String(demoSessionId),
       userText,
       trigger,
-      ip: req.ip,
     });
     if (!result.ok) {
       const status = result.error === 'turn_limit' || result.error === 'rate_limit_ip' ? 429 : 400;

@@ -73,6 +73,11 @@ AGENT_NAME=translation-cloud-prod
 # AGENT_MODULE=transcription_codeswitch_agent
 # AGENT_NAME=translation-cloud-deepgram-codeswitch
 
+# --- Demo room (public /demo live preview) ---
+BACKEND_BASE_URL=https://YOUR_BACKEND_HOST
+DEMO_ORCHESTRATOR_SECRET=
+TTS_ENABLED=true
+
 # --- Applying to LiveKit ---
 # Do NOT pass all vars as one comma-separated lk --secrets string; commas break parsing.
 # Use: lk agent deploy --secrets "STT_PROVIDER=deepgram" --secrets "LLM_PROVIDER=openai"

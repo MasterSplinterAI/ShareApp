@@ -89,12 +89,14 @@ async function createDemoLiveRoomSession({
   const roomName = `demo-${demoSessionId.slice(0, 8)}`;
   const displayName = String(participantName || 'Guest').trim().slice(0, 64) || 'Guest';
   const identity = displayName;
+  const agents = getAgentsForScenario(scenarioId, mergedLangs);
 
   await createDemoLiveKitRoom(roomName, {
     demoSessionId,
     scenarioId,
     readLang: read,
     speakLang: speak,
+    agentNames: agents.map((a) => a.name),
   });
 
   const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
@@ -110,7 +112,6 @@ async function createDemoLiveRoomSession({
   });
 
   const token = await at.toJwt();
-  const agents = getAgentsForScenario(scenarioId, mergedLangs);
   const participants = getScenarioParticipants(scenario, mergedLangs, displayName);
 
   sessions.set(demoSessionId, {
@@ -146,14 +147,11 @@ async function createDemoLiveRoomSession({
   };
 }
 
-async function orchestrateDemoRoom({ demoSessionId, userText, ip, trigger }) {
+async function orchestrateDemoRoom({ demoSessionId, userText, trigger }) {
   pruneSessions();
   const session = sessions.get(demoSessionId);
   if (!session) {
     return { ok: false, error: 'invalid_session', message: 'Demo session expired. Refresh to start again.' };
-  }
-  if (session.ip !== ip) {
-    return { ok: false, error: 'session_mismatch', message: 'Invalid demo session.' };
   }
 
   const isOpening = trigger === 'opening' || (!session.openingDone && !userText);

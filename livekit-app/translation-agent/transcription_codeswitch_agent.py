@@ -27,6 +27,7 @@ from codeswitch_source_language import (
     speech_data_detected_language,
 )
 from residual_guard import is_residual_repeat
+from demo_orchestrator import DemoRoomOrchestrator
 from translation_helpers import (
     TranslationCache,
     build_translation_messages,
@@ -447,6 +448,7 @@ class TranscriptionOnlyAgent:
         self._stt_skip_providers: Dict[str, Set[str]] = {}
         # Repeated utterances (greetings, confirmations) skip the LLM round trip.
         self._translation_cache = TranslationCache(max_size=_translation_cache_size())
+        self.demo_orchestrator: Optional[DemoRoomOrchestrator] = None
 
     def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -711,6 +713,46 @@ class TranscriptionOnlyAgent:
                 meta = json.loads(raw_meta)
                 org_id = meta.get("org_id") or None
                 self._apply_caption_config(meta.get("caption_config"), "room metadata (startup)")
+                if meta.get("demo") and meta.get("demoSessionId"):
+                    read_lang = meta.get("readLang") or "en"
+                    agent_names = meta.get("agentNames") or []
+
+                    async def publish_demo_caption(msg_dict: dict, reliable: bool) -> None:
+                        await ctx.room.local_participant.publish_data(
+                            json.dumps(msg_dict).encode("utf-8"),
+                            topic="transcription",
+                            reliable=reliable,
+                        )
+
+                    async def publish_demo_phase(phase: str, active_speaker: Optional[str]) -> None:
+                        await ctx.room.local_participant.publish_data(
+                            json.dumps(
+                                {
+                                    "type": "demo_phase",
+                                    "phase": phase,
+                                    "activeSpeaker": active_speaker,
+                                }
+                            ).encode("utf-8"),
+                            topic="demo",
+                            reliable=True,
+                        )
+
+                    self.demo_orchestrator = DemoRoomOrchestrator(
+                        demo_session_id=str(meta["demoSessionId"]),
+                        read_lang=str(read_lang),
+                        publish_caption=publish_demo_caption,
+                        get_tts_lane=lambda lang: self.tts_lanes.get(
+                            str(lang).split("-")[0].lower()
+                        ),
+                        on_phase=publish_demo_phase,
+                        agent_names=set(str(n) for n in agent_names),
+                    )
+                    logger.info(
+                        "🎭 Demo room orchestrator active session=%s readLang=%s",
+                        meta["demoSessionId"],
+                        read_lang,
+                    )
+                    self.demo_orchestrator.schedule_opening()
         except Exception as e:
             logger.warning(f"Room metadata parse failed: {e}")
 
@@ -1829,6 +1871,17 @@ class TranscriptionOnlyAgent:
             for r in results:
                 if isinstance(r, BaseException):
                     logger.error(f"{L} finalize lane failed: {r}")
+
+            if (
+                self.demo_orchestrator
+                and full_original
+                and not is_likely_agent_identity(speaker_id)
+            ):
+                self._spawn_bg(
+                    self.demo_orchestrator.on_user_final(
+                        speaker_id, full_original, tid
+                    )
+                )
 
             dg_buffer.clear()
             for lane in lanes.values():
