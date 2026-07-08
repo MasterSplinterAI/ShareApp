@@ -2,7 +2,6 @@ const db = require('../db/v2Database');
 
 const SETTINGS_ID = 'default';
 const DEFAULT_FROM = 'Lalia <no-reply@lalia.cloud>';
-const PLACEHOLDER_FROM_DOMAIN = 'lalia.cloud';
 let cache = null;
 let cacheAt = 0;
 const CACHE_MS = 3000;
@@ -147,11 +146,6 @@ function extractEmailAddress(fromValue) {
   return match ? match[1].toLowerCase() : '';
 }
 
-function isPlaceholderFromAddress(fromValue) {
-  const email = extractEmailAddress(fromValue);
-  return email.endsWith(`@${PLACEHOLDER_FROM_DOMAIN}`);
-}
-
 function extractDomainFromMailFrom(fromValue) {
   const email = extractEmailAddress(fromValue);
   const at = email.lastIndexOf('@');
@@ -163,9 +157,6 @@ function validateMailFrom(value) {
   const trimmed = String(value).trim();
   if (!/^[^<>\n]+<[^\s@<>]+@[^\s@<>]+>$|^[^\s@<>]+@[^\s@<>]+$/.test(trimmed)) {
     return 'From address should look like "Lalia <no-reply@yourdomain.com>"';
-  }
-  if (isPlaceholderFromAddress(trimmed)) {
-    return `Use a domain verified in Resend (not @${PLACEHOLDER_FROM_DOMAIN}). For testing, try onboarding@resend.dev`;
   }
   return null;
 }
@@ -235,13 +226,6 @@ async function saveEmailSettings(actorEmail, body = {}) {
     return { ok: false, error: 'Enter a Resend API key before enabling email delivery' };
   }
 
-  if (next.email_enabled && isPlaceholderFromAddress(mergedPreview.mailFrom)) {
-    return {
-      ok: false,
-      error: `Set a From address on a domain verified in Resend (not @${PLACEHOLDER_FROM_DOMAIN}). For testing, use onboarding@resend.dev`,
-    };
-  }
-
   const now = new Date().toISOString();
   if (row) {
     await db.run(
@@ -297,7 +281,6 @@ function toAdminView(settings) {
     mailFrom: storedMailFrom,
     effectiveMailFrom: settings.mailFrom,
     usingDefaultFrom: !storedMailFrom,
-    usingPlaceholderFrom: isPlaceholderFromAddress(settings.mailFrom),
     usingEnvKey: settings.hasEnvKey && !settings.hasDbKey,
     hasResendWebhookSecret: Boolean(settings.resendWebhookSecret),
     resendWebhookSecretMasked: maskWebhookSecret(settings.resendWebhookSecret),
@@ -313,9 +296,7 @@ function toAdminView(settings) {
 
 async function isMailerConfigured() {
   const settings = await getEmailSettings();
-  return Boolean(
-    settings.emailEnabled && settings.resendApiKey && !isPlaceholderFromAddress(settings.mailFrom)
-  );
+  return Boolean(settings.emailEnabled && settings.resendApiKey && settings.mailFrom);
 }
 
 module.exports = {
@@ -328,7 +309,6 @@ module.exports = {
   validateIcsOrganizerDomain,
   toAdminView,
   isMailerConfigured,
-  isPlaceholderFromAddress,
   extractDomainFromMailFrom,
   DEFAULT_FROM,
 };

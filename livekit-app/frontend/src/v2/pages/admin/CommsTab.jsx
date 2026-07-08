@@ -108,18 +108,7 @@ function EmailSettingsSection() {
           />
           {settings.usingEnvWebhookSecret && <Badge variant="outline">Using env webhook secret</Badge>}
           {settings.usingEnvIcsDomain && <Badge variant="outline">Using env organizer domain</Badge>}
-          {settings.usingPlaceholderFrom && (
-            <Badge variant="destructive">From domain not verified in Resend</Badge>
-          )}
         </div>
-
-        {settings.usingPlaceholderFrom && (
-          <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            Resend will reject mail from <code>@lalia.cloud</code> until that domain is verified. Set a From address on a
-            domain you&apos;ve verified in Resend — for quick testing use{' '}
-            <code>Lalia &lt;onboarding@resend.dev&gt;</code>.
-          </p>
-        )}
 
         <form
           className="space-y-4 rounded-lg border border-border/60 bg-muted/20 p-4"
