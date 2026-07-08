@@ -3,10 +3,10 @@ import { Button } from '../ui/button';
 
 const PHASE_HINTS = {
   opening: 'Meeting starting…',
-  your_turn: 'Your turn — hold the mic or type below',
-  you_speaking: 'Listening… release when done',
+  your_turn: 'Your turn — speak now',
+  you_speaking: 'Listening…',
   processing: 'Translating your line…',
-  agent_speaking: 'Teammate responding…',
+  agent_speaking: 'Teammate responding… (your mic is paused)',
   complete: 'Demo complete',
 };
 
@@ -45,7 +45,7 @@ function DemoParticipantTile({ participant, active, muted }) {
       <div className="absolute bottom-0 left-0 right-0 p-1.5 text-[9px] text-white sm:text-[10px]">
         <span className="block truncate font-medium drop-shadow-sm">
           {participant.name}
-          {isYou ? ' (You)' : ''}
+          {isYou && participant.name === 'You' ? ' (You)' : ''}
         </span>
         <span className="block truncate text-white/75">
           {isYou ? 'Mic · ' : 'Translated · '}

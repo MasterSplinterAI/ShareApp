@@ -87,7 +87,8 @@ async function createDemoLiveRoomSession({
 
   const demoSessionId = newSessionId();
   const roomName = `demo-${demoSessionId.slice(0, 8)}`;
-  const identity = String(participantName || 'Guest').slice(0, 64);
+  const displayName = String(participantName || 'Guest').trim().slice(0, 64) || 'Guest';
+  const identity = displayName;
 
   await createDemoLiveKitRoom(roomName, {
     demoSessionId,
@@ -110,7 +111,7 @@ async function createDemoLiveRoomSession({
 
   const token = await at.toJwt();
   const agents = getAgentsForScenario(scenarioId, mergedLangs);
-  const participants = getScenarioParticipants(scenario, mergedLangs);
+  const participants = getScenarioParticipants(scenario, mergedLangs, displayName);
 
   sessions.set(demoSessionId, {
     id: demoSessionId,
@@ -135,6 +136,7 @@ async function createDemoLiveRoomSession({
     token,
     url: process.env.LIVEKIT_URL,
     identity,
+    displayName,
     scenario: { id: scenario.id, title: scenario.title },
     agents,
     participants,
@@ -169,7 +171,7 @@ async function orchestrateDemoRoom({ demoSessionId, userText, ip, trigger }) {
       return { ok: false, error: 'turn_limit', message: 'Turn limit reached for this demo.' };
     }
     session.turnCount += 1;
-    session.history.push({ speaker: 'You', text, lang: session.speakLang });
+    session.history.push({ speaker: session.userIdentity, text, lang: session.speakLang });
   }
 
   const { lines, fallback } = await generateDemoAgentTurns({

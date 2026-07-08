@@ -4,15 +4,22 @@ import { ConnectionState } from 'livekit-client';
 import { demoLabService } from '../services/demoLab';
 import { publishAgentCaptionSequence, delay } from '../lib/demoCaptionPublish';
 import { speakDemoLineAsync, stopDemoSpeech } from './useDemoSpeech';
+import { isLikelyEcho } from './useDemoMicGate';
 
 function isAgentSpeaker(participantId, agentNames) {
   if (!participantId || !agentNames?.length) return false;
-  return agentNames.some((n) => n === participantId || participantId.startsWith(`agent-${n}`));
+  const id = String(participantId).toLowerCase();
+  return agentNames.some((n) => {
+    const name = String(n).toLowerCase();
+    return id === name || id.startsWith(`agent-${name}`) || id.includes(name);
+  });
 }
+
+const LISTENING_PHASES = new Set(['your_turn']);
 
 /**
  * Listens for user final transcripts from the translation agent, calls LLM orchestrator,
- * publishes agent caption packets + optional TTS.
+ * publishes agent caption packets + optional TTS. Mic is gated externally via useDemoMicGate.
  */
 export function useDemoOrchestrator({
   demoSessionId,
@@ -34,7 +41,10 @@ export function useDemoOrchestrator({
   const processedIdsRef = useRef(new Set());
   const openingSentRef = useRef(false);
   const busyRef = useRef(false);
+  const completeRef = useRef(false);
+  const turnPhaseRef = useRef('opening');
   const agentNamesRef = useRef(agentNames);
+  const recentAgentTextsRef = useRef([]);
 
   useEffect(() => {
     agentNamesRef.current = agentNames;
@@ -44,11 +54,30 @@ export function useDemoOrchestrator({
     busyRef.current = busy;
   }, [busy]);
 
+  useEffect(() => {
+    completeRef.current = complete;
+  }, [complete]);
+
+  const setPhase = useCallback(
+    (phase) => {
+      turnPhaseRef.current = phase;
+      onTurnPhase?.(phase);
+    },
+    [onTurnPhase]
+  );
+
   const playAgentLines = useCallback(
     async (agentLines) => {
       if (!localParticipant || !agentLines?.length) return;
-      onTurnPhase?.('agent_speaking');
+      setPhase('agent_speaking');
+      stopDemoSpeech();
+
       for (const line of agentLines) {
+        recentAgentTextsRef.current.push(line.originalText);
+        if (recentAgentTextsRef.current.length > 8) {
+          recentAgentTextsRef.current.shift();
+        }
+
         onActiveSpeaker?.(line.speaker);
         const translated = line.primary || line.originalText;
         await publishAgentCaptionSequence(localParticipant, {
@@ -58,51 +87,59 @@ export function useDemoOrchestrator({
           sourceLang: line.sourceLang,
           targetLang: readLang,
         });
+
         if (ttsEnabled) {
           await speakDemoLineAsync(line.originalText, line.sourceLang);
         } else {
-          await delay(Math.min(6000, Math.max(1200, line.originalText.length * 48)));
+          await delay(Math.min(6000, Math.max(1400, line.originalText.length * 48)));
         }
         onActiveSpeaker?.(null);
-        await delay(280);
+        await delay(320);
       }
-      if (!complete) onTurnPhase?.('your_turn');
+
+      if (!completeRef.current) {
+        setPhase('your_turn');
+      }
     },
-    [localParticipant, readLang, ttsEnabled, onActiveSpeaker, onTurnPhase, complete]
+    [localParticipant, readLang, ttsEnabled, onActiveSpeaker, setPhase]
   );
 
   const runOrchestrate = useCallback(
     async ({ userText, trigger }) => {
       if (!demoSessionId || busyRef.current) return;
+      if (trigger !== 'opening' && !LISTENING_PHASES.has(turnPhaseRef.current)) return;
+
       setBusy(true);
       busyRef.current = true;
-      onTurnPhase?.(trigger === 'opening' ? 'opening' : 'processing');
+      setPhase(trigger === 'opening' ? 'opening' : 'processing');
+      stopDemoSpeech();
+
       try {
         const data = await demoLabService.orchestrate(demoSessionId, { userText, trigger });
         setTurnsRemaining(data.turnsRemaining);
         if (data.complete) {
           setComplete(true);
+          completeRef.current = true;
           onComplete?.(true);
-          onTurnPhase?.('complete');
+          setPhase('complete');
         }
         if (data.agentLines?.length) {
           await playAgentLines(data.agentLines);
         } else if (!data.complete) {
-          onTurnPhase?.('your_turn');
+          setPhase('your_turn');
         }
         demoLabService.track(demoSessionId, 'live_orchestrate');
       } catch (e) {
         console.error('[useDemoOrchestrator]', e);
-        onTurnPhase?.('your_turn');
+        if (!completeRef.current) setPhase('your_turn');
       } finally {
         setBusy(false);
         busyRef.current = false;
       }
     },
-    [demoSessionId, playAgentLines, onTurnPhase, onComplete]
+    [demoSessionId, playAgentLines, setPhase, onComplete]
   );
 
-  // Opening line once room connected + mic path ready
   useEffect(() => {
     if (!room || !demoSessionId || openingSentRef.current) return;
     if (room.state !== ConnectionState.Connected) return;
@@ -111,18 +148,19 @@ export function useDemoOrchestrator({
       if (openingSentRef.current) return;
       openingSentRef.current = true;
       runOrchestrate({ trigger: 'opening' });
-    }, 2200);
+    }, 2800);
 
     return () => clearTimeout(timer);
   }, [room, room?.state, demoSessionId, runOrchestrate]);
 
-  // Listen for user final transcripts from translation agent
   useEffect(() => {
     if (!room || !userIdentity) return;
 
     const handleData = (payload, _participant, _kind, topic) => {
-      if (busyRef.current || complete) return;
       if (topic != null && topic !== 'transcription') return;
+      if (busyRef.current || completeRef.current) return;
+      if (!LISTENING_PHASES.has(turnPhaseRef.current)) return;
+
       try {
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
@@ -132,25 +170,27 @@ export function useDemoOrchestrator({
         if (!message.final) return;
 
         const speakerId = message.participant_id;
-        if (!speakerId || speakerId !== userIdentity) return;
+        if (!speakerId) return;
         if (isAgentSpeaker(speakerId, agentNamesRef.current)) return;
+        if (String(speakerId) !== String(userIdentity)) return;
 
-        const tid = message.transcriptionId || `${speakerId}-${message.originalText?.slice(0, 24)}`;
+        const text = (message.originalText || message.text || '').trim();
+        if (!text || text.length < 3) return;
+        if (isLikelyEcho(text, recentAgentTextsRef.current)) return;
+
+        const tid = message.transcriptionId || `${speakerId}-${text.slice(0, 32)}`;
         if (processedIdsRef.current.has(tid)) return;
         processedIdsRef.current.add(tid);
 
-        const text = (message.originalText || message.text || '').trim();
-        if (!text) return;
-
         runOrchestrate({ userText: text });
       } catch {
-        /* ignore parse errors */
+        /* ignore */
       }
     };
 
     room.on('dataReceived', handleData);
     return () => room.off('dataReceived', handleData);
-  }, [room, userIdentity, complete, runOrchestrate]);
+  }, [room, userIdentity, runOrchestrate]);
 
   useEffect(() => () => stopDemoSpeech(), []);
 

@@ -54,7 +54,7 @@ export default function TranslationLabDemo() {
   const [readLang, setReadLang] = useState('en');
   const [participantLangs, setParticipantLangs] = useState({ You: 'en', María: 'es', Yuki: 'ja' });
   const [participantName, setParticipantName] = useState('Guest');
-  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsEnabled, setTtsEnabled] = useState(false);
   const [starting, setStarting] = useState(false);
   const [liveRoom, setLiveRoom] = useState(null);
 
@@ -108,6 +108,7 @@ export default function TranslationLabDemo() {
         url={liveRoom.url}
         demoSessionId={liveRoom.demoSessionId}
         identity={liveRoom.identity}
+        userDisplayName={liveRoom.displayName || participantName.trim() || 'Guest'}
         readLang={liveRoom.readLang}
         speakLang={liveRoom.speakLang}
         agents={liveRoom.agents}
@@ -230,7 +231,7 @@ export default function TranslationLabDemo() {
                 className="h-4 w-4 rounded border-border accent-primary"
               />
               <span className="flex items-center gap-1.5 text-muted-foreground">
-                <Volume2 className="h-4 w-4" /> Hear teammates speak (browser voice)
+                <Volume2 className="h-4 w-4" /> Hear teammates speak (use headphones)
               </span>
             </label>
 

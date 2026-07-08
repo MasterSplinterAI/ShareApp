@@ -4,32 +4,23 @@ import {
   LiveKitRoom,
   RoomAudioRenderer,
   StartAudio,
-  useRoomContext,
 } from '@livekit/components-react';
-import { ConnectionState } from 'livekit-client';
-import { ArrowRight, Loader2, Phone } from 'lucide-react';
+import { ArrowRight, Headphones, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MeetingProvider, useMeeting } from '../../context/MeetingContext';
 import TranscriptionPanel from '../TranscriptionPanel';
 import RoomControls from '../RoomControls';
 import { DemoRoomStage } from './DemoRoomStage';
 import { useDemoOrchestrator } from '../../hooks/useDemoOrchestrator';
+import { useDemoMicGate } from '../../hooks/useDemoMicGate';
 import { demoLabService } from '../../services/demoLab';
 import { Button } from '../ui/button';
 import { ROOM_PUBLISH_DEFAULTS } from '../../lib/roomPublishDefaults';
 
-function DemoMicEnable() {
-  const room = useRoomContext();
-  useEffect(() => {
-    if (!room || room.state !== ConnectionState.Connected) return;
-    room.localParticipant.setMicrophoneEnabled(true).catch(() => {});
-  }, [room, room?.state]);
-  return null;
-}
-
 function DemoLiveRoomInner({
   demoSessionId,
   userIdentity,
+  userDisplayName,
   readLang,
   speakLang,
   agents,
@@ -45,8 +36,11 @@ function DemoLiveRoomInner({
   const [complete, setComplete] = useState(false);
 
   const agentNames = agents.map((a) => a.name);
+  const displayName = userDisplayName || userIdentity || 'You';
 
-  const { turnsRemaining, busy } = useDemoOrchestrator({
+  useDemoMicGate(turnPhase, { cooldownMs: ttsEnabled ? 1400 : 900 });
+
+  const { turnsRemaining } = useDemoOrchestrator({
     demoSessionId,
     userIdentity,
     readLang: selectedLanguage || readLang,
@@ -61,10 +55,12 @@ function DemoLiveRoomInner({
   const roomParticipants =
     participants?.length > 0
       ? participants.map((p) =>
-          p.id === 'you' || p.name === 'You' ? { ...p, name: 'You', speakLang: speakLang } : p
+          p.id === 'you' || p.name === 'You'
+            ? { ...p, name: displayName, speakLang }
+            : p
         )
       : [
-          { id: 'you', name: 'You', speakLang, gradient: 'from-primary/30 to-slate-300' },
+          { id: 'you', name: displayName, speakLang, gradient: 'from-primary/30 to-slate-300' },
           ...agents.map((a) => ({
             id: a.id,
             name: a.name,
@@ -73,14 +69,26 @@ function DemoLiveRoomInner({
           })),
         ];
 
+  const turnHint =
+    turnPhase === 'your_turn'
+      ? `Your turn — speak now, ${displayName}`
+      : turnPhase === 'agent_speaking'
+        ? 'Teammate responding… (mic paused)'
+        : undefined;
+
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-background">
-      <DemoMicEnable />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="shrink-0 border-b border-border/60 px-3 py-2 text-center text-xs text-muted-foreground">
-            {turnsRemaining != null ? `${turnsRemaining} turns left` : `${maxTurns} max`} · Real
-            Deepgram STT · LLM teammates
+            {turnsRemaining != null ? `${turnsRemaining} turns left` : `${maxTurns} max`} · Deepgram
+            STT · LLM teammates
+            {turnPhase === 'your_turn' && (
+              <span className="ml-2 font-medium text-emerald-600">· Mic live</span>
+            )}
+            {turnPhase !== 'your_turn' && turnPhase !== 'complete' && (
+              <span className="ml-2 text-amber-600">· Mic paused</span>
+            )}
           </div>
           <div className="shrink-0 p-3">
             <DemoRoomStage
@@ -93,9 +101,15 @@ function DemoLiveRoomInner({
             />
           </div>
           <p className="px-4 pb-2 text-center text-xs text-muted-foreground">
-            Speak naturally — your mic uses the same STT pipeline as real meetings. Teammates reply
-            via AI in their languages; captions translate for you.
+            {turnHint ||
+              'Wait for your teammate to finish — your mic turns on automatically when it is your turn.'}
           </p>
+          {ttsEnabled && (
+            <p className="flex items-center justify-center gap-1.5 px-4 pb-2 text-center text-xs text-amber-700/90">
+              <Headphones className="h-3.5 w-3.5" />
+              Use headphones for agent voice to avoid echo.
+            </p>
+          )}
         </div>
         <TranscriptionPanel />
       </div>
@@ -105,10 +119,10 @@ function DemoLiveRoomInner({
         spokenLanguage={speakLang}
         translationEnabled={translationEnabled}
         voiceTranslationEnabled={voiceTranslationEnabled}
-        participantName={userIdentity}
+        participantName={displayName}
       />
 
-      <div className="flex shrink-0 items-center justify-center gap-3 border-t border-border/60 bg-card/80 px-4 py-3">
+      <div className="flex shrink-0 items-center justify-center gap-3 border-b border-border/60 bg-card/80 px-4 py-3">
         {complete ? (
           <>
             <Button asChild onClick={() => demoLabService.track(demoSessionId, 'signup_click')}>
@@ -136,6 +150,7 @@ export function DemoLiveRoom({
   url,
   demoSessionId,
   identity,
+  userDisplayName,
   readLang,
   speakLang,
   agents,
@@ -153,14 +168,6 @@ export function DemoLiveRoom({
     toast.error('Could not connect to demo room. Check mic permissions and try again.');
   }, []);
 
-  if (!token) {
-    return (
-      <div className="flex h-[50vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
   return (
     <MeetingProvider
       initialState={{
@@ -173,7 +180,7 @@ export function DemoLiveRoom({
         token={token}
         serverUrl={livekitUrl}
         video={false}
-        audio
+        audio={false}
         connect
         onError={handleError}
         options={{
@@ -188,6 +195,7 @@ export function DemoLiveRoom({
         <DemoLiveRoomInner
           demoSessionId={demoSessionId}
           userIdentity={identity}
+          userDisplayName={userDisplayName}
           readLang={readLang}
           speakLang={speakLang}
           agents={agents}

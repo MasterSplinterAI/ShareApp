@@ -256,7 +256,7 @@ function listScenarios() {
   }));
 }
 
-function getScenarioParticipants(scenario, participantLangs = {}) {
+function getScenarioParticipants(scenario, participantLangs = {}, userDisplayName = 'You') {
   const agents = (scenario.participants || []).map((p) => ({
     ...p,
     speakLang: participantLangs[p.name] || p.defaultLang,
@@ -264,7 +264,7 @@ function getScenarioParticipants(scenario, participantLangs = {}) {
   return [
     {
       id: 'you',
-      name: 'You',
+      name: userDisplayName,
       role: 'host',
       speakLang: participantLangs.You || 'en',
       gradient: 'from-primary/30 to-slate-300',
