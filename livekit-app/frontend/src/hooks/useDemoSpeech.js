@@ -83,6 +83,33 @@ export function speakDemoLine(text, langCode) {
   window.speechSynthesis.speak(utter);
 }
 
+/** Promise-based TTS for sequential turn-taking in the demo room. */
+export function speakDemoLineAsync(text, langCode) {
+  return new Promise((resolve) => {
+    if (!text || typeof window === 'undefined' || !window.speechSynthesis) {
+      resolve();
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = demoLangToSpeechLocale(langCode);
+    utter.rate = 0.95;
+    utter.onend = () => resolve();
+    utter.onerror = () => resolve();
+    window.speechSynthesis.speak(utter);
+  });
+}
+
+/** Rough delay when TTS is off so agent "speaking" still feels natural. */
+export function estimateSpeechMs(text) {
+  if (!text) return 1400;
+  return Math.min(9000, Math.max(1400, text.length * 52));
+}
+
+export function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function stopDemoSpeech() {
   window.speechSynthesis?.cancel?.();
 }

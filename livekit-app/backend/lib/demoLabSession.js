@@ -6,6 +6,8 @@ const {
   matchResponse,
   DEMO_LANGUAGES,
   listScenarios,
+  getScenarioParticipants,
+  shouldSecondarySpeak,
 } = require('./demoLabScenarios');
 const { translateText } = require('./textTranslate');
 
@@ -58,7 +60,7 @@ async function buildCaptionLine({ speaker, sourceLang, originalText, readLang })
   return { speaker, sourceLang: src, originalText, primary, secondary };
 }
 
-async function createDemoSession({ scenarioId, speakLang, readLang, ip }) {
+async function createDemoSession({ scenarioId, speakLang, readLang, participantLangs, ip }) {
   pruneSessions();
   if (sessions.size >= MAX_CONCURRENT_SESSIONS) {
     return { ok: false, error: 'capacity', message: 'Demo is busy right now. Please try again in a minute.' };
@@ -71,14 +73,20 @@ async function createDemoSession({ scenarioId, speakLang, readLang, ip }) {
   if (!scenario) return { ok: false, error: 'invalid_scenario', message: 'Unknown scenario.' };
 
   const allowed = DEMO_LANGUAGES.map((l) => l.code);
-  const speak = allowed.includes(speakLang) ? speakLang : 'en';
   const read = allowed.includes(readLang) ? readLang : 'en';
+  const langs = participantLangs && typeof participantLangs === 'object' ? participantLangs : {};
+  const speak = allowed.includes(langs.You || speakLang) ? langs.You || speakLang : 'en';
+  const mergedLangs = { ...langs, You: speak };
+
+  const participants = getScenarioParticipants(scenario, mergedLangs);
+  const primaryAgent = participants.find((p) => p.name === scenario.bot.name) || participants[1];
+  const botSpeakLang = primaryAgent?.speakLang || scenario.bot.speakLang;
 
   const sessionId = newSessionId();
-  const botOriginal = pickLine(scenario.opening, scenario.bot.speakLang);
+  const botOriginal = pickLine(scenario.opening, botSpeakLang);
   const openingLine = await buildCaptionLine({
     speaker: scenario.bot.name,
-    sourceLang: scenario.bot.speakLang,
+    sourceLang: botSpeakLang,
     originalText: botOriginal,
     readLang: read,
   });
@@ -89,6 +97,7 @@ async function createDemoSession({ scenarioId, speakLang, readLang, ip }) {
     scenarioId,
     speakLang: speak,
     readLang: read,
+    participantLangs: mergedLangs,
     turnCount: 0,
     createdAt: Date.now(),
     events: [],
@@ -99,11 +108,12 @@ async function createDemoSession({ scenarioId, speakLang, readLang, ip }) {
     ok: true,
     sessionId,
     scenario: { id: scenario.id, title: scenario.title, bot: scenario.bot },
+    participants,
     speakLang: speak,
     readLang: read,
     maxTurns: MAX_TURNS_PER_SESSION,
     openingLine,
-    lines: [openingLine],
+    lines: [],
   };
 }
 
@@ -135,27 +145,47 @@ async function processDemoTurn({ sessionId, userText, ip }) {
 
   session.turnCount += 1;
 
+  const userSpeakLang = session.participantLangs?.You || session.speakLang;
   const userLine = await buildCaptionLine({
     speaker: 'You',
-    sourceLang: session.speakLang,
+    sourceLang: userSpeakLang,
     originalText: text,
     readLang: session.readLang,
   });
 
+  const primaryLang =
+    session.participantLangs?.[scenario.bot.name] || scenario.bot.speakLang;
   const botLines = matchResponse(scenario, text);
-  const botOriginal = pickLine(botLines, scenario.bot.speakLang);
-  const botLine = await buildCaptionLine({
-    speaker: scenario.bot.name,
-    sourceLang: scenario.bot.speakLang,
-    originalText: botOriginal,
-    readLang: session.readLang,
-  });
+  const botOriginal = pickLine(botLines, primaryLang);
+  const agentLines = [
+    await buildCaptionLine({
+      speaker: scenario.bot.name,
+      sourceLang: primaryLang,
+      originalText: botOriginal,
+      readLang: session.readLang,
+    }),
+  ];
+
+  if (shouldSecondarySpeak(scenario, text, session.turnCount)) {
+    const sec = scenario.secondary;
+    const secLang = session.participantLangs?.[sec.name] || sec.speakLang;
+    const secOriginal = pickLine(sec.lines, secLang);
+    agentLines.push(
+      await buildCaptionLine({
+        speaker: sec.name,
+        sourceLang: secLang,
+        originalText: secOriginal,
+        readLang: session.readLang,
+      })
+    );
+  }
 
   return {
     ok: true,
     turnsRemaining: MAX_TURNS_PER_SESSION - session.turnCount,
     userLine,
-    botLine,
+    agentLines,
+    botLine: agentLines[0],
     complete: session.turnCount >= MAX_TURNS_PER_SESSION,
   };
 }

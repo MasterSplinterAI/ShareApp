@@ -27,6 +27,23 @@ const SCENARIOS = {
     title: 'Global standup',
     description: 'A weekly sync with teammates in Madrid and Tokyo.',
     bot: { name: 'María', speakLang: 'es' },
+    participants: [
+      { id: 'maria', name: 'María', defaultLang: 'es', gradient: 'from-violet-200 to-slate-300' },
+      { id: 'yuki', name: 'Yuki', defaultLang: 'ja', gradient: 'from-emerald-200 to-slate-300' },
+    ],
+    secondary: {
+      name: 'Yuki',
+      speakLang: 'ja',
+      triggers: ['japan', 'japanese', 'apac', 'asia', 'materials', 'docs', 'document', 'translation'],
+      lines: line(
+        'はい — 日本語版の資料も必要です。Laliaのライブ翻訳があればAPACチームも同じ会議に参加できます。',
+        'Sí — también necesitamos materiales en japonés. Con Lalia el equipo APAC puede seguir en la misma reunión.',
+        'Oui — il nous faut aussi des documents en japonais. Avec Lalia, l’équipe APAC peut suivre la même réunion.',
+        'Ja — wir brauchen auch japanische Unterlagen. Mit Lalia kann das APAC-Team im selben Meeting folgen.',
+        'Sim — também precisamos de materiais em japonês. Com o Lalia a equipe APAC acompanha na mesma reunião.',
+        'はい — 日本語版の資料も必要です。Laliaのライブ翻訳があればAPACチームも同じ会議に参加できます。'
+      ),
+    },
     opening: line(
       'Buenos días — ¿repasamos el cronograma del despliegue global?',
       'Buenos días — ¿repasamos el cronograma del despliegue global?',
@@ -84,6 +101,23 @@ const SCENARIOS = {
     title: 'Customer call',
     description: 'A prospect in São Paulo asks about multilingual support.',
     bot: { name: 'Ana', speakLang: 'pt' },
+    participants: [
+      { id: 'ana', name: 'Ana', defaultLang: 'pt', gradient: 'from-amber-200 to-slate-300' },
+      { id: 'james', name: 'James', defaultLang: 'en', gradient: 'from-sky-200 to-slate-300' },
+    ],
+    secondary: {
+      name: 'James',
+      speakLang: 'en',
+      triggers: ['security', 'record', 'privacy', 'data', 'gdpr', 'enterprise', 'sso'],
+      lines: line(
+        'Happy to jump in — we also get asked about security a lot. Lalia does not record AV; transcripts are opt-in only.',
+        'Me uno — también nos preguntan mucho por seguridad. Lalia no graba audio ni vídeo.',
+        'Je peux préciser — on nous pose souvent des questions sur la sécurité. Lalia n’enregistre pas l’audio.',
+        'Kurz ergänzt — Sicherheit ist oft das erste Thema. Lalia zeichnet weder Audio noch Video auf.',
+        'Só complementando — segurança é a pergunta mais comum. Lalia não grava áudio nem vídeo.',
+        '補足します — セキュリティの質問が多いです。Laliaは音声・動画を録画しません。'
+      ),
+    },
     opening: line(
       'Olá — ouvi que vocês fazem reuniões com tradução ao vivo. Como funciona para convidados?',
       'Olá — ouvi que vocês fazem reuniões com tradução ao vivo. Como funciona para convidados?',
@@ -141,6 +175,23 @@ const SCENARIOS = {
     title: 'Interview',
     description: 'HR screens a candidate who is more comfortable in French.',
     bot: { name: 'Sophie', speakLang: 'fr' },
+    participants: [
+      { id: 'sophie', name: 'Sophie', defaultLang: 'fr', gradient: 'from-rose-200 to-slate-300' },
+      { id: 'marco', name: 'Marco', defaultLang: 'de', gradient: 'from-indigo-200 to-slate-300' },
+    ],
+    secondary: {
+      name: 'Marco',
+      speakLang: 'de',
+      triggers: ['tool', 'zoom', 'meet', 'translate', 'caption', 'software', 'lalia'],
+      lines: line(
+        'From engineering — we tried captions before, but live translation in-room is the difference. That is what we would use Lalia for.',
+        'Desde ingeniería — probamos subtítulos, pero la traducción en vivo en la reunión marca la diferencia.',
+        'Côté engineering — nous avions des sous-titres, mais la traduction en direct dans la réunion change tout.',
+        'Aus dem Engineering — Untertitel hatten wir, aber Live-Übersetzung im Meeting ist der Unterschied.',
+        'Do engineering — já tínhamos legendas, mas tradução ao vivo na reunião faz diferença.',
+        'エンジニアリングから — 字幕は試しましたが、会議中のライブ翻訳が決め手です。'
+      ),
+    },
     opening: line(
       'Bonjour — merci d’être disponible. Parlez-moi de votre expérience avec des équipes internationales.',
       'Hola — gracias por tu tiempo. Cuéntame tu experiencia con equipos internacionales.',
@@ -201,7 +252,33 @@ function listScenarios() {
     title: s.title,
     description: s.description,
     bot: s.bot,
+    participants: s.participants || [],
   }));
+}
+
+function getScenarioParticipants(scenario, participantLangs = {}) {
+  const agents = (scenario.participants || []).map((p) => ({
+    ...p,
+    speakLang: participantLangs[p.name] || p.defaultLang,
+  }));
+  return [
+    {
+      id: 'you',
+      name: 'You',
+      role: 'host',
+      speakLang: participantLangs.You || 'en',
+      gradient: 'from-primary/30 to-slate-300',
+    },
+    ...agents.map((a) => ({ ...a, role: 'agent' })),
+  ];
+}
+
+function shouldSecondarySpeak(scenario, userText, turnCount) {
+  if (!scenario.secondary) return false;
+  const lower = userText.toLowerCase();
+  if (scenario.secondary.triggers?.some((t) => lower.includes(t))) return true;
+  // Occasional second voice so the room feels alive
+  return turnCount > 0 && turnCount % 2 === 0;
 }
 
 function getScenario(id) {
@@ -232,4 +309,6 @@ module.exports = {
   pickLine,
   normalizeText,
   matchResponse,
+  getScenarioParticipants,
+  shouldSecondarySpeak,
 };

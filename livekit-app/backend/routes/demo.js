@@ -16,11 +16,12 @@ router.get('/config', (_req, res) => {
 
 router.post('/session', async (req, res) => {
   try {
-    const { scenarioId, speakLang, readLang } = req.body || {};
+    const { scenarioId, speakLang, readLang, participantLangs } = req.body || {};
     const result = await createDemoSession({
       scenarioId: scenarioId || 'standup',
       speakLang: speakLang || 'en',
       readLang: readLang || 'en',
+      participantLangs,
       ip: req.ip,
     });
     if (!result.ok) {
