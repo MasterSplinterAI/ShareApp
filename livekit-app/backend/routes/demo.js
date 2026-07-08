@@ -5,10 +5,22 @@ const {
   recordDemoEvent,
   getDemoConfig,
 } = require('../lib/demoLabSession');
+const {
+  createDemoLiveRoomSession,
+  orchestrateDemoRoom,
+} = require('../lib/demoLiveRoom');
 
 const router = express.Router();
 
-const ALLOWED_EVENTS = new Set(['session_start', 'turn', 'complete', 'signup_click', 'tts_enabled']);
+const ALLOWED_EVENTS = new Set([
+  'session_start',
+  'turn',
+  'complete',
+  'signup_click',
+  'tts_enabled',
+  'live_room_start',
+  'live_orchestrate',
+]);
 
 router.get('/config', (_req, res) => {
   res.json(getDemoConfig());
@@ -69,6 +81,51 @@ router.post('/event', (req, res) => {
   } catch (e) {
     console.error('[demo/event]', e);
     res.status(500).json({ error: 'Failed to record event' });
+  }
+});
+
+router.post('/room', async (req, res) => {
+  try {
+    const { scenarioId, speakLang, readLang, participantLangs, participantName } = req.body || {};
+    const result = await createDemoLiveRoomSession({
+      scenarioId: scenarioId || 'standup',
+      speakLang: speakLang || 'en',
+      readLang: readLang || 'en',
+      participantLangs,
+      participantName: participantName || 'Guest',
+      ip: req.ip,
+    });
+    if (!result.ok) {
+      const status = result.error === 'rate_limit_ip' || result.error === 'capacity' ? 429 : 400;
+      return res.status(status).json({ error: result.message || result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[demo/room]', e);
+    res.status(500).json({ error: 'Failed to create demo room' });
+  }
+});
+
+router.post('/orchestrate', async (req, res) => {
+  try {
+    const { demoSessionId, userText, trigger } = req.body || {};
+    if (!demoSessionId) {
+      return res.status(400).json({ error: 'demoSessionId required' });
+    }
+    const result = await orchestrateDemoRoom({
+      demoSessionId: String(demoSessionId),
+      userText,
+      trigger,
+      ip: req.ip,
+    });
+    if (!result.ok) {
+      const status = result.error === 'turn_limit' || result.error === 'rate_limit_ip' ? 429 : 400;
+      return res.status(status).json({ error: result.message || result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[demo/orchestrate]', e);
+    res.status(500).json({ error: 'Failed to orchestrate demo turn' });
   }
 });
 

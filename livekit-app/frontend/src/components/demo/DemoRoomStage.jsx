@@ -66,6 +66,7 @@ export function DemoRoomStage({
   micDisabled,
   onMicDown,
   onMicUp,
+  showMicButton = true,
 }) {
   const hint = PHASE_HINTS[turnPhase] || '';
 
@@ -98,7 +99,7 @@ export function DemoRoomStage({
 
         <p className="mt-3 text-center text-xs text-muted-foreground">{hint}</p>
 
-        {micSupported && turnPhase !== 'complete' && turnPhase !== 'opening' && (
+        {showMicButton && micSupported && turnPhase !== 'complete' && turnPhase !== 'opening' && (
           <div className="mt-4 flex justify-center">
             <Button
               type="button"

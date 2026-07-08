@@ -134,6 +134,35 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
   return room;
 }
 
+/** Ephemeral public demo room — shorter empty timeout, demo metadata flag. */
+async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
+  const roomService = getRoomService();
+  const emptyTimeout = 600;
+  const departureTimeout = 120;
+  const metadata = {
+    createdAt: new Date().toISOString(),
+    type: 'demo',
+    roomMode: 'multi-language',
+    stt_pipeline: DEFAULT_STT_PIPELINE,
+    demo: true,
+    ...demoMeta,
+  };
+  const room = await roomService.createRoom({
+    name: roomName,
+    emptyTimeout,
+    departureTimeout,
+    maxParticipants: 10,
+    metadata: JSON.stringify(metadata),
+  });
+  const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
+  try {
+    await getAgentDispatch().createDispatch(roomName, agentName);
+  } catch (e) {
+    console.warn(`[livekitService] Demo agent dispatch failed for ${roomName}:`, e.message);
+  }
+  return room;
+}
+
 /**
  * Ensure a LiveKit room exists and has an agent dispatched.
  * If the room was torn down after emptyTimeout, LiveKit's createRoom is
@@ -280,6 +309,7 @@ module.exports = {
   VALID_STT_PIPELINES,
   DEFAULT_STT_PIPELINE,
   createLiveKitConferenceRoom,
+  createDemoLiveKitRoom,
   ensureRoomAndAgent,
   removeAgentsFromRoom,
   switchRoomSttPipeline,

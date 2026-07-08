@@ -131,7 +131,9 @@ app.use('/api/v2/auth/change-password', authLimiter);
 app.use('/api/v2/join-info', publicJoinLimiter);
 app.use('/api/v2/guest-token', publicJoinLimiter);
 app.use('/api/demo/session', demoLimiter);
+app.use('/api/demo/room', demoLimiter);
 app.use('/api/demo/turn', demoTurnLimiter);
+app.use('/api/demo/orchestrate', demoTurnLimiter);
 app.use('/api/demo', demoRoutes);
 app.use('/api/auth', authLimiter);
 

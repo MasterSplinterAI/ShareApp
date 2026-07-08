@@ -5,6 +5,11 @@ export const demoLabService = {
 
   startSession: (body) => api.post('/demo/session', body).then((r) => r.data),
 
+  createRoom: (body) => api.post('/demo/room', body).then((r) => r.data),
+
+  orchestrate: (demoSessionId, body = {}) =>
+    api.post('/demo/orchestrate', { demoSessionId, ...body }).then((r) => r.data),
+
   turn: (sessionId, userText) =>
     api.post('/demo/turn', { sessionId, userText }).then((r) => r.data),
 

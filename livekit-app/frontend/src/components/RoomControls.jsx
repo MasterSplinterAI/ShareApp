@@ -4,6 +4,7 @@ import { DataPacket_Kind, RoomEvent, Track } from 'livekit-client';
 
 function RoomControls({
   selectedLanguage,
+  spokenLanguage,
   translationEnabled,
   voiceTranslationEnabled = false,
   participantName,
@@ -23,7 +24,7 @@ function RoomControls({
         type: 'language_update',
         participantName: participantName,
         participantIdentity: lp?.identity,
-        language: selectedLanguage,
+        language: spokenLanguage || selectedLanguage,
         enabled: translationEnabled,
         voiceEnabled: Boolean(translationEnabled && voiceTranslationEnabled),
       };
@@ -46,6 +47,7 @@ function RoomControls({
   }, [
     room,
     localParticipant,
+    spokenLanguage,
     selectedLanguage,
     translationEnabled,
     voiceTranslationEnabled,
