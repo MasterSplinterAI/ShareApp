@@ -20,6 +20,11 @@ export function MarketingFooter() {
           <p className="font-medium text-foreground">{t('footer.product')}</p>
           <ul className="mt-3 space-y-2">
             <li>
+              <Link to="/demo" className={linkClass}>
+                {t('footer.tryDemo')}
+              </Link>
+            </li>
+            <li>
               <a href="/#platform" className={linkClass}>
                 {t('footer.platform')}
               </a>

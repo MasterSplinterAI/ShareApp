@@ -28,7 +28,7 @@ export function Hero() {
             </Link>
           </Button>
           <Button size="lg" variant="outline" className="min-w-[220px]" asChild>
-            <a href="/#platform">{t('hero.seeHowItWorks')}</a>
+            <Link to="/demo">{t('hero.tryTranslation')}</Link>
           </Button>
         </div>
         <p className="mt-5 text-center text-xs text-muted-foreground sm:mt-6">{t('hero.footnote')}</p>

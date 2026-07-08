@@ -1,5 +1,5 @@
 {
-  "_version": 5,
+  "_version": 6,
   "nav": {
     "platform": "Platform",
     "features": "Features",
@@ -17,6 +17,7 @@
     "title": "Meetings that work in every language—live and after.",
     "subtitle": "Lalia combines live translation, speech-to-text, optional transcript storage, and AI meeting reports—for solo calls or whole teams.",
     "startFree": "Start free — 60 min/month",
+    "tryTranslation": "Try translation",
     "seeHowItWorks": "See how it works",
     "footnote": "No credit card · Guests join in one click · Transcripts off by default · Runs in your browser"
   },

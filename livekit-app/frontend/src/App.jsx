@@ -34,6 +34,7 @@ import { PlansTab } from './v2/pages/admin/PlansTab'
 import V2ResetPassword from './v2/pages/V2ResetPassword'
 import TermsPage from './components/legal/TermsPage'
 import PrivacyPage from './components/legal/PrivacyPage'
+import TranslationLabDemo from './components/demo/TranslationLabDemo'
 import DomTranslationFallback from './components/DomTranslationFallback'
 
 function App() {
@@ -95,6 +96,7 @@ function App() {
           </Route>
         </Route>
         <Route path="/" element={<HomeScreen />} />
+        <Route path="/demo" element={<TranslationLabDemo />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/room/:roomName" element={<MeetingRoom />} />

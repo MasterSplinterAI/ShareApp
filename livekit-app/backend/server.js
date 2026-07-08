@@ -33,6 +33,20 @@ const publicJoinLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many requests. Please wait a moment and try again.' },
 });
+const demoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demo rate limit reached. Please wait a few minutes or sign up free.' },
+});
+const demoTurnLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many demo tries. Please wait a moment.' },
+});
 
 // Middleware
 // Allow CORS from localhost, network IP, and ngrok domains
@@ -101,6 +115,7 @@ app.use(express.json());
 const authRoutes = require('./routes/auth');
 const roomsRoutes = require('./routes/rooms');
 const translateRoutes = require('./routes/translate');
+const demoRoutes = require('./routes/demo');
 
 const v2Routes = require('./routes/v2');
 const v2Database = require('./db/v2Database');
@@ -115,6 +130,9 @@ app.use('/api/v2/auth/reset-password', authLimiter);
 app.use('/api/v2/auth/change-password', authLimiter);
 app.use('/api/v2/join-info', publicJoinLimiter);
 app.use('/api/v2/guest-token', publicJoinLimiter);
+app.use('/api/demo/session', demoLimiter);
+app.use('/api/demo/turn', demoTurnLimiter);
+app.use('/api/demo', demoRoutes);
 app.use('/api/auth', authLimiter);
 
 app.use('/api/auth', authRoutes);
