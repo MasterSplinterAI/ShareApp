@@ -1,11 +1,14 @@
 import { MarketingNav } from './marketing/MarketingNav';
 import { Hero } from './marketing/Hero';
 import { TrustStrip } from './marketing/TrustStrip';
-import { FeatureGrid } from './marketing/FeatureGrid';
+import { PlatformPillars } from './marketing/PlatformPillars';
 import AiReports from './marketing/AiReports';
+import { WhoItsFor } from './marketing/WhoItsFor';
 import { HowItWorks } from './marketing/HowItWorks';
+import { FeatureGrid } from './marketing/FeatureGrid';
 import { PricingTable } from './marketing/PricingTable';
 import { FAQ } from './marketing/FAQ';
+import { MarketingCta } from './marketing/MarketingCta';
 import { MarketingFooter } from './marketing/MarketingFooter';
 
 export default function HomeScreen() {
@@ -15,11 +18,14 @@ export default function HomeScreen() {
       <main>
         <Hero />
         <TrustStrip />
-        <FeatureGrid />
+        <PlatformPillars />
         <AiReports />
+        <WhoItsFor />
         <HowItWorks />
+        <FeatureGrid />
         <PricingTable />
         <FAQ />
+        <MarketingCta />
       </main>
       <MarketingFooter />
     </div>

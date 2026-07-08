@@ -21,17 +21,14 @@ export function Hero() {
           {t('hero.subtitle')}
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:mt-12 sm:flex-row sm:gap-4">
-          <Button size="lg" className="min-w-[200px] gap-2" asChild>
+          <Button size="lg" className="min-w-[220px] gap-2" asChild>
             <Link to="/v2/signup">
               {t('hero.startFree')}
               <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
-          <Button size="lg" variant="outline" className="min-w-[200px]" asChild>
-            <a href="/#preview">{t('hero.seeDemo')}</a>
-          </Button>
-          <Button size="lg" variant="secondary" className="min-w-[200px]" asChild>
-            <a href="/#pricing">{t('hero.seePricing')}</a>
+          <Button size="lg" variant="outline" className="min-w-[220px]" asChild>
+            <a href="/#platform">{t('hero.seeHowItWorks')}</a>
           </Button>
         </div>
         <p className="mt-5 text-center text-xs text-muted-foreground sm:mt-6">{t('hero.footnote')}</p>

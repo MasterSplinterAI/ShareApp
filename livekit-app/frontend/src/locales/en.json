@@ -1,8 +1,9 @@
 {
-  "_version": 4,
+  "_version": 5,
   "nav": {
+    "platform": "Platform",
     "features": "Features",
-    "aiReports": "AI reports",
+    "aiReports": "AI insights",
     "pricing": "Pricing",
     "faq": "FAQ",
     "openWorkspace": "Open workspace",
@@ -12,13 +13,69 @@
     "menuTitle": "Menu"
   },
   "hero": {
-    "eyebrow": "Live captions & translation",
-    "title": "Video meetings everyone can follow—in their own language.",
-    "subtitle": "Lalia adds live captions and real-time translation to every meeting, so global teams stay aligned. Share a guest link—no account needed—and keep an optional transcript when you want a record.",
+    "eyebrow": "Multilingual meetings · captions · AI insights",
+    "title": "Meetings that work in every language—live and after.",
+    "subtitle": "Lalia combines live translation, speech-to-text, optional transcript storage, and AI meeting reports—for solo calls or whole teams.",
+    "startFree": "Start free — 60 min/month",
+    "seeHowItWorks": "See how it works",
+    "footnote": "No credit card · Guests join in one click · Transcripts off by default · Runs in your browser"
+  },
+  "platform": {
+    "eyebrow": "One platform",
+    "title": "Fewer tools. One meeting stack.",
+    "subtitle": "Stop stitching together interpreters, caption add-ons, and note-taking bots. Lalia is built for live multilingual conversation first—and keeps a record when you want one.",
+    "pillars": {
+      "live": {
+        "title": "Live in the meeting",
+        "description": "Real-time speech-to-text, live captions, and cross-language translation—each participant in their own language lane."
+      },
+      "after": {
+        "title": "After the meeting",
+        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+      },
+      "insights": {
+        "title": "Without the busywork",
+        "description": "AI summaries, action items, and decisions—grounded only in what was actually said. Gaps flagged, never invented."
+      }
+    },
+    "replaces": {
+      "title": "Replaces a patchwork of:",
+      "items": {
+        "interpreter": "Scheduled interpreters for recurring syncs",
+        "captions": "Caption-only add-ons",
+        "transcription": "Separate transcription bots",
+        "notes": "Manual meeting notes & follow-up docs"
+      }
+    }
+  },
+  "audience": {
+    "eyebrow": "Who it's for",
+    "title": "Individuals and teams, same platform",
+    "subtitle": "Start free on your own—or bring your whole organization when you're ready.",
+    "personal": {
+      "title": "For you",
+      "description": "Consultants, freelancers, remote workers, and anyone who meets across languages.",
+      "items": {
+        "free": "Free tier with 60 participant-minutes/month",
+        "guest": "One-click guest links—no download",
+        "solo": "Personal workspace—no company required"
+      }
+    },
+    "team": {
+      "title": "For your team",
+      "description": "Sales, customer success, HR, ops, and global product teams who need shared access.",
+      "items": {
+        "workspace": "Team workspace with roles & invites",
+        "usage": "Usage dashboard & centralized billing",
+        "enterprise": "Enterprise volume, DPA support & custom terms"
+      }
+    }
+  },
+  "cta": {
+    "title": "Start your first multilingual meeting",
+    "subtitle": "Free tier · No credit card · Guests join from a link",
     "startFree": "Start free",
-    "seePricing": "See pricing",
-    "seeDemo": "See live demo",
-    "footnote": "No credit card required · Guests join in one click · Runs in your browser"
+    "contactSales": "Talk to sales"
   },
   "trust": {
     "ariaLabel": "Security and trust",
@@ -30,8 +87,9 @@
     "poweredBy": "Powered by LiveKit real-time infrastructure"
   },
   "footer": {
-    "tagline": "Live captions, real-time translation, and AI meeting reports—built for global teams.",
+    "tagline": "The multilingual meeting platform—live translation, transcripts, and AI insights for individuals and teams.",
     "product": "Product",
+    "platform": "Platform",
     "company": "Company",
     "features": "Features",
     "aiReports": "AI reports",
@@ -51,12 +109,12 @@
     "people": "People",
     "translating": "Translating EN → ES, JA",
     "presenting": "Kenny is presenting",
-    "footnote": "Simulated room — screen share up top, participant tiles along the bottom, captions on the side."
+    "footnote": "Product preview — screen share, participant tiles, and live captions in the side panel."
   },
   "features": {
-    "eyebrow": "Features",
-    "title": "Built for clarity",
-    "subtitle": "Everything runs in your browser—a focused host experience and one-click guest links.",
+    "eyebrow": "Capabilities",
+    "title": "Everything in one browser tab",
+    "subtitle": "Host meetings, invite guests, and manage transcripts from a focused workspace—no plugins required.",
     "items": {
       "translation": {
         "title": "Real-time translation",
@@ -96,9 +154,9 @@
     }
   },
   "aiReports": {
-    "eyebrow": "AI meeting reports",
+    "eyebrow": "Transcripts & AI insights",
     "title": "Your meeting, distilled—in any language it was spoken.",
-    "subtitle": "When transcript storage is on, Lalia turns the full multilingual conversation into a polished report: executive summaries, action items with owners, decisions and open questions. Grounded only in what was actually said — gaps are flagged, never invented.",
+    "subtitle": "When transcript storage is on, Lalia turns the multilingual conversation into a polished report: executive summaries, action items with owners, decisions and open questions. The third pillar of the platform—after live translation and saved transcripts.",
     "templates": {
       "executive": {
         "label": "Executive summary",
@@ -231,6 +289,10 @@
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
         "a": "No—we do not use your meeting content to train Lalia's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
+      },
+      "stack": {
+        "q": "How is Lalia different from transcription-only tools?",
+        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
       }
     }
   },

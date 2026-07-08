@@ -4,6 +4,7 @@ import { useTranslation } from '../../lib/i18n/I18nProvider';
 const FAQ_KEYS = [
   'guests',
   'languages',
+  'stack',
   'participants',
   'planLimit',
   'transcripts',

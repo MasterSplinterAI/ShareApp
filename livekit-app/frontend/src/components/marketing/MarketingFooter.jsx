@@ -13,11 +13,17 @@ export function MarketingFooter() {
       <div className="mx-auto grid max-w-6xl gap-8 px-4 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         <div className="sm:col-span-2">
           <p className="text-sm font-semibold text-foreground">Lalia</p>
+          <p className="text-xs text-muted-foreground">Multilingual meetings</p>
           <p className="mt-2 max-w-xs text-sm leading-relaxed text-muted-foreground">{t('footer.tagline')}</p>
         </div>
         <nav className="text-sm" aria-label="Product">
           <p className="font-medium text-foreground">{t('footer.product')}</p>
           <ul className="mt-3 space-y-2">
+            <li>
+              <a href="/#platform" className={linkClass}>
+                {t('footer.platform')}
+              </a>
+            </li>
             <li>
               <a href="/#features" className={linkClass}>
                 {t('footer.features')}

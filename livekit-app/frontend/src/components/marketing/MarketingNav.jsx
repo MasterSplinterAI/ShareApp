@@ -10,7 +10,7 @@ const navLinkClass =
   'rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
 
 const MOBILE_LINKS = [
-  { href: '/#features', key: 'features' },
+  { href: '/#platform', key: 'platform' },
   { href: '/#ai-reports', key: 'aiReports' },
   { href: '/#pricing', key: 'pricing' },
   { href: '/#faq', key: 'faq' },
@@ -59,8 +59,8 @@ export function MarketingNav() {
         </Link>
 
         <nav className="hidden items-center gap-1 sm:flex sm:gap-2" aria-label="Primary">
-          <a href="/#features" className={navLinkClass}>
-            {t('nav.features')}
+          <a href="/#platform" className={navLinkClass}>
+            {t('nav.platform')}
           </a>
           <a href="/#ai-reports" className={`hidden ${navLinkClass} md:inline`}>
             {t('nav.aiReports')}

@@ -1,5 +1,5 @@
 /** Bump when locale JSON changes to invalidate localStorage cache. */
-export const I18N_VERSION = 4;
+export const I18N_VERSION = 5;
 
 export const LOCALE_STORAGE_KEY = 'parley_locale';
 
