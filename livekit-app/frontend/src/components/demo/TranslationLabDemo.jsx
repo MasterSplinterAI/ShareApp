@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import toast from 'react-hot-toast';
 import {
   ArrowRight,
   Briefcase,
   Globe2,
-  Loader2,
   Mic,
   Shield,
   Sparkles,
@@ -16,7 +14,7 @@ import {
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 import { DemoPreviewPanel } from './DemoPreviewPanel';
-import { DemoLiveRoom } from './DemoLiveRoom';
+import { DemoJoinFlow } from './DemoLiveRoom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { demoLabService } from '../../services/demoLab';
@@ -79,8 +77,7 @@ export default function TranslationLabDemo() {
   const [participantLangs, setParticipantLangs] = useState({ You: 'en', María: 'es', Yuki: 'ja' });
   const [participantName, setParticipantName] = useState('Guest');
   const [ttsEnabled, setTtsEnabled] = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [liveRoom, setLiveRoom] = useState(null);
+  const [joinConfig, setJoinConfig] = useState(null);
 
   const languages = config?.languages || [
     { code: 'en', label: 'English' },
@@ -105,44 +102,27 @@ export default function TranslationLabDemo() {
     setParticipantLangs(buildDefaultLangs(selectedScenario, speakLang));
   }, [scenarioId, selectedScenario, speakLang]);
 
-  const joinLiveRoom = async () => {
-    setStarting(true);
-    try {
-      const data = await demoLabService.createRoom({
-        scenarioId,
-        speakLang,
-        readLang,
-        participantLangs,
-        participantName: participantName.trim() || 'Guest',
-      });
-      setLiveRoom(data);
-      demoLabService.track(data.demoSessionId, 'live_room_start', { scenarioId });
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Could not start demo room');
-    } finally {
-      setStarting(false);
-    }
+  const joinLiveRoom = () => {
+    setJoinConfig({
+      scenarioId,
+      speakLang,
+      readLang,
+      participantLangs,
+      participantName: participantName.trim() || 'Guest',
+      ttsEnabled,
+      scenarioTitle: selectedScenario.title,
+    });
   };
 
   const leaveRoom = () => {
-    setLiveRoom(null);
+    setJoinConfig(null);
   };
 
-  if (liveRoom) {
+  if (joinConfig) {
     return (
-      <DemoLiveRoom
-        token={liveRoom.token}
-        url={liveRoom.url}
-        demoSessionId={liveRoom.demoSessionId}
-        identity={liveRoom.identity}
-        userDisplayName={liveRoom.displayName || participantName.trim() || 'Guest'}
-        readLang={liveRoom.readLang}
-        speakLang={liveRoom.speakLang}
-        agents={liveRoom.agents}
-        participants={liveRoom.participants}
-        scenarioTitle={liveRoom.scenario?.title}
-        ttsEnabled={ttsEnabled}
-        maxTurns={liveRoom.maxTurns || maxTurns}
+      <DemoJoinFlow
+        config={joinConfig}
+        maxTurns={maxTurns}
         onLeave={leaveRoom}
       />
     );
@@ -309,11 +289,11 @@ export default function TranslationLabDemo() {
                 </span>
               </label>
 
-              <Button size="lg" className="mt-6 w-full gap-2 shadow-md" disabled={starting} onClick={joinLiveRoom}>
-                {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-                Join live demo room
-                {!starting && <ArrowRight className="ml-auto h-4 w-4 opacity-70" />}
-              </Button>
+            <Button size="lg" className="mt-6 w-full gap-2 shadow-md" onClick={joinLiveRoom}>
+              <Mic className="h-4 w-4" />
+              Join live demo room
+              <ArrowRight className="ml-auto h-4 w-4 opacity-70" />
+            </Button>
             </div>
 
             <p className="flex items-start gap-2 text-xs text-muted-foreground">

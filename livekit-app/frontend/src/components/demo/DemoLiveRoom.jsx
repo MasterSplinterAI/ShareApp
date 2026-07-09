@@ -6,7 +6,7 @@ import {
   StartAudio,
   usePreviewTracks,
 } from '@livekit/components-react';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MeetingProvider, useMeeting } from '../../context/MeetingContext';
 import TranscriptionPanel from '../TranscriptionPanel';
@@ -15,6 +15,7 @@ import CustomControlBar from '../CustomControlBar';
 import TtsAudioController from '../TtsAudioController';
 import PreJoinScreen from '../PreJoinScreen';
 import PublishPreviewTracks from '../PublishPreviewTracks';
+import DemoEnsureMedia from './DemoEnsureMedia';
 import { DemoRoomStage } from './DemoRoomStage';
 import { useDemoPhase } from '../../hooks/useDemoPhase';
 import { demoLabService } from '../../services/demoLab';
@@ -84,10 +85,6 @@ function DemoLiveRoomInner({
 
   const micLive = turnPhase === 'your_turn' || turnPhase === 'you_speaking';
 
-  const handleNavigateAfterLeave = useCallback(() => {
-    onLeave();
-  }, [onLeave]);
-
   return (
     <div className="meeting-surface meeting-room-root relative flex h-[100dvh] flex-col overflow-hidden bg-background">
       <TtsAudioController
@@ -139,7 +136,7 @@ function DemoLiveRoomInner({
         isHost={false}
         onShareClick={() => toast('Guest links and invites are available on full Lalia meetings.')}
         intentionalLeaveRef={intentionalLeaveRef}
-        onNavigateAfterLeave={handleNavigateAfterLeave}
+        onNavigateAfterLeave={onLeave}
         initialVideoEffectId={prejoinChoices?.videoEffectId ?? null}
       />
 
@@ -162,27 +159,24 @@ function DemoLiveRoomInner({
   );
 }
 
-export function DemoLiveRoom({
-  token,
-  url,
-  demoSessionId,
-  identity,
-  userDisplayName,
-  readLang,
-  speakLang,
-  agents,
-  participants,
-  scenarioTitle,
-  ttsEnabled,
-  maxTurns,
-  onLeave,
-}) {
-  const livekitUrl =
-    url || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud';
+/**
+ * Prejoin first (mic/camera preview), then create LiveKit room — same order as production meetings.
+ */
+export function DemoJoinFlow({ config, maxTurns, onLeave }) {
+  const {
+    scenarioId,
+    speakLang,
+    readLang,
+    participantLangs,
+    participantName,
+    ttsEnabled,
+    scenarioTitle,
+  } = config;
 
   const [prejoinChoices, setPrejoinChoices] = useState(null);
-  const [joinedReadLang, setJoinedReadLang] = useState(readLang);
-  const [joinedName, setJoinedName] = useState(userDisplayName || identity || 'Guest');
+  const [liveRoom, setLiveRoom] = useState(null);
+  const [roomError, setRoomError] = useState(null);
+  const [creatingRoom, setCreatingRoom] = useState(false);
   const [previewMedia, setPreviewMedia] = useState({
     audioEnabled: true,
     videoEnabled: true,
@@ -204,7 +198,7 @@ export function DemoLiveRoom({
   }, [frozenPreviewTrackOptions, previewMedia]);
 
   const onPreviewMediaError = useCallback((err) => {
-    console.warn('[DemoLiveRoom] PreJoin media error:', err);
+    console.warn('[DemoJoinFlow] PreJoin media error:', err);
     toast.error('Could not access camera or microphone. Check browser permissions.');
   }, []);
 
@@ -214,21 +208,50 @@ export function DemoLiveRoom({
     setPreviewMedia((prev) => ({ ...prev, ...partial }));
   }, []);
 
-  const handlePrejoinJoin = useCallback(
-    (choices) => {
-      setFrozenPreviewTrackOptions({
-        audio: choices.audioEnabled ? { deviceId: choices.audioDeviceId || undefined } : false,
-        video: choices.videoEnabled ? { deviceId: choices.videoDeviceId || undefined } : false,
+  const handlePrejoinJoin = useCallback((choices) => {
+    setFrozenPreviewTrackOptions({
+      audio: choices.audioEnabled ? { deviceId: choices.audioDeviceId || undefined } : false,
+      video: choices.videoEnabled ? { deviceId: choices.videoDeviceId || undefined } : false,
+    });
+    setPrejoinChoices(choices);
+  }, []);
+
+  useEffect(() => {
+    if (!prejoinChoices || liveRoom || creatingRoom) return;
+
+    let cancelled = false;
+    setCreatingRoom(true);
+    setRoomError(null);
+
+    demoLabService
+      .createRoom({
+        scenarioId,
+        speakLang,
+        readLang,
+        participantLangs,
+        participantName: prejoinChoices.name || participantName?.trim() || 'Guest',
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setLiveRoom(data);
+        demoLabService.track(data.demoSessionId, 'live_room_start', { scenarioId });
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setRoomError(e.response?.data?.error || 'Could not start demo room');
+        toast.error(e.response?.data?.error || 'Could not start demo room');
+      })
+      .finally(() => {
+        if (!cancelled) setCreatingRoom(false);
       });
-      setJoinedName(choices.name || userDisplayName || 'Guest');
-      setJoinedReadLang(readLang);
-      setPrejoinChoices(choices);
-    },
-    [readLang, userDisplayName]
-  );
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prejoinChoices, liveRoom, creatingRoom, scenarioId, speakLang, readLang, participantLangs, participantName]);
 
   const handleError = useCallback((err) => {
-    console.error('[DemoLiveRoom]', err);
+    console.error('[DemoJoinFlow]', err);
     toast.error('Could not connect to demo room. Check mic permissions and try again.');
   }, []);
 
@@ -236,9 +259,9 @@ export function DemoLiveRoom({
     return (
       <PreJoinScreen
         roomName={`Demo · ${scenarioTitle || 'Translation lab'}`}
-        defaultName={userDisplayName || identity || 'Guest'}
+        defaultName={participantName?.trim() || 'Guest'}
         defaultLanguage={readLang}
-        participantCount={(agents?.length || 0) + 1}
+        participantCount={2}
         meetingTitle={scenarioTitle}
         previewTracks={previewTracks}
         media={previewMedia}
@@ -252,21 +275,43 @@ export function DemoLiveRoom({
     );
   }
 
+  if (creatingRoom || !liveRoom) {
+    return (
+      <div className="flex min-h-[100dvh] items-center justify-center bg-background">
+        <div className="text-center">
+          <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">
+            {roomError || 'Connecting to demo room…'}
+          </p>
+          {roomError && (
+            <Button variant="outline" className="mt-4" onClick={onLeave}>
+              Back
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const livekitUrl =
+    liveRoom.url || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud';
+  const displayName = prejoinChoices.name || liveRoom.displayName || participantName || 'Guest';
+
   return (
     <MeetingProvider
       initialState={{
-        selectedLanguage: joinedReadLang,
+        selectedLanguage: readLang,
         translationEnabled: true,
         voiceTranslationEnabled: ttsEnabled !== false,
-        participantName: joinedName,
-        demoTeammates: (agents || []).map((a) => ({
+        participantName: displayName,
+        demoTeammates: (liveRoom.agents || []).map((a) => ({
           name: a.name,
           lang: a.speakLang || a.nativeLang,
         })),
       }}
     >
       <LiveKitRoom
-        token={token}
+        token={liveRoom.token}
         serverUrl={livekitUrl}
         video={false}
         audio={false}
@@ -291,18 +336,29 @@ export function DemoLiveRoom({
           audioEnabled={prejoinChoices.audioEnabled ?? true}
           publishOptions={ROOM_PUBLISH_DEFAULTS}
         />
+        <DemoEnsureMedia
+          audioEnabled={prejoinChoices.audioEnabled ?? true}
+          videoEnabled={prejoinChoices.videoEnabled ?? false}
+          audioDeviceId={prejoinChoices.audioDeviceId}
+          videoDeviceId={prejoinChoices.videoDeviceId}
+        />
         <DemoLiveRoomInner
-          demoSessionId={demoSessionId}
-          userDisplayName={joinedName}
+          demoSessionId={liveRoom.demoSessionId}
+          userDisplayName={displayName}
           speakLang={speakLang}
-          agents={agents}
-          participants={participants}
-          scenarioTitle={scenarioTitle}
-          maxTurns={maxTurns}
+          agents={liveRoom.agents}
+          participants={liveRoom.participants}
+          scenarioTitle={liveRoom.scenario?.title || scenarioTitle}
+          maxTurns={liveRoom.maxTurns || maxTurns}
           prejoinChoices={prejoinChoices}
           onLeave={onLeave}
         />
       </LiveKitRoom>
     </MeetingProvider>
   );
+}
+
+/** @deprecated Use DemoJoinFlow — kept as alias for imports */
+export function DemoLiveRoom(props) {
+  return <DemoJoinFlow {...props} />;
 }

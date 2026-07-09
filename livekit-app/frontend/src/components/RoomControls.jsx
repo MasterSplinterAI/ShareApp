@@ -134,7 +134,9 @@ function RoomControls({
 
     const handleDataReceived = (payload) => {
       try {
-        const msg = JSON.parse(new TextDecoder().decode(payload));
+        const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
+        if (!raw) return;
+        const msg = JSON.parse(new TextDecoder().decode(raw));
         if (msg?.type === 'agent_ready') {
           sendLanguagePreference();
         }
