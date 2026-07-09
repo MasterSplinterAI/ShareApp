@@ -114,6 +114,10 @@ function PreJoinScreen({
   media,
   onMediaChange,
   onJoin,
+  showNameField = true,
+  showLanguagePicker = true,
+  joinButtonLabel = null,
+  headerSubtitle = null,
 }) {
   const { t, setLocale } = useTranslation();
   const [name, setName] = useState(defaultName);
@@ -240,9 +244,10 @@ function PreJoinScreen({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    const trimmed = (showNameField ? name : defaultName || name).trim();
+    if (!trimmed) return;
     onJoin({
-      name: name.trim(),
+      name: trimmed,
       language: selectedLanguage,
       audioEnabled,
       videoEnabled,
@@ -261,6 +266,9 @@ function PreJoinScreen({
         <div className="border-b border-border/60 px-4 py-4 text-center sm:px-6 sm:py-5">
           <MeetingBrandHeader branding={branding} meetingTitle={meetingTitle} />
           <h1 className="text-lg font-semibold tracking-tight sm:text-xl">{t('prejoin.readyTitle')}</h1>
+          {headerSubtitle && (
+            <p className="mt-1 text-sm text-muted-foreground">{headerSubtitle}</p>
+          )}
           <p className="mt-1 flex flex-wrap items-center justify-center gap-1.5 text-sm text-muted-foreground">
             <span className="truncate">{roomName}</span>
             {participantCount !== null && participantCount > 0 && (
@@ -380,40 +388,44 @@ function PreJoinScreen({
 
           {/* Join form */}
           <form onSubmit={handleSubmit} className="flex flex-col justify-center space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="pj-name">{t('prejoin.displayName')}</Label>
-              <Input
-                id="pj-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder={t('prejoin.namePlaceholder')}
-                autoFocus={!defaultName}
-                required
-              />
-            </div>
+            {showNameField && (
+              <div className="space-y-2">
+                <Label htmlFor="pj-name">{t('prejoin.displayName')}</Label>
+                <Input
+                  id="pj-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={t('prejoin.namePlaceholder')}
+                  autoFocus={!defaultName}
+                  required
+                />
+              </div>
+            )}
 
-            <div className="space-y-2">
-              <Label className="flex items-center gap-1">
-                <Globe className="h-3.5 w-3.5" />
-                {t('prejoin.myLanguage')}
-              </Label>
-              <MeetingLanguagePicker
-                value={selectedLanguage}
-                onChange={handleLanguageChange}
-                align="start"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('prejoin.languageHint')}
-              </p>
-            </div>
+            {showLanguagePicker && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <Globe className="h-3.5 w-3.5" />
+                  {t('prejoin.myLanguage')}
+                </Label>
+                <MeetingLanguagePicker
+                  value={selectedLanguage}
+                  onChange={handleLanguageChange}
+                  align="start"
+                />
+                <p className="text-xs text-muted-foreground">
+                  {t('prejoin.languageHint')}
+                </p>
+              </div>
+            )}
 
             <Button
               type="submit"
               size="lg"
               className={branding ? brandButtonClassName('w-full border-0') : 'w-full'}
-              disabled={!name.trim()}
+              disabled={!(showNameField ? name.trim() : (defaultName || name).trim())}
             >
-              {t('prejoin.joinMeeting')}
+              {joinButtonLabel || t('prejoin.joinMeeting')}
             </Button>
           </form>
         </div>
