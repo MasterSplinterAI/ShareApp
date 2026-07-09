@@ -97,6 +97,7 @@ async function createDemoLiveRoomSession({
     readLang: read,
     speakLang: speak,
     agentNames: agents.map((a) => a.name),
+    agentLangs: Object.fromEntries(agents.map((a) => [a.name, a.speakLang])),
   });
 
   const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {

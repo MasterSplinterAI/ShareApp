@@ -753,6 +753,20 @@ class TranscriptionOnlyAgent:
                         read_lang,
                     )
                     self.demo_orchestrator.schedule_opening()
+
+                    agent_langs = meta.get("agentLangs") or {}
+                    for name, lang in agent_langs.items():
+                        virtual_id = f"demo:{name}"
+                        norm_lang = str(lang).split("-")[0].lower()
+                        self.participant_languages[virtual_id] = norm_lang
+                        self.translation_enabled[virtual_id] = True
+                        self.voice_enabled[virtual_id] = False
+                    if agent_langs:
+                        await self.update_assistants(ctx)
+                        logger.info(
+                            "🎭 Demo virtual listeners registered: %s",
+                            agent_langs,
+                        )
         except Exception as e:
             logger.warning(f"Room metadata parse failed: {e}")
 

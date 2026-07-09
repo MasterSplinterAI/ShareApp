@@ -73,15 +73,17 @@ function DemoLiveRoomInner({
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 border-b border-border/60 px-3 py-2 text-center text-xs text-muted-foreground">
+          <div className="shrink-0 border-b border-border/60 bg-gradient-to-r from-primary/5 via-background to-emerald-500/5 px-3 py-2 text-center text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{scenarioTitle || 'Translation lab'}</span>
+            <span className="mx-2 text-border">·</span>
             {maxTurns} turns max · Deepgram STT · Pipeline TTS
             {micLive ? (
               <span className="ml-2 font-medium text-emerald-600">· Mic live (VAD)</span>
             ) : turnPhase !== 'complete' ? (
-              <span className="ml-2 text-muted-foreground">· Waiting for your turn</span>
+              <span className="ml-2">· Waiting for your turn</span>
             ) : null}
           </div>
-          <div className="shrink-0 p-3">
+          <div className="shrink-0 p-3 sm:p-4">
             <DemoRoomStage
               participants={roomParticipants}
               activeSpeaker={activeSpeaker}
@@ -159,6 +161,11 @@ export function DemoLiveRoom({
         selectedLanguage: readLang,
         translationEnabled: true,
         voiceTranslationEnabled: ttsEnabled !== false,
+        participantName: userDisplayName || identity || 'Guest',
+        demoTeammates: (agents || []).map((a) => ({
+          name: a.name,
+          lang: a.speakLang || a.nativeLang,
+        })),
       }}
     >
       <LiveKitRoom

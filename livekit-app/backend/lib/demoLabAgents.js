@@ -69,7 +69,7 @@ const SCENARIO_AGENTS = {
 const SCENARIO_CONTEXT = {
   standup: 'Weekly global standup. Topics: rollout timeline, Madrid pilot June 16, Japanese materials for APAC, blockers.',
   customer: 'Sales call with a prospect asking about Lalia live translation, guest links, security, and pricing.',
-  interview: 'HR screen for an international role. Topics: remote collaboration, tools (Zoom/Meet), translation needs.',
+  interview: 'HR screen for an international role. Topics: remote collaboration across time zones, multilingual teamwork on Lalia, and how candidates use live translation in distributed teams.',
 };
 
 function getAgentsForScenario(scenarioId, participantLangs = {}) {

@@ -1,5 +1,11 @@
 const axios = require('axios');
 const { getAgentsForScenario, getScenarioContext } = require('./demoLabAgents');
+const {
+  guardrailPromptSection,
+  filterGuardedLines,
+  GUARDRAIL_RETRY_USER,
+  onBrandFallbackLine,
+} = require('./demoGuardrails');
 
 function llmConfig() {
   const provider = (process.env.DEMO_LLM_PROVIDER || process.env.TRANSLATION_API_PROVIDER || 'openai').toLowerCase();
@@ -29,6 +35,8 @@ function buildSystemPrompt({ scenarioId, agents, participantLangs }) {
 
   return `You orchestrate a realistic multilingual video meeting demo for Lalia (live meeting translation).
 
+${guardrailPromptSection()}
+
 Scenario: ${context}
 
 Teammates (AI agents — NOT the human visitor):
@@ -39,9 +47,9 @@ Rules:
 2. Each agent line MUST be written in that agent's native language (${agents.map((a) => `${a.name}=${a.speakLang || a.nativeLang}`).join(', ')}).
 3. Keep each line 1-3 sentences, conversational, under 220 characters.
 4. Primary agent responds first; a second agent may chime in only when clearly relevant (max 2 lines total).
-5. Stay in character. Mention Lalia naturally when discussing translation/tools.
+5. Stay in character as a colleague who uses Lalia daily — reference Lalia features naturally when tools or translation come up.
 6. Never speak as "You" or the visitor.
-7. Opening: primary agent welcomes and sets up the scenario (no user input yet).
+7. Opening: primary agent welcomes and sets up the scenario (no user input yet). Do not mention non-Lalia video tools in the opening.
 
 Output schema:
 {"lines":[{"speaker":"Name","text":"..."}]}`;
@@ -98,7 +106,7 @@ async function callLlm(messages) {
     {
       model: cfg.model,
       messages,
-      temperature: 0.65,
+      temperature: 0.55,
       max_tokens: 450,
     },
     {
@@ -129,11 +137,26 @@ async function generateDemoAgentTurns({
     : `Recent transcript:\n${formatHistory(history)}\n\nThe visitor just said: "${userText}"\n\nGenerate agent response line(s).`;
 
   let raw;
+  const baseMessages = [
+    { role: 'system', content: system },
+    { role: 'user', content: userPayload },
+  ];
   try {
-    raw = await callLlm([
-      { role: 'system', content: system },
-      { role: 'user', content: userPayload },
-    ]);
+    raw = await callLlm(baseMessages);
+    let parsed = parseLlmJson(raw);
+    let lines = filterGuardedLines(validateLines(parsed, agents));
+
+    if (!lines.length && parsed?.lines?.length) {
+      const retryRaw = await callLlm([
+        ...baseMessages,
+        { role: 'assistant', content: raw },
+        { role: 'user', content: GUARDRAIL_RETRY_USER },
+      ]);
+      parsed = parseLlmJson(retryRaw);
+      lines = filterGuardedLines(validateLines(parsed, agents));
+    }
+
+    if (lines.length) return { lines, fallback: false };
   } catch (e) {
     console.error('[demoOrchestratorLlm]', e.message);
     const primary = agents[0];
@@ -141,12 +164,7 @@ async function generateDemoAgentTurns({
       lines: [
         {
           speaker: primary.name,
-          originalText:
-            primary.nativeLang === 'es'
-              ? 'Gracias — sigamos con la reunión.'
-              : primary.nativeLang === 'fr'
-                ? 'Merci — continuons la réunion.'
-                : 'Thanks — let us continue the meeting.',
+          originalText: onBrandFallbackLine(primary),
           sourceLang: primary.speakLang || primary.nativeLang,
         },
       ],
@@ -154,19 +172,12 @@ async function generateDemoAgentTurns({
     };
   }
 
-  const parsed = parseLlmJson(raw);
-  const lines = validateLines(parsed, agents);
-  if (lines.length) return { lines, fallback: false };
-
   const primary = agents[0];
   return {
     lines: [
       {
         speaker: primary.name,
-        originalText:
-          primary.nativeLang === 'es'
-            ? 'Entendido — gracias por compartir.'
-            : 'Understood — thank you for sharing.',
+        originalText: onBrandFallbackLine(primary),
         sourceLang: primary.speakLang || primary.nativeLang,
       },
     ],

@@ -17,6 +17,26 @@ function getLanguageLabel(code) {
   return LANGUAGE_LABELS[code] || code;
 }
 
+function normalizeLangCode(code) {
+  return typeof code === 'string' ? code.split('-')[0].toLowerCase() : code;
+}
+
+/** Demo-only: per-teammate translations when the guest speaks their language. */
+function getTeammateCaptions(translations, demoTeammates, sourceLanguage) {
+  if (!demoTeammates?.length || !translations) return [];
+  const sourceNorm = sourceLanguage ? normalizeLangCode(sourceLanguage) : null;
+  return demoTeammates
+    .map(({ name, lang }) => {
+      const norm = normalizeLangCode(lang);
+      const entry = Object.entries(translations).find(([k]) => normalizeLangCode(k) === norm);
+      const text = entry?.[1]?.trim();
+      if (!text) return null;
+      if (sourceNorm && norm === sourceNorm) return null;
+      return { name, lang, text };
+    })
+    .filter(Boolean);
+}
+
 function mergeSttOverlap(base, addition) {
   const bw = base.split(/\s+/).filter(Boolean);
   const nw = addition.split(/\s+/).filter(Boolean);
@@ -242,6 +262,8 @@ function TranscriptionPanel() {
     meetingId,
     transcriptPersistEnabled,
     isHost,
+    demoTeammates,
+    participantName,
   } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
   // Default to expanded on mobile: when captions open (incl. on join) show the
@@ -616,6 +638,8 @@ function TranscriptionPanel() {
           bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
+          demoTeammates={demoTeammates}
+          participantName={participantName}
           compact
         />
         {!isAtBottom && (
@@ -642,6 +666,8 @@ function TranscriptionPanel() {
           bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
           selectedLanguage={selectedLanguage}
+          demoTeammates={demoTeammates}
+          participantName={participantName}
         />
         {!isAtBottom && (
           <JumpToLatest onClick={jumpToLatest} />
@@ -672,6 +698,8 @@ function TranscriptionPanel() {
             bottomAnchorRef={bottomAnchorRef}
             onScroll={handleScroll}
             selectedLanguage={selectedLanguage}
+            demoTeammates={demoTeammates}
+            participantName={participantName}
             compact
           />
           {!isAtBottom && (
@@ -755,6 +783,7 @@ function TranscriptionBubble({
   isPartial = false,
   pendingTranslation = false,
   compact = false,
+  teammateCaptions = [],
 }) {
   // A finalized bubble whose translation never arrived (cold LLM, dropped lane)
   // must not say "Translating…" forever — fall back to the original text.
@@ -826,11 +855,33 @@ function TranscriptionBubble({
           {displaySecondary}
         </p>
       )}
+
+      {teammateCaptions.map(({ name, lang, text }) => (
+        <p
+          key={`${name}-${lang}`}
+          className={`text-muted-foreground break-words leading-relaxed mt-1 pl-2.5 ${compact ? 'text-[10px]' : 'text-xs'} opacity-70`}
+        >
+          <span className="font-medium text-foreground/70">{name}</span>
+          {' hears '}
+          <span className="text-muted-foreground">[{getLanguageLabel(lang)}]</span>
+          {': '}
+          {text}
+        </p>
+      ))}
     </div>
   );
 }
 
-function PanelContent({ messages, scrollRef, bottomAnchorRef, onScroll, selectedLanguage, compact = false }) {
+function PanelContent({
+  messages,
+  scrollRef,
+  bottomAnchorRef,
+  onScroll,
+  selectedLanguage,
+  demoTeammates = [],
+  participantName = '',
+  compact = false,
+}) {
   const hasContent = messages.length > 0;
 
   return (
@@ -861,20 +912,26 @@ function PanelContent({ messages, scrollRef, bottomAnchorRef, onScroll, selected
           item.isPartial,
           item.sourceLanguage,
         );
+        const showTeammateCaptions = demoTeammates.length > 0 && item.speaker === participantName;
+        const teammateCaptions = showTeammateCaptions
+          ? getTeammateCaptions(item.translations, demoTeammates, item.sourceLanguage)
+          : [];
+        const hideGenericSecondary = showTeammateCaptions && teammateCaptions.length > 0;
         return (
           <TranscriptionBubble
             key={item.id}
             speaker={item.speaker}
             dominant={dominant}
-            secondary={secondary}
+            secondary={hideGenericSecondary ? null : secondary}
             dominantLang={dominantLang}
-            secondaryLang={secondaryLang}
+            secondaryLang={hideGenericSecondary ? null : secondaryLang}
             sourceLanguage={item.sourceLanguage}
             selectedLanguage={selectedLanguage}
             timestamp={item.timestamp}
             isPartial={item.isPartial}
             pendingTranslation={pendingTranslation}
             compact={compact}
+            teammateCaptions={teammateCaptions}
           />
         );
       })}

@@ -141,6 +141,9 @@ export function MeetingProvider({ children, initialState = {} }) {
 
     // Mode
     meetingMode: initialState.meetingMode || 'translation',
+
+    // Demo room: virtual AI teammates whose languages drive caption targets
+    demoTeammates: initialState.demoTeammates || [],
   }), [
     initialState.roomName,
     initialState.meetingId,
@@ -148,6 +151,7 @@ export function MeetingProvider({ children, initialState = {} }) {
     initialState.isHost,
     initialState.participantName,
     initialState.meetingMode,
+    initialState.demoTeammates,
     selectedLanguage,
     setSelectedLanguage,
     translationEnabled,
