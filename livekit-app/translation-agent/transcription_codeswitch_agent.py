@@ -752,7 +752,7 @@ class TranscriptionOnlyAgent:
                         meta["demoSessionId"],
                         read_lang,
                     )
-                    self.demo_orchestrator.schedule_opening()
+                    self._spawn_bg(self.demo_orchestrator.schedule_opening())
 
                     agent_langs = meta.get("agentLangs") or {}
                     for name, lang in agent_langs.items():
