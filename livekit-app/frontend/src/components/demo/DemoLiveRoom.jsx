@@ -216,9 +216,12 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
     setPrejoinChoices(choices);
   }, []);
 
-  useEffect(() => {
-    if (!prejoinChoices || liveRoom || creatingRoom) return;
+  const roomCreateStartedRef = useRef(false);
 
+  useEffect(() => {
+    if (!prejoinChoices || liveRoom || roomCreateStartedRef.current) return;
+
+    roomCreateStartedRef.current = true;
     let cancelled = false;
     setCreatingRoom(true);
     setRoomError(null);
@@ -238,8 +241,10 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
       })
       .catch((e) => {
         if (cancelled) return;
-        setRoomError(e.response?.data?.error || 'Could not start demo room');
-        toast.error(e.response?.data?.error || 'Could not start demo room');
+        roomCreateStartedRef.current = false;
+        const message = e.response?.data?.error || e.response?.data?.message || 'Could not start demo room';
+        setRoomError(message);
+        toast.error(message);
       })
       .finally(() => {
         if (!cancelled) setCreatingRoom(false);
@@ -248,7 +253,7 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
     return () => {
       cancelled = true;
     };
-  }, [prejoinChoices, liveRoom, creatingRoom, scenarioId, speakLang, readLang, participantLangs, participantName]);
+  }, [prejoinChoices, liveRoom, scenarioId, speakLang, readLang, participantLangs, participantName]);
 
   const handleError = useCallback((err) => {
     console.error('[DemoJoinFlow]', err);
