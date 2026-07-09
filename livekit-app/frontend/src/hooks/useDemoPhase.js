@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { ConnectionState } from 'livekit-client';
 import { useRoomContext } from '@livekit/components-react';
 
 /**
  * Turn-taking UI driven by the translation agent's demo_phase packets (topic: demo).
+ * Falls back to your_turn if the agent never advances past opening.
  */
 export function useDemoPhase() {
   const room = useRoomContext();
@@ -29,6 +31,21 @@ export function useDemoPhase() {
     room.on('dataReceived', handleData);
     return () => room.off('dataReceived', handleData);
   }, [room]);
+
+  // Don't block the user forever if opening orchestration fails or is slow.
+  useEffect(() => {
+    if (turnPhase !== 'opening') return undefined;
+    const t = setTimeout(() => setTurnPhase('your_turn'), 10000);
+    return () => clearTimeout(t);
+  }, [turnPhase]);
+
+  useEffect(() => {
+    if (!room || room.state !== ConnectionState.Connected) return undefined;
+    const t = setTimeout(() => {
+      setTurnPhase((phase) => (phase === 'opening' ? 'your_turn' : phase));
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [room, room?.state]);
 
   return { turnPhase, setTurnPhase, activeSpeaker, setActiveSpeaker };
 }

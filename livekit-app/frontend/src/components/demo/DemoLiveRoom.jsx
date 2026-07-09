@@ -14,9 +14,8 @@ import RoomControls from '../RoomControls';
 import CustomControlBar from '../CustomControlBar';
 import TtsAudioController from '../TtsAudioController';
 import PreJoinScreen from '../PreJoinScreen';
-import PublishPreviewTracks from '../PublishPreviewTracks';
 import DemoEnsureMedia from './DemoEnsureMedia';
-import { DemoRoomStage } from './DemoRoomStage';
+import { DemoMeetingStage } from './DemoMeetingStage';
 import { useDemoPhase } from '../../hooks/useDemoPhase';
 import { demoLabService } from '../../services/demoLab';
 import { Button } from '../ui/button';
@@ -41,7 +40,6 @@ function DemoLiveRoomInner({
   userDisplayName,
   speakLang,
   agents,
-  participants,
   scenarioTitle,
   maxTurns,
   prejoinChoices,
@@ -60,29 +58,6 @@ function DemoLiveRoomInner({
   const intentionalLeaveRef = useRef(false);
   const t = useRoomControlLabels(selectedLanguage);
 
-  const roomParticipants =
-    participants?.length > 0
-      ? participants.map((p) =>
-          p.id === 'you' || p.name === 'You' || p.name === displayName
-            ? { ...p, id: 'you', name: displayName, speakLang, isLocal: true }
-            : p
-        )
-      : [
-          {
-            id: 'you',
-            name: displayName,
-            speakLang,
-            isLocal: true,
-            gradient: 'from-primary/30 to-slate-300',
-          },
-          ...agents.map((a) => ({
-            id: a.id,
-            name: a.name,
-            speakLang: a.speakLang || a.nativeLang,
-            gradient: a.gradient,
-          })),
-        ];
-
   const micLive = turnPhase === 'your_turn' || turnPhase === 'you_speaking';
 
   return (
@@ -92,30 +67,29 @@ function DemoLiveRoomInner({
         translationEnabled={translationEnabled}
         voiceTranslationEnabled={voiceTranslationEnabled}
       />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:flex-row">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 border-b border-border/60 bg-gradient-to-r from-primary/5 via-background to-emerald-500/5 px-3 py-2 text-center text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">{scenarioTitle || 'Translation lab'}</span>
-            <span className="mx-2 text-border">·</span>
-            {maxTurns} turns max · Deepgram STT
-            {micLive ? (
-              <span className="ml-2 font-medium text-emerald-600">· Mic live</span>
-            ) : turnPhase === 'complete' ? (
-              <span className="ml-2 font-medium text-primary">· Demo complete</span>
-            ) : null}
-          </div>
-          <div className="shrink-0 p-3 sm:p-4">
-            <DemoRoomStage
-              participants={roomParticipants}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="shrink-0 border-b border-border/60 bg-gradient-to-r from-primary/5 via-background to-emerald-500/5 px-3 py-2 text-center text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{scenarioTitle || 'Translation lab'}</span>
+          <span className="mx-2 text-border">·</span>
+          {maxTurns} turns max · Deepgram STT
+          {micLive ? (
+            <span className="ml-2 font-medium text-emerald-600">· Mic live</span>
+          ) : turnPhase === 'complete' ? (
+            <span className="ml-2 font-medium text-primary">· Demo complete</span>
+          ) : null}
+        </div>
+
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <DemoMeetingStage
+              agents={agents}
               activeSpeaker={activeSpeaker}
               turnPhase={turnPhase}
               scenarioTitle={scenarioTitle}
-              micSupported={false}
-              showMicButton={false}
             />
           </div>
+          <TranscriptionPanel />
         </div>
-        <TranscriptionPanel />
       </div>
 
       <RoomControls
@@ -183,19 +157,18 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
     audioDeviceId: '',
     videoDeviceId: '',
   });
-  const [frozenPreviewTrackOptions, setFrozenPreviewTrackOptions] = useState(null);
 
-  const previewTrackOptions = useMemo(() => {
-    if (frozenPreviewTrackOptions) return frozenPreviewTrackOptions;
-    return {
+  const previewTrackOptions = useMemo(
+    () => ({
       audio: previewMedia.audioEnabled
         ? { deviceId: previewMedia.audioDeviceId || undefined }
         : false,
       video: previewMedia.videoEnabled
         ? { deviceId: previewMedia.videoDeviceId || undefined }
         : false,
-    };
-  }, [frozenPreviewTrackOptions, previewMedia]);
+    }),
+    [previewMedia]
+  );
 
   const onPreviewMediaError = useCallback((err) => {
     console.warn('[DemoJoinFlow] PreJoin media error:', err);
@@ -209,10 +182,6 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
   }, []);
 
   const handlePrejoinJoin = useCallback((choices) => {
-    setFrozenPreviewTrackOptions({
-      audio: choices.audioEnabled ? { deviceId: choices.audioDeviceId || undefined } : false,
-      video: choices.videoEnabled ? { deviceId: choices.videoDeviceId || undefined } : false,
-    });
     setPrejoinChoices(choices);
   }, []);
 
@@ -232,7 +201,7 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
         speakLang,
         readLang,
         participantLangs,
-        participantName: prejoinChoices.name || participantName?.trim() || 'Guest',
+        participantName: participantName?.trim() || 'Guest',
       })
       .then((data) => {
         if (cancelled) return;
@@ -300,7 +269,9 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
 
   const livekitUrl =
     liveRoom.url || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud';
-  const displayName = prejoinChoices.name || liveRoom.displayName || participantName || 'Guest';
+  const displayName = liveRoom.displayName || participantName?.trim() || 'Guest';
+  const wantsVideo = prejoinChoices.videoEnabled ?? false;
+  const wantsAudio = prejoinChoices.audioEnabled ?? true;
 
   return (
     <MeetingProvider
@@ -318,8 +289,8 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
       <LiveKitRoom
         token={liveRoom.token}
         serverUrl={livekitUrl}
-        video={false}
-        audio={false}
+        video={wantsVideo}
+        audio={wantsAudio}
         connect
         onError={handleError}
         options={{
@@ -335,15 +306,9 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
         }}
         className="h-[100dvh]"
       >
-        <PublishPreviewTracks
-          tracks={previewTracks}
-          videoEnabled={prejoinChoices.videoEnabled ?? false}
-          audioEnabled={prejoinChoices.audioEnabled ?? true}
-          publishOptions={ROOM_PUBLISH_DEFAULTS}
-        />
         <DemoEnsureMedia
-          audioEnabled={prejoinChoices.audioEnabled ?? true}
-          videoEnabled={prejoinChoices.videoEnabled ?? false}
+          audioEnabled={wantsAudio}
+          videoEnabled={wantsVideo}
           audioDeviceId={prejoinChoices.audioDeviceId}
           videoDeviceId={prejoinChoices.videoDeviceId}
         />
@@ -352,7 +317,6 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
           userDisplayName={displayName}
           speakLang={speakLang}
           agents={liveRoom.agents}
-          participants={liveRoom.participants}
           scenarioTitle={liveRoom.scenario?.title || scenarioTitle}
           maxTurns={liveRoom.maxTurns || maxTurns}
           prejoinChoices={prejoinChoices}
