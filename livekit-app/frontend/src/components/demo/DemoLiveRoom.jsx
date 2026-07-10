@@ -14,6 +14,7 @@ import RoomControls from '../RoomControls';
 import CustomControlBar from '../CustomControlBar';
 import TtsAudioController from '../TtsAudioController';
 import PreJoinScreen from '../PreJoinScreen';
+import PublishPreviewTracks from '../PublishPreviewTracks';
 import DemoEnsureMedia from './DemoEnsureMedia';
 import { DemoMeetingStage } from './DemoMeetingStage';
 import { useDemoPhase } from '../../hooks/useDemoPhase';
@@ -289,8 +290,8 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
       <LiveKitRoom
         token={liveRoom.token}
         serverUrl={livekitUrl}
-        video={wantsVideo}
-        audio={wantsAudio}
+        video={false}
+        audio={false}
         connect
         onError={handleError}
         options={{
@@ -306,6 +307,12 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
         }}
         className="h-[100dvh]"
       >
+        <PublishPreviewTracks
+          tracks={previewTracks}
+          videoEnabled={wantsVideo}
+          audioEnabled={wantsAudio}
+          publishOptions={ROOM_PUBLISH_DEFAULTS}
+        />
         <DemoEnsureMedia
           audioEnabled={wantsAudio}
           videoEnabled={wantsVideo}

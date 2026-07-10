@@ -449,6 +449,9 @@ class TranscriptionOnlyAgent:
         # Repeated utterances (greetings, confirmations) skip the LLM round trip.
         self._translation_cache = TranslationCache(max_size=_translation_cache_size())
         self.demo_orchestrator: Optional[DemoRoomOrchestrator] = None
+        self._demo_room: bool = False
+        self._demo_speak_lang: str = "en"
+        self._demo_read_lang: str = "en"
 
     def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -715,7 +718,11 @@ class TranscriptionOnlyAgent:
                 self._apply_caption_config(meta.get("caption_config"), "room metadata (startup)")
                 if meta.get("demo") and meta.get("demoSessionId"):
                     read_lang = meta.get("readLang") or "en"
+                    speak_lang = meta.get("speakLang") or "en"
                     agent_names = meta.get("agentNames") or []
+                    self._demo_room = True
+                    self._demo_speak_lang = str(speak_lang).split("-")[0].lower()
+                    self._demo_read_lang = str(read_lang).split("-")[0].lower()
 
                     async def publish_demo_caption(msg_dict: dict, reliable: bool) -> None:
                         await ctx.room.local_participant.publish_data(
@@ -761,12 +768,22 @@ class TranscriptionOnlyAgent:
                         self.participant_languages[virtual_id] = norm_lang
                         self.translation_enabled[virtual_id] = True
                         self.voice_enabled[virtual_id] = False
+                    # TTS for demo agent lines is spoken in the visitor's read/caption language.
+                    reader_id = "demo:reader"
+                    self.participant_languages[reader_id] = self._demo_read_lang
+                    self.translation_enabled[reader_id] = True
+                    self.voice_enabled[reader_id] = True
+                    await self.update_assistants(ctx)
                     if agent_langs:
-                        await self.update_assistants(ctx)
                         logger.info(
                             "🎭 Demo virtual listeners registered: %s",
                             agent_langs,
                         )
+                    logger.info(
+                        "🎭 Demo TTS reader lane language=%s speakLang=%s",
+                        self._demo_read_lang,
+                        self._demo_speak_lang,
+                    )
         except Exception as e:
             logger.warning(f"Room metadata parse failed: {e}")
 
@@ -904,6 +921,15 @@ class TranscriptionOnlyAgent:
         async def on_connected(participant: rtc.RemoteParticipant):
             ident = participant.identity or ""
             if not is_likely_agent_identity(ident):
+                if self._demo_room:
+                    self.participant_languages[ident] = self._demo_speak_lang
+                    self.translation_enabled[ident] = True
+                    self.voice_enabled[ident] = True
+                    logger.info(
+                        "🎭 Demo bootstrap STT for %r → %s (awaiting mic track)",
+                        ident,
+                        self._demo_speak_lang,
+                    )
                 t = self._agent_ready_ping_task
                 if t is not None and not t.done():
                     t.cancel()
