@@ -877,15 +877,27 @@ class TranscriptionOnlyAgent:
                 # update_assistants won't remove it because the key stays in `expected`,
                 # so we must explicitly tear down the speaker's old pipelines here.
                 old_lang = self.participant_languages.get(participant_id)
+                new_enabled = bool(enabled)
+                new_voice = new_enabled and bool(voice_enabled)
+                old_enabled = self.translation_enabled.get(participant_id)
+                old_voice = self.voice_enabled.get(participant_id)
                 lang_changed = old_lang is not None and old_lang != lang
 
+                if (
+                    old_lang == lang
+                    and old_enabled == new_enabled
+                    and old_voice == new_voice
+                    and not lang_changed
+                ):
+                    return
+
                 self.participant_languages[participant_id] = lang
-                self.translation_enabled[participant_id] = bool(enabled)
-                self.voice_enabled[participant_id] = bool(enabled) and bool(voice_enabled)
+                self.translation_enabled[participant_id] = new_enabled
+                self.voice_enabled[participant_id] = new_voice
 
                 logger.info(
                     f"📥 Language update: {participant_id} → {lang} (was {old_lang!r}), "
-                    f"enabled={enabled}, voiceEnabled={self.voice_enabled[participant_id]}"
+                    f"enabled={new_enabled}, voiceEnabled={new_voice}"
                 )
 
                 if lang_changed:
@@ -895,7 +907,7 @@ class TranscriptionOnlyAgent:
                         f"{old_lang!r} → {lang!r} (STT language changed)"
                     )
 
-                if enabled:
+                if new_enabled:
                     # Debounce: rapid switches (es→en→es) coalesce into one update
                     _schedule_update()
                 else:
