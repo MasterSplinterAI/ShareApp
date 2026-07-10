@@ -45,6 +45,7 @@ function DemoLiveRoomInner({
   maxTurns,
   prejoinChoices,
   onLeave,
+  intentionalLeaveRef,
 }) {
   const {
     selectedLanguage,
@@ -56,7 +57,6 @@ function DemoLiveRoomInner({
   } = useMeeting();
   const { turnPhase, activeSpeaker } = useDemoPhase();
   const displayName = userDisplayName || 'Guest';
-  const intentionalLeaveRef = useRef(false);
   const t = useRoomControlLabels(selectedLanguage);
 
   const micLive = turnPhase === 'your_turn' || turnPhase === 'you_speaking';
@@ -230,6 +230,13 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
     toast.error('Could not connect to demo room. Check mic permissions and try again.');
   }, []);
 
+  const intentionalLeaveRef = useRef(false);
+
+  const handleDisconnected = useCallback(() => {
+    // Always return to the demo landing after leave (or unexpected disconnect).
+    onLeave?.();
+  }, [onLeave]);
+
   if (!prejoinChoices) {
     return (
       <PreJoinScreen
@@ -294,6 +301,7 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
         audio={false}
         connect
         onError={handleError}
+        onDisconnected={handleDisconnected}
         options={{
           adaptiveStream: true,
           dynacast: true,
@@ -328,6 +336,7 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
           maxTurns={liveRoom.maxTurns || maxTurns}
           prejoinChoices={prejoinChoices}
           onLeave={onLeave}
+          intentionalLeaveRef={intentionalLeaveRef}
         />
       </LiveKitRoom>
     </MeetingProvider>

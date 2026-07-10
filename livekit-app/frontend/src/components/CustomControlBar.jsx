@@ -599,8 +599,9 @@ export default function CustomControlBar({
               try {
                 await room?.disconnect(true);
               } catch {
-                onNavigateAfterLeave?.();
+                /* still navigate below */
               }
+              onNavigateAfterLeave?.();
             }}
             className={barBtn(isCompact)}
             aria-label="Leave meeting"
