@@ -1,16 +1,10 @@
 const path = require('path');
-const fs = require('fs');
+const { deleteOrgObject } = require('./objectStorage');
 
 const WELCOME_MAX = 200;
 const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 const LOGO_MIME = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const DEFAULT_ACCENT = '#2563eb';
-
-function brandingDir(orgId) {
-  const base = path.join(__dirname, '..', 'uploads', 'v2', orgId, 'branding');
-  fs.mkdirSync(base, { recursive: true });
-  return base;
-}
 
 function normalizeAccentColor(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -32,12 +26,9 @@ function hostDisplayLabel(org, hostUser) {
   return hostUser?.display_name || org.name || null;
 }
 
-function brandingLogoPath(orgId, fileName) {
+function brandingRelativePath(fileName) {
   if (!fileName) return null;
-  const safe = path.basename(fileName);
-  const full = path.join(brandingDir(orgId), safe);
-  if (!full.startsWith(brandingDir(orgId))) return null;
-  return full;
+  return `branding/${path.basename(fileName)}`;
 }
 
 function publicLogoUrl(req, orgId, hasLogo) {
@@ -68,11 +59,10 @@ function serializePublicBranding(req, org, hostUser) {
   };
 }
 
-function removeLogoFile(orgId, fileName) {
+async function removeLogoFile(orgId, fileName) {
   if (!fileName) return;
   try {
-    const full = brandingLogoPath(orgId, fileName);
-    if (full && fs.existsSync(full)) fs.unlinkSync(full);
+    await deleteOrgObject(orgId, brandingRelativePath(fileName));
   } catch {
     /* best effort */
   }
@@ -83,11 +73,10 @@ module.exports = {
   LOGO_MAX_BYTES,
   LOGO_MIME,
   DEFAULT_ACCENT,
-  brandingDir,
   normalizeAccentColor,
   normalizeWelcomeMessage,
   hostDisplayLabel,
-  brandingLogoPath,
+  brandingRelativePath,
   publicLogoUrl,
   serializePublicBranding,
   removeLogoFile,

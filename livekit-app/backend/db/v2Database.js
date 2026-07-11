@@ -346,6 +346,23 @@ async function migrate() {
     )
   `);
 
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_storage_settings (
+      id TEXT PRIMARY KEY,
+      storage_driver TEXT,
+      storage_local_dir TEXT,
+      storage_s3_bucket TEXT,
+      storage_s3_region TEXT,
+      storage_s3_endpoint TEXT,
+      storage_s3_force_path_style INTEGER,
+      storage_s3_access_key_id TEXT,
+      storage_s3_secret_access_key TEXT,
+      storage_s3_prefix TEXT,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+
   const emailSettingsCols = await all(`PRAGMA table_info(v2_platform_email_settings)`);
   const emailSettingsColNames = new Set((emailSettingsCols || []).map((c) => c.name));
   if (!emailSettingsColNames.has('resend_webhook_secret')) {

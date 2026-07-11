@@ -1,7 +1,7 @@
 const express = require('express');
-const fs = require('fs');
 const db = require('../../db/v2Database');
-const { brandingLogoPath } = require('../../lib/v2Branding');
+const { streamOrgObject, pipeObjectToResponse } = require('../../lib/objectStorage');
+const { brandingRelativePath } = require('../../lib/v2Branding');
 
 const router = express.Router();
 
@@ -15,8 +15,9 @@ router.get('/:orgId/logo', async (req, res) => {
     if (!org?.brand_logo_file) {
       return res.status(404).end();
     }
-    const full = brandingLogoPath(req.params.orgId, org.brand_logo_file);
-    if (!full || !fs.existsSync(full)) {
+    const rel = brandingRelativePath(org.brand_logo_file);
+    const stream = await streamOrgObject(req.params.orgId, rel);
+    if (!stream) {
       return res.status(404).end();
     }
     const ext = (org.brand_logo_file.split('.').pop() || '').toLowerCase();
@@ -27,9 +28,11 @@ router.get('/:orgId/logo', async (req, res) => {
       webp: 'image/webp',
       gif: 'image/gif',
     };
-    res.setHeader('Content-Type', types[ext] || 'application/octet-stream');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    fs.createReadStream(full).pipe(res);
+    const ok = await pipeObjectToResponse(stream, res, {
+      contentType: types[ext] || 'application/octet-stream',
+      cacheControl: 'public, max-age=3600',
+    });
+    if (!ok) res.status(404).end();
   } catch (e) {
     console.error('[v2/branding/logo]', e);
     res.status(500).end();

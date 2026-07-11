@@ -1,6 +1,5 @@
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 const router = express.Router();
 const db = require('../../db/v2Database');
@@ -10,12 +9,13 @@ const {
   DEFAULT_ACCENT,
   LOGO_MAX_BYTES,
   LOGO_MIME,
-  brandingDir,
+  brandingRelativePath,
   normalizeAccentColor,
   normalizeWelcomeMessage,
   publicLogoUrl,
   removeLogoFile,
 } = require('../../lib/v2Branding');
+const { putOrgObject } = require('../../lib/objectStorage');
 
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
 const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
@@ -276,19 +276,7 @@ router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req,
 });
 
 const logoUpload = multer({
-  storage: multer.diskStorage({
-    destination(req, _file, cb) {
-      try {
-        cb(null, brandingDir(req.v2Auth.orgId));
-      } catch (e) {
-        cb(e);
-      }
-    },
-    filename(_req, file, cb) {
-      const ext = path.extname(file.originalname || '').toLowerCase().slice(0, 10) || '.png';
-      cb(null, `logo${ext}`);
-    },
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: LOGO_MAX_BYTES },
   fileFilter(_req, file, cb) {
     if (!LOGO_MIME.has(file.mimetype)) {
@@ -344,12 +332,17 @@ router.post('/me/branding/logo', requireV2Auth, (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     try {
+      const ext = path.extname(req.file.originalname || '').toLowerCase().slice(0, 10) || '.png';
+      const filename = `logo${ext}`;
       const org = await db.get(`SELECT brand_logo_file FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
-      if (org?.brand_logo_file && org.brand_logo_file !== req.file.filename) {
-        removeLogoFile(req.v2Auth.orgId, org.brand_logo_file);
+      if (org?.brand_logo_file && org.brand_logo_file !== filename) {
+        await removeLogoFile(req.v2Auth.orgId, org.brand_logo_file);
       }
+      await putOrgObject(req.v2Auth.orgId, brandingRelativePath(filename), req.file.buffer, {
+        contentType: req.file.mimetype,
+      });
       await db.run(`UPDATE v2_organizations SET brand_logo_file = ? WHERE id = ?`, [
-        req.file.filename,
+        filename,
         req.v2Auth.orgId,
       ]);
       const fresh = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
@@ -367,7 +360,7 @@ router.delete('/me/branding/logo', requireV2Auth, async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     const org = await db.get(`SELECT brand_logo_file FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
-    removeLogoFile(req.v2Auth.orgId, org?.brand_logo_file);
+    await removeLogoFile(req.v2Auth.orgId, org?.brand_logo_file);
     await db.run(`UPDATE v2_organizations SET brand_logo_file = NULL WHERE id = ?`, [req.v2Auth.orgId]);
     const fresh = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     res.json({ branding: brandingPayload(req, fresh) });

@@ -224,6 +224,9 @@ export const v2Admin = {
   patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),
   emailConfig: () => apiV2.get('/admin/email/config').then((r) => r.data),
   patchEmailConfig: (body) => apiV2.patch('/admin/email/config', body).then((r) => r.data),
+  storageConfig: () => apiV2.get('/admin/storage/config').then((r) => r.data),
+  patchStorageConfig: (body) => apiV2.patch('/admin/storage/config', body).then((r) => r.data),
+  testStorage: (body) => apiV2.post('/admin/storage/test', body || {}).then((r) => r.data),
   cancelOrgSubscription: (orgId, body) =>
     apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
   marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),

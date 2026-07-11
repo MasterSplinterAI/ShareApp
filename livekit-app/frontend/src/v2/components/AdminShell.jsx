@@ -10,6 +10,7 @@ import {
   LogOut,
   Mail,
   Menu,
+  HardDrive,
   ScrollText,
   Shield,
   Ticket,
@@ -65,6 +66,7 @@ const NAV_SECTIONS = [
     items: [
       { to: '/v2/app/admin/support', label: 'Support', icon: Ticket },
       { to: '/v2/app/admin/comms', label: 'Comms', icon: Mail },
+      { to: '/v2/app/admin/storage', label: 'Storage', icon: HardDrive },
       { to: '/v2/app/admin/audit', label: 'Audit log', icon: ScrollText },
     ],
   },

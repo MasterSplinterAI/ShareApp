@@ -24,6 +24,7 @@ import {
   AdminCostsPage,
   AdminBillingPage,
   AdminCommsPage,
+  AdminStoragePage,
   AdminSupportPage,
   SuperAdminRedirect,
 } from './v2/pages/AdminDashboard'
@@ -87,6 +88,7 @@ function App() {
                 <Route path="costs" element={<AdminCostsPage />} />
                 <Route path="billing" element={<AdminBillingPage />} />
                 <Route path="comms" element={<AdminCommsPage />} />
+                <Route path="storage" element={<AdminStoragePage />} />
                 <Route path="support" element={<AdminSupportPage />} />
                 <Route path="guests" element={<GuestsTab />} />
                 <Route path="audit" element={<AuditTab />} />

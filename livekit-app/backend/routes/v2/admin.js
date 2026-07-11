@@ -20,6 +20,12 @@ const {
   saveEmailSettings,
   toAdminView: toEmailAdminView,
 } = require('../../lib/v2EmailSettings');
+const {
+  getStorageSettings,
+  saveStorageSettings,
+  toAdminView: toStorageAdminView,
+} = require('../../lib/v2StorageSettings');
+const { testStorageConnection, resetObjectStorage } = require('../../lib/objectStorage');
 const { renderAdminMessage } = require('../../lib/emailTemplates');
 const { settleDueOverageCycles, settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
 
@@ -1016,6 +1022,68 @@ router.patch('/email/config', requireV2Auth, requireSuperadmin, async (req, res)
   } catch (e) {
     console.error('[admin/email/config patch]', e);
     res.status(500).json({ error: 'Failed to save email settings' });
+  }
+});
+
+router.get('/storage/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const settings = await getStorageSettings();
+    res.json({
+      settings: toStorageAdminView(settings),
+      activeDriver: settings.driver,
+      envChecklist: [
+        { key: 'STORAGE_DRIVER (env fallback)', ok: Boolean(process.env.STORAGE_DRIVER) },
+        { key: 'STORAGE_S3_BUCKET (env fallback)', ok: Boolean(process.env.STORAGE_S3_BUCKET) },
+        { key: 'STORAGE_S3_ACCESS_KEY_ID (env fallback)', ok: Boolean(process.env.STORAGE_S3_ACCESS_KEY_ID) },
+        {
+          key: 'STORAGE_S3_SECRET_ACCESS_KEY (env fallback)',
+          ok: Boolean(process.env.STORAGE_S3_SECRET_ACCESS_KEY),
+        },
+      ],
+    });
+  } catch (e) {
+    console.error('[admin/storage/config]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/storage/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveStorageSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    resetObjectStorage();
+
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_storage_config', {
+      driver: result.settings.driver,
+      source: result.settings.source,
+      bucket: result.settings.bucket || null,
+      reason: result.reason,
+    });
+
+    res.json({
+      ok: true,
+      settings: toStorageAdminView(result.settings),
+      activeDriver: result.settings.driver,
+    });
+  } catch (e) {
+    console.error('[admin/storage/config patch]', e);
+    res.status(500).json({ error: 'Failed to save storage settings' });
+  }
+});
+
+router.post('/storage/test', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await testStorageConnection(req.body || {});
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/storage/test]', e);
+    res.status(500).json({ ok: false, error: e.message || 'Storage test failed' });
   }
 });
 

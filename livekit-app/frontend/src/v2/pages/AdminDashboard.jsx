@@ -16,6 +16,7 @@ import { AuditTab } from './admin/AuditTab';
 import { PlansTab } from './admin/PlansTab';
 import { BillingTab } from './admin/BillingTab';
 import { CommsTab } from './admin/CommsTab';
+import { StorageTab } from './admin/StorageTab';
 import { SupportTab } from './admin/SupportTab';
 
 /** Auth gate — renders child admin routes when platform admin access is allowed. */
@@ -125,6 +126,10 @@ export function AdminBillingPage() {
   return <BillingTab />;
 }
 
+export function AdminStoragePage() {
+  return <StorageTab />;
+}
+
 export function AdminSupportPage() {
   const [searchParams] = useSearchParams();
   const initialTicket = searchParams.get('ticket');
@@ -147,6 +152,7 @@ export function SuperAdminRedirect() {
     costs: 'costs',
     billing: 'billing',
     comms: 'comms',
+    storage: 'storage',
     support: 'support',
     guests: 'guests',
     audit: 'audit',
