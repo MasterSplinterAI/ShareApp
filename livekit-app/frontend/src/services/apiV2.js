@@ -209,6 +209,7 @@ export const v2Admin = {
   plans: () => apiV2.get('/admin/plans').then((r) => r.data),
   patchPlan: (planId, body) => apiV2.patch(`/admin/plans/${encodeURIComponent(planId)}`, body).then((r) => r.data),
   revenue: () => apiV2.get('/admin/revenue').then((r) => r.data),
+  disputes: (params = {}) => apiV2.get('/admin/disputes', { params }).then((r) => r.data),
   costsSummary: () => apiV2.get('/admin/costs/summary').then((r) => r.data),
   audit: () => apiV2.get('/admin/audit').then((r) => r.data),
   trends: (days = 30) => apiV2.get('/admin/trends', { params: { days } }).then((r) => r.data),

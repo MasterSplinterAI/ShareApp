@@ -733,6 +733,26 @@ async function migrate() {
 
   // Scale / ops: billing + webhook + usage tables remain SQLite here; production should migrate
   // high-write paths (webhook_events, usage_events, overage_ledger) to Postgres for concurrency and backups.
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_stripe_disputes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      stripe_customer_id TEXT,
+      charge_id TEXT,
+      status TEXT NOT NULL,
+      reason TEXT,
+      amount_cents INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'usd',
+      evidence_due_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      closed_at TEXT,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_stripe_disputes_org ON v2_stripe_disputes(org_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_stripe_disputes_status ON v2_stripe_disputes(status)`);
 }
 
 function initDatabase() {

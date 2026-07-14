@@ -176,6 +176,9 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
                     <span className="inline-flex flex-wrap items-center gap-1.5">
                       {o.name}
                       {o.suspended_at && <SuspendedBadge />}
+                      {String(o.suspended_reason || '').startsWith('stripe_dispute:') && (
+                        <Badge variant="destructive">Dispute</Badge>
+                      )}
                     </span>
                   </td>
                   <td className="px-4 py-3">{o.plan_id || '—'}</td>
@@ -203,6 +206,9 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
             <CardDescription>
               Org ID: {key}
               {org?.suspended_reason ? ` · Suspended: ${org.suspended_reason}` : ''}
+              {String(org?.suspended_reason || '').startsWith('stripe_dispute:')
+                ? ' · Chargeback/dispute lock (reactivate only after review)'
+                : ''}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6 lg:grid-cols-2">

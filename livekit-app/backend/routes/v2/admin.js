@@ -762,6 +762,14 @@ router.get('/revenue', requireV2Auth, requireSuperadmin, async (req, res) => {
       `SELECT COUNT(*) AS c FROM v2_webhook_events
        WHERE type LIKE '%subscription.deleted%' AND received_at >= datetime('now', 'start of month')`
     );
+    const openDisputes = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_stripe_disputes
+       WHERE status IN ('needs_response','under_review','warning_needs_response','warning_under_review')`
+    );
+    const disputeSuspended = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_organizations
+       WHERE suspended_at IS NOT NULL AND suspended_reason LIKE 'stripe_dispute:%'`
+    );
     res.json({
       paidOrgs: paidCount,
       trialOrgs: trialRow?.c || 0,
@@ -770,9 +778,30 @@ router.get('/revenue', requireV2Auth, requireSuperadmin, async (req, res) => {
       arpuCents: paidCount > 0 ? Math.round(mrrCents / paidCount) : 0,
       newSubscriptionsThisMonth: webhookNew?.c || 0,
       cancellationsThisMonth: webhookCanceled?.c || 0,
+      openDisputes: openDisputes?.c || 0,
+      disputeSuspendedOrgs: disputeSuspended?.c || 0,
     });
   } catch (e) {
     console.error('[admin/revenue]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/disputes', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const openOnly = String(req.query.open || '1') !== '0';
+    const rows = await db.all(
+      `SELECT d.*, o.name AS org_name, o.billing_status, o.suspended_at, o.suspended_reason
+       FROM v2_stripe_disputes d
+       LEFT JOIN v2_organizations o ON o.id = d.org_id
+       WHERE (? = 0) OR d.status IN ('needs_response','under_review','warning_needs_response','warning_under_review')
+       ORDER BY datetime(d.updated_at) DESC
+       LIMIT 100`,
+      [openOnly ? 1 : 0]
+    );
+    res.json({ disputes: rows });
+  } catch (e) {
+    console.error('[admin/disputes]', e);
     res.status(500).json({ error: 'Failed' });
   }
 });

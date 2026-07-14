@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const db = require('../../db/v2Database');
 const { getStripeSettings } = require('../../lib/v2StripeSettings');
 const { applyStripeSubscriptionToOrg, applyCheckoutSessionToOrg } = require('../../lib/v2StripeSubscriptionSync');
+const { applyStripeDisputeEvent } = require('../../lib/v2StripeDispute');
 
 const MAX_PAYLOAD_CHARS = 500_000;
 
@@ -56,6 +57,12 @@ async function processStripeEvent(event) {
 
   if (type.startsWith('customer.subscription.')) {
     await applyStripeSubscriptionToOrg(obj);
+    return;
+  }
+
+  if (type.startsWith('charge.dispute.')) {
+    const result = await applyStripeDisputeEvent(type, obj);
+    console.info('[v2/billing/webhook] dispute', type, result);
   }
 }
 

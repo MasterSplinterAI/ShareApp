@@ -9,6 +9,7 @@ export function AdminProvider({ children }) {
   const [users, setUsers] = useState([]);
   const [kpis, setKpis] = useState(null);
   const [revenue, setRevenue] = useState(null);
+  const [disputes, setDisputes] = useState([]);
   const [costs, setCosts] = useState(null);
   const [costsLoadedAt, setCostsLoadedAt] = useState(null);
   const [selectedOrg, setSelectedOrg] = useState(null);
@@ -46,9 +47,14 @@ export function AdminProvider({ children }) {
 
   const reloadKpis = useCallback(
     () =>
-      Promise.all([v2Orgs.adminKpis().then(setKpis), v2Admin.revenue().then(setRevenue).catch(() => {})]).catch(
-        () => {}
-      ),
+      Promise.all([
+        v2Orgs.adminKpis().then(setKpis),
+        v2Admin.revenue().then(setRevenue).catch(() => {}),
+        v2Admin
+          .disputes({ open: 1 })
+          .then((r) => setDisputes(r.disputes || []))
+          .catch(() => setDisputes([])),
+      ]).catch(() => {}),
     []
   );
 
@@ -98,6 +104,7 @@ export function AdminProvider({ children }) {
       users,
       kpis,
       revenue,
+      disputes,
       costs,
       costsLoadedAt,
       selectedOrg,
@@ -116,6 +123,7 @@ export function AdminProvider({ children }) {
       users,
       kpis,
       revenue,
+      disputes,
       costs,
       costsLoadedAt,
       selectedOrg,

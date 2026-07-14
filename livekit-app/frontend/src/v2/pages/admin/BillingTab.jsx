@@ -235,7 +235,9 @@ export function BillingTab() {
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Webhook URL (Stripe Dashboard)</div>
               <code className="mt-1 block break-all text-xs">{config.webhookUrl}</code>
               <p className="mt-2 text-xs text-muted-foreground">
-                Subscribe to checkout.session.completed, customer.subscription.*, and invoice.* events.
+                Subscribe to <code>checkout.session.completed</code>, <code>customer.subscription.*</code>,{' '}
+                <code>charge.dispute.*</code>, and optionally <code>invoice.*</code> events. Disputes auto-suspend
+                mapped orgs until won or an admin reactivates.
               </p>
             </div>
           ) : (
