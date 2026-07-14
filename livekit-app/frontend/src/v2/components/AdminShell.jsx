@@ -41,7 +41,7 @@ const NAV_SECTIONS = [
   {
     label: 'Customers',
     items: [
-      { to: '/v2/app/admin/orgs', label: 'Organizations', icon: Building2 },
+      { to: '/v2/app/admin/orgs', label: 'Accounts', icon: Building2 },
       { to: '/v2/app/admin/users', label: 'Users', icon: Users },
       { to: '/v2/app/admin/guests', label: 'Guests', icon: UserPlus },
     ],

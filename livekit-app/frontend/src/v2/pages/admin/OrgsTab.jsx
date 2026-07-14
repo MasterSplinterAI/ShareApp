@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { v2Admin } from '../../../services/apiV2';
 import { Button } from '../../../components/ui/button';
@@ -13,6 +13,12 @@ import { useAuditReason, orgKey } from './useAuditReason';
 const COMP_LABELS = ['personal', 'friend', 'promo', 'internal'];
 const PLAN_OPTIONS = ['free', 'starter', 'pro'];
 
+function matchesOrgQuery(o, q) {
+  if (!q) return true;
+  return [o.name, o.owner_email, o.owner_display_name, o.plan_id, o.billing_status, o.stripe_customer_id]
+    .some((v) => (v || '').toLowerCase().includes(q));
+}
+
 export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onReload }) {
   const [planEdit, setPlanEdit] = useState({});
   const [compEdit, setCompEdit] = useState({});
@@ -21,8 +27,21 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
   const [limitsEdit, setLimitsEdit] = useState({});
   const [emailForm, setEmailForm] = useState({ subject: '', body: '', reason: '' });
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all'); // all | personal | team
   const { auditReason, auditReasonError, auditInputRef, updateAuditReason, requireAuditReason } =
     useAuditReason(selectedOrg);
+
+  const q = search.trim().toLowerCase();
+  const filteredOrgs = useMemo(
+    () =>
+      orgs.filter((o) => {
+        if (typeFilter === 'personal' && o.account_type !== 'personal') return false;
+        if (typeFilter === 'team' && o.account_type === 'personal') return false;
+        return matchesOrgQuery(o, q);
+      }),
+    [orgs, typeFilter, q]
+  );
 
   const key = orgKey(selectedOrg);
   const sub = orgDetail?.subscription;
@@ -140,17 +159,44 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
     <div className="space-y-4">
       <Card className="app-card overflow-hidden border-border/60">
         <CardHeader>
-          <CardTitle className="text-lg">Organizations</CardTitle>
+          <CardTitle className="text-lg">Accounts</CardTitle>
           <CardDescription>
-            {orgs.length} workspaces — click a row for usage analytics and lifecycle / billing controls.
-            Participant-min = each person-minute in a meeting (2 people × 30 min = 60).
+            {orgs.length} accounts ({orgs.filter((o) => o.account_type === 'personal').length} personal,{' '}
+            {orgs.filter((o) => o.account_type !== 'personal').length} team) — personal signups are shown here too
+            (they are billed as single-user workspaces). Click a row for billing controls.
           </CardDescription>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Input
+              aria-label="Search accounts"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by email, name, plan…"
+              className="max-w-sm"
+            />
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'personal', label: 'Personal' },
+              { id: 'team', label: 'Team' },
+            ].map((opt) => (
+              <Button
+                key={opt.id}
+                type="button"
+                size="sm"
+                variant={typeFilter === opt.id ? 'default' : 'outline'}
+                onClick={() => setTypeFilter(opt.id)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <div className="overflow-x-auto border-t border-border/60">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-border bg-muted/30 text-muted-foreground">
               <tr>
-                <th className="px-4 py-3 font-medium">Organization</th>
+                <th className="px-4 py-3 font-medium">Account</th>
+                <th className="px-4 py-3 font-medium">Owner email</th>
+                <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Plan</th>
                 <th className="px-4 py-3 font-medium">Comp</th>
                 <th className="px-4 py-3 font-medium">Billing</th>
@@ -164,7 +210,7 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
               </tr>
             </thead>
             <tbody>
-              {orgs.map((o) => (
+              {filteredOrgs.map((o) => (
                 <tr
                   key={o.id}
                   className={`cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/30 ${
@@ -181,6 +227,14 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
                       )}
                     </span>
                   </td>
+                  <td className="px-4 py-3 text-muted-foreground">{o.owner_email || '—'}</td>
+                  <td className="px-4 py-3">
+                    {o.account_type === 'personal' ? (
+                      <Badge variant="secondary">Personal</Badge>
+                    ) : (
+                      <Badge variant="outline">Team</Badge>
+                    )}
+                  </td>
                   <td className="px-4 py-3">{o.plan_id || '—'}</td>
                   <td className="px-4 py-3">
                     {o.is_comp === 1 ? <Badge variant="secondary">{o.comp_label || 'comp'}</Badge> : '—'}
@@ -191,6 +245,13 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
                   <td className="px-4 py-3">{o.member_count}</td>
                 </tr>
               ))}
+              {filteredOrgs.length === 0 && (
+                <tr>
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={9}>
+                    No accounts match this filter.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -205,6 +266,14 @@ export function OrgsTab({ orgs = [], selectedOrg, setSelectedOrg, orgDetail, onR
             </CardTitle>
             <CardDescription>
               Org ID: {key}
+              {org?.account_type
+                ? ` · ${org.account_type === 'personal' ? 'Personal account' : 'Team workspace'}`
+                : ''}
+              {orgDetail?.members?.length
+                ? ` · Owner: ${
+                    orgDetail.members.find((m) => m.role === 'owner')?.email || orgDetail.members[0].email
+                  }`
+                : ''}
               {org?.suspended_reason ? ` · Suspended: ${org.suspended_reason}` : ''}
               {String(org?.suspended_reason || '').startsWith('stripe_dispute:')
                 ? ' · Chargeback/dispute lock (reactivate only after review)'

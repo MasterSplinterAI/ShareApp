@@ -123,7 +123,20 @@ export function AdminCommsPage() {
 }
 
 export function AdminBillingPage() {
-  return <BillingTab />;
+  const navigate = useNavigate();
+  const { orgs, setSelectedOrg, reloadOrgs } = useAdmin();
+  useEffect(() => {
+    reloadOrgs();
+  }, [reloadOrgs]);
+  return (
+    <BillingTab
+      orgs={orgs}
+      onSelectOrg={(orgId) => {
+        setSelectedOrg(orgId);
+        navigate('/v2/app/admin/orgs');
+      }}
+    />
+  );
 }
 
 export function AdminStoragePage() {

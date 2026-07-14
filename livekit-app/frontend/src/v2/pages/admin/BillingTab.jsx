@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { v2Admin } from '../../../services/apiV2';
@@ -8,6 +8,7 @@ import { Badge } from '../../../components/ui/badge';
 import { Input } from '../../../components/ui/input';
 import { Label } from '../../../components/ui/label';
 import { fmtCents } from './formatters';
+import { SuspendedBadge } from './shared';
 
 function StatusBadge({ ok, label }) {
   return (
@@ -17,7 +18,14 @@ function StatusBadge({ ok, label }) {
   );
 }
 
-export function BillingTab() {
+function matchesAccountQuery(o, q) {
+  if (!q) return true;
+  return [o.name, o.owner_email, o.owner_display_name, o.plan_id, o.stripe_customer_id, o.billing_status].some(
+    (v) => (v || '').toLowerCase().includes(q)
+  );
+}
+
+export function BillingTab({ orgs = [], onSelectOrg }) {
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -26,6 +34,8 @@ export function BillingTab() {
   const [stripeSecretKey, setStripeSecretKey] = useState('');
   const [stripeWebhookSecret, setStripeWebhookSecret] = useState('');
   const [auditReason, setAuditReason] = useState('');
+  const [accountSearch, setAccountSearch] = useState('');
+  const [accountType, setAccountType] = useState('all');
 
   const reload = () => {
     setLoading(true);
@@ -45,6 +55,20 @@ export function BillingTab() {
   useEffect(() => {
     reload();
   }, []);
+
+  const aq = accountSearch.trim().toLowerCase();
+  const filteredAccounts = useMemo(
+    () =>
+      orgs.filter((o) => {
+        if (accountType === 'personal' && o.account_type !== 'personal') return false;
+        if (accountType === 'team' && o.account_type === 'personal') return false;
+        return matchesAccountQuery(o, aq);
+      }),
+    [orgs, accountType, aq]
+  );
+
+  const personalCount = orgs.filter((o) => o.account_type === 'personal').length;
+  const teamCount = orgs.length - personalCount;
 
   const saveSettings = async () => {
     if (auditReason.trim().length < 4) {
@@ -294,6 +318,99 @@ export function BillingTab() {
           </div>
         </Card>
       )}
+
+      <Card className="app-card overflow-hidden border-border/60">
+        <CardHeader>
+          <CardTitle className="text-lg">Customer accounts</CardTitle>
+          <CardDescription>
+            Personal signups and team workspaces ({personalCount} personal · {teamCount} team). Search by email to find
+            individual users — billing still attaches to their personal workspace.
+          </CardDescription>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Input
+              aria-label="Search billing accounts"
+              value={accountSearch}
+              onChange={(e) => setAccountSearch(e.target.value)}
+              placeholder="Search by email, name, plan, Stripe customer…"
+              className="max-w-md"
+            />
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'personal', label: 'Personal' },
+              { id: 'team', label: 'Team' },
+            ].map((opt) => (
+              <Button
+                key={opt.id}
+                type="button"
+                size="sm"
+                variant={accountType === opt.id ? 'default' : 'outline'}
+                onClick={() => setAccountType(opt.id)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
+        </CardHeader>
+        <div className="overflow-x-auto border-t border-border/60">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+              <tr>
+                <th className="px-3 py-3 font-medium">Owner email</th>
+                <th className="px-3 py-3 font-medium">Account</th>
+                <th className="px-3 py-3 font-medium">Type</th>
+                <th className="px-3 py-3 font-medium">Plan</th>
+                <th className="px-3 py-3 font-medium">Billing</th>
+                <th className="px-3 py-3 font-medium">Stripe customer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAccounts.map((o) => (
+                <tr
+                  key={o.id}
+                  className="cursor-pointer border-b border-border/60 last:border-0 hover:bg-muted/30"
+                  onClick={() => onSelectOrg?.(o.id)}
+                >
+                  <td className="px-3 py-3 font-medium">{o.owner_email || '—'}</td>
+                  <td className="px-3 py-3">
+                    <span className="inline-flex flex-wrap items-center gap-1.5">
+                      {o.name}
+                      {o.suspended_at && <SuspendedBadge />}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    {o.account_type === 'personal' ? (
+                      <Badge variant="secondary">Personal</Badge>
+                    ) : (
+                      <Badge variant="outline">Team</Badge>
+                    )}
+                  </td>
+                  <td className="px-3 py-3">
+                    {o.plan_id || '—'}
+                    {Number(o.cancel_at_period_end) === 1 ? (
+                      <span className="ml-1 text-xs text-amber-700 dark:text-amber-400">canceling</span>
+                    ) : null}
+                  </td>
+                  <td className="px-3 py-3">{o.billing_status || '—'}</td>
+                  <td className="px-3 py-3">
+                    {o.stripe_customer_id ? (
+                      <code className="text-xs">{o.stripe_customer_id}</code>
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {filteredAccounts.length === 0 && (
+                <tr>
+                  <td className="px-3 py-6 text-muted-foreground" colSpan={6}>
+                    No accounts match this filter.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }

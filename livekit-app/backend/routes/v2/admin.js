@@ -128,8 +128,19 @@ router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
     const orgs = await db.all(
       `SELECT o.id, o.name, o.billing_status, o.account_type, o.created_at, o.suspended_at, o.suspended_reason,
         s.plan_id, s.status AS sub_status, s.is_comp, s.comp_label, s.comp_reason,
+        s.cancel_at_period_end, s.cancel_at, s.status AS stripe_status,
         p.monthly_price_cents, p.included_meeting_minutes,
         s.stripe_customer_id, s.stripe_subscription_id,
+        (SELECT u.email FROM v2_org_members m
+           JOIN v2_users u ON u.id = m.user_id
+          WHERE m.org_id = o.id
+          ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END, lower(u.email)
+          LIMIT 1) AS owner_email,
+        (SELECT u.display_name FROM v2_org_members m
+           JOIN v2_users u ON u.id = m.user_id
+          WHERE m.org_id = o.id
+          ORDER BY CASE m.role WHEN 'owner' THEN 0 ELSE 1 END, lower(u.email)
+          LIMIT 1) AS owner_display_name,
         (SELECT COUNT(*) FROM v2_org_members m WHERE m.org_id = o.id) AS member_count,
         (SELECT COUNT(*) FROM v2_meetings mt WHERE mt.org_id = o.id) AS meeting_count,
         (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
