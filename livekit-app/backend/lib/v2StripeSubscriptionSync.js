@@ -1,6 +1,8 @@
 const db = require('../db/v2Database');
 
 const DOWNGRADE_STRIPE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
+const LIVE_STRIPE_STATUSES = new Set(['active', 'trialing', 'past_due']);
+const PLAN_RANK = { free: 0, starter: 1, pro: 2 };
 
 function orgBillingStatusFromStripe(stripeStatus) {
   const s = String(stripeStatus || '').toLowerCase();
@@ -73,7 +75,10 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
     return { ok: false, reason: 'no_org_mapping' };
   }
 
-  const exists = await db.get(`SELECT org_id, is_comp FROM v2_org_subscriptions WHERE org_id = ?`, [orgId]);
+  const exists = await db.get(
+    `SELECT org_id, is_comp, plan_id, stripe_subscription_id, status FROM v2_org_subscriptions WHERE org_id = ?`,
+    [orgId]
+  );
   if (!exists) return { ok: false, reason: 'no_local_subscription' };
 
   const stripeStatus = String(stripeSub.status || 'active').slice(0, 32);
@@ -82,6 +87,21 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
     ['canceled', 'unpaid', 'past_due', 'incomplete_expired'].includes(stripeStatus)
   ) {
     return { ok: true, skipped: 'comp_account' };
+  }
+
+  // Duplicate checkouts: ignore cancel/downgrade events for a non-primary Stripe sub
+  // so they don't wipe a higher live plan (e.g. Starter cancel while Pro is still live).
+  const primarySubId = exists.stripe_subscription_id || null;
+  const isPrimary = !primarySubId || primarySubId === stripeSubId;
+  if (!isPrimary && DOWNGRADE_STRIPE_STATUSES.has(stripeStatus)) {
+    return { ok: true, skipped: 'non_primary_downgrade', orgId, stripeSubId };
+  }
+  if (!isPrimary && LIVE_STRIPE_STATUSES.has(stripeStatus)) {
+    const incomingRank = PLAN_RANK[planIdMeta] ?? -1;
+    const currentRank = PLAN_RANK[exists.plan_id] ?? -1;
+    if (incomingRank < currentRank && LIVE_STRIPE_STATUSES.has(String(exists.status || ''))) {
+      return { ok: true, skipped: 'lower_tier_duplicate', orgId, stripeSubId };
+    }
   }
 
   const { cps, cpe } = resolvePeriodBounds(stripeSub);
