@@ -4,6 +4,7 @@ import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
 import { useMeeting } from '../context/MeetingContext';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { TTS_VOICES, sanitizeTtsVoiceId } from '../lib/ttsVoices';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 
@@ -30,6 +31,8 @@ export default function MeetingPanelMenu({
   translationEnabled = false,
   voiceTranslationEnabled = false,
   onVoiceTranslationToggle,
+  ttsVoiceId,
+  onTtsVoiceChange,
   isHost = false,
   captionMode,
   onCaptionModeChange,
@@ -187,6 +190,30 @@ export default function MeetingPanelMenu({
               {voiceTranslationEnabled ? 'ON' : 'OFF'}
             </span>
           </button>
+
+          {translationEnabled && voiceTranslationEnabled && onTtsVoiceChange && (
+            <div className="border-b border-border px-3 py-2">
+              <label
+                htmlFor="tts-voice-select-mobile"
+                className="block pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Voice
+              </label>
+              <select
+                id="tts-voice-select-mobile"
+                value={ttsVoiceId}
+                onChange={(e) => onTtsVoiceChange(sanitizeTtsVoiceId(e.target.value))}
+                aria-label="Translation voice"
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {TTS_VOICES.map((voice) => (
+                  <option key={voice.id} value={voice.id}>
+                    {voice.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <MeetingLanguageList
             value={normalizedValue}

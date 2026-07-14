@@ -6,7 +6,12 @@ import asyncio
 import json
 import time
 
-from tts_lane import TtsLane, classify_tts_api_error, resolve_tts_provider
+from tts_lane import (
+    TtsLane,
+    _ELEVENLABS_DEFAULT_VOICE,
+    classify_tts_api_error,
+    resolve_tts_provider,
+)
 
 
 class _FakeLocalParticipant:
@@ -187,6 +192,43 @@ def test_classify_tts_api_error() -> None:
 
     code, msg = classify_tts_api_error("elevenlabs", 500, "")
     assert code == "provider_error"
+
+
+def test_default_voice_is_sarah() -> None:
+    assert _ELEVENLABS_DEFAULT_VOICE == "EXAVITQu4vr4xnSDxMaL"
+
+
+def test_voice_id_validation() -> None:
+    from tts_lane import is_valid_elevenlabs_voice_id, resolve_elevenlabs_voice_id
+
+    assert is_valid_elevenlabs_voice_id("EXAVITQu4vr4xnSDxMaL")
+    assert not is_valid_elevenlabs_voice_id("../evil")
+    assert not is_valid_elevenlabs_voice_id("bad?x=1")
+    assert not is_valid_elevenlabs_voice_id("")
+    assert resolve_elevenlabs_voice_id("../evil") == _ELEVENLABS_DEFAULT_VOICE
+
+
+def test_voice_id_init_and_set() -> None:
+    room = _FakeRoom()
+    lane = TtsLane(room=room, language="en", publish_track=False)
+    assert lane.voice_id is None
+
+    lane2 = TtsLane(
+        room=room,
+        language="en",
+        publish_track=False,
+        voice_id="EXAVITQu4vr4xnSDxMaL",
+    )
+    assert lane2.voice_id == "EXAVITQu4vr4xnSDxMaL"
+
+    lane2.set_voice_id("JBFqnCBsd6RMkjVDRZzb")
+    assert lane2.voice_id == "JBFqnCBsd6RMkjVDRZzb"
+
+    lane2.set_voice_id("../nope")
+    assert lane2.voice_id == "JBFqnCBsd6RMkjVDRZzb"
+
+    lane3 = TtsLane(room=room, language="en", publish_track=False, voice_id="bad-id!")
+    assert lane3.voice_id is None
 
 
 def test_tts_error_event_emitted_on_failure() -> None:

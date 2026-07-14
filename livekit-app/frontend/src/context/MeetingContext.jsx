@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { normalizeMeetingLanguageCode, writeStoredMeetingLanguage } from '../lib/languages';
+import { DEFAULT_TTS_VOICE_ID } from '../lib/ttsVoices';
 
 const MeetingContext = createContext(null);
 
@@ -17,6 +18,9 @@ export function MeetingProvider({ children, initialState = {} }) {
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);
   const [voiceTranslationEnabled, setVoiceTranslationEnabled] = useState(
     initialState.voiceTranslationEnabled ?? false
+  );
+  const [ttsVoiceId, setTtsVoiceId] = useState(
+    initialState.ttsVoiceId ?? DEFAULT_TTS_VOICE_ID
   );
 
   // Unified side panel: one panel, two tabs.
@@ -113,6 +117,8 @@ export function MeetingProvider({ children, initialState = {} }) {
     setTranslationEnabled,
     voiceTranslationEnabled,
     setVoiceTranslationEnabled,
+    ttsVoiceId,
+    setTtsVoiceId,
 
     // Unified side panel
     sidePanelOpen,
@@ -156,6 +162,7 @@ export function MeetingProvider({ children, initialState = {} }) {
     setSelectedLanguage,
     translationEnabled,
     voiceTranslationEnabled,
+    ttsVoiceId,
     sidePanelOpen,
     sidePanelTab,
     setSidePanelTab,

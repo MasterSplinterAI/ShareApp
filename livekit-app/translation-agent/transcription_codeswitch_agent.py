@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Set, T
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
-from tts_lane import TtsLane, resolve_tts_provider
+from tts_lane import TtsLane, is_valid_elevenlabs_voice_id, resolve_tts_provider
 from codeswitch_source_language import (
     effective_source_language,
     lane_is_same_language,
@@ -452,6 +452,7 @@ class TranscriptionOnlyAgent:
         self._demo_room: bool = False
         self._demo_speak_lang: str = "en"
         self._demo_read_lang: str = "en"
+        self.room_tts_voice: str | None = None
 
     def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -593,6 +594,7 @@ class TranscriptionOnlyAgent:
                 stale_after_sec=_tts_stale_sec(),
                 provider=resolve_tts_provider(lang),
                 emit_cost_hook=self._emit_tts_cost,
+                voice_id=self.room_tts_voice,
             )
             try:
                 await lane.start()
@@ -856,6 +858,7 @@ class TranscriptionOnlyAgent:
                         "voiceEnabled",
                         msg.get("voice_enabled", self.voice_enabled.get(participant_id, False)),
                     )
+
                 elif msg_type == "caption_config":
                     # Room-global control — only honored via room metadata, which the
                     # backend writes after authenticating the host (POST /v2/rooms/:name/
@@ -869,6 +872,20 @@ class TranscriptionOnlyAgent:
                 else:
                     logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
                     return
+
+                # Room-wide TTS voice override (applies to all lanes).
+                tts_voice = (msg.get("ttsVoiceId") or msg.get("tts_voice_id") or "").strip()
+                if tts_voice and is_valid_elevenlabs_voice_id(tts_voice) and tts_voice != self.room_tts_voice:
+                    self.room_tts_voice = tts_voice
+                    for lane in self.tts_lanes.values():
+                        lane.set_voice_id(tts_voice)
+                    logger.info("TTS voice updated to %s", tts_voice)
+                elif tts_voice and not is_valid_elevenlabs_voice_id(tts_voice):
+                    logger.warning(
+                        "Ignoring invalid ttsVoiceId from %s: %r",
+                        participant_id,
+                        tts_voice[:64],
+                    )
 
                 # Detect language change BEFORE updating stored value.
                 # The STT language is baked into each pipeline at creation time.

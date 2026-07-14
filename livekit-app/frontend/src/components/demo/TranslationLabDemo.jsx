@@ -18,6 +18,7 @@ import { DemoJoinFlow } from './DemoLiveRoom';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { demoLabService } from '../../services/demoLab';
+import { DEFAULT_TTS_VOICE_ID, TTS_VOICES, sanitizeTtsVoiceId } from '../../lib/ttsVoices';
 
 const DEFAULT_SCENARIOS = [
   {
@@ -77,6 +78,7 @@ export default function TranslationLabDemo() {
   const [participantLangs, setParticipantLangs] = useState({ You: 'en', María: 'es', Yuki: 'ja' });
   const [participantName, setParticipantName] = useState('Guest');
   const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsVoiceId, setTtsVoiceId] = useState(DEFAULT_TTS_VOICE_ID);
   const [joinConfig, setJoinConfig] = useState(null);
 
   const languages = config?.languages || [
@@ -110,6 +112,7 @@ export default function TranslationLabDemo() {
       participantLangs,
       participantName: participantName.trim() || 'Guest',
       ttsEnabled,
+      ttsVoiceId,
       scenarioTitle: selectedScenario.title,
     });
   };
@@ -276,18 +279,36 @@ export default function TranslationLabDemo() {
                 </select>
               </label>
 
-              <label className="mt-4 flex cursor-pointer items-center gap-2.5 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5 text-sm">
-                <input
-                  type="checkbox"
-                  checked={ttsEnabled}
-                  onChange={(e) => setTtsEnabled(e.target.checked)}
-                  className="h-4 w-4 rounded border-border accent-primary"
-                />
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <Volume2 className="h-4 w-4 text-primary" />
-                  Hear teammates (pipeline voice translation)
-                </span>
-              </label>
+              <div className="mt-4 space-y-2 rounded-lg border border-border/50 bg-background/60 px-3 py-2.5">
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ttsEnabled}
+                    onChange={(e) => setTtsEnabled(e.target.checked)}
+                    className="h-4 w-4 rounded border-border accent-primary"
+                  />
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <Volume2 className="h-4 w-4 text-primary" />
+                    Hear teammates (pipeline voice translation)
+                  </span>
+                </label>
+                {ttsEnabled && (
+                  <label className="flex items-center justify-between gap-3 pl-6 text-sm">
+                    <span className="text-xs text-muted-foreground">Voice</span>
+                    <select
+                      value={ttsVoiceId}
+                      onChange={(e) => setTtsVoiceId(sanitizeTtsVoiceId(e.target.value))}
+                      className="rounded-md border border-input bg-background px-2 py-1 text-sm"
+                    >
+                      {TTS_VOICES.map((v) => (
+                        <option key={v.id} value={v.id}>
+                          {v.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
 
             <Button size="lg" className="mt-6 w-full gap-2 shadow-md" onClick={joinLiveRoom}>
               <Mic className="h-4 w-4" />

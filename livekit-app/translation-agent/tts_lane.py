@@ -7,6 +7,7 @@ import inspect
 import json
 import logging
 import os
+import re
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -42,13 +43,33 @@ _AURA_SUPPORTED_LANGS = set(_AURA_VOICE_BY_LANG)
 
 # ElevenLabs Flash v2.5: one multilingual voice covers all 32 supported languages.
 _ELEVENLABS_MODEL = "eleven_flash_v2_5"
-_ELEVENLABS_DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb"  # "George" — neutral multilingual
+_ELEVENLABS_DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # "Sarah" — multilingual Flash v2.5
+# Premade voice IDs are alphanumeric (typically 20 chars). Reject path injection.
+_ELEVENLABS_VOICE_ID_RE = re.compile(r"^[a-zA-Z0-9]{10,40}$")
 # ISO 639-1 codes Flash v2.5 accepts as language_code (per ElevenLabs docs).
 _ELEVENLABS_LANGS = {
     "en", "es", "fr", "de", "it", "pt", "pl", "nl", "sv", "da", "no", "fi",
     "cs", "sk", "uk", "ru", "ro", "bg", "hr", "el", "hu", "tr", "ar", "hi",
     "ja", "ko", "zh", "vi", "id", "ms", "ta", "fil",
 }
+
+
+def is_valid_elevenlabs_voice_id(voice_id: str | None) -> bool:
+    if not voice_id or not isinstance(voice_id, str):
+        return False
+    return bool(_ELEVENLABS_VOICE_ID_RE.fullmatch(voice_id.strip()))
+
+
+def resolve_elevenlabs_voice_id(voice_id: str | None = None) -> str:
+    """Resolve a safe ElevenLabs voice id (instance → env → Sarah default)."""
+    for candidate in (
+        (voice_id or "").strip(),
+        os.getenv("ELEVENLABS_VOICE_ID", "").strip(),
+        _ELEVENLABS_DEFAULT_VOICE,
+    ):
+        if is_valid_elevenlabs_voice_id(candidate):
+            return candidate
+    return _ELEVENLABS_DEFAULT_VOICE
 
 
 class TtsApiError(RuntimeError):
@@ -154,6 +175,7 @@ class TtsLane:
         emit_cost_hook: Optional[
             Callable[[int, str, str, str], Awaitable[None] | None]
         ] = None,
+        voice_id: str | None = None,
     ) -> None:
         self.room = room
         self.language = language
@@ -163,6 +185,17 @@ class TtsLane:
         self.track_name = f"tts-{language}"
         self.stale_after_sec = stale_after_sec
         self.publish_track = publish_track
+        self.voice_id: str | None = None
+        if voice_id is not None:
+            cleaned = (voice_id or "").strip()
+            if is_valid_elevenlabs_voice_id(cleaned):
+                self.voice_id = cleaned
+            else:
+                logger.warning(
+                    "[TTS:%s] ignoring invalid initial voice_id=%r",
+                    language,
+                    voice_id,
+                )
 
         self._now = now_fn
         self._synthesize_hook = synthesize_hook
@@ -184,6 +217,14 @@ class TtsLane:
         self._audio_source: Any = None
         self._local_track: Any = None
         self._publication: Any = None
+
+    def set_voice_id(self, voice_id: str) -> None:
+        """Update the ElevenLabs voice for subsequent synthesis calls."""
+        cleaned = (voice_id or "").strip()
+        if not is_valid_elevenlabs_voice_id(cleaned):
+            logger.warning("[TTS:%s] ignoring invalid voice_id=%r", self.language, voice_id)
+            return
+        self.voice_id = cleaned
 
     async def start(self) -> None:
         if self._closed:
@@ -418,7 +459,7 @@ class TtsLane:
                 message="ElevenLabs API key not configured on agent",
             )
 
-        voice = os.getenv("ELEVENLABS_VOICE_ID", _ELEVENLABS_DEFAULT_VOICE).strip()
+        voice = resolve_elevenlabs_voice_id(self.voice_id)
         base_lang = self.language.split("-")[0].lower()
 
         body: dict[str, Any] = {"text": text, "model_id": _ELEVENLABS_MODEL}

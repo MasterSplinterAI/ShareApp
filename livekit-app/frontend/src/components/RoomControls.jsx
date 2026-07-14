@@ -7,6 +7,7 @@ function RoomControls({
   spokenLanguage,
   translationEnabled,
   voiceTranslationEnabled = false,
+  ttsVoiceId,
   participantName,
   isHost = false,
 }) {
@@ -27,6 +28,7 @@ function RoomControls({
         language: spokenLanguage || selectedLanguage,
         enabled: translationEnabled,
         voiceEnabled: Boolean(translationEnabled && voiceTranslationEnabled),
+        ttsVoiceId: ttsVoiceId || undefined,
       };
 
       const encoder = new TextEncoder();
@@ -51,6 +53,7 @@ function RoomControls({
     selectedLanguage,
     translationEnabled,
     voiceTranslationEnabled,
+    ttsVoiceId,
     participantName,
   ]);
 

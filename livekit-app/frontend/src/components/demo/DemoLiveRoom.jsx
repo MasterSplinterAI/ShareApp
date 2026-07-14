@@ -54,6 +54,8 @@ function DemoLiveRoomInner({
     setTranslationEnabled,
     voiceTranslationEnabled,
     setVoiceTranslationEnabled,
+    ttsVoiceId,
+    setTtsVoiceId,
   } = useMeeting();
   const { turnPhase, activeSpeaker } = useDemoPhase();
   const displayName = userDisplayName || 'Guest';
@@ -98,6 +100,7 @@ function DemoLiveRoomInner({
         spokenLanguage={speakLang}
         translationEnabled={translationEnabled}
         voiceTranslationEnabled={voiceTranslationEnabled}
+        ttsVoiceId={ttsVoiceId}
         participantName={displayName}
       />
 
@@ -108,6 +111,8 @@ function DemoLiveRoomInner({
         setTranslationEnabled={setTranslationEnabled}
         voiceTranslationEnabled={voiceTranslationEnabled}
         setVoiceTranslationEnabled={setVoiceTranslationEnabled}
+        ttsVoiceId={ttsVoiceId}
+        setTtsVoiceId={setTtsVoiceId}
         isHost={false}
         onShareClick={() => toast('Guest links and invites are available on full Lalia meetings.')}
         intentionalLeaveRef={intentionalLeaveRef}
@@ -145,6 +150,7 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
     participantLangs,
     participantName,
     ttsEnabled,
+    ttsVoiceId,
     scenarioTitle,
   } = config;
 
@@ -287,6 +293,7 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
         selectedLanguage: readLang,
         translationEnabled: true,
         voiceTranslationEnabled: ttsEnabled !== false,
+        ttsVoiceId: ttsVoiceId || undefined,
         participantName: displayName,
         demoTeammates: (liveRoom.agents || []).map((a) => ({
           name: a.name,

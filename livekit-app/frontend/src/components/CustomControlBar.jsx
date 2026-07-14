@@ -36,6 +36,8 @@ export default function CustomControlBar({
   setTranslationEnabled,
   voiceTranslationEnabled,
   setVoiceTranslationEnabled,
+  ttsVoiceId,
+  setTtsVoiceId,
   isHost,
   onShareClick,
   intentionalLeaveRef,
@@ -515,6 +517,8 @@ export default function CustomControlBar({
               translationEnabled={translationEnabled}
               voiceTranslationEnabled={voiceTranslationEnabled}
               onVoiceTranslationToggle={handleVoiceTranslationToggle}
+              ttsVoiceId={ttsVoiceId}
+              onTtsVoiceChange={setTtsVoiceId}
               isHost={isHost}
               captionMode={captionMode}
               onCaptionModeChange={handleCaptionModeChange}
@@ -529,6 +533,8 @@ export default function CustomControlBar({
                 translationEnabled={translationEnabled}
                 voiceTranslationEnabled={voiceTranslationEnabled}
                 onVoiceTranslationToggle={handleVoiceTranslationToggle}
+                ttsVoiceId={ttsVoiceId}
+                onTtsVoiceChange={setTtsVoiceId}
                 isHost={isHost}
                 captionMode={captionMode}
                 onCaptionModeChange={handleCaptionModeChange}

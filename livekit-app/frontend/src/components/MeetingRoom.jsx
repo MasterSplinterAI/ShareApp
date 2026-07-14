@@ -436,6 +436,8 @@ function MeetingRoomInner({
     setTranslationEnabled,
     voiceTranslationEnabled,
     setVoiceTranslationEnabled,
+    ttsVoiceId,
+    setTtsVoiceId,
     isPanelOpen,
   } = useMeeting();
   const t = useRoomControlLabels(selectedLanguage);
@@ -527,6 +529,7 @@ function MeetingRoomInner({
           selectedLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
           voiceTranslationEnabled={voiceTranslationEnabled}
+          ttsVoiceId={ttsVoiceId}
           participantName={participantInfo?.participantName || ''}
           isHost={participantInfo?.isHost || false}
         />
@@ -539,6 +542,8 @@ function MeetingRoomInner({
           setTranslationEnabled={setTranslationEnabled}
           voiceTranslationEnabled={voiceTranslationEnabled}
           setVoiceTranslationEnabled={setVoiceTranslationEnabled}
+          ttsVoiceId={ttsVoiceId}
+          setTtsVoiceId={setTtsVoiceId}
           isHost={participantInfo?.isHost || false}
           onShareClick={() => setShowShareModal(true)}
           intentionalLeaveRef={intentionalLeaveRef}
