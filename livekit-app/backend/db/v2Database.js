@@ -530,11 +530,11 @@ async function migrate() {
     );
     await run(
       `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['starter', 'Starter', 4900, 2000, 500, 3, 5]
+      ['starter', 'Starter', 4900, 2000, 500, 3, 6]
     );
     await run(
       `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['pro', 'Pro', 19900, 10000, 3000, 2, 4]
+      ['pro', 'Pro', 19900, 10000, 3000, 2, 5]
     );
   } else {
     const freePlan = await get(`SELECT id FROM v2_plans WHERE id = 'free'`);
