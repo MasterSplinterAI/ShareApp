@@ -675,8 +675,15 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
       params.push(Math.max(0, Number(overage_translation_cents_per_min) || 0));
     }
     if (stripe_price_id !== undefined) {
+      const priceId = stripe_price_id ? String(stripe_price_id).trim().slice(0, 128) : null;
+      if (priceId && !priceId.startsWith('price_')) {
+        return res.status(400).json({
+          error:
+            'stripe_price_id must be a Stripe Price ID starting with price_ (not a Product ID like prod_…)',
+        });
+      }
       updates.push('stripe_price_id = ?');
-      params.push(stripe_price_id ? String(stripe_price_id).slice(0, 128) : null);
+      params.push(priceId);
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_plan', {

@@ -104,6 +104,13 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
     if (!plan || !plan.stripe_price_id) {
       return res.status(400).json({ error: 'Plan not available for self-serve checkout' });
     }
+    if (!String(plan.stripe_price_id).startsWith('price_')) {
+      return res.status(400).json({
+        error:
+          'Plan is misconfigured: stripe_price_id must be a Price ID (price_…), not a Product ID (prod_…). Update it in Admin → Plans.',
+        code: 'invalid_stripe_price_id',
+      });
+    }
     if (planId === 'free') {
       return res.status(400).json({ error: 'Free plan does not require checkout' });
     }
@@ -144,6 +151,14 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
     res.json({ url: session.url, sessionId: session.id });
   } catch (e) {
     console.error('[v2/billing/checkout]', e);
+    const stripeMsg = e?.raw?.message || e?.message || '';
+    if (e?.code === 'resource_missing' || /No such price/i.test(stripeMsg)) {
+      return res.status(400).json({
+        error:
+          'Stripe rejected this plan price ID. In Admin → Plans, set stripe_price_id to a Price ID (price_…), not a Product ID (prod_…).',
+        code: 'invalid_stripe_price_id',
+      });
+    }
     res.status(500).json({ error: 'Checkout failed' });
   }
 });
