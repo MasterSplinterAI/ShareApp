@@ -497,6 +497,15 @@ async function migrate() {
   if (!subColNames2.has('custom_included_translation_minutes')) {
     await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN custom_included_translation_minutes INTEGER`);
   }
+  if (!subColNames2.has('cancel_at_period_end')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!subColNames2.has('cancel_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN cancel_at TEXT`);
+  }
+  if (!subColNames2.has('canceled_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN canceled_at TEXT`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_announcements (

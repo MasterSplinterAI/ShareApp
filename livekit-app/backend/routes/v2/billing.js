@@ -34,10 +34,15 @@ router.get('/plans', async (req, res) => {
 router.get('/subscription', requireV2Auth, async (req, res) => {
   try {
     const settings = await getStripeSettings();
+    const referer = req.get('Referer') || '';
     const shouldReconcile =
       req.query.reconcile === '1' ||
       req.query.billing === 'success' ||
-      req.get('Referer')?.includes('billing=success');
+      req.query.billing === 'portal' ||
+      referer.includes('billing=success') ||
+      referer.includes('billing=portal') ||
+      // Keep local cancel/period state fresh when browsing Settings → Billing
+      req.query.section === 'billing';
 
     if (shouldReconcile) {
       try {
@@ -179,7 +184,7 @@ router.post('/portal', requireV2Auth, async (req, res) => {
     const stripe = getStripeClient(settings);
     const base = frontendBaseUrl();
     const { flow } = req.body || {};
-    const returnUrl = `${base}/v2/app/settings?section=billing`;
+    const returnUrl = `${base}/v2/app/settings?section=billing&billing=portal`;
     const sessionParams = {
       customer: sub.stripe_customer_id,
       return_url: returnUrl,
@@ -195,6 +200,42 @@ router.post('/portal', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/billing/portal]', e);
     res.status(500).json({ error: 'Portal failed' });
+  }
+});
+
+/** Undo a pending cancel (cancel_at / cancel_at_period_end) so the plan renews. */
+router.post('/resume', requireV2Auth, async (req, res) => {
+  try {
+    const settings = await getStripeSettings();
+    if (!isStripeBillingActive(settings)) {
+      return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
+    }
+    if (!['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
+    if (!sub?.stripe_subscription_id) {
+      return res.status(400).json({ error: 'No active Stripe subscription to resume' });
+    }
+    const stripe = getStripeClient(settings);
+    const { applyStripeSubscriptionToOrg } = require('../../lib/v2StripeSubscriptionSync');
+    const updated = await stripe.subscriptions.update(sub.stripe_subscription_id, {
+      cancel_at_period_end: false,
+      cancel_at: '',
+    });
+    await applyStripeSubscriptionToOrg(updated);
+    const fresh = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
+    const planRow = fresh ? await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [fresh.plan_id]) : null;
+    res.json({
+      ok: true,
+      subscription: fresh,
+      plan: planRow
+        ? { ...planRow, teamWorkspace: planAllowsTeamWorkspace(planRow.id) }
+        : null,
+    });
+  } catch (e) {
+    console.error('[v2/billing/resume]', e);
+    res.status(500).json({ error: e.message || 'Failed to resume subscription' });
   }
 });
 

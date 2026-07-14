@@ -184,6 +184,7 @@ export const v2Billing = {
       .then((r) => r.data),
   checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
   portal: (body) => apiV2.post('/billing/portal', body || {}).then((r) => r.data),
+  resume: () => apiV2.post('/billing/resume', {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),
   updateOverageAutoCharge: (body) => apiV2.patch('/billing/overage-auto-charge', body).then((r) => r.data),
 };

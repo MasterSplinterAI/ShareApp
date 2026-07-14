@@ -82,6 +82,7 @@ export default function V2OrgSettings() {
   const [plans, setPlans] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
   const [portalLoading, setPortalLoading] = useState(null);
+  const [resumeLoading, setResumeLoading] = useState(false);
   const [overageAutoChargeOptIn, setOverageAutoChargeOptIn] = useState(false);
   const [savingOverageAutoCharge, setSavingOverageAutoCharge] = useState(false);
 
@@ -110,6 +111,28 @@ export default function V2OrgSettings() {
     }
   };
 
+  const resumeSubscription = async () => {
+    setResumeLoading(true);
+    try {
+      const data = await v2Billing.resume();
+      setBillingSnap((prev) =>
+        prev
+          ? {
+              ...prev,
+              subscription: data.subscription || prev.subscription,
+              plan: data.plan || prev.plan,
+            }
+          : prev
+      );
+      toast.success('Subscription renewed — you’ll be charged on the next billing date.');
+      load({ reconcileBilling: true });
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not resume subscription');
+    } finally {
+      setResumeLoading(false);
+    }
+  };
+
   const saveOverageAutoCharge = async (nextOptIn) => {
     setSavingOverageAutoCharge(true);
     try {
@@ -126,7 +149,11 @@ export default function V2OrgSettings() {
   };
 
   const load = (opts = {}) => {
-    const reconcileBilling = opts.reconcileBilling || searchParams.get('billing') === 'success';
+    const billingReturn =
+      searchParams.get('billing') === 'success' || searchParams.get('billing') === 'portal';
+    const onBillingSection =
+      (searchParams.get('section') || section) === 'billing' || billingReturn;
+    const reconcileBilling = Boolean(opts.reconcileBilling || billingReturn || onBillingSection);
     Promise.all([
       v2Auth.me(),
       v2Orgs.listMembers(),
@@ -178,6 +205,13 @@ export default function V2OrgSettings() {
     load();
   }, []);
 
+  // Returning from Stripe portal, or opening Billing, should re-sync cancel/period state.
+  useEffect(() => {
+    if (section !== 'billing' && searchParams.get('billing') !== 'portal') return;
+    load({ reconcileBilling: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional reload on billing focus
+  }, [section, searchParams]);
+
   // Plan-intent funnel: /v2/app/settings?checkout=starter|pro (set after signup
   // from a paid pricing CTA) — jump to billing and start Stripe checkout once
   // the billing snapshot is loaded.
@@ -201,6 +235,20 @@ export default function V2OrgSettings() {
   const canRenameOrg = canManage;
   const teamWorkspace = hasTeamWorkspace(org?.entitlements, billingSnap?.plan);
   const teamAccount = isTeamWorkspace(org?.org || profile?.org);
+  const subRow = billingSnap?.subscription;
+  const subStatus = String(subRow?.status || '').toLowerCase();
+  const isFullyCanceled = ['canceled', 'cancelled', 'unpaid', 'incomplete_expired'].includes(subStatus);
+  const cancelScheduled = Boolean(
+    !isFullyCanceled && (subRow?.cancel_at_period_end || subRow?.cancel_at)
+  );
+  const accessEndsAt = subRow?.cancel_at || (cancelScheduled ? subRow?.current_period_end : null);
+  const renewsAt = !isFullyCanceled && !cancelScheduled ? subRow?.current_period_end : null;
+  const formatBillingDate = (iso) => {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  };
   const upgradeOffer = useMemo(
     () =>
       getRecommendedUpgrade({
@@ -991,16 +1039,68 @@ export default function V2OrgSettings() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
                     <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Account status</div>
-                    <div className="mt-1 font-medium text-foreground">{org?.org?.billing_status || '—'}</div>
+                    <div className="mt-1 font-medium text-foreground">
+                      {isFullyCanceled
+                        ? 'canceled'
+                        : cancelScheduled
+                          ? 'canceling'
+                          : org?.org?.billing_status || '—'}
+                    </div>
                   </div>
                   <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
                     <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Subscription</div>
                     <div className="mt-1 font-medium text-foreground">
-                      {billingSnap?.subscription?.status || '—'}
+                      {isFullyCanceled
+                        ? 'Canceled'
+                        : cancelScheduled
+                          ? 'Cancellation scheduled'
+                          : billingSnap?.subscription?.status || '—'}
                       {billingSnap?.plan?.name ? ` · ${billingSnap.plan.name}` : ''}
                     </div>
+                    {renewsAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Next charge: {formatBillingDate(renewsAt) || renewsAt}
+                      </p>
+                    )}
+                    {cancelScheduled && accessEndsAt && (
+                      <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                        Access through {formatBillingDate(accessEndsAt) || accessEndsAt}. No renewal after that.
+                      </p>
+                    )}
+                    {isFullyCanceled && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Choose a plan below to renew anytime.
+                      </p>
+                    )}
                   </div>
                 </div>
+
+                {canManage && cancelScheduled && billingSnap?.stripeEnabled && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                    <div>
+                      <div className="text-sm font-medium text-foreground">Cancellation scheduled</div>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        Your {billingSnap?.plan?.name || 'paid'} plan stays active until{' '}
+                        {formatBillingDate(accessEndsAt) || 'the period ends'}. Resume renewal to keep the plan,
+                        or change plans below.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" size="sm" disabled={resumeLoading} onClick={resumeSubscription}>
+                        {resumeLoading ? 'Resuming…' : 'Keep / renew this plan'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={portalLoading === 'manage'}
+                        onClick={() => openPortal()}
+                      >
+                        Manage in Stripe
+                      </Button>
+                    </div>
+                  </div>
+                )}
                 {billingSnap?.plan && (
                   <div className="rounded-lg border border-border/60 px-3 py-3 text-muted-foreground">
                     <div>Included participant-minutes: {billingSnap.plan.included_meeting_minutes ?? '—'}/mo</div>
@@ -1074,9 +1174,8 @@ export default function V2OrgSettings() {
                           </Button>
                           {billingSnap?.subscription?.stripe_subscription_id &&
                             billingSnap?.plan?.id !== 'free' &&
-                            !['canceled', 'cancelled'].includes(
-                              String(billingSnap?.subscription?.status || '').toLowerCase()
-                            ) && (
+                            !isFullyCanceled &&
+                            !cancelScheduled && (
                               <Button
                                 type="button"
                                 variant="ghost"

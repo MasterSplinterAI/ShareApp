@@ -19,6 +19,42 @@ function resolvePlanIdFromStripe(stripeSub, planIdMeta) {
   return null;
 }
 
+function unixToIso(sec) {
+  if (sec == null) return null;
+  const n = Number(sec);
+  if (!Number.isFinite(n)) return null;
+  return new Date(Math.floor(n * 1000)).toISOString();
+}
+
+/** Newer Stripe API versions put period bounds on subscription items. */
+function resolvePeriodBounds(stripeSub) {
+  let cps = stripeSub.current_period_start;
+  let cpe = stripeSub.current_period_end;
+  const item = stripeSub.items?.data?.[0];
+  if (cps == null && item?.current_period_start != null) cps = item.current_period_start;
+  if (cpe == null && item?.current_period_end != null) cpe = item.current_period_end;
+  return { cps: unixToIso(cps), cpe: unixToIso(cpe) };
+}
+
+/**
+ * Pending cancel: Stripe may set cancel_at_period_end, or cancel_at (scheduled end)
+ * while status remains active until the period ends.
+ */
+function resolveCancelFlags(stripeSub) {
+  const stripeStatus = String(stripeSub.status || '').toLowerCase();
+  const cancelAtIso = unixToIso(stripeSub.cancel_at);
+  const canceledAtIso = unixToIso(stripeSub.canceled_at);
+  let cancelAtPeriodEnd = Boolean(stripeSub.cancel_at_period_end);
+  if (!cancelAtPeriodEnd && cancelAtIso && ['active', 'trialing', 'past_due'].includes(stripeStatus)) {
+    cancelAtPeriodEnd = true;
+  }
+  return {
+    cancelAtPeriodEnd,
+    cancelAt: cancelAtIso,
+    canceledAt: canceledAtIso,
+  };
+}
+
 /**
  * Apply Stripe subscription object to local v2_org_subscriptions + v2_organizations.billing_status.
  */
@@ -48,8 +84,8 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
     return { ok: true, skipped: 'comp_account' };
   }
 
-  const cps = unixToIso(stripeSub.current_period_start);
-  const cpe = unixToIso(stripeSub.current_period_end);
+  const { cps, cpe } = resolvePeriodBounds(stripeSub);
+  const { cancelAtPeriodEnd, cancelAt, canceledAt } = resolveCancelFlags(stripeSub);
   const planId = resolvePlanIdFromStripe(stripeSub, planIdMeta);
   const orgBillingStatus = orgBillingStatusFromStripe(stripeStatus);
 
@@ -61,9 +97,23 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
          status = ?,
          plan_id = ?,
          current_period_start = COALESCE(?, current_period_start),
-         current_period_end = COALESCE(?, current_period_end)
+         current_period_end = COALESCE(?, current_period_end),
+         cancel_at_period_end = ?,
+         cancel_at = ?,
+         canceled_at = ?
        WHERE org_id = ?`,
-      [stripeSubId, customerId, stripeStatus, planId, cps, cpe, orgId]
+      [
+        stripeSubId,
+        customerId,
+        stripeStatus,
+        planId,
+        cps,
+        cpe,
+        cancelAtPeriodEnd ? 1 : 0,
+        cancelAt,
+        canceledAt,
+        orgId,
+      ]
     );
   } else {
     await db.run(
@@ -72,15 +122,36 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
          stripe_customer_id = COALESCE(?, stripe_customer_id),
          status = ?,
          current_period_start = COALESCE(?, current_period_start),
-         current_period_end = COALESCE(?, current_period_end)
+         current_period_end = COALESCE(?, current_period_end),
+         cancel_at_period_end = ?,
+         cancel_at = ?,
+         canceled_at = ?
        WHERE org_id = ?`,
-      [stripeSubId, customerId, stripeStatus, cps, cpe, orgId]
+      [
+        stripeSubId,
+        customerId,
+        stripeStatus,
+        cps,
+        cpe,
+        cancelAtPeriodEnd ? 1 : 0,
+        cancelAt,
+        canceledAt,
+        orgId,
+      ]
     );
   }
 
   await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [orgBillingStatus, orgId]);
 
-  return { ok: true, orgId, planId, orgBillingStatus, stripeStatus };
+  return {
+    ok: true,
+    orgId,
+    planId,
+    orgBillingStatus,
+    stripeStatus,
+    cancelAtPeriodEnd,
+    cancelAt,
+  };
 }
 
 async function applyCheckoutSessionToOrg(session) {
@@ -103,7 +174,10 @@ async function applyCheckoutSessionToOrg(session) {
          stripe_customer_id = COALESCE(?, stripe_customer_id),
          stripe_subscription_id = COALESCE(?, stripe_subscription_id),
          plan_id = ?,
-         status = 'active'
+         status = 'active',
+         cancel_at_period_end = 0,
+         cancel_at = NULL,
+         canceled_at = NULL
        WHERE org_id = ?`,
       [custId, subId, planId, orgId]
     );
@@ -121,16 +195,12 @@ async function applyCheckoutSessionToOrg(session) {
   return { ok: true, orgId, planId };
 }
 
-function unixToIso(sec) {
-  if (sec == null) return null;
-  const n = Number(sec);
-  if (!Number.isFinite(n)) return null;
-  return new Date(Math.floor(n * 1000)).toISOString();
-}
-
 module.exports = {
   applyStripeSubscriptionToOrg,
   applyCheckoutSessionToOrg,
   orgBillingStatusFromStripe,
   resolvePlanIdFromStripe,
+  resolvePeriodBounds,
+  resolveCancelFlags,
+  unixToIso,
 };
