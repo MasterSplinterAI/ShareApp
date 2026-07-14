@@ -120,6 +120,7 @@
     "subtitle": "Comece com 60 minutos-participante por mês. Faça upgrade quando estiver pronto—cobrança por organização.",
     "popular": "Popular",
     "period": "/ org / mês",
+    "participantMinutesFootnote": "Minutos-participante = tempo de cada pessoa em reuniões (3 pessoas × 10 min = 30). Minutos de tradução medem o STT ao vivo usado para legendas/tradução. Planos pagos com excedente suave e cobrança automática opcional; limite rígido em 2× os minutos incluídos em ambos os medidores.",
     "tiers": {
       "free": {
         "name": "Free",
@@ -129,7 +130,7 @@
           "captions": "Legendas ao vivo e tradução",
           "meetings": "Reuniões instantâneas e agendadas",
           "guests": "Links de convidado",
-          "limit": "Limite rígido em 60 min/mês"
+          "limit": "Limite rígido em 60 min/mês (cada medidor)"
         }
       },
       "starter": {
@@ -137,10 +138,10 @@
         "blurb": "Para equipes pequenas que se reúnem em vários idiomas toda semana.",
         "cta": "Obter Starter",
         "features": {
-          "minutes": "2.000 minutos-participante",
-          "transcripts": "Armazenamento de transcrições",
-          "dashboard": "Painel de uso",
-          "support": "Suporte por e-mail"
+          "minutes": "2.000 minutos-participante / mês",
+          "translation": "500 minutos de tradução / mês",
+          "overages": "Excedente (opcional): reunião 3¢/min · tradução 6¢/min",
+          "hardCap": "Limite rígido em 2× os minutos incluídos"
         }
       },
       "pro": {
@@ -148,10 +149,10 @@
         "blurb": "Para equipes que precisam de vagas no espaço de trabalho e maior volume.",
         "cta": "Obter Pro",
         "features": {
-          "minutes": "10.000 minutos-participante",
-          "workspace": "Espaço de trabalho de equipe e convites",
-          "insights": "Insights de transcrição com IA",
-          "support": "Suporte prioritário"
+          "minutes": "10.000 minutos-participante / mês",
+          "translation": "3.000 minutos de tradução / mês",
+          "overages": "Excedente (opcional): reunião 2¢/min · tradução 5¢/min",
+          "hardCap": "Limite rígido em 2× os minutos incluídos · espaço de trabalho de equipe"
         }
       }
     }
@@ -180,6 +181,10 @@
       "accuracy": {
         "q": "Qual a precisão da tradução ao vivo?",
         "a": "O Lalia usa reconhecimento de fala em tempo real com tradução multilíngue. A precisão depende da qualidade do áudio—funciona melhor quando os participantes usam headset em um ambiente silencioso."
+      },
+      "planLimit": {
+        "q": "O que acontece quando atingo o limite do meu plano?",
+        "a": "Planos Free param em 60 minutos por medidor por mês. No Starter/Pro, uso além do pool incluído pode ser cobrado automaticamente apenas se você optar (reunião 3¢/2¢ por min; tradução 6¢/5¢). Em 2× os minutos incluídos para reunião ou tradução, novas reuniões e entradas são bloqueadas até o próximo período ou upgrade. Veja Preços para os valores incluídos."
       }
     }
   },

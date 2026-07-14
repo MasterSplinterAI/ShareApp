@@ -1102,9 +1102,21 @@ export default function V2OrgSettings() {
                   </div>
                 )}
                 {billingSnap?.plan && (
-                  <div className="rounded-lg border border-border/60 px-3 py-3 text-muted-foreground">
+                  <div className="rounded-lg border border-border/60 px-3 py-3 text-muted-foreground space-y-1">
                     <div>Included participant-minutes: {billingSnap.plan.included_meeting_minutes ?? '—'}/mo</div>
                     <div>Included translation minutes: {billingSnap.plan.included_translation_minutes ?? '—'}/mo</div>
+                    <div>
+                      Overage rates:{' '}
+                      {billingSnap.plan.overage_meeting_cents_per_min != null
+                        ? `${billingSnap.plan.overage_meeting_cents_per_min}¢ meeting`
+                        : '—'}
+                      {' · '}
+                      {billingSnap.plan.overage_translation_cents_per_min != null
+                        ? `${billingSnap.plan.overage_translation_cents_per_min}¢ translation`
+                        : '—'}
+                      /min (opt-in charge)
+                    </div>
+                    <div>Hard stop: 2× included minutes on either meter</div>
                   </div>
                 )}
                 <div>
@@ -1200,9 +1212,10 @@ export default function V2OrgSettings() {
                               Usage overages
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              If you exceed included minutes on your plan, overages may be billed at the rates shown on
-                              your plan. Opt in only if you want us to charge your saved payment method automatically
-                              when a billing period closes.
+                              If you exceed included meeting or translation minutes, overages may be billed at your plan
+                              rates when you opt in below. Soft overage continues until you hit the hard limit of 2×
+                              included minutes on either meter, after which new meetings and joins are blocked until the
+                              next period or an upgrade.
                             </p>
                           </div>
                           <label className="flex items-start gap-2 text-sm">

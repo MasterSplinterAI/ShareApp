@@ -3,8 +3,8 @@ const { orgIsSuspended } = require('./v2OrgLifecycle');
 const { planAllowsTeamWorkspace } = require('./v2PlanFeatures');
 
 /**
- * Hard stop multiplier on included meeting participant-minutes before blocking new joins / ending live rooms.
- * Free plans: 1× (strict 60-min ceiling). Paid plans: default 2× included quota (override via V2_HARD_CAP_MULTIPLIER).
+ * Hard stop multiplier on included minutes before blocking new joins / ending live rooms.
+ * Free plans: 1× (strict ceiling). Paid plans: default 2× included quota (override via V2_HARD_CAP_MULTIPLIER).
  */
 function hardCapMultiplier(planId) {
   if (planId === 'free') return 1;
@@ -66,8 +66,12 @@ async function getMonthToDateUsage(orgId) {
   };
 }
 
+function hardCapDenied(code, message, usage, cap, entitlements) {
+  return { ok: false, code, message, usage, cap, entitlements };
+}
+
 /**
- * Returns { ok: true } or { ok: false, reason, ... }.
+ * Returns { ok: true } or { ok: false, code, ... }.
  */
 async function assertCanCreateMeeting(orgId) {
   const org = await db.get(`SELECT id, suspended_at, billing_status FROM v2_organizations WHERE id = ?`, [orgId]);
@@ -92,26 +96,53 @@ async function assertCanCreateMeeting(orgId) {
     return { ok: false, code: 'billing_inactive', message: 'Subscription is not active' };
   }
   const usage = await getMonthToDateUsage(orgId);
-  const cap = ent.includedMeetingMinutes * hardCapMultiplier(ent.planId);
-  if (usage.meetingMinutes >= cap) {
-    return {
-      ok: false,
-      code: 'hard_cap_meeting',
-      message:
-        ent.planId === 'free'
-          ? 'Free plan limit reached (60 participant-minutes/month). Upgrade to continue.'
-          : 'Meeting usage exceeds policy; contact support or upgrade',
+  const mult = hardCapMultiplier(ent.planId);
+  const meetingCap = ent.includedMeetingMinutes * mult;
+  const translationCap = ent.includedTranslationMinutes * mult;
+
+  if (usage.meetingMinutes >= meetingCap) {
+    return hardCapDenied(
+      'hard_cap_meeting',
+      ent.planId === 'free'
+        ? 'Free plan limit reached (60 participant-minutes/month). Upgrade to continue.'
+        : 'Meeting usage exceeds the plan hard limit (2× included participant-minutes). Upgrade or contact support.',
       usage,
-      cap,
-      entitlements: ent,
-    };
+      meetingCap,
+      ent
+    );
   }
-  return { ok: true, entitlements: ent, usage, cap };
+
+  if (usage.translationMinutes >= translationCap) {
+    return hardCapDenied(
+      'hard_cap_translation',
+      ent.planId === 'free'
+        ? 'Free plan translation limit reached. Upgrade to continue.'
+        : 'Translation usage exceeds the plan hard limit (2× included translation minutes). Upgrade or contact support.',
+      usage,
+      translationCap,
+      ent
+    );
+  }
+
+  return {
+    ok: true,
+    entitlements: ent,
+    usage,
+    caps: { meeting: meetingCap, translation: translationCap },
+    // Back-compat for callers that read gate.cap as meeting hard cap
+    cap: meetingCap,
+  };
 }
 
 /** Same usage-cap gate as meeting create — used for guest join and in-meeting enforcement. */
 async function assertGuestJoinAllowed(orgId) {
   return assertCanCreateMeeting(orgId);
+}
+
+const HARD_CAP_CODES = new Set(['hard_cap_meeting', 'hard_cap_translation']);
+
+function isHardCapDenied(gate) {
+  return Boolean(gate && !gate.ok && HARD_CAP_CODES.has(gate.code));
 }
 
 module.exports = {
@@ -120,4 +151,6 @@ module.exports = {
   assertCanCreateMeeting,
   assertGuestJoinAllowed,
   hardCapMultiplier,
+  isHardCapDenied,
+  HARD_CAP_CODES,
 };

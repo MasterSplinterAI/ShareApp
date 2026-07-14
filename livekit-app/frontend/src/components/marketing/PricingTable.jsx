@@ -10,8 +10,8 @@ import { useTranslation } from '../../lib/i18n/I18nProvider';
 const TIER_KEYS = ['free', 'starter', 'pro'];
 const FEATURE_KEYS = {
   free: ['captions', 'meetings', 'guests', 'limit'],
-  starter: ['minutes', 'transcripts', 'dashboard', 'support'],
-  pro: ['minutes', 'workspace', 'insights', 'support'],
+  starter: ['minutes', 'translation', 'overages', 'hardCap'],
+  pro: ['minutes', 'translation', 'overages', 'hardCap'],
 };
 
 const PRICES = {

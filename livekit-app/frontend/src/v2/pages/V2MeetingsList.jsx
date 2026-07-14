@@ -309,7 +309,10 @@ export default function V2MeetingsList() {
 
   const handleCreateError = (e) => {
     const code = e.response?.data?.code;
-    if (e.response?.status === 402 && code === 'hard_cap_meeting') {
+    if (
+      e.response?.status === 402 &&
+      (code === 'hard_cap_meeting' || code === 'hard_cap_translation')
+    ) {
       setShowCreate(false);
       setQuotaBlocked(e.response?.data?.error || 'Usage limit reached');
       return;

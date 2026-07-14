@@ -188,7 +188,7 @@
   "pricing": {
     "eyebrow": "Pricing",
     "title": "Start free, scale as you grow",
-    "subtitle": "Begin with 60 participant-minutes a month. Upgrade when you're ready—billed per organization.",
+    "subtitle": "Begin with 60 participant-minutes a month. Paid plans include translation minutes too—billed per organization.",
     "popular": "Popular",
     "period": "/ org / month",
     "periodAnnual": "/ org / mo · billed yearly",
@@ -197,7 +197,7 @@
     "annualSave": "save 20%",
     "billingToggleLabel": "Billing period",
     "billedAnnually": "{{total}} billed once per year",
-    "participantMinutesFootnote": "Participant-minutes = the sum of each person's time in your meetings (e.g. 3 people × 10 min = 30 participant-minutes).",
+    "participantMinutesFootnote": "Participant-minutes = each person's time in meetings (3 people × 10 min = 30). Translation minutes meter live STT used for captions/translation. Paid plans soft-overage with optional auto-charge; hard stop at 2× included minutes for both meters.",
     "tiers": {
       "free": {
         "name": "Free",
@@ -207,7 +207,7 @@
           "captions": "Live captions & translation",
           "meetings": "Instant & scheduled meetings",
           "guests": "Guest links",
-          "limit": "Hard stop at 60 min/mo"
+          "limit": "Hard stop at 60 min/mo (each meter)"
         }
       },
       "starter": {
@@ -215,10 +215,10 @@
         "blurb": "For small teams meeting across languages weekly.",
         "cta": "Get Starter",
         "features": {
-          "minutes": "2,000 participant-minutes",
-          "transcripts": "Transcript storage",
-          "dashboard": "Usage dashboard",
-          "support": "Email support"
+          "minutes": "2,000 participant-minutes / mo",
+          "translation": "500 translation minutes / mo",
+          "overages": "Overage (opt-in): meeting 3¢/min · translation 6¢/min",
+          "hardCap": "Hard stop at 2× included minutes"
         }
       },
       "pro": {
@@ -226,10 +226,10 @@
         "blurb": "For teams that need workspace seats and higher volume.",
         "cta": "Get Pro",
         "features": {
-          "minutes": "10,000 participant-minutes",
-          "workspace": "Team workspace & invites",
-          "insights": "AI transcript insights",
-          "support": "Priority support"
+          "minutes": "10,000 participant-minutes / mo",
+          "translation": "3,000 translation minutes / mo",
+          "overages": "Overage (opt-in): meeting 2¢/min · translation 5¢/min",
+          "hardCap": "Hard stop at 2× included minutes · team workspace"
         }
       },
       "enterprise": {
@@ -282,7 +282,7 @@
       },
       "planLimit": {
         "q": "What happens when I hit my plan limit?",
-        "a": "Free plans stop new usage at 60 participant-minutes per month. Paid plans include a monthly pool; you can enable overage auto-charge for usage above your included minutes, or meetings may be limited when you reach your policy cap. See Pricing for included amounts."
+        "a": "Free plans stop at 60 minutes per meter per month. On Starter/Pro, usage past your included pool can be auto-charged only if you opt in (meeting 3¢/2¢ per min; translation 6¢/5¢). At 2× included minutes for meeting or translation, new meetings and joins are blocked until the next period or you upgrade. See Pricing for included amounts."
       },
       "recording": {
         "q": "Are meetings recorded?",

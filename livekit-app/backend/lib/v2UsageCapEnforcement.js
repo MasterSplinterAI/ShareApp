@@ -1,5 +1,5 @@
 const db = require('../db/v2Database');
-const { assertCanCreateMeeting } = require('./v2Entitlements');
+const { assertCanCreateMeeting, isHardCapDenied } = require('./v2Entitlements');
 const { getRoomService } = require('./livekitService');
 const { mergeRoomMetadata } = require('./livekitRoomMetadata');
 
@@ -43,7 +43,7 @@ async function checkAndEnforceUsageCap(roomName, orgId, meetingUuid) {
   if (!orgId) return { enforced: false };
 
   const gate = await assertCanCreateMeeting(orgId);
-  if (gate.ok || gate.code !== 'hard_cap_meeting') {
+  if (gate.ok || !isHardCapDenied(gate)) {
     return { enforced: false, gate };
   }
 

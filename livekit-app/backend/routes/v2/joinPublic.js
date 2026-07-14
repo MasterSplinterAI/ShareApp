@@ -154,7 +154,10 @@ router.post('/guest-token', async (req, res) => {
     const v = await validateGuestAccess(meeting, inviteToken || '');
     if (!v.ok) {
       const status =
-        v.reason === 'hard_cap_meeting' || v.reason === 'billing_inactive' || v.reason === 'org_suspended'
+        v.reason === 'hard_cap_meeting' ||
+        v.reason === 'hard_cap_translation' ||
+        v.reason === 'billing_inactive' ||
+        v.reason === 'org_suspended'
           ? 402
           : 403;
       return res.status(status).json({

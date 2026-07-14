@@ -120,6 +120,7 @@
     "subtitle": "Beginnen Sie mit 60 Teilnehmerminuten pro Monat. Upgraden Sie, wenn Sie bereit sind—Abrechnung pro Organisation.",
     "popular": "Beliebt",
     "period": "/ Org / Monat",
+    "participantMinutesFootnote": "Teilnehmerminuten = Zeit jeder Person in Meetings (3 Personen × 10 Min = 30). Übersetzungsminuten messen live STT für Untertitel/Übersetzung. Kostenpflichtige Pläne mit optionalem Soft-Overage und Auto-Abbuchung; harter Stopp bei 2× der enthaltenen Minuten für beide Zähler.",
     "tiers": {
       "free": {
         "name": "Free",
@@ -129,7 +130,7 @@
           "captions": "Live-Untertitel & Übersetzung",
           "meetings": "Sofort- & geplante Meetings",
           "guests": "Gastlinks",
-          "limit": "Hartes Limit bei 60 Min/Monat"
+          "limit": "Harter Stopp bei 60 Min/Monat (jeder Zähler)"
         }
       },
       "starter": {
@@ -137,10 +138,10 @@
         "blurb": "Für kleine Teams, die wöchentlich mehrsprachig tagen.",
         "cta": "Starter wählen",
         "features": {
-          "minutes": "2.000 Teilnehmerminuten",
-          "transcripts": "Transkriptspeicherung",
-          "dashboard": "Nutzungs-Dashboard",
-          "support": "E-Mail-Support"
+          "minutes": "2.000 Teilnehmerminuten / Monat",
+          "translation": "500 Übersetzungsminuten / Monat",
+          "overages": "Overage (opt-in): Meeting 3¢/Min · Übersetzung 6¢/Min",
+          "hardCap": "Harter Stopp bei 2× der enthaltenen Minuten"
         }
       },
       "pro": {
@@ -148,10 +149,10 @@
         "blurb": "Für Teams, die Arbeitsbereichsplätze und höheres Volumen benötigen.",
         "cta": "Pro wählen",
         "features": {
-          "minutes": "10.000 Teilnehmerminuten",
-          "workspace": "Team-Arbeitsbereich & Einladungen",
-          "insights": "KI-Transkript-Einblicke",
-          "support": "Prioritäts-Support"
+          "minutes": "10.000 Teilnehmerminuten / Monat",
+          "translation": "3.000 Übersetzungsminuten / Monat",
+          "overages": "Overage (opt-in): Meeting 2¢/Min · Übersetzung 5¢/Min",
+          "hardCap": "Harter Stopp bei 2× der enthaltenen Minuten · Team-Arbeitsbereich"
         }
       }
     }
@@ -180,6 +181,10 @@
       "accuracy": {
         "q": "Wie genau ist die Live-Übersetzung?",
         "a": "Lalia nutzt Echtzeit-Spracherkennung mit mehrsprachiger Übersetzung. Die Genauigkeit hängt von der Audioqualität ab—am besten funktioniert es mit Headset in einer ruhigen Umgebung."
+      },
+      "planLimit": {
+        "q": "Was passiert, wenn ich mein Planlimit erreiche?",
+        "a": "Free-Pläne stoppen bei 60 Minuten pro Zähler pro Monat. Bei Starter/Pro kann Nutzung über dem enthaltenen Kontingent nur bei Opt-in automatisch abgerechnet werden (Meeting 3¢/2¢ pro Min; Übersetzung 6¢/5¢). Bei 2× der enthaltenen Minuten für Meeting oder Übersetzung werden neue Meetings und Beitritte blockiert bis zur nächsten Periode oder einem Upgrade. Siehe Preise für enthaltene Mengen."
       }
     }
   },

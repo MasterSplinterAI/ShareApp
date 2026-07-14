@@ -120,6 +120,7 @@
     "subtitle": "Démarrez avec 60 minutes-participant par mois. Passez à un plan supérieur quand vous êtes prêt—facturation par organisation.",
     "popular": "Populaire",
     "period": "/ org / mois",
+    "participantMinutesFootnote": "Minutes-participant = temps de chaque personne en réunion (3 personnes × 10 min = 30). Les minutes de traduction mesurent le STT en direct utilisé pour les sous-titres/la traduction. Les plans payants autorisent un dépassement avec facturation automatique optionnelle ; arrêt strict à 2× les minutes incluses pour les deux compteurs.",
     "tiers": {
       "free": {
         "name": "Free",
@@ -129,7 +130,7 @@
           "captions": "Sous-titres en direct et traduction",
           "meetings": "Réunions instantanées et planifiées",
           "guests": "Liens invités",
-          "limit": "Arrêt strict à 60 min/mois"
+          "limit": "Arrêt strict à 60 min/mois (chaque compteur)"
         }
       },
       "starter": {
@@ -137,10 +138,10 @@
         "blurb": "Pour les petites équipes qui se réunissent en plusieurs langues chaque semaine.",
         "cta": "Choisir Starter",
         "features": {
-          "minutes": "2 000 minutes-participant",
-          "transcripts": "Stockage des transcriptions",
-          "dashboard": "Tableau de bord d'utilisation",
-          "support": "Assistance par e-mail"
+          "minutes": "2 000 minutes-participant / mois",
+          "translation": "500 minutes de traduction / mois",
+          "overages": "Dépassement (option) : réunion 3¢/min · traduction 6¢/min",
+          "hardCap": "Arrêt strict à 2× les minutes incluses"
         }
       },
       "pro": {
@@ -148,10 +149,10 @@
         "blurb": "Pour les équipes qui ont besoin de sièges d'espace de travail et d'un volume plus élevé.",
         "cta": "Choisir Pro",
         "features": {
-          "minutes": "10 000 minutes-participant",
-          "workspace": "Espace de travail d'équipe et invitations",
-          "insights": "Analyses IA des transcriptions",
-          "support": "Assistance prioritaire"
+          "minutes": "10 000 minutes-participant / mois",
+          "translation": "3 000 minutes de traduction / mois",
+          "overages": "Dépassement (option) : réunion 2¢/min · traduction 5¢/min",
+          "hardCap": "Arrêt strict à 2× les minutes incluses · espace de travail d'équipe"
         }
       }
     }
@@ -180,6 +181,10 @@
       "accuracy": {
         "q": "Quelle est la précision de la traduction en direct ?",
         "a": "Lalia utilise la reconnaissance vocale en temps réel avec traduction multilingue. La précision dépend de la qualité audio—elle est optimale lorsque les participants utilisent un casque dans un environnement calme."
+      },
+      "planLimit": {
+        "q": "Que se passe-t-il lorsque j'atteins la limite de mon plan ?",
+        "a": "Les plans Free s'arrêtent à 60 minutes par compteur par mois. Sur Starter/Pro, l'utilisation au-delà du pool inclus peut être facturée automatiquement uniquement si vous l'activez (réunion 3¢/2¢ par min ; traduction 6¢/5¢). À 2× les minutes incluses pour réunion ou traduction, les nouvelles réunions et participations sont bloquées jusqu'à la période suivante ou un upgrade. Voir Tarifs pour les montants inclus."
       }
     }
   },
