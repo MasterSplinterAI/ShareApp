@@ -4,8 +4,24 @@ import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { formatPlanPrice } from '../lib/upgradeOffers';
 
-function CheckoutButton({ offer, planId, checkoutLoading, onCheckout, className, size = 'sm' }) {
-  if (offer.canCheckout) {
+const BILLING_PLANS_HREF = '/v2/app/settings?section=billing';
+
+/** Prefer plan picker when multiple upgrades exist — don't skip choice into Stripe. */
+function ChoosePlanButton({ className, size = 'sm', label = 'Choose a plan' }) {
+  return (
+    <Button type="button" size={size} className={className} asChild>
+      <Link to={BILLING_PLANS_HREF}>{label}</Link>
+    </Button>
+  );
+}
+
+function CheckoutButton({ offer, planId, checkoutLoading, onCheckout, className, size = 'sm', label }) {
+  const upgrades = offer?.upgrades || [];
+  // Multiple paid options → send users to Settings billing to pick first.
+  if (upgrades.length > 1) {
+    return <ChoosePlanButton className={className} size={size} label={label || 'Choose a plan'} />;
+  }
+  if (offer.canCheckout && planId) {
     return (
       <Button
         type="button"
@@ -14,13 +30,13 @@ function CheckoutButton({ offer, planId, checkoutLoading, onCheckout, className,
         disabled={checkoutLoading === planId}
         onClick={() => onCheckout(planId)}
       >
-        {checkoutLoading === planId ? 'Loading…' : 'Upgrade now'}
+        {checkoutLoading === planId ? 'Loading…' : label || `Upgrade to ${offer.primaryPlan?.name || 'plan'}`}
       </Button>
     );
   }
   return (
     <Button type="button" size={size} variant="outline" className={className} asChild>
-      <Link to="/v2/app/settings?section=billing">View plans</Link>
+      <Link to={BILLING_PLANS_HREF}>View plans</Link>
     </Button>
   );
 }
@@ -28,7 +44,9 @@ function CheckoutButton({ offer, planId, checkoutLoading, onCheckout, className,
 /** Compact card for app sidebar — always visible on upgradable plans. */
 export function UpgradeSidebarCard({ offer, checkoutLoading, onCheckout, className }) {
   if (!offer?.show) return null;
-  const plan = offer.primaryPlan;
+  const upgrades = offer.upgrades || [];
+  const showPlanChoices = offer.canCheckout && upgrades.length > 1;
+
   return (
     <div
       className={cn(
@@ -42,21 +60,49 @@ export function UpgradeSidebarCard({ offer, checkoutLoading, onCheckout, classNa
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-xs font-semibold leading-snug text-foreground">{offer.headline}</p>
           <p className="text-[11px] leading-snug text-muted-foreground">{offer.detail}</p>
-          {plan && (
+          {showPlanChoices ? (
             <p className="text-[10px] text-muted-foreground">
-              {plan.name} · {formatPlanPrice(plan.monthly_price_cents)}
+              {upgrades.map((p) => `${p.name} ${formatPlanPrice(p.monthly_price_cents)}`).join(' · ')}
             </p>
-          )}
+          ) : offer.primaryPlan ? (
+            <p className="text-[10px] text-muted-foreground">
+              {offer.primaryPlan.name} · {formatPlanPrice(offer.primaryPlan.monthly_price_cents)}
+            </p>
+          ) : null}
         </div>
       </div>
       <div className="mt-2.5 flex flex-col gap-1.5">
-        <CheckoutButton
-          offer={offer}
-          planId={plan?.id}
-          checkoutLoading={checkoutLoading}
-          onCheckout={onCheckout}
-          className="w-full"
-        />
+        {showPlanChoices ? (
+          <>
+            {upgrades.map((p) => (
+              <Button
+                key={p.id}
+                type="button"
+                size="sm"
+                variant={p.id === offer.primaryPlan?.id ? 'default' : 'outline'}
+                className="w-full"
+                disabled={checkoutLoading === p.id}
+                onClick={() => onCheckout(p.id)}
+              >
+                {checkoutLoading === p.id ? 'Loading…' : `${p.name} · ${formatPlanPrice(p.monthly_price_cents)}`}
+              </Button>
+            ))}
+            <Link
+              to={BILLING_PLANS_HREF}
+              className="text-center text-[10px] font-medium text-primary hover:underline"
+            >
+              Compare plans
+            </Link>
+          </>
+        ) : (
+          <CheckoutButton
+            offer={offer}
+            planId={offer.primaryPlan?.id}
+            checkoutLoading={checkoutLoading}
+            onCheckout={onCheckout}
+            className="w-full"
+          />
+        )}
         {!offer.canCheckout && (
           <p className="text-[10px] text-muted-foreground">Ask an owner or admin to upgrade this workspace.</p>
         )}
@@ -101,6 +147,7 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
             onCheckout={onCheckout}
             size="default"
             className="shrink-0 gap-1.5"
+            label={(offer.upgrades?.length || 0) > 1 ? 'Choose a plan' : undefined}
           />
         )}
       </div>
@@ -123,7 +170,7 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
       )}
       {offer?.show && (
         <Link
-          to="/v2/app/settings?section=billing"
+          to={BILLING_PLANS_HREF}
           className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
         >
           Compare all plans
@@ -134,20 +181,25 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
   );
 }
 
-/** Quota-blocked dialog actions — direct checkout when possible. */
+/** Quota-blocked dialog actions — plan picker when multiple upgrades exist. */
 export function UpgradeQuotaActions({ offer, checkoutLoading, onCheckout, onDismiss }) {
+  const upgrades = offer?.upgrades || [];
   return (
     <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end" data-no-translate="true">
       <Button type="button" variant="outline" onClick={onDismiss}>
         Close
       </Button>
-      {offer?.canCheckout && offer.primaryPlan ? (
+      {offer?.canCheckout && upgrades.length > 1 ? (
+        <Button type="button" asChild>
+          <Link to={BILLING_PLANS_HREF}>Choose a plan</Link>
+        </Button>
+      ) : offer?.canCheckout && offer.primaryPlan ? (
         <Button type="button" disabled={checkoutLoading === offer.primaryPlan.id} onClick={() => onCheckout(offer.primaryPlan.id)}>
           {checkoutLoading === offer.primaryPlan.id ? 'Loading…' : `Upgrade to ${offer.primaryPlan.name}`}
         </Button>
       ) : (
         <Button type="button" asChild>
-          <Link to="/v2/app/settings?section=billing">View upgrade options</Link>
+          <Link to={BILLING_PLANS_HREF}>View upgrade options</Link>
         </Button>
       )}
     </div>
