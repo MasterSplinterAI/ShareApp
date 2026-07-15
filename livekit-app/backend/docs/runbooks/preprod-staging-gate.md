@@ -10,6 +10,7 @@ Complete this checklist on **staging** before starting any SEO / marketing work.
 | Stripe webhook secret | Set in Admin → Billing **or** `STRIPE_WEBHOOK_SECRET`. Unsigned Stripe webhooks fail in production. |
 | Resend inbound secret | Set in Admin → Communications **or** `RESEND_WEBHOOK_SECRET`. Unsigned Resend inbound fails in production. |
 | Platform secrets at rest | Stripe + Resend keys saved via Admin encrypt with `secretCrypto` (AES-GCM). Plaintext rows re-encrypt on read. |
+| Stable encryption key | Set `SETTINGS_ENCRYPTION_KEY` (32+ random bytes hex) **separately from** `JWT_SECRET_V2` so JWT rotation never bricks Admin secrets. |
 | Settlement scheduler | `V2_OVERAGE_SETTLEMENT_INTERVAL_MS=3600000` (or rely on default 1h when `NODE_ENV=production` / `APP_ENV=staging`). Confirm Admin → Billing shows scheduler **on**. |
 | LiveKit staging project | Use **separate** LiveKit project / API keys from production (`LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, webhook). Do not share prod keys. |
 | Deploy hygiene | Prefer clean git tree; `deploy-staging.sh` no longer auto `git add -A`. |
