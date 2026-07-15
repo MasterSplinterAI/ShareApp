@@ -1,4 +1,5 @@
 const db = require('../db/v2Database');
+const { encryptSecret, decryptSecret, isEncrypted } = require('./secretCrypto');
 
 const SETTINGS_ID = 'default';
 const DEFAULT_FROM = 'Lalia <no-reply@lalia.cloud>';
@@ -16,6 +17,16 @@ function maskWebhookSecret(value) {
   if (!value || typeof value !== 'string') return null;
   if (value.length <= 12) return '••••••••';
   return `${value.slice(0, 8)}…${value.slice(-4)}`;
+}
+
+function decryptField(raw) {
+  if (!raw) return null;
+  try {
+    return decryptSecret(String(raw).trim());
+  } catch (e) {
+    console.warn('[v2EmailSettings] decrypt failed:', e.message);
+    return null;
+  }
 }
 
 function envResendApiKey() {
@@ -46,12 +57,38 @@ async function loadDbRow() {
   return db.get(`SELECT * FROM v2_platform_email_settings WHERE id = ?`, [SETTINGS_ID]);
 }
 
+async function migratePlaintextSecrets(row) {
+  if (!row) return row;
+  let apiKey = row.resend_api_key ? String(row.resend_api_key).trim() : null;
+  let webhook = row.resend_webhook_secret ? String(row.resend_webhook_secret).trim() : null;
+  let changed = false;
+  if (apiKey && !isEncrypted(apiKey) && apiKey.startsWith('re_')) {
+    apiKey = encryptSecret(apiKey);
+    changed = true;
+  }
+  if (webhook && !isEncrypted(webhook) && webhook.startsWith('whsec_')) {
+    webhook = encryptSecret(webhook);
+    changed = true;
+  }
+  if (changed) {
+    await db.run(
+      `UPDATE v2_platform_email_settings SET resend_api_key = ?, resend_webhook_secret = ? WHERE id = ?`,
+      [apiKey, webhook, SETTINGS_ID]
+    );
+    row = { ...row, resend_api_key: apiKey, resend_webhook_secret: webhook };
+  }
+  return row;
+}
+
 function mergeSettings(row) {
   const dbEnabled = row ? Boolean(row.email_enabled) : null;
-  const dbKey = row?.resend_api_key ? String(row.resend_api_key).trim() : null;
+  const dbKeyRaw = row?.resend_api_key ? String(row.resend_api_key).trim() : null;
   const dbFrom = row?.mail_from ? String(row.mail_from).trim() : null;
-  const dbWebhookSecret = row?.resend_webhook_secret ? String(row.resend_webhook_secret).trim() : null;
+  const dbWebhookRaw = row?.resend_webhook_secret ? String(row.resend_webhook_secret).trim() : null;
   const dbIcsDomain = row?.ics_organizer_domain ? String(row.ics_organizer_domain).trim().toLowerCase() : null;
+
+  const dbKey = decryptField(dbKeyRaw);
+  const dbWebhookSecret = decryptField(dbWebhookRaw);
 
   const resendApiKey = dbKey || envResendApiKey();
   const mailFrom = dbFrom || envMailFrom() || DEFAULT_FROM;
@@ -63,9 +100,9 @@ function mergeSettings(row) {
   let source = 'environment';
   if (row) {
     source =
-      dbKey || dbFrom || dbWebhookSecret || dbIcsDomain || dbEnabled !== null ? 'database' : 'environment';
+      dbKeyRaw || dbFrom || dbWebhookRaw || dbIcsDomain || dbEnabled !== null ? 'database' : 'environment';
     if (
-      (dbKey || dbFrom || dbWebhookSecret || dbIcsDomain) &&
+      (dbKeyRaw || dbFrom || dbWebhookRaw || dbIcsDomain) &&
       (envResendApiKey() || envMailFrom() || envResendWebhookSecret() || envIcsOrganizerDomain())
     ) {
       source = 'mixed';
@@ -81,9 +118,9 @@ function mergeSettings(row) {
     icsOrganizerDomain,
     source,
     dbRow: row,
-    hasDbKey: Boolean(dbKey),
+    hasDbKey: Boolean(dbKeyRaw),
     hasEnvKey: Boolean(envResendApiKey()),
-    hasDbWebhookSecret: Boolean(dbWebhookSecret),
+    hasDbWebhookSecret: Boolean(dbWebhookRaw),
     hasEnvWebhookSecret: Boolean(envResendWebhookSecret()),
     hasDbIcsDomain: Boolean(dbIcsDomain),
     hasEnvIcsDomain: Boolean(envIcsOrganizerDomain()),
@@ -95,7 +132,8 @@ function mergeSettings(row) {
 async function getEmailSettings({ fresh = false } = {}) {
   const now = Date.now();
   if (!fresh && cache && now - cacheAt < CACHE_MS) return cache;
-  const row = await loadDbRow();
+  let row = await loadDbRow();
+  row = await migratePlaintextSecrets(row);
   cache = mergeSettings(row);
   cacheAt = now;
   return cache;
@@ -185,7 +223,9 @@ async function saveEmailSettings(actorEmail, body = {}) {
   } else if (body.resendApiKey !== undefined && body.resendApiKey !== '') {
     const err = validateResendApiKey(body.resendApiKey);
     if (err) return { ok: false, error: err };
-    next.resend_api_key = String(body.resendApiKey).trim();
+    next.resend_api_key = encryptSecret(String(body.resendApiKey).trim());
+  } else if (next.resend_api_key && !isEncrypted(next.resend_api_key)) {
+    next.resend_api_key = encryptSecret(next.resend_api_key);
   }
 
   if (body.clearMailFrom) {
@@ -201,7 +241,9 @@ async function saveEmailSettings(actorEmail, body = {}) {
   } else if (body.resendWebhookSecret !== undefined && body.resendWebhookSecret !== '') {
     const err = validateResendWebhookSecret(body.resendWebhookSecret);
     if (err) return { ok: false, error: err };
-    next.resend_webhook_secret = String(body.resendWebhookSecret).trim();
+    next.resend_webhook_secret = encryptSecret(String(body.resendWebhookSecret).trim());
+  } else if (next.resend_webhook_secret && !isEncrypted(next.resend_webhook_secret)) {
+    next.resend_webhook_secret = encryptSecret(next.resend_webhook_secret);
   }
 
   if (body.clearIcsOrganizerDomain) {

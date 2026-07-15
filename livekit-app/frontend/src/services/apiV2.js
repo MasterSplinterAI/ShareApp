@@ -115,6 +115,7 @@ export const v2Meetings = {
   },
   create: (body) => apiV2.post('/meetings', body).then((r) => r.data),
   get: (id) => apiV2.get(`/meetings/${id}`).then((r) => r.data),
+  usageStatus: (id) => apiV2.get(`/meetings/${encodeURIComponent(id)}/usage-status`).then((r) => r.data),
   patch: (id, body) => apiV2.patch(`/meetings/${id}`, body).then((r) => r.data),
   delete: (id) => apiV2.delete(`/meetings/${encodeURIComponent(id)}`).then((r) => r.data),
   token: (id, body) => apiV2.post(`/meetings/${id}/token`, body).then((r) => r.data),

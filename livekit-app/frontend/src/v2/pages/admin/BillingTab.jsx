@@ -160,8 +160,9 @@ export function BillingTab({ orgs = [], onSelectOrg }) {
               <span>
                 <span className="font-medium text-foreground">Allow customers to opt in to overage auto-charge</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Platform capability only. Each org owner must separately opt in under Settings → Billing before
-                  overages can be charged automatically.
+                  Platform capability only. Each org owner must separately opt in under Settings → Billing. Charges
+                  apply after the billing period for soft overage only; the hard stop remains at 2× included minutes
+                  (not an instant top-up).
                 </span>
               </span>
             </label>
@@ -241,6 +242,21 @@ export function BillingTab({ orgs = [], onSelectOrg }) {
               <div className="mt-1 text-2xl font-semibold tabular-nums">
                 {config?.plansConfigured ?? 0}/{config?.plansTotal ?? 0}
               </div>
+            </div>
+            <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pending overage ledger</div>
+              <div className="mt-1 text-2xl font-semibold tabular-nums">
+                {config?.stats?.pendingOverageLedgerRows ?? 0}
+              </div>
+              <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                Settlement scheduler:{' '}
+                {config?.settlement?.schedulerEnabled
+                  ? `on (${Math.round((config.settlement.intervalMs || 0) / 60000)}m)`
+                  : 'off'}
+                {config?.settlement?.lastRun?.finishedAt
+                  ? ` · last ${new Date(config.settlement.lastRun.finishedAt).toLocaleString()}`
+                  : ' · no run yet'}
+              </p>
             </div>
             <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Orgs with customer</div>

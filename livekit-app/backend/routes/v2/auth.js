@@ -123,6 +123,12 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'Workspace suspended', code: 'org_suspended' });
     }
     await db.run(`UPDATE v2_users SET last_login_at = datetime('now') WHERE id = ?`, [user.id]);
+    try {
+      const { ensureCurrentBillingCycle } = require('../../lib/v2BillingCycles');
+      await ensureCurrentBillingCycle(membership.org_id);
+    } catch (cycleErr) {
+      console.warn('[v2/auth/login] billing cycle ensure:', cycleErr.message);
+    }
     const token = signSession({
       sub: user.id,
       email: user.email,

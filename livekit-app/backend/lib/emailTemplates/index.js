@@ -3,6 +3,7 @@ const { renderGuestInvite, renderGuestReminder } = require('./guestInvite');
 const { renderTranscriptReport } = require('./transcriptReport');
 const { renderSupportReply } = require('./supportReply');
 const { renderAdminMessage } = require('./adminMessage');
+const { renderUsageAlert } = require('./usageAlert');
 
 module.exports = {
   renderPasswordReset,
@@ -11,4 +12,5 @@ module.exports = {
   renderTranscriptReport,
   renderSupportReply,
   renderAdminMessage,
+  renderUsageAlert,
 };

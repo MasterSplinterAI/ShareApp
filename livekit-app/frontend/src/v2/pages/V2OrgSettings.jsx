@@ -1116,7 +1116,9 @@ export default function V2OrgSettings() {
                         : '—'}
                       /min (opt-in charge)
                     </div>
-                    <div>Hard stop: 2× included minutes on either meter</div>
+                    <div>
+                      Hard stop: 2× included minutes on either meter (auto-charge does not raise this limit)
+                    </div>
                   </div>
                 )}
                 <div>
@@ -1212,8 +1214,9 @@ export default function V2OrgSettings() {
                               Usage overages
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">
-                              If you exceed included meeting or translation minutes, overages may be billed at your plan
-                              rates when you opt in below. Soft overage continues until you hit the hard limit of 2×
+                              If you exceed included meeting or translation minutes, soft overage may be billed after
+                              the period ends when you opt in below. Soft overage continues until the hard limit of 2×
+                              included — opt-in does not buy unlimited minutes.
                               included minutes on either meter, after which new meetings and joins are blocked until the
                               next period or an upgrade.
                             </p>
@@ -1232,10 +1235,11 @@ export default function V2OrgSettings() {
                             />
                             <span className="cursor-pointer text-muted-foreground">
                               <span className="font-medium text-foreground">
-                                Automatically charge overages to my payment method
+                                Charge soft overages on my card after the billing period
                               </span>
                               <span className="mt-1 block text-xs">
-                                You can turn this off anytime. Without opt-in, overages are tracked but not auto-charged.
+                                Bills soft overage (past included, before the 2× hard stop) after the period ends. This
+                                is not an instant top-up and does not let you exceed the hard stop. You can turn this off anytime.
                                 {billingSnap?.overageAutoCharge?.optedInAt && overageAutoChargeOptIn
                                   ? ` Opted in ${new Date(billingSnap.overageAutoCharge.optedInAt).toLocaleString()}.`
                                   : ''}

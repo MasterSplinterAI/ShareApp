@@ -151,20 +151,31 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
           />
         )}
       </div>
-      {showBar && (
+          {showBar && (
         <div className="mt-3 space-y-1">
           <div className="h-2 overflow-hidden rounded-full bg-muted">
             <div
               className={cn(
                 'h-full rounded-full transition-all',
-                pressure.level === 'over' || pressure.level === 'high' ? 'bg-amber-500' : 'bg-primary',
+                pressure.level === 'hard_stopped' || pressure.level === 'near_hard_cap'
+                  ? 'bg-destructive'
+                  : pressure.level === 'soft_overage' ||
+                      pressure.level === 'over' ||
+                      pressure.level === 'high'
+                    ? 'bg-amber-500'
+                    : 'bg-primary',
               )}
-              style={{ width: `${Math.min(100, pressure.percent)}%` }}
+              style={{
+                width: `${Math.min(100, pressure.hardCap ? pressure.pctHard || pressure.percent : pressure.percent)}%`,
+              }}
             />
           </div>
           <p className="text-xs text-muted-foreground">
-            {pressure.percent}% of included participant-minutes this month
-            {pressure.level === 'over' ? ' — limit reached' : ''}
+            {pressure.hardCap
+              ? `${pressure.pctHard || pressure.percent}% of hard limit (${pressure.used.toLocaleString()} / ${pressure.hardCap.toLocaleString()})`
+              : `${pressure.percent}% of included participant-minutes this month`}
+            {pressure.level === 'soft_overage' ? ' — soft overage (hard stop at 2×)' : ''}
+            {pressure.level === 'hard_stopped' ? ' — hard stop reached' : ''}
           </p>
         </div>
       )}

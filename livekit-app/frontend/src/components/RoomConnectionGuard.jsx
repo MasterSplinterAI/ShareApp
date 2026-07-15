@@ -44,8 +44,21 @@ export default function RoomConnectionGuard({
         return;
       }
       if (reason === DisconnectReason.ROOM_DELETED) {
-        toast.error('Meeting ended');
-        onGiveUp?.();
+        let limitMsg = '';
+        try {
+          limitMsg =
+            sessionStorage.getItem('usage_limit_message_last') ||
+            sessionStorage.getItem('usage_limit_message') ||
+            '';
+        } catch {
+          /* ignore */
+        }
+        if (limitMsg) {
+          toast.error(limitMsg, { duration: 8000 });
+        } else {
+          toast.error('Meeting ended');
+        }
+        onGiveUp?.(limitMsg || null);
         return;
       }
 

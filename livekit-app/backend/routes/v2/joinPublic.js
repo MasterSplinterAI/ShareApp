@@ -2,6 +2,7 @@
  * Unauthenticated join preview + guest LiveKit token for V2 meetings.
  */
 const express = require('express');
+const crypto = require('crypto');
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('../../db/v2Database');
 const { ensureRoomAndAgent } = require('../../lib/livekitService');
@@ -9,8 +10,18 @@ const { serializePublicBranding } = require('../../lib/v2Branding');
 const { inviteIsUsable, inviteEffectiveFromMs } = require('../../lib/inviteExpiry');
 const { orgIsSuspended } = require('../../lib/v2OrgLifecycle');
 const { assertGuestJoinAllowed } = require('../../lib/v2Entitlements');
+const { mintMeetingQualityToken } = require('../../lib/meetingQualityToken');
 
 const router = express.Router();
+
+const INVITE_GATE_REASONS = new Set([
+  'invite_required',
+  'invalid_invite',
+  'invite_expired',
+  'invite_used',
+  'invite_max_uses',
+  'invite_not_yet_valid',
+]);
 
 async function loadV2MeetingByRoom(roomName) {
   return db.get(
@@ -47,30 +58,16 @@ function meetingBranding(req, meeting) {
   return serializePublicBranding(req, org, hostUser);
 }
 
+/**
+ * Validate invite first so join-info can stay generic until the invite proves
+ * the caller is intended to see the meeting. Org/billing/hard-cap run after.
+ */
 async function validateGuestAccess(meeting, inviteToken) {
-  const org = meeting.org_id
-    ? await db.get(`SELECT suspended_at, billing_status FROM v2_organizations WHERE id = ?`, [meeting.org_id])
-    : null;
-  if (org && orgIsSuspended(org)) {
-    return { ok: false, reason: 'org_suspended' };
-  }
-  if (org?.billing_status === 'suspended' || org?.billing_status === 'canceled') {
-    return { ok: false, reason: 'billing_inactive' };
-  }
-  if (meeting.org_id) {
-    const gate = await assertGuestJoinAllowed(meeting.org_id);
-    if (!gate.ok) {
-      return { ok: false, reason: gate.code || 'usage_blocked', message: gate.message };
-    }
-  }
   if (meeting.status === 'archived') {
     return { ok: false, reason: 'meeting_ended' };
   }
   if (meeting.status === 'ended' && !inviteToken) {
     return { ok: false, reason: 'meeting_ended' };
-  }
-  if (meeting.host_required_to_start === 1 && meeting.host_present !== 1) {
-    return { ok: false, reason: 'waiting_for_host' };
   }
   if (!inviteToken || typeof inviteToken !== 'string') {
     return { ok: false, reason: 'invite_required' };
@@ -98,7 +95,48 @@ async function validateGuestAccess(meeting, inviteToken) {
     }
     return { ok: false, reason: 'invite_expired' };
   }
+
+  const org = meeting.org_id
+    ? await db.get(`SELECT suspended_at, billing_status FROM v2_organizations WHERE id = ?`, [meeting.org_id])
+    : null;
+  if (org && orgIsSuspended(org)) {
+    return { ok: false, reason: 'org_suspended', link };
+  }
+  if (org?.billing_status === 'suspended' || org?.billing_status === 'canceled') {
+    return { ok: false, reason: 'billing_inactive', link };
+  }
+  if (meeting.org_id) {
+    const gate = await assertGuestJoinAllowed(meeting.org_id);
+    if (!gate.ok) {
+      return { ok: false, reason: gate.code || 'usage_blocked', message: gate.message, link };
+    }
+  }
+  if (meeting.host_required_to_start === 1 && meeting.host_present !== 1) {
+    return { ok: false, reason: 'waiting_for_host', link };
+  }
   return { ok: true, link };
+}
+
+function scrubbedJoinDenial(reason) {
+  const safeReason = INVITE_GATE_REASONS.has(reason) ? reason : 'invite_required';
+  return {
+    mode: 'v2',
+    allowed: false,
+    reason: safeReason,
+    message: null,
+  };
+}
+
+function detailedJoinDenial(req, meeting, v) {
+  return {
+    mode: 'v2',
+    allowed: false,
+    reason: v.reason,
+    message: v.message || null,
+    meetingId: meeting.id,
+    title: meeting.title,
+    branding: meetingBranding(req, meeting),
+  };
 }
 
 router.get('/join-info', async (req, res) => {
@@ -114,15 +152,10 @@ router.get('/join-info', async (req, res) => {
     }
     const v = await validateGuestAccess(meeting, inviteToken);
     if (!v.ok) {
-      return res.json({
-        mode: 'v2',
-        allowed: false,
-        reason: v.reason,
-        message: v.message || null,
-        meetingId: meeting.id,
-        title: meeting.title,
-        branding: meetingBranding(req, meeting),
-      });
+      if (!v.link) {
+        return res.json(scrubbedJoinDenial(v.reason));
+      }
+      return res.json(detailedJoinDenial(req, meeting, v));
     }
     // Guest is allowed — ensure LiveKit room exists before the client calls GET /rooms/:name.
     // Without this, host-not-required meetings fail with 404 even though join-info said allowed.
@@ -172,8 +205,12 @@ router.post('/guest-token', async (req, res) => {
       return res.status(500).json({ error: 'LiveKit not configured' });
     }
     await ensureRoomAndAgent(meeting.livekit_room_name, 'multi-language');
+    const displayName = String(participantName).trim().slice(0, 128) || 'Guest';
+    const identity = `guest-${crypto.randomUUID()}`;
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
-      identity: String(participantName).slice(0, 128),
+      identity,
+      name: displayName,
+      metadata: JSON.stringify({ displayName, role: 'guest' }),
       ttl: '12h',
     });
     at.addGrant({
@@ -186,13 +223,16 @@ router.post('/guest-token', async (req, res) => {
       recorder: false,
     });
     const token = await at.toJwt();
+    const qualityEventToken = mintMeetingQualityToken(meeting.id);
     res.json({
       token,
       url: process.env.LIVEKIT_URL,
       roomName: meeting.livekit_room_name,
       meetingId: meeting.id,
-      participantName,
+      participantName: displayName,
+      participantIdentity: identity,
       isHost: false,
+      qualityEventToken,
     });
   } catch (e) {
     console.error('[v2/guest-token]', e);
@@ -201,3 +241,5 @@ router.post('/guest-token', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.scrubbedJoinDenial = scrubbedJoinDenial;
+module.exports.INVITE_GATE_REASONS = INVITE_GATE_REASONS;

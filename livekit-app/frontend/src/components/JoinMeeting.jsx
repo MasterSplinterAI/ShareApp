@@ -116,8 +116,18 @@ function JoinMeeting() {
           return;
         }
         if (!joinPreview.allowed) {
-          const msg =
-            joinPreview.reason === 'invite_required'
+          const serverMsg =
+            typeof joinPreview.message === 'string' && joinPreview.message.trim()
+              ? joinPreview.message.trim()
+              : '';
+          const hardCap =
+            joinPreview.reason === 'hard_cap_meeting' ||
+            joinPreview.reason === 'hard_cap_translation' ||
+            joinPreview.reason === 'billing_inactive' ||
+            joinPreview.reason === 'org_suspended';
+          const msg = hardCap && serverMsg
+            ? serverMsg
+            : joinPreview.reason === 'invite_required'
               ? 'This meeting requires a full invite link (with ?i= token).'
               : joinPreview.reason === 'invite_not_yet_valid'
                 ? 'This invite link is not active yet — it opens shortly before the meeting.'
@@ -125,7 +135,7 @@ function JoinMeeting() {
                 ? 'This invite link is invalid or has expired.'
                 : joinPreview.reason === 'meeting_ended'
                   ? 'This meeting has ended.'
-                  : 'You cannot join this meeting.';
+                  : serverMsg || 'You cannot join this meeting.';
           setError(msg);
           setIsLoading(false);
           return;

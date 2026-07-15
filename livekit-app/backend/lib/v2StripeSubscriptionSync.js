@@ -163,6 +163,13 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
 
   await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [orgBillingStatus, orgId]);
 
+  try {
+    const { ensureCurrentBillingCycle } = require('./v2BillingCycles');
+    await ensureCurrentBillingCycle(orgId);
+  } catch (e) {
+    console.warn('[stripe-sync] billing cycle ensure:', orgId, e.message);
+  }
+
   return {
     ok: true,
     orgId,

@@ -1,16 +1,24 @@
 const db = require('../db/v2Database');
+const { getOrgEntitlements } = require('./v2Entitlements');
 
 /**
  * Persists one row per overage metric for a closed billing cycle (idempotent per org/cycle/metric).
+ * Uses effective included minutes (custom overrides included).
  */
 async function writeOverageLedgerForCycle(orgId, cycleId) {
   const cycle = await db.get(`SELECT * FROM v2_billing_cycles WHERE id = ? AND org_id = ?`, [cycleId, orgId]);
   if (!cycle) return { ok: false, error: 'cycle_not_found' };
+  const ent = await getOrgEntitlements(orgId);
+  if (!ent) return { ok: false, error: 'no_plan' };
+  if (ent.isComp) return { ok: true, written: [], skipped: 'comp_account' };
+
   const plan = await db.get(
-    `SELECT p.* FROM v2_plans p JOIN v2_org_subscriptions s ON s.plan_id = p.id WHERE s.org_id = ?`,
+    `SELECT p.overage_meeting_cents_per_min, p.overage_translation_cents_per_min
+     FROM v2_plans p JOIN v2_org_subscriptions s ON s.plan_id = p.id WHERE s.org_id = ?`,
     [orgId]
   );
   if (!plan) return { ok: false, error: 'no_plan' };
+
   const usage = await db.get(
     `SELECT
        COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0) AS m,
@@ -19,8 +27,11 @@ async function writeOverageLedgerForCycle(orgId, cycleId) {
      WHERE org_id = ? AND created_at >= ? AND created_at <= ?`,
     [orgId, cycle.period_start, cycle.period_end]
   );
-  const overM = Math.max(0, (usage?.m || 0) - (plan.included_meeting_minutes || 0));
-  const overT = Math.max(0, (usage?.t || 0) - (plan.included_translation_minutes || 0));
+
+  const includedM = Number(ent.includedMeetingMinutes || 0);
+  const includedT = Number(ent.includedTranslationMinutes || 0);
+  const overM = Math.max(0, (usage?.m || 0) - includedM);
+  const overT = Math.max(0, (usage?.t || 0) - includedT);
   const rateM = Math.round(plan.overage_meeting_cents_per_min || 0);
   const rateT = Math.round(plan.overage_translation_cents_per_min || 0);
   const amountMeetingCents = Math.round(overM * rateM);
@@ -58,7 +69,12 @@ async function writeOverageLedgerForCycle(orgId, cycleId) {
     }
   }
 
-  return { ok: true, written, overage: { meetingMinutes: overM, translationMinutes: overT } };
+  return {
+    ok: true,
+    written,
+    overage: { meetingMinutes: overM, translationMinutes: overT },
+    included: { meetingMinutes: includedM, translationMinutes: includedT },
+  };
 }
 
 module.exports = { writeOverageLedgerForCycle };

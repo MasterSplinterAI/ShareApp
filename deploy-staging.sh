@@ -33,19 +33,21 @@ if [ "$CURRENT_BRANCH" != "$DEPLOY_BRANCH" ]; then
 fi
 
 echo "=== Step 1: local git status ==="
+# Never auto git-add everything from this script (secret / env risk). Commit deliberately first.
 if [ -n "$(git status --porcelain)" ]; then
-  echo "Uncommitted changes detected."
-  read -r -p "Commit message (empty to skip commit and deploy current remote branch HEAD): " COMMIT_MSG
-  if [ -n "$COMMIT_MSG" ]; then
-    git add -A
-    git commit -m "$COMMIT_MSG"
-    git push origin "$DEPLOY_BRANCH"
-  else
-    echo "Skipping commit — deploying current origin/$DEPLOY_BRANCH."
+  echo "Uncommitted changes detected. Commit and push intentionally, then re-run deploy."
+  echo "Deploy will use origin/$DEPLOY_BRANCH only (no local auto-commit)."
+  git status --short
+  read -r -p "Re-run deploy of current origin/$DEPLOY_BRANCH anyway? [y/N] " CONTINUE_DIRTY
+  if [[ ! "${CONTINUE_DIRTY:-}" =~ ^[Yy]$ ]]; then
+    echo "Aborting deploy."
+    exit 1
   fi
+  echo "Skipping local commit — deploying current origin/$DEPLOY_BRANCH."
 else
   echo "Working tree clean. Deploying origin/$DEPLOY_BRANCH."
 fi
+echo "Ops note: staging should use a separate LiveKit project/API keys from production."
 
 echo "=== Step 2: deploy $DEPLOY_BRANCH to $REMOTE_HOST ==="
 ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \

@@ -16,6 +16,7 @@ import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
 import TtsAudioController from './TtsAudioController';
 import RoomConnectionGuard from './RoomConnectionGuard';
+import MeetingUsageBanner from './MeetingUsageBanner';
 import VideoGrid from './VideoGrid';
 import PreJoinScreen from './PreJoinScreen';
 import PublishPreviewTracks from './PublishPreviewTracks';
@@ -262,6 +263,18 @@ function MeetingRoom() {
       if (tokenData.url) {
         setLivekitUrl(tokenData.url);
       }
+      if (tokenData.qualityEventToken) {
+        try {
+          const raw = sessionStorage.getItem('participantInfo');
+          const prev = raw ? JSON.parse(raw) : {};
+          sessionStorage.setItem(
+            'participantInfo',
+            JSON.stringify({ ...prev, roomName, qualityEventToken: tokenData.qualityEventToken })
+          );
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (error) {
       console.error('Failed to get token:', error);
       setError(error.response?.data?.error || error.message || 'Failed to connect to room');
@@ -507,6 +520,7 @@ function MeetingRoomInner({
           onReconnectingChange={setReconnecting}
         />
         <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
+        <MeetingUsageBanner meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content area: video grid + optional transcription panel */}
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {/* Video grid takes remaining space */}

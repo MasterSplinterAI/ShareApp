@@ -3,6 +3,11 @@ const { verifySvixWebhook } = require('../../lib/resendWebhookVerify');
 const { processInboundRsvpEmail, recordInboundEvent } = require('../../lib/guestInviteRsvp');
 const { getEmailSettings } = require('../../lib/v2EmailSettings');
 
+/** Production must not accept unsigned inbound webhooks. */
+function isResendInboundSecretRequired() {
+  return process.env.NODE_ENV === 'production';
+}
+
 async function handleResendInboundWebhook(req, res) {
   const rawBody = req.body;
   if (!Buffer.isBuffer(rawBody)) {
@@ -27,8 +32,13 @@ async function handleResendInboundWebhook(req, res) {
       console.warn('[resend/inbound] webhook verification failed:', check.reason);
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
+  } else if (isResendInboundSecretRequired()) {
+    console.error('[resend/inbound] RESEND_WEBHOOK_SECRET unset in production');
+    return res.status(400).json({ error: 'Webhook secret not configured' });
   } else {
-    console.warn('[resend/inbound] no webhook signing secret configured (Admin → Communications or RESEND_WEBHOOK_SECRET) — accepting webhook without verification');
+    console.warn(
+      '[resend/inbound] no webhook signing secret configured (Admin → Communications or RESEND_WEBHOOK_SECRET) — accepting webhook without verification (development only)'
+    );
   }
 
   let event;
@@ -73,4 +83,4 @@ async function handleResendInboundWebhook(req, res) {
   }
 }
 
-module.exports = { handleResendInboundWebhook };
+module.exports = { handleResendInboundWebhook, isResendInboundSecretRequired };

@@ -1,9 +1,43 @@
 const db = require('../db/v2Database');
+const { encryptSecret, decryptSecret, isEncrypted } = require('./secretCrypto');
 
 const SETTINGS_ID = 'default';
 let cache = null;
 let cacheAt = 0;
 const CACHE_MS = 3000;
+
+function decryptField(raw) {
+  if (!raw) return null;
+  try {
+    return decryptSecret(String(raw).trim());
+  } catch (e) {
+    console.warn('[v2StripeSettings] decrypt failed:', e.message);
+    return null;
+  }
+}
+
+async function migratePlaintextSecrets(row) {
+  if (!row) return row;
+  let secret = row.stripe_secret_key ? String(row.stripe_secret_key).trim() : null;
+  let webhook = row.stripe_webhook_secret ? String(row.stripe_webhook_secret).trim() : null;
+  let changed = false;
+  if (secret && !isEncrypted(secret) && /^sk_(test|live)_/.test(secret)) {
+    secret = encryptSecret(secret);
+    changed = true;
+  }
+  if (webhook && !isEncrypted(webhook) && webhook.startsWith('whsec_')) {
+    webhook = encryptSecret(webhook);
+    changed = true;
+  }
+  if (changed) {
+    await db.run(
+      `UPDATE v2_platform_billing_settings SET stripe_secret_key = ?, stripe_webhook_secret = ? WHERE id = ?`,
+      [secret, webhook, SETTINGS_ID]
+    );
+    row = { ...row, stripe_secret_key: secret, stripe_webhook_secret: webhook };
+  }
+  return row;
+}
 
 function maskStripeSecret(value) {
   if (!value || typeof value !== 'string') return null;
@@ -43,8 +77,10 @@ async function loadDbRow() {
 function mergeSettings(row) {
   const dbEnabled = row ? Boolean(row.stripe_enabled) : null;
   const dbAutoCharge = row ? Boolean(row.auto_charge_enabled) : null;
-  const dbSecret = row?.stripe_secret_key ? String(row.stripe_secret_key).trim() : null;
-  const dbWebhook = row?.stripe_webhook_secret ? String(row.stripe_webhook_secret).trim() : null;
+  const dbSecretRaw = row?.stripe_secret_key ? String(row.stripe_secret_key).trim() : null;
+  const dbWebhookRaw = row?.stripe_webhook_secret ? String(row.stripe_webhook_secret).trim() : null;
+  const dbSecret = decryptField(dbSecretRaw);
+  const dbWebhook = decryptField(dbWebhookRaw);
 
   const secretKey = dbSecret || envSecretKey();
   const webhookSecret = dbWebhook || envWebhookSecret();
@@ -78,7 +114,8 @@ function mergeSettings(row) {
 async function getStripeSettings({ fresh = false } = {}) {
   const now = Date.now();
   if (!fresh && cache && now - cacheAt < CACHE_MS) return cache;
-  const row = await loadDbRow();
+  let row = await loadDbRow();
+  row = await migratePlaintextSecrets(row);
   cache = mergeSettings(row);
   cacheAt = now;
   return cache;
@@ -144,7 +181,9 @@ async function saveStripeSettings(actorEmail, body = {}) {
   } else if (body.stripeSecretKey !== undefined && body.stripeSecretKey !== '') {
     const err = validateSecretKey(body.stripeSecretKey);
     if (err) return { ok: false, error: err };
-    next.stripe_secret_key = String(body.stripeSecretKey).trim();
+    next.stripe_secret_key = encryptSecret(String(body.stripeSecretKey).trim());
+  } else if (next.stripe_secret_key && !isEncrypted(next.stripe_secret_key)) {
+    next.stripe_secret_key = encryptSecret(next.stripe_secret_key);
   }
 
   if (body.clearWebhookSecret) {
@@ -152,7 +191,9 @@ async function saveStripeSettings(actorEmail, body = {}) {
   } else if (body.stripeWebhookSecret !== undefined && body.stripeWebhookSecret !== '') {
     const err = validateWebhookSecret(body.stripeWebhookSecret);
     if (err) return { ok: false, error: err };
-    next.stripe_webhook_secret = String(body.stripeWebhookSecret).trim();
+    next.stripe_webhook_secret = encryptSecret(String(body.stripeWebhookSecret).trim());
+  } else if (next.stripe_webhook_secret && !isEncrypted(next.stripe_webhook_secret)) {
+    next.stripe_webhook_secret = encryptSecret(next.stripe_webhook_secret);
   }
 
   const mergedPreview = mergeSettings({

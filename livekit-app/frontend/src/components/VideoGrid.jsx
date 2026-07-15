@@ -413,11 +413,24 @@ function ScreenShareQualityChip({ trackRef, meetingId }) {
 
       // Detect 1080p → 720p downgrade
       if (prevQualityRef.current === VideoQuality.HIGH && q === VideoQuality.MEDIUM) {
+        if (!meetingId) return;
+        let qualityEventToken = '';
+        try {
+          const info = JSON.parse(sessionStorage.getItem('participantInfo') || '{}');
+          qualityEventToken = info.qualityEventToken || '';
+        } catch {
+          /* ignore */
+        }
+        const v2Tok = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
+        const headers = { 'Content-Type': 'application/json' };
+        if (qualityEventToken) headers['X-Meeting-Quality-Token'] = qualityEventToken;
+        if (v2Tok) headers.Authorization = `Bearer ${v2Tok}`;
+        if (!qualityEventToken && !v2Tok) return;
         fetch('/api/quality-events', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
           body: JSON.stringify({
-            meeting_id: meetingId || 'unknown',
+            meeting_id: meetingId,
             participant_identity: trackRef.participant?.identity || null,
             from_layer: '1080p',
             to_layer: '720p',

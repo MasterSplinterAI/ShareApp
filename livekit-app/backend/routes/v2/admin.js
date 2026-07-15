@@ -27,7 +27,11 @@ const {
 } = require('../../lib/v2StorageSettings');
 const { testStorageConnection, resetObjectStorage } = require('../../lib/objectStorage');
 const { renderAdminMessage } = require('../../lib/emailTemplates');
-const { settleDueOverageCycles, settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
+const {
+  settleDueOverageCycles,
+  settlePendingOverageForOrgCycle,
+  getLastSettlementRun,
+} = require('../../lib/v2OverageSettlement');
 
 function backendBaseUrl() {
   return (process.env.BACKEND_BASE_URL || process.env.PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
@@ -969,6 +973,16 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
     const withSubscription = await db.get(
       `SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE stripe_subscription_id IS NOT NULL AND stripe_subscription_id != ''`
     );
+    const pendingLedger = await db.get(
+      `SELECT COUNT(*) AS c FROM v2_overage_ledger WHERE status IN ('pending', 'pending_payment')`
+    );
+    const settlementIntervalRaw = process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS;
+    const settlementIntervalMs =
+      settlementIntervalRaw !== undefined && settlementIntervalRaw !== ''
+        ? Number(settlementIntervalRaw)
+        : process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'staging'
+          ? 3600000
+          : 0;
     const base = backendBaseUrl();
     const adminSettings = toAdminView(settings);
     res.json({
@@ -983,11 +997,22 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
       stats: {
         orgsWithStripeCustomer: withCustomer?.c || 0,
         orgsWithStripeSubscription: withSubscription?.c || 0,
+        pendingOverageLedgerRows: pendingLedger?.c || 0,
+      },
+      settlement: {
+        intervalMs: settlementIntervalMs,
+        schedulerEnabled: settlementIntervalMs > 0,
+        lastRun: getLastSettlementRun(),
+        note: 'Charges soft overage after the billing period ends only; hard stop remains at 2× included. Auto-charge requires platform + org opt-in.',
       },
       envChecklist: [
         { key: 'STRIPE_ENABLED (env fallback)', ok: process.env.STRIPE_ENABLED === 'true' },
         { key: 'STRIPE_SECRET_KEY (env fallback)', ok: Boolean(process.env.STRIPE_SECRET_KEY) },
         { key: 'STRIPE_WEBHOOK_SECRET (env fallback)', ok: Boolean(process.env.STRIPE_WEBHOOK_SECRET) },
+        {
+          key: 'V2_OVERAGE_SETTLEMENT_INTERVAL_MS',
+          ok: settlementIntervalMs > 0,
+        },
         { key: 'BACKEND_BASE_URL', ok: Boolean(base) },
         {
           key: 'FRONTEND_URL',

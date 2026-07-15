@@ -5,7 +5,24 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const WEAK_SECRETS = new Set(['change-me-in-production-v2', 'change-me', 'secret', 'replace-with-long-random-string']);
+const WEAK_SECRETS = new Set([
+  'change-me-in-production-v2',
+  'change-me-in-production',
+  'change-me',
+  'changeme',
+  'secret',
+  'password',
+  'jwt-secret',
+  'jwt_secret',
+  'your-secret-here',
+  'replace-with-long-random-string',
+  'dev-secret',
+  'development',
+  'test',
+  'test-secret',
+  'xxxx',
+  'xxxxxxxx',
+]);
 
 function resolveJwtSecret() {
   const secret = process.env.JWT_SECRET_V2 || process.env.JWT_SECRET;
@@ -13,7 +30,7 @@ function resolveJwtSecret() {
     throw new Error('[auth] JWT_SECRET_V2 is required — set a strong random secret');
   }
   const trimmed = String(secret).trim();
-  if (WEAK_SECRETS.has(trimmed)) {
+  if (WEAK_SECRETS.has(trimmed) || WEAK_SECRETS.has(trimmed.toLowerCase())) {
     throw new Error('[auth] JWT_SECRET_V2 must not use a placeholder value');
   }
   if (process.env.NODE_ENV === 'production' && trimmed.length < 32) {

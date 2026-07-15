@@ -620,6 +620,23 @@ router.post('/:id/host-session-open', requireV2Auth, async (req, res) => {
   }
 });
 
+router.get('/:id/usage-status', requireV2Auth, async (req, res) => {
+  try {
+    const row = await db.get(`SELECT id, org_id FROM v2_meetings WHERE id = ? AND org_id = ?`, [
+      req.params.id,
+      req.v2Auth.orgId,
+    ]);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
+    const { getMeetingUsageStatusPayload } = require('../../lib/v2UsageAlerts');
+    const status = await getMeetingUsageStatusPayload(req.v2Auth.orgId);
+    res.json({ status });
+  } catch (e) {
+    console.error('[v2/meetings usage-status]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
 router.get('/:id', requireV2Auth, async (req, res) => {
   try {
     const row = await db.get(
@@ -800,6 +817,7 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
       return res.status(500).json({ error: 'LiveKit not configured' });
     }
     await ensureRoomAndAgent(row.livekit_room_name, 'multi-language', row.org_id);
+    const { mintMeetingQualityToken } = require('../../lib/meetingQualityToken');
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: String(participantName).slice(0, 128),
       ttl: '24h',
@@ -823,6 +841,7 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
       roomName: row.livekit_room_name,
       participantName,
       isHost: host,
+      qualityEventToken: mintMeetingQualityToken(row.id),
       policy: {
         host_required_to_start: row.host_required_to_start === 1,
         require_invite_token: row.require_invite_token === 1,

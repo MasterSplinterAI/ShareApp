@@ -433,6 +433,9 @@ async function migrate() {
   if (!ledgerColNames.has('failure_reason')) {
     await run(`ALTER TABLE v2_overage_ledger ADD COLUMN failure_reason TEXT`);
   }
+  if (!ledgerColNames.has('stripe_invoice_id')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN stripe_invoice_id TEXT`);
+  }
 
   const orgCols = await all(`PRAGMA table_info(v2_organizations)`);
   const orgColNames = new Set((orgCols || []).map((c) => c.name));
@@ -753,6 +756,26 @@ async function migrate() {
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_stripe_disputes_org ON v2_stripe_disputes(org_id)`);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_stripe_disputes_status ON v2_stripe_disputes(status)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_usage_alert_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      alert_key TEXT NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_usage_alert_events_org_key ON v2_usage_alert_events(org_id, alert_key, sent_at)`
+  );
+
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_overage_ledger_org_cycle_metric
+     ON v2_overage_ledger(org_id, cycle_id, metric)`
+  ).catch(() => {
+    /* may already exist or have dupes — ignore */
+  });
 }
 
 function initDatabase() {

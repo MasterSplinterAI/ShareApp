@@ -2,6 +2,7 @@ const { WebhookReceiver } = require('livekit-server-sdk');
 const { run, get, all, uuid } = require('../db/v2Database');
 const { reconcileTranslationMinutesForMeeting } = require('../lib/v2TranslationUsage');
 const { checkAndEnforceUsageCap } = require('../lib/v2UsageCapEnforcement');
+const { evaluateAndSendUsageAlerts } = require('../lib/v2UsageAlerts');
 
 function isLiveKitWebhookVerifyRequired() {
   if (process.env.NODE_ENV === 'production') return true;
@@ -353,6 +354,9 @@ async function handleLiveKitWebhook(req, res) {
         checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
           console.error('[webhook/livekit] usage cap check:', err.message)
         );
+        evaluateAndSendUsageAlerts(orgId).catch((err) =>
+          console.error('[webhook/livekit] usage alerts:', err.message)
+        );
       }
     }
 
@@ -364,6 +368,9 @@ async function handleLiveKitWebhook(req, res) {
         } catch (err) {
           console.error('[webhook/livekit] translation usage reconcile:', err.message);
         }
+        evaluateAndSendUsageAlerts(orgId).catch((err) =>
+          console.error('[webhook/livekit] usage alerts:', err.message)
+        );
       }
       aggregateRollup(roomName).catch((err) =>
         console.error('[webhook/livekit] rollup error:', err.message)

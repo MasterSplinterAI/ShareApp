@@ -142,7 +142,14 @@ app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
-app.use('/api/quality-events', require('./routes/qualityEvents'));
+const qualityEventsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many quality events' },
+});
+app.use('/api/quality-events', qualityEventsLimiter, require('./routes/qualityEvents'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -177,7 +184,14 @@ app.use((err, req, res, next) => {
   }
   try {
     const { settleDueOverageCycles } = require('./lib/v2OverageSettlement');
-    const intervalMs = Number(process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS || 0);
+    const defaultInterval =
+      process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'staging' ? 3600000 : 0;
+    const intervalMs = Number(
+      process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS !== undefined &&
+        process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS !== ''
+        ? process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS
+        : defaultInterval
+    );
     if (intervalMs > 0) {
       const tick = () => {
         settleDueOverageCycles().catch((err) => console.error('[overage-settlement]', err.message));
@@ -185,6 +199,8 @@ app.use((err, req, res, next) => {
       tick();
       setInterval(tick, intervalMs);
       console.log(`[overage-settlement] scheduler every ${intervalMs}ms`);
+    } else {
+      console.log('[overage-settlement] scheduler off (set V2_OVERAGE_SETTLEMENT_INTERVAL_MS to enable)');
     }
   } catch (e) {
     console.error('[overage-settlement] scheduler start failed:', e.message);
