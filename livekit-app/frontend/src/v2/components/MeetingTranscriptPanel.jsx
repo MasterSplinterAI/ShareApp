@@ -122,6 +122,67 @@ export default function MeetingTranscriptPanel({
   const [emailTo, setEmailTo] = useState('');
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
+  const [inviteGuests, setInviteGuests] = useState([]);
+  const [selectedInviteEmails, setSelectedInviteEmails] = useState(() => new Set());
+  const [loadingInviteGuests, setLoadingInviteGuests] = useState(false);
+
+  const inviteEmailOptions = useMemo(() => {
+    const seen = new Set();
+    const opts = [];
+    for (const g of inviteGuests) {
+      const email = String(g.email || '')
+        .trim()
+        .toLowerCase();
+      if (!email || seen.has(email)) continue;
+      seen.add(email);
+      opts.push({ email, id: g.id });
+    }
+    return opts;
+  }, [inviteGuests]);
+
+  const loadInviteGuests = useCallback(async () => {
+    if (!meetingId) return;
+    setLoadingInviteGuests(true);
+    try {
+      const data = await v2Meetings.listEmailInvites(meetingId);
+      const guests = data.guests || [];
+      setInviteGuests(guests);
+      const emails = [
+        ...new Set(
+          guests
+            .map((g) => String(g.email || '').trim().toLowerCase())
+            .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+        ),
+      ];
+      setSelectedInviteEmails(new Set(emails));
+    } catch {
+      setInviteGuests([]);
+      setSelectedInviteEmails(new Set());
+    } finally {
+      setLoadingInviteGuests(false);
+    }
+  }, [meetingId]);
+
+  useEffect(() => {
+    if (emailOpen) loadInviteGuests();
+  }, [emailOpen, loadInviteGuests]);
+
+  const toggleInviteEmail = (email) => {
+    setSelectedInviteEmails((prev) => {
+      const next = new Set(prev);
+      if (next.has(email)) next.delete(email);
+      else next.add(email);
+      return next;
+    });
+  };
+
+  const setAllInviteEmails = (checked) => {
+    if (checked) {
+      setSelectedInviteEmails(new Set(inviteEmailOptions.map((o) => o.email)));
+    } else {
+      setSelectedInviteEmails(new Set());
+    }
+  };
 
   const downloadReport = async (format) => {
     if (!report?.id) return;
@@ -148,15 +209,26 @@ export default function MeetingTranscriptPanel({
   };
 
   const sendReportEmail = async () => {
-    const to = emailTo.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      toast.error('Enter a valid email address');
+    const extra = emailTo
+      .split(/[,;\s]+/)
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const invalidExtra = extra.filter((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+    if (invalidExtra.length) {
+      toast.error(`Invalid email: ${invalidExtra[0]}`);
+      return;
+    }
+    const recipients = [...new Set([...selectedInviteEmails, ...extra])];
+    if (!recipients.length) {
+      toast.error('Select at least one invitee or enter an email address');
       return;
     }
     setEmailSending(true);
     try {
-      await v2Meetings.emailTranscriptReport(meetingId, report.id, to);
-      toast.success(`Report sent to ${to}`);
+      await v2Meetings.emailTranscriptReport(meetingId, report.id, recipients);
+      toast.success(
+        recipients.length === 1 ? `Report sent to ${recipients[0]}` : `Report sent to ${recipients.length} recipients`
+      );
       setEmailOpen(false);
       setEmailTo('');
     } catch (e) {
@@ -350,21 +422,96 @@ export default function MeetingTranscriptPanel({
           )}
         </div>
         {report && emailOpen && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-muted/30 px-3 py-2">
-            <Input
-              aria-label="Recipient email"
-              value={emailTo}
-              onChange={(e) => setEmailTo(e.target.value)}
-              placeholder="recipient@company.com"
-              type="email"
-              className="h-8 w-64"
-              onKeyDown={(e) => e.key === 'Enter' && !emailSending && sendReportEmail()}
-            />
-            <Button type="button" size="sm" className="gap-1.5" disabled={emailSending} onClick={sendReportEmail}>
-              {emailSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-              Send PDF
-            </Button>
-            <span className="text-xs text-muted-foreground">Sends the formatted PDF as an attachment.</span>
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Label className="text-sm">Meeting invitees</Label>
+                {inviteEmailOptions.length > 0 && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-xs text-primary hover:underline"
+                      onClick={() => setAllInviteEmails(true)}
+                    >
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-muted-foreground hover:underline"
+                      onClick={() => setAllInviteEmails(false)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+              </div>
+              {loadingInviteGuests ? (
+                <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading invitees…
+                </p>
+              ) : inviteEmailOptions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No email invitees on this meeting yet. Add addresses below, or invite guests from the meeting page
+                  first.
+                </p>
+              ) : (
+                <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/60 p-2">
+                  {inviteEmailOptions.map((opt) => {
+                    const checked = selectedInviteEmails.has(opt.email);
+                    return (
+                      <li key={opt.email}>
+                        <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted/50">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 shrink-0 rounded border-border accent-primary"
+                            checked={checked}
+                            onChange={() => toggleInviteEmail(opt.email)}
+                          />
+                          <span className="truncate">{opt.email}</span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="report-email-extra" className="text-sm">
+                Additional emails
+              </Label>
+              <Input
+                id="report-email-extra"
+                aria-label="Additional recipient emails"
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="colleague@company.com, another@company.com"
+                className="h-9"
+                onKeyDown={(e) => e.key === 'Enter' && !emailSending && sendReportEmail()}
+              />
+              <p className="text-xs text-muted-foreground">Comma-separated is fine. PDF attaches to one email.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" size="sm" className="gap-1.5" disabled={emailSending} onClick={sendReportEmail}>
+                {emailSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                Send PDF
+                {(() => {
+                  const n = [
+                    ...new Set([
+                      ...selectedInviteEmails,
+                      ...emailTo
+                        .split(/[,;\s]+/)
+                        .map((e) => e.trim().toLowerCase())
+                        .filter(Boolean),
+                    ]),
+                  ].length;
+                  return n > 0 ? ` (${n})` : '';
+                })()}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" disabled={emailSending} onClick={() => setEmailOpen(false)}>
+                Cancel
+              </Button>
+            </div>
           </div>
         )}
         {report?.content_markdown && (

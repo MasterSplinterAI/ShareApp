@@ -152,7 +152,9 @@ export const v2Meetings = {
       .then((r) => r),
   emailTranscriptReport: (id, reportId, to) =>
     apiV2
-      .post(`/meetings/${encodeURIComponent(id)}/transcript/reports/${encodeURIComponent(reportId)}/email`, { to })
+      .post(`/meetings/${encodeURIComponent(id)}/transcript/reports/${encodeURIComponent(reportId)}/email`, {
+        to: Array.isArray(to) ? to : [to],
+      })
       .then((r) => r.data),
 };
 

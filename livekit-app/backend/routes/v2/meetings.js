@@ -968,14 +968,27 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
     );
     if (!report) return res.status(404).json({ error: 'Report not found' });
 
-    const to = String(req.body?.to || '').trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
-      return res.status(400).json({ error: 'Valid recipient email required' });
+    const rawTo = req.body?.to;
+    const rawList = Array.isArray(rawTo)
+      ? rawTo
+      : typeof rawTo === 'string'
+        ? rawTo.split(/[,;\s]+/)
+        : Array.isArray(req.body?.recipients)
+          ? req.body.recipients
+          : [];
+    const recipients = [
+      ...new Set(
+        rawList
+          .map((e) => String(e || '').trim().toLowerCase())
+          .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
+      ),
+    ].slice(0, 20);
+    if (!recipients.length) {
+      return res.status(400).json({ error: 'At least one valid recipient email is required' });
     }
 
     const { reportToPdfBuffer, reportToMarkdown, templateLabel, safeFilename } = require('../../lib/reportExport');
     const { sendEmail } = require('../../lib/mailer');
-    const { isMailerConfigured } = require('../../lib/v2EmailSettings');
     const { renderTranscriptReport } = require('../../lib/emailTemplates');
     const org = await db.get(`SELECT name FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     const pdf = await reportToPdfBuffer({ report, meetingTitle: row.title, orgName: org?.name });
@@ -990,7 +1003,7 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
     });
 
     const result = await sendEmail({
-      to,
+      to: recipients,
       subject: email.subject,
       text: email.text,
       html: email.html,
@@ -1004,7 +1017,7 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
         message: 'Email delivery is not configured on this server yet. Download the PDF instead.',
       });
     }
-    res.json({ ok: true, to });
+    res.json({ ok: true, to: recipients });
   } catch (e) {
     console.error('[v2/transcript/reports email]', e);
     res.status(500).json({ error: 'Email failed' });
