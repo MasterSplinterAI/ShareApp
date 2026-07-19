@@ -473,14 +473,6 @@ function MeetingRoomInner({
 
   return (
     <div className="meeting-surface meeting-room-root relative h-[100dvh] w-full overflow-hidden">
-      {reconnecting && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
-          <div className="text-center">
-            <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Reconnecting to meeting…</p>
-          </div>
-        </div>
-      )}
       <LiveKitRoom
         video={false}
         audio={false}
@@ -523,8 +515,16 @@ function MeetingRoomInner({
         <MeetingUsageBanner meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content: column on mobile (video + in-flow sheet), row on desktop */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
-          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <VideoGrid />
+            {reconnecting && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                <div className="text-center px-4">
+                  <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Reconnecting to meeting…</p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Captions / chat / people — side rail on desktop, in-flow bottom region on mobile */}
