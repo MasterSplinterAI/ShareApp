@@ -147,7 +147,8 @@ export default function ParticipantsPanel({ meetingId }) {
 
   return (
     <div
-      className="z-40 flex max-h-[45vh] w-full min-h-0 flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-80 lg:w-96 sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
+      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface sm:h-full sm:max-h-none sm:w-80 sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none lg:w-96"
+      data-meeting-mobile-sheet="participants"
       data-no-translate="true"
     >
       <PanelTabs />

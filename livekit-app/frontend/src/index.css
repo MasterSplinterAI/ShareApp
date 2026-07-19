@@ -132,6 +132,14 @@
   .meeting-surface.meeting-room-root {
     background-color: hsl(var(--meeting-canvas));
     background-image: none;
+    /* Shared bottom chrome height — CustomControlBar overwrites via ResizeObserver. */
+    --control-bar-h: 57px;
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (min-width: 640px) {
+    .meeting-surface.meeting-room-root {
+      --control-bar-h: 68px;
+    }
   }
   .meeting-video-matte {
     background-color: hsl(var(--meeting-canvas));

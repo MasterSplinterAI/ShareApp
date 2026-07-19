@@ -378,7 +378,7 @@ function ChatPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 z-[9998] flex max-h-80 w-96 flex-col rounded-xl border meeting-panel-surface backdrop-blur-md"
+        className="fixed bottom-[calc(var(--control-bar-h,3.5rem)+0.75rem)] right-4 z-[9998] flex max-h-80 w-96 flex-col rounded-xl border meeting-panel-surface backdrop-blur-md"
         data-no-translate="true"
       >
         <PanelTabs compact />
@@ -389,7 +389,8 @@ function ChatPanel() {
 
   return (
     <div
-      className="z-40 flex max-h-[45vh] w-full min-h-0 flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface fixed bottom-12 left-0 right-0 sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full sm:w-[350px] lg:w-[400px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none"
+      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface sm:h-full sm:max-h-none sm:w-[350px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none lg:w-[400px]"
+      data-meeting-mobile-sheet="chat"
       data-no-translate="true"
     >
       <PanelTabs />

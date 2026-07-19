@@ -339,9 +339,34 @@ export default function CustomControlBar({
     );
 
   const t = useRoomControlLabels(selectedLanguage);
+  const barRef = useRef(null);
+
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return undefined;
+    const root = el.closest('.meeting-room-root');
+    if (!root) return undefined;
+    const publish = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      if (h > 0) root.style.setProperty('--control-bar-h', `${h}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isCompact]);
 
   return (
-    <div className={`relative z-50 w-full border-t meeting-control-strip border-border ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`} data-no-translate="true">
+    <div
+      ref={barRef}
+      data-meeting-control-bar="true"
+      className={cn(
+        'relative z-50 w-full shrink-0 border-t border-border meeting-control-strip',
+        isCompact ? 'px-2 pt-1.5' : 'px-4 pt-3',
+        'pb-[calc(0.375rem+var(--safe-bottom,0px))] sm:pb-[calc(0.75rem+var(--safe-bottom,0px))]'
+      )}
+      data-no-translate="true"
+    >
       <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
         {/* Left side - Standard controls */}
         <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>

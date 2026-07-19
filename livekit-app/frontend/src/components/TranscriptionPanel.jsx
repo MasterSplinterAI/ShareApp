@@ -628,7 +628,7 @@ function TranscriptionPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 w-96 max-h-80 border meeting-panel-surface backdrop-blur-md rounded-xl z-[9999] flex flex-col min-h-0"
+        className="fixed bottom-[calc(var(--control-bar-h,3.5rem)+0.75rem)] right-4 z-[9999] flex max-h-80 w-96 min-h-0 flex-col rounded-xl border meeting-panel-surface backdrop-blur-md"
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
@@ -674,7 +674,7 @@ function TranscriptionPanel() {
         )}
       </div>
 
-      {/* Mobile: collapsed caption bar or expanded bottom sheet */}
+      {/* Mobile: in-flow region (not fixed) so video flex-shrinks above it */}
       {!mobileExpanded ? (
         <MobileCaptionBar
           text={latestCaptionText}
@@ -683,7 +683,8 @@ function TranscriptionPanel() {
         />
       ) : (
         <div
-          className="sm:hidden fixed bottom-12 left-0 right-0 z-40 flex max-h-[45vh] w-full min-h-0 flex-shrink-0 flex-col rounded-t-xl border meeting-panel-surface"
+          className="meeting-mobile-sheet sm:hidden flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface"
+          data-meeting-mobile-sheet="captions"
           data-no-translate="true"
         >
           <PanelTabs
@@ -943,12 +944,13 @@ function PanelContent({
 function MobileCaptionBar({ text, onExpand, hasContent }) {
   return (
     <div
-      className="sm:hidden fixed bottom-12 left-0 right-0 z-40"
+      className="meeting-mobile-caption-bar sm:hidden w-full shrink-0"
+      data-meeting-mobile-sheet="captions-bar"
       data-no-translate="true"
     >
       <button
         onClick={onExpand}
-        className="w-full flex items-center gap-2 px-3 py-2 meeting-control-strip backdrop-blur-sm border-t border-border text-left"
+        className="flex w-full items-center gap-2 border-t border-border meeting-control-strip px-3 py-2 text-left backdrop-blur-sm"
       >
         <MessageSquare className="w-3.5 h-3.5 text-primary flex-shrink-0" />
         {text ? (
