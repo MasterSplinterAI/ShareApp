@@ -17,6 +17,7 @@ import CustomControlBar from './CustomControlBar';
 import TtsAudioController from './TtsAudioController';
 import RoomConnectionGuard from './RoomConnectionGuard';
 import MeetingUsageBanner from './MeetingUsageBanner';
+import LocalDisplayNameSync from './LocalDisplayNameSync';
 import VideoGrid from './VideoGrid';
 import PreJoinScreen from './PreJoinScreen';
 import PublishPreviewTracks from './PublishPreviewTracks';
@@ -512,6 +513,7 @@ function MeetingRoomInner({
           onReconnectingChange={setReconnecting}
         />
         <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
+        <LocalDisplayNameSync displayName={participantInfo?.participantName} />
         <MeetingUsageBanner meetingId={meetingId} isHost={participantInfo?.isHost} />
         {/* Main content: column on mobile (video + in-flow sheet), row on desktop */}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">

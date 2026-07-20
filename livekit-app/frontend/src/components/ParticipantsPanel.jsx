@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { useMeeting } from '../context/MeetingContext';
 import { v2Host } from '../services/apiV2';
 import PanelTabs from './PanelTabs';
+import { participantDisplayName } from '../lib/participantDisplayName';
 
 function isAgentParticipant(identity) {
   const id = (identity || '').toLowerCase();
@@ -22,7 +23,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
   const identity = participant.identity || '';
   const isAgent = isAgentParticipant(identity);
   const isSelf = identity === localIdentity;
-  const name = participant.name || identity;
+  const name = participantDisplayName(participant);
 
   const micPub = participant.getTrackPublication?.(Track.Source.Microphone);
   const isServerMuted = Boolean(micPub?.isMuted);

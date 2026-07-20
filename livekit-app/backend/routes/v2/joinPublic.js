@@ -213,6 +213,8 @@ router.post('/guest-token', async (req, res) => {
       metadata: JSON.stringify({ displayName, role: 'guest' }),
       ttl: '12h',
     });
+    // Ensure JWT `name` claim is set even if constructor options are ignored by SDK version.
+    at.name = displayName;
     at.addGrant({
       roomJoin: true,
       room: meeting.livekit_room_name,

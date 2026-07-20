@@ -49,7 +49,9 @@ export function useTranslation() {
       const data = {
         type: 'language_preference',
         participant_id: localParticipant.sid,
-        participant_name: localParticipant.identity,
+        participant_name:
+          localParticipant.name ||
+          localParticipant.identity,
         target_language: language,
         translation_enabled: enabled,
       };

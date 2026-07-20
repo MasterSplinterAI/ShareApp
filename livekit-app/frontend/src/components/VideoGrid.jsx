@@ -4,6 +4,7 @@ import { Track, RoomEvent, VideoQuality, ConnectionQuality } from 'livekit-clien
 import { Maximize, Minimize, User, MicOff, VideoOff } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
+import { participantDisplayName } from '../lib/participantDisplayName';
 
 function useIsMobile() {
   const [isMobile, setIsMobile] = useState(false);
@@ -186,7 +187,7 @@ function ParticipantTile({ participant, tracks, compact = false }) {
   const isCameraOff = isLocal ? !localCameraEnabled : !hasVideo;
   const isSpeaking = participant.isSpeaking;
 
-  const displayName = participant.name || participant.identity || 'Unknown';
+  const displayName = participantDisplayName(participant);
 
   return (
     <div

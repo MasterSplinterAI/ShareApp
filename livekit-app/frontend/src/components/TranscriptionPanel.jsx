@@ -4,6 +4,7 @@ import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 import { v2Meetings } from '../services/apiV2';
 import PanelTabs from './PanelTabs';
+import { resolveSpeakerLabel, preferSpeakerLabel } from '../lib/participantDisplayName';
 
 const LANGUAGE_LABELS = {
   en: 'English', es: 'Spanish', 'es-CO': 'Colombian Spanish',
@@ -362,6 +363,10 @@ function TranscriptionPanel() {
         }
 
         const speakerId = message.participant_id || participant?.identity || 'Unknown';
+        const speakerLabel =
+          message.participant_name ||
+          resolveSpeakerLabel(speakerId, room) ||
+          speakerId;
         const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : Date.now();
         const targetLang = message.language || 'en';
         const sourceLanguage = message.sourceLanguage || null;
@@ -386,6 +391,7 @@ function TranscriptionPanel() {
           return {
             id: `m${msgCounterRef.current}`,
             speaker: speakerId,
+            speakerLabel,
             originalText: isTranslation ? originalText : (originalText || text),
             translations: isTranslation ? { [targetLang]: text } : {},
             sourceLanguage,
@@ -411,6 +417,7 @@ function TranscriptionPanel() {
           }
           return {
           ...existing,
+          speakerLabel: preferSpeakerLabel(speakerLabel, existing.speakerLabel),
           originalText: mergedOriginal,
           translations: isTranslation
             ? {
@@ -883,6 +890,7 @@ function PanelContent({
   participantName = '',
   compact = false,
 }) {
+  const room = useRoomContext();
   const hasContent = messages.length > 0;
 
   return (
@@ -913,7 +921,10 @@ function PanelContent({
           item.isPartial,
           item.sourceLanguage,
         );
-        const showTeammateCaptions = demoTeammates.length > 0 && item.speaker === participantName;
+        const showTeammateCaptions = demoTeammates.length > 0 && (
+          item.speaker === participantName ||
+          item.speakerLabel === participantName
+        );
         const teammateCaptions = showTeammateCaptions
           ? getTeammateCaptions(item.translations, demoTeammates, item.sourceLanguage)
           : [];
@@ -921,7 +932,7 @@ function PanelContent({
         return (
           <TranscriptionBubble
             key={item.id}
-            speaker={item.speaker}
+            speaker={item.speakerLabel || resolveSpeakerLabel(item.speaker, room) || item.speaker}
             dominant={dominant}
             secondary={hideGenericSecondary ? null : secondary}
             dominantLang={dominantLang}

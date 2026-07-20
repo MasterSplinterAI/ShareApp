@@ -11,6 +11,7 @@ import os
 import json
 import asyncio
 import logging
+import re
 import sys
 import time
 from collections import deque
@@ -300,6 +301,34 @@ def is_likely_agent_identity(identity: str) -> bool:
     )
 
 
+def _parse_display_name_from_metadata(metadata: Any) -> str:
+    if not metadata:
+        return ""
+    try:
+        meta = json.loads(metadata) if isinstance(metadata, str) else metadata
+        if isinstance(meta, dict):
+            return str(meta.get("displayName") or meta.get("name") or "").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def resolve_livekit_display_name(participant: Any, identity: str = "") -> str:
+    """Human label for a LiveKit participant (name / metadata), never the guest-uuid identity."""
+    pid = identity or str(getattr(participant, "identity", "") or "")
+    name = str(getattr(participant, "name", None) or "").strip() if participant is not None else ""
+    if name and name != pid:
+        return name
+    from_meta = _parse_display_name_from_metadata(
+        getattr(participant, "metadata", None) if participant is not None else None
+    )
+    if from_meta:
+        return from_meta
+    if re.match(r"^guest-[0-9a-f-]{36}$", pid, re.I):
+        return "Guest"
+    return name or pid or "Unknown"
+
+
 class SpeakerRunContext:
     """Mutable target-language set for one speaker pipeline (listener-only changes update this)."""
 
@@ -388,6 +417,8 @@ class TranscriptionOnlyAgent:
         # One language per user: STT when they speak + translation target for what they read.
         self.participant_languages: Dict[str, str] = {}
         self.translation_enabled: Dict[str, bool] = {}
+        # Display labels for caption packets (identity stays guest-{uuid}).
+        self.participant_display_names: Dict[str, str] = {}
         # One asyncio task per speaker: shared STT/VAD, fan-out to per-target translation lanes.
         self.speaker_pipelines: Dict[str, asyncio.Task] = {}
         self._speaker_ctx: Dict[str, SpeakerRunContext] = {}
@@ -421,6 +452,27 @@ class TranscriptionOnlyAgent:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
         return task
+
+    def _remember_display_name(self, identity: str, name: str) -> None:
+        label = str(name or "").strip()
+        if not identity or not label or label == identity:
+            return
+        if re.match(r"^guest-[0-9a-f-]{36}$", label, re.I):
+            return
+        self.participant_display_names[identity] = label[:128]
+
+    def _display_name_for(self, room: Any, speaker_id: str) -> str:
+        cached = self.participant_display_names.get(speaker_id)
+        if cached:
+            return cached
+        participant = None
+        for p in getattr(room, "remote_participants", {}).values():
+            if getattr(p, "identity", None) == speaker_id:
+                participant = p
+                break
+        label = resolve_livekit_display_name(participant, speaker_id)
+        self._remember_display_name(speaker_id, label)
+        return label
 
     def _apply_caption_config(self, cc: Any, source: str) -> bool:
         """Validate + apply caption_config; returns True when something changed."""
@@ -637,6 +689,16 @@ class TranscriptionOnlyAgent:
                 participant_id = data.participant.identity
                 msg_type = msg.get("type")
 
+                # Display-only cache (never used for auth). Prefer LiveKit name/metadata.
+                self._remember_display_name(
+                    participant_id,
+                    resolve_livekit_display_name(data.participant, participant_id),
+                )
+                self._remember_display_name(
+                    participant_id,
+                    msg.get("participantName") or msg.get("participant_name") or "",
+                )
+
                 if msg_type == "language_update":
                     lang = (
                         msg.get("language")
@@ -714,6 +776,9 @@ class TranscriptionOnlyAgent:
 
         async def on_connected(participant: rtc.RemoteParticipant):
             ident = participant.identity or ""
+            self._remember_display_name(
+                ident, resolve_livekit_display_name(participant, ident)
+            )
             if not is_likely_agent_identity(ident):
                 t = self._agent_ready_ping_task
                 if t is not None and not t.done():
@@ -1199,6 +1264,11 @@ class TranscriptionOnlyAgent:
             # frontend render the dominant line in its own selected language while still
             # seeing translations underneath. is_same_language_lane is kept for future
             # targeted-delivery options but is unused on the broadcast path.
+            if "participant_name" not in msg_dict:
+                msg_dict = {
+                    **msg_dict,
+                    "participant_name": self._display_name_for(job_ctx.room, speaker_id),
+                }
             payload = json.dumps(msg_dict).encode("utf-8")
             await job_ctx.room.local_participant.publish_data(
                 payload,

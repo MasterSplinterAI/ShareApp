@@ -5,6 +5,7 @@ import { useMeeting } from '../context/MeetingContext';
 import { chatService } from '../services/api';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { participantDisplayName } from '../lib/participantDisplayName';
 import PanelTabs from './PanelTabs';
 import { Button } from './ui/button';
 
@@ -127,7 +128,12 @@ function ChatPanel() {
         if (id) processedIdsRef.current.add(id);
 
         const senderId = message.senderId || participant?.identity || 'unknown';
-        const senderName = message.senderName || participant?.name || senderId;
+        const fromPacket = String(message.senderName || '').trim();
+        const looksLikeGuestId = /^guest-[0-9a-f-]{36}$/i.test(fromPacket);
+        const senderName =
+          (fromPacket && !looksLikeGuestId ? fromPacket : '') ||
+          participantDisplayName(participant) ||
+          senderId;
         const sourceLanguage = normalizeMeetingLanguageCode(message.sourceLanguage || 'en');
         const originalText = message.text || '';
         const timestamp = message.timestamp || Date.now();
@@ -228,7 +234,10 @@ function ChatPanel() {
       type: 'chat',
       id,
       senderId: room.localParticipant.identity,
-      senderName: participantName || room.localParticipant.identity,
+      senderName:
+        participantName ||
+        participantDisplayName(room.localParticipant) ||
+        room.localParticipant.identity,
       sourceLanguage,
       text,
       timestamp: Date.now(),
@@ -239,7 +248,7 @@ function ChatPanel() {
     const optimistic = {
       id,
       senderId: room.localParticipant.identity,
-      senderName: participantName || room.localParticipant.identity,
+      senderName: payload.senderName,
       sourceLanguage,
       originalText: text,
       translations: {},

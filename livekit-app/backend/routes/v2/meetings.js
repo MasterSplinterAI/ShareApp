@@ -818,10 +818,14 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
     }
     await ensureRoomAndAgent(row.livekit_room_name, 'multi-language', row.org_id);
     const { mintMeetingQualityToken } = require('../../lib/meetingQualityToken');
+    const hostDisplayName = String(participantName).trim().slice(0, 128);
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
-      identity: String(participantName).slice(0, 128),
+      identity: hostDisplayName,
+      name: hostDisplayName,
+      metadata: JSON.stringify({ displayName: hostDisplayName, role: host ? 'host' : 'member' }),
       ttl: '24h',
     });
+    at.name = hostDisplayName;
     at.addGrant({
       roomJoin: true,
       room: row.livekit_room_name,
