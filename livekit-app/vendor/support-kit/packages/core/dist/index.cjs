@@ -270,7 +270,11 @@ async function runQuiet(db, sql) {
   try {
     await db.run(sql.trim());
     return true;
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/no such|SQLITE_ERROR|Cannot read|null/i.test(message)) {
+      console.warn(`[support-kit] ensureSchema statement failed: ${message}`);
+    }
     return false;
   }
 }
@@ -3064,9 +3068,13 @@ function notifyEmail2(email, ticket, body, brandName) {
 function createHttpRouter(ctx) {
   const tablePrefix = ctx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
   const topics = ctx.topics ?? [...import_support_shared7.DEFAULT_TOPICS];
-  const ready = ensureSchema(ctx.db, tablePrefix);
+  let ready = null;
+  const ensureReady = () => {
+    if (!ready) ready = ensureSchema(ctx.db, tablePrefix);
+    return ready;
+  };
   const handler = async (req, res, _next) => {
-    await ready;
+    await ensureReady();
     const r = req;
     const response = res;
     const method = String(r.method ?? "GET").toUpperCase();

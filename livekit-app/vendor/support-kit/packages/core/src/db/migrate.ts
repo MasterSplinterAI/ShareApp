@@ -40,7 +40,12 @@ async function runQuiet(db: DbAdapter, sql: string): Promise<boolean> {
   try {
     await db.run(sql.trim());
     return true;
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Surface first-boot failures (e.g. DB not open yet) without aborting the loop.
+    if (/no such|SQLITE_ERROR|Cannot read|null/i.test(message)) {
+      console.warn(`[support-kit] ensureSchema statement failed: ${message}`);
+    }
     return false;
   }
 }

@@ -307,4 +307,14 @@ module.exports = {
   supportKitEnabled,
   createSqliteSupportDb,
   resolveUser,
+  ensureSupportSchema,
 };
+
+async function ensureSupportSchema() {
+  const { ensureSchema } = require('@rhule/support-core');
+  const result = await ensureSchema(createSqliteSupportDb());
+  console.log(
+    `[support] schema ensured (prefix=${result.tablePrefix}, applied=${result.statements})`
+  );
+  return result;
+}

@@ -306,10 +306,16 @@ function notifyEmail(
 export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
   const tablePrefix = ctx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
   const topics = ctx.topics ?? [...DEFAULT_TOPICS];
-  const ready = ensureSchema(ctx.db, tablePrefix);
+  // Defer ensureSchema until the first request so hosts can open the DB
+  // (e.g. ShareApp sqlite init) before CREATE TABLE runs.
+  let ready: ReturnType<typeof ensureSchema> | null = null;
+  const ensureReady = () => {
+    if (!ready) ready = ensureSchema(ctx.db, tablePrefix);
+    return ready;
+  };
 
   const handler = async (req: unknown, res: unknown, _next?: unknown) => {
-    await ready;
+    await ensureReady();
 
     const r = req as MockRequest & IncomingMessage;
     const response = res as ServerResponse & {

@@ -172,6 +172,14 @@ app.use((err, req, res, next) => {
     console.error('[v2Database] init failed:', e.message);
   }
   try {
+    const { supportKitEnabled, ensureSupportSchema } = require('./lib/supportKit');
+    if (supportKitEnabled()) {
+      await ensureSupportSchema();
+    }
+  } catch (e) {
+    console.error('[support] schema ensure failed:', e.message);
+  }
+  try {
     const { startGuestInviteReminders } = require('./lib/guestInvites');
     const baseUrl = (process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'https://staging.jarmetals.com').replace(/\/$/, '');
     startGuestInviteReminders((roomName, token) =>
