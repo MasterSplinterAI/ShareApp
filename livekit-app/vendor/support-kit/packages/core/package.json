@@ -1,0 +1,52 @@
+{
+  "name": "@rhule/support-core",
+  "version": "0.1.0",
+  "description": "Support kit core \u2014 tickets, KB, agent, createSupportRouter",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --external better-sqlite3",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/db/migrate.test.ts src/tickets/store.test.ts src/proposals/store.test.ts src/proposals/executor.test.ts src/gaps/store.test.ts src/kb/search.test.ts src/kb/codegen.test.ts src/kb/filesystemCodebase.test.ts src/agent/triage.test.ts src/http/createRouter.test.ts src/http/adminRouter.test.ts",
+    "clean": "rm -rf dist",
+    "lint": "echo 'no lint yet'"
+  },
+  "dependencies": {
+    "@rhule/support-shared": "file:../shared"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "better-sqlite3": "^11.10.0",
+    "tsup": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "express": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

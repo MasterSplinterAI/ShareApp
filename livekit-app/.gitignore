@@ -17,6 +17,9 @@ dist/
 build/
 *.egg-info/
 .cache/
+# Vendored support-kit ships prebuilt dist (CJS/ESM) — must be in git for deploys
+!vendor/**/dist/
+!vendor/**/dist/**
 
 # IDE files
 .vscode/

@@ -40,7 +40,9 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.20.1",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "@rhule/support-shared": "file:../vendor/support-kit/packages/shared",
+    "@rhule/support-react": "file:../vendor/support-kit/packages/react"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",

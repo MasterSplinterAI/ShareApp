@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
 import { v2Announcements, v2Auth } from '../../services/apiV2';
 import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
-import HelpPanel from '../../components/HelpPanel';
+import LaliaSupportLauncher from './LaliaSupportLauncher';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import {
@@ -63,7 +63,7 @@ export default function V2AppShell({ me, onLogout }) {
   const { offer, checkoutLoading, startCheckout } = useUpgradeOffer(me);
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [helpOpen, setHelpOpen] = useState(false);
+  const openHelpRef = useRef(null);
   const [announcements, setAnnouncements] = useState([]);
   const [dismissed, setDismissed] = useState(() => {
     try {
@@ -179,7 +179,7 @@ export default function V2AppShell({ me, onLogout }) {
                 </Link>
               </DropdownMenuItem>
             )}
-            <DropdownMenuItem onClick={() => setHelpOpen(true)}>
+            <DropdownMenuItem onClick={() => openHelpRef.current?.()}>
               <LifeBuoy className="mr-2 h-4 w-4" />
               {t('app.helpSupport')}
             </DropdownMenuItem>
@@ -246,7 +246,7 @@ export default function V2AppShell({ me, onLogout }) {
           )}
           <Outlet />
         </main>
-        <HelpPanel open={helpOpen} onOpenChange={setHelpOpen} isLoggedIn userEmail={me?.user?.email} />
+        <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} />
       </div>
     </div>
   );

@@ -17,6 +17,7 @@ STAGING_BACKEND_PORT="${STAGING_BACKEND_PORT:-3101}"
 APP_DIR="/var/www/share-app-staging"
 BACKEND_DIR="$APP_DIR/livekit-app/backend"
 FRONTEND_DIR="$APP_DIR/livekit-app/frontend"
+VENDOR_DIR="$APP_DIR/livekit-app/vendor"
 GIT_REPO="/home/ubuntu/git/share-app.git"
 PM2_NAME="livekit-backend-staging"
 
@@ -51,7 +52,7 @@ echo "Ops note: staging should use a separate LiveKit project/API keys from prod
 
 echo "=== Step 2: deploy $DEPLOY_BRANCH to $REMOTE_HOST ==="
 ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
-  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' bash -s" <<'REMOTE'
+  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' bash -s" <<'REMOTE'
 set -euo pipefail
 
 echo "Fetching latest code..."
@@ -90,6 +91,8 @@ if [ -z "$CHANGED_FILES" ]; then
 else
   echo "$CHANGED_FILES" | grep -q '^livekit-app/frontend/'       && NEED_FRONTEND_BUILD=true || true
   echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/package' && NEED_BACKEND_INSTALL=true || true
+  echo "$CHANGED_FILES" | grep -q '^livekit-app/vendor/'         && NEED_FRONTEND_BUILD=true && NEED_BACKEND_INSTALL=true || true
+  echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/lib/supportKit' && NEED_BACKEND_INSTALL=true || true
 fi
 
 if [ "$NEED_BACKEND_INSTALL" != true ] && [ -f "$BACKEND_DIR/package-lock.json" ]; then
@@ -98,7 +101,23 @@ if [ "$NEED_BACKEND_INSTALL" != true ] && [ -f "$BACKEND_DIR/package-lock.json" 
   fi
 fi
 
-sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR"
+sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR"
+
+# ---------- Vendor (support-kit file: deps for backend + frontend build) ----------
+if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
+  echo "Syncing livekit-app/vendor..."
+  sudo rsync -a --delete \
+    --exclude 'node_modules' \
+    "$TEMP_DIR/livekit-app/vendor/" "$VENDOR_DIR/"
+  # Nested file: deps resolve from each package dir when Node loads via backend/frontend symlinks
+  for pkg in shared core channels react; do
+    PKG_DIR="$VENDOR_DIR/support-kit/packages/$pkg"
+    if [ -f "$PKG_DIR/package.json" ]; then
+      echo "npm install vendor/support-kit/packages/$pkg..."
+      (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
+    fi
+  done
+fi
 
 # ---------- Backend ----------
 ENV_BACKUP=''
@@ -142,9 +161,28 @@ if [ -n "$ENV_BACKUP" ]; then
   echo "Restored staging backend/.env"
 fi
 
+# Ensure SUPPORT_KIT_ENABLED is on for staging (kit FE is live; legacy HelpPanel retired)
+if [ -f "$BACKEND_DIR/.env" ]; then
+  if grep -q '^SUPPORT_KIT_ENABLED=' "$BACKEND_DIR/.env"; then
+    sudo sed -i 's/^SUPPORT_KIT_ENABLED=.*/SUPPORT_KIT_ENABLED=true/' "$BACKEND_DIR/.env"
+  else
+    echo 'SUPPORT_KIT_ENABLED=true' | sudo tee -a "$BACKEND_DIR/.env" >/dev/null
+  fi
+  echo "Ensured SUPPORT_KIT_ENABLED=true in staging .env"
+fi
+
 # ---------- Frontend ----------
 if [ "$NEED_FRONTEND_BUILD" = true ] || [ ! -f "$FRONTEND_DIR/index.html" ]; then
   echo "Building frontend..."
+  # Vendor packages must resolve before frontend npm install (file:../vendor)
+  if [ -d "$TEMP_DIR/livekit-app/vendor/support-kit/packages" ]; then
+    for pkg in shared react; do
+      PKG_DIR="$TEMP_DIR/livekit-app/vendor/support-kit/packages/$pkg"
+      if [ -f "$PKG_DIR/package.json" ]; then
+        (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
+      fi
+    done
+  fi
   cd "$TEMP_DIR/livekit-app/frontend"
   if [ -d "$FRONTEND_DIR/node_modules" ] \
      && cmp -s "$FRONTEND_DIR/package-lock.json" "$TEMP_DIR/livekit-app/frontend/package-lock.json"; then
@@ -195,4 +233,4 @@ echo ""
 echo "=== Staging deploy finished ==="
 echo "Health check:"
 ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
-  "curl -sS -o /dev/null -w '  /api/health ($STAGING_BACKEND_PORT): %{http_code}\n' http://127.0.0.1:$STAGING_BACKEND_PORT/api/health"
+  "curl -sS -o /dev/null -w '  /api/health ($STAGING_BACKEND_PORT): %{http_code}\n' http://127.0.0.1:$STAGING_BACKEND_PORT/api/health; curl -sS -o /dev/null -w '  /api/v2/support/health: %{http_code}\n' http://127.0.0.1:$STAGING_BACKEND_PORT/api/v2/support/health"

@@ -1,0 +1,44 @@
+{
+  "name": "@rhule/support-react",
+  "version": "0.1.0",
+  "description": "SupportLauncher + headless hooks for support-kit",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.tsx --format esm,cjs --dts --clean --external react --external react-dom",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/markdown.test.ts",
+    "clean": "rm -rf dist",
+    "lint": "echo 'no lint yet'"
+  },
+  "dependencies": {
+    "@rhule/support-shared": "file:../shared"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

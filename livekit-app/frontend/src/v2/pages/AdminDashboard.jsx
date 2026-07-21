@@ -17,7 +17,8 @@ import { PlansTab } from './admin/PlansTab';
 import { BillingTab } from './admin/BillingTab';
 import { CommsTab } from './admin/CommsTab';
 import { StorageTab } from './admin/StorageTab';
-import { SupportTab } from './admin/SupportTab';
+import { SupportOpsConsole } from '@rhule/support-react';
+import { getSupportAccessToken, SUPPORT_API_BASE } from '../components/LaliaSupportLauncher';
 
 /** Auth gate — renders child admin routes when platform admin access is allowed. */
 export function AdminGate() {
@@ -144,9 +145,11 @@ export function AdminStoragePage() {
 }
 
 export function AdminSupportPage() {
-  const [searchParams] = useSearchParams();
-  const initialTicket = searchParams.get('ticket');
-  return <SupportTab initialTicketNumber={initialTicket} />;
+  return (
+    <div className="min-h-[70vh]">
+      <SupportOpsConsole apiBase={SUPPORT_API_BASE} getAccessToken={getSupportAccessToken} />
+    </div>
+  );
 }
 
 export { AdminOverview };
