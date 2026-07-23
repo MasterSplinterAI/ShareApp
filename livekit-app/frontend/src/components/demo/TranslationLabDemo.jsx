@@ -93,7 +93,7 @@ export default function TranslationLabDemo() {
     const fallback = DEFAULT_SCENARIOS.find((d) => d.id === s.id);
     return { ...fallback, ...s, icon: fallback?.icon || Globe2, accent: fallback?.accent };
   });
-  const maxTurns = config?.limits?.maxTurns ?? 12;
+  const maxTurns = config?.limits?.maxTurns ?? 20;
   const selectedScenario = scenarios.find((s) => s.id === scenarioId) || scenarios[0];
 
   useEffect(() => {

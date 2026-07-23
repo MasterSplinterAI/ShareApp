@@ -82,8 +82,9 @@ function DemoLiveRoomInner({
           ) : null}
         </div>
 
-        <div className="flex min-h-0 flex-1 overflow-hidden">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Column on mobile (video + in-flow caption sheet), row on desktop — matches MeetingRoom */}
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <DemoMeetingStage
               agents={agents}
               activeSpeaker={activeSpeaker}
@@ -134,7 +135,11 @@ function DemoLiveRoomInner({
       )}
 
       <RoomAudioRenderer />
-      <StartAudio label={t('startAudio')} />
+      <div className="pointer-events-none fixed inset-x-0 bottom-[var(--control-bar-h)] z-[60] flex justify-center px-3 pb-2">
+        <div className="pointer-events-auto">
+          <StartAudio label={t('startAudio')} />
+        </div>
+      </div>
     </div>
   );
 }

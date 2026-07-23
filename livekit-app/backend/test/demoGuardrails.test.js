@@ -34,6 +34,7 @@ test('filterGuardedLines drops bad lines', () => {
   assert.equal(kept[0].speaker, 'Marco');
 });
 
-test('onBrandFallbackLine returns localized correction', () => {
+test('onBrandFallbackLine returns localized on-brand line', () => {
   assert.match(onBrandFallbackLine({ nativeLang: 'fr' }), /Lalia/);
+  assert.match(onBrandFallbackLine({ nativeLang: 'en' }), /Lalia/);
 });
