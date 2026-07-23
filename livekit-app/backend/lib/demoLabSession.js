@@ -198,11 +198,13 @@ function recordDemoEvent(sessionId, event, ip) {
 }
 
 function getDemoConfig() {
+  // Public /demo landing uses the live-room turn budget (demoLiveRoom MAX_TURNS).
+  const LIVE_ROOM_MAX_TURNS = 20;
   return {
     languages: DEMO_LANGUAGES,
     scenarios: listScenarios(),
     limits: {
-      maxTurns: MAX_TURNS_PER_SESSION,
+      maxTurns: LIVE_ROOM_MAX_TURNS,
       maxTextLength: MAX_TEXT_LENGTH,
       sessionTtlMinutes: SESSION_TTL_MS / 60000,
     },

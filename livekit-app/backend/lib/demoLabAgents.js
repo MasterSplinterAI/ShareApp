@@ -67,9 +67,15 @@ const SCENARIO_AGENTS = {
 };
 
 const SCENARIO_CONTEXT = {
-  standup: 'Weekly global standup. Topics: rollout timeline, Madrid pilot June 16, Japanese materials for APAC, blockers.',
-  customer: 'Sales call with a prospect asking about Lalia live translation, guest links, security, and pricing.',
-  interview: 'HR screen for an international role. Topics: remote collaboration across time zones, multilingual teamwork on Lalia, and how candidates use live translation in distributed teams.',
+  standup: `Weekly global product standup on Lalia. María (PM, Madrid) and Yuki (eng lead, Tokyo) work across time zones and rely on live captions/translation in this call.
+Goals: stay aligned on rollout readiness, surface blockers, and make sure APAC materials stay in sync with the Madrid pilot.
+The visitor has joined as a teammate. Treat them as a colleague — answer their questions about the work, process, or Lalia itself before pushing any agenda.`,
+  customer: `Live sales/demo call on Lalia with a prospect. Ana (customer success, São Paulo) and James (solutions engineer, Austin) are hosting.
+Goals: help the visitor understand how Lalia meetings work end-to-end — live translation, guest links, security posture, and how teams use it day to day.
+Answer product and workflow questions directly; pricing can be described at a high level (they should talk to sales for quotes) without inventing numbers.`,
+  interview: `Informal HR screen for an international role, held on Lalia. Sophie (HR, Paris) and Marco (engineering, Berlin) are interviewing.
+Goals: learn how the candidate collaborates across languages and time zones, and show how multilingual teamwork feels on Lalia.
+Answer the visitor's questions about the role, team, or Lalia thoughtfully; keep the tone professional and conversational, not a rigid script.`,
 };
 
 function getAgentsForScenario(scenarioId, participantLangs = {}) {

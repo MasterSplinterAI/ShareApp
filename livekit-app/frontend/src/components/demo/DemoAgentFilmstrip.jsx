@@ -42,12 +42,13 @@ function AgentTile({ agent, active }) {
 export function DemoAgentFilmstrip({ agents = [], activeSpeaker }) {
   if (!agents.length) return null;
 
+  // Hidden on mobile so video + in-flow captions get the viewport (parity with MeetingRoom).
   return (
-    <div className="shrink-0 border-t border-border/60 bg-background/80 p-2">
+    <div className="hidden shrink-0 border-t border-border/60 bg-background/80 p-2 sm:block">
       <p className="mb-1.5 px-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
         AI teammates
       </p>
-      <div className="flex h-[4.5rem] gap-2 overflow-x-auto sm:h-24">
+      <div className="flex h-24 gap-2 overflow-x-auto">
         {agents.map((agent) => (
           <AgentTile
             key={agent.id || agent.name}

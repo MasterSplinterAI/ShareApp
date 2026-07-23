@@ -7,7 +7,7 @@ const { generateDemoAgentTurns } = require('./demoOrchestratorLlm');
 const { translateText } = require('./textTranslate');
 
 const DEMO_LANGUAGES = ['en', 'es', 'fr', 'de', 'pt', 'ja'];
-const MAX_TURNS = 12;
+const MAX_TURNS = 20;
 const MAX_ROOMS_PER_IP_HOUR = 6;
 const MAX_CONCURRENT_ROOMS = 30;
 const SESSION_TTL_MS = 15 * 60 * 1000;

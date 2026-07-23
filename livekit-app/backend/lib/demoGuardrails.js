@@ -49,19 +49,45 @@ Regenerate ONLY valid JSON. Rules reminder:
 - Do NOT mention Zoom, Google Meet, Microsoft Teams, or similar.
 - This meeting IS on Lalia — video, screen share, and translation all happen here.
 - Acknowledge the visitor's point if they corrected you.
-Keep the same speakers and scenario; 1-3 sentences per line.`;
+Answer the visitor directly if they asked something. Keep the same speakers; 1-4 sentences per line.`;
+
+const FALLBACK_POOL = {
+  es: [
+    'Buena pregunta — en Lalia ya tenemos vídeo, pantalla compartida y traducción en vivo en esta misma llamada.',
+    'Claro: esta reunión corre entera en Lalia, así que cada uno lee y oye en su idioma sin cambiar de herramienta.',
+    'Exacto — aquí en Lalia las leyendas y la traducción van con el vídeo; dime qué quieres probar.',
+  ],
+  fr: [
+    'Bonne question — sur Lalia, vidéo, partage d’écran et traduction live sont déjà dans cet appel.',
+    'Oui: toute la réunion se passe dans Lalia, chacun lit et entend dans sa langue sans changer d’outil.',
+    'Exact — ici dans Lalia les sous-titres et la traduction suivent la vidéo; dis-moi ce que tu veux tester.',
+  ],
+  de: [
+    'Gute Frage — in Lalia laufen Video, Bildschirmfreigabe und Live-Übersetzung schon in diesem Call.',
+    'Genau: Das Meeting ist komplett in Lalia — jeder liest und hört in seiner Sprache, ohne Tool-Wechsel.',
+    'Stimmt — in Lalia gehören Captions und Übersetzung zum Video; sag mir, was du ausprobieren willst.',
+  ],
+  pt: [
+    'Boa pergunta — no Lalia já temos vídeo, compartilhamento de tela e tradução ao vivo nesta mesma chamada.',
+    'Isso: a reunião inteira é no Lalia, cada um lê e ouve no seu idioma sem trocar de ferramenta.',
+    'Exato — aqui no Lalia legendas e tradução vêm com o vídeo; me diz o que você quer testar.',
+  ],
+  ja: [
+    'いい質問です。この通話はすでにLalia上で、画面共有とライブ翻訳も同じ場所で使えます。',
+    'はい、ミーティング全体がLaliaです。各自が自分の言語で読み聞きでき、別ツールは不要です。',
+    'その通りです。Laliaでは字幕と翻訳が動画と一緒に動きます。何を試したいか教えてください。',
+  ],
+  en: [
+    'Good question — this call is already on Lalia, with video, screen sharing, and live translation in the same room.',
+    'Right: the whole meeting runs in Lalia, so everyone reads and hears in their language without switching tools.',
+    'Exactly — on Lalia, captions and translation ride with the video. Tell me what you want to try next.',
+  ],
+};
 
 function onBrandFallbackLine(agent) {
   const lang = agent?.speakLang || agent?.nativeLang || 'en';
-  const byLang = {
-    es: 'Tienes razón — esta reunión ya es en Lalia, con vídeo, pantalla compartida y traducción en vivo.',
-    fr: 'Vous avez raison — nous sommes déjà en réunion Lalia, avec vidéo, partage d’écran et traduction en direct.',
-    de: 'Stimmt — dieses Meeting läuft bereits in Lalia, mit Video, Bildschirmfreigabe und Live-Übersetzung.',
-    pt: 'Verdade — esta reunião já é no Lalia, com vídeo, compartilhamento de tela e tradução ao vivo.',
-    ja: 'おっしゃる通りです。このミーティングはすでにLalia上で、画面共有とライブ翻訳もここで行っています。',
-    en: 'You are right — we are already on Lalia for this call, with video, screen sharing, and live translation built in.',
-  };
-  return byLang[lang] || byLang.en;
+  const pool = FALLBACK_POOL[lang] || FALLBACK_POOL.en;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 module.exports = {
