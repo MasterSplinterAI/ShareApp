@@ -1139,7 +1139,6 @@ function SupportLauncher(props) {
   const [gateEmail, setGateEmail] = (0, import_react3.useState)("");
   const [gatePhone, setGatePhone] = (0, import_react3.useState)("");
   const [gateMarketing, setGateMarketing] = (0, import_react3.useState)(false);
-  const [contactMessage, setContactMessage] = (0, import_react3.useState)("");
   const [sending, setSending] = (0, import_react3.useState)(false);
   const [error, setError] = (0, import_react3.useState)(null);
   const [tickets, setTickets] = (0, import_react3.useState)([]);
@@ -1200,45 +1199,6 @@ function SupportLauncher(props) {
       setView({ name: "home" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save contact info");
-    } finally {
-      setSending(false);
-    }
-  };
-  const submitContact = async (event) => {
-    event?.preventDefault();
-    if (sending || !contactMessage.trim()) return;
-    if (!leadId && !guestEmail.trim()) {
-      setError("Complete the contact form first");
-      return;
-    }
-    setSending(true);
-    setError(null);
-    try {
-      const data = await fetchApi(
-        "/tickets",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            kind: "support",
-            topic: "other",
-            subject: contactMessage.trim().slice(0, 120),
-            body: contactMessage.trim(),
-            guestEmail: gateEmail.trim() || guestEmail.trim(),
-            contextJson: JSON.stringify({
-              leadId,
-              name: gateName.trim() || void 0,
-              phone: gatePhone.trim() || void 0,
-              marketingOptIn: gateMarketing,
-              source: "public_contact"
-            })
-          })
-        }
-      );
-      setSubmittedTicket(data.ticket);
-      setContactMessage("");
-      setView({ name: "home" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send message");
     } finally {
       setSending(false);
     }
@@ -1625,7 +1585,7 @@ ${priority}`
       view.name === "gate" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { fontWeight: 600, marginTop: 0 }, children: "How can we reach you?" }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: [
-          "Tell us a bit about yourself before chatting or contacting ",
+          "Tell us a bit about yourself before chatting with ",
           label,
           "."
         ] }),
@@ -1778,26 +1738,9 @@ ${priority}`
         /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: "How can we help?" }),
         /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("button", { type: "button", style: intentBtn(), onClick: () => startSupportChat(), children: [
           isPublic ? "Ask a question" : `Chat with ${agentName}`,
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: isPublic ? `Questions about ${label}, pricing, or getting started` : "Questions about the product, account, or billing \u2014 just ask" })
+          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: isPublic ? `Questions about ${label}, pricing, or getting started \u2014 we'll escalate to the team when needed` : "Questions about the product, account, or billing \u2014 just ask" })
         ] }),
-        isPublic ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
-          "button",
-          {
-            type: "button",
-            style: intentBtn(),
-            onClick: () => {
-              setContactMessage("");
-              setView({ name: "contact" });
-            },
-            children: [
-              "Contact us",
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: [
-                "Send a message to our team",
-                brand?.contactEmail ? ` \xB7 ${brand.contactEmail}` : ""
-              ] })
-            ]
-          }
-        ) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
+        isPublic ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
           /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
             "button",
             {
@@ -1866,66 +1809,6 @@ ${priority}`
             },
             t.id
           ))
-        ] })
-      ] }) : null,
-      view.name === "contact" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-          "button",
-          {
-            type: "button",
-            onClick: () => setView({ name: "home" }),
-            style: {
-              border: "none",
-              background: "transparent",
-              color: accent,
-              fontWeight: 600,
-              marginBottom: 8,
-              cursor: "pointer",
-              padding: 0
-            },
-            children: "\u2190 Back"
-          }
-        ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { fontWeight: 600 }, children: [
-          "Contact ",
-          label
-        ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("form", { onSubmit: submitContact, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-            "textarea",
-            {
-              value: contactMessage,
-              onChange: (e) => setContactMessage(e.target.value),
-              rows: 5,
-              placeholder: "How can we help?",
-              required: true,
-              style: {
-                width: "100%",
-                boxSizing: "border-box",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #cbd5e1",
-                marginBottom: 8
-              }
-            }
-          ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
-            "button",
-            {
-              type: "submit",
-              disabled: sending || !contactMessage.trim(),
-              style: {
-                width: "100%",
-                padding: 10,
-                border: "none",
-                borderRadius: 10,
-                background: accent,
-                color: "#fff",
-                fontWeight: 600
-              },
-              children: sending ? "Sending\u2026" : "Send message"
-            }
-          )
         ] })
       ] }) : null,
       view.name === "supportChat" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 360 }, children: [

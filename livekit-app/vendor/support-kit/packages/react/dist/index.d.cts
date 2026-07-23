@@ -38,8 +38,8 @@ interface SupportLauncherProps {
     };
     mode?: "bubble" | "page";
     /**
-     * `public` = home / logged-out: contact gate first, then FAQ chat + Contact
-     * (no bug/feature/my tickets).
+     * `public` = home / logged-out: contact gate first, then FAQ chat only
+     * (escalation happens inside Ask a question — no separate Contact form).
      */
     audience?: "app" | "public";
     renderTrigger?: (open: () => void) => ReactNode;

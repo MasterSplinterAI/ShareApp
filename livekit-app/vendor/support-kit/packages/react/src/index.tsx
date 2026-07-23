@@ -34,8 +34,8 @@ export interface SupportLauncherProps {
   offset?: { bottom?: number; left?: number; right?: number };
   mode?: "bubble" | "page";
   /**
-   * `public` = home / logged-out: contact gate first, then FAQ chat + Contact
-   * (no bug/feature/my tickets).
+   * `public` = home / logged-out: contact gate first, then FAQ chat only
+   * (escalation happens inside Ask a question — no separate Contact form).
    */
   audience?: "app" | "public";
   renderTrigger?: (open: () => void) => ReactNode;
@@ -64,7 +64,6 @@ type View =
   | { name: "gate" }
   | { name: "home" }
   | { name: "supportChat" }
-  | { name: "contact" }
   | { name: "compose"; kind: "bug" | "feature" }
   | { name: "thread"; ticketId: string }
   | { name: "tickets" };
@@ -220,7 +219,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [gateEmail, setGateEmail] = useState("");
   const [gatePhone, setGatePhone] = useState("");
   const [gateMarketing, setGateMarketing] = useState(false);
-  const [contactMessage, setContactMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
@@ -292,45 +290,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
       setView({ name: "home" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save contact info");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const submitContact = async (event?: FormEvent) => {
-    event?.preventDefault();
-    if (sending || !contactMessage.trim()) return;
-    if (!leadId && !guestEmail.trim()) {
-      setError("Complete the contact form first");
-      return;
-    }
-    setSending(true);
-    setError(null);
-    try {
-      const data = await fetchApi<{ ok: boolean; ticket: TicketSummary }>("/tickets",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            kind: "support",
-            topic: "other",
-            subject: contactMessage.trim().slice(0, 120),
-            body: contactMessage.trim(),
-            guestEmail: gateEmail.trim() || guestEmail.trim(),
-            contextJson: JSON.stringify({
-              leadId,
-              name: gateName.trim() || undefined,
-              phone: gatePhone.trim() || undefined,
-              marketingOptIn: gateMarketing,
-              source: "public_contact",
-            }),
-          }),
-        },
-      );
-      setSubmittedTicket(data.ticket);
-      setContactMessage("");
-      setView({ name: "home" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send message");
     } finally {
       setSending(false);
     }
@@ -769,7 +728,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
           <>
             <p style={{ fontWeight: 600, marginTop: 0 }}>How can we reach you?</p>
             <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>
-              Tell us a bit about yourself before chatting or contacting {label}.
+              Tell us a bit about yourself before chatting with {label}.
             </p>
             <form onSubmit={submitGate}>
               <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>
@@ -911,26 +870,11 @@ export function SupportLauncher(props: SupportLauncherProps) {
               {isPublic ? "Ask a question" : `Chat with ${agentName}`}
               <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
                 {isPublic
-                  ? `Questions about ${label}, pricing, or getting started`
+                  ? `Questions about ${label}, pricing, or getting started — we'll escalate to the team when needed`
                   : "Questions about the product, account, or billing — just ask"}
               </div>
             </button>
-            {isPublic ? (
-              <button
-                type="button"
-                style={intentBtn()}
-                onClick={() => {
-                  setContactMessage("");
-                  setView({ name: "contact" });
-                }}
-              >
-                Contact us
-                <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                  Send a message to our team
-                  {brand?.contactEmail ? ` · ${brand.contactEmail}` : ""}
-                </div>
-              </button>
-            ) : (
+            {isPublic ? null : (
               <>
                 <button
                   type="button"
@@ -985,59 +929,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
                 ))}
               </>
             )}
-          </>
-        ) : null}
-
-        {view.name === "contact" ? (
-          <>
-            <button
-              type="button"
-              onClick={() => setView({ name: "home" })}
-              style={{
-                border: "none",
-                background: "transparent",
-                color: accent,
-                fontWeight: 600,
-                marginBottom: 8,
-                cursor: "pointer",
-                padding: 0,
-              }}
-            >
-              ← Back
-            </button>
-            <p style={{ fontWeight: 600 }}>Contact {label}</p>
-            <form onSubmit={submitContact}>
-              <textarea
-                value={contactMessage}
-                onChange={(e) => setContactMessage(e.target.value)}
-                rows={5}
-                placeholder="How can we help?"
-                required
-                style={{
-                  width: "100%",
-                  boxSizing: "border-box",
-                  padding: 8,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  marginBottom: 8,
-                }}
-              />
-              <button
-                type="submit"
-                disabled={sending || !contactMessage.trim()}
-                style={{
-                  width: "100%",
-                  padding: 10,
-                  border: "none",
-                  borderRadius: 10,
-                  background: accent,
-                  color: "#fff",
-                  fontWeight: 600,
-                }}
-              >
-                {sending ? "Sending…" : "Send message"}
-              </button>
-            </form>
           </>
         ) : null}
 

@@ -28,7 +28,6 @@ export default function LaliaSupportLauncher({ user, openRef, audience }) {
         name: 'Lalia',
         supportAgentName: 'Lalia Help',
         signupUrl: '/v2/signup',
-        contactEmail: 'support@jarmetals.com',
       }}
       audience={resolvedAudience}
       user={

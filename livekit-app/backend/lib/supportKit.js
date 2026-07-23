@@ -255,7 +255,6 @@ function createShareAppSupportRouter() {
       featureCoachSystemHint:
         'Lalia is a live meeting product with real-time captions and translation, guest invites, org billing, and admin tools. Prefer concrete UX/workflow improvements over speculative platform rewrites.',
       signupUrl: `${frontendBase}/v2/signup`,
-      contactEmail: process.env.SUPPORT_CONTACT_EMAIL || 'support@jarmetals.com',
     },
     docsRoot: DOCS_ROOT,
     adminBaseUrl: adminBaseUrl(),
