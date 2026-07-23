@@ -12,10 +12,13 @@ export function getSupportAccessToken() {
 }
 
 /**
- * Kit SupportLauncher with ShareApp Bearer JWT + menu-open hook.
+ * Kit SupportLauncher with ShareApp Bearer JWT.
+ * - Logged-in app: pass `user` (+ optional `openRef` for menu → open).
+ * - Marketing / auth pages: omit `user` → contact gate + FAQ/Contact only.
  */
-export default function LaliaSupportLauncher({ user, openRef }) {
+export default function LaliaSupportLauncher({ user, openRef, audience }) {
   const localOpen = useRef(null);
+  const resolvedAudience = audience || (user?.id ? 'app' : 'public');
 
   return (
     <SupportLauncher
@@ -27,7 +30,7 @@ export default function LaliaSupportLauncher({ user, openRef }) {
         signupUrl: '/v2/signup',
         contactEmail: 'support@jarmetals.com',
       }}
-      audience={user?.id ? 'app' : 'public'}
+      audience={resolvedAudience}
       user={
         user
           ? {
@@ -39,31 +42,35 @@ export default function LaliaSupportLauncher({ user, openRef }) {
           : undefined
       }
       offset={{ bottom: 20, right: 20 }}
-      renderTrigger={(open) => {
-        localOpen.current = open;
-        if (openRef) openRef.current = open;
-        return (
-          <button
-            type="button"
-            aria-label="Open Lalia help"
-            onClick={open}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              padding: '12px 18px',
-              border: 'none',
-              borderRadius: 999,
-              background: '#2563eb',
-              color: '#fff',
-              fontWeight: 600,
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(15, 23, 42, 0.18)',
-            }}
-          >
-            Help
-          </button>
-        );
-      }}
+      renderTrigger={
+        openRef
+          ? (open) => {
+              localOpen.current = open;
+              openRef.current = open;
+              return (
+                <button
+                  type="button"
+                  aria-label="Open Lalia help"
+                  onClick={open}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '12px 18px',
+                    border: 'none',
+                    borderRadius: 999,
+                    background: '#2563eb',
+                    color: '#fff',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(15, 23, 42, 0.18)',
+                  }}
+                >
+                  Help
+                </button>
+              );
+            }
+          : undefined
+      }
     />
   );
 }

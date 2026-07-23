@@ -6,6 +6,7 @@ import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { Button } from '../components/ui/button';
 import { useTranslation } from '../lib/i18n/I18nProvider';
 import V2AppShell from './components/V2AppShell';
+import LaliaSupportLauncher from './components/LaliaSupportLauncher';
 import { v2Auth } from '../services/apiV2';
 
 export default function V2Layout() {
@@ -42,6 +43,7 @@ export default function V2Layout() {
         <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <Outlet />
         </main>
+        <LaliaSupportLauncher audience="public" />
       </div>
     );
   }
@@ -76,6 +78,7 @@ export default function V2Layout() {
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <Outlet />
       </main>
+      <LaliaSupportLauncher audience="public" />
     </div>
   );
 }

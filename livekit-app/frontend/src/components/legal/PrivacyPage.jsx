@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
+import LaliaSupportLauncher from '../../v2/components/LaliaSupportLauncher';
 
 // TODO: replace with the final legal entity name once incorporated.
 const COMPANY_LEGAL_NAME = 'Lalia';
@@ -174,6 +175,7 @@ export default function PrivacyPage() {
         </Section>
       </main>
       <MarketingFooter />
+      <LaliaSupportLauncher audience="public" />
     </div>
   );
 }

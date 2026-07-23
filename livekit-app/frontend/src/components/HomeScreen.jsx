@@ -10,6 +10,7 @@ import { PricingTable } from './marketing/PricingTable';
 import { FAQ } from './marketing/FAQ';
 import { MarketingCta } from './marketing/MarketingCta';
 import { MarketingFooter } from './marketing/MarketingFooter';
+import LaliaSupportLauncher from '../v2/components/LaliaSupportLauncher';
 
 export default function HomeScreen() {
   return (
@@ -28,6 +29,7 @@ export default function HomeScreen() {
         <MarketingCta />
       </main>
       <MarketingFooter />
+      <LaliaSupportLauncher audience="public" />
     </div>
   );
 }
