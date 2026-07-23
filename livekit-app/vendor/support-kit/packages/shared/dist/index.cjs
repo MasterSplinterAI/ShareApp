@@ -22,8 +22,10 @@ var index_exports = {};
 __export(index_exports, {
   BrandConfigSchema: () => BrandConfigSchema,
   BugSeveritySchema: () => BugSeveritySchema,
+  CreateLeadInputSchema: () => CreateLeadInputSchema,
   CreateProposalInputSchema: () => CreateProposalInputSchema,
   CreateTicketInputSchema: () => CreateTicketInputSchema,
+  DEFAULT_MARKETING_CONSENT_LABEL: () => DEFAULT_MARKETING_CONSENT_LABEL,
   DEFAULT_TOPICS: () => DEFAULT_TOPICS,
   FeaturePrioritySchema: () => FeaturePrioritySchema,
   GapStatusSchema: () => GapStatusSchema,
@@ -33,6 +35,7 @@ __export(index_exports, {
   KbSourceKindSchema: () => KbSourceKindSchema,
   KbVisibilitySchema: () => KbVisibilitySchema,
   KnowledgeGapSchema: () => KnowledgeGapSchema,
+  LeadSchema: () => LeadSchema,
   MessageAuthorTypeSchema: () => MessageAuthorTypeSchema,
   PACKAGE_NAME: () => PACKAGE_NAME,
   ProposalSchema: () => ProposalSchema,
@@ -345,7 +348,45 @@ var BrandConfigSchema = import_zod5.z.object({
    * Optional host hint appended to the feature-request coach system prompt
    * (product vocabulary, audiences, out-of-scope topics). Keep generic hosts empty.
    */
-  featureCoachSystemHint: import_zod5.z.string().max(4e3).optional()
+  featureCoachSystemHint: import_zod5.z.string().max(4e3).optional(),
+  /** Public launcher signup CTA. */
+  signupUrl: import_zod5.z.string().optional(),
+  /** Public contact email display. */
+  contactEmail: import_zod5.z.string().email().optional(),
+  /** Override marketing consent checkbox copy (stored on lead for audit). */
+  marketingConsentLabel: import_zod5.z.string().max(2e3).optional()
+});
+
+// src/lead.ts
+var import_zod6 = require("zod");
+var DEFAULT_MARKETING_CONSENT_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
+var LeadSchema = import_zod6.z.object({
+  id: import_zod6.z.string().min(1),
+  tenantId: TenantIdSchema,
+  email: import_zod6.z.string().email(),
+  name: import_zod6.z.string().min(1),
+  phone: import_zod6.z.string().nullable().optional(),
+  marketingEmailOptIn: import_zod6.z.boolean(),
+  marketingSmsOptIn: import_zod6.z.boolean(),
+  source: import_zod6.z.string().min(1),
+  consentText: import_zod6.z.string().nullable().optional(),
+  consentAt: import_zod6.z.string().nullable().optional(),
+  ipHash: import_zod6.z.string().nullable().optional(),
+  userAgent: import_zod6.z.string().nullable().optional(),
+  createdAt: import_zod6.z.string().min(1),
+  updatedAt: import_zod6.z.string().min(1)
+});
+var CreateLeadInputSchema = import_zod6.z.object({
+  tenantId: TenantIdSchema,
+  name: import_zod6.z.string().min(1).max(200),
+  email: import_zod6.z.string().email().max(320),
+  phone: import_zod6.z.string().max(40).optional(),
+  /** Master marketing opt-in (email; SMS only if phone present). */
+  marketingOptIn: import_zod6.z.boolean().default(false),
+  source: import_zod6.z.string().min(1).max(80).default("public_launcher"),
+  consentText: import_zod6.z.string().max(2e3).optional(),
+  ipHash: import_zod6.z.string().max(128).optional(),
+  userAgent: import_zod6.z.string().max(512).optional()
 });
 
 // src/index.ts
@@ -355,8 +396,10 @@ var KIT_VERSION = "0.1.0";
 0 && (module.exports = {
   BrandConfigSchema,
   BugSeveritySchema,
+  CreateLeadInputSchema,
   CreateProposalInputSchema,
   CreateTicketInputSchema,
+  DEFAULT_MARKETING_CONSENT_LABEL,
   DEFAULT_TOPICS,
   FeaturePrioritySchema,
   GapStatusSchema,
@@ -366,6 +409,7 @@ var KIT_VERSION = "0.1.0";
   KbSourceKindSchema,
   KbVisibilitySchema,
   KnowledgeGapSchema,
+  LeadSchema,
   MessageAuthorTypeSchema,
   PACKAGE_NAME,
   ProposalSchema,

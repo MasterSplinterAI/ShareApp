@@ -22,6 +22,9 @@ interface SupportLauncherProps {
         name: string;
         accent?: string;
         supportAgentName?: string;
+        signupUrl?: string;
+        contactEmail?: string;
+        marketingConsentLabel?: string;
     };
     position?: "bottom-right" | "bottom-left";
     /**
@@ -34,6 +37,11 @@ interface SupportLauncherProps {
         right?: number;
     };
     mode?: "bubble" | "page";
+    /**
+     * `public` = home / logged-out: contact gate first, then FAQ chat + Contact
+     * (no bug/feature/my tickets).
+     */
+    audience?: "app" | "public";
     renderTrigger?: (open: () => void) => ReactNode;
     className?: string;
     /**

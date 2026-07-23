@@ -1,4 +1,4 @@
-import type { BrandConfig, SupportUser, TenantId } from "@rhule/support-shared";
+import type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-shared";
 
 /**
  * Host-owned auth → kit user shape.
@@ -143,6 +143,8 @@ export interface CreateSupportRouterOptions {
    * Hosts pass LegalAI / ShareApp / other allowlisted roots via createFilesystemCodebaseAdapter.
    */
   codebase?: CodebaseAdapter;
+  /** Fired when a public-launcher lead is created/updated (CRM / email list). */
+  onLeadCaptured?: (lead: Lead) => void | Promise<void>;
   /**
    * Telegram webhook + soft-claim. When set, mounts POST /telegram/webhook
    * (host typically mounts kit under /support → /support/telegram/webhook).

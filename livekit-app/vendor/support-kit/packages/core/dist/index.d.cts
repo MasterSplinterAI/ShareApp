@@ -1,5 +1,5 @@
-import { TenantId, SupportUser, BrandConfig, CreateTicketInput, Ticket, TicketMessage, TicketKind, TicketStatus, ProposalType, ProposalStatus, Proposal, CreateProposalInput, KnowledgeGap, GapStatus, RecordKnowledgeGapInput, KbArticle, KbVisibility, KbArticleStatus } from '@rhule/support-shared';
-export { BrandConfig, KIT_VERSION, SupportUser, TenantId } from '@rhule/support-shared';
+import { TenantId, SupportUser, BrandConfig, Lead, CreateTicketInput, Ticket, TicketMessage, TicketKind, TicketStatus, ProposalType, ProposalStatus, Proposal, CreateProposalInput, KnowledgeGap, GapStatus, RecordKnowledgeGapInput, CreateLeadInput, KbArticle, KbVisibility, KbArticleStatus } from '@rhule/support-shared';
+export { BrandConfig, DEFAULT_MARKETING_CONSENT_LABEL, KIT_VERSION, Lead, SupportUser, TenantId } from '@rhule/support-shared';
 import * as zod from 'zod';
 
 /**
@@ -131,6 +131,8 @@ interface CreateSupportRouterOptions {
      * Hosts pass LegalAI / ShareApp / other allowlisted roots via createFilesystemCodebaseAdapter.
      */
     codebase?: CodebaseAdapter;
+    /** Fired when a public-launcher lead is created/updated (CRM / email list). */
+    onLeadCaptured?: (lead: Lead) => void | Promise<void>;
     /**
      * Telegram webhook + soft-claim. When set, mounts POST /telegram/webhook
      * (host typically mounts kit under /support → /support/telegram/webhook).
@@ -707,6 +709,84 @@ declare class KnowledgeGapService {
     } | undefined>;
 }
 
+declare class LeadStore {
+    private readonly db;
+    private readonly tablePrefix;
+    constructor(db: DbAdapter, tablePrefix?: string);
+    private get t();
+    getById(tenantId: string, id: string): Promise<Lead | undefined>;
+    getByEmail(tenantId: string, email: string): Promise<Lead | undefined>;
+    /**
+     * Insert or update by (tenant_id, email). Re-submitting the gate refreshes
+     * name/phone/consent so ops always see the latest opt-in state.
+     */
+    upsert(input: CreateLeadInput & {
+        marketingEmailOptIn: boolean;
+        marketingSmsOptIn: boolean;
+    }): Promise<Lead>;
+    list(tenantId: string, opts?: {
+        marketingOnly?: boolean;
+        limit?: number;
+    }): Promise<Lead[]>;
+}
+
+declare class LeadService {
+    private readonly store;
+    constructor(db: DbAdapter, tablePrefix?: string);
+    getById(tenantId: string, id: string): Promise<{
+        id: string;
+        tenantId: string & zod.BRAND<"TenantId">;
+        createdAt: string;
+        updatedAt: string;
+        email: string;
+        name: string;
+        marketingEmailOptIn: boolean;
+        marketingSmsOptIn: boolean;
+        source: string;
+        phone?: string | null | undefined;
+        consentText?: string | null | undefined;
+        consentAt?: string | null | undefined;
+        ipHash?: string | null | undefined;
+        userAgent?: string | null | undefined;
+    } | undefined>;
+    getByEmail(tenantId: string, email: string): Promise<{
+        id: string;
+        tenantId: string & zod.BRAND<"TenantId">;
+        createdAt: string;
+        updatedAt: string;
+        email: string;
+        name: string;
+        marketingEmailOptIn: boolean;
+        marketingSmsOptIn: boolean;
+        source: string;
+        phone?: string | null | undefined;
+        consentText?: string | null | undefined;
+        consentAt?: string | null | undefined;
+        ipHash?: string | null | undefined;
+        userAgent?: string | null | undefined;
+    } | undefined>;
+    list(tenantId: string, opts?: {
+        marketingOnly?: boolean;
+        limit?: number;
+    }): Promise<{
+        id: string;
+        tenantId: string & zod.BRAND<"TenantId">;
+        createdAt: string;
+        updatedAt: string;
+        email: string;
+        name: string;
+        marketingEmailOptIn: boolean;
+        marketingSmsOptIn: boolean;
+        source: string;
+        phone?: string | null | undefined;
+        consentText?: string | null | undefined;
+        consentAt?: string | null | undefined;
+        ipHash?: string | null | undefined;
+        userAgent?: string | null | undefined;
+    }[]>;
+    upsertLead(raw: CreateLeadInput): Promise<Lead>;
+}
+
 interface KbSearchHit {
     source: string;
     title: string;
@@ -897,6 +977,13 @@ interface TriageInput {
     /** Optional explicit kind from launcher home picker. */
     kind?: "support" | "bug" | "feature";
     topic?: string;
+    guestEmail?: string;
+    leadContext?: {
+        leadId: string;
+        name: string;
+        phone?: string | null;
+        marketingOptIn?: boolean;
+    };
 }
 interface TriageDeps {
     db: DbAdapter;
@@ -909,6 +996,8 @@ interface TriageDeps {
     topics?: string[];
     sensitiveTopics?: string[];
     autoReplyMinConfidence?: number;
+    /** Public home launcher — answer from product FAQ only; no account claims. */
+    publicAudience?: boolean;
 }
 type TriageResult = {
     action: "ticket";
@@ -1019,6 +1108,7 @@ interface HttpRouterContext {
     kbIngest?: KbIngestConfig;
     telegram?: CreateSupportRouterOptions["telegram"];
     codebase?: CodebaseAdapter;
+    onLeadCaptured?: CreateSupportRouterOptions["onLeadCaptured"];
 }
 /**
  * Express-compatible support HTTP surface.
@@ -1189,4 +1279,4 @@ declare class TelegramDraftSessionStore {
  */
 declare function createSupportRouter(options: CreateSupportRouterOptions): SupportRouter;
 
-export { type CoachDraft, type CoachMessage, type CoachPriority, type CoachResult, type CodebaseAdapter, type CodebaseSearchHit, type GitHubAdapter as CoreGitHubAdapter, type CreateSupportRouterOptions, DEFAULT_ESCALATION_REPLY, DEFAULT_HOLD_REPLY, DEFAULT_TABLE_PREFIX, type DbAdapter, type EmailNotifier, type FilesystemCodebaseOptions, type GapResearchResult, type GitHubAdapter$1 as GitHubAdapter, type GitHubIssueInput, type GitHubIssueResult, type IngestCodegenArticleInput, type IngestDocSource, type IngestFromChangelogOptions, type KbIngestConfig, type KbSearchHit, KnowledgeGapService, KnowledgeGapStore, type LlmAdapter, type LlmTriageParse, type OpsNotification, type OpsNotificationKind, type OpsNotifier, type PromoteTicketToKbInput, type ProposalAction, type ProposalExecutorDeps, type ProposalExecutorResult, ProposalService, ProposalStore, type ResolveTelegramConfig, type ResolveUser, type RoutingDecision, type SearchActiveArticlesOptions, type SearchCuratedDocsOptions, type SupportRouter, type TelegramDraftSession, TelegramDraftSessionStore, type TelegramMessageEditor, type TelegramOpsRuntimeConfig, type TelegramWebhookDeps, TicketService, TicketStore, type TriageDeps, type TriageInput, type TriageResult, clearDocsCache, coachFeatureRequest, containsEscalationSignal, createFilesystemCodebaseAdapter, createHttpRouter, createRouter, createSupportRouter, curateAnswerToKbDraft, decideFromHeuristics, decideFromLlm, deprecateKbArticle, ensureSchema, executeGithubFromProposal, executeProposalAction, formatSourcesForPrompt, getKbArticle, handleTelegramUpdate, inferKindTopic, ingestCodegenArticle, ingestDocsSources, ingestFromChangelog, listKbArticles, parseBugFeatureBody, promoteKbArticle, promoteTicketAnswerToKb, researchGapToKbDraft, searchActiveArticles, searchCuratedDocs, triageMessage, updateKbArticle, verifyTelegramWebhookSecret };
+export { type CoachDraft, type CoachMessage, type CoachPriority, type CoachResult, type CodebaseAdapter, type CodebaseSearchHit, type GitHubAdapter as CoreGitHubAdapter, type CreateSupportRouterOptions, DEFAULT_ESCALATION_REPLY, DEFAULT_HOLD_REPLY, DEFAULT_TABLE_PREFIX, type DbAdapter, type EmailNotifier, type FilesystemCodebaseOptions, type GapResearchResult, type GitHubAdapter$1 as GitHubAdapter, type GitHubIssueInput, type GitHubIssueResult, type IngestCodegenArticleInput, type IngestDocSource, type IngestFromChangelogOptions, type KbIngestConfig, type KbSearchHit, KnowledgeGapService, KnowledgeGapStore, LeadService, LeadStore, type LlmAdapter, type LlmTriageParse, type OpsNotification, type OpsNotificationKind, type OpsNotifier, type PromoteTicketToKbInput, type ProposalAction, type ProposalExecutorDeps, type ProposalExecutorResult, ProposalService, ProposalStore, type ResolveTelegramConfig, type ResolveUser, type RoutingDecision, type SearchActiveArticlesOptions, type SearchCuratedDocsOptions, type SupportRouter, type TelegramDraftSession, TelegramDraftSessionStore, type TelegramMessageEditor, type TelegramOpsRuntimeConfig, type TelegramWebhookDeps, TicketService, TicketStore, type TriageDeps, type TriageInput, type TriageResult, clearDocsCache, coachFeatureRequest, containsEscalationSignal, createFilesystemCodebaseAdapter, createHttpRouter, createRouter, createSupportRouter, curateAnswerToKbDraft, decideFromHeuristics, decideFromLlm, deprecateKbArticle, ensureSchema, executeGithubFromProposal, executeProposalAction, formatSourcesForPrompt, getKbArticle, handleTelegramUpdate, inferKindTopic, ingestCodegenArticle, ingestDocsSources, ingestFromChangelog, listKbArticles, parseBugFeatureBody, promoteKbArticle, promoteTicketAnswerToKb, researchGapToKbDraft, searchActiveArticles, searchCuratedDocs, triageMessage, updateKbArticle, verifyTelegramWebhookSecret };

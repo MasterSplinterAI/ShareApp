@@ -119,6 +119,27 @@ export function buildSchemaStatements(tablePrefix: string): string[] {
     `,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_status ON ${p}kb_articles(tenant_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_visibility ON ${p}kb_articles(tenant_id, visibility)`,
+    `
+    CREATE TABLE IF NOT EXISTS ${p}leads (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT,
+      marketing_email_opt_in INTEGER NOT NULL DEFAULT 0,
+      marketing_sms_opt_in INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'public_launcher',
+      consent_text TEXT,
+      consent_at TEXT,
+      ip_hash TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (tenant_id, email)
+    )
+    `,
+    `CREATE INDEX IF NOT EXISTS idx_${p}leads_tenant_email ON ${p}leads(tenant_id, email)`,
+    `CREATE INDEX IF NOT EXISTS idx_${p}leads_marketing ON ${p}leads(tenant_id, marketing_email_opt_in)`,
   ];
 }
 

@@ -27,5 +27,11 @@ export const BrandConfigSchema = z.object({
    * (product vocabulary, audiences, out-of-scope topics). Keep generic hosts empty.
    */
   featureCoachSystemHint: z.string().max(4000).optional(),
+  /** Public launcher signup CTA. */
+  signupUrl: z.string().optional(),
+  /** Public contact email display. */
+  contactEmail: z.string().email().optional(),
+  /** Override marketing consent checkbox copy (stored on lead for audit). */
+  marketingConsentLabel: z.string().max(2000).optional(),
 });
 export type BrandConfig = z.infer<typeof BrandConfigSchema>;

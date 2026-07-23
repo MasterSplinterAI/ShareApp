@@ -32,6 +32,13 @@ export interface TriageInput {
   /** Optional explicit kind from launcher home picker. */
   kind?: "support" | "bug" | "feature";
   topic?: string;
+  guestEmail?: string;
+  leadContext?: {
+    leadId: string;
+    name: string;
+    phone?: string | null;
+    marketingOptIn?: boolean;
+  };
 }
 
 export interface TriageDeps {
@@ -45,6 +52,8 @@ export interface TriageDeps {
   topics?: string[];
   sensitiveTopics?: string[];
   autoReplyMinConfidence?: number;
+  /** Public home launcher — answer from product FAQ only; no account claims. */
+  publicAudience?: boolean;
 }
 
 export type TriageResult = {
@@ -253,11 +262,21 @@ export async function triageMessage(
     contextJson: JSON.stringify({
       planLabel: input.user.planLabel ?? null,
       contextSummary: input.user.contextSummary ?? null,
-      email: input.user.email ?? null,
+      email: input.user.email ?? input.guestEmail ?? null,
       role: input.user.role,
+      publicAudience: Boolean(deps.publicAudience),
+      ...(input.leadContext
+        ? {
+            leadId: input.leadContext.leadId,
+            name: input.leadContext.name,
+            phone: input.leadContext.phone ?? null,
+            marketingOptIn: Boolean(input.leadContext.marketingOptIn),
+          }
+        : {}),
     }),
   };
   if (input.user.orgId) createInput.orgId = input.user.orgId;
+  if (input.guestEmail) createInput.guestEmail = input.guestEmail;
 
   const { ticket, message: userMessage } = await tickets.createTicket(createInput);
 

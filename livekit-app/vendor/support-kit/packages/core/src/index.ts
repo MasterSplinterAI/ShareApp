@@ -26,6 +26,8 @@ export { ProposalStore } from "./proposals/store.js";
 export { ProposalService } from "./proposals/service.js";
 export { KnowledgeGapStore } from "./gaps/store.js";
 export { KnowledgeGapService } from "./gaps/service.js";
+export { LeadStore } from "./leads/store.js";
+export { LeadService } from "./leads/service.js";
 export {
   searchCuratedDocs,
   searchActiveArticles,
@@ -104,8 +106,8 @@ export type {
 export { TelegramDraftSessionStore } from "./telegram/draftSessions.js";
 export type { TelegramDraftSession } from "./telegram/draftSessions.js";
 
-export type { BrandConfig, SupportUser, TenantId } from "@rhule/support-shared";
-export { KIT_VERSION };
+export type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-shared";
+export { KIT_VERSION, DEFAULT_MARKETING_CONSENT_LABEL } from "@rhule/support-shared";
 
 
 /**

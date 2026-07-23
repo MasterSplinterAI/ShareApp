@@ -287,7 +287,45 @@ var BrandConfigSchema = z5.object({
    * Optional host hint appended to the feature-request coach system prompt
    * (product vocabulary, audiences, out-of-scope topics). Keep generic hosts empty.
    */
-  featureCoachSystemHint: z5.string().max(4e3).optional()
+  featureCoachSystemHint: z5.string().max(4e3).optional(),
+  /** Public launcher signup CTA. */
+  signupUrl: z5.string().optional(),
+  /** Public contact email display. */
+  contactEmail: z5.string().email().optional(),
+  /** Override marketing consent checkbox copy (stored on lead for audit). */
+  marketingConsentLabel: z5.string().max(2e3).optional()
+});
+
+// src/lead.ts
+import { z as z6 } from "zod";
+var DEFAULT_MARKETING_CONSENT_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
+var LeadSchema = z6.object({
+  id: z6.string().min(1),
+  tenantId: TenantIdSchema,
+  email: z6.string().email(),
+  name: z6.string().min(1),
+  phone: z6.string().nullable().optional(),
+  marketingEmailOptIn: z6.boolean(),
+  marketingSmsOptIn: z6.boolean(),
+  source: z6.string().min(1),
+  consentText: z6.string().nullable().optional(),
+  consentAt: z6.string().nullable().optional(),
+  ipHash: z6.string().nullable().optional(),
+  userAgent: z6.string().nullable().optional(),
+  createdAt: z6.string().min(1),
+  updatedAt: z6.string().min(1)
+});
+var CreateLeadInputSchema = z6.object({
+  tenantId: TenantIdSchema,
+  name: z6.string().min(1).max(200),
+  email: z6.string().email().max(320),
+  phone: z6.string().max(40).optional(),
+  /** Master marketing opt-in (email; SMS only if phone present). */
+  marketingOptIn: z6.boolean().default(false),
+  source: z6.string().min(1).max(80).default("public_launcher"),
+  consentText: z6.string().max(2e3).optional(),
+  ipHash: z6.string().max(128).optional(),
+  userAgent: z6.string().max(512).optional()
 });
 
 // src/index.ts
@@ -296,8 +334,10 @@ var KIT_VERSION = "0.1.0";
 export {
   BrandConfigSchema,
   BugSeveritySchema,
+  CreateLeadInputSchema,
   CreateProposalInputSchema,
   CreateTicketInputSchema,
+  DEFAULT_MARKETING_CONSENT_LABEL,
   DEFAULT_TOPICS,
   FeaturePrioritySchema,
   GapStatusSchema,
@@ -307,6 +347,7 @@ export {
   KbSourceKindSchema,
   KbVisibilitySchema,
   KnowledgeGapSchema,
+  LeadSchema,
   MessageAuthorTypeSchema,
   PACKAGE_NAME,
   ProposalSchema,

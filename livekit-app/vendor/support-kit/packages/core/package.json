@@ -1,7 +1,7 @@
 {
   "name": "@rhule/support-core",
   "version": "0.1.0",
-  "description": "Support kit core \u2014 tickets, KB, agent, createSupportRouter",
+  "description": "Support kit core — tickets, KB, agent, createSupportRouter",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -13,9 +13,7 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --external better-sqlite3",
     "typecheck": "tsc -p tsconfig.json --noEmit",

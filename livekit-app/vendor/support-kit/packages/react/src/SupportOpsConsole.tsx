@@ -64,6 +64,20 @@ type Gap = {
   ticketId: string;
 };
 
+type Lead = {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string | null;
+  marketingEmailOptIn: boolean;
+  marketingSmsOptIn: boolean;
+  source: string;
+  consentText?: string | null;
+  consentAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type TicketCounts = Record<string, number>;
 
 const ACCENT = "#2563eb";
@@ -147,7 +161,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
       opsFetch<T>(apiBase, path, init, getAccessToken),
     [apiBase, getAccessToken],
   );
-  const [tab, setTab] = useState<"inbox" | "kb">("inbox");
+  const [tab, setTab] = useState<"inbox" | "kb" | "leads">("inbox");
   const [kindFilter, setKindFilter] = useState<string>("attention");
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
   const [counts, setCounts] = useState<TicketCounts>({});
@@ -166,6 +180,9 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
   const [articles, setArticles] = useState<KbArticle[]>([]);
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [selectedArticle, setSelectedArticle] = useState<KbArticle | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadsMarketingOnly, setLeadsMarketingOnly] = useState(false);
+  const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   const loadInbox = useCallback(async () => {
     const q =
@@ -215,13 +232,26 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
     setArticles(data.articles ?? []);
   }, [fetchApi, kbFilter]);
 
+  const loadLeads = useCallback(async () => {
+    const q = leadsMarketingOnly ? "?marketing=1" : "";
+    const data = await fetchApi<{ ok: boolean; leads: Lead[] }>(`/admin/leads${q}`,
+    );
+    setLeads(data.leads ?? []);
+  }, [apiBase, leadsMarketingOnly]);
+
   useEffect(() => {
     if (tab === "inbox") {
       void loadInbox().catch((e) => setError(e instanceof Error ? e.message : "Load failed"));
-    } else {
+    } else if (tab === "kb") {
       void loadKb().catch((e) => setError(e instanceof Error ? e.message : "KB load failed"));
+    } else if (tab === "leads") {
+      void loadLeads().catch((e) => setError(e instanceof Error ? e.message : "Leads load failed"));
     }
-  }, [tab, loadInbox, loadKb]);
+  }, [tab, loadInbox, loadKb, loadLeads]);
+
+  useEffect(() => {
+    if (tab === "leads") void loadLeads().catch(() => {});
+  }, [leadsMarketingOnly, tab, loadLeads]);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -324,7 +354,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
         }}
       >
         <div style={{ display: "flex", borderBottom: "1px solid #e2e8f0" }}>
-          {(["inbox", "kb"] as const).map((t) => (
+          {(["inbox", "kb", "leads"] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -409,7 +439,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
               ))}
             </div>
           </>
-        ) : (
+        ) : tab === "kb" ? (
           <>
             <div style={{ padding: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
               {["draft", "active", "deprecated", "gaps"].map((id) => (
@@ -520,6 +550,74 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                   ))}
             </div>
           </>
+        ) : (
+          <>
+            <div style={{ padding: 8, display: "flex", flexWrap: "wrap", gap: 4 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLeadsMarketingOnly(false);
+                  void loadLeads();
+                }}
+                style={{
+                  border: `1px solid ${!leadsMarketingOnly ? ACCENT : "#e2e8f0"}`,
+                  background: !leadsMarketingOnly ? "#eff6ff" : "#fff",
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLeadsMarketingOnly(true);
+                }}
+                style={{
+                  border: `1px solid ${leadsMarketingOnly ? ACCENT : "#e2e8f0"}`,
+                  background: leadsMarketingOnly ? "#eff6ff" : "#fff",
+                  borderRadius: 999,
+                  padding: "4px 10px",
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                Marketing opt-in
+              </button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              {leads.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => setSelectedLead(l)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "10px 12px",
+                    border: "none",
+                    borderBottom: "1px solid #f1f5f9",
+                    background: selectedLead?.id === l.id ? "#f8fafc" : "#fff",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>{l.name}</div>
+                  <div style={{ fontSize: 12, color: "#64748b" }}>{l.email}</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                    {l.marketingEmailOptIn ? "Email opt-in" : "No email marketing"}
+                    {l.marketingSmsOptIn ? " · SMS opt-in" : ""}
+                    {l.phone ? ` · ${l.phone}` : ""}
+                  </div>
+                </button>
+              ))}
+              {leads.length === 0 ? (
+                <p style={{ padding: 12, color: "#64748b", fontSize: 13 }}>No leads yet.</p>
+              ) : null}
+            </div>
+          </>
         )}
       </aside>
 
@@ -534,6 +632,47 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
       >
         {error ? (
           <p style={{ color: "#b91c1c", marginTop: 0 }}>{error}</p>
+        ) : null}
+
+        {tab === "leads" && !selectedLead ? (
+          <p style={{ color: "#64748b" }}>Select a lead to review consent details.</p>
+        ) : null}
+
+        {tab === "leads" && selectedLead ? (
+          <>
+            <h3 style={{ marginTop: 0 }}>{selectedLead.name}</h3>
+            <p style={{ margin: "4px 0" }}>
+              <strong>Email:</strong> {selectedLead.email}
+            </p>
+            <p style={{ margin: "4px 0" }}>
+              <strong>Phone:</strong> {selectedLead.phone || "—"}
+            </p>
+            <p style={{ margin: "4px 0" }}>
+              <strong>Marketing email:</strong>{" "}
+              {selectedLead.marketingEmailOptIn ? "Opted in" : "Not opted in"}
+            </p>
+            <p style={{ margin: "4px 0" }}>
+              <strong>Marketing SMS:</strong>{" "}
+              {selectedLead.marketingSmsOptIn ? "Opted in" : "Not opted in"}
+            </p>
+            <p style={{ margin: "4px 0", fontSize: 13, color: "#64748b" }}>
+              Source: {selectedLead.source} · Consent at:{" "}
+              {selectedLead.consentAt || selectedLead.updatedAt}
+            </p>
+            {selectedLead.consentText ? (
+              <blockquote
+                style={{
+                  margin: "12px 0",
+                  padding: 12,
+                  background: "#f8fafc",
+                  borderLeft: `3px solid ${ACCENT}`,
+                  fontSize: 13,
+                }}
+              >
+                {selectedLead.consentText}
+              </blockquote>
+            ) : null}
+          </>
         ) : null}
 
         {tab === "kb" && selectedArticle ? (

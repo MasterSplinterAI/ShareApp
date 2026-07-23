@@ -237,6 +237,14 @@ function createGithubAdapter() {
  * @returns {{ handler: Function, meta: object }}
  */
 function createShareAppSupportRouter() {
+  const frontendBase = (
+    process.env.PUBLIC_FRONTEND_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    'http://localhost:5174'
+  )
+    .trim()
+    .replace(/\/$/, '');
+
   const options = {
     tenantId: 'lalia',
     db: createSqliteSupportDb(),
@@ -246,6 +254,8 @@ function createShareAppSupportRouter() {
       agentAuthorId: 'lalia-support-ai',
       featureCoachSystemHint:
         'Lalia is a live meeting product with real-time captions and translation, guest invites, org billing, and admin tools. Prefer concrete UX/workflow improvements over speculative platform rewrites.',
+      signupUrl: `${frontendBase}/v2/signup`,
+      contactEmail: process.env.SUPPORT_CONTACT_EMAIL || 'support@jarmetals.com',
     },
     docsRoot: DOCS_ROOT,
     adminBaseUrl: adminBaseUrl(),

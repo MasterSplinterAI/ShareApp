@@ -2,7 +2,6 @@ import {
   useCallback,
   useEffect,
   useId,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -19,7 +18,14 @@ export interface SupportLauncherProps {
     email?: string;
     planLabel?: string;
   };
-  brand?: { name: string; accent?: string; supportAgentName?: string };
+  brand?: {
+    name: string;
+    accent?: string;
+    supportAgentName?: string;
+    signupUrl?: string;
+    contactEmail?: string;
+    marketingConsentLabel?: string;
+  };
   position?: "bottom-right" | "bottom-left";
   /**
    * Nudge the floating bubble so it clears host UI (e.g. a Send button
@@ -27,6 +33,11 @@ export interface SupportLauncherProps {
    */
   offset?: { bottom?: number; left?: number; right?: number };
   mode?: "bubble" | "page";
+  /**
+   * `public` = home / logged-out: contact gate first, then FAQ chat + Contact
+   * (no bug/feature/my tickets).
+   */
+  audience?: "app" | "public";
   renderTrigger?: (open: () => void) => ReactNode;
   className?: string;
   /**
@@ -50,8 +61,10 @@ type CoachBubble = {
 };
 
 type View =
+  | { name: "gate" }
   | { name: "home" }
   | { name: "supportChat" }
+  | { name: "contact" }
   | { name: "compose"; kind: "bug" | "feature" }
   | { name: "thread"; ticketId: string }
   | { name: "tickets" };
@@ -83,6 +96,12 @@ type TicketMessage = {
 };
 
 const DEFAULT_ACCENT = "#2563eb";
+const DEFAULT_MARKETING_LABEL =
+  "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
+
+function leadStorageKey(apiBase: string): string {
+  return `support-kit:leadId:${normalizeApiBase(apiBase)}`;
+}
 
 function normalizeApiBase(apiBase: string): string {
   return apiBase.replace(/\/$/, "");
@@ -154,6 +173,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     position = "bottom-right",
     offset,
     mode = "bubble",
+    audience = "app",
     renderTrigger,
     className,
     getAccessToken,
@@ -168,11 +188,14 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const accent = brand?.accent ?? DEFAULT_ACCENT;
   const label = brand?.name ?? "Support";
   const agentName = brand?.supportAgentName ?? `${label} Support`;
+  const marketingLabel =
+    brand?.marketingConsentLabel?.trim() || DEFAULT_MARKETING_LABEL;
+  const isPublic = audience === "public" && !user?.id;
   const panelId = useId();
   const listRef = useRef<HTMLDivElement>(null);
 
   const [open, setOpen] = useState(mode === "page");
-  const [view, setView] = useState<View>({ name: "home" });
+  const [view, setView] = useState<View>(isPublic ? { name: "gate" } : { name: "home" });
   const [draft, setDraft] = useState("");
   const [supportMessages, setSupportMessages] = useState<ChatBubble[]>([]);
   const [supportTicketId, setSupportTicketId] = useState<string | null>(null);
@@ -192,6 +215,12 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [coachInput, setCoachInput] = useState("");
   const [guestEmail, setGuestEmail] = useState(user?.email ?? "");
   const [submittedTicket, setSubmittedTicket] = useState<TicketSummary | null>(null);
+  const [leadId, setLeadId] = useState<string | null>(null);
+  const [gateName, setGateName] = useState("");
+  const [gateEmail, setGateEmail] = useState("");
+  const [gatePhone, setGatePhone] = useState("");
+  const [gateMarketing, setGateMarketing] = useState(false);
+  const [contactMessage, setContactMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
@@ -203,19 +232,109 @@ export function SupportLauncher(props: SupportLauncherProps) {
 
   const isOpen = mode === "page" || open;
 
+  useEffect(() => {
+    if (!isPublic || typeof sessionStorage === "undefined") return;
+    try {
+      const stored = sessionStorage.getItem(leadStorageKey(apiBase));
+      if (stored) {
+        setLeadId(stored);
+        setView((v) => (v.name === "gate" ? { name: "home" } : v));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [apiBase, isPublic]);
+
   const startSupportChat = useCallback(() => {
     setSupportMessages([
       {
         id: "welcome",
         role: "assistant",
-        text: `Hi — I'm ${agentName}. Ask me anything about the product, your account, or billing. I'll figure out the details and help right here.`,
+        text: isPublic
+          ? `Hi — I'm ${agentName}. Ask about ${label}, pricing, or getting started. For account-specific help, please sign in.`
+          : `Hi — I'm ${agentName}. Ask me anything about the product, your account, or billing. I'll figure out the details and help right here.`,
       },
     ]);
     setSupportTicketId(null);
     setDraft("");
     setError(null);
     setView({ name: "supportChat" });
-  }, [agentName]);
+  }, [agentName, isPublic, label]);
+
+  const submitGate = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (sending) return;
+    if (!gateName.trim() || !gateEmail.trim()) {
+      setError("Name and email are required");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      const data = await fetchApi<{ ok: boolean; leadId: string }>("/leads", {
+        method: "POST",
+        body: JSON.stringify({
+          name: gateName.trim(),
+          email: gateEmail.trim(),
+          ...(gatePhone.trim() ? { phone: gatePhone.trim() } : {}),
+          marketingOptIn: gateMarketing,
+          source: "public_launcher",
+          consentText: marketingLabel,
+        }),
+      });
+      setLeadId(data.leadId);
+      setGuestEmail(gateEmail.trim());
+      try {
+        sessionStorage.setItem(leadStorageKey(apiBase), data.leadId);
+      } catch {
+        /* ignore */
+      }
+      setView({ name: "home" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save contact info");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const submitContact = async (event?: FormEvent) => {
+    event?.preventDefault();
+    if (sending || !contactMessage.trim()) return;
+    if (!leadId && !guestEmail.trim()) {
+      setError("Complete the contact form first");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      const data = await fetchApi<{ ok: boolean; ticket: TicketSummary }>("/tickets",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            kind: "support",
+            topic: "other",
+            subject: contactMessage.trim().slice(0, 120),
+            body: contactMessage.trim(),
+            guestEmail: gateEmail.trim() || guestEmail.trim(),
+            contextJson: JSON.stringify({
+              leadId,
+              name: gateName.trim() || undefined,
+              phone: gatePhone.trim() || undefined,
+              marketingOptIn: gateMarketing,
+              source: "public_contact",
+            }),
+          }),
+        },
+      );
+      setSubmittedTicket(data.ticket);
+      setContactMessage("");
+      setView({ name: "home" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send message");
+    } finally {
+      setSending(false);
+    }
+  };
 
   const resetFeatureCompose = useCallback(() => {
     setCoachTurn(0);
@@ -348,10 +467,10 @@ export function SupportLauncher(props: SupportLauncherProps) {
   );
 
   useEffect(() => {
-    if (isOpen && (view.name === "home" || view.name === "tickets")) {
+    if (isOpen && (view.name === "home" || view.name === "tickets") && !isPublic) {
       void loadTickets();
     }
-  }, [isOpen, view.name, loadTickets]);
+  }, [isOpen, view.name, loadTickets, isPublic]);
 
   useEffect(() => {
     if (view.name === "thread" && thread) {
@@ -390,7 +509,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     setError(null);
 
     try {
-      if (supportTicketId) {
+      if (supportTicketId && !isPublic) {
         await fetchApi(`/tickets/${supportTicketId}/messages`, {
           method: "POST",
           body: JSON.stringify({ body: message }),
@@ -413,6 +532,12 @@ export function SupportLauncher(props: SupportLauncherProps) {
           })),
         );
       } else {
+        if (isPublic && !leadId) {
+          setError("Please complete the contact form first");
+          setView({ name: "gate" });
+          setSending(false);
+          return;
+        }
         const data = await fetchApi<{
           ok: boolean;
           ticket?: TicketSummary;
@@ -422,9 +547,10 @@ export function SupportLauncher(props: SupportLauncherProps) {
           body: JSON.stringify({
             message,
             kind: "support",
+            ...(leadId ? { leadId } : {}),
           }),
         });
-        if (data.ticket?.id) {
+        if (data.ticket?.id && !isPublic) {
           setSupportTicketId(data.ticket.id);
         }
         const bot: ChatBubble = {
@@ -639,6 +765,110 @@ export function SupportLauncher(props: SupportLauncherProps) {
       </div>
 
       <div style={{ flex: 1, overflow: "auto", padding: 12, background: "#f8fafc" }}>
+        {view.name === "gate" ? (
+          <>
+            <p style={{ fontWeight: 600, marginTop: 0 }}>How can we reach you?</p>
+            <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>
+              Tell us a bit about yourself before chatting or contacting {label}.
+            </p>
+            <form onSubmit={submitGate}>
+              <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>
+                Name *
+              </label>
+              <input
+                value={gateName}
+                onChange={(e) => setGateName(e.target.value)}
+                required
+                autoComplete="name"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: 8,
+                  marginBottom: 8,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
+              />
+              <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>
+                Email *
+              </label>
+              <input
+                type="email"
+                value={gateEmail}
+                onChange={(e) => setGateEmail(e.target.value)}
+                required
+                autoComplete="email"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: 8,
+                  marginBottom: 8,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
+              />
+              <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>
+                Phone <span style={{ fontWeight: 400, color: "#64748b" }}>(optional)</span>
+              </label>
+              <input
+                type="tel"
+                value={gatePhone}
+                onChange={(e) => setGatePhone(e.target.value)}
+                autoComplete="tel"
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: 8,
+                  marginBottom: 8,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                }}
+              />
+              <label
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "flex-start",
+                  fontSize: 12,
+                  color: "#334155",
+                  marginBottom: 12,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={gateMarketing}
+                  onChange={(e) => setGateMarketing(e.target.checked)}
+                  style={{ marginTop: 2 }}
+                />
+                <span>{marketingLabel}</span>
+              </label>
+              <button
+                type="submit"
+                disabled={sending || !gateName.trim() || !gateEmail.trim()}
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  border: "none",
+                  borderRadius: 10,
+                  background: accent,
+                  color: "#fff",
+                  fontWeight: 600,
+                }}
+              >
+                {sending ? "Saving…" : "Continue"}
+              </button>
+            </form>
+            {brand?.signupUrl ? (
+              <p style={{ fontSize: 12, color: "#64748b", marginTop: 12 }}>
+                Already have an account?{" "}
+                <a href={brand.signupUrl} style={{ color: accent, fontWeight: 600 }}>
+                  Sign up / sign in
+                </a>
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
         {view.name === "home" ? (
           <>
             {submittedTicket ? (
@@ -677,67 +907,137 @@ export function SupportLauncher(props: SupportLauncherProps) {
             <p style={{ color: "#64748b", fontSize: 13, marginTop: 0 }}>
               How can we help?
             </p>
-            <button
-              type="button"
-              style={intentBtn()}
-              onClick={() => startSupportChat()}
-            >
-              Chat with {agentName}
+            <button type="button" style={intentBtn()} onClick={() => startSupportChat()}>
+              {isPublic ? "Ask a question" : `Chat with ${agentName}`}
               <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                Questions about the product, account, or billing — just ask
+                {isPublic
+                  ? `Questions about ${label}, pricing, or getting started`
+                  : "Questions about the product, account, or billing — just ask"}
               </div>
             </button>
-            <button
-              type="button"
-              style={intentBtn()}
-              onClick={() => setView({ name: "compose", kind: "bug" })}
-            >
-              Report a bug
-              <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                Something broken or unexpected
-              </div>
-            </button>
-            <button
-              type="button"
-              style={intentBtn()}
-              onClick={() => {
-                resetFeatureCompose();
-                setView({ name: "compose", kind: "feature" });
-              }}
-            >
-              Request a feature
-              <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
-                Suggest an improvement
-              </div>
-            </button>
-            <button
-              type="button"
-              style={{
-                ...intentBtn(),
-                marginTop: 8,
-                background: "#fff",
-              }}
-              onClick={() => {
-                setView({ name: "tickets" });
-                void loadTickets();
-              }}
-            >
-              My tickets ({tickets.filter((t) => t.status !== "closed").length})
-            </button>
-            {tickets.slice(0, 3).map((t) => (
+            {isPublic ? (
               <button
-                key={t.id}
                 type="button"
-                style={{
-                  ...intentBtn(),
-                  fontWeight: 500,
-                  fontSize: 13,
+                style={intentBtn()}
+                onClick={() => {
+                  setContactMessage("");
+                  setView({ name: "contact" });
                 }}
-                onClick={() => void openThread(t.id)}
               >
-                #{t.publicNumber} · {t.kind ?? "support"} · {statusLabel(t.status)}
+                Contact us
+                <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                  Send a message to our team
+                  {brand?.contactEmail ? ` · ${brand.contactEmail}` : ""}
+                </div>
               </button>
-            ))}
+            ) : (
+              <>
+                <button
+                  type="button"
+                  style={intentBtn()}
+                  onClick={() => setView({ name: "compose", kind: "bug" })}
+                >
+                  Report a bug
+                  <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                    Something broken or unexpected
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  style={intentBtn()}
+                  onClick={() => {
+                    resetFeatureCompose();
+                    setView({ name: "compose", kind: "feature" });
+                  }}
+                >
+                  Request a feature
+                  <div style={{ fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }}>
+                    Suggest an improvement
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  style={{
+                    ...intentBtn(),
+                    marginTop: 8,
+                    background: "#fff",
+                  }}
+                  onClick={() => {
+                    setView({ name: "tickets" });
+                    void loadTickets();
+                  }}
+                >
+                  My tickets ({tickets.filter((t) => t.status !== "closed").length})
+                </button>
+                {tickets.slice(0, 3).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    style={{
+                      ...intentBtn(),
+                      fontWeight: 500,
+                      fontSize: 13,
+                    }}
+                    onClick={() => void openThread(t.id)}
+                  >
+                    #{t.publicNumber} · {t.kind ?? "support"} · {statusLabel(t.status)}
+                  </button>
+                ))}
+              </>
+            )}
+          </>
+        ) : null}
+
+        {view.name === "contact" ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setView({ name: "home" })}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: accent,
+                fontWeight: 600,
+                marginBottom: 8,
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              ← Back
+            </button>
+            <p style={{ fontWeight: 600 }}>Contact {label}</p>
+            <form onSubmit={submitContact}>
+              <textarea
+                value={contactMessage}
+                onChange={(e) => setContactMessage(e.target.value)}
+                rows={5}
+                placeholder="How can we help?"
+                required
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  padding: 8,
+                  borderRadius: 8,
+                  border: "1px solid #cbd5e1",
+                  marginBottom: 8,
+                }}
+              />
+              <button
+                type="submit"
+                disabled={sending || !contactMessage.trim()}
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  border: "none",
+                  borderRadius: 10,
+                  background: accent,
+                  color: "#fff",
+                  fontWeight: 600,
+                }}
+              >
+                {sending ? "Sending…" : "Send message"}
+              </button>
+            </form>
           </>
         ) : null}
 

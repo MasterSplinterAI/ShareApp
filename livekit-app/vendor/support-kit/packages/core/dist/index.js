@@ -4,6 +4,7 @@ import { KIT_VERSION as KIT_VERSION2, PACKAGE_NAME as SHARED } from "@rhule/supp
 // src/http/createRouter.ts
 import {
   DEFAULT_TOPICS as DEFAULT_TOPICS2,
+  DEFAULT_MARKETING_CONSENT_LABEL,
   KIT_VERSION,
   TicketKindSchema,
   TicketStatusSchema
@@ -126,7 +127,28 @@ function buildSchemaStatements(tablePrefix) {
     )
     `,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_status ON ${p}kb_articles(tenant_id, status)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}kb_visibility ON ${p}kb_articles(tenant_id, visibility)`
+    `CREATE INDEX IF NOT EXISTS idx_${p}kb_visibility ON ${p}kb_articles(tenant_id, visibility)`,
+    `
+    CREATE TABLE IF NOT EXISTS ${p}leads (
+      id TEXT PRIMARY KEY,
+      tenant_id TEXT NOT NULL,
+      email TEXT NOT NULL,
+      name TEXT NOT NULL,
+      phone TEXT,
+      marketing_email_opt_in INTEGER NOT NULL DEFAULT 0,
+      marketing_sms_opt_in INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'public_launcher',
+      consent_text TEXT,
+      consent_at TEXT,
+      ip_hash TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE (tenant_id, email)
+    )
+    `,
+    `CREATE INDEX IF NOT EXISTS idx_${p}leads_tenant_email ON ${p}leads(tenant_id, email)`,
+    `CREATE INDEX IF NOT EXISTS idx_${p}leads_marketing ON ${p}leads(tenant_id, marketing_email_opt_in)`
   ];
 }
 function buildAlterStatements(tablePrefix) {
@@ -1012,6 +1034,169 @@ var KnowledgeGapService = class {
   }
 };
 
+// src/leads/service.ts
+import {
+  CreateLeadInputSchema
+} from "@rhule/support-shared";
+
+// src/leads/store.ts
+import { randomUUID as randomUUID4 } from "crypto";
+function mapLead(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    email: row.email,
+    name: row.name,
+    phone: row.phone,
+    marketingEmailOptIn: Boolean(row.marketing_email_opt_in),
+    marketingSmsOptIn: Boolean(row.marketing_sms_opt_in),
+    source: row.source,
+    consentText: row.consent_text,
+    consentAt: row.consent_at,
+    ipHash: row.ip_hash,
+    userAgent: row.user_agent,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+var LeadStore = class {
+  constructor(db, tablePrefix = DEFAULT_TABLE_PREFIX) {
+    this.db = db;
+    this.tablePrefix = tablePrefix;
+  }
+  db;
+  tablePrefix;
+  get t() {
+    return `${this.tablePrefix}leads`;
+  }
+  async getById(tenantId, id) {
+    const row = await this.db.get(
+      `SELECT * FROM ${this.t} WHERE tenant_id = ? AND id = ?`,
+      [tenantId, id]
+    );
+    return row ? mapLead(row) : void 0;
+  }
+  async getByEmail(tenantId, email) {
+    const row = await this.db.get(
+      `SELECT * FROM ${this.t} WHERE tenant_id = ? AND email = ?`,
+      [tenantId, email.toLowerCase()]
+    );
+    return row ? mapLead(row) : void 0;
+  }
+  /**
+   * Insert or update by (tenant_id, email). Re-submitting the gate refreshes
+   * name/phone/consent so ops always see the latest opt-in state.
+   */
+  async upsert(input) {
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const email = input.email.trim().toLowerCase();
+    const existing = await this.getByEmail(input.tenantId, email);
+    const phone = input.phone?.trim() || null;
+    const consentAt = now;
+    if (existing) {
+      await this.db.run(
+        `UPDATE ${this.t} SET
+          name = ?, phone = ?,
+          marketing_email_opt_in = ?, marketing_sms_opt_in = ?,
+          source = ?, consent_text = ?, consent_at = ?,
+          ip_hash = COALESCE(?, ip_hash),
+          user_agent = COALESCE(?, user_agent),
+          updated_at = ?
+         WHERE tenant_id = ? AND id = ?`,
+        [
+          input.name.trim(),
+          phone,
+          input.marketingEmailOptIn ? 1 : 0,
+          input.marketingSmsOptIn ? 1 : 0,
+          input.source,
+          input.consentText ?? null,
+          consentAt,
+          input.ipHash ?? null,
+          input.userAgent ?? null,
+          now,
+          input.tenantId,
+          existing.id
+        ]
+      );
+      const updated = await this.getById(input.tenantId, existing.id);
+      if (!updated) throw new Error("Lead upsert failed");
+      return updated;
+    }
+    const id = randomUUID4();
+    await this.db.run(
+      `INSERT INTO ${this.t} (
+        id, tenant_id, email, name, phone,
+        marketing_email_opt_in, marketing_sms_opt_in,
+        source, consent_text, consent_at, ip_hash, user_agent,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id,
+        input.tenantId,
+        email,
+        input.name.trim(),
+        phone,
+        input.marketingEmailOptIn ? 1 : 0,
+        input.marketingSmsOptIn ? 1 : 0,
+        input.source,
+        input.consentText ?? null,
+        consentAt,
+        input.ipHash ?? null,
+        input.userAgent ?? null,
+        now,
+        now
+      ]
+    );
+    const created = await this.getById(input.tenantId, id);
+    if (!created) throw new Error("Lead insert failed");
+    return created;
+  }
+  async list(tenantId, opts) {
+    const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 500);
+    const rows = opts?.marketingOnly ? await this.db.all(
+      `SELECT * FROM ${this.t}
+           WHERE tenant_id = ? AND marketing_email_opt_in = 1
+           ORDER BY updated_at DESC LIMIT ?`,
+      [tenantId, limit]
+    ) : await this.db.all(
+      `SELECT * FROM ${this.t}
+           WHERE tenant_id = ?
+           ORDER BY updated_at DESC LIMIT ?`,
+      [tenantId, limit]
+    );
+    return rows.map(mapLead);
+  }
+};
+
+// src/leads/service.ts
+var LeadService = class {
+  store;
+  constructor(db, tablePrefix = DEFAULT_TABLE_PREFIX) {
+    this.store = new LeadStore(db, tablePrefix);
+  }
+  getById(tenantId, id) {
+    return this.store.getById(tenantId, id);
+  }
+  getByEmail(tenantId, email) {
+    return this.store.getByEmail(tenantId, email);
+  }
+  list(tenantId, opts) {
+    return this.store.list(tenantId, opts);
+  }
+  async upsertLead(raw) {
+    const input = CreateLeadInputSchema.parse(raw);
+    const phone = input.phone?.trim() || void 0;
+    const marketingEmailOptIn = Boolean(input.marketingOptIn);
+    const marketingSmsOptIn = Boolean(input.marketingOptIn && phone);
+    return this.store.upsert({
+      ...input,
+      ...phone ? { phone } : {},
+      marketingEmailOptIn,
+      marketingSmsOptIn
+    });
+  }
+};
+
 // src/agent/triage.ts
 import { DEFAULT_TOPICS, SENSITIVE_TOPICS_DEFAULT as SENSITIVE_TOPICS_DEFAULT2 } from "@rhule/support-shared";
 
@@ -1564,11 +1749,19 @@ async function triageMessage(deps, input) {
     contextJson: JSON.stringify({
       planLabel: input.user.planLabel ?? null,
       contextSummary: input.user.contextSummary ?? null,
-      email: input.user.email ?? null,
-      role: input.user.role
+      email: input.user.email ?? input.guestEmail ?? null,
+      role: input.user.role,
+      publicAudience: Boolean(deps.publicAudience),
+      ...input.leadContext ? {
+        leadId: input.leadContext.leadId,
+        name: input.leadContext.name,
+        phone: input.leadContext.phone ?? null,
+        marketingOptIn: Boolean(input.leadContext.marketingOptIn)
+      } : {}
     })
   };
   if (input.user.orgId) createInput.orgId = input.user.orgId;
+  if (input.guestEmail) createInput.guestEmail = input.guestEmail;
   const { ticket, message: userMessage } = await tickets.createTicket(createInput);
   const autoReplied = decision.action === "auto_reply";
   const citationJson = docHits.length > 0 ? citationsJson(docHits) : null;
@@ -1676,7 +1869,7 @@ async function triageMessage(deps, input) {
 }
 
 // src/kb/codegen.ts
-import { randomUUID as randomUUID4 } from "crypto";
+import { randomUUID as randomUUID5 } from "crypto";
 function mapKbArticle2(row) {
   return {
     id: row.id,
@@ -1718,7 +1911,7 @@ async function ingestCodegenArticle(db, input) {
     if (!row2) throw new Error("ingestCodegenArticle: upsert failed");
     return mapKbArticle2(row2);
   }
-  const id = randomUUID4();
+  const id = randomUUID5();
   await db.run(
     `INSERT INTO ${table} (
       id, tenant_id, title, body, status, source_kind, visibility, provenance_json, source_key, created_at, updated_at
@@ -2872,6 +3065,7 @@ Respond as JSON.`,
 }
 
 // src/http/createRouter.ts
+import { createHash } from "crypto";
 function parsePath(url) {
   const raw = url.split("?")[0] ?? url;
   return raw.endsWith("/") && raw.length > 1 ? raw.slice(0, -1) : raw;
@@ -2897,6 +3091,7 @@ function matchRoute(method, path2) {
   if (method === "GET" && path2 === "/config") return { name: "config", params: {} };
   if (method === "POST" && path2 === "/chat") return { name: "chat", params: {} };
   if (method === "POST" && path2 === "/coach") return { name: "coach", params: {} };
+  if (method === "POST" && path2 === "/leads") return { name: "createLead", params: {} };
   if (method === "GET" && path2 === "/tickets") return { name: "listTickets", params: {} };
   if (method === "POST" && path2 === "/tickets") return { name: "createTicket", params: {} };
   const ticketReply = path2.match(/^\/tickets\/([^/]+)\/messages$/);
@@ -2921,6 +3116,9 @@ function matchRoute(method, path2) {
   }
   if (method === "GET" && path2 === "/admin/gaps") {
     return { name: "adminListGaps", params: {} };
+  }
+  if (method === "GET" && path2 === "/admin/leads") {
+    return { name: "adminListLeads", params: {} };
   }
   if (method === "POST" && path2 === "/admin/kb/ingest") {
     return { name: "adminKbIngest", params: {} };
@@ -3116,6 +3314,7 @@ function createHttpRouter(ctx) {
     const tickets = new TicketService(ctx.db, tablePrefix);
     const proposals = new ProposalService(ctx.db, tablePrefix);
     const gaps = new KnowledgeGapService(ctx.db, tablePrefix);
+    const leads = new LeadService(ctx.db, tablePrefix);
     const readBody = async () => {
       if (r.body !== void 0) return r.body;
       if (typeof r.on === "function") {
@@ -3131,7 +3330,9 @@ function createHttpRouter(ctx) {
           kinds: ["support", "bug", "feature"],
           brand: ctx.brand,
           coachEnabled: Boolean(ctx.llm),
-          guestTickets: true
+          guestTickets: true,
+          publicLeads: true,
+          defaultMarketingConsentLabel: DEFAULT_MARKETING_CONSENT_LABEL
         });
         return;
       }
@@ -3146,6 +3347,51 @@ function createHttpRouter(ctx) {
           articles: articles.filter((a) => a.visibility === "public")
         });
         return;
+      }
+      if (route.name === "createLead") {
+        const body = await readBody();
+        const name = String(body?.name ?? "").trim();
+        const email = String(body?.email ?? "").trim();
+        const phoneRaw = String(body?.phone ?? "").trim();
+        const marketingOptIn = Boolean(body?.marketingOptIn);
+        const source = String(body?.source ?? "public_launcher").trim() || "public_launcher";
+        const consentText = String(body?.consentText ?? "").trim() || ctx.brand.marketingConsentLabel || DEFAULT_MARKETING_CONSENT_LABEL;
+        if (!name || name.length < 1) {
+          finish(400, { ok: false, error: "name is required" });
+          return;
+        }
+        if (!email) {
+          finish(400, { ok: false, error: "email is required" });
+          return;
+        }
+        const ua = header(r, "user-agent")?.slice(0, 512);
+        const fwd = header(r, "x-forwarded-for")?.split(",")[0]?.trim();
+        const ipHash = fwd ? createHash("sha256").update(fwd).digest("hex").slice(0, 32) : void 0;
+        try {
+          const lead = await leads.upsertLead({
+            tenantId: ctx.tenantId,
+            name,
+            email,
+            marketingOptIn,
+            source,
+            consentText,
+            ...phoneRaw ? { phone: phoneRaw } : {},
+            ...ipHash ? { ipHash } : {},
+            ...ua ? { userAgent: ua } : {}
+          });
+          if (ctx.onLeadCaptured) {
+            void Promise.resolve(ctx.onLeadCaptured(lead)).catch(() => {
+            });
+          }
+          finish(201, { ok: true, leadId: lead.id, lead });
+          return;
+        } catch (err) {
+          finish(400, {
+            ok: false,
+            error: err instanceof Error ? err.message : "Invalid lead"
+          });
+          return;
+        }
       }
       if (route.name === "coach") {
         const body = await readBody();
@@ -3224,6 +3470,60 @@ function createHttpRouter(ctx) {
           });
         }
         finish(201, { ok: true, ...created });
+        return;
+      }
+      if (route.name === "chat" && !user) {
+        const body = await readBody();
+        const message = String(body?.message ?? "").trim();
+        const leadId = String(body?.leadId ?? "").trim();
+        if (!message) {
+          finish(400, { ok: false, error: "message is required" });
+          return;
+        }
+        if (!leadId) {
+          finish(401, {
+            ok: false,
+            error: "Sign in or complete the contact form (leadId required)"
+          });
+          return;
+        }
+        const lead = await leads.getById(ctx.tenantId, leadId);
+        if (!lead) {
+          finish(401, { ok: false, error: "Invalid or expired contact session" });
+          return;
+        }
+        const guestUser = {
+          id: `lead:${lead.id}`,
+          email: lead.email,
+          name: lead.name,
+          role: "user",
+          contextSummary: `Public visitor (lead). Name: ${lead.name}. Email: ${lead.email}. No account context \u2014 answer from public product FAQ only. Do not invent account/plan/billing details.`
+        };
+        const triageDeps = {
+          db: ctx.db,
+          brand: ctx.brand,
+          tablePrefix,
+          topics,
+          publicAudience: true
+        };
+        if (ctx.llm) triageDeps.llm = ctx.llm;
+        if (ctx.docsRoot) triageDeps.docsRoot = ctx.docsRoot;
+        if (ctx.opsNotifier) triageDeps.opsNotifier = ctx.opsNotifier;
+        if (ctx.adminBaseUrl) triageDeps.adminBaseUrl = ctx.adminBaseUrl;
+        const result = await triageMessage(triageDeps, {
+          tenantId: ctx.tenantId,
+          user: guestUser,
+          message,
+          kind: "support",
+          guestEmail: lead.email,
+          leadContext: {
+            leadId: lead.id,
+            name: lead.name,
+            phone: lead.phone ?? null,
+            marketingOptIn: lead.marketingEmailOptIn
+          }
+        });
+        finish(200, { ok: true, ...result });
         return;
       }
       if (!user) {
@@ -3636,6 +3936,16 @@ function createHttpRouter(ctx) {
           finish(200, { ok: true, gaps: list });
           return;
         }
+        if (route.name === "adminListLeads") {
+          const q = parseQueryString(String(r.url ?? ""));
+          const marketingOnly = q.marketing === "1" || q.marketing === "true" || q.optIn === "1";
+          const list = await leads.list(ctx.tenantId, {
+            marketingOnly,
+            limit: 200
+          });
+          finish(200, { ok: true, leads: list });
+          return;
+        }
         if (route.name === "adminGapPatch") {
           const body = await readBody();
           const status = String(body?.status ?? "").trim();
@@ -3796,6 +4106,7 @@ function createRouter(options) {
   if (options.kbIngest) ctx.kbIngest = options.kbIngest;
   if (options.telegram) ctx.telegram = options.telegram;
   if (options.codebase) ctx.codebase = options.codebase;
+  if (options.onLeadCaptured) ctx.onLeadCaptured = options.onLeadCaptured;
   return createHttpRouter(ctx);
 }
 
@@ -3958,6 +4269,7 @@ function createFilesystemCodebaseAdapter(options) {
 }
 
 // src/index.ts
+import { KIT_VERSION as KIT_VERSION3, DEFAULT_MARKETING_CONSENT_LABEL as DEFAULT_MARKETING_CONSENT_LABEL2 } from "@rhule/support-shared";
 function createSupportRouter(options) {
   const tenantId = String(options.tenantId);
   if (!tenantId) {
@@ -3981,10 +4293,13 @@ function createSupportRouter(options) {
 export {
   DEFAULT_ESCALATION_REPLY,
   DEFAULT_HOLD_REPLY,
+  DEFAULT_MARKETING_CONSENT_LABEL2 as DEFAULT_MARKETING_CONSENT_LABEL,
   DEFAULT_TABLE_PREFIX,
-  KIT_VERSION2 as KIT_VERSION,
+  KIT_VERSION3 as KIT_VERSION,
   KnowledgeGapService,
   KnowledgeGapStore,
+  LeadService,
+  LeadStore,
   ProposalService,
   ProposalStore,
   TelegramDraftSessionStore,

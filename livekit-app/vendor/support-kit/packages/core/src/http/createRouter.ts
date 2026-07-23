@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   DEFAULT_TOPICS,
+  DEFAULT_MARKETING_CONSENT_LABEL,
   KIT_VERSION,
   TicketKindSchema,
   TicketStatusSchema,
@@ -26,6 +27,7 @@ import { ensureSchema, DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { TicketService } from "../tickets/service.js";
 import { ProposalService } from "../proposals/service.js";
 import { KnowledgeGapService } from "../gaps/service.js";
+import { LeadService } from "../leads/service.js";
 import { triageMessage, type TriageDeps } from "../agent/triage.js";
 import {
   deprecateKbArticle,
@@ -44,6 +46,7 @@ import {
 } from "../telegram/webhook.js";
 import { curateAnswerToKbDraft, researchGapToKbDraft } from "../kb/gapResearch.js";
 import { coachFeatureRequest } from "../agent/featureCoach.js";
+import { createHash } from "node:crypto";
 
 type JsonResponse = {
   statusCode: number;
@@ -94,6 +97,7 @@ function matchRoute(
   if (method === "GET" && path === "/config") return { name: "config", params: {} };
   if (method === "POST" && path === "/chat") return { name: "chat", params: {} };
   if (method === "POST" && path === "/coach") return { name: "coach", params: {} };
+  if (method === "POST" && path === "/leads") return { name: "createLead", params: {} };
   if (method === "GET" && path === "/tickets") return { name: "listTickets", params: {} };
   if (method === "POST" && path === "/tickets") return { name: "createTicket", params: {} };
 
@@ -122,6 +126,9 @@ function matchRoute(
   }
   if (method === "GET" && path === "/admin/gaps") {
     return { name: "adminListGaps", params: {} };
+  }
+  if (method === "GET" && path === "/admin/leads") {
+    return { name: "adminListLeads", params: {} };
   }
   if (method === "POST" && path === "/admin/kb/ingest") {
     return { name: "adminKbIngest", params: {} };
@@ -267,6 +274,7 @@ export interface HttpRouterContext {
   kbIngest?: KbIngestConfig;
   telegram?: CreateSupportRouterOptions["telegram"];
   codebase?: CodebaseAdapter;
+  onLeadCaptured?: CreateSupportRouterOptions["onLeadCaptured"];
 }
 
 function notifyEmail(
@@ -446,6 +454,7 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
     const tickets = new TicketService(ctx.db, tablePrefix);
     const proposals = new ProposalService(ctx.db, tablePrefix);
     const gaps = new KnowledgeGapService(ctx.db, tablePrefix);
+    const leads = new LeadService(ctx.db, tablePrefix);
 
     const readBody = async (): Promise<unknown> => {
       if (r.body !== undefined) return r.body;
@@ -465,6 +474,8 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
           brand: ctx.brand,
           coachEnabled: Boolean(ctx.llm),
           guestTickets: true,
+          publicLeads: true,
+          defaultMarketingConsentLabel: DEFAULT_MARKETING_CONSENT_LABEL,
         });
         return;
       }
@@ -480,6 +491,62 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
           articles: articles.filter((a) => a.visibility === "public"),
         });
         return;
+      }
+
+      // Public contact gate — name + email (+ optional phone + marketing consent)
+      if (route.name === "createLead") {
+        const body = await readBody();
+        const name = String((body as { name?: string })?.name ?? "").trim();
+        const email = String((body as { email?: string })?.email ?? "").trim();
+        const phoneRaw = String((body as { phone?: string })?.phone ?? "").trim();
+        const marketingOptIn = Boolean((body as { marketingOptIn?: boolean })?.marketingOptIn);
+        const source =
+          String((body as { source?: string })?.source ?? "public_launcher").trim() ||
+          "public_launcher";
+        const consentText =
+          String((body as { consentText?: string })?.consentText ?? "").trim() ||
+          ctx.brand.marketingConsentLabel ||
+          DEFAULT_MARKETING_CONSENT_LABEL;
+
+        if (!name || name.length < 1) {
+          finish(400, { ok: false, error: "name is required" });
+          return;
+        }
+        if (!email) {
+          finish(400, { ok: false, error: "email is required" });
+          return;
+        }
+
+        const ua = header(r, "user-agent")?.slice(0, 512);
+        const fwd = header(r, "x-forwarded-for")?.split(",")[0]?.trim();
+        const ipHash = fwd
+          ? createHash("sha256").update(fwd).digest("hex").slice(0, 32)
+          : undefined;
+
+        try {
+          const lead = await leads.upsertLead({
+            tenantId: ctx.tenantId as never,
+            name,
+            email,
+            marketingOptIn,
+            source,
+            consentText,
+            ...(phoneRaw ? { phone: phoneRaw } : {}),
+            ...(ipHash ? { ipHash } : {}),
+            ...(ua ? { userAgent: ua } : {}),
+          });
+          if (ctx.onLeadCaptured) {
+            void Promise.resolve(ctx.onLeadCaptured(lead)).catch(() => {});
+          }
+          finish(201, { ok: true, leadId: lead.id, lead });
+          return;
+        } catch (err) {
+          finish(400, {
+            ok: false,
+            error: err instanceof Error ? err.message : "Invalid lead",
+          });
+          return;
+        }
       }
 
       // Feature coach — optional auth; works without llm (fallback mode)
@@ -571,6 +638,63 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
         }
 
         finish(201, { ok: true, ...created });
+        return;
+      }
+
+      // Public chat after contact gate: require leadId when no session user
+      if (route.name === "chat" && !user) {
+        const body = await readBody();
+        const message = String((body as { message?: string })?.message ?? "").trim();
+        const leadId = String((body as { leadId?: string })?.leadId ?? "").trim();
+        if (!message) {
+          finish(400, { ok: false, error: "message is required" });
+          return;
+        }
+        if (!leadId) {
+          finish(401, {
+            ok: false,
+            error: "Sign in or complete the contact form (leadId required)",
+          });
+          return;
+        }
+        const lead = await leads.getById(ctx.tenantId, leadId);
+        if (!lead) {
+          finish(401, { ok: false, error: "Invalid or expired contact session" });
+          return;
+        }
+        const guestUser: SupportUser = {
+          id: `lead:${lead.id}`,
+          email: lead.email,
+          name: lead.name,
+          role: "user",
+          contextSummary: `Public visitor (lead). Name: ${lead.name}. Email: ${lead.email}. No account context — answer from public product FAQ only. Do not invent account/plan/billing details.`,
+        };
+        const triageDeps: TriageDeps = {
+          db: ctx.db,
+          brand: ctx.brand,
+          tablePrefix,
+          topics,
+          publicAudience: true,
+        };
+        if (ctx.llm) triageDeps.llm = ctx.llm;
+        if (ctx.docsRoot) triageDeps.docsRoot = ctx.docsRoot;
+        if (ctx.opsNotifier) triageDeps.opsNotifier = ctx.opsNotifier;
+        if (ctx.adminBaseUrl) triageDeps.adminBaseUrl = ctx.adminBaseUrl;
+
+        const result = await triageMessage(triageDeps, {
+          tenantId: ctx.tenantId,
+          user: guestUser,
+          message,
+          kind: "support",
+          guestEmail: lead.email,
+          leadContext: {
+            leadId: lead.id,
+            name: lead.name,
+            phone: lead.phone ?? null,
+            marketingOptIn: lead.marketingEmailOptIn,
+          },
+        });
+        finish(200, { ok: true, ...result });
         return;
       }
 
@@ -1071,6 +1195,18 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
           return;
         }
 
+        if (route.name === "adminListLeads") {
+          const q = parseQueryString(String(r.url ?? ""));
+          const marketingOnly =
+            q.marketing === "1" || q.marketing === "true" || q.optIn === "1";
+          const list = await leads.list(ctx.tenantId, {
+            marketingOnly,
+            limit: 200,
+          });
+          finish(200, { ok: true, leads: list });
+          return;
+        }
+
         if (route.name === "adminGapPatch") {
           const body = await readBody();
           const status = String((body as { status?: string })?.status ?? "").trim();
@@ -1244,6 +1380,7 @@ export function createRouter(options: CreateSupportRouterOptions): SupportRouter
   if (options.kbIngest) ctx.kbIngest = options.kbIngest;
   if (options.telegram) ctx.telegram = options.telegram;
   if (options.codebase) ctx.codebase = options.codebase;
+  if (options.onLeadCaptured) ctx.onLeadCaptured = options.onLeadCaptured;
   return createHttpRouter(ctx);
 }
 

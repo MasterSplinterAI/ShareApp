@@ -484,6 +484,12 @@ declare const BrandConfigSchema: z.ZodObject<{
      * (product vocabulary, audiences, out-of-scope topics). Keep generic hosts empty.
      */
     featureCoachSystemHint: z.ZodOptional<z.ZodString>;
+    /** Public launcher signup CTA. */
+    signupUrl: z.ZodOptional<z.ZodString>;
+    /** Public contact email display. */
+    contactEmail: z.ZodOptional<z.ZodString>;
+    /** Override marketing consent checkbox copy (stored on lead for audit). */
+    marketingConsentLabel: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     name: string;
     supportAgentName: string;
@@ -491,6 +497,9 @@ declare const BrandConfigSchema: z.ZodObject<{
     accentColor?: string | undefined;
     logoUrl?: string | undefined;
     featureCoachSystemHint?: string | undefined;
+    signupUrl?: string | undefined;
+    contactEmail?: string | undefined;
+    marketingConsentLabel?: string | undefined;
 }, {
     name: string;
     accentColor?: string | undefined;
@@ -498,10 +507,95 @@ declare const BrandConfigSchema: z.ZodObject<{
     supportAgentName?: string | undefined;
     agentAuthorId?: string | undefined;
     featureCoachSystemHint?: string | undefined;
+    signupUrl?: string | undefined;
+    contactEmail?: string | undefined;
+    marketingConsentLabel?: string | undefined;
 }>;
 type BrandConfig = z.infer<typeof BrandConfigSchema>;
+
+declare const DEFAULT_MARKETING_CONSENT_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
+declare const LeadSchema: z.ZodObject<{
+    id: z.ZodString;
+    tenantId: z.ZodBranded<z.ZodString, "TenantId">;
+    email: z.ZodString;
+    name: z.ZodString;
+    phone: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    marketingEmailOptIn: z.ZodBoolean;
+    marketingSmsOptIn: z.ZodBoolean;
+    source: z.ZodString;
+    consentText: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    consentAt: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    ipHash: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    userAgent: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    createdAt: z.ZodString;
+    updatedAt: z.ZodString;
+}, "strip", z.ZodTypeAny, {
+    id: string;
+    tenantId: string & z.BRAND<"TenantId">;
+    createdAt: string;
+    updatedAt: string;
+    email: string;
+    name: string;
+    marketingEmailOptIn: boolean;
+    marketingSmsOptIn: boolean;
+    source: string;
+    phone?: string | null | undefined;
+    consentText?: string | null | undefined;
+    consentAt?: string | null | undefined;
+    ipHash?: string | null | undefined;
+    userAgent?: string | null | undefined;
+}, {
+    id: string;
+    tenantId: string;
+    createdAt: string;
+    updatedAt: string;
+    email: string;
+    name: string;
+    marketingEmailOptIn: boolean;
+    marketingSmsOptIn: boolean;
+    source: string;
+    phone?: string | null | undefined;
+    consentText?: string | null | undefined;
+    consentAt?: string | null | undefined;
+    ipHash?: string | null | undefined;
+    userAgent?: string | null | undefined;
+}>;
+type Lead = z.infer<typeof LeadSchema>;
+declare const CreateLeadInputSchema: z.ZodObject<{
+    tenantId: z.ZodBranded<z.ZodString, "TenantId">;
+    name: z.ZodString;
+    email: z.ZodString;
+    phone: z.ZodOptional<z.ZodString>;
+    /** Master marketing opt-in (email; SMS only if phone present). */
+    marketingOptIn: z.ZodDefault<z.ZodBoolean>;
+    source: z.ZodDefault<z.ZodString>;
+    consentText: z.ZodOptional<z.ZodString>;
+    ipHash: z.ZodOptional<z.ZodString>;
+    userAgent: z.ZodOptional<z.ZodString>;
+}, "strip", z.ZodTypeAny, {
+    tenantId: string & z.BRAND<"TenantId">;
+    email: string;
+    name: string;
+    source: string;
+    marketingOptIn: boolean;
+    phone?: string | undefined;
+    consentText?: string | undefined;
+    ipHash?: string | undefined;
+    userAgent?: string | undefined;
+}, {
+    tenantId: string;
+    email: string;
+    name: string;
+    phone?: string | undefined;
+    source?: string | undefined;
+    consentText?: string | undefined;
+    ipHash?: string | undefined;
+    userAgent?: string | undefined;
+    marketingOptIn?: boolean | undefined;
+}>;
+type CreateLeadInput = z.infer<typeof CreateLeadInputSchema>;
 
 declare const PACKAGE_NAME: "@rhule/support-shared";
 declare const KIT_VERSION: "0.1.0";
 
-export { type BrandConfig, BrandConfigSchema, type BugSeverity, BugSeveritySchema, type CreateProposalInput, CreateProposalInputSchema, type CreateTicketInput, CreateTicketInputSchema, DEFAULT_TOPICS, type FeaturePriority, FeaturePrioritySchema, type GapStatus, GapStatusSchema, KIT_VERSION, type KbArticle, KbArticleSchema, type KbArticleStatus, KbArticleStatusSchema, type KbSourceKind, KbSourceKindSchema, type KbVisibility, KbVisibilitySchema, type KnowledgeGap, KnowledgeGapSchema, type MessageAuthorType, MessageAuthorTypeSchema, PACKAGE_NAME, type Proposal, ProposalSchema, type ProposalStatus, ProposalStatusSchema, type ProposalType, ProposalTypeSchema, type RecordKnowledgeGapInput, RecordKnowledgeGapInputSchema, SENSITIVE_TOPICS_DEFAULT, type SupportUser, SupportUserSchema, type TenantId, TenantIdSchema, type Ticket, type TicketCategory, TicketCategorySchema, type TicketKind, TicketKindSchema, type TicketMessage, TicketMessageSchema, TicketSchema, type TicketStatus, TicketStatusSchema, type TicketTopic, TicketTopicSchema, mapCategoryToKindTopic, mapKindTopicToCategory, normalizeAuthorType, normalizeCreateTicketInput, normalizeTicketStatus };
+export { type BrandConfig, BrandConfigSchema, type BugSeverity, BugSeveritySchema, type CreateLeadInput, CreateLeadInputSchema, type CreateProposalInput, CreateProposalInputSchema, type CreateTicketInput, CreateTicketInputSchema, DEFAULT_MARKETING_CONSENT_LABEL, DEFAULT_TOPICS, type FeaturePriority, FeaturePrioritySchema, type GapStatus, GapStatusSchema, KIT_VERSION, type KbArticle, KbArticleSchema, type KbArticleStatus, KbArticleStatusSchema, type KbSourceKind, KbSourceKindSchema, type KbVisibility, KbVisibilitySchema, type KnowledgeGap, KnowledgeGapSchema, type Lead, LeadSchema, type MessageAuthorType, MessageAuthorTypeSchema, PACKAGE_NAME, type Proposal, ProposalSchema, type ProposalStatus, ProposalStatusSchema, type ProposalType, ProposalTypeSchema, type RecordKnowledgeGapInput, RecordKnowledgeGapInputSchema, SENSITIVE_TOPICS_DEFAULT, type SupportUser, SupportUserSchema, type TenantId, TenantIdSchema, type Ticket, type TicketCategory, TicketCategorySchema, type TicketKind, TicketKindSchema, type TicketMessage, TicketMessageSchema, TicketSchema, type TicketStatus, TicketStatusSchema, type TicketTopic, TicketTopicSchema, mapCategoryToKindTopic, mapKindTopicToCategory, normalizeAuthorType, normalizeCreateTicketInput, normalizeTicketStatus };

@@ -21,7 +21,13 @@ export default function LaliaSupportLauncher({ user, openRef }) {
     <SupportLauncher
       apiBase={SUPPORT_API_BASE}
       getAccessToken={getSupportAccessToken}
-      brand={{ name: 'Lalia', supportAgentName: 'Lalia Help' }}
+      brand={{
+        name: 'Lalia',
+        supportAgentName: 'Lalia Help',
+        signupUrl: '/v2/signup',
+        contactEmail: 'support@jarmetals.com',
+      }}
+      audience={user?.id ? 'app' : 'public'}
       user={
         user
           ? {
