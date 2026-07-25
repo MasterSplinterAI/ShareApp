@@ -10,9 +10,9 @@
     "startFree": "Commencer gratuitement"
   },
   "hero": {
-    "eyebrow": "Sous-titres et traduction en direct",
-    "title": "Des visioconférences que chacun peut suivre—dans sa langue.",
-    "subtitle": "Lalia ajoute des sous-titres en direct et une traduction en temps réel à chaque réunion, pour que les équipes internationales restent alignées. Partagez un lien invité—sans compte requis—et conservez une transcription optionnelle si vous souhaitez un enregistrement.",
+    "eyebrow": "Traduction en direct · sous-titres · IA",
+    "title": "Traduction et sous-titres en direct pour vos réunions—dans toutes les langues.",
+    "subtitle": "Une plateforme navigateur pour les réunions multilingues : traduction en temps réel, sous-titres, transcriptions optionnelles et insights IA—pour les individus et les équipes.",
     "startFree": "Commencer gratuitement",
     "seePricing": "Voir les tarifs",
     "seeDemo": "Voir la démo en direct",
@@ -164,7 +164,7 @@
     "items": {
       "guests": {
         "q": "Les invités ont-ils besoin d'un compte ?",
-        "a": "Non. Les hôtes partagent une URL de participation invité (et un jeton d'invitation lorsque votre politique l'exige). Les invités saisissent un nom d'affichage et rejoignent la salle LiveKit."
+        "a": "Non. Les hôtes partagent une URL de participation invité (et un jeton d'invitation lorsque votre politique l'exige). Les invités saisissent un nom d'affichage et rejoignent la réunion dans le navigateur."
       },
       "transcripts": {
         "q": "Le stockage des transcriptions est-il obligatoire ?",
@@ -308,5 +308,8 @@
     "myLanguage": "Ma langue (parler et écouter)",
     "languageHint": "Les sous-titres et traductions s'afficheront dans cette langue.",
     "joinMeeting": "Rejoindre la réunion"
+  },
+  "trust": {
+    "poweredBy": "Vidéo en temps réel dans le navigateur"
   }
 }

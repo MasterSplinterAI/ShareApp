@@ -10,9 +10,9 @@
     "startFree": "Kostenlos starten"
   },
   "hero": {
-    "eyebrow": "Live-Untertitel & Übersetzung",
-    "title": "Videomeetings, denen jeder folgen kann—in der eigenen Sprache.",
-    "subtitle": "Lalia fügt jedem Meeting Live-Untertitel und Echtzeitübersetzung hinzu, damit globale Teams auf dem gleichen Stand bleiben. Teilen Sie einen Gastlink—kein Konto erforderlich—und behalten Sie optional ein Transkript, wenn Sie eine Aufzeichnung wünschen.",
+    "eyebrow": "Live-Übersetzung · Untertitel · KI",
+    "title": "Live-Meeting-Übersetzung und Untertitel—in jeder Sprache.",
+    "subtitle": "Eine Browser-Plattform für mehrsprachige Meetings: Echtzeitübersetzung, Spracherkennung, optionale Transkripte und KI-Insights—für Einzelpersonen und Teams.",
     "startFree": "Kostenlos starten",
     "seePricing": "Preise ansehen",
     "seeDemo": "Live-Demo ansehen",
@@ -164,7 +164,7 @@
     "items": {
       "guests": {
         "q": "Brauchen Gäste ein Konto?",
-        "a": "Nein. Hosts teilen eine Gast-Beitritts-URL (und ein Einladungstoken, wenn Ihre Richtlinie es erfordert). Gäste geben einen Anzeigenamen ein und treten dem LiveKit-Raum bei."
+        "a": "Nein. Hosts teilen eine Gast-Beitritts-URL (und ein Einladungstoken, wenn Ihre Richtlinie es erfordert). Gäste geben einen Anzeigenamen ein und treten der Besprechung im Browser bei."
       },
       "transcripts": {
         "q": "Ist die Transkriptspeicherung erforderlich?",
@@ -308,5 +308,8 @@
     "myLanguage": "Meine Sprache (sprechen & hören)",
     "languageHint": "Untertitel und Übersetzungen erscheinen in dieser Sprache.",
     "joinMeeting": "Meeting beitreten"
+  },
+  "trust": {
+    "poweredBy": "Echtzeit-Video im Browser"
   }
 }

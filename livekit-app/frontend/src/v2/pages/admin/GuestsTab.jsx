@@ -18,7 +18,7 @@ export function GuestsTab() {
     <Card className="app-card overflow-hidden border-border/60">
       <CardHeader>
         <CardTitle className="text-lg">Participant ledger (30 days)</CardTitle>
-        <CardDescription>{data?.notes || 'Join/leave activity from LiveKit lifecycle webhooks.'}</CardDescription>
+        <CardDescription>{data?.notes || 'Join/leave activity from meeting lifecycle webhooks.'}</CardDescription>
       </CardHeader>
       <div className="overflow-x-auto border-t border-border/60">
         <table className="w-full text-left text-sm">

@@ -335,7 +335,7 @@ export default function TranslationLabDemo() {
         <div className="mt-16 border-t border-border/60 pt-12">
           <h2 className="text-center text-lg font-semibold">How the demo works</h2>
           <p className="mx-auto mt-2 max-w-lg text-center text-sm text-muted-foreground">
-            Not a scripted chatbot — a real LiveKit room with production STT and translation.
+            Not a scripted chatbot — a real meeting room with production speech-to-text and translation.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-3">
             {STEPS.map(({ icon: Icon, title, body }, i) => (

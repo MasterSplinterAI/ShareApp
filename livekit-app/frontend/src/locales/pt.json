@@ -10,9 +10,9 @@
     "startFree": "Começar grátis"
   },
   "hero": {
-    "eyebrow": "Legendas e tradução ao vivo",
-    "title": "Videoconferências que todos podem acompanhar—no seu próprio idioma.",
-    "subtitle": "O Lalia adiciona legendas ao vivo e tradução em tempo real a cada reunião, para que equipes globais permaneçam alinhadas. Compartilhe um link de convidado—sem conta necessária—e mantenha uma transcrição opcional quando quiser um registro.",
+    "eyebrow": "Tradução ao vivo · legendas · IA",
+    "title": "Tradução e legendas ao vivo para reuniões—em qualquer idioma.",
+    "subtitle": "Uma plataforma no navegador para reuniões multilíngues: tradução em tempo real, legendas, transcrições opcionais e insights de IA—para pessoas e equipes.",
     "startFree": "Começar grátis",
     "seePricing": "Ver preços",
     "seeDemo": "Ver demo ao vivo",
@@ -164,7 +164,7 @@
     "items": {
       "guests": {
         "q": "Convidados precisam de uma conta?",
-        "a": "Não. Os anfitriões compartilham uma URL de entrada para convidados (e um token de convite quando sua política exige). Convidados informam um nome de exibição e entram na sala LiveKit."
+        "a": "Não. Os anfitriões compartilham uma URL de entrada para convidados (e um token de convite quando sua política exige). Convidados informam um nome de exibição e entram na reunião no navegador."
       },
       "transcripts": {
         "q": "O armazenamento de transcrições é obrigatório?",
@@ -308,5 +308,8 @@
     "myLanguage": "Meu idioma (falar e ouvir)",
     "languageHint": "Legendas e traduções aparecerão neste idioma.",
     "joinMeeting": "Entrar na reunião"
+  },
+  "trust": {
+    "poweredBy": "Vídeo em tempo real no navegador"
   }
 }

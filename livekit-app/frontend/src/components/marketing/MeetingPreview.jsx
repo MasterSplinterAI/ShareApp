@@ -281,12 +281,18 @@ function VideoTile({ label, sub, image, fallback, badge, compact = false }) {
 function ScreenShareTile({ presentingLabel }) {
   return (
     <div className="relative h-full w-full overflow-hidden bg-slate-100">
-      <img
-        src="/marketing/hero-screenshare.png"
-        alt=""
-        className="absolute inset-0 h-full w-full object-contain bg-slate-100 p-1 sm:p-2"
-        loading="lazy"
-      />
+      <picture>
+        <source srcSet="/marketing/hero-screenshare.webp" type="image/webp" />
+        <img
+          src="/marketing/hero-screenshare.png"
+          alt=""
+          className="absolute inset-0 h-full w-full object-contain bg-slate-100 p-1 sm:p-2"
+          loading="lazy"
+          decoding="async"
+          width={1600}
+          height={1067}
+        />
+      </picture>
       <div className="absolute bottom-2 left-2 rounded-md border border-border/60 bg-background/90 px-2 py-0.5 text-[9px] text-foreground shadow-sm sm:text-[10px]">
         {presentingLabel}
       </div>

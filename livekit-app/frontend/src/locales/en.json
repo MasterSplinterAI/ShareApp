@@ -13,9 +13,9 @@
     "menuTitle": "Menu"
   },
   "hero": {
-    "eyebrow": "Multilingual meetings · captions · AI insights",
-    "title": "Meetings that work in every language—live and after.",
-    "subtitle": "Lalia combines live translation, speech-to-text, optional transcript storage, and AI meeting reports—for solo calls or whole teams.",
+    "eyebrow": "Live translation · captions · AI insights",
+    "title": "Live meeting translation and captions—in every language.",
+    "subtitle": "One browser platform for multilingual meetings: real-time translation, speech-to-text, optional transcripts, and AI insights—for individuals and teams.",
     "startFree": "Start free — 60 min/month",
     "tryTranslation": "Try translation",
     "seeHowItWorks": "See how it works",
@@ -85,7 +85,7 @@
       "transcripts": "Transcripts off by default",
       "retention": "You control retention"
     },
-    "poweredBy": "Powered by LiveKit real-time infrastructure"
+    "poweredBy": "Real-time video in the browser"
   },
   "footer": {
     "tagline": "The multilingual meeting platform—live translation, transcripts, and AI insights for individuals and teams.",
@@ -254,7 +254,7 @@
     "items": {
       "guests": {
         "q": "Do guests need an account?",
-        "a": "No. Hosts share a guest join URL (and an invite token when your policy requires it). Guests enter a display name and join the LiveKit room."
+        "a": "No. Hosts share a guest join URL (and an invite token when your policy requires it). Guests enter a display name and join in the browser."
       },
       "transcripts": {
         "q": "Is transcript storage required?",

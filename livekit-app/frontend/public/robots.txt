@@ -1,4 +1,9 @@
 User-agent: *
 Allow: /
 
+# Private / ephemeral app surfaces — do not index
+Disallow: /v2/app/
+Disallow: /room/
+Disallow: /join/
+
 Sitemap: https://lalia.cloud/sitemap.xml

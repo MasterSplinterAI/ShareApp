@@ -10,9 +10,9 @@
     "startFree": "Empezar gratis"
   },
   "hero": {
-    "eyebrow": "Subtítulos y traducción en vivo",
-    "title": "Videollamadas que todos pueden seguir—en su propio idioma.",
-    "subtitle": "Lalia añade subtítulos en vivo y traducción en tiempo real a cada reunión, para que los equipos globales sigan alineados. Comparte un enlace de invitado—sin cuenta necesaria—y guarda una transcripción opcional cuando quieras un registro.",
+    "eyebrow": "Traducción en vivo · subtítulos · IA",
+    "title": "Traducción y subtítulos en vivo para reuniones—en cualquier idioma.",
+    "subtitle": "Una plataforma en el navegador para reuniones multilingües: traducción en tiempo real, subtítulos, transcripciones opcionales e insights de IA—para personas y equipos.",
     "startFree": "Empezar gratis",
     "seePricing": "Ver precios",
     "seeDemo": "Ver demo en vivo",
@@ -164,7 +164,7 @@
     "items": {
       "guests": {
         "q": "¿Los invitados necesitan una cuenta?",
-        "a": "No. Los anfitriones comparten una URL de acceso para invitados (y un token de invitación cuando tu política lo requiere). Los invitados introducen un nombre para mostrar y se unen a la sala de LiveKit."
+        "a": "No. Los anfitriones comparten una URL de acceso para invitados (y un token de invitación cuando tu política lo requiere). Los invitados introducen un nombre para mostrar y se unen a la reunión en el navegador."
       },
       "transcripts": {
         "q": "¿Es obligatorio almacenar transcripciones?",
@@ -308,5 +308,8 @@
     "myLanguage": "Mi idioma (hablar y escuchar)",
     "languageHint": "Los subtítulos y traducciones aparecerán en este idioma.",
     "joinMeeting": "Unirse a la reunión"
+  },
+  "trust": {
+    "poweredBy": "Vídeo en tiempo real en el navegador"
   }
 }

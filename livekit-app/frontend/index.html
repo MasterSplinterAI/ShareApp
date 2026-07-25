@@ -5,7 +5,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%232563eb' rx='8'/><text x='16' y='22' text-anchor='middle' fill='white' font-family='system-ui,sans-serif' font-size='14' font-weight='700'>L</text></svg>" />
@@ -68,7 +68,7 @@
                 "name": "Do guests need an account?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "No. Hosts share a guest join URL and invite token when required. Guests enter a display name and join in the browser."
+                  "text": "No. Hosts share a guest join URL (and an invite token when your policy requires it). Guests enter a display name and join in the browser."
                 }
               },
               {
@@ -76,23 +76,7 @@
                 "name": "Which languages are supported?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Lalia supports 30+ meeting languages for live captions and cross-language translation."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Are meetings recorded?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "No. Audio and video are not recorded. Optional transcript text is stored only when the host enables it for a meeting."
-                }
-              },
-              {
-                "@type": "Question",
-                "name": "Do you use my meetings to train AI models?",
-                "acceptedAnswer": {
-                  "@type": "Answer",
-                  "text": "No. Lalia does not use meeting content to train its own models. Providers process data under contract to operate the service."
+                  "text": "Lalia supports 30+ meeting languages for live captions and cross-language translation—including English, Spanish, French, German, Portuguese, Japanese, Chinese, Arabic, Hebrew, and more. Hosts and guests each pick their own language lane in the meeting."
                 }
               },
               {
@@ -100,7 +84,71 @@
                 "name": "How is Lalia different from transcription-only tools?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when storage is enabled."
+                  "text": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How many participants can join a meeting?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Lalia is built for team calls and client meetings with multiple speakers. Typical group sizes work well on all plans. Need a large event or webinar-style session? Contact us—we'll help you size the right plan."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What happens when I hit my plan limit?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Free plans stop at 60 minutes per meter per month. On Starter/Pro, usage past your included pool can be auto-charged only if you opt in (meeting 3¢/2¢ per min; translation 6¢/5¢). At 2× included minutes for meeting or translation, new meetings and joins are blocked until the next period or you upgrade. See Pricing for included amounts."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Is transcript storage required?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Each meeting can opt in to saving finalized caption lines on the server. Hosts and org admins can download later when lines exist."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Are meetings recorded?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Do you use my meetings to train AI models?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No—we do not use your meeting content to train Lalia's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I try it before paying?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The free plan includes 60 participant-minutes per month—no credit card required. Upgrade anytime when you need more."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Where is data stored?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Meetings are processed in real time. Transcripts are stored only when the host enables storage for a meeting, and can be deleted at any time. All data is encrypted in transit."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "How accurate is the live translation?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Lalia uses real-time speech recognition with multi-language translation. Accuracy depends on audio quality—it works best when speakers use a headset in a quiet environment."
                 }
               }
             ]

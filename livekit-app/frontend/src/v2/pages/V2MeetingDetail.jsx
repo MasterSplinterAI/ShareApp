@@ -778,7 +778,7 @@ export default function V2MeetingDetail() {
           <AlertDialogHeader>
             <AlertDialogTitle>End meeting for everyone?</AlertDialogTitle>
             <AlertDialogDescription>
-              The LiveKit room will be closed and invite links revoked. Participants will be disconnected.
+              The meeting room will be closed and invite links revoked. Participants will be disconnected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

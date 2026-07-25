@@ -6,7 +6,9 @@
   "scripts": {
     "postinstall": "patch-package",
     "dev": "vite --host 0.0.0.0 --port 5174",
-    "build": "vite build",
+    "build": "vite build && node scripts/prerender.mjs",
+    "build:app": "vite build",
+    "prerender": "node scripts/prerender.mjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "npx playwright test",
