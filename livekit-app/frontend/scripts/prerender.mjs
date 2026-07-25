@@ -75,8 +75,18 @@ async function main() {
     process.exit(1)
   }
 
+  let browser
+  try {
+    browser = await chromium.launch({ headless: true })
+  } catch (err) {
+    // Staging/CI boxes often lack Playwright browser binaries. Vite output is
+    // still valid; skip shells instead of failing the whole deploy.
+    console.warn('prerender: skipping — Chromium unavailable')
+    console.warn(String(err?.message || err))
+    process.exit(0)
+  }
+
   const server = await startStaticServer()
-  const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
 
   try {
