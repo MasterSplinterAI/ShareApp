@@ -14,12 +14,15 @@ REMOTE_HOST="3.16.210.84"
 PEM_KEY="$HOME/Downloads/AxisAlgo.pem"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-v2-foundation}"
 STAGING_BACKEND_PORT="${STAGING_BACKEND_PORT:-3101}"
+FORCE_FRONTEND_BUILD="${FORCE_FRONTEND_BUILD:-false}"
 APP_DIR="/var/www/share-app-staging"
 BACKEND_DIR="$APP_DIR/livekit-app/backend"
 FRONTEND_DIR="$APP_DIR/livekit-app/frontend"
 VENDOR_DIR="$APP_DIR/livekit-app/vendor"
 GIT_REPO="/home/ubuntu/git/share-app.git"
 PM2_NAME="livekit-backend-staging"
+NGINX_STAGING_SRC="deploy/nginx-staging.jarmetals.com.conf"
+NGINX_STAGING_DEST="/etc/nginx/sites-available/staging.jarmetals.com"
 
 echo "=== ShareApp STAGING deploy ($DEPLOY_BRANCH) ==="
 
@@ -52,7 +55,7 @@ echo "Ops note: staging should use a separate LiveKit project/API keys from prod
 
 echo "=== Step 2: deploy $DEPLOY_BRANCH to $REMOTE_HOST ==="
 ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
-  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' bash -s" <<'REMOTE'
+  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' FORCE_FRONTEND_BUILD='$FORCE_FRONTEND_BUILD' NGINX_STAGING_DEST='$NGINX_STAGING_DEST' bash -s" <<'REMOTE'
 set -euo pipefail
 
 echo "Fetching latest code..."
@@ -85,9 +88,10 @@ fi
 
 NEED_FRONTEND_BUILD=false
 NEED_BACKEND_INSTALL=false
-if [ -z "$CHANGED_FILES" ]; then
+if [ -z "$CHANGED_FILES" ] || [ "${FORCE_FRONTEND_BUILD:-false}" = true ]; then
   NEED_FRONTEND_BUILD=true
   NEED_BACKEND_INSTALL=true
+  [ "${FORCE_FRONTEND_BUILD:-false}" = true ] && echo "FORCE_FRONTEND_BUILD=true — rebuilding frontend."
 else
   echo "$CHANGED_FILES" | grep -q '^livekit-app/frontend/'       && NEED_FRONTEND_BUILD=true || true
   echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/package' && NEED_BACKEND_INSTALL=true || true
@@ -193,10 +197,35 @@ if [ "$NEED_FRONTEND_BUILD" = true ] || [ ! -f "$FRONTEND_DIR/index.html" ]; the
   fi
   # Staging: show "Try V2 workspace" on classic home (build-time flag only for this deploy path).
   export VITE_V2_ENTRY_ENABLED="${VITE_V2_ENTRY_ENABLED:-true}"
+  # Install Chromium once so marketing prerender shells can be generated.
+  if [ ! -d "$HOME/.cache/ms-playwright" ]; then
+    echo "Installing Playwright Chromium for prerender..."
+    npx playwright install chromium >/dev/null
+  fi
   npm run build --silent
   sudo rsync -a --delete "$TEMP_DIR/livekit-app/frontend/dist/" "$FRONTEND_DIR/"
 else
   echo "Frontend: no source changes, skipping build."
+fi
+
+# Staging must never be indexed — override production robots.txt from the build.
+printf '%s\n' \
+  'User-agent: *' \
+  'Disallow: /' \
+  '' \
+  '# Staging override — production robots.txt is restored on prod deploys.' \
+  | sudo tee "$FRONTEND_DIR/robots.txt" >/dev/null
+echo "Wrote staging robots.txt (Disallow: /)."
+
+# Apply staging nginx vhost from repo (X-Robots-Tag, try_files for prerender).
+if [ -f "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" ]; then
+  echo "Updating staging nginx vhost..."
+  sudo cp "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" "$NGINX_STAGING_DEST"
+  sudo nginx -t
+  sudo systemctl reload nginx
+  echo "Nginx reloaded for staging.jarmetals.com."
+else
+  echo "Warning: deploy/nginx-staging.jarmetals.com.conf missing in checkout." >&2
 fi
 
 sudo chown -R ubuntu:ubuntu "$APP_DIR"
