@@ -11,6 +11,9 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1085.0",
     "@aws-sdk/lib-storage": "^3.1085.0",
+    "@rhule/support-channels": "file:../vendor/support-kit/packages/channels",
+    "@rhule/support-core": "file:../vendor/support-kit/packages/core",
+    "@rhule/support-shared": "file:../vendor/support-kit/packages/shared",
     "axios": "^1.6.2",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -23,11 +26,9 @@
     "marked": "^18.0.5",
     "multer": "^2.1.1",
     "pdfkit": "^0.19.1",
+    "pg": "^8.22.0",
     "sqlite3": "^5.1.6",
-    "stripe": "^22.2.0",
-    "@rhule/support-shared": "file:../vendor/support-kit/packages/shared",
-    "@rhule/support-core": "file:../vendor/support-kit/packages/core",
-    "@rhule/support-channels": "file:../vendor/support-kit/packages/channels"
+    "stripe": "^22.2.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

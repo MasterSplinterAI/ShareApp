@@ -1,17 +1,46 @@
 /**
- * SQLite persistence for V2 SaaS (users, orgs, meetings, billing, usage, files).
- * File: v2-platform.db next to backend (excluded from rsync deploy deletes via path).
+ * V2 SaaS persistence (users, orgs, meetings, billing, usage, files).
+ *
+ * - DATABASE_URL set → PostgreSQL (staging/prod)
+ * - otherwise → SQLite file v2-platform.db (local/dev fallback)
  */
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
 const crypto = require('crypto');
+const { toPostgresSql } = require('./sqlCompat');
 
+const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+const usePostgres = Boolean(DATABASE_URL);
 const DB_PATH = process.env.V2_DB_PATH || path.join(__dirname, '..', 'v2-platform.db');
 
 let db = null;
+let pool = null;
 let initPromise = null;
 
-function run(sql, params = []) {
+function uuid() {
+  return crypto.randomUUID();
+}
+
+function isPostgres() {
+  return usePostgres;
+}
+
+async function pgRun(sql, params = []) {
+  const res = await pool.query(toPostgresSql(sql), params);
+  const lastID = res.rows?.[0]?.id;
+  return { lastID: lastID != null ? lastID : 0, changes: res.rowCount ?? 0 };
+}
+
+async function pgGet(sql, params = []) {
+  const res = await pool.query(toPostgresSql(sql), params);
+  return res.rows[0];
+}
+
+async function pgAll(sql, params = []) {
+  const res = await pool.query(toPostgresSql(sql), params);
+  return res.rows || [];
+}
+
+function sqliteRun(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) reject(err);
@@ -20,7 +49,7 @@ function run(sql, params = []) {
   });
 }
 
-function get(sql, params = []) {
+function sqliteGet(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
       if (err) reject(err);
@@ -29,7 +58,7 @@ function get(sql, params = []) {
   });
 }
 
-function all(sql, params = []) {
+function sqliteAll(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
       if (err) reject(err);
@@ -38,8 +67,16 @@ function all(sql, params = []) {
   });
 }
 
-function uuid() {
-  return crypto.randomUUID();
+function run(sql, params = []) {
+  return usePostgres ? pgRun(sql, params) : sqliteRun(sql, params);
+}
+
+function get(sql, params = []) {
+  return usePostgres ? pgGet(sql, params) : sqliteGet(sql, params);
+}
+
+function all(sql, params = []) {
+  return usePostgres ? pgAll(sql, params) : sqliteAll(sql, params);
 }
 
 async function migrate() {
@@ -778,19 +815,42 @@ async function migrate() {
   });
 }
 
+async function initPostgres() {
+  const { Pool } = require('pg');
+  const { runMigrations } = require('./runMigrations');
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    max: Number(process.env.PG_POOL_MAX || 10),
+  });
+  pool.on('error', (err) => {
+    console.error('[v2Database] Postgres pool error:', err.message);
+  });
+  await pool.query('SELECT 1');
+  const result = await runMigrations(pool);
+  console.log(
+    `[v2Database] Ready: postgres (migrations applied=${result.applied}/${result.total})`
+  );
+}
+
+async function initSqlite() {
+  const sqlite3 = require('sqlite3').verbose();
+  await new Promise((resolve, reject) => {
+    db = new sqlite3.Database(DB_PATH, (err) => {
+      if (err) {
+        console.error('[v2Database] Failed to open:', err.message);
+        reject(err);
+      } else resolve();
+    });
+  });
+  await migrate();
+  console.log('[v2Database] Ready:', DB_PATH);
+}
+
 function initDatabase() {
   if (initPromise) return initPromise;
   initPromise = (async () => {
-    await new Promise((resolve, reject) => {
-      db = new sqlite3.Database(DB_PATH, (err) => {
-        if (err) {
-          console.error('[v2Database] Failed to open:', err.message);
-          reject(err);
-        } else resolve();
-      });
-    });
-    await migrate();
-    console.log('[v2Database] Ready:', DB_PATH);
+    if (usePostgres) await initPostgres();
+    else await initSqlite();
   })();
   return initPromise;
 }
@@ -798,6 +858,8 @@ function initDatabase() {
 module.exports = {
   initDatabase,
   DB_PATH,
+  DATABASE_URL: usePostgres ? DATABASE_URL : '',
+  isPostgres,
   run,
   get,
   all,
