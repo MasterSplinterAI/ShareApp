@@ -12,8 +12,8 @@
 cd /var/www/share-app-staging/livekit-app/backend
 export DATABASE_URL="$(cat /home/ubuntu/.lalia_staging_database_url)"
 
-# One-time import from existing SQLite (safe to re-run; conflicts skipped)
-node db/importSqliteToPostgres.js ./v2-platform.db
+# One-time import from existing SQLite (FK-safe order; use --truncate to reload)
+node db/importSqliteToPostgres.js --truncate ./v2-platform.db
 
 # Wire app env (append once)
 grep -q '^DATABASE_URL=' .env || echo "DATABASE_URL=$DATABASE_URL" >> .env
