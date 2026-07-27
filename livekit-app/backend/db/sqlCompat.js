@@ -58,8 +58,9 @@ function toPostgresSql(sql) {
     `to_char(timezone('utc', now()), 'YYYY-MM-DD HH24:MI:SS')`
   );
 
-  // datetime(column_or_alias) for compare/order — TEXT columns cast to timestamp
-  s = s.replace(/datetime\s*\(\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\)/gi, '($1)::timestamp');
+  // datetime(column) — TEXT ISO timestamps compare lexicographically with to_char(...).
+  // Do not cast to timestamp (avoids "timestamp <= text" errors vs datetime('now')).
+  s = s.replace(/datetime\s*\(\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\)/gi, '$1');
 
   return convertPlaceholders(s);
 }

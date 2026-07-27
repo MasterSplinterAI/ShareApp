@@ -42,4 +42,12 @@ describe('sqlCompat.toPostgresSql', () => {
     assert.match(out, /BIGSERIAL PRIMARY KEY/);
     assert.doesNotMatch(out, /AUTOINCREMENT/);
   });
+
+  it('strips datetime() around columns without timestamp cast', () => {
+    const out = toPostgresSql(
+      "SELECT * FROM t WHERE datetime(period_start) <= datetime('now')"
+    );
+    assert.match(out, /period_start\s*<=\s*to_char/);
+    assert.doesNotMatch(out, /::timestamp/);
+  });
 });
