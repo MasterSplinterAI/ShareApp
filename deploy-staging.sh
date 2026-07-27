@@ -68,9 +68,12 @@ if [ -z "$NEW_COMMIT" ]; then
   exit 1
 fi
 
-if [ "$OLD_COMMIT" = "$NEW_COMMIT" ] && [ -n "$OLD_COMMIT" ]; then
+if [ "$OLD_COMMIT" = "$NEW_COMMIT" ] && [ -n "$OLD_COMMIT" ] && [ "${FORCE_FRONTEND_BUILD:-false}" != true ]; then
   echo "No new commits for $DEPLOY_BRANCH ($OLD_COMMIT). Nothing to deploy."
   exit 0
+fi
+if [ "$OLD_COMMIT" = "$NEW_COMMIT" ] && [ "${FORCE_FRONTEND_BUILD:-false}" = true ]; then
+  echo "No new commits, but FORCE_FRONTEND_BUILD=true — rebuilding frontend from $NEW_COMMIT."
 fi
 
 TEMP_DIR="$(mktemp -d)"
@@ -197,10 +200,15 @@ if [ "$NEED_FRONTEND_BUILD" = true ] || [ ! -f "$FRONTEND_DIR/index.html" ]; the
   fi
   # Staging: show "Try V2 workspace" on classic home (build-time flag only for this deploy path).
   export VITE_V2_ENTRY_ENABLED="${VITE_V2_ENTRY_ENABLED:-true}"
-  # Install Chromium once so marketing prerender shells can be generated.
+  # Install Chromium (+ OS libs once) so marketing prerender shells can be generated.
   if [ ! -d "$HOME/.cache/ms-playwright" ]; then
     echo "Installing Playwright Chromium for prerender..."
     npx playwright install chromium >/dev/null
+  fi
+  if [ ! -f "$HOME/.cache/ms-playwright/.deps-installed" ]; then
+    echo "Installing Playwright OS dependencies (sudo)..."
+    sudo npx playwright install-deps chromium >/dev/null || true
+    touch "$HOME/.cache/ms-playwright/.deps-installed" 2>/dev/null || true
   fi
   npm run build --silent
   sudo rsync -a --delete "$TEMP_DIR/livekit-app/frontend/dist/" "$FRONTEND_DIR/"
