@@ -490,21 +490,24 @@ export default function V2MeetingDetail() {
         </Button>
       )}
       {canManageMeeting && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              size="lg"
-              className="h-12 flex-1 gap-2.5 bg-emerald-600 text-base font-semibold text-white shadow-sm hover:bg-emerald-700"
-            >
-              <UserPlus className="h-4 w-4 shrink-0" />
-              Invite guests
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-[min(92vw,34rem)]">
-            <MeetingEmailInvites meetingId={meeting.id} />
-          </PopoverContent>
-        </Popover>
+        <Button
+          type="button"
+          size="lg"
+          className="h-12 flex-1 gap-2.5 bg-emerald-600 text-base font-semibold text-white shadow-sm hover:bg-emerald-700"
+          onClick={() => {
+            const el = document.getElementById('meeting-guests');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              const input = el.querySelector('input[inputmode="email"], input[type="email"], #guest-emails-' + meeting.id);
+              if (input instanceof HTMLElement) {
+                window.setTimeout(() => input.focus(), 350);
+              }
+            }
+          }}
+        >
+          <UserPlus className="h-4 w-4 shrink-0" />
+          Invite guests
+        </Button>
       )}
     </div>
   );
@@ -755,6 +758,23 @@ export default function V2MeetingDetail() {
       )}
 
       {transcriptCard}
+
+      {canManageMeeting && (
+        <Card id="meeting-guests" className="app-card scroll-mt-24 border-border/60">
+          <CardHeader className="border-b border-border/60 pb-4">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <UserPlus className="h-5 w-5 text-emerald-600" />
+              Guests
+            </CardTitle>
+            <CardDescription>
+              Invite by email and track who accepted, declined, or still needs to reply.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <MeetingEmailInvites meetingId={meeting.id} />
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
         {isLive ? (

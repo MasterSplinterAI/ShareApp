@@ -23,18 +23,36 @@ export function reminderOffsetLabel(offsetMin) {
 }
 
 export function rsvpStatusLabel(status) {
+  return rsvpStatusMeta(status).label;
+}
+
+/** Always returns a display label + Badge variant (null/unknown → Pending). */
+export function rsvpStatusMeta(status) {
   switch (status) {
     case 'accepted':
-      return 'Accepted';
+      return { key: 'accepted', label: 'Accepted', variant: 'success' };
     case 'declined':
-      return 'Declined';
+      return { key: 'declined', label: 'Declined', variant: 'destructive' };
     case 'tentative':
-      return 'Maybe';
+      return { key: 'tentative', label: 'Maybe', variant: 'warning' };
     case 'needs_action':
-      return 'Awaiting';
+      return { key: 'needs_action', label: 'Awaiting reply', variant: 'muted' };
     default:
-      return null;
+      return { key: 'pending', label: 'Pending', variant: 'muted' };
   }
+}
+
+export function summarizeGuestRsvps(guests = []) {
+  const summary = { total: guests.length, accepted: 0, declined: 0, maybe: 0, pending: 0, queued: 0 };
+  for (const g of guests) {
+    if (!g.sent_at) summary.queued += 1;
+    const key = rsvpStatusMeta(g.rsvp_status).key;
+    if (key === 'accepted') summary.accepted += 1;
+    else if (key === 'declined') summary.declined += 1;
+    else if (key === 'tentative') summary.maybe += 1;
+    else summary.pending += 1;
+  }
+  return summary;
 }
 
 export function offsetsFromToggles({ dayBefore, fifteenMin }) {
