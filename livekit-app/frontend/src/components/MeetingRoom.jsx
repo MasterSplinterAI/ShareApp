@@ -464,6 +464,25 @@ function MeetingRoomInner({
   // chrome uses room-label translations instead.
   useEffect(() => {
     autopilotTranslator.destroy();
+    const html = document.documentElement;
+    html.setAttribute('translate', 'no');
+    html.classList.add('notranslate');
+    let meta = document.querySelector('meta[name="google"]');
+    const createdMeta = !meta;
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'google');
+      document.head.appendChild(meta);
+    }
+    const previousContent = meta.getAttribute('content');
+    meta.setAttribute('content', 'notranslate');
+    return () => {
+      html.removeAttribute('translate');
+      html.classList.remove('notranslate');
+      if (createdMeta) meta.remove();
+      else if (previousContent == null) meta.removeAttribute('content');
+      else meta.setAttribute('content', previousContent);
+    };
   }, []);
 
   const handleFetchTokenForReconnect = useCallback(async () => {
@@ -473,7 +492,7 @@ function MeetingRoomInner({
   }, [fetchRoomToken, setReconnecting]);
 
   return (
-    <div className="meeting-surface meeting-room-root relative h-[100dvh] w-full overflow-hidden">
+    <div translate="no" className="meeting-surface meeting-room-root notranslate relative h-[100dvh] w-full overflow-hidden">
       <LiveKitRoom
         video={false}
         audio={false}

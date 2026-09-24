@@ -3,7 +3,10 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { I18nProvider } from './lib/i18n/I18nProvider.jsx'
+import { installDomRemoveChildGuard } from './lib/domRemoveChildGuard.js'
 import './index.css'
+
+installDomRemoveChildGuard()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
