@@ -117,14 +117,26 @@ def _stt_stream_supports_flush(provider: str) -> bool:
 def _deepgram_stt_idle_ms() -> int:
     """
     Finalize the live bubble after this long with no *changed* transcript from Deepgram.
+    A thought stays open across breaths; this is "done speaking," not a clause pause.
     Does not depend on room silence — background noise won't block finalize.
     """
-    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "1500").strip()
+    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "3500").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 1500
-    return max(400, min(ms, 5000))
+        ms = 3500
+    return max(400, min(ms, 8000))
+
+
+def _translation_covers_thought(source: str, translated: str) -> bool:
+    """False when the translation is only the first clause of a longer thought."""
+    src_words = [w for w in (source or "").split() if w]
+    tgt_words = [w for w in (translated or "").split() if w]
+    if not src_words:
+        return True
+    if len(src_words) <= 8:
+        return bool(tgt_words)
+    return len(tgt_words) >= max(4, int(len(src_words) * 0.55))
 
 
 def _llm_model() -> str:
@@ -1868,7 +1880,10 @@ class TranscriptionOnlyAgent:
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                 else:
                     full_translated = lane.display_translation()
-                    if not (full_translated or "").strip() and lane.llm_instance is not None:
+                    if (
+                        lane.llm_instance is not None
+                        and not _translation_covers_thought(full_original, full_translated)
+                    ):
                         # Lane joined mid-turn (listener language arrived after speech
                         # started) so no translation was ever attempted — one direct
                         # call here keeps the FIRST utterance from publishing

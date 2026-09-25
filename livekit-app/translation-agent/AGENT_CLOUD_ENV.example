@@ -17,7 +17,7 @@ DEEPGRAM_API_KEY=
 # Deepgram END_OF_SPEECH (ms silence). 400 is a good default.
 DEEPGRAM_ENDPOINTING_MS=400
 # Finalize bubble after no new/changed transcript for this long (default 1200ms).
-DEEPGRAM_STT_IDLE_MS=1200
+DEEPGRAM_STT_IDLE_MS=3500
 
 # Silero VAD — higher activation_threshold = less background noise triggering speech.
 # Presets: quiet | normal | noisy | ultra_noisy (override with VAD_PRESET).

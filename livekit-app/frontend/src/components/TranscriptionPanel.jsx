@@ -476,12 +476,11 @@ function TranscriptionPanel() {
               );
             }
 
-            if (idx >= 0) {
-              const existing = prev[idx];
+            const commitExisting = (existing, index) => {
               const newTranslations = { ...existing.translations };
               if (isTranslation) newTranslations[targetLang] = text;
               const next = [...prev];
-              next[idx] = {
+              next[index] = {
                 ...existing,
                 originalText: pickLiveCaptionText(
                   existing.originalText,
@@ -494,6 +493,27 @@ function TranscriptionPanel() {
                 isPartial: false,
               };
               return next;
+            };
+
+            if (idx >= 0) {
+              return commitExisting(prev[idx], idx);
+            }
+
+            // Same thought split across two finals (shorter line, then the continuation).
+            for (let i = prev.length - 1; i >= 0; i -= 1) {
+              const existing = prev[i];
+              if (existing.speaker !== speakerId || existing.isPartial) continue;
+              if (Math.abs(existing.timestamp - messageTimestamp) > 8000) break;
+              const prevText = existing.originalText || '';
+              const nextText = originalText || text || '';
+              const continues = nextText.startsWith(prevText)
+                || prevText.startsWith(nextText)
+                || wordPrefixMatch(prevText, nextText)
+                || wordPrefixMatch(nextText, prevText);
+              if (continues && (prevText.length > 12 || nextText.length > 12)) {
+                return commitExisting(existing, i);
+              }
+              break;
             }
 
             // Late-arriving translation for an already-finalized bubble.
