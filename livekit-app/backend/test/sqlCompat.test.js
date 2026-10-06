@@ -50,4 +50,14 @@ describe('sqlCompat.toPostgresSql', () => {
     assert.match(out, /period_start\s*<=\s*to_char/);
     assert.doesNotMatch(out, /::timestamp/);
   });
+
+  it('rewrites SQLite date(column) because Postgres has no date(text)', () => {
+    const out = toPostgresSql(
+      "SELECT date(created_at) AS day, COUNT(DISTINCT date(ue.created_at)) FROM t GROUP BY date(created_at)"
+    );
+    assert.match(out, /left\(\(created_at\)::text, 10\) AS day/);
+    assert.match(out, /COUNT\(DISTINCT left\(\(ue\.created_at\)::text, 10\)\)/);
+    assert.match(out, /GROUP BY left\(\(created_at\)::text, 10\)/);
+    assert.doesNotMatch(out, /\bdate\s*\(/);
+  });
 });

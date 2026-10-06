@@ -62,6 +62,11 @@ function toPostgresSql(sql) {
   // Do not cast to timestamp (avoids "timestamp <= text" errors vs datetime('now')).
   s = s.replace(/datetime\s*\(\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\)/gi, '$1');
 
+  // SQLite date(column) on TEXT timestamps. Postgres has no date(text).
+  // Stored values are 'YYYY-MM-DD ...' or ISO-8601, so the first 10 chars are the day.
+  // \bdate( does not match date_trunc(.
+  s = s.replace(/\bdate\s*\(\s*([a-zA-Z_][a-zA-Z0-9_.]*)\s*\)/gi, 'left(($1)::text, 10)');
+
   return convertPlaceholders(s);
 }
 

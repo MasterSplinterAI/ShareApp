@@ -81,7 +81,7 @@ async function getOrgUsageAnalytics(orgId) {
      LEFT JOIN v2_meetings m ON m.id = ue.meeting_id
      WHERE ue.org_id = ? AND ue.event_type = 'meeting_participant_minute'
        AND ue.created_at >= datetime('now', 'start of month')
-     GROUP BY ue.meeting_id
+     GROUP BY ue.meeting_id, m.title
      ORDER BY meeting_minutes DESC
      LIMIT 20`,
     [orgId]
@@ -281,21 +281,29 @@ router.get('/costs/summary', requireV2Auth, requireSuperadmin, async (req, res) 
        FROM meeting_cost_rollups r
        WHERE r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000`
     );
+    // Aggregate rollups first. Postgres rejects SELECT columns (org name, plan)
+    // that are not in GROUP BY; SQLite does not. Joining plan/org after the
+    // aggregate keeps one row per org, including guest rooms with a null org_id.
     const byOrg = await db.all(
-      `SELECT COALESCE(r.org_id, mt.org_id) AS org_id, o.name AS org_name,
-              COALESCE(SUM(r.total_cost_usd), 0) AS cost_usd,
-              COUNT(*) AS meetings,
+      `SELECT g.org_id, o.name AS org_name, g.cost_usd, g.meetings,
               s.plan_id, s.is_comp, p.monthly_price_cents,
               (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
-               FROM v2_usage_events u WHERE u.org_id = COALESCE(r.org_id, mt.org_id) AND u.created_at >= datetime('now', 'start of month')) AS mtd_minutes
-       FROM meeting_cost_rollups r
-       LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
-       LEFT JOIN v2_organizations o ON o.id = COALESCE(r.org_id, mt.org_id)
-       LEFT JOIN v2_org_subscriptions s ON s.org_id = COALESCE(r.org_id, mt.org_id)
+               FROM v2_usage_events u
+               WHERE u.org_id = g.org_id
+                 AND u.created_at >= datetime('now', 'start of month')) AS mtd_minutes
+       FROM (
+         SELECT COALESCE(r.org_id, mt.org_id) AS org_id,
+                COALESCE(SUM(r.total_cost_usd), 0) AS cost_usd,
+                COUNT(*) AS meetings
+         FROM meeting_cost_rollups r
+         LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
+         WHERE r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000
+         GROUP BY COALESCE(r.org_id, mt.org_id)
+       ) g
+       LEFT JOIN v2_organizations o ON o.id = g.org_id
+       LEFT JOIN v2_org_subscriptions s ON s.org_id = g.org_id
        LEFT JOIN v2_plans p ON p.id = s.plan_id
-       WHERE r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000
-       GROUP BY COALESCE(r.org_id, mt.org_id)
-       ORDER BY cost_usd DESC
+       ORDER BY g.cost_usd DESC
        LIMIT 100`
     );
     // Org-less meetings (guest rooms started from a bare invite link) still cost
