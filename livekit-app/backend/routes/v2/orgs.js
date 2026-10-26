@@ -1,5 +1,4 @@
 const express = require('express');
-const path = require('path');
 const multer = require('multer');
 const router = express.Router();
 const db = require('../../db/v2Database');
@@ -10,6 +9,7 @@ const {
   LOGO_MAX_BYTES,
   LOGO_MIME,
   brandingRelativePath,
+  newLogoFileName,
   normalizeAccentColor,
   normalizeWelcomeMessage,
   publicLogoUrl,
@@ -25,7 +25,7 @@ function brandingPayload(req, org) {
   return {
     accentColor: normalizeAccentColor(org?.brand_accent_color) || DEFAULT_ACCENT,
     welcomeMessage: org?.brand_welcome_message || '',
-    logoUrl: publicLogoUrl(req, org?.id, Boolean(org?.brand_logo_file)),
+    logoUrl: publicLogoUrl(req, org?.id, org?.brand_logo_file),
   };
 }
 
@@ -332,10 +332,9 @@ router.post('/me/branding/logo', requireV2Auth, (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     try {
-      const ext = path.extname(req.file.originalname || '').toLowerCase().slice(0, 10) || '.png';
-      const filename = `logo${ext}`;
+      const filename = newLogoFileName(req.file.mimetype);
       const org = await db.get(`SELECT brand_logo_file FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
-      if (org?.brand_logo_file && org.brand_logo_file !== filename) {
+      if (org?.brand_logo_file) {
         await removeLogoFile(req.v2Auth.orgId, org.brand_logo_file);
       }
       await putOrgObject(req.v2Auth.orgId, brandingRelativePath(filename), req.file.buffer, {

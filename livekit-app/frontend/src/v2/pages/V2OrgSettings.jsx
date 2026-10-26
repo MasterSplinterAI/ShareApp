@@ -861,6 +861,7 @@ export default function V2OrgSettings() {
                         <div className="flex flex-wrap items-center gap-3">
                           {brandingLogoUrl ? (
                             <img
+                              key={brandingLogoUrl}
                               src={brandingLogoUrl}
                               alt=""
                               className="h-12 max-w-[140px] rounded border border-border/60 bg-muted/30 object-contain p-1"

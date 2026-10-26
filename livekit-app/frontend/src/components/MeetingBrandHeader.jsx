@@ -10,6 +10,7 @@ export default function MeetingBrandHeader({ branding, meetingTitle, fallbackTit
     <div className="mb-4 flex flex-col items-center gap-2 text-center">
       {logoUrl ? (
         <img
+          key={logoUrl}
           src={logoUrl}
           alt=""
           className="max-h-12 max-w-[180px] object-contain"

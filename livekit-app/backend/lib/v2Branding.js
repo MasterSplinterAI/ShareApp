@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const path = require('path');
 const { deleteOrgObject } = require('./objectStorage');
 
@@ -26,17 +27,33 @@ function hostDisplayLabel(org, hostUser) {
   return hostUser?.display_name || org.name || null;
 }
 
+const LOGO_EXT_BY_MIME = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+};
+
 function brandingRelativePath(fileName) {
   if (!fileName) return null;
   return `branding/${path.basename(fileName)}`;
 }
 
-function publicLogoUrl(req, orgId, hasLogo) {
-  if (!hasLogo || !orgId) return null;
+/** Unique object name so a replacement is a different public URL. */
+function newLogoFileName(mime) {
+  const ext = LOGO_EXT_BY_MIME[mime] || '.png';
+  const id = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString('hex')}`;
+  return `logo-${id}${ext}`;
+}
+
+function publicLogoUrl(req, orgId, logoFile) {
+  if (!logoFile || !orgId) return null;
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
   const host = req.get('x-forwarded-host') || req.get('host');
-  if (!host) return `/api/v2/branding/${encodeURIComponent(orgId)}/logo`;
-  return `${proto}://${host}/api/v2/branding/${encodeURIComponent(orgId)}/logo`;
+  const version = encodeURIComponent(path.basename(String(logoFile)));
+  const pathPart = `/api/v2/branding/${encodeURIComponent(orgId)}/logo?v=${version}`;
+  if (!host) return pathPart;
+  return `${proto}://${host}${pathPart}`;
 }
 
 function serializePublicBranding(req, org, hostUser) {
@@ -49,7 +66,7 @@ function serializePublicBranding(req, org, hostUser) {
   if (!configured) return null;
   const accent = normalizeAccentColor(org.brand_accent_color) || DEFAULT_ACCENT;
   const welcome = org.brand_welcome_message || null;
-  const logoUrl = publicLogoUrl(req, org.id, Boolean(org.brand_logo_file));
+  const logoUrl = publicLogoUrl(req, org.id, org.brand_logo_file);
   const hostName = hostDisplayLabel(org, hostUser);
   return {
     accentColor: accent,
@@ -77,6 +94,7 @@ module.exports = {
   normalizeWelcomeMessage,
   hostDisplayLabel,
   brandingRelativePath,
+  newLogoFileName,
   publicLogoUrl,
   serializePublicBranding,
   removeLogoFile,

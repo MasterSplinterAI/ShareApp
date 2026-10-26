@@ -30,7 +30,9 @@ router.get('/:orgId/logo', async (req, res) => {
     };
     const ok = await pipeObjectToResponse(stream, res, {
       contentType: types[ext] || 'application/octet-stream',
-      cacheControl: 'public, max-age=3600',
+      // The public URL includes ?v=<filename>. A new upload is a new URL, so this
+      // cache entry is for one logo version and is not reused after a replacement.
+      cacheControl: 'public, max-age=86400',
     });
     if (!ok) res.status(404).end();
   } catch (e) {
