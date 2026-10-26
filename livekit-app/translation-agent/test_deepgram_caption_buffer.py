@@ -38,6 +38,23 @@ class DeepgramCaptionBufferTest(unittest.TestCase):
         self.assertEqual(utterance, "Done.")
         self.assertEqual(buf.live_text(), "Done.")
 
+    def test_commit_pending_interim_preserves_unfinalized_trailing_speech(self):
+        buf = DeepgramCaptionBuffer()
+        buf.on_final_segment("First part of the thought,")
+        buf.on_interim("and the trailing words after a pause")
+        utterance = buf.commit_pending_interim()
+        self.assertEqual(
+            utterance,
+            "First part of the thought, and the trailing words after a pause",
+        )
+        self.assertEqual(buf.open_interim, "")
+
+    def test_commit_pending_interim_preserves_interim_only_utterance(self):
+        buf = DeepgramCaptionBuffer()
+        buf.on_interim("Short reply before is_final")
+        utterance = buf.commit_pending_interim()
+        self.assertEqual(utterance, "Short reply before is_final")
+
     def test_gladia_utterance_final_replaces_buffer(self):
         buf = DeepgramCaptionBuffer()
         buf.on_interim("Hello there")

@@ -8,6 +8,7 @@ from translation_helpers import (
     join_nonempty,
     llm_completion_token_cap,
     should_break_turn,
+    should_handoff_turn,
     split_tail,
     stable_common_prefix,
     tts_remainder,
@@ -240,3 +241,55 @@ class TestTtsRemainder:
 
     def test_everything_spoken_returns_empty(self):
         assert tts_remainder("Hola mundo.", "Hola mundo.") == ""
+
+
+class TestShouldHandoffTurn:
+    """Conversational A -> B -> A turn handoff without cutting off active speech."""
+
+    def test_handoff_when_speaker_a_paused_and_speaker_b_speaks(self):
+        assert (
+            should_handoff_turn(
+                other_has_open_turn=True,
+                other_vad_active=False,
+                other_idle_sec=0.6,
+                interjector_is_final=False,
+                interjector_word_count=2,
+            )
+            is True
+        )
+
+    def test_handoff_on_short_one_word_final_from_speaker_b(self):
+        assert (
+            should_handoff_turn(
+                other_has_open_turn=True,
+                other_vad_active=False,
+                other_idle_sec=0.5,
+                interjector_is_final=True,
+                interjector_word_count=1,
+            )
+            is True
+        )
+
+    def test_no_handoff_when_speaker_a_is_actively_speaking(self):
+        assert (
+            should_handoff_turn(
+                other_has_open_turn=True,
+                other_vad_active=True,
+                other_idle_sec=0.1,
+                interjector_is_final=True,
+                interjector_word_count=3,
+            )
+            is False
+        )
+
+    def test_no_handoff_when_speaker_a_has_no_open_turn(self):
+        assert (
+            should_handoff_turn(
+                other_has_open_turn=False,
+                other_vad_active=False,
+                other_idle_sec=2.0,
+                interjector_is_final=True,
+                interjector_word_count=4,
+            )
+            is False
+        )

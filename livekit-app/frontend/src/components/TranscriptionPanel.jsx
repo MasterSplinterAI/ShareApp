@@ -436,22 +436,34 @@ function TranscriptionPanel() {
 
         if (message.partial) {
           setMessages((prev) => {
-            // Same bubble while this speaker's turn is still in progress.
-            // Other speakers keep their own partials open — they finalize via their own
-            // END_OF_SPEECH timer, so background noise on another mic can't truncate them.
-            let idx = prev.findIndex(
-              (m) =>
-                m.isPartial &&
-                ((transcriptionId != null && m.transcriptionId === transcriptionId) ||
-                  m.speaker === speakerId),
-            );
-            if (idx < 0 && transcriptionId != null) {
-              // Same turn was prematurely finalized (e.g. out-of-order packet) — reopen it.
+            // Match this turn's partial bubble. Never merge a new transcriptionId
+            // into an older turn's bubble, and if another speaker's bubble has
+            // appeared below this speaker's old un-id'd partial, start a new
+            // bubble at the bottom so A -> B -> A stays strictly chronological.
+            let idx = -1;
+            if (transcriptionId != null) {
               idx = prev.findIndex(
-                (m) =>
+                (m) => m.isPartial && m.transcriptionId === transcriptionId,
+              );
+            }
+            if (idx < 0) {
+              idx = prev.findIndex(
+                (m, i) =>
+                  m.isPartial &&
+                  m.speaker === speakerId &&
+                  (transcriptionId == null || m.transcriptionId == null) &&
+                  !prev.slice(i + 1).some((later) => later.speaker !== speakerId),
+              );
+            }
+            if (idx < 0 && transcriptionId != null) {
+              // Same turn was prematurely finalized (e.g. out-of-order packet) — reopen it,
+              // but only if no other speaker has spoken since.
+              idx = prev.findIndex(
+                (m, i) =>
                   !m.isPartial &&
                   m.speaker === speakerId &&
-                  m.transcriptionId === transcriptionId,
+                  m.transcriptionId === transcriptionId &&
+                  !prev.slice(i + 1).some((later) => later.speaker !== speakerId),
               );
             }
             if (idx >= 0) {
@@ -472,7 +484,10 @@ function TranscriptionPanel() {
             }
             if (idx < 0) {
               idx = prev.findIndex(
-                (m) => m.speaker === speakerId && m.isPartial,
+                (m) =>
+                  m.speaker === speakerId &&
+                  m.isPartial &&
+                  (transcriptionId == null || m.transcriptionId == null),
               );
             }
 
@@ -499,10 +514,13 @@ function TranscriptionPanel() {
               return commitExisting(prev[idx], idx);
             }
 
-            // Same thought split across two finals (shorter line, then the continuation).
+            // Same thought split across two finals (shorter line, then the continuation) —
+            // only if the most recent finalized bubble is also from this speaker (never jump
+            // backwards over another speaker's interjection).
             for (let i = prev.length - 1; i >= 0; i -= 1) {
               const existing = prev[i];
-              if (existing.speaker !== speakerId || existing.isPartial) continue;
+              if (existing.isPartial) continue;
+              if (existing.speaker !== speakerId) break;
               if (Math.abs(existing.timestamp - messageTimestamp) > 8000) break;
               const prevText = existing.originalText || '';
               const nextText = originalText || text || '';

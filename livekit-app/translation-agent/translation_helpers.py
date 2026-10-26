@@ -126,6 +126,38 @@ def tts_remainder(already_enqueued: str, full_text: str) -> str:
     return full
 
 
+def should_handoff_turn(
+    *,
+    other_has_open_turn: bool,
+    other_vad_active: bool,
+    other_idle_sec: float,
+    interjector_is_final: bool,
+    interjector_word_count: int,
+    min_pause_sec: float = 0.35,
+) -> bool:
+    """True when Speaker B's speech should finalize Speaker A's paused turn (A -> B -> A).
+
+    - Never hand off if Speaker A has no open turn.
+    - Never cut off Speaker A while Speaker A is actively talking (simultaneous
+      cross-talk: other_vad_active is True and other_idle_sec < min_pause_sec).
+    - Require Speaker B to have actual recognized speech (any is_final, or an
+      interim with >= 2 words, or >= 1 word once Speaker A has been paused >= 0.8s)
+      so a mic bump / cough never splits Speaker A's bubble.
+    """
+    if not other_has_open_turn:
+        return False
+    other_paused = (not other_vad_active) or (other_idle_sec >= min_pause_sec)
+    if not other_paused:
+        return False
+    if interjector_is_final and interjector_word_count >= 1:
+        return True
+    if interjector_word_count >= 2:
+        return True
+    if interjector_word_count >= 1 and other_idle_sec >= 0.8:
+        return True
+    return False
+
+
 def split_tail(committed_text: str, frozen_src: str) -> str:
     """Portion of the committed utterance not yet frozen.
 

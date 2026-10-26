@@ -109,6 +109,22 @@ class DeepgramCaptionBuffer:
         self.open_interim = ""
         return self.committed_text()
 
+    def commit_pending_interim(self) -> str:
+        """Promote any un-finalized open_interim words before finalizing a turn.
+
+        When a turn closes (idle timeout, speaker handoff, or teardown) before
+        Deepgram emits is_final for the last phrase, dropping open_interim loses
+        the end of the speaker's sentence. Stitching it into final_segments
+        preserves every word that was shown live.
+        """
+        open_text = self.open_interim.strip()
+        if not open_text:
+            return self.committed_text()
+        stitched = self.live_text()
+        self.on_final_segment(stitched)
+        self.open_interim = ""
+        return self.committed_text()
+
     def on_utterance_final(self, text: str) -> tuple[str, int, str]:
         """
         Gladia-style finals: one full utterance per event (not Deepgram incremental segments).

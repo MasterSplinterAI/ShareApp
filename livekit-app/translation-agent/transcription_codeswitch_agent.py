@@ -36,6 +36,7 @@ from translation_helpers import (
     join_nonempty,
     llm_completion_token_cap,
     should_break_turn,
+    should_handoff_turn,
     split_tail,
     stable_common_prefix,
     tts_remainder,
@@ -410,6 +411,8 @@ class SpeakerCaptionSession:
     speaker_id: str
     finalize_now: Callable[[], Awaitable[None]]
     has_open_turn: Callable[[], bool]
+    is_vad_active: Callable[[], bool] = lambda: False
+    idle_seconds: Callable[[], float] = lambda: 0.0
 
 
 @dataclass
@@ -550,18 +553,30 @@ class TranscriptionOnlyAgent:
         async with self._caption_sessions_lock:
             self._caption_sessions.pop(speaker_id, None)
 
-    async def _finalize_other_speakers(self, active_speaker_id: str) -> None:
-        """When someone else starts speaking, commit their open live bubble for chronology."""
+    async def _finalize_other_speakers(
+        self,
+        active_speaker_id: str,
+        *,
+        is_final: bool = True,
+        word_count: int = 1,
+    ) -> None:
+        """Conversational A -> B -> A handoff: commit paused speakers' open bubbles when another speaker talks."""
         async with self._caption_sessions_lock:
             others = [
                 s for sid, s in self._caption_sessions.items() if sid != active_speaker_id
             ]
         for session in others:
             try:
-                if session.has_open_turn():
+                if should_handoff_turn(
+                    other_has_open_turn=session.has_open_turn(),
+                    other_vad_active=session.is_vad_active(),
+                    other_idle_sec=session.idle_seconds(),
+                    interjector_is_final=is_final,
+                    interjector_word_count=word_count,
+                ):
                     logger.info(
-                        f"[{active_speaker_id}] ↪︎ committing open caption from "
-                        f"{session.speaker_id!r} (another speaker started)"
+                        f"[{active_speaker_id}] ↪︎ committing paused open caption from "
+                        f"{session.speaker_id!r} (interjected words={word_count} is_final={is_final})"
                     )
                     await session.finalize_now()
             except Exception as e:
@@ -1910,7 +1925,7 @@ class TranscriptionOnlyAgent:
             await reconcile_lanes()
             finalize_t0 = time.perf_counter()
 
-            dg_buffer.on_speech_final()
+            dg_buffer.commit_pending_interim()
             full_original = dg_buffer.committed_text()
             tid = turn_id[0]
             if not full_original:
@@ -1941,7 +1956,9 @@ class TranscriptionOnlyAgent:
                         for t in pending:
                             if not t.done():
                                 t.cancel()
-                if lane.is_same_language or use_gladia_native_translation[0]:
+                if lane.is_same_language:
+                    full_translated = full_original
+                elif use_gladia_native_translation[0]:
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                 else:
                     full_translated = lane.display_translation()
@@ -2185,7 +2202,6 @@ class TranscriptionOnlyAgent:
                 logger.info(
                     f"{L} ⏱️ STT idle finalize ({_deepgram_stt_idle_ms()}ms without new words)"
                 )
-                dg_buffer.on_speech_final()
                 maybe_flush_stt()
                 await asyncio.sleep(0.15)
                 if turn_id[0] and dg_buffer.has_content():
@@ -2266,8 +2282,9 @@ class TranscriptionOnlyAgent:
                 return
             try:
                 maybe_flush_stt()
-                # Let flushed STT finals land before we commit (interruption / early finalize).
-                await asyncio.sleep(0.45 if _stt_stream_supports_flush(stt_provider_name) else 0.0)
+                # Brief window for flushed finals; commit_pending_interim preserves
+                # any remaining open_interim words if flush hasn't landed yet.
+                await asyncio.sleep(0.15 if _stt_stream_supports_flush(stt_provider_name) else 0.0)
             except Exception:
                 pass
             if turn_id[0]:
@@ -2278,10 +2295,20 @@ class TranscriptionOnlyAgent:
                 return False
             return dg_buffer.has_content()
 
+        def is_vad_active() -> bool:
+            return bool(vad_speech_active[0])
+
+        def idle_seconds() -> float:
+            if last_stt_text_at[0] <= 0:
+                return 999.0
+            return max(0.0, time.time() - last_stt_text_at[0])
+
         caption_session = SpeakerCaptionSession(
             speaker_id=speaker_id,
             finalize_now=finalize_now,
             has_open_turn=has_open_turn,
+            is_vad_active=is_vad_active,
+            idle_seconds=idle_seconds,
         )
         await self._register_caption_session(caption_session)
 
@@ -2397,6 +2424,11 @@ class TranscriptionOnlyAgent:
                         logger.info(f"{L} 🛑 residual interim dropped: '{text[:40]}'")
                         continue
                     await ensure_lanes_for_caption()
+                    self._spawn_bg(
+                        self._finalize_other_speakers(
+                            speaker_id, is_final=False, word_count=len(text.split())
+                        )
+                    )
                     await note_detected_language(speech_data, is_final=False, text=text)
                     display_text = dg_buffer.on_interim(text)
                     schedule_live_partial(display_text)
@@ -2409,6 +2441,11 @@ class TranscriptionOnlyAgent:
                         )
                         continue
                     await ensure_lanes_for_caption()
+                    self._spawn_bg(
+                        self._finalize_other_speakers(
+                            speaker_id, is_final=True, word_count=len(text.split())
+                        )
+                    )
                     await note_detected_language(speech_data, is_final=True, text=text)
 
                     if (
