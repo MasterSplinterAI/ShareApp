@@ -43,16 +43,56 @@ function withRoomLock(roomName, fn) {
   return run;
 }
 
+function isJobInFlight(job) {
+  const status = job?.state?.status;
+  const endedAt = job?.state?.endedAt;
+  const ended = endedAt != null && String(endedAt) !== '0' && String(endedAt) !== '';
+  if (ended) return false;
+  return (
+    status === 0 ||
+    status === 1 ||
+    status === 'JS_PENDING' ||
+    status === 'JS_RUNNING'
+  );
+}
+
 /**
- * Duplicate-agent guard: dispatch only when the room has neither an agent
- * participant nor an existing dispatch. An existing dispatch with no agent
- * participant yet means a job is assigned/in flight — creating another one
- * (or deleting + recreating) can land two agents in the same room.
+ * Duplicate-agent + unnamed-dispatch guard:
+ * - LiveKit Cloud creates an automatic default dispatch with `agentName: ""`
+ *   on every `createRoom`. Our workers register with explicit names, so that
+ *   default row never assigns a worker (`jobs: []`) and MUST be ignored.
+ * - If a dispatch for `agentName` has a pending/running job in flight, do not
+ *   create another dispatch (prevents duplicate agents).
+ * - If a named dispatch has only completed/failed jobs (or is for another
+ *   agentName) and no agent is in the room, mark it stale for deletion before
+ *   creating a fresh dispatch.
  */
-function decideDispatchAction({ agentPresent, dispatchCount }) {
-  if (agentPresent) return 'none';
-  if (dispatchCount > 0) return 'none';
-  return 'create';
+function decideDispatchAction({ agentPresent, dispatches = [], agentName = '' }) {
+  if (agentPresent) {
+    return { action: 'none', staleDispatchIds: [] };
+  }
+  const rows = Array.isArray(dispatches) ? dispatches : [];
+  const staleDispatchIds = [];
+  let hasInFlight = false;
+
+  for (const d of rows) {
+    const dName = String(d?.agentName || '').trim();
+    // Ignore LiveKit Cloud's automatic unnamed room dispatch (`agentName: ""`).
+    if (!dName) continue;
+
+    const jobs = Array.isArray(d?.state?.jobs) ? d.state.jobs : [];
+    const inFlight = dName === agentName && jobs.some(isJobInFlight);
+    if (inFlight) {
+      hasInFlight = true;
+    } else if (d?.id) {
+      staleDispatchIds.push(d.id);
+    }
+  }
+
+  if (hasInFlight) {
+    return { action: 'none', staleDispatchIds: [] };
+  }
+  return { action: 'create', staleDispatchIds };
 }
 
 function getLivekitHttpHost() {
@@ -176,19 +216,36 @@ async function ensureAgentDispatchLocked(roomName, agentName) {
   }
   const agentPresent = participants.some((p) => looksLikeAgentParticipant(p));
 
-  let dispatchCount = 0;
+  const agentDispatch = getAgentDispatch();
+  let dispatches = [];
   try {
-    const existing = await getAgentDispatch().listDispatch(roomName);
-    dispatchCount = Array.isArray(existing) ? existing.length : 0;
+    const existing = await agentDispatch.listDispatch(roomName);
+    dispatches = Array.isArray(existing) ? existing : [];
   } catch (e) {
     console.warn(`[livekitService] listDispatch(${roomName}):`, e.message);
   }
 
-  if (decideDispatchAction({ agentPresent, dispatchCount }) !== 'create') {
+  const { action, staleDispatchIds } = decideDispatchAction({
+    agentPresent,
+    dispatches,
+    agentName,
+  });
+
+  if (action !== 'create') {
     return agentPresent ? 'present' : 'in-flight';
   }
+
+  for (const dispatchId of staleDispatchIds) {
+    try {
+      await agentDispatch.deleteDispatch(dispatchId, roomName);
+      console.log(`[livekitService] Removed stale agent dispatch ${dispatchId} for ${roomName}`);
+    } catch (delErr) {
+      console.warn(`[livekitService] deleteDispatch ${dispatchId}:`, delErr.message);
+    }
+  }
+
   try {
-    await getAgentDispatch().createDispatch(roomName, agentName);
+    await agentDispatch.createDispatch(roomName, agentName);
     console.log(`[livekitService] Agent dispatched to ${roomName} (${agentName})`);
     return 'created';
   } catch (e) {
