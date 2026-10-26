@@ -29,6 +29,7 @@ from translation_helpers import (
     ends_sentence,
     join_nonempty,
     llm_completion_token_cap,
+    should_break_turn,
     split_tail,
     stable_common_prefix,
 )
@@ -58,6 +59,27 @@ try:
 except ImportError:
     NOISE_CANCELLATION_AVAILABLE = False
     noise_cancellation = None
+
+VALID_STT_PROVIDERS = ("deepgram", "gladia", "openai")
+
+
+def _stt_provider() -> str:
+    """Configured STT provider, validated.
+
+    Unknown values (production once ran STT_PROVIDER='xai', which no code
+    implements) previously fell through to the Deepgram-first ladder with no
+    signal. Now they log loudly and land on the deepgram default explicitly.
+    """
+    raw = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    if raw not in VALID_STT_PROVIDERS:
+        logger.error(
+            "STT_PROVIDER=%r is not a known provider %s — falling back to 'deepgram'",
+            raw,
+            VALID_STT_PROVIDERS,
+        )
+        return "deepgram"
+    return raw
+
 
 def _deepgram_endpointing_ms() -> int:
     """Silence (ms) before Deepgram emits END_OF_SPEECH."""
@@ -120,6 +142,24 @@ def _deepgram_stt_idle_ms() -> int:
     except ValueError:
         ms = 3500
     return max(400, min(ms, 8000))
+
+
+def _turn_max_sec() -> float:
+    """Close a bubble at a sentence boundary after this much continuous turn time."""
+    raw = os.getenv("TURN_MAX_SEC", "45").strip()
+    try:
+        return max(10.0, min(float(raw), 600.0))
+    except ValueError:
+        return 45.0
+
+
+def _turn_max_words() -> int:
+    """Close a bubble at a sentence boundary once it grows past this many words."""
+    raw = os.getenv("TURN_MAX_WORDS", "110").strip()
+    try:
+        return max(20, min(int(raw), 1000))
+    except ValueError:
+        return 110
 
 
 def _translation_covers_thought(source: str, translated: str) -> bool:
@@ -1001,7 +1041,7 @@ class TranscriptionOnlyAgent:
             return None, "unknown"
         is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
-        stt_provider = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+        stt_provider = _stt_provider()
         normalized_lang = self._normalize_language_code(stt_lang)
         stt_instance: Optional[Any] = None
         stt_provider_name = "unknown"
@@ -2174,6 +2214,26 @@ class TranscriptionOnlyAgent:
                             lane.current_task = task
                             lane.pending_translate_tasks.append(task)
                     schedule_live_partial(display_text)
+                    # Long-turn bubble break: close at a sentence boundary once
+                    # the turn is too old/wordy, so monologues don't grow one
+                    # endless bubble (and TTS doesn't wait for the full turn).
+                    _turn_age = (
+                        asyncio.get_event_loop().time() - turn_start_time[0]
+                        if turn_start_time[0]
+                        else 0.0
+                    )
+                    if should_break_turn(
+                        committed_snapshot,
+                        _turn_age,
+                        max_age_sec=_turn_max_sec(),
+                        max_words=_turn_max_words(),
+                    ):
+                        logger.info(
+                            f"{L} ✂️ turn break at sentence boundary "
+                            f"(age={_turn_age:.0f}s words={len(committed_snapshot.split())})"
+                        )
+                        await finalize_turn()
+                        continue
                     if stt_provider_name == "gladia" and not use_gladia_native_translation[0]:
                         await finalize_turn()
                     continue
@@ -2244,7 +2304,7 @@ class TranscriptionOnlyAgent:
 def log_resolved_inference_config() -> None:
     """Log effective inference env once per worker (never print API key values)."""
     lc_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
-    stt = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    stt = _stt_provider()
     llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
 
     build_ref = (

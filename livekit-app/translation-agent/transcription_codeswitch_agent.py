@@ -22,8 +22,8 @@ from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
 from tts_lane import TtsLane, is_valid_elevenlabs_voice_id, resolve_tts_provider
 from codeswitch_source_language import (
-    effective_source_language,
     lane_is_same_language,
+    next_source_flip,
     speech_data_detected_language,
 )
 from residual_guard import is_residual_repeat
@@ -35,8 +35,10 @@ from translation_helpers import (
     ends_sentence,
     join_nonempty,
     llm_completion_token_cap,
+    should_break_turn,
     split_tail,
     stable_common_prefix,
+    tts_remainder,
 )
 
 from livekit import rtc
@@ -64,6 +66,27 @@ try:
 except ImportError:
     NOISE_CANCELLATION_AVAILABLE = False
     noise_cancellation = None
+
+VALID_STT_PROVIDERS = ("deepgram", "gladia", "openai")
+
+
+def _stt_provider() -> str:
+    """Configured STT provider, validated.
+
+    Unknown values (production once ran STT_PROVIDER='xai', which no code
+    implements) previously fell through to the Deepgram-first ladder with no
+    signal. Now they log loudly and land on the deepgram default explicitly.
+    """
+    raw = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    if raw not in VALID_STT_PROVIDERS:
+        logger.error(
+            "STT_PROVIDER=%r is not a known provider %s — falling back to 'deepgram'",
+            raw,
+            VALID_STT_PROVIDERS,
+        )
+        return "deepgram"
+    return raw
+
 
 def _deepgram_endpointing_ms() -> int:
     """Silence (ms) before Deepgram emits END_OF_SPEECH."""
@@ -126,6 +149,24 @@ def _deepgram_stt_idle_ms() -> int:
     except ValueError:
         ms = 3500
     return max(400, min(ms, 8000))
+
+
+def _turn_max_sec() -> float:
+    """Close a bubble at a sentence boundary after this much continuous turn time."""
+    raw = os.getenv("TURN_MAX_SEC", "45").strip()
+    try:
+        return max(10.0, min(float(raw), 600.0))
+    except ValueError:
+        return 45.0
+
+
+def _turn_max_words() -> int:
+    """Close a bubble at a sentence boundary once it grows past this many words."""
+    raw = os.getenv("TURN_MAX_WORDS", "110").strip()
+    try:
+        return max(20, min(int(raw), 1000))
+    except ValueError:
+        return 110
 
 
 def _translation_covers_thought(source: str, translated: str) -> bool:
@@ -397,6 +438,8 @@ class TargetLaneState:
     last_interim_src: str = ""
     # --- rolling cross-turn context for pronoun/terminology consistency ---
     context_pairs: Deque[Tuple[str, str]] = field(default_factory=lambda: deque(maxlen=3))
+    # Translated text already handed to the TTS lane this turn (frozen chunks).
+    tts_enqueued_text: str = ""
 
     def display_translation(self) -> str:
         """Current best translation for this lane: frozen prefix + live tail.
@@ -419,6 +462,7 @@ class TargetLaneState:
         self.interim_candidate = ""
         self.interim_stable = ""
         self.last_interim_src = ""
+        self.tts_enqueued_text = ""
 
     def cancel_inflight(self) -> None:
         for t in (self.current_task, self.interim_task):
@@ -1166,7 +1210,7 @@ class TranscriptionOnlyAgent:
             return None, "unknown"
         is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
-        stt_provider = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+        stt_provider = _stt_provider()
         normalized_lang = self._normalize_language_code(stt_lang)
         stt_instance: Optional[Any] = None
         stt_provider_name = "unknown"
@@ -1695,6 +1739,18 @@ class TranscriptionOnlyAgent:
             lane.interim_candidate = ""
             lane.interim_stable = ""
             lane.last_interim_src = ""
+            # Speak the frozen sentence now instead of waiting for turn finalize;
+            # finalize sends only the unspoken remainder (see tts_remainder).
+            tts_lane = self.tts_lanes.get(lane.target_lang)
+            if tts_lane is not None and not lane.is_same_language:
+                chunk = translation.strip()
+                if chunk:
+                    lane.tts_enqueued_text = join_nonempty(lane.tts_enqueued_text, chunk)
+                    self._spawn_bg(
+                        tts_lane.enqueue_final(
+                            speaker_id=speaker_id, text=chunk, supersede=False
+                        )
+                    )
 
         async def translate_tail(
             lane: TargetLaneState, tgt_lang: str, tail_src: str, committed_snapshot: str
@@ -1934,12 +1990,17 @@ class TranscriptionOnlyAgent:
                     lane.context_pairs.append((full_original, full_translated))
                 tts_lane = self.tts_lanes.get(tgt)
                 if tts_lane is not None and not lane.is_same_language:
-                    tts_text = (full_translated or full_original).strip()
+                    # Frozen sentences were already queued as they committed —
+                    # speak only what TTS hasn't seen yet (no repeats).
+                    tts_text = tts_remainder(
+                        lane.tts_enqueued_text, (full_translated or full_original)
+                    )
                     if tts_text:
                         try:
                             await tts_lane.enqueue_final(
                                 speaker_id=speaker_id,
                                 text=tts_text,
+                                supersede=False,
                             )
                         except Exception as e:
                             logger.warning(f"{L}→{tgt} TTS enqueue failed: {e}")
@@ -2215,22 +2276,43 @@ class TranscriptionOnlyAgent:
         )
         await self._register_caption_session(caption_session)
 
-        async def note_detected_language(speech_data: Any) -> None:
-            if stt_provider_name != "deepgram":
+        # Code-switch flips are gated: only FINAL detections count, and two in
+        # a row must agree. A single interim guess used to flip lanes mid-bubble,
+        # mixing languages and restarting translations in the open turn.
+        source_flip_pending: List[str] = [""]
+        source_flip_count: List[int] = [0]
+
+        async def note_detected_language(speech_data: Any, *, is_final: bool) -> None:
+            if stt_provider_name != "deepgram" or not is_final:
                 return
             detected = speech_data_detected_language(speech_data)
             prev = effective_source_lang[0]
-            effective_source_lang[0] = effective_source_language(
-                configured_speaker_lang,
-                detected,
+            new_eff, pending, count, flipped = next_source_flip(
                 prev,
+                detected,
+                source_flip_pending[0],
+                source_flip_count[0],
+                required=2,
             )
-            if effective_source_lang[0] == prev:
+            source_flip_pending[0] = pending
+            source_flip_count[0] = count
+            if not flipped:
                 return
+            effective_source_lang[0] = new_eff
             logger.info(
-                f"{L} codeswitch source {prev!r} → {effective_source_lang[0]!r} "
-                f"(detected={detected!r})"
+                f"{L} codeswitch source {prev!r} → {new_eff!r} "
+                f"(2 agreeing finals, detected={detected!r})"
             )
+            # Lane modes (same/cross) depend on the source language. Restart
+            # lane translation state so the open bubble isn't half old-language;
+            # the next is_final re-translates the full committed tail.
+            for lane in lanes.values():
+                lane.cancel_inflight()
+                lane.pending_translate_tasks.clear()
+                lane.current_task = None
+                lane.interim_task = None
+                lane.turn_translated_parts.clear()
+                lane.reset_turn()
             await reconcile_lanes()
 
         async def process_vad() -> None:
@@ -2302,7 +2384,7 @@ class TranscriptionOnlyAgent:
                         logger.info(f"{L} 🛑 residual interim dropped: '{text[:40]}'")
                         continue
                     await ensure_lanes_for_caption()
-                    await note_detected_language(speech_data)
+                    await note_detected_language(speech_data, is_final=False)
                     display_text = dg_buffer.on_interim(text)
                     schedule_live_partial(display_text)
                     schedule_interim_translations()
@@ -2314,7 +2396,7 @@ class TranscriptionOnlyAgent:
                         )
                         continue
                     await ensure_lanes_for_caption()
-                    await note_detected_language(speech_data)
+                    await note_detected_language(speech_data, is_final=True)
 
                     if (
                         stt_provider_name == "gladia"
@@ -2400,6 +2482,26 @@ class TranscriptionOnlyAgent:
                             lane.current_task = task
                             lane.pending_translate_tasks.append(task)
                     schedule_live_partial(display_text)
+                    # Long-turn bubble break: close at a sentence boundary once
+                    # the turn is too old/wordy, so monologues don't grow one
+                    # endless bubble (and TTS doesn't wait for the full turn).
+                    _turn_age = (
+                        asyncio.get_event_loop().time() - turn_start_time[0]
+                        if turn_start_time[0]
+                        else 0.0
+                    )
+                    if should_break_turn(
+                        committed_snapshot,
+                        _turn_age,
+                        max_age_sec=_turn_max_sec(),
+                        max_words=_turn_max_words(),
+                    ):
+                        logger.info(
+                            f"{L} ✂️ turn break at sentence boundary "
+                            f"(age={_turn_age:.0f}s words={len(committed_snapshot.split())})"
+                        )
+                        await finalize_turn()
+                        continue
                     if stt_provider_name == "gladia" and not use_gladia_native_translation[0]:
                         await finalize_turn()
                     continue
@@ -2470,7 +2572,7 @@ class TranscriptionOnlyAgent:
 def log_resolved_inference_config() -> None:
     """Log effective inference env once per worker (never print API key values)."""
     lc_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
-    stt = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    stt = _stt_provider()
     llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
 
     build_ref = (

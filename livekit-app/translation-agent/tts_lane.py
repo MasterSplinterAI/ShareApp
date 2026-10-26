@@ -208,7 +208,8 @@ class TtsLane:
         self._closed = False
 
         self._sequence = 0
-        self._latest_sequence_by_speaker: dict[str, int] = {}
+        # Items at or below this sequence were superseded by a newer turn.
+        self._superseded_up_to_by_speaker: dict[str, int] = {}
         self._last_error_sig: str | None = None
         self._last_error_at: float = 0.0
 
@@ -255,7 +256,9 @@ class TtsLane:
             await self._http_session.close()
         self._http_session = None
 
-    async def enqueue_final(self, speaker_id: str, text: str) -> None:
+    async def enqueue_final(
+        self, speaker_id: str, text: str, *, supersede: bool = True
+    ) -> None:
         clean_text = " ".join((text or "").split())
         if self._closed or not clean_text:
             return
@@ -263,9 +266,12 @@ class TtsLane:
         async with self._queue_lock:
             self._sequence += 1
             seq = self._sequence
-            self._latest_sequence_by_speaker[speaker_id] = seq
-            # New turn supersedes queued but not-yet-spoken items from this speaker.
-            self._queue = deque(x for x in self._queue if x.speaker_id != speaker_id)
+            if supersede:
+                # New turn supersedes queued but not-yet-spoken items from this
+                # speaker. Frozen-sentence chunks within one turn pass
+                # supersede=False so they queue up and all speak in order.
+                self._superseded_up_to_by_speaker[speaker_id] = seq - 1
+                self._queue = deque(x for x in self._queue if x.speaker_id != speaker_id)
             self._queue.append(
                 _QueuedSentence(
                     speaker_id=speaker_id,
@@ -295,8 +301,7 @@ class TtsLane:
                 )
                 continue
 
-            latest_seq = self._latest_sequence_by_speaker.get(item.speaker_id)
-            if latest_seq is not None and item.sequence < latest_seq:
+            if item.sequence <= self._superseded_up_to_by_speaker.get(item.speaker_id, 0):
                 continue
 
             await self._emit_tts_event("tts_start", item.speaker_id)

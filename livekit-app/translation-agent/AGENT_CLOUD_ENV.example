@@ -12,12 +12,19 @@ LIVEKIT_URL=wss://YOUR_PROJECT.livekit.cloud
 AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
 
 # --- Speech-to-text (production: Deepgram nova-3) ---
+# Valid values: deepgram | gladia | openai. Anything else is rejected at
+# startup (error log) and falls back to deepgram — there is no xAI provider.
 STT_PROVIDER=deepgram
 DEEPGRAM_API_KEY=
 # Deepgram END_OF_SPEECH (ms silence). 400 is a good default.
 DEEPGRAM_ENDPOINTING_MS=400
 # Finalize bubble after no new/changed transcript for this long (default 1200ms).
 DEEPGRAM_STT_IDLE_MS=3500
+# Long-turn bubble break: close the bubble at a sentence boundary once the
+# turn exceeds this age (sec) or word count, so monologues don't grow one
+# endless bubble and TTS doesn't wait for the whole turn.
+TURN_MAX_SEC=45
+TURN_MAX_WORDS=110
 
 # Silero VAD — higher activation_threshold = less background noise triggering speech.
 # Presets: quiet | normal | noisy | ultra_noisy (override with VAD_PRESET).

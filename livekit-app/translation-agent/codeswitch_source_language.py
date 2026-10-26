@@ -47,6 +47,37 @@ def effective_source_language(
     return configured
 
 
+def next_source_flip(
+    current_effective: str,
+    detected_lang: str,
+    pending_lang: str,
+    pending_count: int,
+    *,
+    required: int = 2,
+) -> tuple[str, str, int, bool]:
+    """Decide whether the effective source language may flip.
+
+    A single Deepgram language guess is unreliable (short utterances, proper
+    nouns, similar languages). Require `required` consecutive FINAL detections
+    agreeing on the same new language before flipping — and callers should
+    only feed FINAL events in, never interims. Returns
+    (new_effective, pending_lang, pending_count, flipped).
+    """
+    current = normalize_language_code(current_effective) or "en"
+    detected = normalize_language_code(detected_lang)
+    pending = normalize_language_code(pending_lang)
+
+    if not detected or len(detected) < 2:
+        return current, pending, pending_count, False
+    if detected == current:
+        return current, "", 0, False
+
+    count = pending_count + 1 if detected == pending else 1
+    if count >= max(1, required):
+        return detected, "", 0, True
+    return current, detected, count, False
+
+
 def lane_is_same_language(effective_source: str, target_lang: str) -> bool:
     """True when listener target matches the effective spoken source language."""
     src = normalize_language_code(effective_source)

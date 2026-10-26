@@ -7,8 +7,10 @@ from translation_helpers import (
     ends_sentence,
     join_nonempty,
     llm_completion_token_cap,
+    should_break_turn,
     split_tail,
     stable_common_prefix,
+    tts_remainder,
 )
 
 
@@ -200,3 +202,41 @@ class TestLlmCompletionTokenCap:
 
     def test_empty_source_still_has_minimum_cap(self):
         assert llm_completion_token_cap("   ") == 64
+
+
+# ------------------------------------------------------- turn breaking
+
+class TestShouldBreakTurn:
+    def test_no_break_for_short_young_turn(self):
+        assert should_break_turn("Hello there.", age_sec=5) is False
+
+    def test_no_break_mid_sentence_even_when_old(self):
+        # Never split a bubble mid-sentence — wait for a sentence boundary.
+        assert should_break_turn("and then we went to the", age_sec=120) is False
+
+    def test_breaks_at_sentence_boundary_when_too_old(self):
+        assert should_break_turn("That is the first point.", age_sec=46) is True
+
+    def test_breaks_at_sentence_boundary_when_too_wordy(self):
+        text = " ".join(["word"] * 120) + "."
+        assert should_break_turn(text, age_sec=10) is True
+
+    def test_empty_never_breaks(self):
+        assert should_break_turn("  ", age_sec=999) is False
+
+
+class TestTtsRemainder:
+    def test_nothing_spoken_returns_full(self):
+        assert tts_remainder("", "Hola mundo.") == "Hola mundo."
+
+    def test_spoken_prefix_is_not_respoken(self):
+        assert tts_remainder("Hola.", "Hola. Mundo.") == "Mundo."
+
+    def test_diverged_text_returns_full(self):
+        # Translation was revised — safest is to speak the full current text
+        # only when nothing was queued from it; here prefix diverged so the
+        # caller gets the full text back.
+        assert tts_remainder("Hola.", "Buenas. Mundo.") == "Buenas. Mundo."
+
+    def test_everything_spoken_returns_empty(self):
+        assert tts_remainder("Hola mundo.", "Hola mundo.") == ""

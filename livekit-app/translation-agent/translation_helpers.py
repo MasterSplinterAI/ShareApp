@@ -87,6 +87,45 @@ def ends_sentence(text: str) -> bool:
     return bool(_SENTENCE_END_RE.search(text.strip())) if text.strip() else False
 
 
+def should_break_turn(
+    committed_text: str,
+    age_sec: float,
+    *,
+    max_age_sec: float = 45.0,
+    max_words: int = 110,
+) -> bool:
+    """True when an open caption bubble should close at a sentence boundary.
+
+    Without this, a long monologue stays one ever-growing bubble (and TTS
+    stays silent) until the speaker pauses for the full idle window. Breaks
+    happen only at sentence-final punctuation so bubbles never split
+    mid-sentence; the idle timer still closes sub-threshold thoughts.
+    """
+    text = (committed_text or "").strip()
+    if not text or not ends_sentence(text):
+        return False
+    return age_sec >= max_age_sec or len(text.split()) >= max_words
+
+
+def tts_remainder(already_enqueued: str, full_text: str) -> str:
+    """Text still to speak: full_text minus the prefix already sent to TTS.
+
+    Frozen sentences are enqueued to TTS as they commit; at turn finalize
+    only the unspoken remainder may be sent or listeners hear repeats.
+    """
+    full = (full_text or "").strip()
+    spoken = (already_enqueued or "").strip()
+    if not full:
+        return ""
+    if not spoken:
+        return full
+    if full == spoken:
+        return ""
+    if full.startswith(spoken):
+        return full[len(spoken):].strip()
+    return full
+
+
 def split_tail(committed_text: str, frozen_src: str) -> str:
     """Portion of the committed utterance not yet frozen.
 

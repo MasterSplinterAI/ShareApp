@@ -72,6 +72,36 @@ def test_queue_drops_superseded_items_for_same_speaker() -> None:
     asyncio.run(_run())
 
 
+def test_chunked_enqueues_from_one_turn_all_speak_in_order() -> None:
+    """Frozen-sentence chunks (supersede=False) must not drop each other."""
+    async def _run() -> None:
+        room = _FakeRoom()
+        spoken: list[str] = []
+
+        async def synth(text: str, language: str, playback_rate: float):
+            spoken.append(text)
+            await asyncio.sleep(0.02)
+            return []
+
+        lane = TtsLane(
+            room=room,
+            language="es",
+            publish_track=False,
+            synthesize_hook=synth,
+        )
+        await lane.start()
+        await lane.enqueue_final("speaker-a", "Primera frase.", supersede=False)
+        await lane.enqueue_final("speaker-a", "Segunda frase.", supersede=False)
+        await lane.enqueue_final("speaker-a", "Tercera frase.", supersede=False)
+
+        await _wait_for(lambda: len(spoken) == 3)
+        await lane.aclose()
+
+        assert spoken == ["Primera frase.", "Segunda frase.", "Tercera frase."]
+
+    asyncio.run(_run())
+
+
 def test_queue_drops_stale_items() -> None:
     async def _run() -> None:
         room = _FakeRoom()

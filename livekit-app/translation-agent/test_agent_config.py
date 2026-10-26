@@ -7,7 +7,27 @@ from transcription_only_agent import (
     TranscriptionOnlyAgent,
     _deepgram_keyterms,
     _llm_temperature,
+    _stt_provider,
 )
+
+
+def test_stt_provider_defaults_to_deepgram(monkeypatch):
+    monkeypatch.delenv("STT_PROVIDER", raising=False)
+    assert _stt_provider() == "deepgram"
+
+
+def test_stt_provider_rejects_unknown_values(monkeypatch):
+    # Production once ran STT_PROVIDER='xai' — no such provider exists, and the
+    # unknown value silently fell back. Validation must land on deepgram.
+    monkeypatch.setenv("STT_PROVIDER", "xai")
+    assert _stt_provider() == "deepgram"
+
+
+def test_stt_provider_accepts_known_values(monkeypatch):
+    monkeypatch.setenv("STT_PROVIDER", "Gladia")
+    assert _stt_provider() == "gladia"
+    monkeypatch.setenv("STT_PROVIDER", "openai")
+    assert _stt_provider() == "openai"
 
 
 def test_llm_temperature_defaults_to_zero(monkeypatch):

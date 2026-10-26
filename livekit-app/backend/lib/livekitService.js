@@ -23,6 +23,38 @@ const DEFAULT_STT_PIPELINE = VALID_STT_PIPELINES.includes(_rawDefaultPipeline)
   ? _rawDefaultPipeline
   : 'deepgram_codeswitch';
 
+/**
+ * Per-room promise-chain lock. Concurrent joins (host + guests hitting
+ * ensureRoomAndAgent at once) otherwise race the dispatch check and can
+ * create two agent jobs in one room — duplicate captions, TTS, and cost.
+ */
+const _roomLocks = new Map();
+
+function withRoomLock(roomName, fn) {
+  const key = String(roomName);
+  const prev = _roomLocks.get(key) || Promise.resolve();
+  const run = prev.then(() => fn());
+  // Keep the chain alive even when fn throws; clean up when we're the tail.
+  const tail = run.catch(() => {});
+  _roomLocks.set(key, tail);
+  tail.finally(() => {
+    if (_roomLocks.get(key) === tail) _roomLocks.delete(key);
+  });
+  return run;
+}
+
+/**
+ * Duplicate-agent guard: dispatch only when the room has neither an agent
+ * participant nor an existing dispatch. An existing dispatch with no agent
+ * participant yet means a job is assigned/in flight — creating another one
+ * (or deleting + recreating) can land two agents in the same room.
+ */
+function decideDispatchAction({ agentPresent, dispatchCount }) {
+  if (agentPresent) return 'none';
+  if (dispatchCount > 0) return 'none';
+  return 'create';
+}
+
 function getLivekitHttpHost() {
   const url = process.env.LIVEKIT_URL;
   if (!url) throw new Error('LIVEKIT_URL not configured');
@@ -125,13 +157,46 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
   };
   const room = await roomService.createRoom(createOptions);
   const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
-  try {
-    const agentDispatch = getAgentDispatch();
-    await agentDispatch.createDispatch(roomName, agentName);
-  } catch (e) {
-    console.warn(`[livekitService] Agent dispatch failed for ${roomName}:`, e.message);
-  }
+  await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName));
   return room;
+}
+
+/**
+ * Create exactly one agent dispatch for a room. Caller must hold the room lock.
+ * Never creates a second dispatch when one exists or an agent is present —
+ * that is how duplicate caption/TTS streams (and double inference cost) start.
+ */
+async function ensureAgentDispatchLocked(roomName, agentName) {
+  const roomService = getRoomService();
+  let participants = [];
+  try {
+    participants = await roomService.listParticipants(roomName);
+  } catch (e) {
+    console.warn(`[livekitService] listParticipants(${roomName}):`, e.message);
+  }
+  const agentPresent = participants.some((p) => looksLikeAgentParticipant(p));
+
+  let dispatchCount = 0;
+  try {
+    const existing = await getAgentDispatch().listDispatch(roomName);
+    dispatchCount = Array.isArray(existing) ? existing.length : 0;
+  } catch (e) {
+    console.warn(`[livekitService] listDispatch(${roomName}):`, e.message);
+  }
+
+  if (decideDispatchAction({ agentPresent, dispatchCount }) !== 'create') {
+    return agentPresent ? 'present' : 'in-flight';
+  }
+  try {
+    await getAgentDispatch().createDispatch(roomName, agentName);
+    console.log(`[livekitService] Agent dispatched to ${roomName} (${agentName})`);
+    return 'created';
+  } catch (e) {
+    // No fallback createDispatch here: a blind retry after a partial success
+    // is another duplicate-agent path.
+    console.warn(`[livekitService] Agent dispatch failed for ${roomName}:`, e.message);
+    return 'failed';
+  }
 }
 
 /** Ephemeral public demo room — shorter empty timeout, demo metadata flag. */
@@ -155,11 +220,7 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     metadata: JSON.stringify(metadata),
   });
   const agentName = agentNameForPipeline('deepgram_codeswitch');
-  try {
-    await getAgentDispatch().createDispatch(roomName, agentName);
-  } catch (e) {
-    console.warn(`[livekitService] Demo agent dispatch failed for ${roomName}:`, e.message);
-  }
+  await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName));
   return room;
 }
 
@@ -170,6 +231,12 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
  * We then check for an active agent dispatch and create one if missing.
  */
 async function ensureRoomAndAgent(roomName, roomMode = 'multi-language', orgId = null) {
+  // Serialized per room: simultaneous host/guest joins must not race the
+  // participant/dispatch checks below.
+  return withRoomLock(roomName, () => ensureRoomAndAgentLocked(roomName, roomMode, orgId));
+}
+
+async function ensureRoomAndAgentLocked(roomName, roomMode = 'multi-language', orgId = null) {
   const roomService = getRoomService();
   const { emptyTimeout, departureTimeout } = roomLifecycleTimeouts();
   const metadata = {
@@ -190,49 +257,12 @@ async function ensureRoomAndAgent(roomName, roomMode = 'multi-language', orgId =
 
   const pipeline = normalizeSttPipeline(metadata.stt_pipeline || existingMeta.stt_pipeline);
   const agentName = agentNameForPipeline(pipeline);
-  let participants = [];
-  try {
-    participants = await roomService.listParticipants(roomName);
-  } catch (e) {
-    console.warn(`[livekitService] listParticipants(${roomName}):`, e.message);
-  }
-  const agentParticipantPresent = participants.some((p) => looksLikeAgentParticipant(p));
-
-  try {
-    const dispatch = getAgentDispatch();
-    const existing = await dispatch.listDispatch(roomName);
-    const dispatchRows = Array.isArray(existing) ? existing : [];
-
-    // listDispatch can still return rows after the worker exited or the room was empty.
-    // In that case LiveKit will not join a new agent unless we remove stale dispatches and create a fresh one.
-    if (!agentParticipantPresent && dispatchRows.length > 0) {
-      for (const row of dispatchRows) {
-        const dispatchId = row && row.id;
-        if (!dispatchId) continue;
-        try {
-          await dispatch.deleteDispatch(dispatchId, roomName);
-          console.log(`[livekitService] Removed stale agent dispatch ${dispatchId} for ${roomName}`);
-        } catch (delErr) {
-          console.warn(`[livekitService] deleteDispatch ${dispatchId}:`, delErr.message);
-        }
-      }
-    }
-
-    if (!agentParticipantPresent) {
-      await dispatch.createDispatch(roomName, agentName);
-      console.log(`[livekitService] Agent dispatched to ${roomName} (no agent participant in room)`);
-    } else if (dispatchRows.length === 0) {
-      await dispatch.createDispatch(roomName, agentName);
-      console.log(`[livekitService] Agent dispatched to ${roomName} (participant present but no dispatch rows)`);
-    }
-  } catch (e) {
-    console.warn(`[livekitService] ensureRoomAndAgent dispatch check for ${roomName}:`, e.message);
-    try {
-      await getAgentDispatch().createDispatch(roomName, agentName);
-    } catch (e2) {
-      console.warn(`[livekitService] Fallback dispatch also failed for ${roomName}:`, e2.message);
-    }
-  }
+  // Exactly one dispatch per room (see ensureAgentDispatchLocked). Previously
+  // this deleted live dispatches while their agent was still connecting and
+  // created fresh ones — plus an unconditional fallback create on any error —
+  // which could land two agents (duplicate captions/TTS/cost) in one room.
+  // Explicit removal still happens in removeAgentsFromRoom/switchRoomSttPipeline.
+  await ensureAgentDispatchLocked(roomName, agentName);
 
   if (orgId) {
     try {
@@ -289,12 +319,15 @@ async function removeAgentsFromRoom(roomName) {
 async function switchRoomSttPipeline(roomName, pipeline) {
   const normalized = normalizeSttPipeline(pipeline);
   await mergeRoomMetadata(roomName, { stt_pipeline: normalized });
-  await removeAgentsFromRoom(roomName);
-  await new Promise((r) => setTimeout(r, 600));
-  const agentName = agentNameForPipeline(normalized);
-  await getAgentDispatch().createDispatch(roomName, agentName);
-  console.log(`[livekitService] Switched ${roomName} to pipeline=${normalized} agent=${agentName}`);
-  return { pipeline: normalized, agentName };
+  // Locked so a concurrent guest join can't dispatch the old agent mid-swap.
+  return withRoomLock(roomName, async () => {
+    await removeAgentsFromRoom(roomName);
+    await new Promise((r) => setTimeout(r, 600));
+    const agentName = agentNameForPipeline(normalized);
+    await getAgentDispatch().createDispatch(roomName, agentName);
+    console.log(`[livekitService] Switched ${roomName} to pipeline=${normalized} agent=${agentName}`);
+    return { pipeline: normalized, agentName };
+  });
 }
 
 module.exports = {
@@ -314,4 +347,6 @@ module.exports = {
   removeAgentsFromRoom,
   switchRoomSttPipeline,
   looksLikeAgentParticipant,
+  decideDispatchAction,
+  withRoomLock,
 };
