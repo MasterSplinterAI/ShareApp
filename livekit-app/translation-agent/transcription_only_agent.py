@@ -242,27 +242,29 @@ def _translation_keyterms() -> List[str]:
     return _csv_env("TRANSLATION_KEYTERMS")
 
 
+# Deepgram Nova-3 caps keyterms at 500 BPE tokens across the entire list;
+# exceeding that makes /v1/listen reject the WebSocket handshake with HTTP 400
+# ("Keyterm limit exceeded"), which forces the pipeline onto non-streaming
+# fallback STT. Keep only uncommon domain terms and hard-cap the list at 45.
+MAX_DEEPGRAM_KEYTERMS = 45
+
 DEFAULT_DEEPGRAM_KEYTERMS = [
+    "Lalia",
     "Cassiterite", "Rutile", "Ilmenite", "Bauxite", "Chalcopyrite", "Galena",
     "Sphalerite", "Pentlandite", "Magnetite", "Hematite", "Chromite", "Molybdenite",
     "Scheelite", "Wolframite", "Coltan", "Monazite", "Sperrylite", "Cooperite",
-    "Laurite", "Braggite", "Kimberlite", "Zircon", "Xenotime", "Tin ore",
-    "Copper", "Aluminum", "Zinc", "Lead", "Nickel", "Cobalt", "Molybdenum",
-    "Tungsten", "Lithium", "Gold", "Silver", "Platinum", "Palladium", "Rhodium",
-    "Iridium", "Ruthenium", "Osmium", "PGM", "Platinum Group Metals", "Rare earth",
-    "LME", "London Metal Exchange", "Backwardation", "Contango", "Spot price",
-    "Futures", "Arbitrage", "Assay", "Concentrate", "Cathode", "Anode", "Bullion",
-    "Ingot", "Dore", "Refining", "Smelting", "Warehousing", "Hedging", "Liquidity",
-    "Volatility", "Leverage", "Margin", "Settlement", "Collateral", "Escrow",
-    "KYC", "AML", "Compliance", "Derivatives", "SaaS", "API", "Fintech", "BaaS",
-    "FaaS",
+    "Kimberlite", "Zircon", "Xenotime", "Molybdenum", "Tungsten", "Palladium",
+    "Rhodium", "Iridium", "Ruthenium", "Osmium", "PGM", "Platinum Group Metals",
+    "LME", "London Metal Exchange", "Backwardation", "Contango", "Arbitrage",
+    "Assay", "Bullion", "Ingot", "Dore", "KYC", "AML", "SaaS", "BaaS", "FaaS",
 ]
 
 
 def _deepgram_keyterms() -> List[str]:
-    """Nova-3 keyterm prompting (improves STT accuracy on domain terms)."""
+    """Nova-3 keyterm prompting (capped to stay under Deepgram's 500-token limit)."""
     configured = _csv_env("DEEPGRAM_KEYTERMS")
-    return configured or list(DEFAULT_DEEPGRAM_KEYTERMS)
+    terms = configured or list(DEFAULT_DEEPGRAM_KEYTERMS)
+    return terms[:MAX_DEEPGRAM_KEYTERMS]
 
 
 def _speech_times(speech_data: Any) -> Tuple[float, float]:
@@ -1640,9 +1642,16 @@ class TranscriptionOnlyAgent:
                     emit_llm_cost(lane, tail_src, candidate, usage)
                 if not candidate:
                     return
-                stable = stable_common_prefix(lane.interim_candidate, candidate)
+                # First interim call of the turn/sentence has no prior candidate
+                # to agree with — display it immediately so live translation
+                # appears on the first interim (~400ms) instead of waiting for a
+                # second LLM round-trip. Subsequent calls advance monotonically.
+                if not lane.interim_candidate:
+                    stable = candidate
+                else:
+                    agreed = stable_common_prefix(lane.interim_candidate, candidate)
+                    stable = agreed if len(agreed) >= len(lane.interim_stable) else candidate
                 lane.interim_candidate = candidate
-                # Monotonic display: never retract already-shown stable text.
                 if len(stable) > len(lane.interim_stable):
                     lane.interim_stable = stable
                     await publish_lane_translation_partial(lane, tgt_lang)

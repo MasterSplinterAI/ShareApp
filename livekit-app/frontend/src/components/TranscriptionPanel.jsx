@@ -422,12 +422,12 @@ function TranscriptionPanel() {
           translations: isTranslation
             ? {
                 ...existing.translations,
-                ...(text && text.length >= (existing.translations[targetLang]?.length || 0)
-                  ? { [targetLang]: mergeCaptionText(existing.translations[targetLang], text) }
+                ...(text && text.trim()
+                  ? { [targetLang]: text.trim() }
                   : {}),
               }
             : existing.translations,
-          sourceLanguage: existing.sourceLanguage || sourceLanguage,
+          sourceLanguage: sourceLanguage || existing.sourceLanguage,
           timestamp: messageTimestamp,
           transcriptionId: transcriptionId ?? existing.transcriptionId,
           isPartial,
@@ -487,7 +487,7 @@ function TranscriptionPanel() {
                   isTranslation ? (originalText || existing.originalText) : (text || originalText || existing.originalText),
                 ),
                 translations: newTranslations,
-                sourceLanguage: existing.sourceLanguage || sourceLanguage,
+                sourceLanguage: sourceLanguage || existing.sourceLanguage,
                 timestamp: messageTimestamp,
                 transcriptionId: transcriptionId ?? existing.transcriptionId,
                 isPartial: false,
@@ -532,7 +532,7 @@ function TranscriptionPanel() {
               next[finalIdx] = {
                 ...existing,
                 translations: newTranslations,
-                sourceLanguage: existing.sourceLanguage || sourceLanguage,
+                sourceLanguage: sourceLanguage || existing.sourceLanguage,
               };
               return next;
             }
@@ -640,11 +640,10 @@ function TranscriptionPanel() {
       target.isPartial,
       target.sourceLanguage,
     );
-    // Finalized but never translated (cold LLM / dropped lane): show the original
-    // rather than a permanent "Translating…" in the mobile caption bar.
-    const line = pendingTranslation && !dominant
-      ? (target.isPartial ? 'Translating…' : target.originalText)
-      : dominant;
+    // Show live translated text when available, otherwise show the live
+    // original speech immediately so the mobile bar never hides words behind
+    // a static "Translating…" placeholder.
+    const line = dominant || target.originalText;
     return line ? `${target.speaker}: ${line}` : null;
   }, [messages, selectedLanguage]);
 

@@ -46,6 +46,14 @@ def test_deepgram_keyterms_use_domain_defaults_when_env_unset(monkeypatch):
     assert "LME" in terms
     assert "Contango" in terms
     assert "KYC" in terms
+    # Deepgram returns HTTP 400 ("Keyterm limit exceeded: 500 tokens") when too
+    # many multi-syllable keyterms are passed on nova-3 language=multi.
+    assert len(terms) <= 45
+
+
+def test_deepgram_keyterms_caps_env_list_to_avoid_http_400(monkeypatch):
+    monkeypatch.setenv("DEEPGRAM_KEYTERMS", ",".join(f"Term{i}" for i in range(100)))
+    assert len(_deepgram_keyterms()) <= 45
 
 
 def test_deepgram_keyterms_env_overrides_defaults(monkeypatch):
