@@ -4,11 +4,18 @@ import types
 
 import transcription_only_agent as agent_module
 from transcription_only_agent import (
+    LANG_NAMES,
     TranscriptionOnlyAgent,
     _deepgram_keyterms,
     _llm_temperature,
     _stt_provider,
 )
+
+
+def test_dominican_spanish_registered_in_lang_names():
+    assert "es-DO" in LANG_NAMES
+    assert "Dominican Spanish" in LANG_NAMES["es-DO"]
+    assert "ustedes" in LANG_NAMES["es-DO"]
 
 
 def test_stt_provider_defaults_to_deepgram(monkeypatch):

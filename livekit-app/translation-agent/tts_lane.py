@@ -182,7 +182,7 @@ class TtsLane:
         self.provider = provider
         self.sample_rate = sample_rate
         self.num_channels = num_channels
-        self.track_name = f"tts-{language}"
+        self.track_name = f"tts-{language.lower()}"
         self.stale_after_sec = stale_after_sec
         self.publish_track = publish_track
         self.voice_id: str | None = None

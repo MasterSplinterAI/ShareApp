@@ -7,7 +7,7 @@ import PanelTabs from './PanelTabs';
 import { resolveSpeakerLabel, preferSpeakerLabel } from '../lib/participantDisplayName';
 
 const LANGUAGE_LABELS = {
-  en: 'English', es: 'Spanish', 'es-CO': 'Colombian Spanish',
+  en: 'English', es: 'Spanish', 'es-DO': 'Dominican Spanish', 'es-CO': 'Colombian Spanish', 'es-MX': 'Mexican Spanish',
   fr: 'French', de: 'German', it: 'Italian', pt: 'Portuguese',
   ru: 'Russian', zh: 'Chinese', 'zh-CN': 'Mandarin Chinese', 'zh-TW': 'Chinese (Traditional)',
   ja: 'Japanese', ko: 'Korean',

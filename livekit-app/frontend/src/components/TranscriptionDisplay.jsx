@@ -124,7 +124,7 @@ function TranscriptionDisplay({ participantId, selectedLanguage = 'en', isVisibl
     const labels = {
       es: 'Spanish', fr: 'French', de: 'German', en: 'English', it: 'Italian', pt: 'Portuguese', ru: 'Russian',
       zh: 'Chinese', 'zh-CN': 'Mandarin Chinese', 'zh-TW': 'Chinese (Traditional)',
-      ja: 'Japanese', ko: 'Korean', ar: 'Arabic', hi: 'Hindi', tiv: 'Tiv', 'es-CO': 'Colombian Spanish',
+      ja: 'Japanese', ko: 'Korean', ar: 'Arabic', hi: 'Hindi', tiv: 'Tiv', 'es-DO': 'Dominican Spanish', 'es-CO': 'Colombian Spanish', 'es-MX': 'Mexican Spanish',
     };
     return labels[code] || code;
   };

@@ -361,9 +361,13 @@ logger.info("=" * 60)
 
 
 LANG_NAMES = {
-    "es": "Spanish", "en": "English", "fr": "French", "de": "German",
-    "it": "Italian", "pt": "Portuguese",
-    "zh": "Chinese", "zh-CN": "Mandarin Chinese", "zh-TW": "Traditional Chinese",
+    "es": "Spanish",
+    "es-DO": "Dominican Spanish (República Dominicana — use natural Dominican/Caribbean Spanish phrasing, vocabulary, and 'ustedes', never Castilian 'vosotros')",
+    "es-CO": "Colombian Spanish (Colombia — use natural Colombian Spanish phrasing and 'ustedes')",
+    "es-MX": "Mexican Spanish (México — use natural Mexican Spanish phrasing and 'ustedes')",
+    "en": "English", "fr": "French", "fr-CA": "Canadian French", "de": "German", "de-CH": "Swiss German",
+    "it": "Italian", "pt": "Portuguese", "pt-BR": "Brazilian Portuguese", "pt-PT": "European Portuguese",
+    "zh": "Chinese", "zh-CN": "Mandarin Chinese", "zh-TW": "Traditional Chinese", "zh-HK": "Cantonese",
     "ja": "Japanese",
     "ko": "Korean", "ru": "Russian", "ar": "Arabic", "hi": "Hindi",
     "tiv": "Tiv",
