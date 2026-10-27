@@ -87,6 +87,22 @@ def ends_sentence(text: str) -> bool:
     return bool(_SENTENCE_END_RE.search(text.strip())) if text.strip() else False
 
 
+def stt_idle_timeout_ms(live_text: str, base_idle_ms: int = 2000) -> int:
+    """Adaptive STT idle window before closing the current bubble into a new thought.
+
+    - When the current text ends with sentence punctuation (. ? ! etc.), close
+      slightly sooner (80% of base_idle_ms, e.g. 1600ms for a 2000ms base) so
+      completed thoughts separate cleanly into a new bubble when the speaker
+      starts talking again.
+    - When paused mid-sentence (no terminal punctuation yet), hold for the full
+      base_idle_ms (2000ms) so a brief breath doesn't chop a clause in half.
+    """
+    base = max(400, int(base_idle_ms))
+    if ends_sentence(live_text or ""):
+        return max(400, int(round(base * 0.8)))
+    return base
+
+
 def should_break_turn(
     committed_text: str,
     age_sec: float,

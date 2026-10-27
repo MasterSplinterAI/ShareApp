@@ -11,6 +11,7 @@ from translation_helpers import (
     should_handoff_turn,
     split_tail,
     stable_common_prefix,
+    stt_idle_timeout_ms,
     tts_remainder,
 )
 
@@ -293,3 +294,17 @@ class TestShouldHandoffTurn:
             )
             is False
         )
+
+
+class TestSttIdleTimeoutMs:
+    """Adaptive punctuation-aware idle timeout around 2.0s."""
+
+    def test_sentence_complete_uses_shorter_timeout(self):
+        assert stt_idle_timeout_ms("That finishes the first thought.", base_idle_ms=2000) == 1600
+
+    def test_mid_sentence_uses_full_two_second_timeout(self):
+        assert stt_idle_timeout_ms("And then we looked at", base_idle_ms=2000) == 2000
+
+    def test_respects_custom_base_idle_ms(self):
+        assert stt_idle_timeout_ms("Done!", base_idle_ms=1500) == 1200
+        assert stt_idle_timeout_ms("Still going", base_idle_ms=1500) == 1500

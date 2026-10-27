@@ -39,6 +39,7 @@ from translation_helpers import (
     should_handoff_turn,
     split_tail,
     stable_common_prefix,
+    stt_idle_timeout_ms,
     tts_remainder,
 )
 
@@ -144,11 +145,11 @@ def _deepgram_stt_idle_ms() -> int:
     A thought stays open across breaths; this is "done speaking," not a clause pause.
     Does not depend on room silence — background noise won't block finalize.
     """
-    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "3500").strip()
+    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "2000").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 3500
+        ms = 2000
     return max(400, min(ms, 8000))
 
 
@@ -2193,14 +2194,17 @@ class TranscriptionOnlyAgent:
 
         async def schedule_stt_idle_finalize() -> None:
             try:
-                idle_sec = _deepgram_stt_idle_ms() / 1000.0
+                effective_idle_ms = stt_idle_timeout_ms(
+                    dg_buffer.live_text(), base_idle_ms=_deepgram_stt_idle_ms()
+                )
+                idle_sec = effective_idle_ms / 1000.0
                 await asyncio.sleep(idle_sec)
                 if not turn_id[0] or not dg_buffer.has_content():
                     return
                 if time.time() - last_stt_text_at[0] < idle_sec * 0.85:
                     return
                 logger.info(
-                    f"{L} ⏱️ STT idle finalize ({_deepgram_stt_idle_ms()}ms without new words)"
+                    f"{L} ⏱️ STT idle finalize ({effective_idle_ms}ms without new words)"
                 )
                 maybe_flush_stt()
                 await asyncio.sleep(0.15)

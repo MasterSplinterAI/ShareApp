@@ -18,8 +18,9 @@ STT_PROVIDER=deepgram
 DEEPGRAM_API_KEY=
 # Deepgram END_OF_SPEECH (ms silence). 400 is a good default.
 DEEPGRAM_ENDPOINTING_MS=400
-# Finalize bubble after no new/changed transcript for this long (default 1200ms).
-DEEPGRAM_STT_IDLE_MS=3500
+# Finalize bubble after no new/changed transcript for this long (default 2000ms;
+# adaptive 80% = 1600ms when the line already ends with sentence punctuation).
+DEEPGRAM_STT_IDLE_MS=2000
 # Long-turn bubble break: close the bubble at a sentence boundary once the
 # turn exceeds this age (sec) or word count, so monologues don't grow one
 # endless bubble and TTS doesn't wait for the whole turn.
