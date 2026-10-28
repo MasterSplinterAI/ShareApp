@@ -9,6 +9,7 @@ from translation_helpers import (
     llm_completion_token_cap,
     should_break_turn,
     should_handoff_turn,
+    should_mark_interjection,
     split_tail,
     stable_common_prefix,
     stt_idle_timeout_ms,
@@ -291,6 +292,50 @@ class TestShouldHandoffTurn:
                 other_idle_sec=2.0,
                 interjector_is_final=True,
                 interjector_word_count=4,
+            )
+            is False
+        )
+
+
+class TestShouldMarkInterjection:
+    """Simultaneous talk-over: mark Speaker A so A splits at A's next clause boundary."""
+
+    def test_marks_interjection_when_speaker_a_actively_talking_and_b_speaks(self):
+        assert (
+            should_mark_interjection(
+                other_has_open_turn=True,
+                interjector_is_final=False,
+                interjector_word_count=2,
+            )
+            is True
+        )
+
+    def test_marks_interjection_on_one_word_final_from_b(self):
+        assert (
+            should_mark_interjection(
+                other_has_open_turn=True,
+                interjector_is_final=True,
+                interjector_word_count=1,
+            )
+            is True
+        )
+
+    def test_ignores_single_word_interim_from_b(self):
+        assert (
+            should_mark_interjection(
+                other_has_open_turn=True,
+                interjector_is_final=False,
+                interjector_word_count=1,
+            )
+            is False
+        )
+
+    def test_ignores_when_speaker_a_has_no_open_turn(self):
+        assert (
+            should_mark_interjection(
+                other_has_open_turn=False,
+                interjector_is_final=True,
+                interjector_word_count=3,
             )
             is False
         )

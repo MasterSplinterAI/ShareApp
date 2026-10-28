@@ -31,6 +31,7 @@ from translation_helpers import (
     llm_completion_token_cap,
     should_break_turn,
     should_handoff_turn,
+    should_mark_interjection,
     split_tail,
     stable_common_prefix,
     stt_idle_timeout_ms,
@@ -415,6 +416,7 @@ class SpeakerCaptionSession:
     has_open_turn: Callable[[], bool]
     is_vad_active: Callable[[], bool] = lambda: False
     idle_seconds: Callable[[], float] = lambda: 0.0
+    mark_interjected: Callable[[], None] = lambda: None
 
 
 @dataclass
@@ -594,6 +596,12 @@ class TranscriptionOnlyAgent:
                         f"{session.speaker_id!r} (interjected words={word_count} is_final={is_final})"
                     )
                     await session.finalize_now()
+                elif should_mark_interjection(
+                    other_has_open_turn=session.has_open_turn(),
+                    interjector_is_final=is_final,
+                    interjector_word_count=word_count,
+                ):
+                    session.mark_interjected()
             except Exception as e:
                 logger.warning(
                     f"[{active_speaker_id}] failed to finalize {session.speaker_id!r}: {e}"
@@ -1840,6 +1848,7 @@ class TranscriptionOnlyAgent:
                 lane.turn_translated_parts.clear()
                 lane.reset_turn()
             gladia_satisfied_targets.clear()
+            interjected_during_turn[0] = False
             turn_id[0] = None
 
             # Emit STT cost for the completed turn (fire-and-forget)
@@ -2084,12 +2093,19 @@ class TranscriptionOnlyAgent:
                 return 999.0
             return max(0.0, time.time() - last_stt_text_at[0])
 
+        interjected_during_turn: List[bool] = [False]
+
+        def mark_interjected() -> None:
+            if turn_id[0] and dg_buffer.has_content():
+                interjected_during_turn[0] = True
+
         caption_session = SpeakerCaptionSession(
             speaker_id=speaker_id,
             finalize_now=finalize_now,
             has_open_turn=has_open_turn,
             is_vad_active=is_vad_active,
             idle_seconds=idle_seconds,
+            mark_interjected=mark_interjected,
         )
         await self._register_caption_session(caption_session)
 
@@ -2268,6 +2284,18 @@ class TranscriptionOnlyAgent:
                             lane.current_task = task
                             lane.pending_translate_tasks.append(task)
                     schedule_live_partial(display_text)
+                    # Simultaneous talk-over split: another speaker spoke while this
+                    # turn was active. Now that this clause (is_final) is complete,
+                    # close this bubble so any continuation appears below the other
+                    # speaker's bubble (A part 1 -> B -> A part 2).
+                    if interjected_during_turn[0] and committed_snapshot.strip():
+                        interjected_during_turn[0] = False
+                        logger.info(
+                            f"{L} ↪︎ clause-boundary split after simultaneous interjection "
+                            f"(words={len(committed_snapshot.split())})"
+                        )
+                        await finalize_turn()
+                        continue
                     # Long-turn bubble break: close at a sentence boundary once
                     # the turn is too old/wordy, so monologues don't grow one
                     # endless bubble (and TTS doesn't wait for the full turn).

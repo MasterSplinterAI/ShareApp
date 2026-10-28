@@ -174,6 +174,29 @@ def should_handoff_turn(
     return False
 
 
+def should_mark_interjection(
+    *,
+    other_has_open_turn: bool,
+    interjector_is_final: bool,
+    interjector_word_count: int,
+) -> bool:
+    """True when Speaker B spoke during Speaker A's active turn (simultaneous talk-over).
+
+    When Speaker A is actively talking (so `should_handoff_turn` is False to
+    avoid chopping Speaker A mid-clause), marking Speaker A's turn as
+    interjected causes Speaker A's bubble to close cleanly as soon as Speaker A
+    finishes their current clause (`is_final`), so Speaker A's continuation
+    opens a new bubble below Speaker B (`A (part 1) -> B -> A (part 2)`).
+    """
+    if not other_has_open_turn:
+        return False
+    if interjector_is_final and interjector_word_count >= 1:
+        return True
+    if interjector_word_count >= 2:
+        return True
+    return False
+
+
 def split_tail(committed_text: str, frozen_src: str) -> str:
     """Portion of the committed utterance not yet frozen.
 
