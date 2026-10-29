@@ -6,15 +6,39 @@ import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 import { participantDisplayName } from '../lib/participantDisplayName';
 
-function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
+function useViewportLayout() {
+  const [layout, setLayout] = useState({ isMobile: false, isLandscape: false });
   useEffect(() => {
-    const check = () => setIsMobile(window.innerWidth < 640);
+    const check = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      setLayout({
+        isMobile: w < 640 || (h < 500 && w < 960),
+        isLandscape: w > h && h < 540,
+      });
+    };
     check();
     window.addEventListener('resize', check);
-    return () => window.removeEventListener('resize', check);
+    window.addEventListener('orientationchange', check);
+    return () => {
+      window.removeEventListener('resize', check);
+      window.removeEventListener('orientationchange', check);
+    };
   }, []);
-  return isMobile;
+  return layout;
+}
+
+function isAgentParticipant(p) {
+  if (!p) return false;
+  if (p.isAgent) return true;
+  const identity = String(p.identity || '').toLowerCase();
+  return (
+    identity.startsWith('agent-') ||
+    identity.startsWith('agent_') ||
+    identity.includes('translation') ||
+    identity.includes('-agent') ||
+    p.metadata?.role === 'agent'
+  );
 }
 
 function VideoGrid() {
@@ -23,20 +47,16 @@ function VideoGrid() {
   const { localParticipant } = useLocalParticipant();
   const { isFullScreen, setIsFullScreen, meetingId } = useMeeting();
   const fullScreenRef = useRef(null);
-  const isMobile = useIsMobile();
+  const { isMobile, isLandscape } = useViewportLayout();
   const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState(null);
+  const [pinnedIdentity, setPinnedIdentity] = useState(null);
 
   const tracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Microphone],
     { onlySubscribed: false }
   );
 
-  const humanParticipants = participants.filter(p => {
-    const identity = p.identity || '';
-    return !identity.startsWith('agent-') &&
-           !identity.includes('translation-bot') &&
-           p.metadata?.role !== 'agent';
-  });
+  const humanParticipants = participants.filter((p) => !isAgentParticipant(p));
 
   const screenShareTracks = tracks.filter(t => t.source === Track.Source.ScreenShare);
   const activeScreenShare = screenShareTracks.length > 0 ? screenShareTracks[0] : null;
@@ -45,9 +65,7 @@ function VideoGrid() {
   useEffect(() => {
     if (!room) return;
     const handleSpeakers = (speakers) => {
-      const human = speakers.find(s =>
-        !s.identity?.startsWith('agent-') && !s.identity?.includes('translation-bot')
-      );
+      const human = speakers.find((s) => !isAgentParticipant(s));
       if (human) setActiveSpeakerIdentity(human.identity);
     };
     room.on(RoomEvent.ActiveSpeakersChanged, handleSpeakers);
@@ -78,9 +96,11 @@ function VideoGrid() {
   }, [setIsFullScreen]);
 
   const getGridClass = (count) => {
-    if (count <= 1) return 'grid-cols-1';
-    if (count <= 2) return 'grid-cols-1 sm:grid-cols-2';
-    if (count <= 4) return 'grid-cols-2';
+    if (count <= 1) return 'grid-cols-1 grid-rows-1';
+    if (count === 2) {
+      return isLandscape ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1';
+    }
+    if (count <= 4) return 'grid-cols-2 grid-rows-2';
     if (count <= 6) return 'grid-cols-2 sm:grid-cols-3';
     return 'grid-cols-3 sm:grid-cols-4';
   };
@@ -121,29 +141,51 @@ function VideoGrid() {
     );
   }
 
-  // Mobile: active speaker layout for 3+ participants
+  // Mobile: active speaker (or tapped pin) spotlight layout for 3+ participants
   if (isMobile && humanParticipants.length >= 3) {
-    const speaker = humanParticipants.find(p => p.identity === activeSpeakerIdentity)
-      || humanParticipants.find(p => p.identity !== localParticipant?.identity)
-      || humanParticipants[0];
-    const others = humanParticipants.filter(p => p.identity !== speaker.identity);
+    const speaker =
+      humanParticipants.find((p) => p.identity === pinnedIdentity) ||
+      humanParticipants.find((p) => p.identity === activeSpeakerIdentity) ||
+      humanParticipants.find((p) => p.identity !== localParticipant?.identity) ||
+      humanParticipants[0];
+    const others = humanParticipants.filter((p) => p.identity !== speaker.identity);
 
     return (
-      <div ref={fullScreenRef} className="flex h-full w-full flex-col gap-1.5 meeting-video-matte p-1.5">
-        <div className="flex-1 min-h-0">
-          <ParticipantTile
-            participant={speaker}
-            tracks={tracks}
-          />
+      <div
+        ref={fullScreenRef}
+        className={`flex h-full w-full gap-1.5 meeting-video-matte p-1.5 ${
+          isLandscape ? 'flex-row' : 'flex-col'
+        }`}
+      >
+        <div
+          className="flex-1 min-h-0 min-w-0"
+          onClick={() => pinnedIdentity && setPinnedIdentity(null)}
+        >
+          <ParticipantTile participant={speaker} tracks={tracks} />
         </div>
-        <div className="h-20 flex gap-1.5 overflow-x-auto flex-shrink-0">
-          {others.map(participant => (
-            <ParticipantTile
+        <div
+          className={`flex gap-1.5 flex-shrink-0 ${
+            isLandscape
+              ? 'w-28 flex-col overflow-y-auto'
+              : 'h-20 flex-row overflow-x-auto'
+          }`}
+        >
+          {others.map((participant) => (
+            <div
               key={participant.identity}
-              participant={participant}
-              tracks={tracks}
-              compact
-            />
+              onClick={() =>
+                setPinnedIdentity((prev) =>
+                  prev === participant.identity ? null : participant.identity
+                )
+              }
+              className="cursor-pointer flex-shrink-0"
+            >
+              <ParticipantTile
+                participant={participant}
+                tracks={tracks}
+                compact
+              />
+            </div>
           ))}
         </div>
       </div>

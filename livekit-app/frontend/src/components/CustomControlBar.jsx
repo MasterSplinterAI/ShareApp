@@ -249,7 +249,7 @@ export default function CustomControlBar({
     }
   };
 
-  // Close menus when clicking outside
+  // Close menus when clicking/tapping outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (micMenuRef.current && !micMenuRef.current.contains(event.target)) {
@@ -259,8 +259,8 @@ export default function CustomControlBar({
         setShowCameraMenu(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
   // Close menus on orientation change
@@ -462,7 +462,7 @@ export default function CustomControlBar({
               </Button>
 
               {showCameraMenu && (
-                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-72 rounded-lg border border-border bg-popover shadow-xl">
+                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-72 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-var(--control-bar-h,60px)-1rem)] overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
                     <div className="border-b border-border p-2">
                       <button
                         type="button"

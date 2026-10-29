@@ -134,11 +134,51 @@
     background-image: none;
     /* Shared bottom chrome height — CustomControlBar overwrites via ResizeObserver. */
     --control-bar-h: 57px;
+    --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+    padding-top: var(--safe-top);
+    padding-left: var(--safe-left);
+    padding-right: var(--safe-right);
   }
   @media (min-width: 640px) {
     .meeting-surface.meeting-room-root {
       --control-bar-h: 68px;
+    }
+  }
+
+  /* Mobile bottom sheet height presets (sm = 26dvh, md = 40dvh, lg = 60dvh) */
+  .meeting-mobile-sheet[data-sheet-size="sm"] {
+    height: min(26dvh, 14rem);
+    max-height: 26dvh;
+  }
+  .meeting-mobile-sheet[data-sheet-size="md"] {
+    height: min(40dvh, 22rem);
+    max-height: 40dvh;
+  }
+  .meeting-mobile-sheet[data-sheet-size="lg"] {
+    height: min(60dvh, 32rem);
+    max-height: 60dvh;
+  }
+  @media (min-width: 640px) {
+    .meeting-mobile-sheet[data-sheet-size] {
+      height: 100%;
+      max-height: none;
+    }
+  }
+  /* iPhone landscape: place video and active sheet side-by-side so video isn't squished vertically */
+  @media (max-height: 500px) and (orientation: landscape) {
+    .meeting-stage-layout {
+      flex-direction: row !important;
+    }
+    .meeting-mobile-sheet {
+      height: 100% !important;
+      max-height: none !important;
+      width: min(42vw, 20rem) !important;
+      border-radius: 0 !important;
+      border-top-width: 0 !important;
+      border-left-width: 1px !important;
     }
   }
   .meeting-video-matte {

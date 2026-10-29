@@ -65,8 +65,8 @@ export default function MeetingPanelMenu({
         setIsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -100,13 +100,17 @@ export default function MeetingPanelMenu({
         type="button"
         variant={isActive ? 'success' : 'secondary'}
         onClick={() => setIsOpen((v) => !v)}
-        className={cn(barBtnClass, 'relative gap-0')}
-        aria-label="Open panel menu"
+        className={cn('h-11 rounded-full px-3 gap-1.5 relative shrink-0')}
+        aria-label="Open panel and language menu"
         aria-expanded={isOpen}
       >
-        <ActiveIcon className="h-5 w-5" />
-        <ChevronDown className={cn('absolute bottom-1 right-1 h-2.5 w-2.5 transition-transform', isOpen && 'rotate-180')} />
-        {sidePanelTab === 'chat' && unreadCount > 0 && !sidePanelOpen && (
+        <ActiveIcon className="h-4 w-4 shrink-0" />
+        <span className="text-xs font-semibold uppercase tracking-tight">
+          {selectedLanguage?.flag ? `${selectedLanguage.flag} ` : ''}
+          {normalizedValue}
+        </span>
+        <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', isOpen && 'rotate-180')} />
+        {unreadCount > 0 && !(sidePanelOpen && sidePanelTab === 'chat') && (
           <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
@@ -115,7 +119,7 @@ export default function MeetingPanelMenu({
 
       {isOpen && (
         <div
-          className="absolute bottom-full right-0 z-[9999] mb-2 w-56 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
+          className="absolute bottom-full right-0 z-[9999] mb-2 w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-var(--control-bar-h,60px)-1rem)] overflow-y-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-xl"
         >
           <div className="border-b border-border p-1">
             {visiblePanels.map((item) => {
@@ -204,7 +208,7 @@ export default function MeetingPanelMenu({
                 value={ttsVoiceId}
                 onChange={(e) => onTtsVoiceChange(sanitizeTtsVoiceId(e.target.value))}
                 aria-label="Translation voice"
-                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-base sm:text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               >
                 {TTS_VOICES.map((voice) => (
                   <option key={voice.id} value={voice.id}>

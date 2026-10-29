@@ -534,8 +534,8 @@ function MeetingRoomInner({
         <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
         <LocalDisplayNameSync displayName={participantInfo?.participantName} />
         <MeetingUsageBanner meetingId={meetingId} isHost={participantInfo?.isHost} />
-        {/* Main content: column on mobile (video + in-flow sheet), row on desktop */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
+        {/* Main content: column on mobile portrait (video + in-flow sheet), row on desktop & mobile landscape */}
+        <div className="meeting-stage-layout flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
           <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <VideoGrid />
             {reconnecting && (

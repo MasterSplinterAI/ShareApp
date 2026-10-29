@@ -28,6 +28,12 @@ export function MeetingProvider({ children, initialState = {} }) {
   const [sidePanelTab, setSidePanelTabState] = useState('captions'); // 'captions' | 'chat'
   const [unreadCount, setUnreadCount] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  // Mobile bottom sheet height preset: 'sm' (26dvh) | 'md' (40dvh) | 'lg' (62dvh)
+  const [mobileSheetSize, setMobileSheetSize] = useState('md');
+
+  const cycleMobileSheetSize = useCallback(() => {
+    setMobileSheetSize((prev) => (prev === 'md' ? 'lg' : prev === 'lg' ? 'sm' : 'md'));
+  }, []);
 
   const setSidePanelTab = useCallback((tab) => {
     setSidePanelTabState(tab);
@@ -145,6 +151,11 @@ export function MeetingProvider({ children, initialState = {} }) {
     isFullScreen,
     setIsFullScreen,
 
+    // Mobile sheet sizing
+    mobileSheetSize,
+    setMobileSheetSize,
+    cycleMobileSheetSize,
+
     // Mode
     meetingMode: initialState.meetingMode || 'translation',
 
@@ -179,6 +190,8 @@ export function MeetingProvider({ children, initialState = {} }) {
     markChatRead,
     incrementChatUnread,
     isFullScreen,
+    mobileSheetSize,
+    cycleMobileSheetSize,
   ]);
 
   return (

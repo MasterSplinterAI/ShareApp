@@ -52,6 +52,7 @@ function ChatPanel() {
     isChatOpen,
     incrementChatUnread,
     isFullScreen,
+    mobileSheetSize,
   } = useMeeting();
 
   const [messages, setMessages] = useState([]);
@@ -367,7 +368,7 @@ function ChatPanel() {
           placeholder={t('messagePlaceholder')}
           rows={2}
           aria-label={t('messagePlaceholder')}
-          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-base sm:text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
           maxLength={MAX_CHARS}
         />
         <Button
@@ -398,11 +399,12 @@ function ChatPanel() {
 
   return (
     <div
-      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface sm:h-full sm:max-h-none sm:w-[350px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none lg:w-[400px]"
+      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height] duration-200 sm:h-full sm:max-h-none sm:w-[350px] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none lg:w-[400px]"
       data-meeting-mobile-sheet="chat"
+      data-sheet-size={mobileSheetSize}
       data-no-translate="true"
     >
-      <PanelTabs />
+      <PanelTabs compact />
       {panelBody}
     </div>
   );

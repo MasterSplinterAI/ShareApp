@@ -121,7 +121,7 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
 }
 
 export default function ParticipantsPanel({ meetingId }) {
-  const { sidePanelOpen, sidePanelTab, isHost } = useMeeting();
+  const { sidePanelOpen, sidePanelTab, isHost, mobileSheetSize } = useMeeting();
   const participants = useParticipants();
   const [muteAllBusy, setMuteAllBusy] = useState(false);
 
@@ -148,11 +148,12 @@ export default function ParticipantsPanel({ meetingId }) {
 
   return (
     <div
-      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface sm:h-full sm:max-h-none sm:w-80 sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none lg:w-96"
+      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height] duration-200 sm:h-full sm:max-h-none sm:w-80 sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none lg:w-96"
       data-meeting-mobile-sheet="participants"
+      data-sheet-size={mobileSheetSize}
       data-no-translate="true"
     >
-      <PanelTabs />
+      <PanelTabs compact />
 
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

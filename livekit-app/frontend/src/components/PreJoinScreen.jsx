@@ -86,7 +86,7 @@ function DeviceSelect({ kind, devices, activeDeviceId, onChange, disabled, micro
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         aria-label={label}
-        className="h-9 w-full cursor-pointer truncate rounded-md border border-input bg-background px-2.5 text-sm transition-colors hover:border-ring/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
+        className="h-10 sm:h-9 w-full cursor-pointer truncate rounded-md border border-input bg-background px-2.5 text-base sm:text-sm transition-colors hover:border-ring/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
       >
         {devices.map((d, i) => (
           <option key={d.deviceId || i} value={d.deviceId}>
@@ -396,7 +396,7 @@ function PreJoinScreen({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder={t('prejoin.namePlaceholder')}
-                  autoFocus={!defaultName}
+                  autoFocus={!defaultName && !isMobileViewport()}
                   required
                 />
               </div>

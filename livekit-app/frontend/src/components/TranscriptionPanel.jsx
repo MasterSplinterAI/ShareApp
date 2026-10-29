@@ -265,6 +265,7 @@ function TranscriptionPanel() {
     isHost,
     demoTeammates,
     participantName,
+    mobileSheetSize,
   } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
   // Default to expanded on mobile: when captions open (incl. on join) show the
@@ -727,8 +728,9 @@ function TranscriptionPanel() {
         />
       ) : (
         <div
-          className="meeting-mobile-sheet sm:hidden flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface"
+          className="meeting-mobile-sheet sm:hidden flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height] duration-200"
           data-meeting-mobile-sheet="captions"
+          data-sheet-size={mobileSheetSize}
           data-no-translate="true"
         >
           <PanelTabs
@@ -1002,7 +1004,7 @@ function MobileCaptionBar({ text, onExpand, hasContent }) {
       >
         <MessageSquare className="w-3.5 h-3.5 text-primary flex-shrink-0" />
         {text ? (
-          <span className="text-xs text-foreground truncate flex-1">{text}</span>
+          <span className="text-xs leading-snug text-foreground line-clamp-2 flex-1">{text}</span>
         ) : (
           <span className="text-xs text-muted-foreground truncate flex-1">
             {hasContent ? 'Tap to view captions' : 'Waiting for speech...'}
