@@ -20,11 +20,13 @@ import type {
   KbIngestConfig,
   LlmAdapter,
   OpsNotifier,
+  ResolveTenant,
   ResolveUser,
   SupportRouter,
 } from "../adapters/types.js";
 import { ensureSchema, DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { TicketService } from "../tickets/service.js";
+import { TenantStore, CreateTenantInput } from "../tenants/store.js";
 import { ProposalService } from "../proposals/service.js";
 import { KnowledgeGapService } from "../gaps/service.js";
 import { LeadService } from "../leads/service.js";
@@ -133,6 +135,12 @@ function matchRoute(
   if (method === "POST" && path === "/admin/kb/ingest") {
     return { name: "adminKbIngest", params: {} };
   }
+  if (method === "POST" && path === "/admin/kb/ingest/website") {
+    return { name: "adminKbIngestWebsite", params: {} };
+  }
+  if (method === "POST" && path === "/admin/kb/ingest/uploads") {
+    return { name: "adminKbIngestUploads", params: {} };
+  }
 
   if (method === "POST" && path === "/telegram/webhook") {
     return { name: "telegramWebhook", params: {} };
@@ -186,6 +194,31 @@ function matchRoute(
   const adminProposalAction = path.match(/^\/admin\/proposals\/([^/]+)\/action$/);
   if (method === "POST" && adminProposalAction) {
     return { name: "adminProposalAction", params: { id: adminProposalAction[1]! } };
+  }
+
+  // Multi-tenant hosted platform: tenant-selected embed page (one-line iframe).
+  if (method === "GET" && path === "/embed") {
+    return { name: "embedPage", params: {} };
+  }
+
+  // Tenant registry (platform-level, admin-gated).
+  if (method === "POST" && path === "/tenants") {
+    return { name: "createTenant", params: {} };
+  }
+  if (method === "GET" && path === "/tenants") {
+    return { name: "listTenants", params: {} };
+  }
+  const tenantById = path.match(/^\/tenants\/([^/]+)$/);
+  if (tenantById) {
+    if (method === "GET") {
+      return { name: "getTenant", params: { id: tenantById[1]! } };
+    }
+    if (method === "PATCH") {
+      return { name: "patchTenant", params: { id: tenantById[1]! } };
+    }
+    if (method === "DELETE") {
+      return { name: "deleteTenant", params: { id: tenantById[1]! } };
+    }
   }
 
   return null;
@@ -275,6 +308,7 @@ export interface HttpRouterContext {
   telegram?: CreateSupportRouterOptions["telegram"];
   codebase?: CodebaseAdapter;
   onLeadCaptured?: CreateSupportRouterOptions["onLeadCaptured"];
+  resolveTenant?: ResolveTenant;
 }
 
 function notifyEmail(
@@ -311,16 +345,22 @@ function notifyEmail(
 /**
  * Express-compatible support HTTP surface.
  */
-export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
-  const tablePrefix = ctx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const topics = ctx.topics ?? [...DEFAULT_TOPICS];
-  // Defer ensureSchema until the first request so hosts can open the DB
-  // (e.g. ShareApp sqlite init) before CREATE TABLE runs.
-  let ready: ReturnType<typeof ensureSchema> | null = null;
-  const ensureReady = () => {
-    if (!ready) ready = ensureSchema(ctx.db, tablePrefix);
-    return ready;
+export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
+  const tablePrefix = baseCtx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
+  const topics = baseCtx.topics ?? [...DEFAULT_TOPICS];
+  // Run ensureSchema eagerly for already-open DBs, and retry on the first
+  // request if the host DB wasn't initialized yet at router construction time
+  // (e.g. ShareApp sqlite/pg init).
+  let ready = ensureSchema(baseCtx.db, tablePrefix);
+  const ensureReady = async () => {
+    const res = await ready;
+    if (res.statements === 0) {
+      ready = ensureSchema(baseCtx.db, tablePrefix);
+      return ready;
+    }
+    return res;
   };
+  const tenantStore = new TenantStore(baseCtx.db, tablePrefix);
 
   const handler = async (req: unknown, res: unknown, _next?: unknown) => {
     await ensureReady();
@@ -343,6 +383,22 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
       sendJson(response, status, body);
     };
 
+    // Per-request tenant resolution (multi-tenant hosted platform).
+    // A `?tenant=` query param or `x-tenant-id` header selects the tenant;
+    // the host's resolveTenant hook maps it to that tenant's id + brand.
+    // Every downstream `ctx.tenantId` / `ctx.brand` reference uses the
+    // per-request override when a tenant resolves, else the default tenant.
+    const queryTenant = parseQueryString(String(r.url ?? r.path ?? "/")).tenant;
+    const headerTenant = header(r, "x-tenant-id");
+    const requestedTenantId = queryTenant ?? headerTenant;
+    const resolved =
+      baseCtx.resolveTenant && requestedTenantId
+        ? await baseCtx.resolveTenant(req, requestedTenantId)
+        : null;
+    const ctx: HttpRouterContext = resolved
+      ? { ...baseCtx, tenantId: resolved.tenantId, brand: resolved.brand }
+      : baseCtx;
+
     if (!route) {
       finish(404, { ok: false, error: "Not found" });
       return;
@@ -356,6 +412,90 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
         brand: ctx.brand.name,
       });
       return;
+    }
+
+    // Multi-tenant embed page: self-contained drop-in widget (one-line iframe).
+    if (route.name === "embedPage") {
+      const { buildEmbedPage } = await import("./embedPage.js");
+      const html = buildEmbedPage(ctx.brand);
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(html);
+      return;
+    }
+
+    // Tenant registry (platform-level, admin-gated).
+    if (
+      route.name === "createTenant" ||
+      route.name === "listTenants" ||
+      route.name === "getTenant" ||
+      route.name === "patchTenant" ||
+      route.name === "deleteTenant"
+    ) {
+      const user = await ctx.resolveUser(req);
+      if (!user || !requireAdmin(user)) {
+        finish(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      if (route.name === "createTenant") {
+        const body = (r.body !== undefined
+          ? r.body
+          : await readJsonBody(r as IncomingMessage)) as {
+          name?: string;
+          domain?: string;
+          ingestToken?: string;
+        };
+        if (!body?.name?.trim()) {
+          finish(400, { ok: false, error: "name is required" });
+          return;
+        }
+        const createInput: CreateTenantInput = { name: body.name };
+        if (body.domain !== undefined) createInput.domain = body.domain;
+        if (body.ingestToken !== undefined) createInput.ingestToken = body.ingestToken;
+        const { tenant, ingestToken } = await tenantStore.create(createInput);
+        finish(201, { ok: true, tenant, ingestToken });
+        return;
+      }
+      if (route.name === "listTenants") {
+        const tenants = await tenantStore.list();
+        finish(200, { ok: true, tenants });
+        return;
+      }
+      if (route.name === "getTenant") {
+        const t = await tenantStore.getById(route.params.id!);
+        if (!t) {
+          finish(404, { ok: false, error: "Tenant not found" });
+          return;
+        }
+        finish(200, { ok: true, tenant: t });
+        return;
+      }
+      if (route.name === "patchTenant") {
+        const body = (r.body !== undefined
+          ? r.body
+          : await readJsonBody(r as IncomingMessage)) as {
+          name?: string;
+          domain?: string | null;
+        };
+        const patch: { name?: string; domain?: string | null } = {};
+        if (body?.name !== undefined) patch.name = body.name;
+        if (body?.domain !== undefined) patch.domain = body.domain;
+        try {
+          const updated = await tenantStore.update(route.params.id!, patch);
+          finish(200, { ok: true, tenant: updated });
+        } catch {
+          finish(404, { ok: false, error: "Tenant not found" });
+        }
+        return;
+      }
+      if (route.name === "deleteTenant") {
+        const deleted = await tenantStore.remove(route.params.id!);
+        if (!deleted) {
+          finish(404, { ok: false, error: "Tenant not found" });
+          return;
+        }
+        finish(200, { ok: true });
+        return;
+      }
     }
 
     // Telegram Bot webhook — secret token + allowlist; 200 immediately, process async
@@ -446,6 +586,103 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
           .catch(() => {});
       }
 
+      finish(200, { ok: true, articles, count: articles.length });
+      return;
+    }
+
+    // Website crawl → LLM-curated KB drafts
+    if (route.name === "adminKbIngestWebsite") {
+      const secret = ctx.kbIngest?.webhookSecret;
+      const token = header(r, "x-support-ingest-token");
+      const user = await ctx.resolveUser(req);
+      const authed =
+        (secret && token && token === secret) || (user && requireAdmin(user));
+      if (!authed) {
+        finish(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+
+      const body = (r.body !== undefined
+        ? r.body
+        : await readJsonBody(r as IncomingMessage)) as {
+        url: string;
+        maxPages?: number;
+        gitSha?: string;
+      };
+      if (!body?.url) {
+        finish(400, { ok: false, error: "url is required" });
+        return;
+      }
+      if (!ctx.llm) {
+        finish(503, { ok: false, error: "LLM adapter not configured" });
+        return;
+      }
+      const { crawlSite, curatePagesToKb } = await import("../kb/siteCrawl.js");
+      const pages = await crawlSite(body.url, {
+        maxPages: body.maxPages ?? 25,
+      });
+      const articles = await curatePagesToKb(
+        ctx.db,
+        ctx.tenantId,
+        pages,
+        ctx.llm,
+        { tablePrefix },
+      );
+      if (articles.length > 0 && ctx.opsNotifier) {
+        ctx.opsNotifier
+          .sendToOps({
+            kind: "kb_drafts_ready",
+            title: `${articles.length} KB draft(s) crawled from ${body.url}`,
+            body: articles.map((a) => a.title).slice(0, 8).join(", "),
+          })
+          .catch(() => {});
+      }
+      finish(200, { ok: true, articles, count: articles.length, pagesCrawled: pages.length });
+      return;
+    }
+
+    // Doc uploads → LLM-curated KB drafts
+    if (route.name === "adminKbIngestUploads") {
+      const secret = ctx.kbIngest?.webhookSecret;
+      const token = header(r, "x-support-ingest-token");
+      const user = await ctx.resolveUser(req);
+      const authed =
+        (secret && token && token === secret) || (user && requireAdmin(user));
+      if (!authed) {
+        finish(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      if (!ctx.llm) {
+        finish(503, { ok: false, error: "LLM adapter not configured" });
+        return;
+      }
+      const body = (r.body !== undefined
+        ? r.body
+        : await readJsonBody(r as IncomingMessage)) as {
+        docs?: Array<{ name: string; content: string }>;
+      };
+      const docs = (body?.docs ?? []).filter((d) => d.content?.trim());
+      if (docs.length === 0) {
+        finish(400, { ok: false, error: "docs[] with non-empty content is required" });
+        return;
+      }
+      const { curateDocsToKb } = await import("../kb/siteCrawl.js");
+      const articles = await curateDocsToKb(
+        ctx.db,
+        ctx.tenantId,
+        docs,
+        ctx.llm,
+        { tablePrefix },
+      );
+      if (articles.length > 0 && ctx.opsNotifier) {
+        ctx.opsNotifier
+          .sendToOps({
+            kind: "kb_drafts_ready",
+            title: `${articles.length} KB draft(s) from uploaded docs`,
+            body: articles.map((a) => a.title).slice(0, 8).join(", "),
+          })
+          .catch(() => {});
+      }
       finish(200, { ok: true, articles, count: articles.length });
       return;
     }
@@ -1351,7 +1588,7 @@ export function createHttpRouter(ctx: HttpRouterContext): SupportRouter {
     handler,
     meta: {
       kitVersion: KIT_VERSION,
-      tenantId: String(ctx.tenantId),
+      tenantId: String(baseCtx.tenantId),
       shared: "@rhule/support-shared",
     },
   };
@@ -1381,6 +1618,7 @@ export function createRouter(options: CreateSupportRouterOptions): SupportRouter
   if (options.telegram) ctx.telegram = options.telegram;
   if (options.codebase) ctx.codebase = options.codebase;
   if (options.onLeadCaptured) ctx.onLeadCaptured = options.onLeadCaptured;
+  if (options.resolveTenant) ctx.resolveTenant = options.resolveTenant;
   return createHttpRouter(ctx);
 }
 

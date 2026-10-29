@@ -38,10 +38,15 @@ export interface SupportLauncherProps {
    * (escalation happens inside Ask a question — no separate Contact form).
    */
   audience?: "app" | "public";
+  /**
+   * When false, no floating bubble — open via `legalai:open-support` or
+   * `renderTrigger` (Lex chat header uses a Help button instead of a FAB).
+   */
+  showTrigger?: boolean;
   renderTrigger?: (open: () => void) => ReactNode;
   className?: string;
   /**
-   * Hosts that use Bearer JWT (ShareApp) instead of cookie sessions.
+   * Hosts that use Bearer JWT (ShareApp/Lalia) instead of cookie sessions.
    * Return the raw token; Authorization header is attached automatically.
    */
   getAccessToken?: () => string | null | undefined;
@@ -173,6 +178,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     offset,
     mode = "bubble",
     audience = "app",
+    showTrigger = true,
     renderTrigger,
     className,
     getAccessToken,
@@ -229,6 +235,14 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [threadDraft, setThreadDraft] = useState("");
 
   const isOpen = mode === "page" || open;
+
+  // Host apps (e.g. Lex chat header) can open Help without a floating FAB:
+  // window.dispatchEvent(new Event("legalai:open-support"))
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("legalai:open-support", onOpen);
+    return () => window.removeEventListener("legalai:open-support", onOpen);
+  }, []);
 
   useEffect(() => {
     if (!isPublic || typeof sessionStorage === "undefined") return;
@@ -295,6 +309,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     }
   };
 
+
   const resetFeatureCompose = useCallback(() => {
     setCoachTurn(0);
     setCoachProblem("");
@@ -338,7 +353,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     };
     // Only re-run when entering feature compose
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchApi, view.name, view.name === "compose" ? view.kind : null, label]);
+  }, [apiBase, view.name, view.name === "compose" ? view.kind : null, label]);
 
   useEffect(() => {
     if (view.name === "compose" && view.kind === "feature" && coachEnabled) {
@@ -406,7 +421,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tickets");
     }
-  }, [fetchApi]);
+  }, [apiBase]);
 
   const openThread = useCallback(
     async (id: string) => {
@@ -422,7 +437,8 @@ export function SupportLauncher(props: SupportLauncherProps) {
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load ticket");
       }
-    }, [fetchApi],
+    },
+    [apiBase],
   );
 
   useEffect(() => {
@@ -1601,25 +1617,36 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const rootStyle: CSSProperties =
     mode === "page"
       ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" }
-      : {
-          ...shell,
-          position: "fixed",
-          bottom: offset?.bottom ?? 16,
-          zIndex: 9999,
-          ...(position === "bottom-left"
-            ? { left: offset?.left ?? 16 }
-            : { right: offset?.right ?? 16 }),
-        };
+      : showTrigger || isOpen
+        ? {
+            ...shell,
+            position: "fixed",
+            bottom: offset?.bottom ?? 16,
+            zIndex: 9999,
+            ...(position === "bottom-left"
+              ? { left: offset?.left ?? 16 }
+              : { right: offset?.right ?? 16 }),
+          }
+        : {
+            position: "fixed",
+            width: 0,
+            height: 0,
+            overflow: "visible",
+            pointerEvents: "none",
+            zIndex: 9999,
+          };
 
   return (
     <div
       data-support-kit="launcher"
       data-api-base={apiBase}
       data-mode={mode}
+      data-show-trigger={showTrigger ? "1" : "0"}
+      data-audience={isPublic ? "public" : "app"}
       className={className}
       style={rootStyle}
     >
-      {mode === "bubble" ? (
+      {mode === "bubble" && showTrigger ? (
         renderTrigger ? (
           renderTrigger(() => setOpen(true))
         ) : (
@@ -1646,7 +1673,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
           </button>
         )
       ) : null}
-      {panel}
+      <div style={showTrigger || isOpen ? undefined : { pointerEvents: "auto" }}>{panel}</div>
     </div>
   );
 }

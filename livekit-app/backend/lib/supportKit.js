@@ -7,6 +7,7 @@ const db = require('../db/v2Database');
 const { verifyToken } = require('./authAdapter');
 const { isSuperadminEmail } = require('./v2Superadmin');
 const { getOrgEntitlements } = require('./v2Entitlements');
+const { buildUserContextSnapshot, formatUserContextForPrompt } = require('./supportUserContext');
 const { aiEnabled, callSupportLlm } = require('./supportAgent/llm');
 const { sendEmail } = require('./mailer');
 const { githubConfigured } = require('./githubIssues');
@@ -65,35 +66,26 @@ function adminBaseUrl() {
 }
 
 async function buildContextSummary(user, orgId, role) {
-  const lines = [
-    `- Role: ${role}`,
-    `- Email: ${user.email || 'unknown'}`,
-    `- Product: Lalia (ShareApp) — meetings, live captions/translation, org billing.`,
-  ];
-  if (orgId) {
-    try {
-      const org = await db.get(
-        `SELECT id, name, billing_status, account_type FROM v2_organizations WHERE id = ?`,
-        [orgId]
-      );
-      if (org) {
-        lines.push(`- Org: ${org.name} (${org.account_type || 'personal'})`);
-        lines.push(`- Billing status: ${org.billing_status || 'unknown'}`);
-      }
-      const ent = await getOrgEntitlements(orgId);
-      if (ent) {
-        lines.push(`- Plan: ${ent.planName || ent.planId} (${ent.planId})`);
-        lines.push(`- Included meeting minutes: ${ent.meetingMinutes}`);
-        lines.push(`- Included translation minutes: ${ent.translationMinutes}`);
-      }
-    } catch {
-      /* best-effort */
-    }
+  try {
+    const snapshot = await buildUserContextSnapshot({
+      userId: user.id,
+      orgId,
+      email: user.email,
+    });
+    const formatted = formatUserContextForPrompt(snapshot);
+    return [
+      formatted,
+      '- Product: Lalia (ShareApp) — meetings, live captions/translation, org billing.',
+      '- Escalate refunds, chargebacks, and payment-method changes to human ops.',
+    ].join('\n');
+  } catch {
+    return [
+      `- Role: ${role}`,
+      `- Email: ${user.email || 'unknown'}`,
+      `- Product: Lalia (ShareApp) — meetings, live captions/translation, org billing.`,
+      '- Escalate refunds, chargebacks, and payment-method changes to human ops.',
+    ].join('\n');
   }
-  lines.push(
-    '- Escalate refunds, chargebacks, and payment-method changes to human ops.'
-  );
-  return lines.join('\n');
 }
 
 async function resolveUser(req) {
@@ -116,7 +108,18 @@ async function resolveUser(req) {
   if (!user) return null;
 
   const isAdmin = isSuperadminEmail(user.email);
-  const orgId = payload.orgId || undefined;
+  let orgId = payload.orgId || undefined;
+  if (!orgId) {
+    try {
+      const mem = await db.get(
+        `SELECT org_id FROM v2_org_members WHERE user_id = ? LIMIT 1`,
+        [user.id]
+      );
+      if (mem?.org_id) orgId = mem.org_id;
+    } catch {
+      /* ignore */
+    }
+  }
   const role = isAdmin ? 'admin' : 'user';
   let planLabel = role === 'admin' ? 'platform admin' : 'member';
   try {
@@ -320,10 +323,21 @@ module.exports = {
 };
 
 async function ensureSupportSchema() {
-  const { ensureSchema } = require('@rhule/support-core');
-  const result = await ensureSchema(createSqliteSupportDb());
+  const { ensureSchema, seedCuratedDocs } = require('@rhule/support-core');
+  const supportDb = createSqliteSupportDb();
+  const result = await ensureSchema(supportDb);
   console.log(
     `[support] schema ensured (prefix=${result.tablePrefix}, applied=${result.statements})`
   );
+  if ( typeof seedCuratedDocs === 'function') {
+    try {
+      const seeded = await seedCuratedDocs(supportDb, 'lalia', DOCS_ROOT);
+      console.log(
+        `[support] curated docs seeded (ingested=${seeded.ingested}, promoted=${seeded.promoted})`
+      );
+    } catch (e) {
+      console.warn('[support] seedCuratedDocs skipped:', e.message);
+    }
+  }
   return result;
 }

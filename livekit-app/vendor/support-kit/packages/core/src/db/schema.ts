@@ -140,6 +140,17 @@ export function buildSchemaStatements(tablePrefix: string): string[] {
     `,
     `CREATE INDEX IF NOT EXISTS idx_${p}leads_tenant_email ON ${p}leads(tenant_id, email)`,
     `CREATE INDEX IF NOT EXISTS idx_${p}leads_marketing ON ${p}leads(tenant_id, marketing_email_opt_in)`,
+    `
+    CREATE TABLE IF NOT EXISTS ${p}tenants (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      domain TEXT,
+      ingest_token_hash TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+    `,
+    `CREATE INDEX IF NOT EXISTS idx_${p}tenants_domain ON ${p}tenants(domain)`,
   ];
 }
 

@@ -7,6 +7,16 @@ import * as zod from 'zod';
  * Kit never verifies tokens; host middleware runs first.
  */
 type ResolveUser = (req: unknown) => SupportUser | null | Promise<SupportUser | null>;
+/** A per-request tenant+brand resolution result. */
+interface TenantContext {
+    tenantId: string;
+    brand: BrandConfig;
+}
+/**
+ * Host hook: map a requested tenant id (from `?tenant=` / `x-tenant-id`)
+ * to that tenant's brand. Return null to fall back to the default ctx brand.
+ */
+type ResolveTenant = (req: unknown, requestedTenantId: string) => TenantContext | null | Promise<TenantContext | null>;
 /**
  * Minimal SQL port so Postgres (LegalAI) and SQLite (ShareApp) both work.
  * Host implements; kit never opens its own pool.
@@ -110,6 +120,12 @@ interface CreateSupportRouterOptions {
     tenantId: TenantId | string;
     db: DbAdapter;
     resolveUser: ResolveUser;
+    /**
+     * Host hook for the multi-tenant hosted platform: resolves a
+     * `?tenant=` / `x-tenant-id` request to a per-request tenant context.
+     * Return null to fall back to the default tenant.
+     */
+    resolveTenant?: ResolveTenant;
     brand: BrandConfig;
     llm?: LlmAdapter;
     tablePrefix?: string;
@@ -206,6 +222,45 @@ declare function ensureSchema(db: DbAdapter, tablePrefix?: string): Promise<{
     tablePrefix: string;
     statements: number;
 }>;
+
+interface SeedCuratedDocsResult {
+    tenantId: string;
+    docsRoot: string;
+    ingested: number;
+    promoted: number;
+    articleIds: string[];
+}
+/**
+ * Crawl a host markdown tree, ingest as curated drafts, then promote to active.
+ * Used by the local harness to seed a demo tenant KB.
+ */
+declare function seedCuratedDocs(db: DbAdapter, tenantId: string, docsRoot: string): Promise<SeedCuratedDocsResult>;
+
+/** Shape attached by ShareApp `optionalV2Auth` / `requireV2Auth`. */
+type V2Auth = {
+    userId: string;
+    email?: string;
+    orgId?: string;
+    role?: string;
+};
+declare function mapV2AuthToSupportUser(auth: V2Auth | null | undefined): SupportUser | null;
+type HostSqliteHandle = {
+    run: (sql: string, params?: unknown[]) => Promise<{
+        changes?: number;
+        lastID?: unknown;
+    }>;
+    get: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T | undefined>;
+    all: <T = Record<string, unknown>>(sql: string, params?: unknown[]) => Promise<T[]>;
+};
+/**
+ * Wrap ShareApp's existing sqlite3 / v2Database handle as the kit DbAdapter.
+ * Host keeps the pool; kit never opens its own connection.
+ */
+declare function createHostSqliteDbAdapter(host: HostSqliteHandle): DbAdapter;
+/**
+ * Express-style resolveUser for ShareApp: read `req.v2Auth` after optionalV2Auth.
+ */
+declare function resolveShareAppUser(req: unknown): SupportUser | null;
 
 declare class TicketStore {
     private readonly db;
@@ -819,6 +874,11 @@ interface SearchActiveArticlesOptions {
  * Optional keyword ranking when `query` is provided.
  */
 declare function searchActiveArticles(db: DbAdapter, tenantId: string, options?: SearchActiveArticlesOptions): Promise<KbArticle[]>;
+/**
+ * Ranked keyword hits over published (`active`) KB articles.
+ * Draft / deprecated rows are ignored. Empty query returns no hits.
+ */
+declare function searchActiveArticleHits(db: DbAdapter, tenantId: string, options?: SearchActiveArticlesOptions): Promise<KbSearchHit[]>;
 
 interface IngestCodegenArticleInput {
     tenantId: string;
@@ -1000,7 +1060,7 @@ interface TriageDeps {
     publicAudience?: boolean;
 }
 type TriageResult = {
-    action: "ticket";
+    action: "ticket" | "auto_reply";
     reply: string;
     ticket: Ticket;
     message: TicketMessage;
@@ -1086,6 +1146,8 @@ interface DecideOptions {
     topicAllowlist?: string[];
     sensitiveTopics?: string[];
     autoReplyMinConfidence?: number;
+    /** True when the host provided authenticated account/plan/billing context. */
+    hasUserContext?: boolean;
 }
 declare function decideFromLlm(parsed: LlmTriageParse, message: string, docHits: KbSearchHit[], opts?: DecideOptions): RoutingDecision;
 declare function decideFromHeuristics(message: string, docHits: KbSearchHit[], opts?: DecideOptions): RoutingDecision;
@@ -1109,13 +1171,75 @@ interface HttpRouterContext {
     telegram?: CreateSupportRouterOptions["telegram"];
     codebase?: CodebaseAdapter;
     onLeadCaptured?: CreateSupportRouterOptions["onLeadCaptured"];
+    resolveTenant?: ResolveTenant;
 }
 /**
  * Express-compatible support HTTP surface.
  */
-declare function createHttpRouter(ctx: HttpRouterContext): SupportRouter;
+declare function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter;
 /** Alias used by createSupportRouter in index.ts */
 declare function createRouter(options: CreateSupportRouterOptions): SupportRouter;
+
+/**
+ * Self-contained drop-in embed page for the multi-tenant hosted platform.
+ *
+ * Businesses embed with one line:
+ *
+ *   <iframe src="https://<host>/support/embed?tenant=<tenantId>"
+ *     width="420" height="560" frameborder="0"></iframe>
+ *
+ * The page is served by the router (GET /embed) and:
+ *  - loads the tenant's brand via GET /config (tenant resolved from `?tenant=` / `x-tenant-id`),
+ *  - implements the public contact gate (POST /leads), then support chat (POST /chat),
+ *  - renders the KB help tab from GET /help/articles.
+ *
+ * The iframe is same-origin (hosted under the same mount path), so no CORS
+ * is needed. All in-iframe API calls carry the tenant (query param on GETs,
+ * `x-tenant-id` header on POSTs) so the server's resolveTenant hook routes
+ * every call to the right tenant's data.
+ */
+declare function buildEmbedPage(brand: BrandConfig): string;
+
+/** A registered business tenant on the hosted support platform. */
+interface Tenant {
+    id: string;
+    name: string;
+    domain: string | null;
+    /** SHA-256 of the per-tenant ingest token (plaintext returned once, at creation). */
+    ingestTokenHash: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+interface CreateTenantInput {
+    name: string;
+    domain?: string;
+    /** Plaintext ingest token; stored as SHA-256. */
+    ingestToken?: string;
+}
+declare class TenantStore {
+    private readonly db;
+    private readonly tablePrefix;
+    constructor(db: DbAdapter, tablePrefix?: string);
+    private get t();
+    getById(id: string): Promise<Tenant | undefined>;
+    getByDomain(domain: string): Promise<Tenant | undefined>;
+    list(opts?: {
+        limit?: number;
+    }): Promise<Tenant[]>;
+    /**
+     * Create a tenant. Returns the tenant plus the plaintext ingest token
+     * (only shown once; only the hash is persisted).
+     */
+    create(input: CreateTenantInput): Promise<{
+        tenant: Tenant;
+        ingestToken: string;
+    }>;
+    update(id: string, patch: {
+        name?: string;
+        domain?: string | null;
+    }): Promise<Tenant>;
+    remove(id: string): Promise<boolean>;
+}
 
 type ProposalAction = "claim" | "steal" | "release" | "approve" | "send_reply" | "edit_send" | "reject" | "take_over" | "need_info";
 type ProposalExecutorResult = {
@@ -1189,6 +1313,36 @@ declare function executeProposalAction(deps: ProposalExecutorDeps, proposalId: s
     draftReply?: string;
     needInfoMessage?: string;
 }): Promise<ProposalExecutorResult>;
+
+/** One crawled page, reduced to plain text for LLM curation. */
+interface CrawledPage {
+    url: string;
+    title: string;
+    text: string;
+}
+interface SiteCrawlOptions {
+    /** Max pages to crawl (default 25). */
+    maxPages?: number;
+    /** Injected fetch for tests / custom transports. */
+    fetchImpl?: typeof fetch;
+}
+/**
+ * Crawl a site's public pages: sitemap first, fall back to link-crawling
+ * the homepage. Returns reduced text for LLM curation.
+ */
+declare function crawlSite(baseUrl: string, opts?: SiteCrawlOptions): Promise<CrawledPage[]>;
+interface CurationOptions {
+    tablePrefix?: string;
+}
+/** Curate crawled pages into draft KB articles (source_key = crawl:<url>). */
+declare function curatePagesToKb(db: DbAdapter, tenantId: string, pages: CrawledPage[], llm: LlmAdapter, opts?: CurationOptions): Promise<KbArticle[]>;
+/** An uploaded doc for manual KB ingest (user-provided content). */
+interface UploadedDoc {
+    name: string;
+    content: string;
+}
+/** Curate uploaded docs into draft KB articles (source_key = upload:<name>). */
+declare function curateDocsToKb(db: DbAdapter, tenantId: string, docs: UploadedDoc[], llm: LlmAdapter, opts?: CurationOptions): Promise<KbArticle[]>;
 
 type TelegramOpsRuntimeConfig = {
     botToken: string;
@@ -1279,4 +1433,4 @@ declare class TelegramDraftSessionStore {
  */
 declare function createSupportRouter(options: CreateSupportRouterOptions): SupportRouter;
 
-export { type CoachDraft, type CoachMessage, type CoachPriority, type CoachResult, type CodebaseAdapter, type CodebaseSearchHit, type GitHubAdapter as CoreGitHubAdapter, type CreateSupportRouterOptions, DEFAULT_ESCALATION_REPLY, DEFAULT_HOLD_REPLY, DEFAULT_TABLE_PREFIX, type DbAdapter, type EmailNotifier, type FilesystemCodebaseOptions, type GapResearchResult, type GitHubAdapter$1 as GitHubAdapter, type GitHubIssueInput, type GitHubIssueResult, type IngestCodegenArticleInput, type IngestDocSource, type IngestFromChangelogOptions, type KbIngestConfig, type KbSearchHit, KnowledgeGapService, KnowledgeGapStore, LeadService, LeadStore, type LlmAdapter, type LlmTriageParse, type OpsNotification, type OpsNotificationKind, type OpsNotifier, type PromoteTicketToKbInput, type ProposalAction, type ProposalExecutorDeps, type ProposalExecutorResult, ProposalService, ProposalStore, type ResolveTelegramConfig, type ResolveUser, type RoutingDecision, type SearchActiveArticlesOptions, type SearchCuratedDocsOptions, type SupportRouter, type TelegramDraftSession, TelegramDraftSessionStore, type TelegramMessageEditor, type TelegramOpsRuntimeConfig, type TelegramWebhookDeps, TicketService, TicketStore, type TriageDeps, type TriageInput, type TriageResult, clearDocsCache, coachFeatureRequest, containsEscalationSignal, createFilesystemCodebaseAdapter, createHttpRouter, createRouter, createSupportRouter, curateAnswerToKbDraft, decideFromHeuristics, decideFromLlm, deprecateKbArticle, ensureSchema, executeGithubFromProposal, executeProposalAction, formatSourcesForPrompt, getKbArticle, handleTelegramUpdate, inferKindTopic, ingestCodegenArticle, ingestDocsSources, ingestFromChangelog, listKbArticles, parseBugFeatureBody, promoteKbArticle, promoteTicketAnswerToKb, researchGapToKbDraft, searchActiveArticles, searchCuratedDocs, triageMessage, updateKbArticle, verifyTelegramWebhookSecret };
+export { type CoachDraft, type CoachMessage, type CoachPriority, type CoachResult, type CodebaseAdapter, type CodebaseSearchHit, type GitHubAdapter as CoreGitHubAdapter, type CrawledPage, type CreateSupportRouterOptions, type CreateTenantInput, DEFAULT_ESCALATION_REPLY, DEFAULT_HOLD_REPLY, DEFAULT_TABLE_PREFIX, type DbAdapter, type EmailNotifier, type FilesystemCodebaseOptions, type GapResearchResult, type GitHubAdapter$1 as GitHubAdapter, type GitHubIssueInput, type GitHubIssueResult, type HostSqliteHandle, type IngestCodegenArticleInput, type IngestDocSource, type IngestFromChangelogOptions, type KbIngestConfig, type KbSearchHit, KnowledgeGapService, KnowledgeGapStore, LeadService, LeadStore, type LlmAdapter, type LlmTriageParse, type OpsNotification, type OpsNotificationKind, type OpsNotifier, type PromoteTicketToKbInput, type ProposalAction, type ProposalExecutorDeps, type ProposalExecutorResult, ProposalService, ProposalStore, type ResolveTelegramConfig, type ResolveUser, type RoutingDecision, type SearchActiveArticlesOptions, type SearchCuratedDocsOptions, type SeedCuratedDocsResult, type SiteCrawlOptions, type SupportRouter, type TelegramDraftSession, TelegramDraftSessionStore, type TelegramMessageEditor, type TelegramOpsRuntimeConfig, type TelegramWebhookDeps, type Tenant, TenantStore, TicketService, TicketStore, type TriageDeps, type TriageInput, type TriageResult, type UploadedDoc, type V2Auth, buildEmbedPage, clearDocsCache, coachFeatureRequest, containsEscalationSignal, crawlSite, createFilesystemCodebaseAdapter, createHostSqliteDbAdapter, createHttpRouter, createRouter, createSupportRouter, curateAnswerToKbDraft, curateDocsToKb, curatePagesToKb, decideFromHeuristics, decideFromLlm, deprecateKbArticle, ensureSchema, executeGithubFromProposal, executeProposalAction, formatSourcesForPrompt, getKbArticle, handleTelegramUpdate, inferKindTopic, ingestCodegenArticle, ingestDocsSources, ingestFromChangelog, listKbArticles, mapV2AuthToSupportUser, parseBugFeatureBody, promoteKbArticle, promoteTicketAnswerToKb, researchGapToKbDraft, resolveShareAppUser, searchActiveArticleHits, searchActiveArticles, searchCuratedDocs, seedCuratedDocs, triageMessage, updateKbArticle, verifyTelegramWebhookSecret };

@@ -14,12 +14,15 @@ import { ProposalService } from "../proposals/service.js";
 import { TicketService } from "../tickets/service.js";
 import {
   formatSourcesForPrompt,
+  searchActiveArticleHits,
   searchCuratedDocs,
   type KbSearchHit,
 } from "../kb/search.js";
 import {
+  containsEscalationSignal,
   decideFromHeuristics,
   decideFromLlm,
+  KB_SCORE_THRESHOLD,
   type DecideOptions,
   type LlmTriageParse,
   type RoutingDecision,
@@ -57,7 +60,7 @@ export interface TriageDeps {
 }
 
 export type TriageResult = {
-  action: "ticket";
+  action: "ticket" | "auto_reply";
   reply: string;
   ticket: Ticket;
   message: TicketMessage;
@@ -68,6 +71,41 @@ export type TriageResult = {
   autoReplied: boolean;
   sources: KbSearchHit[];
 };
+
+function mergeHits(docHits: KbSearchHit[], articleHits: KbSearchHit[], limit = 5): KbSearchHit[] {
+  const bySource = new Map<string, KbSearchHit>();
+  for (const hit of [...articleHits, ...docHits]) {
+    const existing = bySource.get(hit.source);
+    if (!existing || hit.score > existing.score) bySource.set(hit.source, hit);
+  }
+  return [...bySource.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+}
+
+function applyPublishedKbAnswer(
+  decision: RoutingDecision,
+  articleHits: KbSearchHit[],
+  message: string,
+): RoutingDecision {
+  if (decision.action === "auto_reply" && decision.draftReply.trim()) {
+    return decision;
+  }
+  const top = articleHits[0];
+  if (!top || top.score < KB_SCORE_THRESHOLD) return decision;
+  if (decision.kind === "bug" || decision.kind === "feature") return decision;
+  if (containsEscalationSignal(message)) return decision;
+
+  const body = top.excerpt.trim();
+  if (!body) return decision;
+
+  return {
+    ...decision,
+    action: "auto_reply",
+    proposalType: "reply",
+    draftReply: body,
+    summary: decision.summary || top.title || "KB answer",
+    recordGap: false,
+  };
+}
 
 function buildSystemPrompt(brand: BrandConfig, topics: string[]): string {
   return `You are ${brand.supportAgentName} for ${brand.name} support triage. Output ONLY valid JSON (no markdown fences).
@@ -135,10 +173,11 @@ function parseLlmJson(raw: string): LlmTriageParse {
   return JSON.parse(cleaned) as LlmTriageParse;
 }
 
-function decideOpts(deps: TriageDeps): DecideOptions {
+function decideOpts(deps: TriageDeps, user?: SupportUser): DecideOptions {
   const opts: DecideOptions = {
     topicAllowlist: deps.topics ?? [...DEFAULT_TOPICS],
     sensitiveTopics: deps.sensitiveTopics ?? [...SENSITIVE_TOPICS_DEFAULT],
+    hasUserContext: Boolean(user?.contextSummary?.trim()),
   };
   if (deps.autoReplyMinConfidence !== undefined) {
     opts.autoReplyMinConfidence = deps.autoReplyMinConfidence;
@@ -181,7 +220,7 @@ async function resolveDecision(
   user: SupportUser,
   forced?: { kind?: TriageInput["kind"]; topic?: string },
 ): Promise<RoutingDecision> {
-  const opts = decideOpts(deps);
+  const opts = decideOpts(deps, user);
   let decision: RoutingDecision;
   if (deps.llm) {
     const parsed = await callLlm(
@@ -232,11 +271,18 @@ export async function triageMessage(
   const docHits = deps.docsRoot
     ? searchCuratedDocs(input.message, { docsRoot: deps.docsRoot, limit: 5 })
     : [];
+  const articleHits = await searchActiveArticleHits(deps.db, input.tenantId, {
+    query: input.message,
+    limit: 5,
+    tablePrefix: prefix,
+  });
+  const kbHits = mergeHits(docHits, articleHits);
 
-  const decision = await resolveDecision(deps, input.message, docHits, input.user, {
+  let decision = await resolveDecision(deps, input.message, kbHits, input.user, {
     ...(input.kind ? { kind: input.kind } : {}),
     ...(input.topic ? { topic: input.topic } : {}),
   });
+  decision = applyPublishedKbAnswer(decision, articleHits, input.message);
 
   const tickets = new TicketService(deps.db, prefix);
   const proposals = new ProposalService(deps.db, prefix);
@@ -281,7 +327,7 @@ export async function triageMessage(
   const { ticket, message: userMessage } = await tickets.createTicket(createInput);
 
   const autoReplied = decision.action === "auto_reply";
-  const citationJson = docHits.length > 0 ? citationsJson(docHits) : null;
+  const citationJson = kbHits.length > 0 ? citationsJson(kbHits) : null;
 
   const agentMessage = await tickets.addMessage(
     input.tenantId,
@@ -300,7 +346,7 @@ export async function triageMessage(
   if (!autoReplied) {
     const bodyJson = JSON.stringify({
       draft_reply: decision.draftReply,
-      sources: docHits.map((h) => h.source),
+      sources: kbHits.map((h) => h.source),
       user_intent: input.message.slice(0, 500),
       kind: decision.kind,
       topic: decision.topic,
@@ -325,7 +371,7 @@ export async function triageMessage(
       proposalType: decision.proposalType,
       summary: decision.summary,
       docQuery: input.message,
-      docHitsJson: JSON.stringify(docHits),
+      docHitsJson: JSON.stringify(kbHits),
       userQuestion: input.message,
     });
   }
@@ -386,14 +432,14 @@ export async function triageMessage(
   }
 
   const result: TriageResult = {
-    action: "ticket",
+    action: autoReplied ? "auto_reply" : "ticket",
     reply: formatReply(decision.draftReply, deps.brand),
     ticket: updated ?? ticket,
     message: userMessage,
     agentMessage,
     confidence: decision.confidence,
     autoReplied,
-    sources: docHits,
+    sources: kbHits,
   };
   if (proposal) result.proposal = proposal;
   if (gap) result.gap = gap;

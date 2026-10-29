@@ -62,7 +62,7 @@ describe("triageMessage", () => {
       },
     );
 
-    assert.equal(result.action, "ticket");
+    assert.equal(result.action, "auto_reply");
     assert.equal(result.autoReplied, true);
     assert.equal(result.ticket.kind, "support");
     assert.ok(["waiting_user", "resolved"].includes(result.ticket.status));
@@ -103,6 +103,44 @@ describe("triageMessage", () => {
     assert.equal(result.autoReplied, false);
     assert.equal(result.ticket.status, "escalated");
     assert.equal(result.proposal?.proposalType, "escalate");
+  });
+
+  it("logged-in user with contextSummary gets auto_reply on routine billing/plan questions", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const tenantId = TenantIdSchema.parse("lalia");
+
+    const result = await triageMessage(
+      {
+        db,
+        brand,
+        llm: mockLlm({
+          route: "reply_in_app",
+          kind: "support",
+          topic: "billing",
+          confidence: 0.9,
+          summary: "Plan and renewal info",
+          body: {
+            draft_reply: "You are on the **Starter** plan ($49/month) with 1,850 meeting minutes remaining.",
+          },
+        }),
+      },
+      {
+        tenantId,
+        user: {
+          id: "u1-billing",
+          role: "user",
+          planLabel: "Starter",
+          contextSummary: "- Plan: Starter ($49/month)\n- Meeting minutes remaining: 1850",
+        },
+        message: "What plan am I on and how many minutes do I have left on my bill?",
+      },
+    );
+
+    assert.equal(result.action, "auto_reply");
+    assert.equal(result.autoReplied, true);
+    assert.match(result.reply, /Starter/);
+    assert.equal(result.proposal, undefined);
   });
 
   it("low confidence bug routes to ticket + bug_fix proposal + gap", async () => {
@@ -160,8 +198,8 @@ describe("triageMessage", () => {
       },
     );
 
-    assert.equal(result.action, "ticket");
-    // May auto-reply or propose depending on fixture scores
+    assert.equal(result.action, "auto_reply");
+    assert.equal(result.autoReplied, true);
     assert.ok(result.ticket);
   });
 
@@ -255,5 +293,146 @@ describe("triageMessage", () => {
     );
 
     assert.equal(sent.length, 0);
+  });
+});
+
+describe("triageMessage SQLite KB", () => {
+  async function insertArticle(
+    db: ReturnType<typeof createMemorySqliteAdapter>,
+    tenantId: string,
+    opts: { id: string; title: string; body: string; status: string },
+  ) {
+    const now = new Date().toISOString();
+    await db.run(
+      `INSERT INTO support_kb_articles (
+        id, tenant_id, title, body, status, source_kind, visibility, source_key, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        opts.id,
+        tenantId,
+        opts.title,
+        opts.body,
+        opts.status,
+        "curated",
+        "public",
+        `docs:${opts.id}`,
+        now,
+        now,
+      ],
+    );
+  }
+
+  it("answers a how-to from published SQLite KB without docsRoot", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const tenantId = TenantIdSchema.parse("legalai");
+    await insertArticle(db, tenantId, {
+      id: "kb-reset",
+      title: "Reset your password",
+      body: "Use the forgot-password link on the login page to reset your password.",
+      status: "active",
+    });
+
+    const result = await triageMessage(
+      { db, brand },
+      {
+        tenantId,
+        user: { id: "kb-u1", role: "user" },
+        message: "How do I reset my password?",
+      },
+    );
+
+    assert.equal(result.action, "auto_reply");
+    assert.equal(result.autoReplied, true);
+    assert.equal(result.proposal, undefined);
+    assert.match(result.reply, /forgot-password/i);
+    assert.ok(["waiting_user", "resolved"].includes(result.ticket.status));
+    assert.ok(result.sources.some((s) => /password/i.test(s.title) || /forgot-password/i.test(s.excerpt)));
+  });
+
+  it("uses the published KB body even when an LLM is configured", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const tenantId = TenantIdSchema.parse("legalai");
+    await insertArticle(db, tenantId, {
+      id: "kb-reset-llm",
+      title: "Reset your password",
+      body: "Use the forgot-password link on the login page to reset your password.",
+      status: "active",
+    });
+
+    const result = await triageMessage(
+      {
+        db,
+        brand,
+        llm: mockLlm({
+          route: "propose_reply",
+          kind: "support",
+          topic: "other",
+          confidence: 0.4,
+          summary: "Unsure",
+          body: { draft_reply: "I am just a stub and should not win." },
+        }),
+      },
+      {
+        tenantId,
+        user: { id: "kb-u2", role: "user" },
+        message: "How do I reset my password?",
+      },
+    );
+
+    assert.equal(result.action, "auto_reply");
+    assert.match(result.reply, /forgot-password/i);
+    assert.doesNotMatch(result.reply, /just a stub/i);
+  });
+
+  it("does not auto-reply from draft KB articles", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const tenantId = TenantIdSchema.parse("legalai");
+    await insertArticle(db, tenantId, {
+      id: "kb-draft",
+      title: "Upload a document",
+      body: "Open Documents and click Upload to add a file to your matter.",
+      status: "draft",
+    });
+
+    const result = await triageMessage(
+      { db, brand },
+      {
+        tenantId,
+        user: { id: "kb-u3", role: "user" },
+        message: "How do I upload a document?",
+      },
+    );
+
+    assert.equal(result.action, "ticket");
+    assert.equal(result.autoReplied, false);
+    assert.equal(result.ticket.status, "pending_ops");
+  });
+
+  it("opens a ticket when no published KB article matches", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const tenantId = TenantIdSchema.parse("legalai");
+    await insertArticle(db, tenantId, {
+      id: "kb-unrelated",
+      title: "Office hours",
+      body: "The downtown office is open weekdays from nine to five.",
+      status: "active",
+    });
+
+    const result = await triageMessage(
+      { db, brand },
+      {
+        tenantId,
+        user: { id: "kb-u4", role: "user" },
+        message: "How do I export a matter as a zip archive?",
+      },
+    );
+
+    assert.equal(result.action, "ticket");
+    assert.equal(result.autoReplied, false);
+    assert.equal(result.ticket.status, "pending_ops");
   });
 });

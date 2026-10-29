@@ -1083,6 +1083,7 @@ function SupportLauncher(props) {
     offset,
     mode = "bubble",
     audience = "app",
+    showTrigger = true,
     renderTrigger,
     className,
     getAccessToken
@@ -1130,6 +1131,11 @@ function SupportLauncher(props) {
   const [thread, setThread] = useState2(null);
   const [threadDraft, setThreadDraft] = useState2("");
   const isOpen = mode === "page" || open;
+  useEffect2(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("legalai:open-support", onOpen);
+    return () => window.removeEventListener("legalai:open-support", onOpen);
+  }, []);
   useEffect2(() => {
     if (!isPublic || typeof sessionStorage === "undefined") return;
     try {
@@ -1224,7 +1230,7 @@ function SupportLauncher(props) {
     return () => {
       cancelled = true;
     };
-  }, [fetchApi, view.name, view.name === "compose" ? view.kind : null, label]);
+  }, [apiBase, view.name, view.name === "compose" ? view.kind : null, label]);
   useEffect2(() => {
     if (view.name === "compose" && view.kind === "feature" && coachEnabled) {
       const el = listRef.current;
@@ -1284,7 +1290,7 @@ function SupportLauncher(props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tickets");
     }
-  }, [fetchApi]);
+  }, [apiBase]);
   const openThread = useCallback2(
     async (id) => {
       setError(null);
@@ -1296,7 +1302,7 @@ function SupportLauncher(props) {
         setError(err instanceof Error ? err.message : "Failed to load ticket");
       }
     },
-    [fetchApi]
+    [apiBase]
   );
   useEffect2(() => {
     if (isOpen && (view.name === "home" || view.name === "tickets") && !isPublic) {
@@ -2470,12 +2476,19 @@ ${priority}`
       error ? /* @__PURE__ */ jsx3("p", { style: { color: "#b91c1c", fontSize: 13, marginTop: 8 }, children: error }) : null
     ] })
   ] }) : null;
-  const rootStyle = mode === "page" ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" } : {
+  const rootStyle = mode === "page" ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" } : showTrigger || isOpen ? {
     ...shell,
     position: "fixed",
     bottom: offset?.bottom ?? 16,
     zIndex: 9999,
     ...position === "bottom-left" ? { left: offset?.left ?? 16 } : { right: offset?.right ?? 16 }
+  } : {
+    position: "fixed",
+    width: 0,
+    height: 0,
+    overflow: "visible",
+    pointerEvents: "none",
+    zIndex: 9999
   };
   return /* @__PURE__ */ jsxs3(
     "div",
@@ -2483,10 +2496,12 @@ ${priority}`
       "data-support-kit": "launcher",
       "data-api-base": apiBase,
       "data-mode": mode,
+      "data-show-trigger": showTrigger ? "1" : "0",
+      "data-audience": isPublic ? "public" : "app",
       className,
       style: rootStyle,
       children: [
-        mode === "bubble" ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ jsxs3(
+        mode === "bubble" && showTrigger ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ jsxs3(
           "button",
           {
             type: "button",
@@ -2512,7 +2527,7 @@ ${priority}`
             ]
           }
         ) : null,
-        panel
+        /* @__PURE__ */ jsx3("div", { style: showTrigger || isOpen ? void 0 : { pointerEvents: "auto" }, children: panel })
       ]
     }
   );

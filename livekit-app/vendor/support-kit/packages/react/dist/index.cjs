@@ -1098,6 +1098,7 @@ function SupportLauncher(props) {
     offset,
     mode = "bubble",
     audience = "app",
+    showTrigger = true,
     renderTrigger,
     className,
     getAccessToken
@@ -1145,6 +1146,11 @@ function SupportLauncher(props) {
   const [thread, setThread] = (0, import_react3.useState)(null);
   const [threadDraft, setThreadDraft] = (0, import_react3.useState)("");
   const isOpen = mode === "page" || open;
+  (0, import_react3.useEffect)(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("legalai:open-support", onOpen);
+    return () => window.removeEventListener("legalai:open-support", onOpen);
+  }, []);
   (0, import_react3.useEffect)(() => {
     if (!isPublic || typeof sessionStorage === "undefined") return;
     try {
@@ -1239,7 +1245,7 @@ function SupportLauncher(props) {
     return () => {
       cancelled = true;
     };
-  }, [fetchApi, view.name, view.name === "compose" ? view.kind : null, label]);
+  }, [apiBase, view.name, view.name === "compose" ? view.kind : null, label]);
   (0, import_react3.useEffect)(() => {
     if (view.name === "compose" && view.kind === "feature" && coachEnabled) {
       const el = listRef.current;
@@ -1299,7 +1305,7 @@ function SupportLauncher(props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load tickets");
     }
-  }, [fetchApi]);
+  }, [apiBase]);
   const openThread = (0, import_react3.useCallback)(
     async (id) => {
       setError(null);
@@ -1311,7 +1317,7 @@ function SupportLauncher(props) {
         setError(err instanceof Error ? err.message : "Failed to load ticket");
       }
     },
-    [fetchApi]
+    [apiBase]
   );
   (0, import_react3.useEffect)(() => {
     if (isOpen && (view.name === "home" || view.name === "tickets") && !isPublic) {
@@ -2485,12 +2491,19 @@ ${priority}`
       error ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "#b91c1c", fontSize: 13, marginTop: 8 }, children: error }) : null
     ] })
   ] }) : null;
-  const rootStyle = mode === "page" ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" } : {
+  const rootStyle = mode === "page" ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" } : showTrigger || isOpen ? {
     ...shell,
     position: "fixed",
     bottom: offset?.bottom ?? 16,
     zIndex: 9999,
     ...position === "bottom-left" ? { left: offset?.left ?? 16 } : { right: offset?.right ?? 16 }
+  } : {
+    position: "fixed",
+    width: 0,
+    height: 0,
+    overflow: "visible",
+    pointerEvents: "none",
+    zIndex: 9999
   };
   return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
     "div",
@@ -2498,10 +2511,12 @@ ${priority}`
       "data-support-kit": "launcher",
       "data-api-base": apiBase,
       "data-mode": mode,
+      "data-show-trigger": showTrigger ? "1" : "0",
+      "data-audience": isPublic ? "public" : "app",
       className,
       style: rootStyle,
       children: [
-        mode === "bubble" ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        mode === "bubble" && showTrigger ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
           "button",
           {
             type: "button",
@@ -2527,7 +2542,7 @@ ${priority}`
             ]
           }
         ) : null,
-        panel
+        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: showTrigger || isOpen ? void 0 : { pointerEvents: "auto" }, children: panel })
       ]
     }
   );

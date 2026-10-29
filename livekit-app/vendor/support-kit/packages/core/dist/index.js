@@ -1,3 +1,22 @@
+import {
+  buildEmbedPage
+} from "./chunk-5T6Q4BBR.js";
+import {
+  DEFAULT_TABLE_PREFIX,
+  crawlSite,
+  curateDocsToKb,
+  curatePagesToKb,
+  deprecateKbArticle,
+  ensureSchema,
+  getKbArticle,
+  ingestCodegenArticle,
+  ingestDocsSources,
+  ingestFromChangelog,
+  listKbArticles,
+  promoteKbArticle,
+  updateKbArticle
+} from "./chunk-CV4OXUB4.js";
+
 // src/index.ts
 import { KIT_VERSION as KIT_VERSION2, PACKAGE_NAME as SHARED } from "@rhule/support-shared";
 
@@ -9,288 +28,6 @@ import {
   TicketKindSchema,
   TicketStatusSchema
 } from "@rhule/support-shared";
-
-// src/db/schema.ts
-function buildSchemaStatements(tablePrefix) {
-  const p = tablePrefix;
-  return [
-    `
-    CREATE TABLE IF NOT EXISTS ${p}tickets (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      public_number INTEGER NOT NULL,
-      kind TEXT NOT NULL DEFAULT 'support',
-      topic TEXT NOT NULL DEFAULT 'other',
-      category TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'open',
-      subject TEXT,
-      severity TEXT,
-      priority TEXT,
-      user_id TEXT,
-      org_id TEXT,
-      guest_email TEXT,
-      context_json TEXT,
-      duplicate_of_ticket_id TEXT,
-      assigned_to TEXT,
-      github_issue_url TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      closed_at TEXT,
-      UNIQUE (tenant_id, public_number)
-    )
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_${p}tickets_tenant_status ON ${p}tickets(tenant_id, status)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}tickets_tenant_kind ON ${p}tickets(tenant_id, kind)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}tickets_tenant_user ON ${p}tickets(tenant_id, user_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}tickets_tenant_created ON ${p}tickets(tenant_id, created_at)`,
-    `
-    CREATE TABLE IF NOT EXISTS ${p}messages (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      ticket_id TEXT NOT NULL,
-      author_type TEXT NOT NULL,
-      author_id TEXT,
-      body TEXT NOT NULL,
-      attachments_json TEXT,
-      citation_json TEXT,
-      created_at TEXT NOT NULL
-    )
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_${p}messages_ticket ON ${p}messages(tenant_id, ticket_id)`,
-    `
-    CREATE TABLE IF NOT EXISTS ${p}proposals (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      ticket_id TEXT NOT NULL,
-      proposal_type TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending_review',
-      summary TEXT NOT NULL,
-      body_json TEXT NOT NULL,
-      confidence REAL,
-      telegram_message_id TEXT,
-      telegram_chat_id TEXT,
-      claimed_by TEXT,
-      claimed_at TEXT,
-      reviewed_by TEXT,
-      reviewed_at TEXT,
-      execution_status TEXT,
-      execution_ref TEXT,
-      created_at TEXT NOT NULL
-    )
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_${p}proposals_ticket ON ${p}proposals(tenant_id, ticket_id)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}proposals_status ON ${p}proposals(tenant_id, status)`,
-    `
-    CREATE TABLE IF NOT EXISTS ${p}telegram_draft_sessions (
-      telegram_user_id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      proposal_id TEXT NOT NULL,
-      ticket_id TEXT NOT NULL,
-      public_number INTEGER NOT NULL,
-      created_at TEXT NOT NULL,
-      expires_at TEXT NOT NULL
-    )
-    `,
-    `
-    CREATE TABLE IF NOT EXISTS ${p}knowledge_gaps (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      ticket_id TEXT NOT NULL,
-      public_number INTEGER,
-      user_question TEXT NOT NULL,
-      escalation_reason TEXT,
-      doc_query TEXT,
-      doc_hits_json TEXT,
-      proposal_id TEXT,
-      proposal_type TEXT,
-      summary TEXT,
-      status TEXT NOT NULL DEFAULT 'open',
-      created_at TEXT NOT NULL,
-      resolved_at TEXT
-    )
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_${p}gaps_status ON ${p}knowledge_gaps(tenant_id, status)`,
-    `
-    CREATE TABLE IF NOT EXISTS ${p}kb_articles (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      body TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'draft',
-      source_kind TEXT NOT NULL,
-      visibility TEXT NOT NULL DEFAULT 'agent',
-      provenance_json TEXT,
-      source_key TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE (tenant_id, source_kind, source_key)
-    )
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_${p}kb_status ON ${p}kb_articles(tenant_id, status)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}kb_visibility ON ${p}kb_articles(tenant_id, visibility)`,
-    `
-    CREATE TABLE IF NOT EXISTS ${p}leads (
-      id TEXT PRIMARY KEY,
-      tenant_id TEXT NOT NULL,
-      email TEXT NOT NULL,
-      name TEXT NOT NULL,
-      phone TEXT,
-      marketing_email_opt_in INTEGER NOT NULL DEFAULT 0,
-      marketing_sms_opt_in INTEGER NOT NULL DEFAULT 0,
-      source TEXT NOT NULL DEFAULT 'public_launcher',
-      consent_text TEXT,
-      consent_at TEXT,
-      ip_hash TEXT,
-      user_agent TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      UNIQUE (tenant_id, email)
-    )
-    `,
-    `CREATE INDEX IF NOT EXISTS idx_${p}leads_tenant_email ON ${p}leads(tenant_id, email)`,
-    `CREATE INDEX IF NOT EXISTS idx_${p}leads_marketing ON ${p}leads(tenant_id, marketing_email_opt_in)`
-  ];
-}
-function buildAlterStatements(tablePrefix) {
-  const p = tablePrefix;
-  return [
-    {
-      table: `${p}tickets`,
-      column: "kind",
-      ddl: `ALTER TABLE ${p}tickets ADD COLUMN kind TEXT NOT NULL DEFAULT 'support'`
-    },
-    {
-      table: `${p}tickets`,
-      column: "topic",
-      ddl: `ALTER TABLE ${p}tickets ADD COLUMN topic TEXT NOT NULL DEFAULT 'other'`
-    },
-    {
-      table: `${p}messages`,
-      column: "citation_json",
-      ddl: `ALTER TABLE ${p}messages ADD COLUMN citation_json TEXT`
-    },
-    {
-      table: `${p}kb_articles`,
-      column: "visibility",
-      ddl: `ALTER TABLE ${p}kb_articles ADD COLUMN visibility TEXT NOT NULL DEFAULT 'agent'`
-    },
-    {
-      table: `${p}proposals`,
-      column: "telegram_chat_id",
-      ddl: `ALTER TABLE ${p}proposals ADD COLUMN telegram_chat_id TEXT`
-    },
-    {
-      table: `${p}proposals`,
-      column: "claimed_by",
-      ddl: `ALTER TABLE ${p}proposals ADD COLUMN claimed_by TEXT`
-    },
-    {
-      table: `${p}proposals`,
-      column: "claimed_at",
-      ddl: `ALTER TABLE ${p}proposals ADD COLUMN claimed_at TEXT`
-    }
-  ];
-}
-
-// src/db/migrate.ts
-var DEFAULT_TABLE_PREFIX = "support_";
-async function columnExists(db, table, column) {
-  try {
-    const rows = await db.all(
-      `SELECT column_name AS name FROM information_schema.columns
-       WHERE table_name = ? AND column_name = ?`,
-      [table, column]
-    );
-    if (rows.length > 0) return true;
-  } catch {
-  }
-  try {
-    const rows = await db.all(`PRAGMA table_info(${table})`);
-    if (rows.length > 0) {
-      return rows.some((r) => r.name === column);
-    }
-  } catch {
-  }
-  try {
-    await db.get(`SELECT ${column} FROM ${table} LIMIT 0`);
-    return true;
-  } catch {
-    return false;
-  }
-}
-async function runQuiet(db, sql) {
-  try {
-    await db.run(sql.trim());
-    return true;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    if (/no such|SQLITE_ERROR|Cannot read|null/i.test(message)) {
-      console.warn(`[support-kit] ensureSchema statement failed: ${message}`);
-    }
-    return false;
-  }
-}
-async function ensureSchema(db, tablePrefix = DEFAULT_TABLE_PREFIX) {
-  if (!/^[a-z][a-z0-9_]*$/.test(tablePrefix)) {
-    throw new Error(`ensureSchema: invalid tablePrefix "${tablePrefix}"`);
-  }
-  const statements = buildSchemaStatements(tablePrefix);
-  const creates = statements.filter((s) => /^\s*CREATE\s+TABLE/i.test(s));
-  const indexes = statements.filter((s) => /^\s*CREATE\s+INDEX/i.test(s));
-  let applied = 0;
-  for (const sql of creates) {
-    if (await runQuiet(db, sql)) applied += 1;
-  }
-  for (const alter of buildAlterStatements(tablePrefix)) {
-    const exists = await columnExists(db, alter.table, alter.column);
-    if (!exists) {
-      if (await runQuiet(db, alter.ddl)) applied += 1;
-    }
-  }
-  for (const sql of indexes) {
-    if (await runQuiet(db, sql)) applied += 1;
-  }
-  try {
-    await db.run(`
-      UPDATE ${tablePrefix}tickets SET
-        kind = CASE category
-          WHEN 'bug' THEN 'bug'
-          WHEN 'feature' THEN 'feature'
-          ELSE 'support'
-        END,
-        topic = CASE category
-          WHEN 'billing' THEN 'billing'
-          WHEN 'how_to' THEN 'how_to'
-          WHEN 'feature' THEN 'product'
-          WHEN 'bug' THEN 'other'
-          ELSE COALESCE(NULLIF(topic, ''), 'other')
-        END
-      WHERE kind IS NULL OR kind = '' OR topic IS NULL OR topic = ''
-    `);
-    await db.run(`
-      UPDATE ${tablePrefix}tickets SET kind = 'support', topic = 'billing'
-      WHERE category = 'billing'
-    `);
-    await db.run(`
-      UPDATE ${tablePrefix}tickets SET kind = 'support', topic = 'how_to'
-      WHERE category = 'how_to'
-    `);
-    await db.run(`
-      UPDATE ${tablePrefix}tickets SET kind = 'bug', topic = COALESCE(NULLIF(topic, ''), 'other')
-      WHERE category = 'bug'
-    `);
-    await db.run(`
-      UPDATE ${tablePrefix}tickets SET kind = 'feature', topic = COALESCE(NULLIF(topic, ''), 'product')
-      WHERE category = 'feature'
-    `);
-    await db.run(`
-      UPDATE ${tablePrefix}tickets SET status = 'waiting_user'
-      WHERE status = 'pending_user'
-    `);
-  } catch {
-  }
-  return { tablePrefix, statements: applied };
-}
 
 // src/tickets/service.ts
 import {
@@ -578,13 +315,112 @@ var TicketService = class {
   }
 };
 
+// src/tenants/store.ts
+import { randomUUID as randomUUID2 } from "crypto";
+function mapTenant(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    domain: row.domain,
+    ingestTokenHash: row.ingest_token_hash,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+var TenantStore = class {
+  constructor(db, tablePrefix = DEFAULT_TABLE_PREFIX) {
+    this.db = db;
+    this.tablePrefix = tablePrefix;
+  }
+  db;
+  tablePrefix;
+  get t() {
+    return `${this.tablePrefix}tenants`;
+  }
+  async getById(id) {
+    const row = await this.db.get(
+      `SELECT * FROM ${this.t} WHERE id = ?`,
+      [id]
+    );
+    return row ? mapTenant(row) : void 0;
+  }
+  async getByDomain(domain) {
+    const row = await this.db.get(
+      `SELECT * FROM ${this.t} WHERE lower(domain) = ?`,
+      [domain.toLowerCase()]
+    );
+    return row ? mapTenant(row) : void 0;
+  }
+  async list(opts) {
+    const limit = opts?.limit ?? 100;
+    const rows = await this.db.all(
+      `SELECT * FROM ${this.t} ORDER BY created_at DESC LIMIT ?`,
+      [limit]
+    );
+    return rows.map(mapTenant);
+  }
+  /**
+   * Create a tenant. Returns the tenant plus the plaintext ingest token
+   * (only shown once; only the hash is persisted).
+   */
+  async create(input) {
+    const name = input.name.trim();
+    if (!name) throw new Error("tenant name is required");
+    const domain = input.domain?.trim().toLowerCase() || null;
+    const ingestToken = (input.ingestToken ?? "").trim() || `sk_live_${randomUUID2().replace(/-/g, "").slice(0, 32)}`;
+    const hash = await hashToken(ingestToken);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const id = randomUUID2();
+    await this.db.run(
+      `INSERT INTO ${this.t} (id, name, domain, ingest_token_hash, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, name, domain, hash, now, now]
+    );
+    return {
+      tenant: {
+        id,
+        name,
+        domain,
+        ingestTokenHash: hash,
+        createdAt: now,
+        updatedAt: now
+      },
+      ingestToken
+    };
+  }
+  async update(id, patch) {
+    const tenant = await this.getById(id);
+    if (!tenant) throw new Error(`tenant ${id} not found`);
+    const now = (/* @__PURE__ */ new Date()).toISOString();
+    const next = {
+      ...tenant,
+      name: patch.name?.trim() || tenant.name,
+      domain: patch.domain === void 0 ? tenant.domain : patch.domain?.trim().toLowerCase() ?? null,
+      updatedAt: now
+    };
+    await this.db.run(
+      `UPDATE ${this.t} SET name = ?, domain = ?, updated_at = ? WHERE id = ?`,
+      [next.name, next.domain, now, id]
+    );
+    return next;
+  }
+  async remove(id) {
+    const changes = await this.db.run(`DELETE FROM ${this.t} WHERE id = ?`, [id]);
+    return changes.changes > 0;
+  }
+};
+async function hashToken(token) {
+  const { createHash: createHash2 } = await import("crypto");
+  return createHash2("sha256").update(token).digest("hex");
+}
+
 // src/proposals/service.ts
 import {
   CreateProposalInputSchema
 } from "@rhule/support-shared";
 
 // src/proposals/store.ts
-import { randomUUID as randomUUID2 } from "crypto";
+import { randomUUID as randomUUID3 } from "crypto";
 function mapProposal(row) {
   return {
     id: row.id,
@@ -617,7 +453,7 @@ var ProposalStore = class {
     return `${this.tablePrefix}proposals`;
   }
   async create(input) {
-    const id = randomUUID2();
+    const id = randomUUID3();
     const now = (/* @__PURE__ */ new Date()).toISOString();
     const status = input.status ?? "pending_review";
     await this.db.run(
@@ -887,7 +723,7 @@ import {
 } from "@rhule/support-shared";
 
 // src/gaps/store.ts
-import { randomUUID as randomUUID3 } from "crypto";
+import { randomUUID as randomUUID4 } from "crypto";
 function mapGap(row) {
   return {
     id: row.id,
@@ -940,7 +776,7 @@ var KnowledgeGapStore = class {
     const userQuestion = String(
       input.userQuestion ?? lastQuestion ?? input.summary ?? ""
     ).slice(0, 4e3);
-    const id = randomUUID3();
+    const id = randomUUID4();
     const now = (/* @__PURE__ */ new Date()).toISOString();
     await this.db.run(
       `INSERT INTO ${this.g} (
@@ -1040,7 +876,7 @@ import {
 } from "@rhule/support-shared";
 
 // src/leads/store.ts
-import { randomUUID as randomUUID4 } from "crypto";
+import { randomUUID as randomUUID5 } from "crypto";
 function mapLead(row) {
   return {
     id: row.id,
@@ -1122,7 +958,7 @@ var LeadStore = class {
       if (!updated) throw new Error("Lead upsert failed");
       return updated;
     }
-    const id = randomUUID4();
+    const id = randomUUID5();
     await this.db.run(
       `INSERT INTO ${this.t} (
         id, tenant_id, email, name, phone,
@@ -1347,10 +1183,29 @@ async function searchActiveArticles(db, tenantId, options) {
   }
   return articles.map((article) => ({ article, score: scoreArticle(article, queryTokens) })).filter((r) => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit).map((r) => r.article);
 }
+async function searchActiveArticleHits(db, tenantId, options) {
+  const prefix = options?.tablePrefix ?? DEFAULT_TABLE_PREFIX;
+  const table = `${prefix}kb_articles`;
+  const limit = Math.min(Math.max(options?.limit ?? DEFAULT_LIMIT, 1), 200);
+  const rows = await db.all(
+    `SELECT * FROM ${table} WHERE tenant_id = ? AND status = 'active'`,
+    [tenantId]
+  );
+  const articles = rows.map(mapKbArticle);
+  const queryTokens = tokenize(options?.query ?? "");
+  if (queryTokens.length === 0) return [];
+  return articles.map((article) => ({ article, score: scoreArticle(article, queryTokens) })).filter((r) => r.score > 0).sort((a, b) => b.score - a.score).slice(0, limit).map(({ article, score }) => ({
+    source: article.sourceKey ?? `kb:${article.id}`,
+    title: article.title,
+    excerpt: article.body.slice(0, 4e3),
+    score
+  }));
+}
 
 // src/agent/routing.ts
 import { SENSITIVE_TOPICS_DEFAULT } from "@rhule/support-shared";
 var ESCALATION_KEYWORDS = [
+  "refund",
   "chargeback",
   "billing dispute",
   "invoice dispute",
@@ -1400,9 +1255,6 @@ function inferKindTopic(message, topicAllowlist = [...SENSITIVE_TOPICS_DEFAULT, 
   if (!topicAllowlist.includes(topic)) topic = "other";
   return { kind: "support", topic };
 }
-function minConfidence(docHits) {
-  return docHits.length > 0 ? MIN_CONFIDENCE_WITH_KB : MIN_CONFIDENCE_NO_KB;
-}
 function topKbScore(hits) {
   return hits.length > 0 ? Math.max(...hits.map((h) => h.score)) : 0;
 }
@@ -1428,6 +1280,8 @@ function decideFromLlm(parsed, message, docHits, opts = {}) {
   const kind = parsed.kind ?? inferred.kind;
   let topic = parsed.topic ?? inferred.topic;
   if (allowlist && !allowlist.includes(topic)) topic = "other";
+  const hasGrounding = docHits.length > 0 || Boolean(opts.hasUserContext);
+  const threshold = opts.autoReplyMinConfidence ?? (hasGrounding ? MIN_CONFIDENCE_WITH_KB : MIN_CONFIDENCE_NO_KB);
   if (kind === "bug") {
     return {
       action: "propose",
@@ -1477,7 +1331,8 @@ function decideFromLlm(parsed, message, docHits, opts = {}) {
       resolveAfterReply: true
     };
   }
-  if (route === "escalate" || isSensitiveTopic(topic, sensitive)) {
+  const canAutoReplyGroundedBilling = topic === "billing" && route === "reply_in_app" && Boolean(draft) && hasGrounding && confidence >= threshold;
+  if (route === "escalate" || isSensitiveTopic(topic, sensitive) && !canAutoReplyGroundedBilling) {
     return {
       action: "escalate",
       kind: "support",
@@ -1489,8 +1344,7 @@ function decideFromLlm(parsed, message, docHits, opts = {}) {
       recordGap: true
     };
   }
-  const threshold = opts.autoReplyMinConfidence ?? minConfidence(docHits);
-  if (route === "reply_in_app" && draft && confidence >= threshold && (docHits.length > 0 || confidence >= HIGH_CONFIDENCE)) {
+  if (route === "reply_in_app" && draft && confidence >= threshold && (hasGrounding || confidence >= HIGH_CONFIDENCE)) {
     return {
       action: "auto_reply",
       kind: "support",
@@ -1603,6 +1457,33 @@ function decideFromHeuristics(message, docHits, opts = {}) {
 }
 
 // src/agent/triage.ts
+function mergeHits(docHits, articleHits, limit = 5) {
+  const bySource = /* @__PURE__ */ new Map();
+  for (const hit of [...articleHits, ...docHits]) {
+    const existing = bySource.get(hit.source);
+    if (!existing || hit.score > existing.score) bySource.set(hit.source, hit);
+  }
+  return [...bySource.values()].sort((a, b) => b.score - a.score).slice(0, limit);
+}
+function applyPublishedKbAnswer(decision, articleHits, message) {
+  if (decision.action === "auto_reply" && decision.draftReply.trim()) {
+    return decision;
+  }
+  const top = articleHits[0];
+  if (!top || top.score < KB_SCORE_THRESHOLD) return decision;
+  if (decision.kind === "bug" || decision.kind === "feature") return decision;
+  if (containsEscalationSignal(message)) return decision;
+  const body = top.excerpt.trim();
+  if (!body) return decision;
+  return {
+    ...decision,
+    action: "auto_reply",
+    proposalType: "reply",
+    draftReply: body,
+    summary: decision.summary || top.title || "KB answer",
+    recordGap: false
+  };
+}
 function buildSystemPrompt(brand, topics) {
   return `You are ${brand.supportAgentName} for ${brand.name} support triage. Output ONLY valid JSON (no markdown fences).
 
@@ -1661,10 +1542,11 @@ function parseLlmJson(raw) {
   const cleaned = raw.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
   return JSON.parse(cleaned);
 }
-function decideOpts(deps) {
+function decideOpts(deps, user) {
   const opts = {
     topicAllowlist: deps.topics ?? [...DEFAULT_TOPICS],
-    sensitiveTopics: deps.sensitiveTopics ?? [...SENSITIVE_TOPICS_DEFAULT2]
+    sensitiveTopics: deps.sensitiveTopics ?? [...SENSITIVE_TOPICS_DEFAULT2],
+    hasUserContext: Boolean(user?.contextSummary?.trim())
   };
   if (deps.autoReplyMinConfidence !== void 0) {
     opts.autoReplyMinConfidence = deps.autoReplyMinConfidence;
@@ -1692,7 +1574,7 @@ async function callLlm(llm, brand, message, docHits, user, topics) {
   }
 }
 async function resolveDecision(deps, message, docHits, user, forced) {
-  const opts = decideOpts(deps);
+  const opts = decideOpts(deps, user);
   let decision;
   if (deps.llm) {
     const parsed = await callLlm(
@@ -1730,10 +1612,17 @@ function citationsJson(docHits) {
 async function triageMessage(deps, input) {
   const prefix = deps.tablePrefix ?? DEFAULT_TABLE_PREFIX;
   const docHits = deps.docsRoot ? searchCuratedDocs(input.message, { docsRoot: deps.docsRoot, limit: 5 }) : [];
-  const decision = await resolveDecision(deps, input.message, docHits, input.user, {
+  const articleHits = await searchActiveArticleHits(deps.db, input.tenantId, {
+    query: input.message,
+    limit: 5,
+    tablePrefix: prefix
+  });
+  const kbHits = mergeHits(docHits, articleHits);
+  let decision = await resolveDecision(deps, input.message, kbHits, input.user, {
     ...input.kind ? { kind: input.kind } : {},
     ...input.topic ? { topic: input.topic } : {}
   });
+  decision = applyPublishedKbAnswer(decision, articleHits, input.message);
   const tickets = new TicketService(deps.db, prefix);
   const proposals = new ProposalService(deps.db, prefix);
   const gaps = new KnowledgeGapService(deps.db, prefix);
@@ -1764,7 +1653,7 @@ async function triageMessage(deps, input) {
   if (input.guestEmail) createInput.guestEmail = input.guestEmail;
   const { ticket, message: userMessage } = await tickets.createTicket(createInput);
   const autoReplied = decision.action === "auto_reply";
-  const citationJson = docHits.length > 0 ? citationsJson(docHits) : null;
+  const citationJson = kbHits.length > 0 ? citationsJson(kbHits) : null;
   const agentMessage = await tickets.addMessage(
     input.tenantId,
     ticket.id,
@@ -1780,7 +1669,7 @@ async function triageMessage(deps, input) {
   if (!autoReplied) {
     const bodyJson = JSON.stringify({
       draft_reply: decision.draftReply,
-      sources: docHits.map((h) => h.source),
+      sources: kbHits.map((h) => h.source),
       user_intent: input.message.slice(0, 500),
       kind: decision.kind,
       topic: decision.topic
@@ -1803,7 +1692,7 @@ async function triageMessage(deps, input) {
       proposalType: decision.proposalType,
       summary: decision.summary,
       docQuery: input.message,
-      docHitsJson: JSON.stringify(docHits),
+      docHitsJson: JSON.stringify(kbHits),
       userQuestion: input.message
     });
   }
@@ -1854,221 +1743,18 @@ async function triageMessage(deps, input) {
     }
   }
   const result = {
-    action: "ticket",
+    action: autoReplied ? "auto_reply" : "ticket",
     reply: formatReply(decision.draftReply, deps.brand),
     ticket: updated ?? ticket,
     message: userMessage,
     agentMessage,
     confidence: decision.confidence,
     autoReplied,
-    sources: docHits
+    sources: kbHits
   };
   if (proposal) result.proposal = proposal;
   if (gap) result.gap = gap;
   return result;
-}
-
-// src/kb/codegen.ts
-import { randomUUID as randomUUID5 } from "crypto";
-function mapKbArticle2(row) {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    title: row.title,
-    body: row.body,
-    status: row.status,
-    sourceKind: row.source_kind,
-    visibility: row.visibility ?? "agent",
-    provenanceJson: row.provenance_json,
-    sourceKey: row.source_key,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at
-  };
-}
-async function ingestCodegenArticle(db, input) {
-  const prefix = input.tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const table = `${prefix}kb_articles`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const sourceKind = input.sourceKind ?? "codegen";
-  const visibility = input.visibility ?? "agent";
-  const provenanceJson = JSON.stringify({
-    gitSha: input.gitSha ?? null,
-    path: input.path ?? null,
-    ingestedAt: now
-  });
-  const existing = await db.get(
-    `SELECT * FROM ${table} WHERE tenant_id = ? AND source_kind = ? AND source_key = ?`,
-    [input.tenantId, sourceKind, input.sourceKey]
-  );
-  if (existing) {
-    await db.run(
-      `UPDATE ${table}
-       SET title = ?, body = ?, status = 'draft', visibility = ?, provenance_json = ?, updated_at = ?
-       WHERE id = ?`,
-      [input.title, input.body, visibility, provenanceJson, now, existing.id]
-    );
-    const row2 = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [existing.id]);
-    if (!row2) throw new Error("ingestCodegenArticle: upsert failed");
-    return mapKbArticle2(row2);
-  }
-  const id = randomUUID5();
-  await db.run(
-    `INSERT INTO ${table} (
-      id, tenant_id, title, body, status, source_kind, visibility, provenance_json, source_key, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      input.tenantId,
-      input.title,
-      input.body,
-      sourceKind,
-      visibility,
-      provenanceJson,
-      input.sourceKey,
-      now,
-      now
-    ]
-  );
-  const row = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-  if (!row) throw new Error("ingestCodegenArticle: insert failed");
-  return mapKbArticle2(row);
-}
-async function promoteKbArticle(db, tenantId, id, tablePrefix, opts) {
-  const prefix = tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const table = `${prefix}kb_articles`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  const existing = await db.get(
-    `SELECT * FROM ${table} WHERE tenant_id = ? AND id = ?`,
-    [tenantId, id]
-  );
-  if (!existing) {
-    throw new Error(`promoteKbArticle: article not found (${id})`);
-  }
-  if (opts?.visibility) {
-    await db.run(
-      `UPDATE ${table} SET status = 'active', visibility = ?, updated_at = ? WHERE id = ?`,
-      [opts.visibility, now, id]
-    );
-  } else {
-    await db.run(
-      `UPDATE ${table} SET status = 'active', updated_at = ? WHERE id = ?`,
-      [now, id]
-    );
-  }
-  const row = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-  if (!row) throw new Error("promoteKbArticle: update failed");
-  return mapKbArticle2(row);
-}
-async function deprecateKbArticle(db, tenantId, id, tablePrefix) {
-  const prefix = tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const table = `${prefix}kb_articles`;
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await db.run(
-    `UPDATE ${table} SET status = 'deprecated', updated_at = ? WHERE tenant_id = ? AND id = ?`,
-    [now, tenantId, id]
-  );
-  const row = await db.get(
-    `SELECT * FROM ${table} WHERE tenant_id = ? AND id = ?`,
-    [tenantId, id]
-  );
-  if (!row) throw new Error(`deprecateKbArticle: article not found (${id})`);
-  return mapKbArticle2(row);
-}
-async function updateKbArticle(db, tenantId, id, patch, tablePrefix) {
-  const prefix = tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const table = `${prefix}kb_articles`;
-  const existing = await db.get(
-    `SELECT * FROM ${table} WHERE tenant_id = ? AND id = ?`,
-    [tenantId, id]
-  );
-  if (!existing) throw new Error(`updateKbArticle: not found (${id})`);
-  const now = (/* @__PURE__ */ new Date()).toISOString();
-  await db.run(
-    `UPDATE ${table} SET title = ?, body = ?, visibility = ?, updated_at = ? WHERE id = ?`,
-    [
-      patch.title ?? existing.title,
-      patch.body ?? existing.body,
-      patch.visibility ?? existing.visibility ?? "agent",
-      now,
-      id
-    ]
-  );
-  const row = await db.get(`SELECT * FROM ${table} WHERE id = ?`, [id]);
-  if (!row) throw new Error("updateKbArticle: reload failed");
-  return mapKbArticle2(row);
-}
-async function listKbArticles(db, tenantId, opts) {
-  const prefix = opts?.tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const table = `${prefix}kb_articles`;
-  const limit = opts?.limit ?? 100;
-  const clauses = ["tenant_id = ?"];
-  const params = [tenantId];
-  if (opts?.status) {
-    clauses.push("status = ?");
-    params.push(opts.status);
-  }
-  if (opts?.sourceKind) {
-    clauses.push("source_kind = ?");
-    params.push(opts.sourceKind);
-  }
-  params.push(limit);
-  const rows = await db.all(
-    `SELECT * FROM ${table} WHERE ${clauses.join(" AND ")} ORDER BY updated_at DESC LIMIT ?`,
-    params
-  );
-  return rows.map(mapKbArticle2);
-}
-async function getKbArticle(db, tenantId, id, tablePrefix) {
-  const prefix = tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const row = await db.get(
-    `SELECT * FROM ${prefix}kb_articles WHERE tenant_id = ? AND id = ?`,
-    [tenantId, id]
-  );
-  return row ? mapKbArticle2(row) : void 0;
-}
-function slugifyHeading(heading) {
-  return heading.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-}
-async function ingestFromChangelog(db, tenantId, changelogText, opts) {
-  const sections = changelogText.split(/\n(?=##\s)/);
-  const articles = [];
-  for (const section of sections) {
-    const trimmed = section.trim();
-    if (!trimmed) continue;
-    const match = trimmed.match(/^##\s+(.+?)(?:\n|$)/);
-    if (!match) continue;
-    const heading = match[1].trim();
-    const sourceKey = `changelog:${slugifyHeading(heading)}`;
-    const ingestInput = {
-      tenantId,
-      title: heading,
-      body: trimmed,
-      sourceKey
-    };
-    if (opts?.gitSha) ingestInput.gitSha = opts.gitSha;
-    if (opts?.tablePrefix) ingestInput.tablePrefix = opts.tablePrefix;
-    const article = await ingestCodegenArticle(db, ingestInput);
-    articles.push(article);
-  }
-  return articles;
-}
-async function ingestDocsSources(db, tenantId, sources, opts) {
-  const articles = [];
-  for (const src of sources) {
-    const sourceKey = `docs:${src.path.replace(/^\/+/, "")}`;
-    const title = src.title ?? src.path.split("/").pop()?.replace(/\.md$/i, "") ?? src.path;
-    const ingestInput = {
-      tenantId,
-      title,
-      body: src.body,
-      sourceKey,
-      path: src.path
-    };
-    if (opts?.gitSha) ingestInput.gitSha = opts.gitSha;
-    if (opts?.tablePrefix) ingestInput.tablePrefix = opts.tablePrefix;
-    articles.push(await ingestCodegenArticle(db, ingestInput));
-  }
-  return articles;
 }
 
 // src/kb/evolutionary.ts
@@ -3086,88 +2772,115 @@ function header(req, name) {
   if (Array.isArray(v)) return v[0];
   return v;
 }
-function matchRoute(method, path2) {
-  if (method === "GET" && path2 === "/health") return { name: "health", params: {} };
-  if (method === "GET" && path2 === "/config") return { name: "config", params: {} };
-  if (method === "POST" && path2 === "/chat") return { name: "chat", params: {} };
-  if (method === "POST" && path2 === "/coach") return { name: "coach", params: {} };
-  if (method === "POST" && path2 === "/leads") return { name: "createLead", params: {} };
-  if (method === "GET" && path2 === "/tickets") return { name: "listTickets", params: {} };
-  if (method === "POST" && path2 === "/tickets") return { name: "createTicket", params: {} };
-  const ticketReply = path2.match(/^\/tickets\/([^/]+)\/messages$/);
+function matchRoute(method, path3) {
+  if (method === "GET" && path3 === "/health") return { name: "health", params: {} };
+  if (method === "GET" && path3 === "/config") return { name: "config", params: {} };
+  if (method === "POST" && path3 === "/chat") return { name: "chat", params: {} };
+  if (method === "POST" && path3 === "/coach") return { name: "coach", params: {} };
+  if (method === "POST" && path3 === "/leads") return { name: "createLead", params: {} };
+  if (method === "GET" && path3 === "/tickets") return { name: "listTickets", params: {} };
+  if (method === "POST" && path3 === "/tickets") return { name: "createTicket", params: {} };
+  const ticketReply = path3.match(/^\/tickets\/([^/]+)\/messages$/);
   if (method === "POST" && ticketReply) {
     return { name: "replyTicket", params: { id: ticketReply[1] } };
   }
-  const ticketMatch = path2.match(/^\/tickets\/([^/]+)$/);
+  const ticketMatch = path3.match(/^\/tickets\/([^/]+)$/);
   if (method === "GET" && ticketMatch) {
     return { name: "getTicket", params: { id: ticketMatch[1] } };
   }
-  if (method === "GET" && path2 === "/help/articles") {
+  if (method === "GET" && path3 === "/help/articles") {
     return { name: "publicHelp", params: {} };
   }
-  if (method === "GET" && path2 === "/admin/tickets") {
+  if (method === "GET" && path3 === "/admin/tickets") {
     return { name: "adminListTickets", params: {} };
   }
-  if (method === "GET" && path2 === "/admin/proposals") {
+  if (method === "GET" && path3 === "/admin/proposals") {
     return { name: "adminListProposals", params: {} };
   }
-  if (method === "GET" && path2 === "/admin/kb") {
+  if (method === "GET" && path3 === "/admin/kb") {
     return { name: "adminListKb", params: {} };
   }
-  if (method === "GET" && path2 === "/admin/gaps") {
+  if (method === "GET" && path3 === "/admin/gaps") {
     return { name: "adminListGaps", params: {} };
   }
-  if (method === "GET" && path2 === "/admin/leads") {
+  if (method === "GET" && path3 === "/admin/leads") {
     return { name: "adminListLeads", params: {} };
   }
-  if (method === "POST" && path2 === "/admin/kb/ingest") {
+  if (method === "POST" && path3 === "/admin/kb/ingest") {
     return { name: "adminKbIngest", params: {} };
   }
-  if (method === "POST" && path2 === "/telegram/webhook") {
+  if (method === "POST" && path3 === "/admin/kb/ingest/website") {
+    return { name: "adminKbIngestWebsite", params: {} };
+  }
+  if (method === "POST" && path3 === "/admin/kb/ingest/uploads") {
+    return { name: "adminKbIngestUploads", params: {} };
+  }
+  if (method === "POST" && path3 === "/telegram/webhook") {
     return { name: "telegramWebhook", params: {} };
   }
-  const adminKbPromote = path2.match(/^\/admin\/kb\/([^/]+)\/promote$/);
+  const adminKbPromote = path3.match(/^\/admin\/kb\/([^/]+)\/promote$/);
   if (method === "POST" && adminKbPromote) {
     return { name: "adminKbPromote", params: { id: adminKbPromote[1] } };
   }
-  const adminKbDeprecate = path2.match(/^\/admin\/kb\/([^/]+)\/deprecate$/);
+  const adminKbDeprecate = path3.match(/^\/admin\/kb\/([^/]+)\/deprecate$/);
   if (method === "POST" && adminKbDeprecate) {
     return { name: "adminKbDeprecate", params: { id: adminKbDeprecate[1] } };
   }
-  const adminKbPatch = path2.match(/^\/admin\/kb\/([^/]+)$/);
+  const adminKbPatch = path3.match(/^\/admin\/kb\/([^/]+)$/);
   if (method === "PATCH" && adminKbPatch) {
     return { name: "adminKbPatch", params: { id: adminKbPatch[1] } };
   }
   if (method === "GET" && adminKbPatch) {
     return { name: "adminKbGet", params: { id: adminKbPatch[1] } };
   }
-  const adminGapPatch = path2.match(/^\/admin\/gaps\/([^/]+)$/);
+  const adminGapPatch = path3.match(/^\/admin\/gaps\/([^/]+)$/);
   if (method === "PATCH" && adminGapPatch) {
     return { name: "adminGapPatch", params: { id: adminGapPatch[1] } };
   }
-  const adminGapResearch = path2.match(/^\/admin\/gaps\/([^/]+)\/research$/);
+  const adminGapResearch = path3.match(/^\/admin\/gaps\/([^/]+)\/research$/);
   if (method === "POST" && adminGapResearch) {
     return { name: "adminGapResearch", params: { id: adminGapResearch[1] } };
   }
-  const adminTicketReply = path2.match(/^\/admin\/tickets\/([^/]+)\/reply$/);
+  const adminTicketReply = path3.match(/^\/admin\/tickets\/([^/]+)\/reply$/);
   if (method === "POST" && adminTicketReply) {
     return { name: "adminReplyTicket", params: { idOrNumber: adminTicketReply[1] } };
   }
-  const adminTicketStatus = path2.match(/^\/admin\/tickets\/([^/]+)\/status$/);
+  const adminTicketStatus = path3.match(/^\/admin\/tickets\/([^/]+)\/status$/);
   if (method === "PATCH" && adminTicketStatus) {
     return { name: "adminSetTicketStatus", params: { idOrNumber: adminTicketStatus[1] } };
   }
-  const adminTicketPromoteKb = path2.match(/^\/admin\/tickets\/([^/]+)\/promote-kb$/);
+  const adminTicketPromoteKb = path3.match(/^\/admin\/tickets\/([^/]+)\/promote-kb$/);
   if (method === "POST" && adminTicketPromoteKb) {
     return { name: "adminPromoteKb", params: { idOrNumber: adminTicketPromoteKb[1] } };
   }
-  const adminTicketDetail = path2.match(/^\/admin\/tickets\/([^/]+)$/);
+  const adminTicketDetail = path3.match(/^\/admin\/tickets\/([^/]+)$/);
   if (method === "GET" && adminTicketDetail) {
     return { name: "adminGetTicket", params: { idOrNumber: adminTicketDetail[1] } };
   }
-  const adminProposalAction = path2.match(/^\/admin\/proposals\/([^/]+)\/action$/);
+  const adminProposalAction = path3.match(/^\/admin\/proposals\/([^/]+)\/action$/);
   if (method === "POST" && adminProposalAction) {
     return { name: "adminProposalAction", params: { id: adminProposalAction[1] } };
+  }
+  if (method === "GET" && path3 === "/embed") {
+    return { name: "embedPage", params: {} };
+  }
+  if (method === "POST" && path3 === "/tenants") {
+    return { name: "createTenant", params: {} };
+  }
+  if (method === "GET" && path3 === "/tenants") {
+    return { name: "listTenants", params: {} };
+  }
+  const tenantById = path3.match(/^\/tenants\/([^/]+)$/);
+  if (tenantById) {
+    if (method === "GET") {
+      return { name: "getTenant", params: { id: tenantById[1] } };
+    }
+    if (method === "PATCH") {
+      return { name: "patchTenant", params: { id: tenantById[1] } };
+    }
+    if (method === "DELETE") {
+      return { name: "deleteTenant", params: { id: tenantById[1] } };
+    }
   }
   return null;
 }
@@ -3205,21 +2918,26 @@ function notifyEmail2(email, ticket, body, brandName) {
   }).catch(() => {
   });
 }
-function createHttpRouter(ctx) {
-  const tablePrefix = ctx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const topics = ctx.topics ?? [...DEFAULT_TOPICS2];
-  let ready = null;
-  const ensureReady = () => {
-    if (!ready) ready = ensureSchema(ctx.db, tablePrefix);
-    return ready;
+function createHttpRouter(baseCtx) {
+  const tablePrefix = baseCtx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
+  const topics = baseCtx.topics ?? [...DEFAULT_TOPICS2];
+  let ready = ensureSchema(baseCtx.db, tablePrefix);
+  const ensureReady = async () => {
+    const res = await ready;
+    if (res.statements === 0) {
+      ready = ensureSchema(baseCtx.db, tablePrefix);
+      return ready;
+    }
+    return res;
   };
+  const tenantStore = new TenantStore(baseCtx.db, tablePrefix);
   const handler = async (req, res, _next) => {
     await ensureReady();
     const r = req;
     const response = res;
     const method = String(r.method ?? "GET").toUpperCase();
-    const path2 = parsePath(String(r.url ?? r.path ?? "/"));
-    const route = matchRoute(method, path2);
+    const path3 = parsePath(String(r.url ?? r.path ?? "/"));
+    const route = matchRoute(method, path3);
     const finish = (status, body) => {
       if (typeof response.status === "function" && typeof response.json === "function") {
         response.status(status).json(body);
@@ -3227,6 +2945,11 @@ function createHttpRouter(ctx) {
       }
       sendJson(response, status, body);
     };
+    const queryTenant = parseQueryString(String(r.url ?? r.path ?? "/")).tenant;
+    const headerTenant = header(r, "x-tenant-id");
+    const requestedTenantId = queryTenant ?? headerTenant;
+    const resolved = baseCtx.resolveTenant && requestedTenantId ? await baseCtx.resolveTenant(req, requestedTenantId) : null;
+    const ctx = resolved ? { ...baseCtx, tenantId: resolved.tenantId, brand: resolved.brand } : baseCtx;
     if (!route) {
       finish(404, { ok: false, error: "Not found" });
       return;
@@ -3239,6 +2962,69 @@ function createHttpRouter(ctx) {
         brand: ctx.brand.name
       });
       return;
+    }
+    if (route.name === "embedPage") {
+      const { buildEmbedPage: buildEmbedPage2 } = await import("./embedPage-O7PLZFAM.js");
+      const html = buildEmbedPage2(ctx.brand);
+      response.setHeader("Content-Type", "text/html; charset=utf-8");
+      response.end(html);
+      return;
+    }
+    if (route.name === "createTenant" || route.name === "listTenants" || route.name === "getTenant" || route.name === "patchTenant" || route.name === "deleteTenant") {
+      const user2 = await ctx.resolveUser(req);
+      if (!user2 || !requireAdmin(user2)) {
+        finish(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      if (route.name === "createTenant") {
+        const body = r.body !== void 0 ? r.body : await readJsonBody(r);
+        if (!body?.name?.trim()) {
+          finish(400, { ok: false, error: "name is required" });
+          return;
+        }
+        const createInput = { name: body.name };
+        if (body.domain !== void 0) createInput.domain = body.domain;
+        if (body.ingestToken !== void 0) createInput.ingestToken = body.ingestToken;
+        const { tenant, ingestToken } = await tenantStore.create(createInput);
+        finish(201, { ok: true, tenant, ingestToken });
+        return;
+      }
+      if (route.name === "listTenants") {
+        const tenants = await tenantStore.list();
+        finish(200, { ok: true, tenants });
+        return;
+      }
+      if (route.name === "getTenant") {
+        const t = await tenantStore.getById(route.params.id);
+        if (!t) {
+          finish(404, { ok: false, error: "Tenant not found" });
+          return;
+        }
+        finish(200, { ok: true, tenant: t });
+        return;
+      }
+      if (route.name === "patchTenant") {
+        const body = r.body !== void 0 ? r.body : await readJsonBody(r);
+        const patch = {};
+        if (body?.name !== void 0) patch.name = body.name;
+        if (body?.domain !== void 0) patch.domain = body.domain;
+        try {
+          const updated = await tenantStore.update(route.params.id, patch);
+          finish(200, { ok: true, tenant: updated });
+        } catch {
+          finish(404, { ok: false, error: "Tenant not found" });
+        }
+        return;
+      }
+      if (route.name === "deleteTenant") {
+        const deleted = await tenantStore.remove(route.params.id);
+        if (!deleted) {
+          finish(404, { ok: false, error: "Tenant not found" });
+          return;
+        }
+        finish(200, { ok: true });
+        return;
+      }
     }
     if (route.name === "telegramWebhook") {
       if (!ctx.telegram) {
@@ -3303,6 +3089,84 @@ function createHttpRouter(ctx) {
         ctx.opsNotifier.sendToOps({
           kind: "kb_drafts_ready",
           title: `${articles.length} KB draft(s) from ${body.gitSha ?? "ingest"}`,
+          body: articles.map((a) => a.title).slice(0, 8).join(", ")
+        }).catch(() => {
+        });
+      }
+      finish(200, { ok: true, articles, count: articles.length });
+      return;
+    }
+    if (route.name === "adminKbIngestWebsite") {
+      const secret = ctx.kbIngest?.webhookSecret;
+      const token = header(r, "x-support-ingest-token");
+      const user2 = await ctx.resolveUser(req);
+      const authed = secret && token && token === secret || user2 && requireAdmin(user2);
+      if (!authed) {
+        finish(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      const body = r.body !== void 0 ? r.body : await readJsonBody(r);
+      if (!body?.url) {
+        finish(400, { ok: false, error: "url is required" });
+        return;
+      }
+      if (!ctx.llm) {
+        finish(503, { ok: false, error: "LLM adapter not configured" });
+        return;
+      }
+      const { crawlSite: crawlSite2, curatePagesToKb: curatePagesToKb2 } = await import("./siteCrawl-543S7EM6.js");
+      const pages = await crawlSite2(body.url, {
+        maxPages: body.maxPages ?? 25
+      });
+      const articles = await curatePagesToKb2(
+        ctx.db,
+        ctx.tenantId,
+        pages,
+        ctx.llm,
+        { tablePrefix }
+      );
+      if (articles.length > 0 && ctx.opsNotifier) {
+        ctx.opsNotifier.sendToOps({
+          kind: "kb_drafts_ready",
+          title: `${articles.length} KB draft(s) crawled from ${body.url}`,
+          body: articles.map((a) => a.title).slice(0, 8).join(", ")
+        }).catch(() => {
+        });
+      }
+      finish(200, { ok: true, articles, count: articles.length, pagesCrawled: pages.length });
+      return;
+    }
+    if (route.name === "adminKbIngestUploads") {
+      const secret = ctx.kbIngest?.webhookSecret;
+      const token = header(r, "x-support-ingest-token");
+      const user2 = await ctx.resolveUser(req);
+      const authed = secret && token && token === secret || user2 && requireAdmin(user2);
+      if (!authed) {
+        finish(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      if (!ctx.llm) {
+        finish(503, { ok: false, error: "LLM adapter not configured" });
+        return;
+      }
+      const body = r.body !== void 0 ? r.body : await readJsonBody(r);
+      const docs = (body?.docs ?? []).filter((d) => d.content?.trim());
+      if (docs.length === 0) {
+        finish(400, { ok: false, error: "docs[] with non-empty content is required" });
+        return;
+      }
+      const { curateDocsToKb: curateDocsToKb2 } = await import("./siteCrawl-543S7EM6.js");
+      const articles = await curateDocsToKb2(
+        ctx.db,
+        ctx.tenantId,
+        docs,
+        ctx.llm,
+        { tablePrefix }
+      );
+      if (articles.length > 0 && ctx.opsNotifier) {
+        ctx.opsNotifier.sendToOps({
+          kind: "kb_drafts_ready",
+          title: `${articles.length} KB draft(s) from uploaded docs`,
           body: articles.map((a) => a.title).slice(0, 8).join(", ")
         }).catch(() => {
         });
@@ -4079,7 +3943,7 @@ function createHttpRouter(ctx) {
     handler,
     meta: {
       kitVersion: KIT_VERSION,
-      tenantId: String(ctx.tenantId),
+      tenantId: String(baseCtx.tenantId),
       shared: "@rhule/support-shared"
     }
   };
@@ -4107,7 +3971,84 @@ function createRouter(options) {
   if (options.telegram) ctx.telegram = options.telegram;
   if (options.codebase) ctx.codebase = options.codebase;
   if (options.onLeadCaptured) ctx.onLeadCaptured = options.onLeadCaptured;
+  if (options.resolveTenant) ctx.resolveTenant = options.resolveTenant;
   return createHttpRouter(ctx);
+}
+
+// src/kb/seedCuratedDocs.ts
+import fs2 from "fs";
+import path2 from "path";
+function walkMarkdown2(dir) {
+  const files = [];
+  if (!fs2.existsSync(dir)) return files;
+  for (const entry of fs2.readdirSync(dir, { withFileTypes: true })) {
+    const full = path2.join(dir, entry.name);
+    if (entry.isDirectory()) files.push(...walkMarkdown2(full));
+    else if (entry.name.endsWith(".md")) files.push(full);
+  }
+  return files;
+}
+function titleFromMarkdown(rel, body) {
+  const heading = body.match(/^#\s+(.+)$/m);
+  if (heading?.[1]) return heading[1].trim();
+  return rel.split("/").pop()?.replace(/\.md$/i, "") ?? rel;
+}
+async function seedCuratedDocs(db, tenantId, docsRoot) {
+  await ensureSchema(db);
+  const root = path2.resolve(docsRoot);
+  const files = walkMarkdown2(root);
+  const sources = files.map((file) => {
+    const rel = path2.relative(root, file).replace(/\\/g, "/");
+    const body = fs2.readFileSync(file, "utf8");
+    return { path: rel, title: titleFromMarkdown(rel, body), body };
+  });
+  const articles = await ingestDocsSources(db, tenantId, sources);
+  let promoted = 0;
+  const articleIds = [];
+  for (const article of articles) {
+    await promoteKbArticle(db, tenantId, article.id, void 0, {
+      visibility: "public"
+    });
+    promoted += 1;
+    articleIds.push(article.id);
+  }
+  return {
+    tenantId,
+    docsRoot: root,
+    ingested: articles.length,
+    promoted,
+    articleIds
+  };
+}
+
+// src/hosts/shareapp.ts
+function mapV2AuthToSupportUser(auth) {
+  if (!auth?.userId) return null;
+  const role = auth.role === "admin" || auth.role === "ops" || auth.role === "owner" ? auth.role === "owner" ? "admin" : auth.role : "user";
+  return {
+    id: auth.userId,
+    role,
+    ...auth.email ? { email: auth.email } : {},
+    ...auth.orgId ? { orgId: auth.orgId } : {}
+  };
+}
+function createHostSqliteDbAdapter(host) {
+  return {
+    async run(sql, params = []) {
+      const result = await host.run(sql, params);
+      return { changes: result.changes ?? 0 };
+    },
+    async get(sql, params = []) {
+      return host.get(sql, params);
+    },
+    async all(sql, params = []) {
+      return host.all(sql, params);
+    }
+  };
+}
+function resolveShareAppUser(req) {
+  const auth = req?.v2Auth;
+  return mapV2AuthToSupportUser(auth);
 }
 
 // src/kb/filesystemCodebase.ts
@@ -4143,8 +4084,8 @@ var TEXT_EXT = /* @__PURE__ */ new Set([
   ".sql",
   ".txt"
 ]);
-function isTextPath(path2) {
-  const lower = path2.toLowerCase();
+function isTextPath(path3) {
+  const lower = path3.toLowerCase();
   const dot = lower.lastIndexOf(".");
   if (dot < 0) return false;
   return TEXT_EXT.has(lower.slice(dot));
@@ -4236,14 +4177,14 @@ function createFilesystemCodebaseAdapter(options) {
         hits.push({ path: rel, snippet, score, _score: score });
       }
       hits.sort((a, b) => b._score - a._score);
-      return hits.slice(0, limit).map(({ path: path2, snippet, _score }) => ({
-        path: path2,
+      return hits.slice(0, limit).map(({ path: path3, snippet, _score }) => ({
+        path: path3,
         snippet,
         score: _score
       }));
     },
-    async readFile(path2, opts) {
-      const abs = resolve(root, path2);
+    async readFile(path3, opts) {
+      const abs = resolve(root, path3);
       if (!isAllowed2(abs)) return null;
       if (!existsSync(abs)) return null;
       try {
@@ -4303,16 +4244,22 @@ export {
   ProposalService,
   ProposalStore,
   TelegramDraftSessionStore,
+  TenantStore,
   TicketService,
   TicketStore,
+  buildEmbedPage,
   clearDocsCache,
   coachFeatureRequest,
   containsEscalationSignal,
+  crawlSite,
   createFilesystemCodebaseAdapter,
+  createHostSqliteDbAdapter,
   createHttpRouter,
   createRouter,
   createSupportRouter,
   curateAnswerToKbDraft,
+  curateDocsToKb,
+  curatePagesToKb,
   decideFromHeuristics,
   decideFromLlm,
   deprecateKbArticle,
@@ -4327,12 +4274,16 @@ export {
   ingestDocsSources,
   ingestFromChangelog,
   listKbArticles,
+  mapV2AuthToSupportUser,
   parseBugFeatureBody,
   promoteKbArticle,
   promoteTicketAnswerToKb,
   researchGapToKbDraft,
+  resolveShareAppUser,
+  searchActiveArticleHits,
   searchActiveArticles,
   searchCuratedDocs,
+  seedCuratedDocs,
   triageMessage,
   updateKbArticle,
   verifyTelegramWebhookSecret

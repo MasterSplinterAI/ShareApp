@@ -260,3 +260,37 @@ export async function searchActiveArticles(
     .slice(0, limit)
     .map((r) => r.article);
 }
+
+/**
+ * Ranked keyword hits over published (`active`) KB articles.
+ * Draft / deprecated rows are ignored. Empty query returns no hits.
+ */
+export async function searchActiveArticleHits(
+  db: DbAdapter,
+  tenantId: string,
+  options?: SearchActiveArticlesOptions,
+): Promise<KbSearchHit[]> {
+  const prefix = options?.tablePrefix ?? DEFAULT_TABLE_PREFIX;
+  const table = `${prefix}kb_articles`;
+  const limit = Math.min(Math.max(options?.limit ?? DEFAULT_LIMIT, 1), 200);
+
+  const rows = await db.all<KbArticleRow>(
+    `SELECT * FROM ${table} WHERE tenant_id = ? AND status = 'active'`,
+    [tenantId],
+  );
+  const articles = rows.map(mapKbArticle);
+  const queryTokens = tokenize(options?.query ?? "");
+  if (queryTokens.length === 0) return [];
+
+  return articles
+    .map((article) => ({ article, score: scoreArticle(article, queryTokens) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ article, score }) => ({
+      source: article.sourceKey ?? `kb:${article.id}`,
+      title: article.title,
+      excerpt: article.body.slice(0, 4000),
+      score,
+    }));
+}

@@ -6,6 +6,21 @@ import type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-sh
  */
 export type ResolveUser = (req: unknown) => SupportUser | null | Promise<SupportUser | null>;
 
+/** A per-request tenant+brand resolution result. */
+export interface TenantContext {
+  tenantId: string;
+  brand: BrandConfig;
+}
+
+/**
+ * Host hook: map a requested tenant id (from `?tenant=` / `x-tenant-id`)
+ * to that tenant's brand. Return null to fall back to the default ctx brand.
+ */
+export type ResolveTenant = (
+  req: unknown,
+  requestedTenantId: string,
+) => TenantContext | null | Promise<TenantContext | null>;
+
 /**
  * Minimal SQL port so Postgres (LegalAI) and SQLite (ShareApp) both work.
  * Host implements; kit never opens its own pool.
@@ -122,6 +137,12 @@ export interface CreateSupportRouterOptions {
   tenantId: TenantId | string;
   db: DbAdapter;
   resolveUser: ResolveUser;
+  /**
+   * Host hook for the multi-tenant hosted platform: resolves a
+   * `?tenant=` / `x-tenant-id` request to a per-request tenant context.
+   * Return null to fall back to the default tenant.
+   */
+  resolveTenant?: ResolveTenant;
   brand: BrandConfig;
   llm?: LlmAdapter;
   tablePrefix?: string;

@@ -52,6 +52,7 @@ describe("LeadService", () => {
           tenantId: TenantIdSchema.parse("dev"),
           name: "X",
           email: "not-an-email",
+          source: "public_launcher",
           marketingOptIn: false,
         }),
     );

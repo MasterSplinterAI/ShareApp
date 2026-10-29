@@ -42,10 +42,15 @@ interface SupportLauncherProps {
      * (escalation happens inside Ask a question — no separate Contact form).
      */
     audience?: "app" | "public";
+    /**
+     * When false, no floating bubble — open via `legalai:open-support` or
+     * `renderTrigger` (Lex chat header uses a Help button instead of a FAB).
+     */
+    showTrigger?: boolean;
     renderTrigger?: (open: () => void) => ReactNode;
     className?: string;
     /**
-     * Hosts that use Bearer JWT (ShareApp) instead of cookie sessions.
+     * Hosts that use Bearer JWT (ShareApp/Lalia) instead of cookie sessions.
      * Return the raw token; Authorization header is attached automatically.
      */
     getAccessToken?: () => string | null | undefined;

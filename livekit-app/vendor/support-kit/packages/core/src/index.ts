@@ -20,6 +20,14 @@ export type {
 export { ensureSchema, DEFAULT_TABLE_PREFIX } from "./db/migrate.js";
 // createMemorySqliteAdapter lives in ./db/memorySqlite.js (dev/test only —
 // not re-exported here so production bundles don't require better-sqlite3).
+export { seedCuratedDocs } from "./kb/seedCuratedDocs.js";
+export type { SeedCuratedDocsResult } from "./kb/seedCuratedDocs.js";
+export {
+  mapV2AuthToSupportUser,
+  createHostSqliteDbAdapter,
+  resolveShareAppUser,
+} from "./hosts/shareapp.js";
+export type { V2Auth, HostSqliteHandle } from "./hosts/shareapp.js";
 export { TicketStore } from "./tickets/store.js";
 export { TicketService } from "./tickets/service.js";
 export { ProposalStore } from "./proposals/store.js";
@@ -31,6 +39,7 @@ export { LeadService } from "./leads/service.js";
 export {
   searchCuratedDocs,
   searchActiveArticles,
+  searchActiveArticleHits,
   formatSourcesForPrompt,
   clearDocsCache,
 } from "./kb/search.js";
@@ -87,7 +96,16 @@ export {
 } from "./agent/routing.js";
 export type { LlmTriageParse, RoutingDecision } from "./agent/routing.js";
 export { createHttpRouter, createRouter } from "./http/createRouter.js";
+export { buildEmbedPage } from "./http/embedPage.js";
+export { TenantStore } from "./tenants/store.js";
+export type { Tenant, CreateTenantInput } from "./tenants/store.js";
 export { executeProposalAction } from "./proposals/executor.js";
+export {
+  crawlSite,
+  curatePagesToKb,
+  curateDocsToKb,
+} from "./kb/siteCrawl.js";
+export type { CrawledPage, SiteCrawlOptions, UploadedDoc } from "./kb/siteCrawl.js";
 export type {
   ProposalAction,
   ProposalExecutorDeps,

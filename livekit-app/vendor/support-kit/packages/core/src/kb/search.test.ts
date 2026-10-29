@@ -9,6 +9,7 @@ import { ensureSchema } from "../db/migrate.js";
 import {
   clearDocsCache,
   searchActiveArticles,
+  searchActiveArticleHits,
   searchCuratedDocs,
 } from "./search.js";
 
@@ -95,5 +96,57 @@ describe("searchActiveArticles", () => {
     const ranked = await searchActiveArticles(db, tenantId, { query: "billing refund" });
     assert.equal(ranked.length, 1);
     assert.match(ranked[0]?.body ?? "", /billing refund/i);
+  });
+});
+
+describe("searchActiveArticleHits", () => {
+  it("ranks published articles by relevance and omits drafts", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const tenantId = TenantIdSchema.parse("legalai");
+    const now = new Date().toISOString();
+
+    await db.run(
+      `INSERT INTO support_kb_articles (
+        id, tenant_id, title, body, status, source_kind, source_key, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "art-active",
+        tenantId,
+        "Reset your password",
+        "Use the forgot-password link on the login page. You will receive an email.",
+        "active",
+        "curated",
+        "docs:reset.md",
+        now,
+        now,
+      ],
+    );
+    await db.run(
+      `INSERT INTO support_kb_articles (
+        id, tenant_id, title, body, status, source_kind, source_key, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        "art-draft",
+        tenantId,
+        "Reset your password draft",
+        "Draft forgot-password instructions should not match.",
+        "draft",
+        "curated",
+        "docs:reset-draft.md",
+        now,
+        now,
+      ],
+    );
+
+    const hits = await searchActiveArticleHits(db, tenantId, {
+      query: "How do I reset my password?",
+      limit: 5,
+    });
+
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0]?.title, "Reset your password");
+    assert.ok((hits[0]?.score ?? 0) >= 2);
+    assert.match(hits[0]?.excerpt ?? "", /forgot-password/i);
   });
 });

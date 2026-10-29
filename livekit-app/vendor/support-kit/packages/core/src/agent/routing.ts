@@ -35,6 +35,7 @@ export interface RoutingDecision {
 }
 
 const ESCALATION_KEYWORDS = [
+  "refund",
   "chargeback",
   "billing dispute",
   "invoice dispute",
@@ -57,7 +58,7 @@ export const DEFAULT_HOLD_REPLY =
 export const DEFAULT_ESCALATION_REPLY =
   "I've shared this with our team for a closer look. You'll see updates here — we typically respond within one business day.";
 
-const KB_SCORE_THRESHOLD = 2;
+export const KB_SCORE_THRESHOLD = 2;
 const MIN_CONFIDENCE_WITH_KB = 0.65;
 const MIN_CONFIDENCE_NO_KB = 0.85;
 const HIGH_CONFIDENCE = 0.92;
@@ -134,6 +135,8 @@ export interface DecideOptions {
   topicAllowlist?: string[];
   sensitiveTopics?: string[];
   autoReplyMinConfidence?: number;
+  /** True when the host provided authenticated account/plan/billing context. */
+  hasUserContext?: boolean;
 }
 
 export function decideFromLlm(
@@ -151,6 +154,9 @@ export function decideFromLlm(
   const kind = parsed.kind ?? inferred.kind;
   let topic = parsed.topic ?? inferred.topic;
   if (allowlist && !allowlist.includes(topic)) topic = "other";
+  const hasGrounding = docHits.length > 0 || Boolean(opts.hasUserContext);
+  const threshold =
+    opts.autoReplyMinConfidence ?? (hasGrounding ? MIN_CONFIDENCE_WITH_KB : MIN_CONFIDENCE_NO_KB);
 
   if (kind === "bug") {
     return {
@@ -205,7 +211,19 @@ export function decideFromLlm(
     };
   }
 
-  if (route === "escalate" || isSensitiveTopic(topic, sensitive)) {
+  // Authenticated users with injected plan/billing contextSummary can get in-app
+  // answers to routine billing/plan questions ("what plan am I on?", "when does
+  // my subscription renew?", "how many minutes left?") when the LLM chooses
+  // reply_in_app. Escalation keywords (refund, chargeback, dispute) are already
+  // caught above.
+  const canAutoReplyGroundedBilling =
+    topic === "billing" &&
+    route === "reply_in_app" &&
+    Boolean(draft) &&
+    hasGrounding &&
+    confidence >= threshold;
+
+  if (route === "escalate" || (isSensitiveTopic(topic, sensitive) && !canAutoReplyGroundedBilling)) {
     return {
       action: "escalate",
       kind: "support",
@@ -218,12 +236,11 @@ export function decideFromLlm(
     };
   }
 
-  const threshold = opts.autoReplyMinConfidence ?? minConfidence(docHits);
   if (
     route === "reply_in_app" &&
     draft &&
     confidence >= threshold &&
-    (docHits.length > 0 || confidence >= HIGH_CONFIDENCE)
+    (hasGrounding || confidence >= HIGH_CONFIDENCE)
   ) {
     return {
       action: "auto_reply",
