@@ -401,13 +401,13 @@ function ChatPanel() {
   return (
     <div
       className={`meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height,width] duration-200 sm:h-full sm:max-h-none ${
-        desktopPanelWide ? 'sm:w-[440px] lg:w-[520px]' : 'sm:w-[340px] lg:w-[400px]'
+        desktopPanelWide ? 'sm:w-[440px] lg:w-[520px]' : 'sm:w-[350px] lg:w-[400px]'
       } sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none`}
       data-meeting-mobile-sheet="chat"
       data-sheet-size={mobileSheetSize}
       data-no-translate="true"
     >
-      <PanelTabs compact />
+      <PanelTabs />
       {panelBody}
     </div>
   );

@@ -77,7 +77,11 @@ export default function MeetingPanelMenu({
 
   const selectPanel = (panelId) => {
     if (sidePanelOpen && sidePanelTab === panelId) {
-      closeSidePanel();
+      if (panelId !== 'captions' && translationEnabled) {
+        openSidePanel('captions');
+      } else {
+        closeSidePanel();
+      }
     } else {
       openSidePanel(panelId);
     }

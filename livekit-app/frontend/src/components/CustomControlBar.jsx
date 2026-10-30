@@ -571,7 +571,11 @@ export default function CustomControlBar({
                 variant={sidePanelOpen && sidePanelTab === 'chat' ? 'success' : 'secondary'}
                 onClick={() => {
                   if (sidePanelOpen && sidePanelTab === 'chat') {
-                    closeSidePanel();
+                    if (translationEnabled) {
+                      openSidePanel('captions');
+                    } else {
+                      closeSidePanel();
+                    }
                   } else {
                     openSidePanel('chat');
                   }
@@ -596,7 +600,11 @@ export default function CustomControlBar({
                   variant={sidePanelOpen && sidePanelTab === 'participants' ? 'success' : 'secondary'}
                   onClick={() => {
                     if (sidePanelOpen && sidePanelTab === 'participants') {
-                      closeSidePanel();
+                      if (translationEnabled) {
+                        openSidePanel('captions');
+                      } else {
+                        closeSidePanel();
+                      }
                     } else {
                       openSidePanel('participants');
                     }

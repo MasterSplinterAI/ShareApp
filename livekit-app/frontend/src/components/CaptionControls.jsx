@@ -15,8 +15,10 @@ const CAPTION_MODES = [
 ];
 
 /**
- * Desktop caption control: one "Captions" pill with a dropdown for personal
- * settings and (when host) room broadcast configuration.
+ * Desktop caption controls:
+ * - Main "Captions" button opens/closes the Captions side panel (matching Chat & People).
+ * - Adjacent language flag + chevron button opens the language, voice translation, and
+ *   host broadcast settings menu.
  */
 export default function CaptionControls({
   value,
@@ -34,13 +36,12 @@ export default function CaptionControls({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
-  const { sidePanelOpen, sidePanelTab, openSidePanel } = useMeeting();
+  const { sidePanelOpen, sidePanelTab, openSidePanel, closeSidePanel } = useMeeting();
   const normalizedValue = normalizeMeetingLanguageCode(value);
   const selectedLanguage = getMeetingLanguageDisplay(normalizedValue);
   const t = useRoomControlLabels(normalizedValue);
 
   const captionsPanelVisible = translationEnabled && sidePanelOpen && sidePanelTab === 'captions';
-  const isActive = captionsPanelVisible || (isHost && captionMode !== 'off');
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -58,13 +59,25 @@ export default function CaptionControls({
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
 
+  const handleMainButtonClick = () => {
+    if (!translationEnabled) {
+      onTranslationToggle();
+      openSidePanel('captions');
+      return;
+    }
+    if (sidePanelOpen && sidePanelTab === 'captions') {
+      closeSidePanel();
+    } else {
+      openSidePanel('captions');
+    }
+  };
+
   const handleLanguageSelect = (code) => {
     onChange(code);
     if (!translationEnabled) {
       onTranslationToggle();
-    } else if (!sidePanelOpen || sidePanelTab !== 'captions') {
-      openSidePanel('captions');
     }
+    openSidePanel('captions');
     setIsOpen(false);
   };
 
@@ -77,18 +90,33 @@ export default function CaptionControls({
   };
 
   return (
-    <div className="relative" ref={menuRef} data-no-translate="true">
+    <div className="relative flex items-center gap-1" ref={menuRef} data-no-translate="true">
       <Button
         type="button"
-        variant={isActive ? 'success' : 'secondary'}
-        onClick={() => setIsOpen((v) => !v)}
-        className={cn(barBtnClass, 'gap-1.5')}
-        aria-label="Caption settings"
-        aria-expanded={isOpen}
+        variant={captionsPanelVisible ? 'success' : 'secondary'}
+        onClick={handleMainButtonClick}
+        className={barBtnClass}
+        aria-label={captionsPanelVisible ? 'Close captions' : 'Open captions'}
+        aria-pressed={captionsPanelVisible}
+        title={captionsPanelVisible ? 'Close captions' : 'Open captions'}
       >
         <Subtitles className="h-5 w-5" />
         <span className="text-sm font-medium">{t('captions')}</span>
-        <span className="text-base leading-none" data-no-translate="true">
+      </Button>
+
+      <Button
+        type="button"
+        variant={isOpen ? 'success' : 'secondary'}
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsOpen((v) => !v);
+        }}
+        className="h-9 px-2.5 shrink-0 rounded-full gap-1"
+        aria-label="Caption and language settings"
+        aria-expanded={isOpen}
+        title="Caption and language settings"
+      >
+        <span className="text-sm leading-none" data-no-translate="true">
           {selectedLanguage.flag}
         </span>
         <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', isOpen && 'rotate-180')} />

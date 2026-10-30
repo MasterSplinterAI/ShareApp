@@ -4,8 +4,8 @@ import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 
 /**
  * Shared tab header used by TranscriptionPanel, ChatPanel, and ParticipantsPanel.
- * Renders a mobile grab-handle bar on top to cycle sheet height ('sm' | 'md' | 'lg'),
- * plus [Captions] [Chat (unread)] [Participants?] ... [Resize?] [Download?] [Minimize?] [X].
+ * Uses identical sizing across all three panels so switching between Captions, Chat,
+ * and People never shifts the header height, font size, or icon size.
  */
 export default function PanelTabs({ onDownload, canDownload = false, compact = false, onMinimize }) {
   const {
@@ -23,10 +23,11 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
   const t = useRoomControlLabels(selectedLanguage);
 
   const padding = compact ? 'px-2.5 py-1.5' : 'px-3 py-2 sm:px-4 sm:py-3';
-  const tabText = compact ? 'text-xs' : 'text-sm';
+  const tabText = compact ? 'text-xs' : 'text-xs sm:text-sm';
+  const iconSize = compact ? 'w-3.5 h-3.5 shrink-0' : 'w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0';
 
   const tabBtn = (active) =>
-    `flex items-center gap-1.5 ${compact ? 'px-2 py-1' : 'px-2.5 py-1.5'} rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${tabText} font-medium ${
+    `flex items-center gap-1.5 ${compact ? 'px-2 py-1' : 'px-2.5 py-1 sm:px-3 sm:py-1.5'} rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${tabText} font-medium ${
       active
         ? 'meeting-tab-pill-active text-foreground'
         : 'text-muted-foreground hover:text-foreground hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
@@ -58,7 +59,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             aria-selected={sidePanelTab === 'captions'}
             role="tab"
           >
-            <MessageSquare className={compact ? 'w-3.5 h-3.5 shrink-0' : 'w-4 h-4 shrink-0'} />
+            <MessageSquare className={iconSize} />
             <span className="truncate">{t('captions')}</span>
           </button>
           <button
@@ -69,7 +70,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             aria-selected={sidePanelTab === 'chat'}
             role="tab"
           >
-            <MessageCircle className={compact ? 'w-3.5 h-3.5 shrink-0' : 'w-4 h-4 shrink-0'} />
+            <MessageCircle className={iconSize} />
             <span className="truncate">{t('chat')}</span>
             {sidePanelTab !== 'chat' && unreadCount > 0 && (
               <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
@@ -86,7 +87,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
               aria-selected={sidePanelTab === 'participants'}
               role="tab"
             >
-              <Users className={compact ? 'w-3.5 h-3.5 shrink-0' : 'w-4 h-4 shrink-0'} />
+              <Users className={iconSize} />
               <span className="truncate">{t('people')}</span>
             </button>
           )}
@@ -101,15 +102,17 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
           >
             <ChevronsUpDown className="w-3.5 h-3.5" />
           </button>
-          <button
-            type="button"
-            onClick={toggleDesktopPanelWide}
-            className="hidden sm:inline-flex rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            aria-label={desktopPanelWide ? 'Standard panel width' : 'Wider panel'}
-            title={desktopPanelWide ? 'Standard panel width' : 'Wider panel'}
-          >
-            <ChevronsLeftRight className="w-4 h-4" />
-          </button>
+          {!compact && (
+            <button
+              type="button"
+              onClick={toggleDesktopPanelWide}
+              className="hidden sm:inline-flex rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              aria-label={desktopPanelWide ? 'Standard panel width' : 'Wider panel'}
+              title={desktopPanelWide ? 'Standard panel width' : 'Wider panel'}
+            >
+              <ChevronsLeftRight className="w-4 h-4" />
+            </button>
+          )}
           {onDownload && (
             <button
               type="button"
@@ -119,7 +122,7 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
               aria-label="Download transcript"
               title="Download transcript"
             >
-              <Download className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+              <Download className={compact ? 'w-3.5 h-3.5' : 'w-3.5 h-3.5 sm:w-4 sm:h-4'} />
             </button>
           )}
           {onMinimize && (

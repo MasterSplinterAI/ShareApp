@@ -149,13 +149,13 @@ export default function ParticipantsPanel({ meetingId }) {
   return (
     <div
       className={`meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height,width] duration-200 sm:h-full sm:max-h-none ${
-        desktopPanelWide ? 'sm:w-[420px] lg:w-[480px]' : 'sm:w-80 lg:w-96'
+        desktopPanelWide ? 'sm:w-[440px] lg:w-[520px]' : 'sm:w-[350px] lg:w-[400px]'
       } sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none`}
       data-meeting-mobile-sheet="participants"
       data-sheet-size={mobileSheetSize}
       data-no-translate="true"
     >
-      <PanelTabs compact />
+      <PanelTabs />
 
       <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
