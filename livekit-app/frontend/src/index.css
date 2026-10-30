@@ -213,9 +213,7 @@
 }
 
 /* Hide LiveKit's default control bar — we use our own */
-.lk-control-bar,
-[class*="ControlBar"],
-[class*="control-bar"]:not(.custom-control-bar) {
+.lk-control-bar {
   display: none !important;
 }
 
