@@ -2,6 +2,8 @@ import { useEffect, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
 import { DataPacket_Kind, RoomEvent, Track } from 'livekit-client';
 
+const SHARED_TEXT_DECODER = new TextDecoder();
+
 function RoomControls({
   selectedLanguage,
   spokenLanguage,
@@ -135,11 +137,12 @@ function RoomControls({
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload) => {
+    const handleDataReceived = (payload, _participant, _kind, topic) => {
+      if (topic && topic !== 'agent') return;
       try {
         const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
         if (!raw) return;
-        const msg = JSON.parse(new TextDecoder().decode(raw));
+        const msg = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         if (msg?.type === 'agent_ready') {
           sendLanguagePreference();
         }

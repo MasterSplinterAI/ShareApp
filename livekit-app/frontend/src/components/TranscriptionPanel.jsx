@@ -1,10 +1,39 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { MessageSquare, ChevronUp, ChevronDown } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 import { v2Meetings } from '../services/apiV2';
 import PanelTabs from './PanelTabs';
 import { resolveSpeakerLabel, preferSpeakerLabel } from '../lib/participantDisplayName';
+
+const SHARED_TEXT_DECODER = new TextDecoder();
+const TIME_FORMATTER = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
+const EMPTY_ARRAY = [];
+const DEFAULT_DOM_WINDOW = 200;
+
+function formatBubbleTime(ts) {
+  if (!ts) return '';
+  try {
+    return TIME_FORMATTER.format(ts);
+  } catch {
+    return '';
+  }
+}
+
+function useIsDesktopViewport() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 640px)').matches : true
+  );
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mq = window.matchMedia('(min-width: 640px)');
+    const onChange = (e) => setIsDesktop(e.matches);
+    setIsDesktop(mq.matches);
+    mq.addEventListener?.('change', onChange);
+    return () => mq.removeEventListener?.('change', onChange);
+  }, []);
+  return isDesktop;
+}
 
 const LANGUAGE_LABELS = {
   en: 'English', es: 'Spanish', 'es-DO': 'Dominican Spanish', 'es-CO': 'Colombian Spanish', 'es-MX': 'Mexican Spanish',
@@ -158,9 +187,34 @@ function commonWordPrefixLen(a, b) {
   return n;
 }
 
+let _lastSanitizeIn = '';
+let _lastSanitizeOut = '';
+
+function wordsMatchAt(words, i, n) {
+  for (let k = 0; k < n; k += 1) {
+    if (words[i + k] !== words[i + n + k]) return false;
+  }
+  return true;
+}
+
 function sanitizeCaptionText(text) {
-  let words = (text || '').trim().split(/\s+/).filter(Boolean);
-  if (words.length < 6) return (text || '').trim();
+  const trimmed = (text || '').trim();
+  if (!trimmed) return '';
+  if (trimmed === _lastSanitizeIn) return _lastSanitizeOut;
+
+  const allWords = trimmed.split(/\s+/).filter(Boolean);
+  if (allWords.length < 6) {
+    _lastSanitizeIn = trimmed;
+    _lastSanitizeOut = trimmed;
+    return trimmed;
+  }
+
+  // Only inspect the trailing 48 words where streaming STT stutters can occur;
+  // keeps per-packet cost O(1) even on long monologues.
+  const headCount = Math.max(0, allWords.length - 48);
+  const head = headCount > 0 ? allWords.slice(0, headCount) : [];
+  let words = headCount > 0 ? allWords.slice(headCount) : allWords;
+
   let changed = true;
   while (changed && words.length >= 6) {
     changed = false;
@@ -168,10 +222,8 @@ function sanitizeCaptionText(text) {
       let i = 0;
       const out = [];
       while (i < words.length) {
-        const a = words.slice(i, i + n).join(' ');
-        const b = words.slice(i + n, i + 2 * n).join(' ');
-        if (a && a === b) {
-          out.push(...words.slice(i, i + n));
+        if (i + 2 * n <= words.length && wordsMatchAt(words, i, n)) {
+          for (let k = 0; k < n; k += 1) out.push(words[i + k]);
           i += 2 * n;
           changed = true;
         } else {
@@ -185,7 +237,10 @@ function sanitizeCaptionText(text) {
       }
     }
   }
-  return words.join(' ');
+  const result = head.length ? [...head, ...words].join(' ') : words.join(' ');
+  _lastSanitizeIn = trimmed;
+  _lastSanitizeOut = result;
+  return result;
 }
 
 /** Agent sends cumulative live lines — prefer prefix extensions, reject mid-string repeats. */
@@ -216,12 +271,23 @@ function mergeCaptionText(previous, incoming) {
 
 /** Hide chunk-sized finals still part of an open live turn (common on mobile list view). */
 function messagesForDisplay(messages) {
-  const partials = messages.filter((m) => m.isPartial);
-  if (!partials.length) return messages;
+  let hasPartials = false;
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (messages[i].isPartial) {
+      hasPartials = true;
+      break;
+    }
+  }
+  if (!hasPartials) return messages;
 
-  const activeTurnIds = new Set(
-    partials.map((p) => p.transcriptionId).filter((id) => id != null),
-  );
+  const activeTurnIds = new Set();
+  for (let i = 0; i < messages.length; i += 1) {
+    const m = messages[i];
+    if (m.isPartial && m.transcriptionId != null) {
+      activeTurnIds.add(m.transcriptionId);
+    }
+  }
+  if (!activeTurnIds.size) return messages;
 
   return messages.filter((m) => {
     if (m.isPartial) return true;
@@ -269,6 +335,7 @@ function TranscriptionPanel() {
     desktopPanelWide,
   } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
+  const isDesktop = useIsDesktopViewport();
   // Default to expanded on mobile: when captions open (incl. on join) show the
   // full bottom sheet, not just the compact bar. Minimizing collapses to the bar.
   const [mobileExpanded, setMobileExpanded] = useState(true);
@@ -289,46 +356,56 @@ function TranscriptionPanel() {
 
   const getScrollEl = useCallback(() => {
     if (usePipMode) return pipScrollRef.current;
-    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 640px)').matches) {
-      return desktopScrollRef.current;
-    }
+    if (isDesktop) return desktopScrollRef.current;
     return mobileScrollRef.current;
-  }, [usePipMode]);
+  }, [usePipMode, isDesktop]);
   const msgCounterRef = useRef(0);
   const sentMessageIdsRef = useRef(new Set());
+  const persistingIdsRef = useRef(new Set());
   const persistFlushTimerRef = useRef(null);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
 
+  const finalMessages = useMemo(() => messages.filter((m) => !m.isPartial), [messages]);
+  const finalCount = finalMessages.length;
+
   const flushPersistedTranscript = useCallback(async () => {
     if (!meetingId || !transcriptPersistEnabled || !isHost || !room) return;
     const latest = messagesRef.current;
-    const batch = latest.filter((m) => !m.isPartial && !sentMessageIdsRef.current.has(m.id));
+    const batch = latest.filter(
+      (m) =>
+        !m.isPartial &&
+        !sentMessageIdsRef.current.has(m.id) &&
+        !persistingIdsRef.current.has(m.id),
+    );
     if (!batch.length) return;
     const paired = batch
       .map((m) => ({ m, line: buildTranscriptPayload(m, selectedLanguage) }))
       .filter(({ line }) => line.original_text && String(line.original_text).trim());
     if (!paired.length) return;
+    paired.forEach(({ m }) => persistingIdsRef.current.add(m.id));
     const lines = paired.map(({ line }) => line);
     try {
       for (let i = 0; i < lines.length; i += 200) {
         const chunk = lines.slice(i, i + 200);
         await v2Meetings.appendTranscriptLines(meetingId, chunk);
       }
-      paired.forEach(({ m }) => sentMessageIdsRef.current.add(m.id));
+      paired.forEach(({ m }) => {
+        persistingIdsRef.current.delete(m.id);
+        sentMessageIdsRef.current.add(m.id);
+      });
     } catch (e) {
+      paired.forEach(({ m }) => persistingIdsRef.current.delete(m.id));
       console.warn('Transcript persist failed:', e.response?.data || e.message);
     }
   }, [meetingId, transcriptPersistEnabled, isHost, room, selectedLanguage]);
 
+  // Trigger persistence timer ONLY when finalized message count changes (not on 10Hz partials!).
   useEffect(() => {
-    if (!meetingId || !transcriptPersistEnabled || !isHost || !room) {
+    if (!meetingId || !transcriptPersistEnabled || !isHost || !room || finalCount === 0) {
       clearTimeout(persistFlushTimerRef.current);
       return undefined;
     }
-    const latest = messagesRef.current;
-    const pending = latest.filter((m) => !m.isPartial && !sentMessageIdsRef.current.has(m.id));
-    if (!pending.length) return undefined;
     clearTimeout(persistFlushTimerRef.current);
     persistFlushTimerRef.current = setTimeout(() => {
       flushPersistedTranscript();
@@ -336,23 +413,37 @@ function TranscriptionPanel() {
     return () => {
       clearTimeout(persistFlushTimerRef.current);
     };
-  }, [messages, meetingId, transcriptPersistEnabled, isHost, room, flushPersistedTranscript]);
+  }, [finalCount, meetingId, transcriptPersistEnabled, isHost, room, flushPersistedTranscript]);
+
+  // Flush any remaining finalized lines on tab hide / unmount.
+  useEffect(() => {
+    if (!meetingId || !transcriptPersistEnabled || !isHost) return undefined;
+    const onPageHide = () => {
+      flushPersistedTranscript();
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      flushPersistedTranscript();
+    };
+  }, [meetingId, transcriptPersistEnabled, isHost, flushPersistedTranscript]);
 
   useEffect(() => {
     if (!room) return;
+    const debugCaptions =
+      import.meta.env.DEV ||
+      (typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('debug') === '1');
 
     const handleDataReceived = (payload, participant, kind, topic) => {
       try {
+        if (topic != null && topic !== 'transcription') return;
         const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
         if (!raw) return;
-        const decoder = new TextDecoder();
-        const message = JSON.parse(decoder.decode(raw));
+        const message = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
 
         if (message.type !== 'transcription') return;
-        if (topic != null && topic !== 'transcription') return;
 
-        const debugCaptions = import.meta.env.DEV
-          || (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1');
         if (debugCaptions) {
           console.log('📝 Transcription received:', {
             speaker: message.participant_id,
@@ -473,7 +564,14 @@ function TranscriptionPanel() {
               next[idx] = applyPartialUpdate(prev[idx], true);
               return next;
             }
-            return [...prev, buildNew(true)];
+            // Starting a brand-new partial bubble for this speaker: auto-finalize any
+            // older orphaned partial from the same speaker so its pulse animations stop.
+            const closedPrev = prev.some((m) => m.isPartial && m.speaker === speakerId)
+              ? prev.map((m) =>
+                  m.isPartial && m.speaker === speakerId ? { ...m, isPartial: false } : m
+                )
+              : prev;
+            return [...closedPrev, buildNew(true)];
           });
         } else {
           setMessages((prev) => {
@@ -586,34 +684,31 @@ function TranscriptionPanel() {
     scrollToLatest();
   }, [visibleMessages, scrollToLatest]);
 
-  // MutationObserver catches in-place partial text growth between React renders.
+  // ResizeObserver keeps scroll anchored when panel/sheet height changes.
+  // (No MutationObserver needed: all caption updates go through React state.)
   useEffect(() => {
     const el = getScrollEl();
-    if (!el) return;
+    if (!el) return undefined;
 
+    let rafId = 0;
     const doScroll = () => {
-      if (!isAtBottomRef.current) return;
-      const target = getScrollEl();
-      if (!target) return;
-      requestAnimationFrame(() => {
+      if (!isAtBottomRef.current || rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
         if (!isAtBottomRef.current) return;
         const active = getScrollEl();
-        if (!active) return;
-        active.scrollTop = active.scrollHeight;
+        if (active) active.scrollTop = active.scrollHeight;
       });
     };
-
-    const mo = new MutationObserver(doScroll);
-    mo.observe(el, { childList: true, subtree: true, characterData: true });
 
     const ro = new ResizeObserver(doScroll);
     ro.observe(el);
 
     return () => {
-      mo.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
       ro.disconnect();
     };
-  }, [isPanelOpen, mobileExpanded, usePipMode, getScrollEl]);
+  }, [isPanelOpen, mobileExpanded, usePipMode, isDesktop, getScrollEl]);
 
   // Track scroll position (event target is the visible panel's scroll container).
   const handleScroll = (e) => {
@@ -625,8 +720,6 @@ function TranscriptionPanel() {
   };
 
   const jumpToLatest = () => scrollToLatest(true);
-
-  const finalMessages = useMemo(() => messages.filter((m) => !m.isPartial), [messages]);
 
   const handleDownload = () => {
     const exportData = finalMessages.map((t) => ({
@@ -650,10 +743,16 @@ function TranscriptionPanel() {
   };
 
   const latestCaptionText = useMemo(() => {
-    if (messages.length === 0) return null;
-    const live = [...messages].reverse().find((m) => m.isPartial);
-    const target = live || messages[messages.length - 1];
-    const { dominant, pendingTranslation } = getDominantAndSecondary(
+    if (isDesktop || mobileExpanded || messages.length === 0) return null;
+    let target = null;
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].isPartial) {
+        target = messages[i];
+        break;
+      }
+    }
+    if (!target) target = messages[messages.length - 1];
+    const { dominant } = getDominantAndSecondary(
       target.originalText,
       target.translations,
       selectedLanguage,
@@ -664,8 +763,8 @@ function TranscriptionPanel() {
     // original speech immediately so the mobile bar never hides words behind
     // a static "Translating…" placeholder.
     const line = dominant || target.originalText;
-    return line ? `${target.speaker}: ${line}` : null;
-  }, [messages, selectedLanguage]);
+    return line ? `${target.speakerLabel || target.speaker}: ${line}` : null;
+  }, [isDesktop, mobileExpanded, messages, selectedLanguage]);
 
   // If captions are not enabled, don't show the panel at all
   if (!translationEnabled) return null;
@@ -677,7 +776,7 @@ function TranscriptionPanel() {
         className="fixed bottom-[calc(var(--control-bar-h,3.5rem)+0.75rem)] right-4 z-[9999] flex max-h-80 w-96 min-h-0 flex-col rounded-xl border meeting-panel-surface backdrop-blur-md"
         data-no-translate="true"
       >
-        <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} compact />
+        <PanelTabs onDownload={handleDownload} canDownload={finalCount > 0} compact />
         <PanelContent
           messages={visibleMessages}
           scrollRef={pipScrollRef}
@@ -698,16 +797,17 @@ function TranscriptionPanel() {
   // Normal side panel (not full screen)
   if (!isPanelOpen) return null;
 
-  return (
-    <>
-      {/* Desktop: right side panel */}
+  // Mount only ONE PanelContent tree (desktop OR mobile) so React never
+  // builds/diffs two duplicate copies of every caption bubble in the DOM.
+  if (isDesktop) {
+    return (
       <div
-        className={`hidden sm:flex flex-col ${
+        className={`flex flex-col ${
           desktopPanelWide ? 'w-[440px] lg:w-[520px]' : 'w-[350px] lg:w-[400px]'
         } meeting-panel-surface border-l border h-full min-h-0 flex-shrink-0 transition-[width] duration-200`}
         data-no-translate="true"
       >
-        <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />
+        <PanelTabs onDownload={handleDownload} canDownload={finalCount > 0} />
         <PanelContent
           messages={visibleMessages}
           scrollRef={desktopScrollRef}
@@ -721,42 +821,41 @@ function TranscriptionPanel() {
           <JumpToLatest onClick={jumpToLatest} />
         )}
       </div>
+    );
+  }
 
-      {/* Mobile: in-flow region (not fixed) so video flex-shrinks above it */}
-      {!mobileExpanded ? (
-        <MobileCaptionBar
-          text={latestCaptionText}
-          onExpand={() => setMobileExpanded(true)}
-          hasContent={messages.length > 0}
-        />
-      ) : (
-        <div
-          className="meeting-mobile-sheet sm:hidden flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height] duration-200"
-          data-meeting-mobile-sheet="captions"
-          data-sheet-size={mobileSheetSize}
-          data-no-translate="true"
-        >
-          <PanelTabs
-            onDownload={handleDownload}
-            canDownload={finalMessages.length > 0}
-            onMinimize={() => setMobileExpanded(false)}
-          />
-          <PanelContent
-            messages={visibleMessages}
-            scrollRef={mobileScrollRef}
-            bottomAnchorRef={bottomAnchorRef}
-            onScroll={handleScroll}
-            selectedLanguage={selectedLanguage}
-            demoTeammates={demoTeammates}
-            participantName={participantName}
-            compact
-          />
-          {!isAtBottom && (
-            <JumpToLatest onClick={jumpToLatest} />
-          )}
-        </div>
+  return !mobileExpanded ? (
+    <MobileCaptionBar
+      text={latestCaptionText}
+      onExpand={() => setMobileExpanded(true)}
+      hasContent={messages.length > 0}
+    />
+  ) : (
+    <div
+      className="meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height] duration-200"
+      data-meeting-mobile-sheet="captions"
+      data-sheet-size={mobileSheetSize}
+      data-no-translate="true"
+    >
+      <PanelTabs
+        onDownload={handleDownload}
+        canDownload={finalCount > 0}
+        onMinimize={() => setMobileExpanded(false)}
+      />
+      <PanelContent
+        messages={visibleMessages}
+        scrollRef={mobileScrollRef}
+        bottomAnchorRef={bottomAnchorRef}
+        onScroll={handleScroll}
+        selectedLanguage={selectedLanguage}
+        demoTeammates={demoTeammates}
+        participantName={participantName}
+        compact
+      />
+      {!isAtBottom && (
+        <JumpToLatest onClick={jumpToLatest} />
       )}
-    </>
+    </div>
   );
 }
 
@@ -820,19 +919,18 @@ function getDominantAndSecondary(
   };
 }
 
-function TranscriptionBubble({
+const TranscriptionBubble = memo(function TranscriptionBubble({
   speaker,
   dominant,
   secondary,
   dominantLang,
   secondaryLang,
-  sourceLanguage,
   selectedLanguage,
   timestamp,
   isPartial = false,
   pendingTranslation = false,
   compact = false,
-  teammateCaptions = [],
+  teammateCaptions = EMPTY_ARRAY,
 }) {
   // A finalized bubble whose translation never arrived (cold LLM, dropped lane)
   // must not say "Translating…" forever — fall back to the original text.
@@ -853,7 +951,7 @@ function TranscriptionBubble({
   const displaySecondary = fallbackToOriginal ? null : secondary;
 
   return (
-    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0`}>
+    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0 [content-visibility:auto]`}>
       <div className="flex items-baseline gap-2 mb-1">
         <span className={`font-medium text-primary ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
         {isPartial ? (
@@ -864,7 +962,7 @@ function TranscriptionBubble({
         ) : (
           timestamp && (
             <span className="text-xs text-muted-foreground">
-              {new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {formatBubbleTime(timestamp)}
             </span>
           )
         )}
@@ -919,7 +1017,53 @@ function TranscriptionBubble({
       ))}
     </div>
   );
-}
+});
+
+const CaptionRow = memo(function CaptionRow({
+  item,
+  selectedLanguage,
+  demoTeammates,
+  participantName,
+  compact,
+  room,
+}) {
+  const {
+    dominant,
+    secondary,
+    dominantLang,
+    secondaryLang,
+    pendingTranslation,
+  } = getDominantAndSecondary(
+    item.originalText,
+    item.translations,
+    selectedLanguage,
+    item.isPartial,
+    item.sourceLanguage,
+  );
+  const showTeammateCaptions =
+    demoTeammates.length > 0 &&
+    (item.speaker === participantName || item.speakerLabel === participantName);
+  const teammateCaptions = showTeammateCaptions
+    ? getTeammateCaptions(item.translations, demoTeammates, item.sourceLanguage)
+    : EMPTY_ARRAY;
+  const hideGenericSecondary = showTeammateCaptions && teammateCaptions.length > 0;
+
+  return (
+    <TranscriptionBubble
+      speaker={item.speakerLabel || resolveSpeakerLabel(item.speaker, room) || item.speaker}
+      dominant={dominant}
+      secondary={hideGenericSecondary ? null : secondary}
+      dominantLang={dominantLang}
+      secondaryLang={hideGenericSecondary ? null : secondaryLang}
+      selectedLanguage={selectedLanguage}
+      timestamp={item.timestamp}
+      isPartial={item.isPartial}
+      pendingTranslation={pendingTranslation}
+      compact={compact}
+      teammateCaptions={teammateCaptions}
+    />
+  );
+});
 
 function PanelContent({
   messages,
@@ -927,12 +1071,18 @@ function PanelContent({
   bottomAnchorRef,
   onScroll,
   selectedLanguage,
-  demoTeammates = [],
+  demoTeammates = EMPTY_ARRAY,
   participantName = '',
   compact = false,
 }) {
   const room = useRoomContext();
+  const [renderLimit, setRenderLimit] = useState(DEFAULT_DOM_WINDOW);
   const hasContent = messages.length > 0;
+  const hiddenCount = Math.max(0, messages.length - renderLimit);
+  const windowedMessages = useMemo(
+    () => (hiddenCount > 0 ? messages.slice(-renderLimit) : messages),
+    [messages, hiddenCount, renderLimit]
+  );
 
   return (
     <div
@@ -948,46 +1098,29 @@ function PanelContent({
         </div>
       )}
 
-      {messages.map((item) => {
-        const {
-          dominant,
-          secondary,
-          dominantLang,
-          secondaryLang,
-          pendingTranslation,
-        } = getDominantAndSecondary(
-          item.originalText,
-          item.translations,
-          selectedLanguage,
-          item.isPartial,
-          item.sourceLanguage,
-        );
-        const showTeammateCaptions = demoTeammates.length > 0 && (
-          item.speaker === participantName ||
-          item.speakerLabel === participantName
-        );
-        const teammateCaptions = showTeammateCaptions
-          ? getTeammateCaptions(item.translations, demoTeammates, item.sourceLanguage)
-          : [];
-        const hideGenericSecondary = showTeammateCaptions && teammateCaptions.length > 0;
-        return (
-          <TranscriptionBubble
-            key={item.id}
-            speaker={item.speakerLabel || resolveSpeakerLabel(item.speaker, room) || item.speaker}
-            dominant={dominant}
-            secondary={hideGenericSecondary ? null : secondary}
-            dominantLang={dominantLang}
-            secondaryLang={hideGenericSecondary ? null : secondaryLang}
-            sourceLanguage={item.sourceLanguage}
-            selectedLanguage={selectedLanguage}
-            timestamp={item.timestamp}
-            isPartial={item.isPartial}
-            pendingTranslation={pendingTranslation}
-            compact={compact}
-            teammateCaptions={teammateCaptions}
-          />
-        );
-      })}
+      {hiddenCount > 0 && (
+        <div className="flex justify-center pb-2">
+          <button
+            type="button"
+            onClick={() => setRenderLimit((prev) => prev + DEFAULT_DOM_WINDOW)}
+            className="rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            Show earlier captions ({hiddenCount} older — all included in download)
+          </button>
+        </div>
+      )}
+
+      {windowedMessages.map((item) => (
+        <CaptionRow
+          key={item.id}
+          item={item}
+          selectedLanguage={selectedLanguage}
+          demoTeammates={demoTeammates}
+          participantName={participantName}
+          compact={compact}
+          room={room}
+        />
+      ))}
       <div ref={bottomAnchorRef} className="h-px w-full shrink-0" aria-hidden />
     </div>
   );

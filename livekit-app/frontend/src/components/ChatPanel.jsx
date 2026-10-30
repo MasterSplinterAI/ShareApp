@@ -11,6 +11,8 @@ import { Button } from './ui/button';
 
 const MAX_CHARS = 2000;
 const URL_RE = /\bhttps?:\/\/\S+/gi;
+const SHARED_TEXT_DECODER = new TextDecoder();
+const CHAT_TIME_FORMATTER = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
 
 function linkifyText(text) {
   if (!text) return null;
@@ -121,8 +123,7 @@ function ChatPanel() {
       try {
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
-        const decoder = new TextDecoder();
-        const message = JSON.parse(decoder.decode(raw));
+        const message = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         if (message.type !== 'chat') return;
 
         const id = message.id;
@@ -328,10 +329,7 @@ function ChatPanel() {
                   </span>
                 )}
                 <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80">
-                  {new Date(msg.timestamp).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  {CHAT_TIME_FORMATTER.format(msg.timestamp)}
                 </span>
               </div>
               <div

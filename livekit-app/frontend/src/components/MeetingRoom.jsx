@@ -581,16 +581,19 @@ function MeetingRoomInner({
           initialVideoEffectId={prejoinChoices?.videoEffectId ?? null}
         />
 
-        {/* Debug panel — add ?debug=1 to URL */}
-        <TranslationDebugPanel
-          selectedLanguage={selectedLanguage}
-          spokenLanguage={selectedLanguage}
-          translationEnabled={translationEnabled}
-          voiceTranslationEnabled={voiceTranslationEnabled}
-          participantName={participantInfo?.participantName || ''}
-          meetingId={meetingId}
-          isHost={participantInfo?.isHost || false}
-        />
+        {/* Debug panel — only mount when ?debug=1 is in URL */}
+        {typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('debug') === '1' && (
+            <TranslationDebugPanel
+              selectedLanguage={selectedLanguage}
+              spokenLanguage={selectedLanguage}
+              translationEnabled={translationEnabled}
+              voiceTranslationEnabled={voiceTranslationEnabled}
+              participantName={participantInfo?.participantName || ''}
+              meetingId={meetingId}
+              isHost={participantInfo?.isHost || false}
+            />
+          )}
 
         <TtsAudioController
           selectedLanguage={selectedLanguage}

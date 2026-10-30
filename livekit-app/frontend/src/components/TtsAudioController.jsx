@@ -6,7 +6,9 @@ import { normalizeMeetingLanguageCode } from '../lib/languages';
 const DUCKED_VOLUME = 0.2;
 const RESTORE_DURATION_MS = 180;
 const RESTORE_STEPS = 6;
+const MAX_DUCK_MS = 15000;
 const TTS_EVENT_TOPICS = new Set(['transcription', 'tts', 'tts_events', 'voice_translation']);
+const SHARED_TEXT_DECODER = new TextDecoder();
 
 function isAgentParticipant(participant) {
   const identity = (participant?.identity || '').toLowerCase();
@@ -196,11 +198,17 @@ export default function TtsAudioController({
         existing.restoreTimerIds.forEach((id) => window.clearTimeout(id));
       }
 
+      // Safety timeout so a missed tts_end packet can never leave a speaker's
+      // microphone ducked at 0.2 volume for the rest of the meeting.
+      const safetyTimerId = window.setTimeout(() => {
+        restoreSpeakerTrack(speakerId);
+      }, MAX_DUCK_MS);
+
       if (existing?.track === micTrack) {
         micTrack.setVolume(DUCKED_VOLUME);
         duckedTracksRef.current.set(key, {
           ...existing,
-          restoreTimerIds: [],
+          restoreTimerIds: [safetyTimerId],
         });
         return;
       }
@@ -208,7 +216,7 @@ export default function TtsAudioController({
       duckedTracksRef.current.set(key, {
         track: micTrack,
         originalVolume: getTrackVolume(micTrack),
-        restoreTimerIds: [],
+        restoreTimerIds: [safetyTimerId],
       });
       micTrack.setVolume(DUCKED_VOLUME);
     };
@@ -254,7 +262,7 @@ export default function TtsAudioController({
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
 
-        const message = JSON.parse(new TextDecoder().decode(raw));
+        const message = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         const eventType = message?.type;
         if (eventType !== 'tts_start' && eventType !== 'tts_end') return;
 
