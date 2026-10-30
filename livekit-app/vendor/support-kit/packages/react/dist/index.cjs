@@ -94,6 +94,19 @@ function renderInline(text, keyPrefix) {
   if (last < text.length) nodes.push(text.slice(last));
   return nodes;
 }
+const ATX_HEADING_RE = /^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*$/;
+function matchAtxHeading(line) {
+  const m = line.match(ATX_HEADING_RE);
+  if (!m) return null;
+  const text = m[2].replace(/\s+#+\s*$/, "").trim();
+  if (!text) return null;
+  const level = m[1].length;
+  if (level < 1 || level > 6) return null;
+  return { level, text };
+}
+function isListLine(line) {
+  return /^[ \t]*[-*]\s+/.test(line) || /^[ \t]*\d+\.\s+/.test(line);
+}
 function parseBlocks(src) {
   const lines = src.split("\n");
   const blocks = [];
@@ -101,6 +114,12 @@ function parseBlocks(src) {
   while (i < lines.length) {
     const line = lines[i];
     if (!line.trim()) {
+      i += 1;
+      continue;
+    }
+    const heading = matchAtxHeading(line);
+    if (heading) {
+      blocks.push({ type: "h", level: heading.level, text: heading.text });
       i += 1;
       continue;
     }
@@ -134,8 +153,7 @@ function parseBlocks(src) {
     i += 1;
     while (i < lines.length) {
       const next = lines[i];
-      if (!next.trim()) break;
-      if (/^[ \t]*[-*]\s+/.test(next) || /^[ \t]*\d+\.\s+/.test(next)) break;
+      if (!next.trim() || matchAtxHeading(next) || isListLine(next)) break;
       parts.push(next);
       i += 1;
     }
@@ -156,6 +174,21 @@ function SupportMarkdown({ text }) {
         wordBreak: "break-word"
       },
       children: blocks.map((block, bi) => {
+        if (block.type === "h") {
+          return /* @__PURE__ */ (0, import_jsx_runtime.jsx)(
+            `h${block.level}`,
+            {
+              style: {
+                fontSize: block.level === 1 ? "1.2em" : block.level === 2 ? "1.08em" : "1em",
+                fontWeight: 700,
+                lineHeight: 1.3,
+                margin: bi === 0 ? "0 0 0.35em" : "0.75em 0 0.3em"
+              },
+              children: renderInline(block.text, `h${bi}`)
+            },
+            `h-${bi}`
+          );
+        }
         if (block.type === "p") {
           return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", { style: { margin: bi === 0 ? "0 0 0.55em" : "0.55em 0" }, children: renderInline(block.text, `p${bi}`) }, `p-${bi}`);
         }

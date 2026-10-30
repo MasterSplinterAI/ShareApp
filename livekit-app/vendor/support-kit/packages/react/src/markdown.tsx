@@ -73,10 +73,29 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
   return nodes;
 }
 
+type HeadingLevel = 1 | 2 | 3 | 4 | 5 | 6;
+
 type Block =
   | { type: "p"; text: string }
+  | { type: "h"; level: HeadingLevel; text: string }
   | { type: "ul"; items: string[] }
   | { type: "ol"; items: string[] };
+
+const ATX_HEADING_RE = /^[ \t]{0,3}(#{1,6})[ \t]+(.+?)[ \t]*$/;
+
+function matchAtxHeading(line: string): { level: HeadingLevel; text: string } | null {
+  const m = line.match(ATX_HEADING_RE);
+  if (!m) return null;
+  const text = m[2]!.replace(/\s+#+\s*$/, "").trim();
+  if (!text) return null;
+  const level = m[1]!.length;
+  if (level < 1 || level > 6) return null;
+  return { level: level as HeadingLevel, text };
+}
+
+function isListLine(line: string): boolean {
+  return /^[ \t]*[-*]\s+/.test(line) || /^[ \t]*\d+\.\s+/.test(line);
+}
 
 function parseBlocks(src: string): Block[] {
   const lines = src.split("\n");
@@ -86,6 +105,13 @@ function parseBlocks(src: string): Block[] {
   while (i < lines.length) {
     const line = lines[i]!;
     if (!line.trim()) {
+      i += 1;
+      continue;
+    }
+
+    const heading = matchAtxHeading(line);
+    if (heading) {
+      blocks.push({ type: "h", level: heading.level, text: heading.text });
       i += 1;
       continue;
     }
@@ -123,8 +149,7 @@ function parseBlocks(src: string): Block[] {
     i += 1;
     while (i < lines.length) {
       const next = lines[i]!;
-      if (!next.trim()) break;
-      if (/^[ \t]*[-*]\s+/.test(next) || /^[ \t]*\d+\.\s+/.test(next)) break;
+      if (!next.trim() || matchAtxHeading(next) || isListLine(next)) break;
       parts.push(next);
       i += 1;
     }
@@ -134,7 +159,22 @@ function parseBlocks(src: string): Block[] {
   return blocks;
 }
 
-/** Minimal markdown for support chat (bold, italic, lists, links, code). */
+export type SupportMarkdownBlock = Block;
+
+/** Parse support chat markdown into blocks (headings, paragraphs, lists). */
+export function parseSupportMarkdownBlocks(text: string): Block[] {
+  const normalized = normalizeSupportMarkdown(text);
+  if (!normalized) return [];
+  return parseBlocks(normalized);
+}
+
+function headingFontSize(level: HeadingLevel): string {
+  if (level === 1) return "1.2em";
+  if (level === 2) return "1.08em";
+  return "1em";
+}
+
+/** Minimal markdown for support chat (headings, bold, italic, lists, links, code). */
 export function SupportMarkdown({ text }: { text: string }) {
   const normalized = normalizeSupportMarkdown(text);
   if (!normalized) return null;
@@ -149,6 +189,22 @@ export function SupportMarkdown({ text }: { text: string }) {
       }}
     >
       {blocks.map((block, bi) => {
+        if (block.type === "h") {
+          const Tag = `h${block.level}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+          return (
+            <Tag
+              key={`h-${bi}`}
+              style={{
+                fontSize: headingFontSize(block.level),
+                fontWeight: 700,
+                lineHeight: 1.3,
+                margin: bi === 0 ? "0 0 0.35em" : "0.75em 0 0.3em",
+              }}
+            >
+              {renderInline(block.text, `h${bi}`)}
+            </Tag>
+          );
+        }
         if (block.type === "p") {
           return (
             <p key={`p-${bi}`} style={{ margin: bi === 0 ? "0 0 0.55em" : "0.55em 0" }}>
