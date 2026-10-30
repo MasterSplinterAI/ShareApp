@@ -246,7 +246,7 @@ export default function V2AppShell({ me, onLogout }) {
           )}
           <Outlet />
         </main>
-        <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} />
+        <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} audience="app" />
       </div>
     </div>
   );

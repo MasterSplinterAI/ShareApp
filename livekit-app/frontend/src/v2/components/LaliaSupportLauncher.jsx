@@ -18,7 +18,8 @@ export function getSupportAccessToken() {
  */
 export default function LaliaSupportLauncher({ user, openRef, audience }) {
   const localOpen = useRef(null);
-  const resolvedAudience = audience || (user?.id ? 'app' : 'public');
+  const hasToken = Boolean(getSupportAccessToken());
+  const resolvedAudience = audience || (user?.id || hasToken ? 'app' : 'public');
 
   return (
     <SupportLauncher

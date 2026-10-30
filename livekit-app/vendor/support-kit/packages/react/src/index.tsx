@@ -245,7 +245,11 @@ export function SupportLauncher(props: SupportLauncherProps) {
   }, []);
 
   useEffect(() => {
-    if (!isPublic || typeof sessionStorage === "undefined") return;
+    if (!isPublic) {
+      setView((v) => (v.name === "gate" ? { name: "home" } : v));
+      return;
+    }
+    if (typeof sessionStorage === "undefined") return;
     try {
       const stored = sessionStorage.getItem(leadStorageKey(apiBase));
       if (stored) {
@@ -256,6 +260,12 @@ export function SupportLauncher(props: SupportLauncherProps) {
       /* ignore */
     }
   }, [apiBase, isPublic]);
+
+  useEffect(() => {
+    if (user?.email) {
+      setGuestEmail(user.email);
+    }
+  }, [user?.email]);
 
   const startSupportChat = useCallback(() => {
     setSupportMessages([

@@ -1,10 +1,10 @@
 // src/index.tsx
 import {
-  useCallback as useCallback2,
+  useCallback as useCallback3,
   useEffect as useEffect2,
   useId,
   useRef,
-  useState as useState2
+  useState as useState3
 } from "react";
 
 // src/markdown.tsx
@@ -1018,18 +1018,91 @@ function SupportOpsConsole(props) {
   ] });
 }
 
-// src/index.tsx
-import { Fragment as Fragment3, jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
-var DEFAULT_ACCENT = "#2563eb";
-var DEFAULT_MARKETING_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
-function leadStorageKey(apiBase) {
-  return `support-kit:leadId:${normalizeApiBase2(apiBase)}`;
-}
+// src/EmbedSnippet.tsx
+import { useCallback as useCallback2, useMemo, useState as useState2 } from "react";
+import { jsx as jsx3, jsxs as jsxs3 } from "react/jsx-runtime";
 function normalizeApiBase2(apiBase) {
   return apiBase.replace(/\/$/, "");
 }
+function buildEmbedIframeSnippet(apiBase, tenantId, opts) {
+  const width = opts?.width ?? 420;
+  const height = opts?.height ?? 560;
+  const src = `${normalizeApiBase2(apiBase)}/embed?tenant=${encodeURIComponent(tenantId)}`;
+  return `<iframe src="${src}" width="${width}" height="${height}" frameborder="0" title="Support"></iframe>`;
+}
+function EmbedSnippet(props) {
+  const { apiBase, tenantId, width = 420, height = 560, className } = props;
+  const snippet = useMemo(
+    () => buildEmbedIframeSnippet(apiBase, tenantId, { width, height }),
+    [apiBase, tenantId, width, height]
+  );
+  const [copied, setCopied] = useState2(false);
+  const copy = useCallback2(async () => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2e3);
+    } catch {
+      setCopied(false);
+    }
+  }, [snippet]);
+  const box = {
+    fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontSize: 13,
+    lineHeight: 1.45,
+    color: "#0f172a"
+  };
+  return /* @__PURE__ */ jsxs3("div", { className, style: box, children: [
+    /* @__PURE__ */ jsx3("div", { style: { fontWeight: 600, marginBottom: 8 }, children: "Embed snippet" }),
+    /* @__PURE__ */ jsx3(
+      "pre",
+      {
+        style: {
+          margin: 0,
+          padding: 12,
+          borderRadius: 10,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          overflowX: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all"
+        },
+        children: snippet
+      }
+    ),
+    /* @__PURE__ */ jsx3(
+      "button",
+      {
+        type: "button",
+        onClick: () => void copy(),
+        style: {
+          marginTop: 10,
+          padding: "8px 14px",
+          border: "none",
+          borderRadius: 8,
+          background: "#2563eb",
+          color: "#fff",
+          fontWeight: 600,
+          cursor: "pointer"
+        },
+        children: copied ? "Copied!" : "Copy iframe code"
+      }
+    )
+  ] });
+}
+
+// src/index.tsx
+import { Fragment as Fragment3, jsx as jsx4, jsxs as jsxs4 } from "react/jsx-runtime";
+var DEFAULT_ACCENT = "#2563eb";
+var DEFAULT_MARKETING_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
+function leadStorageKey(apiBase) {
+  return `support-kit:leadId:${normalizeApiBase3(apiBase)}`;
+}
+function normalizeApiBase3(apiBase) {
+  return apiBase.replace(/\/$/, "");
+}
 async function supportFetch(apiBase, path, init, getAccessToken) {
-  const url = `${normalizeApiBase2(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = `${normalizeApiBase3(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getAccessToken?.()?.trim() || null;
   const { headers: initHeaders, ...rest } = init ?? {};
   const res = await fetch(url, {
@@ -1088,7 +1161,7 @@ function SupportLauncher(props) {
     className,
     getAccessToken
   } = props;
-  const fetchApi = useCallback2(
+  const fetchApi = useCallback3(
     (path, init) => supportFetch(apiBase, path, init, getAccessToken),
     [apiBase, getAccessToken]
   );
@@ -1099,37 +1172,37 @@ function SupportLauncher(props) {
   const isPublic = audience === "public" && !user?.id;
   const panelId = useId();
   const listRef = useRef(null);
-  const [open, setOpen] = useState2(mode === "page");
-  const [view, setView] = useState2(isPublic ? { name: "gate" } : { name: "home" });
-  const [draft, setDraft] = useState2("");
-  const [supportMessages, setSupportMessages] = useState2([]);
-  const [supportTicketId, setSupportTicketId] = useState2(null);
-  const [bugTitle, setBugTitle] = useState2("");
-  const [bugSeverity, setBugSeverity] = useState2("medium");
-  const [bugSteps, setBugSteps] = useState2("");
-  const [bugExpected, setBugExpected] = useState2("");
-  const [bugActual, setBugActual] = useState2("");
-  const [featurePriority, setFeaturePriority] = useState2("important");
-  const [coachTurn, setCoachTurn] = useState2(0);
-  const [coachProblem, setCoachProblem] = useState2("");
-  const [coachOutcome, setCoachOutcome] = useState2("");
-  const [coachEnabled, setCoachEnabled] = useState2(null);
-  const [coachMessages, setCoachMessages] = useState2([]);
-  const [coachDraft, setCoachDraft] = useState2(null);
-  const [coachReady, setCoachReady] = useState2(false);
-  const [coachInput, setCoachInput] = useState2("");
-  const [guestEmail, setGuestEmail] = useState2(user?.email ?? "");
-  const [submittedTicket, setSubmittedTicket] = useState2(null);
-  const [leadId, setLeadId] = useState2(null);
-  const [gateName, setGateName] = useState2("");
-  const [gateEmail, setGateEmail] = useState2("");
-  const [gatePhone, setGatePhone] = useState2("");
-  const [gateMarketing, setGateMarketing] = useState2(false);
-  const [sending, setSending] = useState2(false);
-  const [error, setError] = useState2(null);
-  const [tickets, setTickets] = useState2([]);
-  const [thread, setThread] = useState2(null);
-  const [threadDraft, setThreadDraft] = useState2("");
+  const [open, setOpen] = useState3(mode === "page");
+  const [view, setView] = useState3(isPublic ? { name: "gate" } : { name: "home" });
+  const [draft, setDraft] = useState3("");
+  const [supportMessages, setSupportMessages] = useState3([]);
+  const [supportTicketId, setSupportTicketId] = useState3(null);
+  const [bugTitle, setBugTitle] = useState3("");
+  const [bugSeverity, setBugSeverity] = useState3("medium");
+  const [bugSteps, setBugSteps] = useState3("");
+  const [bugExpected, setBugExpected] = useState3("");
+  const [bugActual, setBugActual] = useState3("");
+  const [featurePriority, setFeaturePriority] = useState3("important");
+  const [coachTurn, setCoachTurn] = useState3(0);
+  const [coachProblem, setCoachProblem] = useState3("");
+  const [coachOutcome, setCoachOutcome] = useState3("");
+  const [coachEnabled, setCoachEnabled] = useState3(null);
+  const [coachMessages, setCoachMessages] = useState3([]);
+  const [coachDraft, setCoachDraft] = useState3(null);
+  const [coachReady, setCoachReady] = useState3(false);
+  const [coachInput, setCoachInput] = useState3("");
+  const [guestEmail, setGuestEmail] = useState3(user?.email ?? "");
+  const [submittedTicket, setSubmittedTicket] = useState3(null);
+  const [leadId, setLeadId] = useState3(null);
+  const [gateName, setGateName] = useState3("");
+  const [gateEmail, setGateEmail] = useState3("");
+  const [gatePhone, setGatePhone] = useState3("");
+  const [gateMarketing, setGateMarketing] = useState3(false);
+  const [sending, setSending] = useState3(false);
+  const [error, setError] = useState3(null);
+  const [tickets, setTickets] = useState3([]);
+  const [thread, setThread] = useState3(null);
+  const [threadDraft, setThreadDraft] = useState3("");
   const isOpen = mode === "page" || open;
   useEffect2(() => {
     const onOpen = () => setOpen(true);
@@ -1137,7 +1210,11 @@ function SupportLauncher(props) {
     return () => window.removeEventListener("legalai:open-support", onOpen);
   }, []);
   useEffect2(() => {
-    if (!isPublic || typeof sessionStorage === "undefined") return;
+    if (!isPublic) {
+      setView((v) => v.name === "gate" ? { name: "home" } : v);
+      return;
+    }
+    if (typeof sessionStorage === "undefined") return;
     try {
       const stored = sessionStorage.getItem(leadStorageKey(apiBase));
       if (stored) {
@@ -1147,7 +1224,12 @@ function SupportLauncher(props) {
     } catch {
     }
   }, [apiBase, isPublic]);
-  const startSupportChat = useCallback2(() => {
+  useEffect2(() => {
+    if (user?.email) {
+      setGuestEmail(user.email);
+    }
+  }, [user?.email]);
+  const startSupportChat = useCallback3(() => {
     setSupportMessages([
       {
         id: "welcome",
@@ -1194,7 +1276,7 @@ function SupportLauncher(props) {
       setSending(false);
     }
   };
-  const resetFeatureCompose = useCallback2(() => {
+  const resetFeatureCompose = useCallback3(() => {
     setCoachTurn(0);
     setCoachProblem("");
     setCoachOutcome("");
@@ -1281,7 +1363,7 @@ function SupportLauncher(props) {
       setSending(false);
     }
   };
-  const loadTickets = useCallback2(async () => {
+  const loadTickets = useCallback3(async () => {
     try {
       const data = await fetchApi(
         "/tickets"
@@ -1291,7 +1373,7 @@ function SupportLauncher(props) {
       setError(err instanceof Error ? err.message : "Failed to load tickets");
     }
   }, [apiBase]);
-  const openThread = useCallback2(
+  const openThread = useCallback3(
     async (id) => {
       setError(null);
       try {
@@ -1536,8 +1618,8 @@ ${priority}`
     cursor: "pointer",
     fontWeight: 600
   });
-  const panel = isOpen ? /* @__PURE__ */ jsxs3("div", { id: panelId, role: "dialog", "aria-label": `${label} support`, style: panelStyle, children: [
-    /* @__PURE__ */ jsxs3(
+  const panel = isOpen ? /* @__PURE__ */ jsxs4("div", { id: panelId, role: "dialog", "aria-label": `${label} support`, style: panelStyle, children: [
+    /* @__PURE__ */ jsxs4(
       "div",
       {
         style: {
@@ -1549,11 +1631,11 @@ ${priority}`
           background: "#f8fafc"
         },
         children: [
-          /* @__PURE__ */ jsxs3("div", { children: [
-            /* @__PURE__ */ jsx3("h2", { style: { margin: 0, fontSize: 15, fontWeight: 700 }, children: label }),
-            user?.planLabel || user?.email ? /* @__PURE__ */ jsx3("div", { style: { fontSize: 12, opacity: 0.85, marginTop: 2 }, children: [user.planLabel, user.name || user.email].filter(Boolean).join(" \xB7 ") }) : null
+          /* @__PURE__ */ jsxs4("div", { children: [
+            /* @__PURE__ */ jsx4("h2", { style: { margin: 0, fontSize: 15, fontWeight: 700 }, children: label }),
+            user?.planLabel || user?.email ? /* @__PURE__ */ jsx4("div", { style: { fontSize: 12, opacity: 0.85, marginTop: 2 }, children: [user.planLabel, user.name || user.email].filter(Boolean).join(" \xB7 ") }) : null
           ] }),
-          mode === "bubble" ? /* @__PURE__ */ jsx3(
+          mode === "bubble" ? /* @__PURE__ */ jsx4(
             "button",
             {
               type: "button",
@@ -1572,17 +1654,17 @@ ${priority}`
         ]
       }
     ),
-    /* @__PURE__ */ jsxs3("div", { style: { flex: 1, overflow: "auto", padding: 12, background: "#f8fafc" }, children: [
-      view.name === "gate" ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-        /* @__PURE__ */ jsx3("p", { style: { fontWeight: 600, marginTop: 0 }, children: "How can we reach you?" }),
-        /* @__PURE__ */ jsxs3("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: [
+    /* @__PURE__ */ jsxs4("div", { style: { flex: 1, overflow: "auto", padding: 12, background: "#f8fafc" }, children: [
+      view.name === "gate" ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+        /* @__PURE__ */ jsx4("p", { style: { fontWeight: 600, marginTop: 0 }, children: "How can we reach you?" }),
+        /* @__PURE__ */ jsxs4("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: [
           "Tell us a bit about yourself before chatting with ",
           label,
           "."
         ] }),
-        /* @__PURE__ */ jsxs3("form", { onSubmit: submitGate, children: [
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Name *" }),
-          /* @__PURE__ */ jsx3(
+        /* @__PURE__ */ jsxs4("form", { onSubmit: submitGate, children: [
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Name *" }),
+          /* @__PURE__ */ jsx4(
             "input",
             {
               value: gateName,
@@ -1599,8 +1681,8 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Email *" }),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Email *" }),
+          /* @__PURE__ */ jsx4(
             "input",
             {
               type: "email",
@@ -1618,11 +1700,11 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsxs3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: [
+          /* @__PURE__ */ jsxs4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: [
             "Phone ",
-            /* @__PURE__ */ jsx3("span", { style: { fontWeight: 400, color: "#64748b" }, children: "(optional)" })
+            /* @__PURE__ */ jsx4("span", { style: { fontWeight: 400, color: "#64748b" }, children: "(optional)" })
           ] }),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4(
             "input",
             {
               type: "tel",
@@ -1639,7 +1721,7 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsxs3(
+          /* @__PURE__ */ jsxs4(
             "label",
             {
               style: {
@@ -1651,7 +1733,7 @@ ${priority}`
                 marginBottom: 12
               },
               children: [
-                /* @__PURE__ */ jsx3(
+                /* @__PURE__ */ jsx4(
                   "input",
                   {
                     type: "checkbox",
@@ -1660,11 +1742,11 @@ ${priority}`
                     style: { marginTop: 2 }
                   }
                 ),
-                /* @__PURE__ */ jsx3("span", { children: marketingLabel })
+                /* @__PURE__ */ jsx4("span", { children: marketingLabel })
               ]
             }
           ),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4(
             "button",
             {
               type: "submit",
@@ -1682,14 +1764,14 @@ ${priority}`
             }
           )
         ] }),
-        brand?.signupUrl ? /* @__PURE__ */ jsxs3("p", { style: { fontSize: 12, color: "#64748b", marginTop: 12 }, children: [
+        brand?.signupUrl ? /* @__PURE__ */ jsxs4("p", { style: { fontSize: 12, color: "#64748b", marginTop: 12 }, children: [
           "Already have an account?",
           " ",
-          /* @__PURE__ */ jsx3("a", { href: brand.signupUrl, style: { color: accent, fontWeight: 600 }, children: "Sign up / sign in" })
+          /* @__PURE__ */ jsx4("a", { href: brand.signupUrl, style: { color: accent, fontWeight: 600 }, children: "Sign up / sign in" })
         ] }) : null
       ] }) : null,
-      view.name === "home" ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-        submittedTicket ? /* @__PURE__ */ jsxs3(
+      view.name === "home" ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+        submittedTicket ? /* @__PURE__ */ jsxs4(
           "p",
           {
             style: {
@@ -1705,7 +1787,7 @@ ${priority}`
               submittedTicket.publicNumber,
               ".",
               user?.id ? " You can open it under My tickets." : " We'll follow up by email.",
-              /* @__PURE__ */ jsx3(
+              /* @__PURE__ */ jsx4(
                 "button",
                 {
                   type: "button",
@@ -1726,13 +1808,13 @@ ${priority}`
             ]
           }
         ) : null,
-        /* @__PURE__ */ jsx3("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: "How can we help?" }),
-        /* @__PURE__ */ jsxs3("button", { type: "button", style: intentBtn(), onClick: () => startSupportChat(), children: [
+        /* @__PURE__ */ jsx4("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: "How can we help?" }),
+        /* @__PURE__ */ jsxs4("button", { type: "button", style: intentBtn(), onClick: () => startSupportChat(), children: [
           isPublic ? "Ask a question" : `Chat with ${agentName}`,
-          /* @__PURE__ */ jsx3("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: isPublic ? `Questions about ${label}, pricing, or getting started \u2014 we'll escalate to the team when needed` : "Questions about the product, account, or billing \u2014 just ask" })
+          /* @__PURE__ */ jsx4("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: isPublic ? `Questions about ${label}, pricing, or getting started \u2014 we'll escalate to the team when needed` : "Questions about the product, account, or billing \u2014 just ask" })
         ] }),
-        isPublic ? null : /* @__PURE__ */ jsxs3(Fragment3, { children: [
-          /* @__PURE__ */ jsxs3(
+        isPublic ? null : /* @__PURE__ */ jsxs4(Fragment3, { children: [
+          /* @__PURE__ */ jsxs4(
             "button",
             {
               type: "button",
@@ -1740,11 +1822,11 @@ ${priority}`
               onClick: () => setView({ name: "compose", kind: "bug" }),
               children: [
                 "Report a bug",
-                /* @__PURE__ */ jsx3("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Something broken or unexpected" })
+                /* @__PURE__ */ jsx4("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Something broken or unexpected" })
               ]
             }
           ),
-          /* @__PURE__ */ jsxs3(
+          /* @__PURE__ */ jsxs4(
             "button",
             {
               type: "button",
@@ -1755,11 +1837,11 @@ ${priority}`
               },
               children: [
                 "Request a feature",
-                /* @__PURE__ */ jsx3("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Suggest an improvement" })
+                /* @__PURE__ */ jsx4("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Suggest an improvement" })
               ]
             }
           ),
-          /* @__PURE__ */ jsxs3(
+          /* @__PURE__ */ jsxs4(
             "button",
             {
               type: "button",
@@ -1779,7 +1861,7 @@ ${priority}`
               ]
             }
           ),
-          tickets.slice(0, 3).map((t) => /* @__PURE__ */ jsxs3(
+          tickets.slice(0, 3).map((t) => /* @__PURE__ */ jsxs4(
             "button",
             {
               type: "button",
@@ -1802,8 +1884,8 @@ ${priority}`
           ))
         ] })
       ] }) : null,
-      view.name === "supportChat" ? /* @__PURE__ */ jsxs3("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 360 }, children: [
-        /* @__PURE__ */ jsx3(
+      view.name === "supportChat" ? /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 360 }, children: [
+        /* @__PURE__ */ jsx4(
           "button",
           {
             type: "button",
@@ -1821,7 +1903,7 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        /* @__PURE__ */ jsxs3(
+        /* @__PURE__ */ jsxs4(
           "div",
           {
             ref: listRef,
@@ -1834,7 +1916,7 @@ ${priority}`
               marginBottom: 8
             },
             children: [
-              supportMessages.map((msg) => /* @__PURE__ */ jsxs3(
+              supportMessages.map((msg) => /* @__PURE__ */ jsxs4(
                 "div",
                 {
                   style: {
@@ -1848,7 +1930,7 @@ ${priority}`
                     wordBreak: "break-word"
                   },
                   children: [
-                    msg.role === "assistant" ? /* @__PURE__ */ jsx3(
+                    msg.role === "assistant" ? /* @__PURE__ */ jsx4(
                       "div",
                       {
                         style: {
@@ -1860,8 +1942,8 @@ ${priority}`
                         children: agentName
                       }
                     ) : null,
-                    msg.role === "assistant" || msg.role === "system" ? /* @__PURE__ */ jsx3(SupportMarkdown, { text: msg.text }) : /* @__PURE__ */ jsx3(PlainMultiline, { text: msg.text }),
-                    msg.ticketPublicNumber != null ? /* @__PURE__ */ jsxs3(
+                    msg.role === "assistant" || msg.role === "system" ? /* @__PURE__ */ jsx4(SupportMarkdown, { text: msg.text }) : /* @__PURE__ */ jsx4(PlainMultiline, { text: msg.text }),
+                    msg.ticketPublicNumber != null ? /* @__PURE__ */ jsxs4(
                       "div",
                       {
                         style: {
@@ -1883,7 +1965,7 @@ ${priority}`
                 },
                 msg.id
               )),
-              sending ? /* @__PURE__ */ jsxs3(
+              sending ? /* @__PURE__ */ jsxs4(
                 "div",
                 {
                   style: {
@@ -1904,8 +1986,8 @@ ${priority}`
             ]
           }
         ),
-        /* @__PURE__ */ jsxs3("form", { onSubmit: sendSupportChat, style: { display: "flex", gap: 8 }, children: [
-          /* @__PURE__ */ jsx3(
+        /* @__PURE__ */ jsxs4("form", { onSubmit: sendSupportChat, style: { display: "flex", gap: 8 }, children: [
+          /* @__PURE__ */ jsx4(
             "input",
             {
               value: draft,
@@ -1922,7 +2004,7 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4(
             "button",
             {
               type: "submit",
@@ -1941,8 +2023,8 @@ ${priority}`
           )
         ] })
       ] }) : null,
-      view.name === "compose" && view.kind === "bug" ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-        /* @__PURE__ */ jsx3(
+      view.name === "compose" && view.kind === "bug" ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+        /* @__PURE__ */ jsx4(
           "button",
           {
             type: "button",
@@ -1959,9 +2041,9 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        /* @__PURE__ */ jsxs3("form", { onSubmit: submitBug, children: [
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Title" }),
-          /* @__PURE__ */ jsx3(
+        /* @__PURE__ */ jsxs4("form", { onSubmit: submitBug, children: [
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Title" }),
+          /* @__PURE__ */ jsx4(
             "input",
             {
               value: bugTitle,
@@ -1976,23 +2058,23 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Severity" }),
-          /* @__PURE__ */ jsxs3(
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Severity" }),
+          /* @__PURE__ */ jsxs4(
             "select",
             {
               value: bugSeverity,
               onChange: (e) => setBugSeverity(e.target.value),
               style: { width: "100%", padding: 8, marginBottom: 8, borderRadius: 8 },
               children: [
-                /* @__PURE__ */ jsx3("option", { value: "low", children: "Low" }),
-                /* @__PURE__ */ jsx3("option", { value: "medium", children: "Medium" }),
-                /* @__PURE__ */ jsx3("option", { value: "high", children: "High" }),
-                /* @__PURE__ */ jsx3("option", { value: "critical", children: "Critical" })
+                /* @__PURE__ */ jsx4("option", { value: "low", children: "Low" }),
+                /* @__PURE__ */ jsx4("option", { value: "medium", children: "Medium" }),
+                /* @__PURE__ */ jsx4("option", { value: "high", children: "High" }),
+                /* @__PURE__ */ jsx4("option", { value: "critical", children: "Critical" })
               ]
             }
           ),
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Steps" }),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Steps" }),
+          /* @__PURE__ */ jsx4(
             "textarea",
             {
               value: bugSteps,
@@ -2008,8 +2090,8 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Expected" }),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Expected" }),
+          /* @__PURE__ */ jsx4(
             "textarea",
             {
               value: bugExpected,
@@ -2025,8 +2107,8 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Actual" }),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Actual" }),
+          /* @__PURE__ */ jsx4(
             "textarea",
             {
               value: bugActual,
@@ -2042,9 +2124,9 @@ ${priority}`
               }
             }
           ),
-          !user?.id ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-            /* @__PURE__ */ jsx3("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Your email" }),
-            /* @__PURE__ */ jsx3(
+          !user?.id ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+            /* @__PURE__ */ jsx4("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Your email" }),
+            /* @__PURE__ */ jsx4(
               "input",
               {
                 type: "email",
@@ -2063,7 +2145,7 @@ ${priority}`
               }
             )
           ] }) : null,
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4(
             "button",
             {
               type: "submit",
@@ -2082,8 +2164,8 @@ ${priority}`
           )
         ] })
       ] }) : null,
-      view.name === "compose" && view.kind === "feature" ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-        /* @__PURE__ */ jsx3(
+      view.name === "compose" && view.kind === "feature" ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+        /* @__PURE__ */ jsx4(
           "button",
           {
             type: "button",
@@ -2103,8 +2185,8 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        coachEnabled === null ? /* @__PURE__ */ jsx3("p", { style: { color: "#64748b", fontSize: 13 }, children: "Loading\u2026" }) : coachEnabled ? /* @__PURE__ */ jsxs3("div", { style: { display: "flex", flexDirection: "column", gap: 8, minHeight: 280 }, children: [
-          /* @__PURE__ */ jsx3(
+        coachEnabled === null ? /* @__PURE__ */ jsx4("p", { style: { color: "#64748b", fontSize: 13 }, children: "Loading\u2026" }) : coachEnabled ? /* @__PURE__ */ jsxs4("div", { style: { display: "flex", flexDirection: "column", gap: 8, minHeight: 280 }, children: [
+          /* @__PURE__ */ jsx4(
             "div",
             {
               ref: listRef,
@@ -2117,14 +2199,14 @@ ${priority}`
                 borderRadius: 10,
                 border: "1px solid #e2e8f0"
               },
-              children: coachMessages.map((m) => /* @__PURE__ */ jsx3(
+              children: coachMessages.map((m) => /* @__PURE__ */ jsx4(
                 "div",
                 {
                   style: {
                     marginBottom: 10,
                     textAlign: m.role === "user" ? "right" : "left"
                   },
-                  children: /* @__PURE__ */ jsx3(
+                  children: /* @__PURE__ */ jsx4(
                     "div",
                     {
                       style: {
@@ -2137,7 +2219,7 @@ ${priority}`
                         fontSize: 13,
                         textAlign: "left"
                       },
-                      children: /* @__PURE__ */ jsx3(SupportMarkdown, { text: m.text })
+                      children: /* @__PURE__ */ jsx4(SupportMarkdown, { text: m.text })
                     }
                   )
                 },
@@ -2145,7 +2227,7 @@ ${priority}`
               ))
             }
           ),
-          coachDraft && (coachReady || coachDraft.problem) ? /* @__PURE__ */ jsxs3(
+          coachDraft && (coachReady || coachDraft.problem) ? /* @__PURE__ */ jsxs4(
             "div",
             {
               style: {
@@ -2157,23 +2239,23 @@ ${priority}`
                 padding: 10
               },
               children: [
-                /* @__PURE__ */ jsx3("div", { style: { fontWeight: 700, marginBottom: 4 }, children: "Draft" }),
-                /* @__PURE__ */ jsxs3("div", { children: [
-                  /* @__PURE__ */ jsx3("strong", { children: "Subject:" }),
+                /* @__PURE__ */ jsx4("div", { style: { fontWeight: 700, marginBottom: 4 }, children: "Draft" }),
+                /* @__PURE__ */ jsxs4("div", { children: [
+                  /* @__PURE__ */ jsx4("strong", { children: "Subject:" }),
                   " ",
                   coachDraft.subject || "\u2014"
                 ] }),
-                /* @__PURE__ */ jsxs3("div", { style: { marginTop: 4 }, children: [
-                  /* @__PURE__ */ jsx3("strong", { children: "Problem:" }),
+                /* @__PURE__ */ jsxs4("div", { style: { marginTop: 4 }, children: [
+                  /* @__PURE__ */ jsx4("strong", { children: "Problem:" }),
                   " ",
                   coachDraft.problem || "\u2014"
                 ] }),
-                coachDraft.solution ? /* @__PURE__ */ jsxs3("div", { style: { marginTop: 4 }, children: [
-                  /* @__PURE__ */ jsx3("strong", { children: "Solution:" }),
+                coachDraft.solution ? /* @__PURE__ */ jsxs4("div", { style: { marginTop: 4 }, children: [
+                  /* @__PURE__ */ jsx4("strong", { children: "Solution:" }),
                   " ",
                   coachDraft.solution
                 ] }) : null,
-                /* @__PURE__ */ jsxs3(
+                /* @__PURE__ */ jsxs4(
                   "select",
                   {
                     value: featurePriority,
@@ -2185,16 +2267,16 @@ ${priority}`
                     },
                     style: { width: "100%", padding: 6, marginTop: 8, borderRadius: 6 },
                     children: [
-                      /* @__PURE__ */ jsx3("option", { value: "nice_to_have", children: "Nice to have" }),
-                      /* @__PURE__ */ jsx3("option", { value: "important", children: "Important" }),
-                      /* @__PURE__ */ jsx3("option", { value: "critical", children: "Critical" })
+                      /* @__PURE__ */ jsx4("option", { value: "nice_to_have", children: "Nice to have" }),
+                      /* @__PURE__ */ jsx4("option", { value: "important", children: "Important" }),
+                      /* @__PURE__ */ jsx4("option", { value: "critical", children: "Critical" })
                     ]
                   }
                 )
               ]
             }
           ) : null,
-          !user?.id ? /* @__PURE__ */ jsx3(
+          !user?.id ? /* @__PURE__ */ jsx4(
             "input",
             {
               type: "email",
@@ -2210,8 +2292,8 @@ ${priority}`
               }
             }
           ) : null,
-          /* @__PURE__ */ jsxs3("form", { onSubmit: sendCoachTurn, style: { display: "flex", gap: 8 }, children: [
-            /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsxs4("form", { onSubmit: sendCoachTurn, style: { display: "flex", gap: 8 }, children: [
+            /* @__PURE__ */ jsx4(
               "input",
               {
                 value: coachInput,
@@ -2227,7 +2309,7 @@ ${priority}`
                 }
               }
             ),
-            /* @__PURE__ */ jsx3(
+            /* @__PURE__ */ jsx4(
               "button",
               {
                 type: "submit",
@@ -2245,7 +2327,7 @@ ${priority}`
               }
             )
           ] }),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4(
             "button",
             {
               type: "button",
@@ -2264,10 +2346,10 @@ ${priority}`
               children: sending ? "Submitting\u2026" : coachReady ? "Submit feature request" : "Submit draft anyway"
             }
           )
-        ] }) : /* @__PURE__ */ jsxs3(Fragment3, { children: [
-          /* @__PURE__ */ jsx3("p", { style: { fontWeight: 600 }, children: coachTurn === 0 ? "What problem are you trying to solve?" : coachTurn === 1 ? "What would a good solution look like?" : "How important is this?" }),
-          coachTurn < 2 ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-            /* @__PURE__ */ jsx3(
+        ] }) : /* @__PURE__ */ jsxs4(Fragment3, { children: [
+          /* @__PURE__ */ jsx4("p", { style: { fontWeight: 600 }, children: coachTurn === 0 ? "What problem are you trying to solve?" : coachTurn === 1 ? "What would a good solution look like?" : "How important is this?" }),
+          coachTurn < 2 ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+            /* @__PURE__ */ jsx4(
               "textarea",
               {
                 value: coachTurn === 0 ? coachProblem : coachOutcome,
@@ -2282,7 +2364,7 @@ ${priority}`
                 }
               }
             ),
-            /* @__PURE__ */ jsx3(
+            /* @__PURE__ */ jsx4(
               "button",
               {
                 type: "button",
@@ -2301,8 +2383,8 @@ ${priority}`
                 children: "Continue"
               }
             )
-          ] }) : /* @__PURE__ */ jsxs3(Fragment3, { children: [
-            !user?.id ? /* @__PURE__ */ jsx3(
+          ] }) : /* @__PURE__ */ jsxs4(Fragment3, { children: [
+            !user?.id ? /* @__PURE__ */ jsx4(
               "input",
               {
                 type: "email",
@@ -2319,20 +2401,20 @@ ${priority}`
                 }
               }
             ) : null,
-            /* @__PURE__ */ jsxs3(
+            /* @__PURE__ */ jsxs4(
               "select",
               {
                 value: featurePriority,
                 onChange: (e) => setFeaturePriority(e.target.value),
                 style: { width: "100%", padding: 8, marginBottom: 8 },
                 children: [
-                  /* @__PURE__ */ jsx3("option", { value: "nice_to_have", children: "Nice to have" }),
-                  /* @__PURE__ */ jsx3("option", { value: "important", children: "Important" }),
-                  /* @__PURE__ */ jsx3("option", { value: "critical", children: "Critical" })
+                  /* @__PURE__ */ jsx4("option", { value: "nice_to_have", children: "Nice to have" }),
+                  /* @__PURE__ */ jsx4("option", { value: "important", children: "Important" }),
+                  /* @__PURE__ */ jsx4("option", { value: "critical", children: "Critical" })
                 ]
               }
             ),
-            /* @__PURE__ */ jsx3(
+            /* @__PURE__ */ jsx4(
               "button",
               {
                 type: "button",
@@ -2353,8 +2435,8 @@ ${priority}`
           ] })
         ] })
       ] }) : null,
-      view.name === "tickets" ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-        /* @__PURE__ */ jsx3(
+      view.name === "tickets" ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+        /* @__PURE__ */ jsx4(
           "button",
           {
             type: "button",
@@ -2371,7 +2453,7 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        tickets.length === 0 ? /* @__PURE__ */ jsx3("p", { style: { color: "#64748b", textAlign: "center" }, children: "No tickets yet." }) : tickets.map((t) => /* @__PURE__ */ jsxs3(
+        tickets.length === 0 ? /* @__PURE__ */ jsx4("p", { style: { color: "#64748b", textAlign: "center" }, children: "No tickets yet." }) : tickets.map((t) => /* @__PURE__ */ jsxs4(
           "button",
           {
             type: "button",
@@ -2382,14 +2464,14 @@ ${priority}`
               t.publicNumber,
               " \xB7 ",
               t.kind ?? "support",
-              /* @__PURE__ */ jsx3("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b" }, children: statusLabel(t.status) })
+              /* @__PURE__ */ jsx4("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b" }, children: statusLabel(t.status) })
             ]
           },
           t.id
         ))
       ] }) : null,
-      view.name === "thread" && thread ? /* @__PURE__ */ jsxs3(Fragment3, { children: [
-        /* @__PURE__ */ jsx3(
+      view.name === "thread" && thread ? /* @__PURE__ */ jsxs4(Fragment3, { children: [
+        /* @__PURE__ */ jsx4(
           "button",
           {
             type: "button",
@@ -2406,13 +2488,13 @@ ${priority}`
             children: "\u2190 Home"
           }
         ),
-        /* @__PURE__ */ jsxs3("div", { style: { fontWeight: 700, marginBottom: 4 }, children: [
+        /* @__PURE__ */ jsxs4("div", { style: { fontWeight: 700, marginBottom: 4 }, children: [
           "Ticket #",
           thread.ticket.publicNumber,
           thread.ticket.kind ? ` \xB7 ${thread.ticket.kind}` : ""
         ] }),
-        /* @__PURE__ */ jsx3("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 12 }, children: statusLabel(thread.ticket.status) }),
-        /* @__PURE__ */ jsx3("div", { ref: listRef, children: thread.messages.map((m) => /* @__PURE__ */ jsxs3(
+        /* @__PURE__ */ jsx4("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 12 }, children: statusLabel(thread.ticket.status) }),
+        /* @__PURE__ */ jsx4("div", { ref: listRef, children: thread.messages.map((m) => /* @__PURE__ */ jsxs4(
           "div",
           {
             style: {
@@ -2423,7 +2505,7 @@ ${priority}`
               border: "1px solid #e2e8f0"
             },
             children: [
-              /* @__PURE__ */ jsx3(
+              /* @__PURE__ */ jsx4(
                 "div",
                 {
                   style: {
@@ -2435,13 +2517,13 @@ ${priority}`
                   children: m.authorType
                 }
               ),
-              m.authorType === "user" ? /* @__PURE__ */ jsx3(PlainMultiline, { text: m.body }) : /* @__PURE__ */ jsx3(SupportMarkdown, { text: m.body })
+              m.authorType === "user" ? /* @__PURE__ */ jsx4(PlainMultiline, { text: m.body }) : /* @__PURE__ */ jsx4(SupportMarkdown, { text: m.body })
             ]
           },
           m.id
         )) }),
-        thread.ticket.status !== "closed" ? /* @__PURE__ */ jsxs3("form", { onSubmit: replyInThread, style: { display: "flex", gap: 8, marginTop: 8 }, children: [
-          /* @__PURE__ */ jsx3(
+        thread.ticket.status !== "closed" ? /* @__PURE__ */ jsxs4("form", { onSubmit: replyInThread, style: { display: "flex", gap: 8, marginTop: 8 }, children: [
+          /* @__PURE__ */ jsx4(
             "input",
             {
               value: threadDraft,
@@ -2455,7 +2537,7 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ jsx3(
+          /* @__PURE__ */ jsx4(
             "button",
             {
               type: "submit",
@@ -2473,7 +2555,7 @@ ${priority}`
           )
         ] }) : null
       ] }) : null,
-      error ? /* @__PURE__ */ jsx3("p", { style: { color: "#b91c1c", fontSize: 13, marginTop: 8 }, children: error }) : null
+      error ? /* @__PURE__ */ jsx4("p", { style: { color: "#b91c1c", fontSize: 13, marginTop: 8 }, children: error }) : null
     ] })
   ] }) : null;
   const rootStyle = mode === "page" ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" } : showTrigger || isOpen ? {
@@ -2490,7 +2572,7 @@ ${priority}`
     pointerEvents: "none",
     zIndex: 9999
   };
-  return /* @__PURE__ */ jsxs3(
+  return /* @__PURE__ */ jsxs4(
     "div",
     {
       "data-support-kit": "launcher",
@@ -2501,7 +2583,7 @@ ${priority}`
       className,
       style: rootStyle,
       children: [
-        mode === "bubble" && showTrigger ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ jsxs3(
+        mode === "bubble" && showTrigger ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ jsxs4(
           "button",
           {
             type: "button",
@@ -2527,12 +2609,14 @@ ${priority}`
             ]
           }
         ) : null,
-        /* @__PURE__ */ jsx3("div", { style: showTrigger || isOpen ? void 0 : { pointerEvents: "auto" }, children: panel })
+        /* @__PURE__ */ jsx4("div", { style: showTrigger || isOpen ? void 0 : { pointerEvents: "auto" }, children: panel })
       ]
     }
   );
 }
 export {
+  EmbedSnippet,
   SupportLauncher,
-  SupportOpsConsole
+  SupportOpsConsole,
+  buildEmbedIframeSnippet
 };

@@ -20,11 +20,13 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // src/index.tsx
 var index_exports = {};
 __export(index_exports, {
+  EmbedSnippet: () => EmbedSnippet,
   SupportLauncher: () => SupportLauncher,
-  SupportOpsConsole: () => SupportOpsConsole
+  SupportOpsConsole: () => SupportOpsConsole,
+  buildEmbedIframeSnippet: () => buildEmbedIframeSnippet
 });
 module.exports = __toCommonJS(index_exports);
-var import_react3 = require("react");
+var import_react4 = require("react");
 
 // src/markdown.tsx
 var import_react = require("react");
@@ -1033,18 +1035,91 @@ function SupportOpsConsole(props) {
   ] });
 }
 
-// src/index.tsx
+// src/EmbedSnippet.tsx
+var import_react3 = require("react");
 var import_jsx_runtime3 = require("react/jsx-runtime");
-var DEFAULT_ACCENT = "#2563eb";
-var DEFAULT_MARKETING_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
-function leadStorageKey(apiBase) {
-  return `support-kit:leadId:${normalizeApiBase2(apiBase)}`;
-}
 function normalizeApiBase2(apiBase) {
   return apiBase.replace(/\/$/, "");
 }
+function buildEmbedIframeSnippet(apiBase, tenantId, opts) {
+  const width = opts?.width ?? 420;
+  const height = opts?.height ?? 560;
+  const src = `${normalizeApiBase2(apiBase)}/embed?tenant=${encodeURIComponent(tenantId)}`;
+  return `<iframe src="${src}" width="${width}" height="${height}" frameborder="0" title="Support"></iframe>`;
+}
+function EmbedSnippet(props) {
+  const { apiBase, tenantId, width = 420, height = 560, className } = props;
+  const snippet = (0, import_react3.useMemo)(
+    () => buildEmbedIframeSnippet(apiBase, tenantId, { width, height }),
+    [apiBase, tenantId, width, height]
+  );
+  const [copied, setCopied] = (0, import_react3.useState)(false);
+  const copy = (0, import_react3.useCallback)(async () => {
+    try {
+      await navigator.clipboard.writeText(snippet);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2e3);
+    } catch {
+      setCopied(false);
+    }
+  }, [snippet]);
+  const box = {
+    fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
+    fontSize: 13,
+    lineHeight: 1.45,
+    color: "#0f172a"
+  };
+  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { className, style: box, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 600, marginBottom: 8 }, children: "Embed snippet" }),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      "pre",
+      {
+        style: {
+          margin: 0,
+          padding: 12,
+          borderRadius: 10,
+          background: "#f8fafc",
+          border: "1px solid #e2e8f0",
+          overflowX: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all"
+        },
+        children: snippet
+      }
+    ),
+    /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      "button",
+      {
+        type: "button",
+        onClick: () => void copy(),
+        style: {
+          marginTop: 10,
+          padding: "8px 14px",
+          border: "none",
+          borderRadius: 8,
+          background: "#2563eb",
+          color: "#fff",
+          fontWeight: 600,
+          cursor: "pointer"
+        },
+        children: copied ? "Copied!" : "Copy iframe code"
+      }
+    )
+  ] });
+}
+
+// src/index.tsx
+var import_jsx_runtime4 = require("react/jsx-runtime");
+var DEFAULT_ACCENT = "#2563eb";
+var DEFAULT_MARKETING_LABEL = "I agree to receive product updates and marketing messages by email (and by SMS if I provided a phone number). I can unsubscribe anytime.";
+function leadStorageKey(apiBase) {
+  return `support-kit:leadId:${normalizeApiBase3(apiBase)}`;
+}
+function normalizeApiBase3(apiBase) {
+  return apiBase.replace(/\/$/, "");
+}
 async function supportFetch(apiBase, path, init, getAccessToken) {
-  const url = `${normalizeApiBase2(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
+  const url = `${normalizeApiBase3(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getAccessToken?.()?.trim() || null;
   const { headers: initHeaders, ...rest } = init ?? {};
   const res = await fetch(url, {
@@ -1103,7 +1178,7 @@ function SupportLauncher(props) {
     className,
     getAccessToken
   } = props;
-  const fetchApi = (0, import_react3.useCallback)(
+  const fetchApi = (0, import_react4.useCallback)(
     (path, init) => supportFetch(apiBase, path, init, getAccessToken),
     [apiBase, getAccessToken]
   );
@@ -1112,47 +1187,51 @@ function SupportLauncher(props) {
   const agentName = brand?.supportAgentName ?? `${label} Support`;
   const marketingLabel = brand?.marketingConsentLabel?.trim() || DEFAULT_MARKETING_LABEL;
   const isPublic = audience === "public" && !user?.id;
-  const panelId = (0, import_react3.useId)();
-  const listRef = (0, import_react3.useRef)(null);
-  const [open, setOpen] = (0, import_react3.useState)(mode === "page");
-  const [view, setView] = (0, import_react3.useState)(isPublic ? { name: "gate" } : { name: "home" });
-  const [draft, setDraft] = (0, import_react3.useState)("");
-  const [supportMessages, setSupportMessages] = (0, import_react3.useState)([]);
-  const [supportTicketId, setSupportTicketId] = (0, import_react3.useState)(null);
-  const [bugTitle, setBugTitle] = (0, import_react3.useState)("");
-  const [bugSeverity, setBugSeverity] = (0, import_react3.useState)("medium");
-  const [bugSteps, setBugSteps] = (0, import_react3.useState)("");
-  const [bugExpected, setBugExpected] = (0, import_react3.useState)("");
-  const [bugActual, setBugActual] = (0, import_react3.useState)("");
-  const [featurePriority, setFeaturePriority] = (0, import_react3.useState)("important");
-  const [coachTurn, setCoachTurn] = (0, import_react3.useState)(0);
-  const [coachProblem, setCoachProblem] = (0, import_react3.useState)("");
-  const [coachOutcome, setCoachOutcome] = (0, import_react3.useState)("");
-  const [coachEnabled, setCoachEnabled] = (0, import_react3.useState)(null);
-  const [coachMessages, setCoachMessages] = (0, import_react3.useState)([]);
-  const [coachDraft, setCoachDraft] = (0, import_react3.useState)(null);
-  const [coachReady, setCoachReady] = (0, import_react3.useState)(false);
-  const [coachInput, setCoachInput] = (0, import_react3.useState)("");
-  const [guestEmail, setGuestEmail] = (0, import_react3.useState)(user?.email ?? "");
-  const [submittedTicket, setSubmittedTicket] = (0, import_react3.useState)(null);
-  const [leadId, setLeadId] = (0, import_react3.useState)(null);
-  const [gateName, setGateName] = (0, import_react3.useState)("");
-  const [gateEmail, setGateEmail] = (0, import_react3.useState)("");
-  const [gatePhone, setGatePhone] = (0, import_react3.useState)("");
-  const [gateMarketing, setGateMarketing] = (0, import_react3.useState)(false);
-  const [sending, setSending] = (0, import_react3.useState)(false);
-  const [error, setError] = (0, import_react3.useState)(null);
-  const [tickets, setTickets] = (0, import_react3.useState)([]);
-  const [thread, setThread] = (0, import_react3.useState)(null);
-  const [threadDraft, setThreadDraft] = (0, import_react3.useState)("");
+  const panelId = (0, import_react4.useId)();
+  const listRef = (0, import_react4.useRef)(null);
+  const [open, setOpen] = (0, import_react4.useState)(mode === "page");
+  const [view, setView] = (0, import_react4.useState)(isPublic ? { name: "gate" } : { name: "home" });
+  const [draft, setDraft] = (0, import_react4.useState)("");
+  const [supportMessages, setSupportMessages] = (0, import_react4.useState)([]);
+  const [supportTicketId, setSupportTicketId] = (0, import_react4.useState)(null);
+  const [bugTitle, setBugTitle] = (0, import_react4.useState)("");
+  const [bugSeverity, setBugSeverity] = (0, import_react4.useState)("medium");
+  const [bugSteps, setBugSteps] = (0, import_react4.useState)("");
+  const [bugExpected, setBugExpected] = (0, import_react4.useState)("");
+  const [bugActual, setBugActual] = (0, import_react4.useState)("");
+  const [featurePriority, setFeaturePriority] = (0, import_react4.useState)("important");
+  const [coachTurn, setCoachTurn] = (0, import_react4.useState)(0);
+  const [coachProblem, setCoachProblem] = (0, import_react4.useState)("");
+  const [coachOutcome, setCoachOutcome] = (0, import_react4.useState)("");
+  const [coachEnabled, setCoachEnabled] = (0, import_react4.useState)(null);
+  const [coachMessages, setCoachMessages] = (0, import_react4.useState)([]);
+  const [coachDraft, setCoachDraft] = (0, import_react4.useState)(null);
+  const [coachReady, setCoachReady] = (0, import_react4.useState)(false);
+  const [coachInput, setCoachInput] = (0, import_react4.useState)("");
+  const [guestEmail, setGuestEmail] = (0, import_react4.useState)(user?.email ?? "");
+  const [submittedTicket, setSubmittedTicket] = (0, import_react4.useState)(null);
+  const [leadId, setLeadId] = (0, import_react4.useState)(null);
+  const [gateName, setGateName] = (0, import_react4.useState)("");
+  const [gateEmail, setGateEmail] = (0, import_react4.useState)("");
+  const [gatePhone, setGatePhone] = (0, import_react4.useState)("");
+  const [gateMarketing, setGateMarketing] = (0, import_react4.useState)(false);
+  const [sending, setSending] = (0, import_react4.useState)(false);
+  const [error, setError] = (0, import_react4.useState)(null);
+  const [tickets, setTickets] = (0, import_react4.useState)([]);
+  const [thread, setThread] = (0, import_react4.useState)(null);
+  const [threadDraft, setThreadDraft] = (0, import_react4.useState)("");
   const isOpen = mode === "page" || open;
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     const onOpen = () => setOpen(true);
     window.addEventListener("legalai:open-support", onOpen);
     return () => window.removeEventListener("legalai:open-support", onOpen);
   }, []);
-  (0, import_react3.useEffect)(() => {
-    if (!isPublic || typeof sessionStorage === "undefined") return;
+  (0, import_react4.useEffect)(() => {
+    if (!isPublic) {
+      setView((v) => v.name === "gate" ? { name: "home" } : v);
+      return;
+    }
+    if (typeof sessionStorage === "undefined") return;
     try {
       const stored = sessionStorage.getItem(leadStorageKey(apiBase));
       if (stored) {
@@ -1162,7 +1241,12 @@ function SupportLauncher(props) {
     } catch {
     }
   }, [apiBase, isPublic]);
-  const startSupportChat = (0, import_react3.useCallback)(() => {
+  (0, import_react4.useEffect)(() => {
+    if (user?.email) {
+      setGuestEmail(user.email);
+    }
+  }, [user?.email]);
+  const startSupportChat = (0, import_react4.useCallback)(() => {
     setSupportMessages([
       {
         id: "welcome",
@@ -1209,7 +1293,7 @@ function SupportLauncher(props) {
       setSending(false);
     }
   };
-  const resetFeatureCompose = (0, import_react3.useCallback)(() => {
+  const resetFeatureCompose = (0, import_react4.useCallback)(() => {
     setCoachTurn(0);
     setCoachProblem("");
     setCoachOutcome("");
@@ -1221,7 +1305,7 @@ function SupportLauncher(props) {
     setCoachEnabled(null);
     setError(null);
   }, []);
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (view.name !== "compose" || view.kind !== "feature") return;
     let cancelled = false;
     void fetchApi("/config").then((cfg) => {
@@ -1246,7 +1330,7 @@ function SupportLauncher(props) {
       cancelled = true;
     };
   }, [apiBase, view.name, view.name === "compose" ? view.kind : null, label]);
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (view.name === "compose" && view.kind === "feature" && coachEnabled) {
       const el = listRef.current;
       if (el) el.scrollTop = el.scrollHeight;
@@ -1296,7 +1380,7 @@ function SupportLauncher(props) {
       setSending(false);
     }
   };
-  const loadTickets = (0, import_react3.useCallback)(async () => {
+  const loadTickets = (0, import_react4.useCallback)(async () => {
     try {
       const data = await fetchApi(
         "/tickets"
@@ -1306,7 +1390,7 @@ function SupportLauncher(props) {
       setError(err instanceof Error ? err.message : "Failed to load tickets");
     }
   }, [apiBase]);
-  const openThread = (0, import_react3.useCallback)(
+  const openThread = (0, import_react4.useCallback)(
     async (id) => {
       setError(null);
       try {
@@ -1319,12 +1403,12 @@ function SupportLauncher(props) {
     },
     [apiBase]
   );
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (isOpen && (view.name === "home" || view.name === "tickets") && !isPublic) {
       void loadTickets();
     }
   }, [isOpen, view.name, loadTickets, isPublic]);
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (view.name === "thread" && thread) {
       const el = listRef.current;
       if (el) el.scrollTop = el.scrollHeight;
@@ -1334,7 +1418,7 @@ function SupportLauncher(props) {
       if (el) el.scrollTop = el.scrollHeight;
     }
   }, [view, thread, supportMessages, sending]);
-  (0, import_react3.useEffect)(() => {
+  (0, import_react4.useEffect)(() => {
     if (view.name !== "thread" || !thread) return;
     if (thread.ticket.status !== "ai_working") return;
     const t = setInterval(() => {
@@ -1551,8 +1635,8 @@ ${priority}`
     cursor: "pointer",
     fontWeight: 600
   });
-  const panel = isOpen ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { id: panelId, role: "dialog", "aria-label": `${label} support`, style: panelStyle, children: [
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+  const panel = isOpen ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { id: panelId, role: "dialog", "aria-label": `${label} support`, style: panelStyle, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
       "div",
       {
         style: {
@@ -1564,11 +1648,11 @@ ${priority}`
           background: "#f8fafc"
         },
         children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("h2", { style: { margin: 0, fontSize: 15, fontWeight: 700 }, children: label }),
-            user?.planLabel || user?.email ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontSize: 12, opacity: 0.85, marginTop: 2 }, children: [user.planLabel, user.name || user.email].filter(Boolean).join(" \xB7 ") }) : null
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("h2", { style: { margin: 0, fontSize: 15, fontWeight: 700 }, children: label }),
+            user?.planLabel || user?.email ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontSize: 12, opacity: 0.85, marginTop: 2 }, children: [user.planLabel, user.name || user.email].filter(Boolean).join(" \xB7 ") }) : null
           ] }),
-          mode === "bubble" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          mode === "bubble" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "button",
             {
               type: "button",
@@ -1587,17 +1671,17 @@ ${priority}`
         ]
       }
     ),
-    /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { flex: 1, overflow: "auto", padding: 12, background: "#f8fafc" }, children: [
-      view.name === "gate" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { fontWeight: 600, marginTop: 0 }, children: "How can we reach you?" }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: [
+    /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { flex: 1, overflow: "auto", padding: 12, background: "#f8fafc" }, children: [
+      view.name === "gate" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: { fontWeight: 600, marginTop: 0 }, children: "How can we reach you?" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: [
           "Tell us a bit about yourself before chatting with ",
           label,
           "."
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("form", { onSubmit: submitGate, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Name *" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("form", { onSubmit: submitGate, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Name *" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               value: gateName,
@@ -1614,8 +1698,8 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Email *" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Email *" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               type: "email",
@@ -1633,11 +1717,11 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: [
             "Phone ",
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { style: { fontWeight: 400, color: "#64748b" }, children: "(optional)" })
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { style: { fontWeight: 400, color: "#64748b" }, children: "(optional)" })
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               type: "tel",
@@ -1654,7 +1738,7 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "label",
             {
               style: {
@@ -1666,7 +1750,7 @@ ${priority}`
                 marginBottom: 12
               },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                   "input",
                   {
                     type: "checkbox",
@@ -1675,11 +1759,11 @@ ${priority}`
                     style: { marginTop: 2 }
                   }
                 ),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("span", { children: marketingLabel })
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("span", { children: marketingLabel })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "button",
             {
               type: "submit",
@@ -1697,14 +1781,14 @@ ${priority}`
             }
           )
         ] }),
-        brand?.signupUrl ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("p", { style: { fontSize: 12, color: "#64748b", marginTop: 12 }, children: [
+        brand?.signupUrl ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("p", { style: { fontSize: 12, color: "#64748b", marginTop: 12 }, children: [
           "Already have an account?",
           " ",
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("a", { href: brand.signupUrl, style: { color: accent, fontWeight: 600 }, children: "Sign up / sign in" })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("a", { href: brand.signupUrl, style: { color: accent, fontWeight: 600 }, children: "Sign up / sign in" })
         ] }) : null
       ] }) : null,
-      view.name === "home" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        submittedTicket ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+      view.name === "home" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        submittedTicket ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
           "p",
           {
             style: {
@@ -1720,7 +1804,7 @@ ${priority}`
               submittedTicket.publicNumber,
               ".",
               user?.id ? " You can open it under My tickets." : " We'll follow up by email.",
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "button",
                 {
                   type: "button",
@@ -1741,13 +1825,13 @@ ${priority}`
             ]
           }
         ) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: "How can we help?" }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("button", { type: "button", style: intentBtn(), onClick: () => startSupportChat(), children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: { color: "#64748b", fontSize: 13, marginTop: 0 }, children: "How can we help?" }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("button", { type: "button", style: intentBtn(), onClick: () => startSupportChat(), children: [
           isPublic ? "Ask a question" : `Chat with ${agentName}`,
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: isPublic ? `Questions about ${label}, pricing, or getting started \u2014 we'll escalate to the team when needed` : "Questions about the product, account, or billing \u2014 just ask" })
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: isPublic ? `Questions about ${label}, pricing, or getting started \u2014 we'll escalate to the team when needed` : "Questions about the product, account, or billing \u2014 just ask" })
         ] }),
-        isPublic ? null : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        isPublic ? null : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "button",
             {
               type: "button",
@@ -1755,11 +1839,11 @@ ${priority}`
               onClick: () => setView({ name: "compose", kind: "bug" }),
               children: [
                 "Report a bug",
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Something broken or unexpected" })
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Something broken or unexpected" })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "button",
             {
               type: "button",
@@ -1770,11 +1854,11 @@ ${priority}`
               },
               children: [
                 "Request a feature",
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Suggest an improvement" })
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b", marginTop: 4 }, children: "Suggest an improvement" })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "button",
             {
               type: "button",
@@ -1794,7 +1878,7 @@ ${priority}`
               ]
             }
           ),
-          tickets.slice(0, 3).map((t) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          tickets.slice(0, 3).map((t) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "button",
             {
               type: "button",
@@ -1817,8 +1901,8 @@ ${priority}`
           ))
         ] })
       ] }) : null,
-      view.name === "supportChat" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 360 }, children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      view.name === "supportChat" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 360 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "button",
           {
             type: "button",
@@ -1836,7 +1920,7 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
           "div",
           {
             ref: listRef,
@@ -1849,7 +1933,7 @@ ${priority}`
               marginBottom: 8
             },
             children: [
-              supportMessages.map((msg) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+              supportMessages.map((msg) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
                 "div",
                 {
                   style: {
@@ -1863,7 +1947,7 @@ ${priority}`
                     wordBreak: "break-word"
                   },
                   children: [
-                    msg.role === "assistant" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+                    msg.role === "assistant" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                       "div",
                       {
                         style: {
@@ -1875,8 +1959,8 @@ ${priority}`
                         children: agentName
                       }
                     ) : null,
-                    msg.role === "assistant" || msg.role === "system" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SupportMarkdown, { text: msg.text }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PlainMultiline, { text: msg.text }),
-                    msg.ticketPublicNumber != null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+                    msg.role === "assistant" || msg.role === "system" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SupportMarkdown, { text: msg.text }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PlainMultiline, { text: msg.text }),
+                    msg.ticketPublicNumber != null ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
                       "div",
                       {
                         style: {
@@ -1898,7 +1982,7 @@ ${priority}`
                 },
                 msg.id
               )),
-              sending ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+              sending ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
                 "div",
                 {
                   style: {
@@ -1919,8 +2003,8 @@ ${priority}`
             ]
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("form", { onSubmit: sendSupportChat, style: { display: "flex", gap: 8 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("form", { onSubmit: sendSupportChat, style: { display: "flex", gap: 8 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               value: draft,
@@ -1937,7 +2021,7 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "button",
             {
               type: "submit",
@@ -1956,8 +2040,8 @@ ${priority}`
           )
         ] })
       ] }) : null,
-      view.name === "compose" && view.kind === "bug" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      view.name === "compose" && view.kind === "bug" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "button",
           {
             type: "button",
@@ -1974,9 +2058,9 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("form", { onSubmit: submitBug, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Title" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("form", { onSubmit: submitBug, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Title" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               value: bugTitle,
@@ -1991,23 +2075,23 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Severity" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Severity" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "select",
             {
               value: bugSeverity,
               onChange: (e) => setBugSeverity(e.target.value),
               style: { width: "100%", padding: 8, marginBottom: 8, borderRadius: 8 },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "low", children: "Low" }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "medium", children: "Medium" }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "high", children: "High" }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "critical", children: "Critical" })
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "low", children: "Low" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "medium", children: "Medium" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "high", children: "High" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "critical", children: "Critical" })
               ]
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Steps" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Steps" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "textarea",
             {
               value: bugSteps,
@@ -2023,8 +2107,8 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Expected" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Expected" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "textarea",
             {
               value: bugExpected,
@@ -2040,8 +2124,8 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Actual" }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Actual" }),
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "textarea",
             {
               value: bugActual,
@@ -2057,9 +2141,9 @@ ${priority}`
               }
             }
           ),
-          !user?.id ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Your email" }),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          !user?.id ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("label", { style: { display: "block", fontWeight: 600, marginBottom: 4 }, children: "Your email" }),
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "input",
               {
                 type: "email",
@@ -2078,7 +2162,7 @@ ${priority}`
               }
             )
           ] }) : null,
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "button",
             {
               type: "submit",
@@ -2097,8 +2181,8 @@ ${priority}`
           )
         ] })
       ] }) : null,
-      view.name === "compose" && view.kind === "feature" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      view.name === "compose" && view.kind === "feature" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "button",
           {
             type: "button",
@@ -2118,8 +2202,8 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        coachEnabled === null ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "#64748b", fontSize: 13 }, children: "Loading\u2026" }) : coachEnabled ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 8, minHeight: 280 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        coachEnabled === null ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: { color: "#64748b", fontSize: 13 }, children: "Loading\u2026" }) : coachEnabled ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { display: "flex", flexDirection: "column", gap: 8, minHeight: 280 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "div",
             {
               ref: listRef,
@@ -2132,14 +2216,14 @@ ${priority}`
                 borderRadius: 10,
                 border: "1px solid #e2e8f0"
               },
-              children: coachMessages.map((m) => /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+              children: coachMessages.map((m) => /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "div",
                 {
                   style: {
                     marginBottom: 10,
                     textAlign: m.role === "user" ? "right" : "left"
                   },
-                  children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+                  children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                     "div",
                     {
                       style: {
@@ -2152,7 +2236,7 @@ ${priority}`
                         fontSize: 13,
                         textAlign: "left"
                       },
-                      children: /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SupportMarkdown, { text: m.text })
+                      children: /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SupportMarkdown, { text: m.text })
                     }
                   )
                 },
@@ -2160,7 +2244,7 @@ ${priority}`
               ))
             }
           ),
-          coachDraft && (coachReady || coachDraft.problem) ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+          coachDraft && (coachReady || coachDraft.problem) ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
             "div",
             {
               style: {
@@ -2172,23 +2256,23 @@ ${priority}`
                 padding: 10
               },
               children: [
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 700, marginBottom: 4 }, children: "Draft" }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: "Subject:" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontWeight: 700, marginBottom: 4 }, children: "Draft" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: "Subject:" }),
                   " ",
                   coachDraft.subject || "\u2014"
                 ] }),
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { marginTop: 4 }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: "Problem:" }),
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginTop: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: "Problem:" }),
                   " ",
                   coachDraft.problem || "\u2014"
                 ] }),
-                coachDraft.solution ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { marginTop: 4 }, children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("strong", { children: "Solution:" }),
+                coachDraft.solution ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { marginTop: 4 }, children: [
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("strong", { children: "Solution:" }),
                   " ",
                   coachDraft.solution
                 ] }) : null,
-                /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+                /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
                   "select",
                   {
                     value: featurePriority,
@@ -2200,16 +2284,16 @@ ${priority}`
                     },
                     style: { width: "100%", padding: 6, marginTop: 8, borderRadius: 6 },
                     children: [
-                      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "nice_to_have", children: "Nice to have" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "important", children: "Important" }),
-                      /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "critical", children: "Critical" })
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "nice_to_have", children: "Nice to have" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "important", children: "Important" }),
+                      /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "critical", children: "Critical" })
                     ]
                   }
                 )
               ]
             }
           ) : null,
-          !user?.id ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          !user?.id ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               type: "email",
@@ -2225,8 +2309,8 @@ ${priority}`
               }
             }
           ) : null,
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("form", { onSubmit: sendCoachTurn, style: { display: "flex", gap: 8 }, children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("form", { onSubmit: sendCoachTurn, style: { display: "flex", gap: 8 }, children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "input",
               {
                 value: coachInput,
@@ -2242,7 +2326,7 @@ ${priority}`
                 }
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "button",
               {
                 type: "submit",
@@ -2260,7 +2344,7 @@ ${priority}`
               }
             )
           ] }),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "button",
             {
               type: "button",
@@ -2279,10 +2363,10 @@ ${priority}`
               children: sending ? "Submitting\u2026" : coachReady ? "Submit feature request" : "Submit draft anyway"
             }
           )
-        ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { fontWeight: 600 }, children: coachTurn === 0 ? "What problem are you trying to solve?" : coachTurn === 1 ? "What would a good solution look like?" : "How important is this?" }),
-          coachTurn < 2 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: { fontWeight: 600 }, children: coachTurn === 0 ? "What problem are you trying to solve?" : coachTurn === 1 ? "What would a good solution look like?" : "How important is this?" }),
+          coachTurn < 2 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "textarea",
               {
                 value: coachTurn === 0 ? coachProblem : coachOutcome,
@@ -2297,7 +2381,7 @@ ${priority}`
                 }
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "button",
               {
                 type: "button",
@@ -2316,8 +2400,8 @@ ${priority}`
                 children: "Continue"
               }
             )
-          ] }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-            !user?.id ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          ] }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+            !user?.id ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "input",
               {
                 type: "email",
@@ -2334,20 +2418,20 @@ ${priority}`
                 }
               }
             ) : null,
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
               "select",
               {
                 value: featurePriority,
                 onChange: (e) => setFeaturePriority(e.target.value),
                 style: { width: "100%", padding: 8, marginBottom: 8 },
                 children: [
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "nice_to_have", children: "Nice to have" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "important", children: "Important" }),
-                  /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("option", { value: "critical", children: "Critical" })
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "nice_to_have", children: "Nice to have" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "important", children: "Important" }),
+                  /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("option", { value: "critical", children: "Critical" })
                 ]
               }
             ),
-            /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+            /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
               "button",
               {
                 type: "button",
@@ -2368,8 +2452,8 @@ ${priority}`
           ] })
         ] })
       ] }) : null,
-      view.name === "tickets" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      view.name === "tickets" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "button",
           {
             type: "button",
@@ -2386,7 +2470,7 @@ ${priority}`
             children: "\u2190 Back"
           }
         ),
-        tickets.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "#64748b", textAlign: "center" }, children: "No tickets yet." }) : tickets.map((t) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        tickets.length === 0 ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: { color: "#64748b", textAlign: "center" }, children: "No tickets yet." }) : tickets.map((t) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
           "button",
           {
             type: "button",
@@ -2397,14 +2481,14 @@ ${priority}`
               t.publicNumber,
               " \xB7 ",
               t.kind ?? "support",
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b" }, children: statusLabel(t.status) })
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontWeight: 400, fontSize: 12, color: "#64748b" }, children: statusLabel(t.status) })
             ]
           },
           t.id
         ))
       ] }) : null,
-      view.name === "thread" && thread ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(import_jsx_runtime3.Fragment, { children: [
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+      view.name === "thread" && thread ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(import_jsx_runtime4.Fragment, { children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
           "button",
           {
             type: "button",
@@ -2421,13 +2505,13 @@ ${priority}`
             children: "\u2190 Home"
           }
         ),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("div", { style: { fontWeight: 700, marginBottom: 4 }, children: [
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("div", { style: { fontWeight: 700, marginBottom: 4 }, children: [
           "Ticket #",
           thread.ticket.publicNumber,
           thread.ticket.kind ? ` \xB7 ${thread.ticket.kind}` : ""
         ] }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 12 }, children: statusLabel(thread.ticket.status) }),
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { ref: listRef, children: thread.messages.map((m) => /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: { fontSize: 12, color: "#64748b", marginBottom: 12 }, children: statusLabel(thread.ticket.status) }),
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { ref: listRef, children: thread.messages.map((m) => /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
           "div",
           {
             style: {
@@ -2438,7 +2522,7 @@ ${priority}`
               border: "1px solid #e2e8f0"
             },
             children: [
-              /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+              /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
                 "div",
                 {
                   style: {
@@ -2450,13 +2534,13 @@ ${priority}`
                   children: m.authorType
                 }
               ),
-              m.authorType === "user" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(PlainMultiline, { text: m.body }) : /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(SupportMarkdown, { text: m.body })
+              m.authorType === "user" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(PlainMultiline, { text: m.body }) : /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(SupportMarkdown, { text: m.body })
             ]
           },
           m.id
         )) }),
-        thread.ticket.status !== "closed" ? /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)("form", { onSubmit: replyInThread, style: { display: "flex", gap: 8, marginTop: 8 }, children: [
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+        thread.ticket.status !== "closed" ? /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)("form", { onSubmit: replyInThread, style: { display: "flex", gap: 8, marginTop: 8 }, children: [
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "input",
             {
               value: threadDraft,
@@ -2470,7 +2554,7 @@ ${priority}`
               }
             }
           ),
-          /* @__PURE__ */ (0, import_jsx_runtime3.jsx)(
+          /* @__PURE__ */ (0, import_jsx_runtime4.jsx)(
             "button",
             {
               type: "submit",
@@ -2488,7 +2572,7 @@ ${priority}`
           )
         ] }) : null
       ] }) : null,
-      error ? /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("p", { style: { color: "#b91c1c", fontSize: 13, marginTop: 8 }, children: error }) : null
+      error ? /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("p", { style: { color: "#b91c1c", fontSize: 13, marginTop: 8 }, children: error }) : null
     ] })
   ] }) : null;
   const rootStyle = mode === "page" ? { ...shell, width: "100%", maxWidth: 720, margin: "0 auto" } : showTrigger || isOpen ? {
@@ -2505,7 +2589,7 @@ ${priority}`
     pointerEvents: "none",
     zIndex: 9999
   };
-  return /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+  return /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
     "div",
     {
       "data-support-kit": "launcher",
@@ -2516,7 +2600,7 @@ ${priority}`
       className,
       style: rootStyle,
       children: [
-        mode === "bubble" && showTrigger ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ (0, import_jsx_runtime3.jsxs)(
+        mode === "bubble" && showTrigger ? renderTrigger ? renderTrigger(() => setOpen(true)) : /* @__PURE__ */ (0, import_jsx_runtime4.jsxs)(
           "button",
           {
             type: "button",
@@ -2542,13 +2626,15 @@ ${priority}`
             ]
           }
         ) : null,
-        /* @__PURE__ */ (0, import_jsx_runtime3.jsx)("div", { style: showTrigger || isOpen ? void 0 : { pointerEvents: "auto" }, children: panel })
+        /* @__PURE__ */ (0, import_jsx_runtime4.jsx)("div", { style: showTrigger || isOpen ? void 0 : { pointerEvents: "auto" }, children: panel })
       ]
     }
   );
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  EmbedSnippet,
   SupportLauncher,
-  SupportOpsConsole
+  SupportOpsConsole,
+  buildEmbedIframeSnippet
 });

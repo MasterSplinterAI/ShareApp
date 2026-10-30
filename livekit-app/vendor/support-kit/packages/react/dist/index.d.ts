@@ -10,6 +10,19 @@ interface SupportOpsConsoleProps {
 }
 declare function SupportOpsConsole(props: SupportOpsConsoleProps): react.JSX.Element;
 
+interface EmbedSnippetProps {
+    apiBase: string;
+    tenantId: string;
+    width?: number;
+    height?: number;
+    className?: string;
+}
+declare function buildEmbedIframeSnippet(apiBase: string, tenantId: string, opts?: {
+    width?: number;
+    height?: number;
+}): string;
+declare function EmbedSnippet(props: EmbedSnippetProps): react.JSX.Element;
+
 interface SupportLauncherProps {
     apiBase: string;
     user?: {
@@ -57,4 +70,4 @@ interface SupportLauncherProps {
 }
 declare function SupportLauncher(props: SupportLauncherProps): react.JSX.Element;
 
-export { SupportLauncher, type SupportLauncherProps, SupportOpsConsole, type SupportOpsConsoleProps };
+export { EmbedSnippet, type EmbedSnippetProps, SupportLauncher, type SupportLauncherProps, SupportOpsConsole, type SupportOpsConsoleProps, buildEmbedIframeSnippet };
