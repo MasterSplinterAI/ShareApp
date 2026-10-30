@@ -1,18 +1,18 @@
 #!/bin/bash
-# Staging deployment script for ShareApp v2 work.
+# Deploy the Lalia app (formerly the staging checkout).
 # Deploy target:
 #   - Frontend: /var/www/share-app-staging/livekit-app/frontend
-#   - Backend:  /var/www/share-app-staging/livekit-app/backend (PM2: livekit-backend-staging)
+#   - Backend:  /var/www/share-app-staging/livekit-app/backend (PM2: livekit-backend-staging, port 3101)
+#   - Public host: lalia.cloud (staging.jarmetals.com stays noindex)
 #
-# This script is intentionally separate from deploy.sh so production deploy flow
-# remains untouched while v2 is built out.
+# deploy.sh calls this. The legacy share.jarmetals.com app is retired.
 
 set -euo pipefail
 
 REMOTE_USER="ubuntu"
 REMOTE_HOST="3.16.210.84"
 PEM_KEY="$HOME/Downloads/AxisAlgo.pem"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-v2-foundation}"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-main}"
 STAGING_BACKEND_PORT="${STAGING_BACKEND_PORT:-3101}"
 FORCE_FRONTEND_BUILD="${FORCE_FRONTEND_BUILD:-false}"
 APP_DIR="/var/www/share-app-staging"
@@ -216,25 +216,27 @@ else
   echo "Frontend: no source changes, skipping build."
 fi
 
-# Staging must never be indexed — override production robots.txt from the build.
-printf '%s\n' \
-  'User-agent: *' \
-  'Disallow: /' \
-  '' \
-  '# Staging override — production robots.txt is restored on prod deploys.' \
-  | sudo tee "$FRONTEND_DIR/robots.txt" >/dev/null
-echo "Wrote staging robots.txt (Disallow: /)."
+# staging.jarmetals.com stays noindex via its vhost header. lalia.cloud serves
+# the built robots.txt (and an explicit location in nginx-lalia.cloud.conf).
 
-# Apply staging nginx vhost from repo (X-Robots-Tag, try_files for prerender).
+# Apply nginx vhosts from the repo.
 if [ -f "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" ]; then
   echo "Updating staging nginx vhost..."
   sudo cp "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" "$NGINX_STAGING_DEST"
-  sudo nginx -t
-  sudo systemctl reload nginx
-  echo "Nginx reloaded for staging.jarmetals.com."
-else
-  echo "Warning: deploy/nginx-staging.jarmetals.com.conf missing in checkout." >&2
 fi
+if [ -f /etc/letsencrypt/live/lalia.cloud/fullchain.pem ] && [ -f "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" ]; then
+  echo "Updating lalia.cloud nginx vhost..."
+  sudo cp "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" /etc/nginx/sites-available/lalia.cloud
+  sudo ln -sfn /etc/nginx/sites-available/lalia.cloud /etc/nginx/sites-enabled/lalia.cloud
+fi
+if [ -f /etc/letsencrypt/live/lalia.cloud/fullchain.pem ] && [ -f "$TEMP_DIR/deploy/nginx-share.jarmetals.com.conf" ]; then
+  echo "Updating share.jarmetals.com redirect..."
+  sudo cp "$TEMP_DIR/deploy/nginx-share.jarmetals.com.conf" /etc/nginx/sites-available/share.jarmetals.com
+  sudo ln -sfn /etc/nginx/sites-available/share.jarmetals.com /etc/nginx/sites-enabled/share.jarmetals.com
+fi
+sudo nginx -t
+sudo systemctl reload nginx
+echo "Nginx reloaded."
 
 sudo chown -R ubuntu:ubuntu "$APP_DIR"
 

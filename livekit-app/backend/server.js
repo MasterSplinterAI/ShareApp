@@ -54,6 +54,8 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.NETWORK_URL,
   process.env.STAGING_FRONTEND_URL,
+  'https://lalia.cloud',
+  'https://www.lalia.cloud',
   'https://staging.jarmetals.com',
   'https://share.jarmetals.com',
   'https://cockatoo-easy-similarly.ngrok.app', // Your custom ngrok domain
