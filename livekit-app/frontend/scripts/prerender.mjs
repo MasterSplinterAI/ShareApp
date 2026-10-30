@@ -4,7 +4,7 @@
  * see title/H1/FAQ body without waiting on the full app JS graph.
  */
 import { createServer } from 'node:http'
-import { writeFile, mkdir, access } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -75,6 +75,21 @@ async function main() {
     process.exit(1)
   }
 
+  // Stamp build-date <lastmod> into dist/sitemap.xml for Google Search Console
+  const sitemapPath = path.join(DIST, 'sitemap.xml')
+  if (await exists(sitemapPath)) {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const xml = await readFile(sitemapPath, 'utf8')
+      if (!xml.includes('<lastmod>')) {
+        const stamped = xml.replace(/<\/loc>/g, `</loc>\n    <lastmod>${today}</lastmod>`)
+        await writeFile(sitemapPath, stamped, 'utf8')
+      }
+    } catch {
+      /* non-fatal */
+    }
+  }
+
   let browser
   try {
     browser = await chromium.launch({ headless: true })
@@ -94,8 +109,8 @@ async function main() {
       const url = `http://127.0.0.1:${PORT}${route}`
       console.log(`prerender: ${route}`)
       await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
-      // Prefer real content; fall back if a route is auth-gated shell
-      await page.waitForSelector('h1, main, [data-seo-ready]', { timeout: 20000 }).catch(() => {})
+      // Wait for route heading or explicit seo-ready marker (not generic <main> shell)
+      await page.waitForSelector('h1, [data-seo-ready]', { timeout: 20000 }).catch(() => {})
       // Let React finish route meta + first paint
       await new Promise((r) => setTimeout(r, 500))
       const html = await page.content()

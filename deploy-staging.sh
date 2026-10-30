@@ -224,10 +224,17 @@ if [ -f "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" ]; then
   echo "Updating staging nginx vhost..."
   sudo cp "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" "$NGINX_STAGING_DEST"
 fi
-if [ -f /etc/letsencrypt/live/lalia.cloud/fullchain.pem ] && [ -f "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" ]; then
-  echo "Updating lalia.cloud nginx vhost..."
-  sudo cp "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" /etc/nginx/sites-available/lalia.cloud
-  sudo ln -sfn /etc/nginx/sites-available/lalia.cloud /etc/nginx/sites-enabled/lalia.cloud
+if [ -f "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" ]; then
+  if [ -f /etc/letsencrypt/live/lalia.cloud/fullchain.pem ]; then
+    echo "Updating lalia.cloud nginx vhost (apex + www cert)..."
+    sudo cp "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" /etc/nginx/sites-available/lalia.cloud
+    sudo ln -sfn /etc/nginx/sites-available/lalia.cloud /etc/nginx/sites-enabled/lalia.cloud
+  elif [ -f /etc/letsencrypt/live/www.lalia.cloud/fullchain.pem ]; then
+    echo "Updating lalia.cloud nginx vhost (www cert fallback until apex A record is added)..."
+    sed 's|/etc/letsencrypt/live/lalia.cloud/|/etc/letsencrypt/live/www.lalia.cloud/|g' \
+      "$TEMP_DIR/deploy/nginx-lalia.cloud.conf" | sudo tee /etc/nginx/sites-available/lalia.cloud >/dev/null
+    sudo ln -sfn /etc/nginx/sites-available/lalia.cloud /etc/nginx/sites-enabled/lalia.cloud
+  fi
 fi
 if [ -f /etc/letsencrypt/live/lalia.cloud/fullchain.pem ] && [ -f "$TEMP_DIR/deploy/nginx-share.jarmetals.com.conf" ]; then
   echo "Updating share.jarmetals.com redirect..."

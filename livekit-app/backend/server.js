@@ -47,9 +47,23 @@ const demoTurnLimiter = rateLimit({
   legacyHeaders: false,
   message: { error: 'Too many demo tries. Please wait a moment.' },
 });
+const translateLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many translation requests. Please wait a moment.' },
+});
+const supportPublicLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many support requests. Please wait a few minutes.' },
+});
 
 // Middleware
-// Allow CORS from localhost, network IP, and ngrok domains
+// Allow CORS from configured production/staging origins
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.NETWORK_URL,
@@ -58,13 +72,6 @@ const allowedOrigins = [
   'https://www.lalia.cloud',
   'https://staging.jarmetals.com',
   'https://share.jarmetals.com',
-  'https://cockatoo-easy-similarly.ngrok.app', // Your custom ngrok domain
-  'https://45304f934cbd.ngrok.app', // Previous ngrok URL
-  'https://f46bc88e5f4e.ngrok.app', // Previous ngrok URL
-  'https://e8376093ae1c.ngrok.app', // Current ngrok URL
-  /^https:\/\/.*\.ngrok\.app$/, // Any ngrok.app domain
-  /^https:\/\/.*\.ngrok-free\.app$/, // Any ngrok-free.app domain (free accounts)
-  /^https:\/\/.*\.ngrok\.io$/,  // Any ngrok.io domain
 ].filter(Boolean); // Remove undefined values
 
 app.use(cors({
@@ -138,10 +145,14 @@ app.use('/api/demo/turn', demoTurnLimiter);
 app.use('/api/demo/orchestrate', demoTurnLimiter);
 app.use('/api/demo', demoRoutes);
 app.use('/api/auth', authLimiter);
+app.use('/api/v2/support/leads', supportPublicLimiter);
+app.use('/api/v2/support/chat', supportPublicLimiter);
+app.use('/api/v2/support/coach', supportPublicLimiter);
+app.use('/api/v2/support/tickets', supportPublicLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomsRoutes);
-app.use('/api/translate', translateRoutes);
+app.use('/api/translate', translateLimiter, translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
 const qualityEventsLimiter = rateLimit({

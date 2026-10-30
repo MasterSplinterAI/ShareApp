@@ -255,7 +255,7 @@ function VideoTile({ label, sub, image, fallback, badge, compact = false }) {
       {image ? (
         <img
           src={image}
-          alt=""
+          alt={label ? `${label} in a Lalia multilingual video meeting` : 'Meeting participant'}
           className="absolute inset-0 h-full w-full object-cover"
           loading="lazy"
           onError={(e) => {
@@ -285,9 +285,9 @@ function ScreenShareTile({ presentingLabel }) {
         <source srcSet="/marketing/hero-screenshare.webp" type="image/webp" />
         <img
           src="/marketing/hero-screenshare.png"
-          alt=""
+          alt="Lalia live meeting screen share with real-time multilingual captions and translation"
           className="absolute inset-0 h-full w-full object-contain bg-slate-100 p-1 sm:p-2"
-          loading="lazy"
+          fetchPriority="high"
           decoding="async"
           width={1600}
           height={1067}

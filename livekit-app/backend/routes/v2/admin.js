@@ -339,6 +339,29 @@ function clampInt(value, fallback, min, max) {
   return Math.min(Math.max(n, min), max);
 }
 
+/** Postgres returns BIGINT as a string. `new Date("1730000000000")` is Invalid Date. */
+function epochMs(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+  if (typeof value === 'string' && /^-?\d+$/.test(value)) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  const t = new Date(value).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+function isoFromEpoch(value) {
+  const ms = epochMs(value);
+  if (ms == null) return null;
+  return new Date(ms).toISOString();
+}
+
 router.get('/trends', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const days = clampInt(req.query.days, 30, 1, 365);
@@ -446,7 +469,7 @@ router.get('/meetings/:meetingId/costs', requireV2Auth, requireSuperadmin, async
         unit_cost_usd: row.unit_cost_usd,
         total_cost_usd: row.total_cost_usd,
         participant,
-        created_at: new Date(row.ts).toISOString(),
+        created_at: isoFromEpoch(row.ts),
       };
     });
     const rollupRow = await db.get(
@@ -508,9 +531,13 @@ router.get('/guests', requireV2Auth, requireSuperadmin, async (req, res) => {
         org_id: row.org_id,
         identity: row.participant_identity,
         name,
-        joined_at: new Date(row.joined_ts).toISOString(),
-        left_at: row.left_ts ? new Date(row.left_ts).toISOString() : null,
-        duration_minutes: row.left_ts ? Math.round((row.left_ts - row.joined_ts) / 60000) : null,
+        joined_at: isoFromEpoch(row.joined_ts),
+        left_at: isoFromEpoch(row.left_ts),
+        duration_minutes: (() => {
+          const joined = epochMs(row.joined_ts);
+          const left = epochMs(row.left_ts);
+          return joined != null && left != null ? Math.round((left - joined) / 60000) : null;
+        })(),
       };
     });
     res.json({

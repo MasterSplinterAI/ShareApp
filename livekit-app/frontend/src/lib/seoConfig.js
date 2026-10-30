@@ -10,7 +10,7 @@ export const SITE_ORIGIN = 'https://lalia.cloud';
 export const DEFAULT_OG_IMAGE = `${SITE_ORIGIN}/marketing/og-card.png`;
 
 const DEFAULT_DESCRIPTION =
-  'Multilingual video meetings in the browser. Live translation, speech-to-text, optional transcripts, and AI meeting insights—for individuals and teams. Free tier, no credit card.';
+  'Live meeting translation, multilingual captions, transcripts, and AI summaries in your browser. Guests join in one click—no download. Start free at Lalia.';
 
 /** Exact-match SEO for indexable marketing routes. */
 export const SEO_BY_PATH = {

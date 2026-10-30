@@ -2,11 +2,12 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
+const { requireSuperadmin } = require('../../lib/v2Superadmin');
 
 const ALLOWED_TYPES = new Set(['meeting_participant_minute', 'translation_minute', 'storage_byte_day']);
 
 /** POST body may include optional `idempotency_key` (string, max 128) for deduplicated inserts per org. */
-router.post('/events', requireV2Auth, async (req, res) => {
+router.post('/events', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const { event_type, quantity, unit, meeting_id, meta, idempotency_key } = req.body || {};
     if (!ALLOWED_TYPES.has(event_type)) {

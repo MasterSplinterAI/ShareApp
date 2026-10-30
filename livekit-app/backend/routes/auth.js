@@ -1,11 +1,13 @@
 const express = require('express');
 const { AccessToken } = require('livekit-server-sdk');
+const db = require('../db/v2Database');
+const { requireV2Auth } = require('../middleware/v2Auth');
 const router = express.Router();
 
-// Generate LiveKit access token
-router.post('/token', async (req, res) => {
+// Legacy token endpoint — locked down to authenticated V2 users and non-V2 rooms only.
+router.post('/token', requireV2Auth, async (req, res) => {
   try {
-    const { roomName, participantName, isHost } = req.body;
+    const { roomName, participantName } = req.body;
 
     if (!roomName || !participantName) {
       return res.status(400).json({
@@ -13,33 +15,41 @@ router.post('/token', async (req, res) => {
       });
     }
 
+    // Never mint tokens for V2 meetings here — V2 meetings must go through
+    // /api/v2/meetings/:id/token or /api/v2/join/guest-token.
+    const v2Row = await db.get(`SELECT id FROM v2_meetings WHERE livekit_room_name = ?`, [String(roomName)]);
+    if (v2Row) {
+      return res.status(403).json({ error: 'Use V2 meeting token endpoint for this room' });
+    }
+
     // Check if LiveKit credentials are configured
     if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET) {
       return res.status(500).json({
-        error: 'LiveKit credentials not configured. Please set LIVEKIT_API_KEY and LIVEKIT_API_SECRET in your .env file.'
+        error: 'LiveKit credentials not configured.'
       });
     }
 
-    // Create access token
+    const safeName = String(participantName).trim().slice(0, 128);
+    // Create access token (never grant roomAdmin on the legacy route)
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,
       {
-        identity: participantName,
-        ttl: '24h', // Token expires in 24 hours
+        identity: `user-${req.v2Auth.userId}`,
+        name: safeName,
+        ttl: '24h',
       }
     );
 
     // Grant permissions
     at.addGrant({
       roomJoin: true,
-      room: roomName,
+      room: String(roomName),
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,
-      // Additional permissions for hosts
-      roomAdmin: isHost === true,
-      recorder: isHost === true,
+      roomAdmin: false,
+      recorder: false,
     });
 
     // Generate JWT token

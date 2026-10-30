@@ -1,17 +1,20 @@
 const express = require('express');
+const crypto = require('crypto');
 const { createLiveKitConferenceRoom, getRoomService } = require('../lib/livekitService');
 const { publicFrontendBaseUrl } = require('../lib/publicFrontendBaseUrl');
+const { requireV2Auth } = require('../middleware/v2Auth');
+const db = require('../db/v2Database');
 const router = express.Router();
 
-// Create a new room
-router.post('/create', async (req, res) => {
+// Create a new room (authenticated V2 users only)
+router.post('/create', requireV2Auth, async (req, res) => {
   try {
     const roomMode = req.body.roomMode || 'multi-language';
-    const roomName = req.body.roomName || `room-${Math.random().toString(36).substring(2, 15)}-${Date.now().toString(36)}`;
-    const room = await createLiveKitConferenceRoom(roomName, roomMode);
+    const roomName = req.body.roomName || `room-${crypto.randomBytes(6).toString('hex')}-${Date.now().toString(36)}`;
+    const room = await createLiveKitConferenceRoom(roomName, roomMode, req.v2Auth.orgId);
     
     // Generate host code for easy rejoin
-    const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const hostCode = crypto.randomBytes(3).toString('hex').toUpperCase();
     
     const base = publicFrontendBaseUrl(req);
     const shareableLink = `${base}/join/${encodeURIComponent(roomName)}`;
@@ -77,11 +80,10 @@ router.get('/:roomName', async (req, res) => {
     res.json({
       roomName: room.name,
       roomId: room.sid,
-      roomMode: metadata.roomMode || 'multi-language', // Include room mode from metadata
+      roomMode: metadata.roomMode || 'multi-language',
       numParticipants: room.numParticipants,
       maxParticipants: room.maxParticipants,
       creationTime: room.creationTime ? room.creationTime.toString() : null,
-      metadata: room.metadata
     });
   } catch (error) {
     console.error('Room info error:', error);
@@ -92,8 +94,8 @@ router.get('/:roomName', async (req, res) => {
   }
 });
 
-// List participants in a room
-router.get('/:roomName/participants', async (req, res) => {
+// List participants in a room (authenticated only)
+router.get('/:roomName/participants', requireV2Auth, async (req, res) => {
   try {
     const { roomName } = req.params;
     const roomService = getRoomService();
@@ -122,11 +124,20 @@ router.get('/:roomName/participants', async (req, res) => {
   }
 });
 
-// Delete a room (host only)
-router.delete('/:roomName', async (req, res) => {
+// Delete a room (authenticated host/org admin only)
+router.delete('/:roomName', requireV2Auth, async (req, res) => {
   try {
     const { roomName } = req.params;
-    const { hostCode } = req.body; // In production, verify this properly
+    const meeting = await db.get(
+      `SELECT id, org_id, host_user_id FROM v2_meetings WHERE livekit_room_name = ?`,
+      [roomName]
+    );
+    if (!meeting || meeting.org_id !== req.v2Auth.orgId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    if (meeting.host_user_id !== req.v2Auth.userId && !['owner', 'admin'].includes(req.v2Auth.role)) {
+      return res.status(403).json({ error: 'Only the host can delete this room' });
+    }
     
     const roomService = getRoomService();
     await roomService.deleteRoom(roomName);
@@ -143,8 +154,8 @@ router.delete('/:roomName', async (req, res) => {
   }
 });
 
-// Generate an invite link (no LiveKit room created yet -- room is created on-demand when someone joins)
-router.post('/invite', async (req, res) => {
+// Generate an invite link (authenticated only)
+router.post('/invite', requireV2Auth, async (req, res) => {
   try {
     const slug = `invite-${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
 

@@ -63,6 +63,24 @@ export default function SeoHead() {
       // route does not linger.
       upsertMeta('name', 'robots', 'index, follow')
     }
+
+    // Scope FAQPage JSON-LD to the homepage (/) only so prerendered sub-pages
+    // (/demo, /terms, /privacy, /v2/signup) do not ship duplicate FAQPage schema.
+    const ldEl = document.getElementById('seo-jsonld')
+    if (ldEl) {
+      try {
+        if (!ldEl.dataset.fullGraph) {
+          ldEl.dataset.fullGraph = ldEl.textContent || ''
+        }
+        const full = JSON.parse(ldEl.dataset.fullGraph)
+        if (location.pathname !== '/' && Array.isArray(full['@graph'])) {
+          full['@graph'] = full['@graph'].filter((node) => node?.['@type'] !== 'FAQPage')
+        }
+        ldEl.textContent = JSON.stringify(full)
+      } catch {
+        /* ignore malformed json-ld */
+      }
+    }
   }, [location.pathname])
 
   return null

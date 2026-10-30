@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const {
   createDemoSession,
   processDemoTurn,
@@ -11,6 +12,17 @@ const {
 } = require('../lib/demoLiveRoom');
 
 const router = express.Router();
+
+function verifyOrchestratorSecret(req) {
+  const expected = String(process.env.DEMO_ORCHESTRATOR_SECRET || '').trim();
+  if (!expected) return true;
+  const provided = String(req.get('X-Demo-Orchestrator-Secret') || '').trim();
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
+}
 
 const ALLOWED_EVENTS = new Set([
   'session_start',
@@ -55,7 +67,7 @@ router.post('/turn', async (req, res) => {
     }
     const result = await processDemoTurn({
       sessionId: String(sessionId),
-      userText,
+      userText: typeof userText === 'string' ? userText.slice(0, 600) : '',
       ip: req.ip,
     });
     if (!result.ok) {
@@ -108,13 +120,16 @@ router.post('/room', async (req, res) => {
 
 router.post('/orchestrate', async (req, res) => {
   try {
+    if (!verifyOrchestratorSecret(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     const { demoSessionId, userText, trigger } = req.body || {};
     if (!demoSessionId) {
       return res.status(400).json({ error: 'demoSessionId required' });
     }
     const result = await orchestrateDemoRoom({
       demoSessionId: String(demoSessionId),
-      userText,
+      userText: typeof userText === 'string' ? userText.slice(0, 600) : '',
       trigger,
     });
     if (!result.ok) {

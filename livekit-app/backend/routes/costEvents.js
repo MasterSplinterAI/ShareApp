@@ -1,7 +1,16 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { computeCost } = require('../lib/costConstants');
 const { run } = require('../db/v2Database');
+
+function safeSecretEqual(a, b) {
+  if (!a || !b) return false;
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
 
 let tableReady = false;
 async function ensureTable() {
@@ -29,13 +38,13 @@ const COST_EVENT_SECRET = process.env.COST_EVENT_SECRET || '';
 router.post('/', async (req, res) => {
   try {
     const provided = req.get('X-Cost-Secret') || '';
-    if (!COST_EVENT_SECRET || provided !== COST_EVENT_SECRET) {
+    if (!safeSecretEqual(provided, COST_EVENT_SECRET)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
     const { meeting_id, org_id, event_type, units, meta } = req.body;
-    if (!meeting_id || !event_type || typeof units !== 'number') {
-      return res.status(400).json({ error: 'meeting_id, event_type, and units (number) are required' });
+    if (!meeting_id || !event_type || typeof units !== 'number' || !Number.isFinite(units) || units < 0) {
+      return res.status(400).json({ error: 'meeting_id, event_type, and non-negative units (number) are required' });
     }
 
     let costInfo;

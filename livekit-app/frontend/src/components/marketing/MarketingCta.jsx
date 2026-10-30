@@ -19,6 +19,9 @@ export function MarketingCta() {
             </Link>
           </Button>
           <Button size="lg" variant="outline" className="min-w-[200px]" asChild>
+            <Link to="/demo">{t('hero.ctaSecondary')}</Link>
+          </Button>
+          <Button size="lg" variant="ghost" className="min-w-[160px]" asChild>
             <a href="mailto:hello@lalia.cloud?subject=Sales%20inquiry">{t('cta.contactSales')}</a>
           </Button>
         </div>

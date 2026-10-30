@@ -332,22 +332,31 @@ async function translateBatchChunk(chunk, targetLanguage, sourceLanguage, provid
   return results;
 }
 
+function sanitizeLangCode(code, fallback = 'en') {
+  const s = String(code || fallback).trim();
+  return /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(s) ? s : fallback;
+}
+
+const MAX_TRANSLATE_TEXT_LEN = 4000;
+const MAX_TRANSLATE_BATCH_LEN = 50;
+
 /**
  * POST /api/translate
  * Translate single text (Autopilot SDK compatible)
  */
 router.post('/', async (req, res) => {
   try {
-    const { text, target_language, source_language, no_cache } = req.body;
-    const targetLanguage = target_language || req.body.targetLanguage || 'en';
-    const sourceLanguage = source_language || req.body.sourceLanguage || 'en';
-    const noCache = Boolean(no_cache || req.body.noCache);
+    const { text: rawText, target_language, source_language, no_cache } = req.body || {};
+    const targetLanguage = sanitizeLangCode(target_language || req.body?.targetLanguage, 'en');
+    const sourceLanguage = sanitizeLangCode(source_language || req.body?.sourceLanguage, 'en');
+    const noCache = Boolean(no_cache || req.body?.noCache);
 
-    if (!text || typeof text !== 'string') {
+    if (!rawText || typeof rawText !== 'string') {
       return res.status(400).json({
         error: 'Missing required field: text (must be a string)'
       });
     }
+    const text = rawText.slice(0, MAX_TRANSLATE_TEXT_LEN);
 
     // No-op when source and target are the same (e.g. both English for DOM strings)
     if (targetLanguage === sourceLanguage) {
@@ -425,15 +434,18 @@ router.post('/', async (req, res) => {
  */
 router.post('/batch', async (req, res) => {
   try {
-    const { texts, target_language, source_language } = req.body;
-    const targetLanguage = target_language || req.body.targetLanguage || 'en';
-    const sourceLanguage = source_language || req.body.sourceLanguage || 'en';
+    const { texts: rawTexts, target_language, source_language } = req.body || {};
+    const targetLanguage = sanitizeLangCode(target_language || req.body?.targetLanguage, 'en');
+    const sourceLanguage = sanitizeLangCode(source_language || req.body?.sourceLanguage, 'en');
 
-    if (!Array.isArray(texts) || texts.length === 0) {
+    if (!Array.isArray(rawTexts) || rawTexts.length === 0) {
       return res.status(400).json({
         error: 'Missing required field: texts (array)'
       });
     }
+    const texts = rawTexts
+      .slice(0, MAX_TRANSLATE_BATCH_LEN)
+      .map((t) => (typeof t === 'string' ? t.slice(0, MAX_TRANSLATE_TEXT_LEN) : ''));
 
     // No-op when source and target match
     if (targetLanguage === sourceLanguage) {

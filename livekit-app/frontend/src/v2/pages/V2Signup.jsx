@@ -67,10 +67,10 @@ export default function V2Signup() {
   };
 
   return (
-    <div className="mx-auto max-w-md">
+    <div className="mx-auto max-w-md" data-seo-ready="true">
       <Card className="border-border/80 shadow-lg">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl">{t('auth.signup.title')}</CardTitle>
+          <h1 className="text-2xl font-semibold leading-none tracking-tight">{t('auth.signup.title')}</h1>
           <CardDescription>{t('auth.signup.description')}</CardDescription>
         </CardHeader>
         <CardContent>
