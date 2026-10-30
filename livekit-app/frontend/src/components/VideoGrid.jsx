@@ -1,10 +1,12 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTracks, useParticipants, useLocalParticipant, VideoTrack, ParticipantContext } from '@livekit/components-react';
 import { Track, RoomEvent, VideoQuality, ConnectionQuality } from 'livekit-client';
-import { Maximize, Minimize, User, MicOff, VideoOff } from 'lucide-react';
+import { Maximize, Minimize, User, MicOff, VideoOff, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 import { participantDisplayName } from '../lib/participantDisplayName';
+
+const DESKTOP_PAGE_SIZE = 12;
 
 function useViewportLayout() {
   const [layout, setLayout] = useState({ isMobile: false, isLandscape: false });
@@ -51,6 +53,9 @@ function VideoGrid() {
   const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState(null);
   const [pinnedIdentity, setPinnedIdentity] = useState(null);
   const [stageWide, setStageWide] = useState(true);
+  const [pageIndex, setPageIndex] = useState(0);
+  const [filmstripVisible, setFilmstripVisible] = useState(true);
+  const speakerOrderRef = useRef([]);
 
   useEffect(() => {
     const el = fullScreenRef.current;
@@ -77,16 +82,55 @@ function VideoGrid() {
   const screenShareTracks = tracks.filter(t => t.source === Track.Source.ScreenShare);
   const activeScreenShare = screenShareTracks.length > 0 ? screenShareTracks[0] : null;
 
-  // Track active speaker for mobile prominence layout
+  // Track active speaker for mobile prominence + large-call page 1 priority
   useEffect(() => {
     if (!room) return;
     const handleSpeakers = (speakers) => {
       const human = speakers.find((s) => !isAgentParticipant(s));
-      if (human) setActiveSpeakerIdentity(human.identity);
+      if (human?.identity) {
+        setActiveSpeakerIdentity(human.identity);
+        speakerOrderRef.current = [
+          human.identity,
+          ...speakerOrderRef.current.filter((id) => id !== human.identity),
+        ].slice(0, 50);
+      }
     };
     room.on(RoomEvent.ActiveSpeakersChanged, handleSpeakers);
     return () => room.off(RoomEvent.ActiveSpeakersChanged, handleSpeakers);
   }, [room]);
+
+  // Prioritize local participant + recent active speakers when paginating 13+ calls
+  // or ordering the screen-share filmstrip.
+  const orderedParticipants = useMemo(() => {
+    if (humanParticipants.length <= DESKTOP_PAGE_SIZE && !activeScreenShare) {
+      return humanParticipants;
+    }
+    const localId = localParticipant?.identity;
+    const recentOrder = speakerOrderRef.current;
+    return [...humanParticipants].sort((a, b) => {
+      if (a.identity === pinnedIdentity) return -1;
+      if (b.identity === pinnedIdentity) return 1;
+      if (a.identity === activeSpeakerIdentity) return -1;
+      if (b.identity === activeSpeakerIdentity) return 1;
+      if (a.identity === localId) return -1;
+      if (b.identity === localId) return 1;
+      const ai = recentOrder.indexOf(a.identity);
+      const bi = recentOrder.indexOf(b.identity);
+      if (ai !== -1 && bi !== -1) return ai - bi;
+      if (ai !== -1) return -1;
+      if (bi !== -1) return 1;
+      return 0;
+    });
+  }, [humanParticipants, activeScreenShare, localParticipant?.identity, pinnedIdentity, activeSpeakerIdentity]);
+
+  const totalPages = Math.max(1, Math.ceil(orderedParticipants.length / DESKTOP_PAGE_SIZE));
+  const safePageIndex = Math.min(pageIndex, totalPages - 1);
+
+  useEffect(() => {
+    if (pageIndex >= totalPages) {
+      setPageIndex(Math.max(0, totalPages - 1));
+    }
+  }, [pageIndex, totalPages]);
 
   const toggleFullScreen = useCallback(async () => {
     const targetEl =
@@ -121,14 +165,19 @@ function VideoGrid() {
     if (count === 3 || count === 4) return 'grid-cols-2 grid-rows-2';
     if (count === 5) return 'grid-cols-6 grid-rows-2';
     if (count === 6) return 'grid-cols-3 grid-rows-2';
-    if (count <= 9) return 'grid-cols-3 grid-rows-3';
-    return 'grid-cols-4 grid-rows-3';
+    if (count === 7 || count === 8) return 'grid-cols-6 grid-rows-3';
+    if (count === 9) return 'grid-cols-3 grid-rows-3';
+    return 'grid-cols-12 grid-rows-3';
   };
 
   const getTileSpanClass = (count, index) => {
     if (count === 3 && index === 2) return 'col-span-2';
     if (count === 5) return index < 3 ? 'col-span-2' : 'col-span-3';
-    if (count === 7 && index === 6) return 'col-span-3';
+    if (count === 7) return index < 6 ? 'col-span-2' : 'col-span-6';
+    if (count === 8) return index < 6 ? 'col-span-2' : 'col-span-3';
+    if (count === 10) return index < 8 ? 'col-span-3' : 'col-span-6';
+    if (count === 11) return index < 8 ? 'col-span-3' : 'col-span-4';
+    if (count >= 12) return 'col-span-3';
     return '';
   };
 
@@ -142,19 +191,35 @@ function VideoGrid() {
             className="w-full h-full object-contain bg-black"
           />
           <ScreenShareQualityChip trackRef={activeScreenShare} meetingId={meetingId} />
-          <button
-            type="button"
-            onClick={toggleFullScreen}
-            className="absolute top-3 right-3 z-10 rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
-            aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
-            title={isFullScreen ? 'Exit full screen' : 'Full screen'}
-          >
-            {isFullScreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-          </button>
+          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+            {!isFullScreen && orderedParticipants.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilmstripVisible((v) => !v)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-2 text-xs font-medium text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
+                aria-label={filmstripVisible ? 'Hide participant thumbnails' : 'Show participant thumbnails'}
+                title={filmstripVisible ? 'Hide participant thumbnails' : 'Show participant thumbnails'}
+              >
+                {filmstripVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                <span className="hidden sm:inline">
+                  {filmstripVisible ? 'Hide strip' : `Show strip (${orderedParticipants.length})`}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={toggleFullScreen}
+              className="rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
+              aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
+              title={isFullScreen ? 'Exit full screen' : 'Full screen'}
+            >
+              {isFullScreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+            </button>
+          </div>
         </div>
-        {!isFullScreen && (
-          <div className="h-20 sm:h-36 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto meeting-filmstrip border-t border-border">
-            {humanParticipants.map(participant => (
+        {!isFullScreen && filmstripVisible && (
+          <div className="h-20 sm:h-32 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto meeting-filmstrip border-t border-border">
+            {orderedParticipants.map((participant) => (
               <ParticipantTile
                 key={participant.identity}
                 participant={participant}
@@ -219,8 +284,16 @@ function VideoGrid() {
     );
   }
 
-  // Normal grid layout — every tile fills 100% of its grid cell (auto-rows-fr)
-  const count = humanParticipants.length;
+  // Normal grid layout — up to 12 tiles per page on desktop, every tile fills 100% of its grid cell
+  const pagedParticipants =
+    orderedParticipants.length > DESKTOP_PAGE_SIZE
+      ? orderedParticipants.slice(
+          safePageIndex * DESKTOP_PAGE_SIZE,
+          (safePageIndex + 1) * DESKTOP_PAGE_SIZE
+        )
+      : orderedParticipants;
+  const count = pagedParticipants.length;
+
   return (
     <div ref={fullScreenRef} className="group relative h-full w-full overflow-hidden meeting-video-matte p-1.5 sm:p-3">
       <button
@@ -233,7 +306,7 @@ function VideoGrid() {
         {isFullScreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
       </button>
       <div className={`grid ${getGridClass(count)} gap-1.5 sm:gap-3 h-full w-full auto-rows-fr`}>
-        {humanParticipants.map((participant, index) => (
+        {pagedParticipants.map((participant, index) => (
           <ParticipantTile
             key={participant.identity}
             participant={participant}
@@ -242,6 +315,31 @@ function VideoGrid() {
           />
         ))}
       </div>
+      {totalPages > 1 && (
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+          <button
+            type="button"
+            onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+            disabled={safePageIndex === 0}
+            className="rounded-full p-0.5 transition-opacity hover:bg-white/15 disabled:opacity-35"
+            aria-label="Previous participants page"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span>
+            Page {safePageIndex + 1} of {totalPages} · {orderedParticipants.length} in call
+          </span>
+          <button
+            type="button"
+            onClick={() => setPageIndex((p) => Math.min(totalPages - 1, p + 1))}
+            disabled={safePageIndex >= totalPages - 1}
+            className="rounded-full p-0.5 transition-opacity hover:bg-white/15 disabled:opacity-35"
+            aria-label="Next participants page"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
