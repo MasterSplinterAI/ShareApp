@@ -1,4 +1,4 @@
-import { MessageSquare, MessageCircle, Users, X, Download, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { MessageSquare, MessageCircle, Users, X, Download, ChevronDown, ChevronsUpDown, ChevronsLeftRight } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 
@@ -17,6 +17,8 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
     selectedLanguage,
     mobileSheetSize,
     cycleMobileSheetSize,
+    desktopPanelWide,
+    toggleDesktopPanelWide,
   } = useMeeting();
   const t = useRoomControlLabels(selectedLanguage);
 
@@ -98,6 +100,15 @@ export default function PanelTabs({ onDownload, canDownload = false, compact = f
             title={`Resize panel (${sizeLabel})`}
           >
             <ChevronsUpDown className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={toggleDesktopPanelWide}
+            className="hidden sm:inline-flex rounded-md p-1.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={desktopPanelWide ? 'Standard panel width' : 'Wider panel'}
+            title={desktopPanelWide ? 'Standard panel width' : 'Wider panel'}
+          >
+            <ChevronsLeftRight className="w-4 h-4" />
           </button>
           {onDownload && (
             <button

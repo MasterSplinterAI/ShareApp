@@ -30,9 +30,15 @@ export function MeetingProvider({ children, initialState = {} }) {
   const [isFullScreen, setIsFullScreen] = useState(false);
   // Mobile bottom sheet height preset: 'sm' (26dvh) | 'md' (40dvh) | 'lg' (62dvh)
   const [mobileSheetSize, setMobileSheetSize] = useState('md');
+  // Desktop side panel width preset: false (standard) | true (wide 520px)
+  const [desktopPanelWide, setDesktopPanelWide] = useState(false);
 
   const cycleMobileSheetSize = useCallback(() => {
     setMobileSheetSize((prev) => (prev === 'md' ? 'lg' : prev === 'lg' ? 'sm' : 'md'));
+  }, []);
+
+  const toggleDesktopPanelWide = useCallback(() => {
+    setDesktopPanelWide((prev) => !prev);
   }, []);
 
   const setSidePanelTab = useCallback((tab) => {
@@ -151,10 +157,12 @@ export function MeetingProvider({ children, initialState = {} }) {
     isFullScreen,
     setIsFullScreen,
 
-    // Mobile sheet sizing
+    // Mobile sheet sizing + Desktop panel width
     mobileSheetSize,
     setMobileSheetSize,
     cycleMobileSheetSize,
+    desktopPanelWide,
+    toggleDesktopPanelWide,
 
     // Mode
     meetingMode: initialState.meetingMode || 'translation',
@@ -192,6 +200,8 @@ export function MeetingProvider({ children, initialState = {} }) {
     isFullScreen,
     mobileSheetSize,
     cycleMobileSheetSize,
+    desktopPanelWide,
+    toggleDesktopPanelWide,
   ]);
 
   return (

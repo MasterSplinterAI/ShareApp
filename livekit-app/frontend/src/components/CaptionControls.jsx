@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Subtitles, Globe, Headphones, Check, ChevronDown } from 'lucide-react';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
+import { useMeeting } from '../context/MeetingContext';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { TTS_VOICES, sanitizeTtsVoiceId } from '../lib/ttsVoices';
 import { Button } from './ui/button';
@@ -33,11 +34,13 @@ export default function CaptionControls({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
+  const { sidePanelOpen, sidePanelTab, openSidePanel } = useMeeting();
   const normalizedValue = normalizeMeetingLanguageCode(value);
   const selectedLanguage = getMeetingLanguageDisplay(normalizedValue);
   const t = useRoomControlLabels(normalizedValue);
 
-  const isActive = translationEnabled || (isHost && captionMode !== 'off');
+  const captionsPanelVisible = translationEnabled && sidePanelOpen && sidePanelTab === 'captions';
+  const isActive = captionsPanelVisible || (isHost && captionMode !== 'off');
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -45,8 +48,8 @@ export default function CaptionControls({
         setIsOpen(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -57,7 +60,20 @@ export default function CaptionControls({
 
   const handleLanguageSelect = (code) => {
     onChange(code);
+    if (!translationEnabled) {
+      onTranslationToggle();
+    } else if (!sidePanelOpen || sidePanelTab !== 'captions') {
+      openSidePanel('captions');
+    }
     setIsOpen(false);
+  };
+
+  const handleToggleCaptionsRow = () => {
+    if (translationEnabled && (!sidePanelOpen || sidePanelTab !== 'captions')) {
+      openSidePanel('captions');
+      return;
+    }
+    onTranslationToggle();
   };
 
   return (
@@ -80,16 +96,14 @@ export default function CaptionControls({
 
       {isOpen && (
         <div
-          className="absolute bottom-full right-0 z-[9999] mb-2 w-72 overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
+          className="absolute bottom-full right-0 z-[9999] mb-2 w-72 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-var(--control-bar-h,68px)-1rem)] overflow-y-auto rounded-lg border border-border bg-popover text-popover-foreground shadow-xl"
         >
           <button
             type="button"
-            onClick={() => {
-              onTranslationToggle();
-            }}
+            onClick={handleToggleCaptionsRow}
             className={cn(
               'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent',
-              translationEnabled && 'bg-primary/10'
+              captionsPanelVisible && 'bg-primary/10'
             )}
           >
             <Globe className="h-4 w-4 shrink-0" />
@@ -97,10 +111,10 @@ export default function CaptionControls({
             <span
               className={cn(
                 'rounded px-1.5 py-0.5 text-xs font-medium',
-                translationEnabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                captionsPanelVisible ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
               )}
             >
-              {translationEnabled ? 'ON' : 'OFF'}
+              {captionsPanelVisible ? 'ON' : 'OFF'}
             </span>
           </button>
 

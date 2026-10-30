@@ -266,6 +266,7 @@ function TranscriptionPanel() {
     demoTeammates,
     participantName,
     mobileSheetSize,
+    desktopPanelWide,
   } = useMeeting();
   const usePipMode = isFullScreen && isPanelOpen;
   // Default to expanded on mobile: when captions open (incl. on join) show the
@@ -701,7 +702,9 @@ function TranscriptionPanel() {
     <>
       {/* Desktop: right side panel */}
       <div
-        className="hidden sm:flex flex-col w-[350px] lg:w-[400px] meeting-panel-surface border-l border h-full min-h-0 flex-shrink-0"
+        className={`hidden sm:flex flex-col ${
+          desktopPanelWide ? 'w-[440px] lg:w-[520px]' : 'w-[340px] lg:w-[400px]'
+        } meeting-panel-surface border-l border h-full min-h-0 flex-shrink-0 transition-[width] duration-200`}
         data-no-translate="true"
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalMessages.length > 0} />

@@ -73,10 +73,12 @@ function VideoGrid() {
   }, [room]);
 
   const toggleFullScreen = useCallback(async () => {
-    if (!fullScreenRef.current) return;
+    const targetEl =
+      fullScreenRef.current?.closest?.('.meeting-room-root') || fullScreenRef.current;
+    if (!targetEl) return;
     try {
       if (!document.fullscreenElement) {
-        await fullScreenRef.current.requestFullscreen();
+        await targetEl.requestFullscreen();
         setIsFullScreen(true);
       } else {
         await document.exitFullscreen();
@@ -193,14 +195,29 @@ function VideoGrid() {
   }
 
   // Normal grid layout
+  const isTwoDesktop = !isMobile && humanParticipants.length === 2;
   return (
-    <div ref={fullScreenRef} className="h-full w-full overflow-hidden meeting-video-matte p-1.5 sm:p-3">
-      <div className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full auto-rows-fr`}>
-        {humanParticipants.map(participant => (
+    <div ref={fullScreenRef} className="group relative h-full w-full overflow-hidden meeting-video-matte p-1.5 sm:p-3">
+      <button
+        type="button"
+        onClick={toggleFullScreen}
+        className="hidden sm:inline-flex absolute top-4 right-4 z-10 rounded-lg bg-black/55 p-2 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
+        aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
+        title={isFullScreen ? 'Exit full screen' : 'Full screen'}
+      >
+        {isFullScreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+      </button>
+      <div
+        className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full ${
+          isTwoDesktop ? 'sm:items-center' : 'auto-rows-fr'
+        }`}
+      >
+        {humanParticipants.map((participant) => (
           <ParticipantTile
             key={participant.identity}
             participant={participant}
             tracks={tracks}
+            aspectVideoDesktop={isTwoDesktop}
           />
         ))}
       </div>
@@ -208,7 +225,7 @@ function VideoGrid() {
   );
 }
 
-function ParticipantTile({ participant, tracks, compact = false }) {
+function ParticipantTile({ participant, tracks, compact = false, aspectVideoDesktop = false }) {
   const { localParticipant, cameraTrack: localCameraPub, microphoneTrack: localMicPub, isCameraEnabled: localCameraEnabled } = useLocalParticipant();
   const isLocal = participant.identity === localParticipant?.identity;
 
@@ -234,7 +251,11 @@ function ParticipantTile({ participant, tracks, compact = false }) {
   return (
     <div
       className={`relative min-h-0 overflow-hidden rounded-lg border meeting-participant-tile ${
-        compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : 'w-full h-full'
+        compact
+          ? 'w-24 sm:w-44 flex-shrink-0 aspect-video'
+          : aspectVideoDesktop
+            ? 'w-full h-full sm:h-auto sm:max-h-full sm:aspect-video'
+            : 'w-full h-full'
       } ${isSpeaking ? 'ring-2 ring-emerald-500' : ''}`}
     >
       {hasVideo ? (

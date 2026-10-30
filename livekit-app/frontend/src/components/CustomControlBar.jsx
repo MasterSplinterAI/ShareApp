@@ -334,8 +334,8 @@ export default function CustomControlBar({
 
   const barBtn = (compact) =>
     cn(
-      'rounded-full transition-transform duration-150 hover:-translate-y-0.5',
-      compact ? 'h-11 w-11 shrink-0 px-0' : 'h-11 gap-2 px-5'
+      'rounded-full transition-transform duration-150 hover:-translate-y-0.5 shrink-0',
+      compact ? 'h-11 w-11 px-0' : 'h-11 gap-2 px-3 lg:px-5'
     );
 
   const t = useRoomControlLabels(selectedLanguage);
@@ -367,9 +367,9 @@ export default function CustomControlBar({
       )}
       data-no-translate="true"
     >
-      <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
+      <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-2 lg:gap-4'}`}>
         {/* Left side - Standard controls */}
-        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
+        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-1.5 lg:gap-2'}`}>
           {/* Microphone Toggle */}
           <div className="flex items-center gap-1">
             <Button
@@ -385,7 +385,7 @@ export default function CustomControlBar({
               title={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
               {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-              {!isCompact && <span className="text-sm font-medium">{t('microphone')}</span>}
+              {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('microphone')}</span>}
             </Button>
 
             {micDevices.length > 1 && !isCompact && (
@@ -405,7 +405,7 @@ export default function CustomControlBar({
                 </Button>
 
                 {showMicMenu && (
-                  <div className="absolute bottom-full left-0 z-[9999] mb-2 w-56 rounded-lg border border-border bg-popover shadow-xl">
+                  <div className="absolute bottom-full left-0 z-[9999] mb-2 w-60 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-var(--control-bar-h,68px)-1rem)] overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
                     <div className="p-2">
                       {micDevices.map((device) => (
                         <button
@@ -442,7 +442,7 @@ export default function CustomControlBar({
               title={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
               {isCameraEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
-              {!isCompact && <span className="text-sm font-medium">{t('camera')}</span>}
+              {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('camera')}</span>}
             </Button>
 
             <div className="relative" ref={cameraMenuRef}>
@@ -527,13 +527,13 @@ export default function CustomControlBar({
               title={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             >
               <Monitor className="h-5 w-5" />
-              <span className="text-sm font-medium">{isScreenSharing ? t('stopSharing') : t('shareScreen')}</span>
+              <span className="hidden lg:inline text-sm font-medium">{isScreenSharing ? t('stopSharing') : t('shareScreen')}</span>
             </Button>
           )}
         </div>
 
         {/* Right side - Captions / panels, share, leave */}
-        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
+        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-1.5 lg:gap-2'}`}>
           {isCompact ? (
             <MeetingPanelMenu
               value={selectedLanguage}
@@ -607,7 +607,7 @@ export default function CustomControlBar({
                   title="Participants"
                 >
                   <Users className="h-5 w-5" />
-                  <span className="text-sm font-medium">{t('people')}</span>
+                  <span className="hidden lg:inline text-sm font-medium">{t('people')}</span>
                 </Button>
               )}
             </>
@@ -617,7 +617,7 @@ export default function CustomControlBar({
           {isHost && (
             <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting" title="Share meeting">
               <Share2 className="h-5 w-5" />
-              {!isCompact && <span className="text-sm font-medium">{t('share')}</span>}
+              {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('share')}</span>}
             </Button>
           )}
 
@@ -639,7 +639,7 @@ export default function CustomControlBar({
             title="Leave meeting"
           >
             <PhoneOff className="h-5 w-5" />
-            {!isCompact && <span className="text-sm font-medium">{t('leave')}</span>}
+            {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('leave')}</span>}
           </Button>
         </div>
       </div>
