@@ -1,0 +1,73 @@
+import * as react from 'react';
+import { ReactNode } from 'react';
+
+interface SupportOpsConsoleProps {
+    apiBase: string;
+    className?: string;
+    pollMs?: number;
+    /** Bearer JWT for hosts without cookie sessions (e.g. ShareApp). */
+    getAccessToken?: () => string | null | undefined;
+}
+declare function SupportOpsConsole(props: SupportOpsConsoleProps): react.JSX.Element;
+
+interface EmbedSnippetProps {
+    apiBase: string;
+    tenantId: string;
+    width?: number;
+    height?: number;
+    className?: string;
+}
+declare function buildEmbedIframeSnippet(apiBase: string, tenantId: string, opts?: {
+    width?: number;
+    height?: number;
+}): string;
+declare function EmbedSnippet(props: EmbedSnippetProps): react.JSX.Element;
+
+interface SupportLauncherProps {
+    apiBase: string;
+    user?: {
+        id: string;
+        name?: string;
+        email?: string;
+        planLabel?: string;
+    };
+    brand?: {
+        name: string;
+        accent?: string;
+        supportAgentName?: string;
+        signupUrl?: string;
+        contactEmail?: string;
+        marketingConsentLabel?: string;
+    };
+    position?: "bottom-right" | "bottom-left";
+    /**
+     * Nudge the floating bubble so it clears host UI (e.g. a Send button
+     * anchored bottom-right). Ignored in `mode="page"`.
+     */
+    offset?: {
+        bottom?: number;
+        left?: number;
+        right?: number;
+    };
+    mode?: "bubble" | "page";
+    /**
+     * `public` = home / logged-out: contact gate first, then FAQ chat only
+     * (escalation happens inside Ask a question — no separate Contact form).
+     */
+    audience?: "app" | "public";
+    /**
+     * When false, no floating bubble — open via `legalai:open-support` or
+     * `renderTrigger` (Lex chat header uses a Help button instead of a FAB).
+     */
+    showTrigger?: boolean;
+    renderTrigger?: (open: () => void) => ReactNode;
+    className?: string;
+    /**
+     * Hosts that use Bearer JWT (ShareApp/Lalia) instead of cookie sessions.
+     * Return the raw token; Authorization header is attached automatically.
+     */
+    getAccessToken?: () => string | null | undefined;
+}
+declare function SupportLauncher(props: SupportLauncherProps): react.JSX.Element;
+
+export { EmbedSnippet, type EmbedSnippetProps, SupportLauncher, type SupportLauncherProps, SupportOpsConsole, type SupportOpsConsoleProps, buildEmbedIframeSnippet };

@@ -1,0 +1,867 @@
+/**
+ * V2 SaaS persistence (users, orgs, meetings, billing, usage, files).
+ *
+ * - DATABASE_URL set → PostgreSQL (staging/prod)
+ * - otherwise → SQLite file v2-platform.db (local/dev fallback)
+ */
+const path = require('path');
+const crypto = require('crypto');
+const { toPostgresSql } = require('./sqlCompat');
+
+const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+const usePostgres = Boolean(DATABASE_URL);
+const DB_PATH = process.env.V2_DB_PATH || path.join(__dirname, '..', 'v2-platform.db');
+
+let db = null;
+let pool = null;
+let initPromise = null;
+
+function uuid() {
+  return crypto.randomUUID();
+}
+
+function isPostgres() {
+  return usePostgres;
+}
+
+async function pgRun(sql, params = []) {
+  const res = await pool.query(toPostgresSql(sql), params);
+  const lastID = res.rows?.[0]?.id;
+  return { lastID: lastID != null ? lastID : 0, changes: res.rowCount ?? 0 };
+}
+
+async function pgGet(sql, params = []) {
+  const res = await pool.query(toPostgresSql(sql), params);
+  return res.rows[0];
+}
+
+async function pgAll(sql, params = []) {
+  const res = await pool.query(toPostgresSql(sql), params);
+  return res.rows || [];
+}
+
+function sqliteRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve({ lastID: this.lastID, changes: this.changes });
+    });
+  });
+}
+
+function sqliteGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+function sqliteAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+}
+
+function run(sql, params = []) {
+  return usePostgres ? pgRun(sql, params) : sqliteRun(sql, params);
+}
+
+function get(sql, params = []) {
+  return usePostgres ? pgGet(sql, params) : sqliteGet(sql, params);
+}
+
+function all(sql, params = []) {
+  return usePostgres ? pgAll(sql, params) : sqliteAll(sql, params);
+}
+
+async function migrate() {
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      display_name TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_organizations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      billing_status TEXT NOT NULL DEFAULT 'trial',
+      account_type TEXT NOT NULL DEFAULT 'personal',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_org_members (
+      org_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'member',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (org_id, user_id),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_plans (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      monthly_price_cents INTEGER NOT NULL DEFAULT 0,
+      included_meeting_minutes INTEGER NOT NULL DEFAULT 0,
+      included_translation_minutes INTEGER NOT NULL DEFAULT 0,
+      overage_meeting_cents_per_min INTEGER NOT NULL DEFAULT 0,
+      overage_translation_cents_per_min INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_org_subscriptions (
+      org_id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      current_period_start TEXT,
+      current_period_end TEXT,
+      stripe_customer_id TEXT,
+      stripe_subscription_id TEXT,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (plan_id) REFERENCES v2_plans(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_billing_cycles (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      period_end TEXT NOT NULL,
+      rolled_up_at TEXT,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meetings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      host_user_id TEXT NOT NULL,
+      livekit_room_name TEXT NOT NULL UNIQUE,
+      title TEXT,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      scheduled_start TEXT,
+      scheduled_end TEXT,
+      host_code TEXT NOT NULL,
+      started_at TEXT,
+      ended_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      metadata TEXT,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (host_user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_meetings_org ON v2_meetings(org_id)`);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_usage_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      meeting_id TEXT,
+      event_type TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      unit TEXT NOT NULL,
+      unit_cost_micros INTEGER,
+      meta_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_usage_org_time ON v2_usage_events(org_id, created_at)`);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_usage_rollups (
+      org_id TEXT NOT NULL,
+      cycle_id TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      quantity REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (org_id, cycle_id, metric),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (cycle_id) REFERENCES v2_billing_cycles(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_overage_ledger (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      cycle_id TEXT NOT NULL,
+      metric TEXT NOT NULL,
+      units REAL NOT NULL,
+      rate_micros INTEGER NOT NULL,
+      amount_micros INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (cycle_id) REFERENCES v2_billing_cycles(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_files (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      meeting_id TEXT,
+      room_name TEXT,
+      stored_name TEXT NOT NULL,
+      original_name TEXT NOT NULL,
+      mime TEXT,
+      size_bytes INTEGER NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_files_org ON v2_files(org_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_policies (
+      meeting_id TEXT PRIMARY KEY,
+      host_required_to_start INTEGER NOT NULL DEFAULT 0,
+      require_invite_token INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_invite_links (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      label TEXT,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      reusable INTEGER NOT NULL DEFAULT 0,
+      use_count INTEGER NOT NULL DEFAULT 0,
+      max_uses INTEGER,
+      expiry_mode TEXT NOT NULL DEFAULT 'days_after_start',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_invite_meeting ON v2_meeting_invite_links(meeting_id)`);
+
+  const inviteCols = await all(`PRAGMA table_info(v2_meeting_invite_links)`);
+  const inviteColNames = new Set((inviteCols || []).map((c) => c.name));
+  if (!inviteColNames.has('expiry_mode')) {
+    await run(`ALTER TABLE v2_meeting_invite_links ADD COLUMN expiry_mode TEXT NOT NULL DEFAULT 'days_after_start'`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_guest_invites (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      invite_link_id TEXT,
+      email TEXT NOT NULL,
+      invited_by TEXT,
+      sent_at TEXT,
+      reminder_sent_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_guest_invites_meeting ON v2_meeting_guest_invites(meeting_id)`);
+
+  const guestInviteCols = await all(`PRAGMA table_info(v2_meeting_guest_invites)`);
+  const guestInviteColNames = new Set((guestInviteCols || []).map((c) => c.name));
+  if (!guestInviteColNames.has('reminders_sent_json')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN reminders_sent_json TEXT`);
+  }
+  if (!guestInviteColNames.has('rsvp_status')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN rsvp_status TEXT`);
+  }
+  if (!guestInviteColNames.has('rsvp_updated_at')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN rsvp_updated_at TEXT`);
+  }
+
+  const polCols = await all(`PRAGMA table_info(v2_meeting_policies)`);
+  const polColNames = new Set((polCols || []).map((c) => c.name));
+  if (!polColNames.has('store_transcripts')) {
+    await run(`ALTER TABLE v2_meeting_policies ADD COLUMN store_transcripts INTEGER NOT NULL DEFAULT 0`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_transcript_lines (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      participant_identity TEXT NOT NULL,
+      language TEXT,
+      source_language TEXT,
+      original_text TEXT NOT NULL,
+      translated_text TEXT,
+      transcription_id TEXT,
+      dedupe_key TEXT UNIQUE,
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_transcript_meeting_time ON v2_meeting_transcript_lines(meeting_id, recorded_at)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_transcript_reports (
+      id TEXT PRIMARY KEY,
+      meeting_id TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      custom_instructions TEXT,
+      instructions_hash TEXT NOT NULL,
+      line_count INTEGER NOT NULL DEFAULT 0,
+      content_markdown TEXT NOT NULL,
+      model TEXT,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_transcript_reports_meeting ON v2_meeting_transcript_reports(meeting_id, created_at)`
+  );
+
+  const cols = await all(`PRAGMA table_info(v2_meetings)`);
+  const colNames = new Set((cols || []).map((c) => c.name));
+  if (!colNames.has('host_present')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN host_present INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!colNames.has('guest_invite_reminder_offsets_json')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN guest_invite_reminder_offsets_json TEXT`);
+  }
+  if (!colNames.has('ics_sequence')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN ics_sequence INTEGER NOT NULL DEFAULT 0`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_webhook_events (
+      id TEXT PRIMARY KEY,
+      provider TEXT NOT NULL DEFAULT 'stripe',
+      type TEXT NOT NULL,
+      payload_json TEXT,
+      received_at TEXT NOT NULL DEFAULT (datetime('now')),
+      processed_at TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_admin_audit_log (
+      id TEXT PRIMARY KEY,
+      actor_email TEXT NOT NULL,
+      action TEXT NOT NULL,
+      payload_json TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_admin_audit_created ON v2_admin_audit_log(created_at)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_billing_settings (
+      id TEXT PRIMARY KEY,
+      stripe_enabled INTEGER NOT NULL DEFAULT 0,
+      stripe_secret_key TEXT,
+      stripe_webhook_secret TEXT,
+      auto_charge_enabled INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_email_settings (
+      id TEXT PRIMARY KEY,
+      email_enabled INTEGER NOT NULL DEFAULT 1,
+      resend_api_key TEXT,
+      mail_from TEXT,
+      resend_webhook_secret TEXT,
+      ics_organizer_domain TEXT,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_storage_settings (
+      id TEXT PRIMARY KEY,
+      storage_driver TEXT,
+      storage_local_dir TEXT,
+      storage_s3_bucket TEXT,
+      storage_s3_region TEXT,
+      storage_s3_endpoint TEXT,
+      storage_s3_force_path_style INTEGER,
+      storage_s3_access_key_id TEXT,
+      storage_s3_secret_access_key TEXT,
+      storage_s3_prefix TEXT,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )
+  `);
+
+  const emailSettingsCols = await all(`PRAGMA table_info(v2_platform_email_settings)`);
+  const emailSettingsColNames = new Set((emailSettingsCols || []).map((c) => c.name));
+  if (!emailSettingsColNames.has('resend_webhook_secret')) {
+    await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN resend_webhook_secret TEXT`);
+  }
+  if (!emailSettingsColNames.has('ics_organizer_domain')) {
+    await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN ics_organizer_domain TEXT`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_resend_inbound_events (
+      id TEXT PRIMARY KEY,
+      payload_json TEXT,
+      processed_at TEXT NOT NULL
+    )
+  `);
+
+  const usageCols = await all(`PRAGMA table_info(v2_usage_events)`);
+  const usageColNames = new Set((usageCols || []).map((c) => c.name));
+  if (!usageColNames.has('idempotency_key')) {
+    await run(`ALTER TABLE v2_usage_events ADD COLUMN idempotency_key TEXT`);
+  }
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_usage_org_idempotency ON v2_usage_events(org_id, idempotency_key) WHERE idempotency_key IS NOT NULL`
+  );
+
+  const planCols = await all(`PRAGMA table_info(v2_plans)`);
+  const planColNames = new Set((planCols || []).map((c) => c.name));
+  if (!planColNames.has('stripe_price_id')) {
+    await run(`ALTER TABLE v2_plans ADD COLUMN stripe_price_id TEXT`);
+  }
+
+  const subCols = await all(`PRAGMA table_info(v2_org_subscriptions)`);
+  const subColNames = new Set((subCols || []).map((c) => c.name));
+  if (!subColNames.has('is_comp')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN is_comp INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!subColNames.has('comp_label')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_label TEXT`);
+  }
+  if (!subColNames.has('comp_reason')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_reason TEXT`);
+  }
+  if (!subColNames.has('comp_set_by')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_set_by TEXT`);
+  }
+  if (!subColNames.has('comp_set_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN comp_set_at TEXT`);
+  }
+  if (!subColNames.has('overage_auto_charge_opt_in')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!subColNames.has('overage_auto_charge_opt_in_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in_at TEXT`);
+  }
+  if (!subColNames.has('overage_auto_charge_opt_in_by')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN overage_auto_charge_opt_in_by TEXT`);
+  }
+
+  const ledgerCols = await all(`PRAGMA table_info(v2_overage_ledger)`);
+  const ledgerColNames = new Set((ledgerCols || []).map((c) => c.name));
+  if (!ledgerColNames.has('stripe_invoice_item_id')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN stripe_invoice_item_id TEXT`);
+  }
+  if (!ledgerColNames.has('settled_at')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN settled_at TEXT`);
+  }
+  if (!ledgerColNames.has('failure_reason')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN failure_reason TEXT`);
+  }
+  if (!ledgerColNames.has('stripe_invoice_id')) {
+    await run(`ALTER TABLE v2_overage_ledger ADD COLUMN stripe_invoice_id TEXT`);
+  }
+
+  const orgCols = await all(`PRAGMA table_info(v2_organizations)`);
+  const orgColNames = new Set((orgCols || []).map((c) => c.name));
+  if (!orgColNames.has('account_type')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN account_type TEXT NOT NULL DEFAULT 'personal'`);
+    const orgRows = await all(`SELECT o.id, o.name, u.email, u.display_name
+      FROM v2_organizations o
+      LEFT JOIN v2_org_members m ON m.org_id = o.id AND m.role = 'owner'
+      LEFT JOIN v2_users u ON u.id = m.user_id`);
+    for (const row of orgRows || []) {
+      const legacyAuto =
+        row.name && row.email && row.name === `${String(row.email).split('@')[0]}'s org`;
+      if (legacyAuto) {
+        const personalName = (row.display_name || String(row.email).split('@')[0] || 'Account').slice(
+          0,
+          128
+        );
+        await run(`UPDATE v2_organizations SET account_type = 'personal', name = ? WHERE id = ?`, [
+          personalName,
+          row.id,
+        ]);
+      } else {
+        await run(`UPDATE v2_organizations SET account_type = 'team' WHERE id = ?`, [row.id]);
+      }
+    }
+  }
+  const orgCols2 = await all(`PRAGMA table_info(v2_organizations)`);
+  const orgColNames2 = new Set((orgCols2 || []).map((c) => c.name));
+  if (!orgColNames2.has('brand_accent_color')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN brand_accent_color TEXT`);
+  }
+  if (!orgColNames2.has('brand_welcome_message')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN brand_welcome_message TEXT`);
+  }
+  if (!orgColNames2.has('brand_logo_file')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN brand_logo_file TEXT`);
+  }
+
+  const orgCols3 = await all(`PRAGMA table_info(v2_organizations)`);
+  const orgColNames3 = new Set((orgCols3 || []).map((c) => c.name));
+  if (!orgColNames3.has('suspended_at')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN suspended_at TEXT`);
+  }
+  if (!orgColNames3.has('suspended_reason')) {
+    await run(`ALTER TABLE v2_organizations ADD COLUMN suspended_reason TEXT`);
+  }
+
+  const userCols = await all(`PRAGMA table_info(v2_users)`);
+  const userColNames = new Set((userCols || []).map((c) => c.name));
+  if (!userColNames.has('disabled_at')) {
+    await run(`ALTER TABLE v2_users ADD COLUMN disabled_at TEXT`);
+  }
+  if (!userColNames.has('last_login_at')) {
+    await run(`ALTER TABLE v2_users ADD COLUMN last_login_at TEXT`);
+  }
+
+  const subCols2 = await all(`PRAGMA table_info(v2_org_subscriptions)`);
+  const subColNames2 = new Set((subCols2 || []).map((c) => c.name));
+  if (!subColNames2.has('custom_included_meeting_minutes')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN custom_included_meeting_minutes INTEGER`);
+  }
+  if (!subColNames2.has('custom_included_translation_minutes')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN custom_included_translation_minutes INTEGER`);
+  }
+  if (!subColNames2.has('cancel_at_period_end')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN cancel_at_period_end INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!subColNames2.has('cancel_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN cancel_at TEXT`);
+  }
+  if (!subColNames2.has('canceled_at')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN canceled_at TEXT`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_announcements (
+      id TEXT PRIMARY KEY,
+      message TEXT NOT NULL,
+      level TEXT NOT NULL DEFAULT 'info',
+      starts_at TEXT NOT NULL,
+      ends_at TEXT,
+      created_by TEXT,
+      disabled_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_announcements_active ON v2_announcements(starts_at, ends_at)`);
+
+  const planCount = await get(`SELECT COUNT(*) AS c FROM v2_plans`);
+
+  if (!planCount || planCount.c === 0) {
+    await run(
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
+      ['free', 'Free', 0, 60, 60, 0, 0]
+    );
+    await run(
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
+      ['starter', 'Starter', 4900, 2000, 500, 3, 6]
+    );
+    await run(
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
+      ['pro', 'Pro', 19900, 10000, 3000, 2, 5]
+    );
+  } else {
+    const freePlan = await get(`SELECT id FROM v2_plans WHERE id = 'free'`);
+    if (!freePlan) {
+      await run(
+        `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
+        ['free', 'Free', 0, 60, 60, 0, 0]
+      );
+    }
+  }
+
+  // Phase 1 cost-tracking tables
+  await run(`
+    CREATE TABLE IF NOT EXISTS meeting_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id TEXT NOT NULL,
+      org_id TEXT,
+      event_type TEXT NOT NULL,
+      participant_identity TEXT,
+      track_sid TEXT,
+      payload_json TEXT,
+      ts INTEGER NOT NULL
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_meeting_events_meeting ON meeting_events(meeting_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_meeting_events_org ON meeting_events(org_id)`);
+  await run(`
+    CREATE TABLE IF NOT EXISTS meeting_cost_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id TEXT NOT NULL,
+      org_id TEXT,
+      event_type TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      units REAL NOT NULL,
+      unit_cost_usd REAL NOT NULL,
+      total_cost_usd REAL NOT NULL,
+      ts INTEGER NOT NULL,
+      meta_json TEXT
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_cost_events_meeting ON meeting_cost_events(meeting_id)`);
+  await run(`
+    CREATE TABLE IF NOT EXISTS meeting_cost_rollups (
+      meeting_id TEXT PRIMARY KEY,
+      org_id TEXT,
+      total_cost_usd REAL NOT NULL,
+      breakdown_json TEXT NOT NULL,
+      duration_seconds INTEGER,
+      computed_at INTEGER NOT NULL
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS screen_share_quality_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      meeting_id TEXT NOT NULL,
+      participant_identity TEXT,
+      from_layer TEXT,
+      to_layer TEXT,
+      ts INTEGER NOT NULL
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_password_resets (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_password_resets_token ON v2_password_resets(token_hash)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_user_communication_prefs (
+      user_id TEXT PRIMARY KEY,
+      marketing_email INTEGER NOT NULL DEFAULT 0,
+      marketing_sms INTEGER NOT NULL DEFAULT 0,
+      marketing_phone INTEGER NOT NULL DEFAULT 0,
+      phone_e164 TEXT,
+      prefs_updated_at TEXT,
+      policy_version INTEGER NOT NULL DEFAULT 1,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+
+  const commPrefCols = await all(`PRAGMA table_info(v2_user_communication_prefs)`);
+  const commPrefColNames = new Set((commPrefCols || []).map((c) => c.name));
+  if (!commPrefColNames.has('timezone')) {
+    await run(`ALTER TABLE v2_user_communication_prefs ADD COLUMN timezone TEXT`);
+  }
+  if (!commPrefColNames.has('guest_invite_reminder_offsets_json')) {
+    await run(`ALTER TABLE v2_user_communication_prefs ADD COLUMN guest_invite_reminder_offsets_json TEXT`);
+  }
+  if (!commPrefColNames.has('guest_invite_cc_host')) {
+    await run(`ALTER TABLE v2_user_communication_prefs ADD COLUMN guest_invite_cc_host INTEGER NOT NULL DEFAULT 1`);
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_consent_events (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      consent_type TEXT NOT NULL,
+      granted INTEGER NOT NULL,
+      ip TEXT,
+      user_agent TEXT,
+      policy_version INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_consent_events_user ON v2_consent_events(user_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_tickets (
+      id TEXT PRIMARY KEY,
+      public_number INTEGER NOT NULL UNIQUE,
+      category TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'open',
+      subject TEXT,
+      severity TEXT,
+      priority TEXT,
+      user_id TEXT,
+      org_id TEXT,
+      guest_email TEXT,
+      context_json TEXT,
+      duplicate_of_ticket_id TEXT,
+      assigned_to TEXT,
+      github_issue_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      closed_at TEXT
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_tickets_status ON v2_support_tickets(status)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_tickets_user ON v2_support_tickets(user_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_tickets_created ON v2_support_tickets(created_at)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_messages (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      author_type TEXT NOT NULL,
+      author_id TEXT,
+      body TEXT NOT NULL,
+      attachments_json TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (ticket_id) REFERENCES v2_support_tickets(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_messages_ticket ON v2_support_messages(ticket_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_proposals (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      proposal_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending_review',
+      summary TEXT NOT NULL,
+      body_json TEXT NOT NULL,
+      confidence REAL,
+      telegram_message_id TEXT,
+      reviewed_by TEXT,
+      reviewed_at TEXT,
+      execution_status TEXT,
+      execution_ref TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (ticket_id) REFERENCES v2_support_tickets(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_proposals_ticket ON v2_support_proposals(ticket_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_proposals_status ON v2_support_proposals(status)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_support_knowledge_gaps (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      public_number INTEGER,
+      user_question TEXT NOT NULL,
+      escalation_reason TEXT,
+      doc_query TEXT,
+      doc_hits_json TEXT,
+      proposal_id TEXT,
+      proposal_type TEXT,
+      summary TEXT,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at TEXT NOT NULL,
+      resolved_at TEXT,
+      FOREIGN KEY (ticket_id) REFERENCES v2_support_tickets(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_knowledge_gaps_status ON v2_support_knowledge_gaps(status)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_support_knowledge_gaps_created ON v2_support_knowledge_gaps(created_at)`);
+
+  // Scale / ops: billing + webhook + usage tables remain SQLite here; production should migrate
+  // high-write paths (webhook_events, usage_events, overage_ledger) to Postgres for concurrency and backups.
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_stripe_disputes (
+      id TEXT PRIMARY KEY,
+      org_id TEXT,
+      stripe_customer_id TEXT,
+      charge_id TEXT,
+      status TEXT NOT NULL,
+      reason TEXT,
+      amount_cents INTEGER NOT NULL DEFAULT 0,
+      currency TEXT NOT NULL DEFAULT 'usd',
+      evidence_due_by TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      closed_at TEXT,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_stripe_disputes_org ON v2_stripe_disputes(org_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_stripe_disputes_status ON v2_stripe_disputes(status)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_usage_alert_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      alert_key TEXT NOT NULL,
+      sent_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id)
+    )
+  `);
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_usage_alert_events_org_key ON v2_usage_alert_events(org_id, alert_key, sent_at)`
+  );
+
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_overage_ledger_org_cycle_metric
+     ON v2_overage_ledger(org_id, cycle_id, metric)`
+  ).catch(() => {
+    /* may already exist or have dupes — ignore */
+  });
+}
+
+async function initPostgres() {
+  const { Pool } = require('pg');
+  const { runMigrations } = require('./runMigrations');
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    max: Number(process.env.PG_POOL_MAX || 10),
+  });
+  pool.on('error', (err) => {
+    console.error('[v2Database] Postgres pool error:', err.message);
+  });
+  await pool.query('SELECT 1');
+  const result = await runMigrations(pool);
+  console.log(
+    `[v2Database] Ready: postgres (migrations applied=${result.applied}/${result.total})`
+  );
+}
+
+async function initSqlite() {
+  const sqlite3 = require('sqlite3').verbose();
+  await new Promise((resolve, reject) => {
+    db = new sqlite3.Database(DB_PATH, (err) => {
+      if (err) {
+        console.error('[v2Database] Failed to open:', err.message);
+        reject(err);
+      } else resolve();
+    });
+  });
+  await migrate();
+  console.log('[v2Database] Ready:', DB_PATH);
+}
+
+function initDatabase() {
+  if (initPromise) return initPromise;
+  initPromise = (async () => {
+    if (usePostgres) await initPostgres();
+    else await initSqlite();
+  })();
+  return initPromise;
+}
+
+module.exports = {
+  initDatabase,
+  DB_PATH,
+  DATABASE_URL: usePostgres ? DATABASE_URL : '',
+  isPostgres,
+  run,
+  get,
+  all,
+  uuid,
+};

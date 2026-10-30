@@ -11,28 +11,82 @@ LIVEKIT_URL=wss://YOUR_PROJECT.livekit.cloud
 # Set to `git rev-parse HEAD` when you deploy, or any unique tag (logged at worker startup).
 AGENT_BUILD_REF=v2026-xx-xx-xxxxxxx
 
-# --- Speech-to-text primary (desired production: Grok STT released with xAI plugin) ---
-# Without this line, defaults to deepgram even if XAI_API_KEY exists.
-STT_PROVIDER=xai
-# XAI_API_KEY=<same xAI credential you use elsewhere; REQUIRED for Grok STT>
-# Tune endpointing (ms); shipped April 2026 work used 1000.
-XAI_STT_ENDPOINTING_MS=1000
+# --- Speech-to-text (production: Deepgram nova-3) ---
+# Valid values: deepgram | gladia | openai. Anything else is rejected at
+# startup (error log) and falls back to deepgram — there is no xAI provider.
+STT_PROVIDER=deepgram
+DEEPGRAM_API_KEY=
+# Deepgram END_OF_SPEECH (ms silence). 400 is a good default.
+DEEPGRAM_ENDPOINTING_MS=400
+# Finalize bubble after no new/changed transcript for this long (default 2000ms;
+# adaptive 80% = 1600ms when the line already ends with sentence punctuation).
+DEEPGRAM_STT_IDLE_MS=2000
+# Long-turn bubble break: close the bubble at a sentence boundary once the
+# turn exceeds this age (sec) or word count, so monologues don't grow one
+# endless bubble and TTS doesn't wait for the whole turn.
+TURN_MAX_SEC=45
+TURN_MAX_WORDS=110
+
+# Silero VAD — higher activation_threshold = less background noise triggering speech.
+# Presets: quiet | normal | noisy | ultra_noisy (override with VAD_PRESET).
+VAD_PRESET=normal
+VAD_ACTIVATION_THRESHOLD=0.58
+VAD_MIN_SILENCE_SEC=1.1
 
 # --- Fallback STT credentials (recommended in Cloud) ---
-# Grok STT auto-falls back for langs outside XAI_SUPPORTED_LANGS or on errors.
-DEEPGRAM_API_KEY=
+# OpenAI gpt-4o-transcribe as emergency fallback (set STT_PROVIDER=openai to activate).
 OPENAI_API_KEY=
 
 # --- Translation captions (cheap / low-latency default) ---
-# openai → openai.LLM() (~gpt-4o-mini) per transcription segment; sufficient for caption translation for most workloads.
 LLM_PROVIDER=openai
-# Only if LLM_PROVIDER=xai:
-XAI_LLM_MODEL=grok-4.20-non-reasoning
+# Translation model (pinned; default gpt-4.1-mini) + sampling/timeout knobs.
+LLM_MODEL=gpt-4.1-mini
+LLM_TEMPERATURE=0.0
+# Per-attempt budget for one translation call (connect + full stream); 1 retry on failure.
+LLM_TIMEOUT_SEC=6.0
+
+# --- Live translation while speaking (simultaneous-MT local agreement) ---
+# Foreign-language readers see stable translated text during speech instead of
+# waiting for Deepgram is_final. Disable to fall back to final-only translation.
+INTERIM_TRANSLATION_ENABLED=true
+# Debounce between interim translation calls per target language (ms).
+INTERIM_TRANSLATION_MIN_INTERVAL_MS=600
+
+# --- Optional spoken translation (experimental codeswitch agent only) ---
+# Keep false for caption-only behavior; enable on the experimental worker first.
+TTS_ENABLED=false
+# Hard cap for concurrent per-language TTS tracks (cost guard).
+TTS_MAX_LANES=4
+# TTS provider routing: auto | elevenlabs | deepgram (default auto).
+# auto = ElevenLabs Flash v2.5 (32 languages, ~75ms) when ELEVENLABS_API_KEY is
+# set, falling back to Deepgram Aura-2 (en/es/fr/de/it/ja/nl only) otherwise.
+TTS_PROVIDER=auto
+ELEVENLABS_API_KEY=
+# Optional voice override (default: George, multilingual).
+# ELEVENLABS_VOICE_ID=JBFqnCBsd6RMkjVDRZzb
+
+# --- Translation quality/consistency ---
+# Rolling (source → target) utterance pairs carried across turns (0 disables).
+TRANSLATION_CONTEXT_PAIRS=3
+# LRU cache for repeated utterances (0 disables).
+TRANSLATION_CACHE_SIZE=512
+# Comma-separated terms the LLM must keep verbatim (brand/product names).
+# TRANSLATION_KEYTERMS=ShareApp,LiveKit
+# Comma-separated Deepgram nova-3 keyterm prompts (boosts STT accuracy on domain terms).
+# DEEPGRAM_KEYTERMS=ShareApp,LiveKit
 
 # Optional (agent identity)
 AGENT_NAME=translation-cloud-prod
+# Experimental Deepgram code-switch A/B worker (livekit-codeswitch.toml):
+# AGENT_MODULE=transcription_codeswitch_agent
+# AGENT_NAME=translation-cloud-deepgram-codeswitch
 
-# --- Applying to LiveKit (read this) ---
+# --- Demo room (public /demo live preview) ---
+BACKEND_BASE_URL=https://YOUR_BACKEND_HOST
+DEMO_ORCHESTRATOR_SECRET=
+TTS_ENABLED=true
+
+# --- Applying to LiveKit ---
 # Do NOT pass all vars as one comma-separated lk --secrets string; commas break parsing.
-# Use: lk agent deploy --secrets "STT_PROVIDER=xai" --secrets "LLM_PROVIDER=openai"
+# Use: lk agent deploy --secrets "STT_PROVIDER=deepgram" --secrets "LLM_PROVIDER=openai"
 # or: lk agent update-secrets --secrets-file path/to/non-secret-vars-only.txt plus dashboard for keys

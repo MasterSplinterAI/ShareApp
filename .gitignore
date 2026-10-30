@@ -11,6 +11,7 @@ backend/.env
 translation-agent/.env
 livekit-app/backend/.env
 livekit-app/translation-agent/.env
+livekit-app/translation-agent/AGENT_CLOUD_ENV.local
 livekit-app/translation-agent/env
 translation-agent/env
 
@@ -42,3 +43,7 @@ livekit-app/translation-agent/venv/
 
 # Backup
 backup/
+
+# V2 SaaS local data (server may keep these outside git)
+livekit-app/backend/v2-platform.db
+livekit-app/backend/uploads/

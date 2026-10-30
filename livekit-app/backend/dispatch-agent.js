@@ -17,7 +17,13 @@ async function dispatchAgent(roomName) {
     }
 
     // Get agent name from environment (default: translation-bot-dev for dev)
-    const agentName = process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev');
+    const agentName =
+      process.env.AGENT_NAME ||
+      ((process.env.LIVEKIT_URL || '').toLowerCase().includes('livekit.cloud')
+        ? 'translation-cloud-prod'
+        : process.env.NODE_ENV === 'production'
+          ? 'translation-cloud-prod'
+          : 'translation-bot-dev');
 
     // Convert WebSocket URL to HTTP/HTTPS for API calls
     const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');

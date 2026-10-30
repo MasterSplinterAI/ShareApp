@@ -1,0 +1,273 @@
+#!/bin/bash
+# Staging deployment script for ShareApp v2 work.
+# Deploy target:
+#   - Frontend: /var/www/share-app-staging/livekit-app/frontend
+#   - Backend:  /var/www/share-app-staging/livekit-app/backend (PM2: livekit-backend-staging)
+#
+# This script is intentionally separate from deploy.sh so production deploy flow
+# remains untouched while v2 is built out.
+
+set -euo pipefail
+
+REMOTE_USER="ubuntu"
+REMOTE_HOST="3.16.210.84"
+PEM_KEY="$HOME/Downloads/AxisAlgo.pem"
+DEPLOY_BRANCH="${DEPLOY_BRANCH:-v2-foundation}"
+STAGING_BACKEND_PORT="${STAGING_BACKEND_PORT:-3101}"
+FORCE_FRONTEND_BUILD="${FORCE_FRONTEND_BUILD:-false}"
+APP_DIR="/var/www/share-app-staging"
+BACKEND_DIR="$APP_DIR/livekit-app/backend"
+FRONTEND_DIR="$APP_DIR/livekit-app/frontend"
+VENDOR_DIR="$APP_DIR/livekit-app/vendor"
+GIT_REPO="/home/ubuntu/git/share-app.git"
+PM2_NAME="livekit-backend-staging"
+NGINX_STAGING_SRC="deploy/nginx-staging.jarmetals.com.conf"
+NGINX_STAGING_DEST="/etc/nginx/sites-available/staging.jarmetals.com"
+
+echo "=== ShareApp STAGING deploy ($DEPLOY_BRANCH) ==="
+
+if [ ! -f "$PEM_KEY" ]; then
+  echo "Error: PEM key not found at $PEM_KEY" >&2
+  exit 1
+fi
+
+CURRENT_BRANCH="$(git branch --show-current)"
+if [ "$CURRENT_BRANCH" != "$DEPLOY_BRANCH" ]; then
+  echo "Warning: current branch is '$CURRENT_BRANCH', but deploy branch is '$DEPLOY_BRANCH'."
+fi
+
+echo "=== Step 1: local git status ==="
+# Never auto git-add everything from this script (secret / env risk). Commit deliberately first.
+if [ -n "$(git status --porcelain)" ]; then
+  echo "Uncommitted changes detected. Commit and push intentionally, then re-run deploy."
+  echo "Deploy will use origin/$DEPLOY_BRANCH only (no local auto-commit)."
+  git status --short
+  read -r -p "Re-run deploy of current origin/$DEPLOY_BRANCH anyway? [y/N] " CONTINUE_DIRTY
+  if [[ ! "${CONTINUE_DIRTY:-}" =~ ^[Yy]$ ]]; then
+    echo "Aborting deploy."
+    exit 1
+  fi
+  echo "Skipping local commit — deploying current origin/$DEPLOY_BRANCH."
+else
+  echo "Working tree clean. Deploying origin/$DEPLOY_BRANCH."
+fi
+echo "Ops note: staging should use a separate LiveKit project/API keys from production."
+
+echo "=== Step 2: deploy $DEPLOY_BRANCH to $REMOTE_HOST ==="
+ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
+  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' FORCE_FRONTEND_BUILD='$FORCE_FRONTEND_BUILD' NGINX_STAGING_DEST='$NGINX_STAGING_DEST' bash -s" <<'REMOTE'
+set -euo pipefail
+
+echo "Fetching latest code..."
+OLD_COMMIT="$(git --git-dir="$GIT_REPO" rev-parse --verify "refs/heads/$DEPLOY_BRANCH" 2>/dev/null || echo '')"
+git --git-dir="$GIT_REPO" fetch origin "$DEPLOY_BRANCH:$DEPLOY_BRANCH" >/dev/null 2>&1
+NEW_COMMIT="$(git --git-dir="$GIT_REPO" rev-parse --verify "refs/heads/$DEPLOY_BRANCH" 2>/dev/null || echo '')"
+
+if [ -z "$NEW_COMMIT" ]; then
+  echo "Branch origin/$DEPLOY_BRANCH not found on remote bare repo." >&2
+  exit 1
+fi
+
+if [ "$OLD_COMMIT" = "$NEW_COMMIT" ] && [ -n "$OLD_COMMIT" ] && [ "${FORCE_FRONTEND_BUILD:-false}" != true ]; then
+  echo "No new commits for $DEPLOY_BRANCH ($OLD_COMMIT). Nothing to deploy."
+  exit 0
+fi
+if [ "$OLD_COMMIT" = "$NEW_COMMIT" ] && [ "${FORCE_FRONTEND_BUILD:-false}" = true ]; then
+  echo "No new commits, but FORCE_FRONTEND_BUILD=true — rebuilding frontend from $NEW_COMMIT."
+fi
+
+TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEMP_DIR"' EXIT
+echo "Temp checkout: $TEMP_DIR"
+
+git --work-tree="$TEMP_DIR" --git-dir="$GIT_REPO" checkout -f "$NEW_COMMIT" >/dev/null 2>&1
+echo "Deploying commit: $NEW_COMMIT"
+
+if [ -n "$OLD_COMMIT" ]; then
+  CHANGED_FILES="$(git --git-dir="$GIT_REPO" diff --name-only "$OLD_COMMIT" "$NEW_COMMIT" 2>/dev/null || echo '')"
+else
+  CHANGED_FILES=''
+fi
+
+NEED_FRONTEND_BUILD=false
+NEED_BACKEND_INSTALL=false
+if [ -z "$CHANGED_FILES" ] || [ "${FORCE_FRONTEND_BUILD:-false}" = true ]; then
+  NEED_FRONTEND_BUILD=true
+  NEED_BACKEND_INSTALL=true
+  [ "${FORCE_FRONTEND_BUILD:-false}" = true ] && echo "FORCE_FRONTEND_BUILD=true — rebuilding frontend."
+else
+  echo "$CHANGED_FILES" | grep -q '^livekit-app/frontend/'       && NEED_FRONTEND_BUILD=true || true
+  echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/package' && NEED_BACKEND_INSTALL=true || true
+  echo "$CHANGED_FILES" | grep -q '^livekit-app/vendor/'         && NEED_FRONTEND_BUILD=true && NEED_BACKEND_INSTALL=true || true
+  echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/lib/supportKit' && NEED_BACKEND_INSTALL=true || true
+fi
+
+if [ "$NEED_BACKEND_INSTALL" != true ] && [ -f "$BACKEND_DIR/package-lock.json" ]; then
+  if ! cmp -s "$TEMP_DIR/livekit-app/backend/package-lock.json" "$BACKEND_DIR/package-lock.json" 2>/dev/null; then
+    NEED_BACKEND_INSTALL=true
+  fi
+fi
+
+sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR"
+
+# ---------- Vendor (support-kit file: deps for backend + frontend build) ----------
+if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
+  echo "Syncing livekit-app/vendor..."
+  sudo rsync -a --delete \
+    --exclude 'node_modules' \
+    "$TEMP_DIR/livekit-app/vendor/" "$VENDOR_DIR/"
+  # Nested file: deps resolve from each package dir when Node loads via backend/frontend symlinks
+  for pkg in shared core channels react; do
+    PKG_DIR="$VENDOR_DIR/support-kit/packages/$pkg"
+    if [ -f "$PKG_DIR/package.json" ]; then
+      echo "npm install vendor/support-kit/packages/$pkg..."
+      (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
+    fi
+  done
+fi
+
+# ---------- Backend ----------
+ENV_BACKUP=''
+if [ -f "$BACKEND_DIR/.env" ]; then
+  ENV_BACKUP="$(mktemp)"
+  sudo cp "$BACKEND_DIR/.env" "$ENV_BACKUP"
+  sudo chown "$USER:$USER" "$ENV_BACKUP"
+  chmod 600 "$ENV_BACKUP"
+  echo "Preserved staging backend/.env -> $ENV_BACKUP"
+fi
+
+if [ "$NEED_BACKEND_INSTALL" = true ] || [ ! -d "$BACKEND_DIR/node_modules" ]; then
+  echo "Backend: full sync (deps may have changed)..."
+  sudo rsync -a --delete \
+    --exclude '.env' \
+    --exclude '.env.*' \
+    --exclude 'node_modules' \
+    --exclude 'translations.db' \
+    --exclude 'v2-platform.db' \
+    --exclude 'uploads' \
+    "$TEMP_DIR/livekit-app/backend/" "$BACKEND_DIR/"
+  cd "$BACKEND_DIR"
+  npm install --production --prefer-offline --no-audit --silent
+else
+  echo "Backend: code-only sync (node_modules preserved)..."
+  sudo rsync -a \
+    --exclude '.env' \
+    --exclude '.env.*' \
+    --exclude 'node_modules' \
+    --exclude 'translations.db' \
+    --exclude 'v2-platform.db' \
+    --exclude 'uploads' \
+    "$TEMP_DIR/livekit-app/backend/" "$BACKEND_DIR/"
+fi
+
+if [ -n "$ENV_BACKUP" ]; then
+  sudo cp "$ENV_BACKUP" "$BACKEND_DIR/.env"
+  sudo chown ubuntu:ubuntu "$BACKEND_DIR/.env"
+  sudo chmod 600 "$BACKEND_DIR/.env"
+  rm -f "$ENV_BACKUP"
+  echo "Restored staging backend/.env"
+fi
+
+# Ensure SUPPORT_KIT_ENABLED is on for staging (kit FE is live; legacy HelpPanel retired)
+if [ -f "$BACKEND_DIR/.env" ]; then
+  if grep -q '^SUPPORT_KIT_ENABLED=' "$BACKEND_DIR/.env"; then
+    sudo sed -i 's/^SUPPORT_KIT_ENABLED=.*/SUPPORT_KIT_ENABLED=true/' "$BACKEND_DIR/.env"
+  else
+    echo 'SUPPORT_KIT_ENABLED=true' | sudo tee -a "$BACKEND_DIR/.env" >/dev/null
+  fi
+  echo "Ensured SUPPORT_KIT_ENABLED=true in staging .env"
+fi
+
+# ---------- Frontend ----------
+if [ "$NEED_FRONTEND_BUILD" = true ] || [ ! -f "$FRONTEND_DIR/index.html" ]; then
+  echo "Building frontend..."
+  # Vendor packages must resolve before frontend npm install (file:../vendor)
+  if [ -d "$TEMP_DIR/livekit-app/vendor/support-kit/packages" ]; then
+    for pkg in shared react; do
+      PKG_DIR="$TEMP_DIR/livekit-app/vendor/support-kit/packages/$pkg"
+      if [ -f "$PKG_DIR/package.json" ]; then
+        (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
+      fi
+    done
+  fi
+  cd "$TEMP_DIR/livekit-app/frontend"
+  if [ -d "$FRONTEND_DIR/node_modules" ] \
+     && cmp -s "$FRONTEND_DIR/package-lock.json" "$TEMP_DIR/livekit-app/frontend/package-lock.json"; then
+    cp -r "$FRONTEND_DIR/node_modules" .
+  else
+    npm ci --prefer-offline --no-audit --silent 2>/dev/null \
+      || npm install --prefer-offline --no-audit --silent
+  fi
+  # Staging: show "Try V2 workspace" on classic home (build-time flag only for this deploy path).
+  export VITE_V2_ENTRY_ENABLED="${VITE_V2_ENTRY_ENABLED:-true}"
+  # Install Chromium (+ OS libs once) so marketing prerender shells can be generated.
+  if [ ! -d "$HOME/.cache/ms-playwright" ]; then
+    echo "Installing Playwright Chromium for prerender..."
+    npx playwright install chromium >/dev/null
+  fi
+  if [ ! -f "$HOME/.cache/ms-playwright/.deps-installed" ]; then
+    echo "Installing Playwright OS dependencies (sudo)..."
+    sudo npx playwright install-deps chromium >/dev/null || true
+    touch "$HOME/.cache/ms-playwright/.deps-installed" 2>/dev/null || true
+  fi
+  npm run build --silent
+  sudo rsync -a --delete "$TEMP_DIR/livekit-app/frontend/dist/" "$FRONTEND_DIR/"
+else
+  echo "Frontend: no source changes, skipping build."
+fi
+
+# Staging must never be indexed — override production robots.txt from the build.
+printf '%s\n' \
+  'User-agent: *' \
+  'Disallow: /' \
+  '' \
+  '# Staging override — production robots.txt is restored on prod deploys.' \
+  | sudo tee "$FRONTEND_DIR/robots.txt" >/dev/null
+echo "Wrote staging robots.txt (Disallow: /)."
+
+# Apply staging nginx vhost from repo (X-Robots-Tag, try_files for prerender).
+if [ -f "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" ]; then
+  echo "Updating staging nginx vhost..."
+  sudo cp "$TEMP_DIR/deploy/nginx-staging.jarmetals.com.conf" "$NGINX_STAGING_DEST"
+  sudo nginx -t
+  sudo systemctl reload nginx
+  echo "Nginx reloaded for staging.jarmetals.com."
+else
+  echo "Warning: deploy/nginx-staging.jarmetals.com.conf missing in checkout." >&2
+fi
+
+sudo chown -R ubuntu:ubuntu "$APP_DIR"
+
+# Support AI knowledge base (repo docs/support + backend/docs/support)
+if [ -d "$TEMP_DIR/docs/support" ]; then
+  sudo mkdir -p "$APP_DIR/docs"
+  sudo rsync -a "$TEMP_DIR/docs/support/" "$APP_DIR/docs/support/"
+fi
+if [ -d "$TEMP_DIR/livekit-app/backend/docs/support" ]; then
+  sudo mkdir -p "$BACKEND_DIR/docs"
+  sudo rsync -a "$TEMP_DIR/livekit-app/backend/docs/support/" "$BACKEND_DIR/docs/support/"
+fi
+# Frontend source (read-only) for support KB research on server — not served to users
+if [ -d "$TEMP_DIR/livekit-app/frontend/src" ]; then
+  sudo mkdir -p "$APP_DIR/livekit-app/frontend"
+  sudo rsync -a "$TEMP_DIR/livekit-app/frontend/src/" "$APP_DIR/livekit-app/frontend/src/"
+fi
+
+# ---------- Services ----------
+echo "Restarting staging backend ($PM2_NAME)..."
+if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
+  pm2 restart "$PM2_NAME" --update-env
+else
+  cd "$BACKEND_DIR"
+  pm2 start server.js --name "$PM2_NAME" --update-env
+fi
+pm2 save >/dev/null
+
+echo "Deployed $DEPLOY_BRANCH commit: $NEW_COMMIT"
+REMOTE
+
+echo ""
+echo "=== Staging deploy finished ==="
+echo "Health check:"
+ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
+  "curl -sS -o /dev/null -w '  /api/health ($STAGING_BACKEND_PORT): %{http_code}\n' http://127.0.0.1:$STAGING_BACKEND_PORT/api/health; curl -sS -o /dev/null -w '  /api/v2/support/health: %{http_code}\n' http://127.0.0.1:$STAGING_BACKEND_PORT/api/v2/support/health"

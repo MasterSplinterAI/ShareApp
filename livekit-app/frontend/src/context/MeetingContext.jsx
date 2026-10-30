@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useMemo } from 'react';
-import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { normalizeMeetingLanguageCode, writeStoredMeetingLanguage } from '../lib/languages';
+import { DEFAULT_TTS_VOICE_ID } from '../lib/ttsVoices';
 
 const MeetingContext = createContext(null);
 
@@ -9,16 +10,36 @@ export function MeetingProvider({ children, initialState = {} }) {
   );
 
   const setSelectedLanguage = useCallback((code) => {
-    setSelectedLanguageState(normalizeMeetingLanguageCode(code || 'en'));
+    const next = normalizeMeetingLanguageCode(code || 'en');
+    setSelectedLanguageState(next);
+    writeStoredMeetingLanguage(next);
   }, []);
 
   const [translationEnabled, setTranslationEnabled] = useState(initialState.translationEnabled ?? true);
+  const [voiceTranslationEnabled, setVoiceTranslationEnabled] = useState(
+    initialState.voiceTranslationEnabled ?? false
+  );
+  const [ttsVoiceId, setTtsVoiceId] = useState(
+    initialState.ttsVoiceId ?? DEFAULT_TTS_VOICE_ID
+  );
 
   // Unified side panel: one panel, two tabs.
   const [sidePanelOpen, setSidePanelOpen] = useState(initialState.translationEnabled ?? true);
   const [sidePanelTab, setSidePanelTabState] = useState('captions'); // 'captions' | 'chat'
   const [unreadCount, setUnreadCount] = useState(0);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  // Mobile bottom sheet height preset: 'sm' (26dvh) | 'md' (40dvh) | 'lg' (62dvh)
+  const [mobileSheetSize, setMobileSheetSize] = useState('md');
+  // Desktop side panel width preset: false (standard) | true (wide 520px)
+  const [desktopPanelWide, setDesktopPanelWide] = useState(false);
+
+  const cycleMobileSheetSize = useCallback(() => {
+    setMobileSheetSize((prev) => (prev === 'md' ? 'lg' : prev === 'lg' ? 'sm' : 'md'));
+  }, []);
+
+  const toggleDesktopPanelWide = useCallback(() => {
+    setDesktopPanelWide((prev) => !prev);
+  }, []);
 
   const setSidePanelTab = useCallback((tab) => {
     setSidePanelTabState(tab);
@@ -95,6 +116,8 @@ export function MeetingProvider({ children, initialState = {} }) {
   const value = useMemo(() => ({
     // Room info
     roomName: initialState.roomName || '',
+    meetingId: initialState.meetingId || '',
+    transcriptPersistEnabled: Boolean(initialState.transcriptPersistEnabled),
     isHost: initialState.isHost || false,
     participantName: initialState.participantName || '',
     spokenLanguage: selectedLanguage,
@@ -104,6 +127,10 @@ export function MeetingProvider({ children, initialState = {} }) {
     setSelectedLanguage,
     translationEnabled,
     setTranslationEnabled,
+    voiceTranslationEnabled,
+    setVoiceTranslationEnabled,
+    ttsVoiceId,
+    setTtsVoiceId,
 
     // Unified side panel
     sidePanelOpen,
@@ -130,16 +157,31 @@ export function MeetingProvider({ children, initialState = {} }) {
     isFullScreen,
     setIsFullScreen,
 
+    // Mobile sheet sizing + Desktop panel width
+    mobileSheetSize,
+    setMobileSheetSize,
+    cycleMobileSheetSize,
+    desktopPanelWide,
+    toggleDesktopPanelWide,
+
     // Mode
     meetingMode: initialState.meetingMode || 'translation',
+
+    // Demo room: virtual AI teammates whose languages drive caption targets
+    demoTeammates: initialState.demoTeammates || [],
   }), [
     initialState.roomName,
+    initialState.meetingId,
+    initialState.transcriptPersistEnabled,
     initialState.isHost,
     initialState.participantName,
     initialState.meetingMode,
+    initialState.demoTeammates,
     selectedLanguage,
     setSelectedLanguage,
     translationEnabled,
+    voiceTranslationEnabled,
+    ttsVoiceId,
     sidePanelOpen,
     sidePanelTab,
     setSidePanelTab,
@@ -156,6 +198,10 @@ export function MeetingProvider({ children, initialState = {} }) {
     markChatRead,
     incrementChatUnread,
     isFullScreen,
+    mobileSheetSize,
+    cycleMobileSheetSize,
+    desktopPanelWide,
+    toggleDesktopPanelWide,
   ]);
 
   return (

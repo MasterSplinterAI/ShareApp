@@ -4,10 +4,15 @@ import { MessageCircle, Send, Loader2 } from 'lucide-react';
 import { useMeeting } from '../context/MeetingContext';
 import { chatService } from '../services/api';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { participantDisplayName } from '../lib/participantDisplayName';
 import PanelTabs from './PanelTabs';
+import { Button } from './ui/button';
 
 const MAX_CHARS = 2000;
 const URL_RE = /\bhttps?:\/\/\S+/gi;
+const SHARED_TEXT_DECODER = new TextDecoder();
+const CHAT_TIME_FORMATTER = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
 
 function linkifyText(text) {
   if (!text) return null;
@@ -27,7 +32,7 @@ function linkifyText(text) {
         href={url}
         target="_blank"
         rel="noopener noreferrer nofollow"
-        className="text-blue-400 underline break-all hover:text-blue-300"
+        className="text-primary underline break-all hover:text-primary/80"
       >
         {url}
       </a>
@@ -49,6 +54,8 @@ function ChatPanel() {
     isChatOpen,
     incrementChatUnread,
     isFullScreen,
+    mobileSheetSize,
+    desktopPanelWide,
   } = useMeeting();
 
   const [messages, setMessages] = useState([]);
@@ -59,6 +66,7 @@ function ChatPanel() {
   const messagesRef = useRef(messages);
   const isChatOpenRef = useRef(isChatOpen);
   const selectedLanguageRef = useRef(selectedLanguage);
+  const t = useRoomControlLabels(selectedLanguage);
 
   messagesRef.current = messages;
   isChatOpenRef.current = isChatOpen;
@@ -115,8 +123,7 @@ function ChatPanel() {
       try {
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
-        const decoder = new TextDecoder();
-        const message = JSON.parse(decoder.decode(raw));
+        const message = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         if (message.type !== 'chat') return;
 
         const id = message.id;
@@ -124,7 +131,12 @@ function ChatPanel() {
         if (id) processedIdsRef.current.add(id);
 
         const senderId = message.senderId || participant?.identity || 'unknown';
-        const senderName = message.senderName || participant?.name || senderId;
+        const fromPacket = String(message.senderName || '').trim();
+        const looksLikeGuestId = /^guest-[0-9a-f-]{36}$/i.test(fromPacket);
+        const senderName =
+          (fromPacket && !looksLikeGuestId ? fromPacket : '') ||
+          participantDisplayName(participant) ||
+          senderId;
         const sourceLanguage = normalizeMeetingLanguageCode(message.sourceLanguage || 'en');
         const originalText = message.text || '';
         const timestamp = message.timestamp || Date.now();
@@ -185,10 +197,25 @@ function ChatPanel() {
   }, [room, localParticipant?.identity, translateIncoming, incrementChatUnread]);
 
   useEffect(() => {
-    if (isAtBottom && scrollRef.current) {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const doScroll = () => {
+      if (!isAtBottom || !scrollRef.current) return;
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages, isAtBottom]);
+    };
+
+    const mo = new MutationObserver(doScroll);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+
+    const ro = new ResizeObserver(doScroll);
+    ro.observe(el);
+
+    return () => {
+      mo.disconnect();
+      ro.disconnect();
+    };
+  }, [isAtBottom, isChatOpen]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
@@ -210,7 +237,10 @@ function ChatPanel() {
       type: 'chat',
       id,
       senderId: room.localParticipant.identity,
-      senderName: participantName || room.localParticipant.identity,
+      senderName:
+        participantName ||
+        participantDisplayName(room.localParticipant) ||
+        room.localParticipant.identity,
       sourceLanguage,
       text,
       timestamp: Date.now(),
@@ -221,7 +251,7 @@ function ChatPanel() {
     const optimistic = {
       id,
       senderId: room.localParticipant.identity,
-      senderName: participantName || room.localParticipant.identity,
+      senderName: payload.senderName,
       sourceLanguage,
       originalText: text,
       translations: {},
@@ -275,9 +305,9 @@ function ChatPanel() {
         className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
       >
         {messages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <MessageCircle className="w-8 h-8 mb-3 opacity-50" />
-            <p className="text-center text-sm">No messages yet. Say hi.</p>
+            <p className="text-center text-sm">{t('noMessages')}</p>
           </div>
         )}
         {messages.map((msg) => {
@@ -288,34 +318,37 @@ function ChatPanel() {
               key={msg.id}
               className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}
             >
-              <div className="flex items-baseline gap-2 mb-1 max-w-[95%]">
-                <span className="text-xs font-medium text-emerald-400 truncate">
-                  {msg.isOwn ? 'You' : msg.senderName}
-                </span>
-                <span className="text-xs text-gray-500">
-                  {new Date(msg.timestamp).toLocaleTimeString([], {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+              <div className="mb-1 flex max-w-[95%] items-baseline gap-2">
+                {msg.isOwn ? (
+                  <span className="truncate text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    {t('you')}
+                  </span>
+                ) : (
+                  <span className="truncate text-xs font-semibold text-emerald-600 dark:text-emerald-400" data-no-translate="true">
+                    {msg.senderName}
+                  </span>
+                )}
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80">
+                  {CHAT_TIME_FORMATTER.format(msg.timestamp)}
                 </span>
               </div>
               <div
-                className={`rounded-lg px-3 py-2 max-w-[95%] break-words text-sm ${
+                className={`max-w-[95%] break-words border px-3 py-2 text-sm shadow-sm ${
                   msg.isOwn
-                    ? 'bg-blue-600/25 text-gray-100 border border-blue-500/30'
-                    : 'bg-gray-800/80 text-gray-100 border border-gray-700/80'
+                    ? 'rounded-2xl rounded-br-sm border-primary/30 bg-primary/15 text-foreground'
+                    : 'rounded-2xl rounded-bl-sm border-border bg-muted/60 text-foreground'
                 }`}
               >
                 {msg.translating && !msg.isOwn ? (
-                  <span className="inline-flex items-center gap-2 text-gray-400">
+                  <span className="inline-flex items-center gap-2 text-muted-foreground">
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Translating…
+                    {t('translating')}
                   </span>
                 ) : (
                   <>
-                    <div className="leading-relaxed">{linkifyText(primary)}</div>
+                    <div className="leading-relaxed" data-no-translate="true">{linkifyText(primary)}</div>
                     {secondary && (
-                      <div className="mt-1 text-xs text-gray-400 leading-relaxed border-t border-gray-700/50 pt-1">
+                      <div className="mt-1 text-xs text-muted-foreground leading-relaxed border-t border-border/50 pt-1" data-no-translate="true">
                         {linkifyText(secondary)}
                       </div>
                     )}
@@ -326,25 +359,27 @@ function ChatPanel() {
           );
         })}
       </div>
-      <div className="p-3 border-t border-gray-700 bg-gray-900/95 flex-shrink-0 flex gap-2">
+      <div className="flex flex-shrink-0 gap-2 border-t border-border meeting-control-strip p-3">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value.slice(0, MAX_CHARS))}
           onKeyDown={onKeyDown}
-          placeholder="Message…"
+          placeholder={t('messagePlaceholder')}
           rows={2}
-          className="flex-1 resize-none rounded-lg bg-gray-800 border border-gray-600 text-white text-sm px-3 py-2 placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+          aria-label={t('messagePlaceholder')}
+          className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-base sm:text-sm text-foreground transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
           maxLength={MAX_CHARS}
         />
-        <button
+        <Button
           type="button"
+          size="icon"
+          className="self-end shrink-0"
           onClick={sendMessage}
           disabled={!draft.trim()}
-          className="self-end px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white"
-          aria-label="Send message"
+          aria-label={t('sendMessage')}
         >
-          <Send className="w-5 h-5" />
-        </button>
+          <Send className="h-5 w-5" />
+        </Button>
       </div>
     </>
   );
@@ -352,7 +387,7 @@ function ChatPanel() {
   if (usePipMode) {
     return (
       <div
-        className="fixed bottom-20 right-4 w-96 max-h-80 bg-gray-900/95 backdrop-blur-md border border-gray-700 rounded-lg shadow-2xl z-[9998] flex flex-col"
+        className="fixed bottom-[calc(var(--control-bar-h,3.5rem)+0.75rem)] right-4 z-[9998] flex max-h-80 w-96 flex-col rounded-xl border meeting-panel-surface backdrop-blur-md"
         data-no-translate="true"
       >
         <PanelTabs compact />
@@ -363,10 +398,11 @@ function ChatPanel() {
 
   return (
     <div
-      className="flex flex-col flex-shrink-0 bg-gray-900 border-gray-700 z-40
-        fixed bottom-12 left-0 right-0 max-h-[45vh] rounded-t-xl border-t shadow-2xl
-        sm:static sm:bottom-auto sm:left-auto sm:right-auto sm:z-auto sm:max-h-none sm:h-full
-        sm:w-[350px] lg:w-[400px] sm:border-l sm:border-t-0 sm:rounded-none sm:shadow-none"
+      className={`meeting-mobile-sheet flex h-[min(40dvh,22rem)] max-h-[40dvh] w-full min-h-0 shrink-0 flex-col rounded-t-xl border meeting-panel-surface transition-[height,max-height,width] duration-200 sm:h-full sm:max-h-none ${
+        desktopPanelWide ? 'sm:w-[440px] lg:w-[520px]' : 'sm:w-[350px] lg:w-[400px]'
+      } sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-none`}
+      data-meeting-mobile-sheet="chat"
+      data-sheet-size={mobileSheetSize}
       data-no-translate="true"
     >
       <PanelTabs />

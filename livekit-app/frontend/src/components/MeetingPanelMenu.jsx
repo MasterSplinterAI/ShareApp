@@ -1,0 +1,262 @@
+import { useState, useEffect, useRef } from 'react';
+import { Subtitles, MessageCircle, Users, Globe, Headphones, Check, ChevronDown } from 'lucide-react';
+import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
+import { useMeeting } from '../context/MeetingContext';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { TTS_VOICES, sanitizeTtsVoiceId } from '../lib/ttsVoices';
+import { Button } from './ui/button';
+import { cn } from '../lib/utils';
+
+const PANEL_ITEMS = [
+  { id: 'captions', labelKey: 'captions', icon: Subtitles },
+  { id: 'chat', labelKey: 'chat', icon: MessageCircle },
+  { id: 'participants', labelKey: 'people', icon: Users, hostOnly: true },
+];
+
+const CAPTION_MODES = [
+  { value: 'off', labelKey: 'captionsOff' },
+  { value: 'transcription_only', labelKey: 'transcriptionOnly' },
+  { value: 'transcription_translation', labelKey: 'transcriptionTranslation' },
+];
+
+/**
+ * Mobile-only control: one fixed-size pill to switch Captions / Chat / People
+ * and adjust personal caption settings inside the same dropdown.
+ */
+export default function MeetingPanelMenu({
+  value,
+  onChange,
+  onTranslationToggle,
+  translationEnabled = false,
+  voiceTranslationEnabled = false,
+  onVoiceTranslationToggle,
+  ttsVoiceId,
+  onTtsVoiceChange,
+  isHost = false,
+  captionMode,
+  onCaptionModeChange,
+  barBtnClass,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+  const {
+    sidePanelOpen,
+    sidePanelTab,
+    openSidePanel,
+    closeSidePanel,
+    unreadCount,
+  } = useMeeting();
+
+  const normalizedValue = normalizeMeetingLanguageCode(value);
+  const selectedLanguage = getMeetingLanguageDisplay(normalizedValue);
+  const t = useRoomControlLabels(normalizedValue);
+
+  const visiblePanels = PANEL_ITEMS.filter((item) => !item.hostOnly || isHost);
+  const activePanel = sidePanelOpen
+    ? visiblePanels.find((item) => item.id === sidePanelTab) || visiblePanels[0]
+    : null;
+  const ActiveIcon = activePanel?.icon || Subtitles;
+  const isActive = sidePanelOpen && (sidePanelTab !== 'captions' || translationEnabled);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const handleOrientationChange = () => setIsOpen(false);
+    window.addEventListener('orientationchange', handleOrientationChange);
+    return () => window.removeEventListener('orientationchange', handleOrientationChange);
+  }, []);
+
+  const selectPanel = (panelId) => {
+    if (sidePanelOpen && sidePanelTab === panelId) {
+      if (panelId !== 'captions' && translationEnabled) {
+        openSidePanel('captions');
+      } else {
+        closeSidePanel();
+      }
+    } else {
+      openSidePanel(panelId);
+    }
+    setIsOpen(false);
+  };
+
+  const handleLanguageSelect = (code) => {
+    onChange(code);
+    if (!translationEnabled) {
+      onTranslationToggle();
+    } else if (!sidePanelOpen || sidePanelTab !== 'captions') {
+      openSidePanel('captions');
+    }
+    setIsOpen(false);
+  };
+
+  return (
+    <div className="relative" ref={menuRef} data-no-translate="true">
+      <Button
+        type="button"
+        variant={isActive ? 'success' : 'secondary'}
+        onClick={() => setIsOpen((v) => !v)}
+        className={cn('h-11 rounded-full px-3 gap-1.5 relative shrink-0')}
+        aria-label="Open panel and language menu"
+        aria-expanded={isOpen}
+      >
+        <ActiveIcon className="h-4 w-4 shrink-0" />
+        <span className="text-xs font-semibold uppercase tracking-tight">
+          {selectedLanguage?.flag ? `${selectedLanguage.flag} ` : ''}
+          {normalizedValue}
+        </span>
+        <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', isOpen && 'rotate-180')} />
+        {unreadCount > 0 && !(sidePanelOpen && sidePanelTab === 'chat') && (
+          <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+            {unreadCount > 99 ? '99+' : unreadCount}
+          </span>
+        )}
+      </Button>
+
+      {isOpen && (
+        <div
+          className="absolute bottom-full right-0 z-[9999] mb-2 w-64 max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-var(--control-bar-h,60px)-1rem)] overflow-y-auto rounded-xl border border-border bg-popover text-popover-foreground shadow-xl"
+        >
+          <div className="border-b border-border p-1">
+            {visiblePanels.map((item) => {
+              const Icon = item.icon;
+              const isSelected = sidePanelOpen && sidePanelTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => selectPanel(item.id)}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+                    isSelected && 'bg-accent'
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1">{t(item.labelKey)}</span>
+                  {item.id === 'chat' && unreadCount > 0 && sidePanelTab !== 'chat' && (
+                    <span className="rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-semibold text-destructive-foreground">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                  {isSelected && <Check className="h-3.5 w-3.5 text-primary" />}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onTranslationToggle()}
+            className={cn(
+              'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+              translationEnabled && 'bg-primary/10'
+            )}
+          >
+            <Globe className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-sm">{t('showCaptions')}</span>
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-xs font-medium',
+                translationEnabled ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {translationEnabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              if (!translationEnabled || !onVoiceTranslationToggle) return;
+              onVoiceTranslationToggle();
+            }}
+            disabled={!translationEnabled}
+            className={cn(
+              'flex w-full items-center gap-2 border-b border-border px-3 py-2.5 text-left transition-colors',
+              translationEnabled ? 'hover:bg-accent focus-visible:bg-accent focus-visible:outline-none' : 'cursor-not-allowed opacity-60',
+              translationEnabled && voiceTranslationEnabled && 'bg-primary/10'
+            )}
+          >
+            <Headphones className="h-4 w-4 shrink-0" />
+            <span className="flex-1 text-sm">Voice translation</span>
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-xs font-medium',
+                voiceTranslationEnabled
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground'
+              )}
+            >
+              {voiceTranslationEnabled ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          {translationEnabled && voiceTranslationEnabled && onTtsVoiceChange && (
+            <div className="border-b border-border px-3 py-2">
+              <label
+                htmlFor="tts-voice-select-mobile"
+                className="block pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Voice
+              </label>
+              <select
+                id="tts-voice-select-mobile"
+                value={ttsVoiceId}
+                onChange={(e) => onTtsVoiceChange(sanitizeTtsVoiceId(e.target.value))}
+                aria-label="Translation voice"
+                className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-base sm:text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {TTS_VOICES.map((voice) => (
+                  <option key={voice.id} value={voice.id}>
+                    {voice.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <MeetingLanguageList
+            value={normalizedValue}
+            onChange={handleLanguageSelect}
+            disabled={!translationEnabled}
+            maxHeightClass="max-h-48"
+          />
+
+          {isHost && onCaptionModeChange && (
+            <div className="border-t border-border p-2">
+              <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('roomBroadcast')}
+              </p>
+              {CAPTION_MODES.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => {
+                    onCaptionModeChange(mode.value);
+                    setIsOpen(false);
+                  }}
+                  className={cn(
+                    'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent',
+                    captionMode === mode.value && 'bg-accent'
+                  )}
+                >
+                  <span>{t(mode.labelKey)}</span>
+                  {captionMode === mode.value && <Check className="h-3.5 w-3.5 text-primary" />}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+}

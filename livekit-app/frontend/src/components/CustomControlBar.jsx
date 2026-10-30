@@ -1,10 +1,23 @@
 import { useState, useEffect, useRef } from 'react';
-import { useLocalParticipant, useTracks } from '@livekit/components-react';
+import { useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
 import toast from 'react-hot-toast';
-import LanguageSelector from './LanguageSelector';
+import CaptionControls from './CaptionControls';
+import MeetingPanelMenu from './MeetingPanelMenu';
+import VideoEffectsPicker from './VideoEffectsPicker';
 import { useMeeting } from '../context/MeetingContext';
+import { Button } from './ui/button';
+import { cn } from '../lib/utils';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
+import {
+  applyVideoEffect,
+  isMobileViewport,
+  loadSavedEffectId,
+  saveEffectId,
+  useVideoEffectsAvailable,
+} from '../lib/videoEffects';
 
 function useIsCompact() {
   const [isCompact, setIsCompact] = useState(false);
@@ -22,10 +35,17 @@ export default function CustomControlBar({
   setSelectedLanguage,
   translationEnabled,
   setTranslationEnabled,
+  voiceTranslationEnabled,
+  setVoiceTranslationEnabled,
+  ttsVoiceId,
+  setTtsVoiceId,
   isHost,
   onShareClick,
-  onDisconnect
+  intentionalLeaveRef,
+  onNavigateAfterLeave,
+  initialVideoEffectId = null,
 }) {
+  const room = useRoomContext();
   const localParticipantHook = useLocalParticipant();
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
@@ -35,8 +55,11 @@ export default function CustomControlBar({
     openSidePanel,
     closeSidePanel,
     unreadCount,
+    roomName,
   } = useMeeting();
   const isCompact = useIsCompact();
+
+  const [captionMode, setCaptionMode] = useState('transcription_translation');
 
   const cameraTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Camera);
   const micTrack = tracks.find(track => track.participant?.identity === localParticipant?.identity && track.source === Track.Source.Microphone);
@@ -51,9 +74,41 @@ export default function CustomControlBar({
   const [cameraDevices, setCameraDevices] = useState([]);
   const [selectedMicId, setSelectedMicId] = useState(null);
   const [selectedCameraId, setSelectedCameraId] = useState(null);
+  const voiceHintShownRef = useRef(false);
 
   const micMenuRef = useRef(null);
   const cameraMenuRef = useRef(null);
+
+  // --- Background effects (blur / virtual background) ---
+  const effectsAvailable = useVideoEffectsAvailable();
+  const [videoEffectId, setVideoEffectId] = useState(() => {
+    if (isMobileViewport()) return 'none';
+    return initialVideoEffectId ?? loadSavedEffectId();
+  });
+
+  // Apply to every camera track instance: LiveKit creates a NEW LocalVideoTrack on
+  // camera re-enable and device switches, so this re-runs whenever the instance or
+  // the chosen effect changes (covers initial join via the prejoin choice too).
+  const camTrackInstance = cameraTrack?.publication?.track ?? cameraTrack?.track;
+  useEffect(() => {
+    if (!effectsAvailable || !camTrackInstance) return;
+    applyVideoEffect(camTrackInstance, videoEffectId).catch((err) => {
+      console.warn('Video effect failed:', err);
+      toast.error('Could not apply background effect');
+    });
+  }, [camTrackInstance, videoEffectId, effectsAvailable]);
+
+  useEffect(() => {
+    if (effectsAvailable || !camTrackInstance) return;
+    applyVideoEffect(camTrackInstance, 'none').catch((err) => {
+      console.warn('Video effect clear failed:', err);
+    });
+  }, [camTrackInstance, effectsAvailable]);
+
+  const handleEffectSelect = (id) => {
+    setVideoEffectId(id);
+    saveEffectId(id);
+  };
 
   // Sync state with tracks (TrackReference uses publication.track)
   useEffect(() => {
@@ -108,9 +163,14 @@ export default function CustomControlBar({
       if (enabled && selectedCameraId) {
         await localParticipant.setCameraEnabled(true, {
           deviceId: { exact: selectedCameraId },
+          resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+        });
+      } else if (enabled) {
+        await localParticipant.setCameraEnabled(true, {
+          resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
         });
       } else {
-        await localParticipant.setCameraEnabled(enabled);
+        await localParticipant.setCameraEnabled(false);
       }
       setIsCameraEnabled(enabled);
     } catch (error) {
@@ -186,6 +246,7 @@ export default function CustomControlBar({
       await localParticipant.setCameraEnabled(false);
       await localParticipant.setCameraEnabled(true, {
         deviceId: { exact: deviceId },
+        resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
       });
       setSelectedCameraId(deviceId);
       setIsCameraEnabled(true);
@@ -195,7 +256,7 @@ export default function CustomControlBar({
     }
   };
 
-  // Close menus when clicking outside
+  // Close menus when clicking/tapping outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (micMenuRef.current && !micMenuRef.current.contains(event.target)) {
@@ -205,8 +266,8 @@ export default function CustomControlBar({
         setShowCameraMenu(false);
       }
     };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
   }, []);
 
   // Close menus on orientation change
@@ -219,49 +280,151 @@ export default function CustomControlBar({
     return () => window.removeEventListener('orientationchange', handleOrientationChange);
   }, []);
 
+  const publishCaptionConfig = async (mode) => {
+    if (!localParticipant) return;
+    const languages = [];
+    try {
+      const payload = JSON.stringify({ type: 'caption_config', mode, languages });
+      await localParticipant.publishData(
+        new TextEncoder().encode(payload),
+        { reliable: true, topic: 'caption_config' }
+      );
+    } catch (err) {
+      console.error('Failed to publish caption config:', err);
+    }
+
+    if (roomName) {
+      const apiBase = import.meta.env.VITE_API_URL || '/api';
+      fetch(`${apiBase}/v2/rooms/${encodeURIComponent(roomName)}/caption-config`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('v2_token') || ''}`,
+        },
+        body: JSON.stringify({ mode, languages }),
+      }).catch(() => {});
+    }
+  };
+
+  const handleCaptionModeChange = async (mode) => {
+    setCaptionMode(mode);
+    await publishCaptionConfig(mode);
+    toast(mode === 'off' ? 'Captions disabled' : 'Caption mode updated');
+  };
+
+  const handleTranslationToggle = () => {
+    const next = !translationEnabled;
+    setTranslationEnabled(next);
+
+    if (next) {
+      openSidePanel('captions');
+      toast.success('Captions enabled');
+      return;
+    }
+
+    setVoiceTranslationEnabled(false);
+    closeSidePanel();
+    toast('Captions disabled');
+  };
+
+  const handleVoiceTranslationToggle = () => {
+    if (!translationEnabled) return;
+
+    const next = !voiceTranslationEnabled;
+    setVoiceTranslationEnabled(next);
+
+    if (next && !voiceHintShownRef.current) {
+      voiceHintShownRef.current = true;
+      toast('Use headphones for best voice translation audio');
+    }
+  };
+
+  const barBtn = (compact) =>
+    cn(
+      'rounded-full transition-transform duration-150 hover:-translate-y-0.5 shrink-0',
+      compact ? 'h-11 w-11 px-0' : 'h-11 gap-2 px-3 lg:px-5'
+    );
+
+  const t = useRoomControlLabels(selectedLanguage);
+  const barRef = useRef(null);
+
+  useEffect(() => {
+    const el = barRef.current;
+    if (!el) return undefined;
+    const root = el.closest('.meeting-room-root');
+    if (!root) return undefined;
+    const publish = () => {
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      if (h > 0) root.style.setProperty('--control-bar-h', `${h}px`);
+    };
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isCompact]);
+
   return (
-    <div className={`w-full bg-gray-900/95 backdrop-blur-sm border-t border-gray-700 ${isCompact ? 'px-2 py-1.5' : 'px-4 py-3'} flex-shrink-0`}>
-      <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-4'}`}>
+    <div
+      ref={barRef}
+      data-meeting-control-bar="true"
+      className={cn(
+        'relative z-50 w-full shrink-0 border-t border-border meeting-control-strip',
+        isCompact ? 'px-2 pt-1.5' : 'px-4 pt-3',
+        'pb-[calc(0.375rem+var(--safe-bottom,0px))] sm:pb-[calc(0.75rem+var(--safe-bottom,0px))]'
+      )}
+      data-no-translate="true"
+    >
+      <div className={`max-w-7xl mx-auto flex items-center justify-between ${isCompact ? 'gap-1' : 'gap-2 lg:gap-4'}`}>
         {/* Left side - Standard controls */}
-        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
+        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-1.5 lg:gap-2'}`}>
           {/* Microphone Toggle */}
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              type="button"
+              variant={isMicEnabled ? 'success' : 'secondary'}
               onClick={toggleMic}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-                isMicEnabled
-                  ? 'bg-white/10 hover:bg-white/15 text-white'
-                  : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
-              }`}
+              className={cn(
+                barBtn(isCompact),
+                !isMicEnabled && 'border border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
+              )}
               aria-label={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
+              aria-pressed={!isMicEnabled}
+              title={isMicEnabled ? 'Mute microphone' : 'Unmute microphone'}
             >
-              {isMicEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-              {!isCompact && <span className="text-sm font-medium">Microphone</span>}
-            </button>
+              {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
+              {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('microphone')}</span>}
+            </Button>
 
             {micDevices.length > 1 && !isCompact && (
               <div className="relative" ref={micMenuRef}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowMicMenu(!showMicMenu); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="icon"
+                  className="h-9 w-9 shrink-0 rounded-full"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowMicMenu(!showMicMenu);
+                  }}
                   aria-label="Select microphone device"
                 >
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
-                </button>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${showMicMenu ? 'rotate-180' : ''}`} />
+                </Button>
 
                 {showMicMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999]">
+                  <div className="absolute bottom-full left-0 z-[9999] mb-2 w-60 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-var(--control-bar-h,68px)-1rem)] overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
                     <div className="p-2">
                       {micDevices.map((device) => (
                         <button
                           key={device.deviceId}
+                          type="button"
                           onClick={() => handleMicDeviceChange(device.deviceId)}
-                          className={`w-full text-left px-3 py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                            selectedMicId === device.deviceId ? 'bg-gray-700' : ''
+                          className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
+                            selectedMicId === device.deviceId ? 'bg-accent' : ''
                           }`}
                         >
-                          <span className="text-sm text-white truncate">{device.label || device.deviceId}</span>
-                          {selectedMicId === device.deviceId && <span className="text-green-400 text-xs">✓</span>}
+                          <span className="truncate text-sm text-popover-foreground">{device.label || device.deviceId}</span>
+                          {selectedMicId === device.deviceId && <span className="text-xs text-primary">✓</span>}
                         </button>
                       ))}
                     </div>
@@ -271,140 +434,228 @@ export default function CustomControlBar({
             )}
           </div>
 
-          {/* Camera Toggle */}
+          {/* Camera Toggle + settings/background menu */}
           <div className="flex items-center gap-1">
-            <button
+            <Button
+              type="button"
+              variant={isCameraEnabled ? 'success' : 'secondary'}
               onClick={toggleCamera}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-                isCameraEnabled
-                  ? 'bg-white/10 hover:bg-white/15 text-white'
-                  : 'bg-red-500/20 hover:bg-red-500/30 text-red-400'
-              }`}
+              className={cn(
+                barBtn(isCompact),
+                !isCameraEnabled && 'border border-destructive/40 bg-destructive/15 text-destructive hover:bg-destructive/25'
+              )}
               aria-label={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
+              aria-pressed={!isCameraEnabled}
+              title={isCameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             >
-              {isCameraEnabled ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
-              {!isCompact && <span className="text-sm font-medium">Camera</span>}
-            </button>
+              {isCameraEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
+              {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('camera')}</span>}
+            </Button>
 
-            {cameraDevices.length > 1 && !isCompact && (
-              <div className="relative" ref={cameraMenuRef}>
-                <button
-                  onClick={(e) => { e.stopPropagation(); setShowCameraMenu(!showCameraMenu); }}
-                  className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all"
-                  aria-label="Select camera device"
-                >
-                  <ChevronDown className={`w-4 h-4 transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
-                </button>
+            <div className="relative" ref={cameraMenuRef}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                className={cn('shrink-0 rounded-full', isCompact ? 'h-8 w-8' : 'h-9 w-9')}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowCameraMenu(!showCameraMenu);
+                }}
+                aria-label="Camera settings"
+                aria-expanded={showCameraMenu}
+              >
+                <ChevronDown className={`${isCompact ? 'h-3.5 w-3.5' : 'h-4 w-4'} transition-transform ${showCameraMenu ? 'rotate-180' : ''}`} />
+              </Button>
 
-                {showCameraMenu && (
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-gray-800 rounded-lg shadow-xl border border-gray-700 z-[9999]">
-                    <div className="p-2">
-                      {cameraDevices.map((device) => (
-                        <button
-                          key={device.deviceId}
-                          onClick={() => handleCameraDeviceChange(device.deviceId)}
-                          className={`w-full text-left px-3 py-2 rounded-md hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                            selectedCameraId === device.deviceId ? 'bg-gray-700' : ''
-                          }`}
-                        >
-                          <span className="text-sm text-white truncate">{device.label || device.deviceId}</span>
-                          {selectedCameraId === device.deviceId && <span className="text-green-400 text-xs">✓</span>}
-                        </button>
-                      ))}
+              {showCameraMenu && (
+                <div className="absolute bottom-full left-0 z-[9999] mb-2 w-72 max-w-[calc(100vw-1.5rem)] max-h-[calc(100dvh-var(--control-bar-h,60px)-1rem)] overflow-y-auto rounded-lg border border-border bg-popover shadow-xl">
+                    <div className="border-b border-border p-2">
+                      <button
+                        type="button"
+                        onClick={toggleCamera}
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                      >
+                        {isCameraEnabled ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+                        <span>{isCameraEnabled ? 'Turn camera off' : 'Turn camera on'}</span>
+                      </button>
                     </div>
+
+                    {cameraDevices.length > 1 && (
+                      <div className="border-b border-border p-2">
+                        <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          Camera
+                        </p>
+                        {cameraDevices.map((device) => (
+                          <button
+                            key={device.deviceId}
+                            type="button"
+                            onClick={() => handleCameraDeviceChange(device.deviceId)}
+                            className={`flex w-full items-center justify-between rounded-md px-3 py-2 text-left transition-colors hover:bg-accent ${
+                              selectedCameraId === device.deviceId ? 'bg-accent' : ''
+                            }`}
+                          >
+                            <span className="truncate text-sm text-popover-foreground">{device.label || device.deviceId}</span>
+                            {selectedCameraId === device.deviceId && <span className="text-xs text-primary">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {effectsAvailable && (
+                      <div className="p-3">
+                        <p className="mb-2 text-xs font-medium text-muted-foreground">Background</p>
+                        <VideoEffectsPicker
+                          activeEffectId={videoEffectId}
+                          onSelect={handleEffectSelect}
+                          disabled={!isCameraEnabled}
+                          compact
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
           </div>
 
           {/* Screen Share - hidden in compact mode */}
           {!isCompact && (
-            <button
+            <Button
+              type="button"
+              variant={isScreenSharing ? 'success' : 'secondary'}
               onClick={toggleScreenShare}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-all ${
-                isScreenSharing
-                  ? 'bg-blue-500/30 hover:bg-blue-500/40 text-blue-300'
-                  : 'bg-white/10 hover:bg-white/15 text-white'
-              }`}
+              className={cn(
+                barBtn(false),
+                isScreenSharing && 'ring-2 ring-primary/40',
+                !isScreenSharing && 'text-foreground'
+              )}
               aria-label={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
+              aria-pressed={isScreenSharing}
+              title={isScreenSharing ? 'Stop sharing screen' : 'Share screen'}
             >
-              <Monitor className="w-5 h-5" />
-              <span className="text-sm font-medium">{isScreenSharing ? 'Stop sharing' : 'Share screen'}</span>
-            </button>
+              <Monitor className="h-5 w-5" />
+              <span className="hidden lg:inline text-sm font-medium">{isScreenSharing ? t('stopSharing') : t('shareScreen')}</span>
+            </Button>
           )}
         </div>
 
-        {/* Right side - Language, panel toggle, share, leave */}
-        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-2'}`}>
-          {/* Language Selector */}
-          <LanguageSelector
-            value={selectedLanguage}
-            onChange={setSelectedLanguage}
-            onTranslationToggle={() => {
-              const next = !translationEnabled;
-              setTranslationEnabled(next);
-              // When enabling, open panel on Captions tab; when disabling, close panel.
-              if (next) {
-                openSidePanel('captions');
-                toast.success('Captions enabled');
-              } else {
-                closeSidePanel();
-                toast('Captions disabled');
-              }
-            }}
-            translationEnabled={translationEnabled}
-          />
+        {/* Right side - Captions / panels, share, leave */}
+        <div className={`flex items-center ${isCompact ? 'gap-1' : 'gap-1.5 lg:gap-2'}`}>
+          {isCompact ? (
+            <MeetingPanelMenu
+              value={selectedLanguage}
+              onChange={setSelectedLanguage}
+              onTranslationToggle={handleTranslationToggle}
+              translationEnabled={translationEnabled}
+              voiceTranslationEnabled={voiceTranslationEnabled}
+              onVoiceTranslationToggle={handleVoiceTranslationToggle}
+              ttsVoiceId={ttsVoiceId}
+              onTtsVoiceChange={setTtsVoiceId}
+              isHost={isHost}
+              captionMode={captionMode}
+              onCaptionModeChange={handleCaptionModeChange}
+              barBtnClass={barBtn(isCompact)}
+            />
+          ) : (
+            <>
+              <CaptionControls
+                value={selectedLanguage}
+                onChange={setSelectedLanguage}
+                onTranslationToggle={handleTranslationToggle}
+                translationEnabled={translationEnabled}
+                voiceTranslationEnabled={voiceTranslationEnabled}
+                onVoiceTranslationToggle={handleVoiceTranslationToggle}
+                ttsVoiceId={ttsVoiceId}
+                onTtsVoiceChange={setTtsVoiceId}
+                isHost={isHost}
+                captionMode={captionMode}
+                onCaptionModeChange={handleCaptionModeChange}
+                barBtnClass={barBtn(false)}
+              />
 
-          {/* Single side-panel toggle. Opens the panel on the Chat tab (and clears unread).
-              In-panel tabs let users switch between Captions and Chat. */}
-          <button
-            type="button"
-            onClick={() => {
-              if (sidePanelOpen && sidePanelTab === 'chat') {
-                closeSidePanel();
-              } else {
-                openSidePanel('chat');
-              }
-            }}
-            className={`relative flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg transition-all ${
-              sidePanelOpen && sidePanelTab === 'chat'
-                ? 'bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-200'
-                : 'bg-white/10 hover:bg-white/15 text-white'
-            }`}
-            aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
-            title="Chat"
-          >
-            <MessageCircle className="w-5 h-5" />
-            {!isCompact && <span className="text-sm font-medium">Chat</span>}
-            {!(sidePanelOpen && sidePanelTab === 'chat') && unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[1.125rem] h-[1.125rem] px-1 flex items-center justify-center rounded-full bg-red-500 text-white text-[10px] font-semibold">
-                {unreadCount > 99 ? '99+' : unreadCount}
-              </span>
-            )}
-          </button>
+              <Button
+                type="button"
+                variant={sidePanelOpen && sidePanelTab === 'chat' ? 'success' : 'secondary'}
+                onClick={() => {
+                  if (sidePanelOpen && sidePanelTab === 'chat') {
+                    if (translationEnabled) {
+                      openSidePanel('captions');
+                    } else {
+                      closeSidePanel();
+                    }
+                  } else {
+                    openSidePanel('chat');
+                  }
+                }}
+                className={cn(barBtn(false), 'relative')}
+                aria-label={sidePanelOpen && sidePanelTab === 'chat' ? 'Close chat' : 'Open chat'}
+                aria-pressed={sidePanelOpen && sidePanelTab === 'chat'}
+                title="Chat"
+              >
+                <MessageCircle className="h-5 w-5" />
+                <span className="text-sm font-medium">{t('chat')}</span>
+                {!(sidePanelOpen && sidePanelTab === 'chat') && unreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-[1.125rem] min-w-[1.125rem] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </Button>
 
-          {/* Share Button - Host Only */}
+              {isHost && (
+                <Button
+                  type="button"
+                  variant={sidePanelOpen && sidePanelTab === 'participants' ? 'success' : 'secondary'}
+                  onClick={() => {
+                    if (sidePanelOpen && sidePanelTab === 'participants') {
+                      if (translationEnabled) {
+                        openSidePanel('captions');
+                      } else {
+                        closeSidePanel();
+                      }
+                    } else {
+                      openSidePanel('participants');
+                    }
+                  }}
+                  className={barBtn(false)}
+                  aria-label={sidePanelOpen && sidePanelTab === 'participants' ? 'Close participants' : 'Open participants'}
+                  aria-pressed={sidePanelOpen && sidePanelTab === 'participants'}
+                  title="Participants"
+                >
+                  <Users className="h-5 w-5" />
+                  <span className="hidden lg:inline text-sm font-medium">{t('people')}</span>
+                </Button>
+              )}
+            </>
+          )}
+
+          {/* Share Link - Host Only */}
           {isHost && (
-            <button
-              onClick={onShareClick}
-              className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white transition-all`}
-              aria-label="Share meeting"
-            >
-              <Share2 className="w-5 h-5" />
-              {!isCompact && <span className="text-sm font-medium">Share</span>}
-            </button>
+            <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting" title="Share meeting">
+              <Share2 className="h-5 w-5" />
+              {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('share')}</span>}
+            </Button>
           )}
 
           {/* Leave Button */}
-          <button
-            onClick={onDisconnect}
-            className={`flex items-center gap-2 ${isCompact ? 'px-2' : 'px-4'} py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white transition-all`}
+          <Button
+            type="button"
+            variant="destructive"
+            onClick={async () => {
+              if (intentionalLeaveRef) intentionalLeaveRef.current = true;
+              try {
+                await room?.disconnect(true);
+              } catch {
+                /* still navigate below */
+              }
+              onNavigateAfterLeave?.();
+            }}
+            className={barBtn(isCompact)}
             aria-label="Leave meeting"
+            title="Leave meeting"
           >
-            <PhoneOff className="w-5 h-5" />
-            {!isCompact && <span className="text-sm font-medium">Leave</span>}
-          </button>
+            <PhoneOff className="h-5 w-5" />
+            {!isCompact && <span className="hidden lg:inline text-sm font-medium">{t('leave')}</span>}
+          </Button>
         </div>
       </div>
     </div>

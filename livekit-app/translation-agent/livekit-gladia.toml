@@ -1,0 +1,6 @@
+[project]
+  subdomain = "production-uiycx4ku"
+
+[agent]
+  id = "CA_m8wUQGKzQx3a"
+  name = "translation-cloud-gladia"

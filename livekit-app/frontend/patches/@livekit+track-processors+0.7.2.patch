@@ -1,0 +1,181 @@
+diff --git a/node_modules/@livekit/track-processors/dist/index.mjs b/node_modules/@livekit/track-processors/dist/index.mjs
+index 8c3efb1..3b0025e 100644
+--- a/node_modules/@livekit/track-processors/dist/index.mjs
++++ b/node_modules/@livekit/track-processors/dist/index.mjs
+@@ -717,6 +717,9 @@ var setupWebGL = (canvas) => {
+     log2.error("Failed to create WebGL context");
+     return void 0;
+   }
++  // Confidence masks are R32F — without this extension LINEAR sampling of
++  // float textures is unavailable on some GPUs (harmless no-op elsewhere).
++  gl.getExtension("OES_texture_float_linear");
+   gl.enable(gl.BLEND);
+   gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+   const composite = createCompositeProgram(gl);
+@@ -734,6 +737,31 @@ var setupWebGL = (canvas) => {
+   const boxBlur = createBoxBlurProgram(gl);
+   const boxBlurProgram = boxBlur.program;
+   const boxBlurUniforms = boxBlur.uniforms;
++  const emaFragmentShader = glsl`#version 300 es
++  precision mediump float;
++  in vec2 texCoords;
++  uniform sampler2D u_current;
++  uniform sampler2D u_previous;
++  uniform float u_alpha;
++  out vec4 fragColor;
++  void main() {
++    float cur = texture(u_current, texCoords).r;
++    float prev = texture(u_previous, texCoords).r;
++    float v = mix(prev, cur, u_alpha);
++    fragColor = vec4(v, v, v, 1.0);
++  }
++`;
++  const emaVertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource(false));
++  const emaFragShader = createShader(gl, gl.FRAGMENT_SHADER, emaFragmentShader);
++  const emaProgram = createProgram(gl, emaVertexShader, emaFragShader);
++  const emaUniforms = {
++    position: gl.getAttribLocation(emaProgram, "position"),
++    current: gl.getUniformLocation(emaProgram, "u_current"),
++    previous: gl.getUniformLocation(emaProgram, "u_previous"),
++    alpha: gl.getUniformLocation(emaProgram, "u_alpha")
++  };
++  const maskTemporalAlpha = 0.5;
++  let firstMaskFrame = true;
+   const bgTexture = initTexture(gl, 0);
+   const frameTexture = initTexture(gl, 1);
+   const vertexBuffer = createVertexBuffer(gl);
+@@ -759,6 +787,8 @@ var setupWebGL = (canvas) => {
+   );
+   const tempMaskTexture = initTexture(gl, 5);
+   const tempMaskFrameBuffer = createFramebuffer(gl, tempMaskTexture, canvas.width, canvas.height);
++  const emaTempTexture = initTexture(gl, 8);
++  const emaTempFrameBuffer = createFramebuffer(gl, emaTempTexture, canvas.width, canvas.height);
+   finalMaskTextures.push(initTexture(gl, 6));
+   finalMaskTextures.push(initTexture(gl, 7));
+   const finalMaskFrameBuffers = [
+@@ -766,6 +796,29 @@ var setupWebGL = (canvas) => {
+     createFramebuffer(gl, finalMaskTextures[1], canvas.width, canvas.height)
+   ];
+   let backgroundImageDisabled = false;
++  // Camera resolution can change in place (republish with simulcast constraints,
++  // adaptive capture) without a processor restart. The mask framebuffers were
++  // sized once at setup; rendering a different-sized viewport into them displaces
++  // and scales the mask relative to the frame — the whole effect goes "weird".
++  // Reallocate on any size change and drop EMA history (it's the wrong size).
++  let maskTexWidth = canvas.width;
++  let maskTexHeight = canvas.height;
++  function ensureMaskBuffers() {
++    if (maskTexWidth === canvas.width && maskTexHeight === canvas.height) return;
++    maskTexWidth = canvas.width;
++    maskTexHeight = canvas.height;
++    const targets = [
++      tempMaskTexture,
++      emaTempTexture,
++      finalMaskTextures[0],
++      finalMaskTextures[1]
++    ];
++    for (const tex of targets) {
++      gl.bindTexture(gl.TEXTURE_2D, tex);
++      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, maskTexWidth, maskTexHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
++    }
++    firstMaskFrame = true;
++  }
+   gl.useProgram(compositeProgram);
+   gl.uniform1i(disableBackgroundLocation, backgroundImageDisabled ? 1 : 0);
+   gl.uniform1i(bgTextureLocation, 0);
+@@ -854,9 +907,8 @@ var setupWebGL = (canvas) => {
+     backgroundImageDisabled = disabled;
+   }
+   function updateMask(mask) {
+-    const tempFramebuffers = [tempMaskFrameBuffer, finalMaskFrameBuffers[writeMaskIndex]];
+-    const tempTextures = [tempMaskTexture, finalMaskTextures[writeMaskIndex]];
+-    applyBlur(
++    ensureMaskBuffers();
++    const blurredMask = applyBlur(
+       gl,
+       mask,
+       canvas.width,
+@@ -865,9 +917,25 @@ var setupWebGL = (canvas) => {
+       boxBlurProgram,
+       boxBlurUniforms,
+       vertexBuffer,
+-      tempFramebuffers,
+-      tempTextures
++      [tempMaskFrameBuffer, emaTempFrameBuffer],
++      [tempMaskTexture, emaTempTexture]
+     );
++    gl.useProgram(emaProgram);
++    gl.bindFramebuffer(gl.FRAMEBUFFER, finalMaskFrameBuffers[writeMaskIndex]);
++    gl.viewport(0, 0, canvas.width, canvas.height);
++    gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
++    gl.vertexAttribPointer(emaUniforms.position, 2, gl.FLOAT, false, 0, 0);
++    gl.enableVertexAttribArray(emaUniforms.position);
++    gl.activeTexture(gl.TEXTURE0);
++    gl.bindTexture(gl.TEXTURE_2D, blurredMask);
++    gl.uniform1i(emaUniforms.current, 0);
++    gl.activeTexture(gl.TEXTURE1);
++    gl.bindTexture(gl.TEXTURE_2D, finalMaskTextures[readMaskIndex]);
++    gl.uniform1i(emaUniforms.previous, 1);
++    gl.uniform1f(emaUniforms.alpha, firstMaskFrame ? 1 : maskTemporalAlpha);
++    firstMaskFrame = false;
++    gl.drawArrays(gl.TRIANGLES, 0, 6);
++    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+     readMaskIndex = writeMaskIndex;
+     writeMaskIndex = 1 - writeMaskIndex;
+   }
+@@ -875,10 +943,13 @@ var setupWebGL = (canvas) => {
+     gl.deleteProgram(compositeProgram);
+     gl.deleteProgram(blurProgram);
+     gl.deleteProgram(boxBlurProgram);
++    gl.deleteProgram(emaProgram);
+     gl.deleteTexture(bgTexture);
+     gl.deleteTexture(frameTexture);
+     gl.deleteTexture(tempMaskTexture);
+     gl.deleteFramebuffer(tempMaskFrameBuffer);
++    gl.deleteTexture(emaTempTexture);
++    gl.deleteFramebuffer(emaTempFrameBuffer);
+     for (const texture of bgBlurTextures) {
+       gl.deleteTexture(texture);
+     }
+@@ -970,9 +1041,8 @@ var BackgroundProcessor = class extends VideoTransformer {
+   static get isSupported() {
+     return typeof OffscreenCanvas !== "undefined" && typeof VideoFrame !== "undefined" && typeof createImageBitmap !== "undefined" && !!document.createElement("canvas").getContext("webgl2");
+   }
+-  async init({ outputCanvas, inputElement: inputVideo }) {
+-    var _a, _b, _c, _d, _e, _f, _g, _h;
+-    await super.init({ outputCanvas, inputElement: inputVideo });
++  async createImageSegmenter() {
++    var _a, _b, _c, _d;
+     const fileSet = await vision.FilesetResolver.forVisionTasks(
+       (_b = (_a = this.options.assetPaths) == null ? void 0 : _a.tasksVisionFileSet) != null ? _b : `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${dependencies["@mediapipe/tasks-vision"]}/wasm`
+     );
+@@ -987,6 +1057,29 @@ var BackgroundProcessor = class extends VideoTransformer {
+       outputCategoryMask: true,
+       outputConfidenceMasks: false
+     });
++  }
++  async restart({ outputCanvas, inputElement: inputVideo }) {
++    var _a;
++    // The new output canvas means a NEW WebGL context; the segmenter's mask
++    // textures live in the old one and would sample as garbage. Rebind it.
++    await super.restart({ outputCanvas, inputElement: inputVideo });
++    await ((_a = this.imageSegmenter) == null ? void 0 : _a.close());
++    this.imageSegmenter = void 0;
++    await this.createImageSegmenter();
++    if (this.options.imagePath) {
++      await this.loadAndSetBackground(this.options.imagePath).catch(
++        (err) => this.log.error("Error while loading processor background image: ", err)
++      );
++    }
++    if (typeof this.options.blurRadius === "number") {
++      this.gl?.setBlurRadius(this.options.blurRadius);
++    }
++    this.gl?.setBackgroundDisabled(this.options.backgroundDisabled ?? false);
++  }
++  async init({ outputCanvas, inputElement: inputVideo }) {
++    var _e, _f, _g, _h;
++    await super.init({ outputCanvas, inputElement: inputVideo });
++    await this.createImageSegmenter();
+     if ((_e = this.options) == null ? void 0 : _e.imagePath) {
+       await this.loadAndSetBackground(this.options.imagePath).catch(
+         (err) => this.log.error("Error while loading processor background image: ", err)

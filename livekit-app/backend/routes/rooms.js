@@ -1,99 +1,28 @@
 const express = require('express');
-const { RoomServiceClient, Room, AgentDispatchClient } = require('livekit-server-sdk');
+const { createLiveKitConferenceRoom, getRoomService } = require('../lib/livekitService');
+const { publicFrontendBaseUrl } = require('../lib/publicFrontendBaseUrl');
 const router = express.Router();
-
-// Initialize LiveKit Room Service Client
-const getRoomService = () => {
-  if (!process.env.LIVEKIT_API_KEY || !process.env.LIVEKIT_API_SECRET || !process.env.LIVEKIT_URL) {
-    throw new Error('LiveKit configuration missing');
-  }
-  
-  const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
-  
-  return new RoomServiceClient(
-    livekitHost,
-    process.env.LIVEKIT_API_KEY,
-    process.env.LIVEKIT_API_SECRET
-  );
-};
 
 // Create a new room
 router.post('/create', async (req, res) => {
   try {
-    const roomService = getRoomService();
-    
-    // Get room mode from request (default: 'multi-language')
     const roomMode = req.body.roomMode || 'multi-language';
-    
-    // Use provided roomName (from invite link) or generate a new one
     const roomName = req.body.roomName || `room-${Math.random().toString(36).substring(2, 15)}-${Date.now().toString(36)}`;
-    
-    // Create room options
-    const createOptions = {
-      name: roomName,
-      emptyTimeout: 300, // Room closes 5 minutes after last participant leaves
-      maxParticipants: 50,
-      metadata: JSON.stringify({
-        createdAt: new Date().toISOString(),
-        type: 'conference',
-        roomMode: roomMode // Store room mode in metadata
-      })
-    };
-
-    // Create room
-    const room = await roomService.createRoom(createOptions);
-    
-    // Dispatch agent to room explicitly - ONLY to our named agent
-    // This prevents cloud-deployed unnamed agents from auto-joining
-    // Default must match the worker name in livekit-app/translation-agent/livekit.toml
-    // ('translation-cloud-prod' on LiveKit Cloud; override with AGENT_NAME in backend .env)
-    const agentName = process.env.AGENT_NAME || (process.env.NODE_ENV === 'production' ? 'translation-cloud-prod' : 'translation-bot-dev');
-    
-    // Debug logging
-    console.log(`[DEBUG] Agent dispatch - AGENT_NAME env: ${process.env.AGENT_NAME}, NODE_ENV: ${process.env.NODE_ENV}, Using agent: ${agentName}`);
-    
-    try {
-      const livekitHost = process.env.LIVEKIT_URL.replace('wss://', 'https://').replace('ws://', 'http://');
-      const agentDispatch = new AgentDispatchClient(
-        livekitHost,
-        process.env.LIVEKIT_API_KEY,
-        process.env.LIVEKIT_API_SECRET
-      );
-      
-      // Dispatch ONLY to our named agent (prevents cloud agent from joining)
-      // Signature: createDispatch(roomName, agentName, options)
-      await agentDispatch.createDispatch(roomName, agentName);
-      
-      console.log(`✅ Agent "${agentName}" dispatched to room ${roomName}`);
-    } catch (agentError) {
-      console.warn(`Could not dispatch agent "${agentName}":`, agentError.message);
-      // Continue anyway - room creation succeeded
-      // Note: If explicit dispatch fails, auto-dispatch might bring in cloud agent
-    }
+    const room = await createLiveKitConferenceRoom(roomName, roomMode);
     
     // Generate host code for easy rejoin
     const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     
-    // Generate shareable links based on request origin
-    const origin = req.headers.origin || req.headers.referer || '';
-    const isNgrok = origin.includes('ngrok.app') || origin.includes('ngrok.io');
-    
-    let shareableLink, shareableLinkNetwork;
-    
-    if (isNgrok) {
-      // Extract ngrok domain from origin
-      const ngrokUrl = origin.replace(/\/$/, ''); // Remove trailing slash
-      shareableLink = `${ngrokUrl}/join/${roomName}`;
-      shareableLinkNetwork = `${ngrokUrl}/join/${roomName}`;
-    } else {
-      const localhostUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-      const networkUrl = process.env.NETWORK_URL || 'http://192.168.1.83:5174';
-      shareableLink = `${localhostUrl}/join/${roomName}`;
-      shareableLinkNetwork = `${networkUrl}/join/${roomName}`;
+    const base = publicFrontendBaseUrl(req);
+    const shareableLink = `${base}/join/${encodeURIComponent(roomName)}`;
+    let shareableLinkNetwork = shareableLink;
+    if (base.includes('localhost') || base.includes('127.0.0.1')) {
+      const networkUrl = (process.env.NETWORK_URL || 'http://192.168.1.83:5174').replace(/\/$/, '');
+      shareableLinkNetwork = `${networkUrl}/join/${encodeURIComponent(roomName)}`;
     }
-    
+
     console.log('Created LiveKit room:', roomName);
-    console.log('Request origin:', origin);
+    console.log('Share base URL:', base);
     console.log('Shareable link:', shareableLink);
     
     // Parse metadata to include roomMode
@@ -219,19 +148,8 @@ router.post('/invite', async (req, res) => {
   try {
     const slug = `invite-${Math.random().toString(36).substring(2, 10)}${Date.now().toString(36)}`;
 
-    const origin = req.headers.origin || req.headers.referer || '';
-    const isNgrok = origin.includes('ngrok.app') || origin.includes('ngrok.io');
-
-    let inviteLink;
-    if (isNgrok) {
-      const ngrokUrl = origin.replace(/\/$/, '');
-      inviteLink = `${ngrokUrl}/join/${slug}`;
-    } else if (process.env.PRODUCTION_URL) {
-      inviteLink = `${process.env.PRODUCTION_URL}/join/${slug}`;
-    } else {
-      const localhostUrl = process.env.FRONTEND_URL || 'http://localhost:5174';
-      inviteLink = `${localhostUrl}/join/${slug}`;
-    }
+    const base = publicFrontendBaseUrl(req);
+    const inviteLink = `${base}/join/${encodeURIComponent(slug)}`;
 
     console.log('Created invite link:', inviteLink, 'slug:', slug);
 

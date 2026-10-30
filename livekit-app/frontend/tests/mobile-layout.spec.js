@@ -1,5 +1,33 @@
 import { test, expect } from '@playwright/test';
 
+async function gotoPrejoin(page, roomName = `test-${Date.now()}`) {
+  await page.addInitScript((room) => {
+    window.sessionStorage.setItem('participantInfo', JSON.stringify({
+      roomName: room,
+      participantName: '',
+      isHost: true,
+      selectedLanguage: 'en',
+      spokenLanguage: 'en',
+    }));
+  }, roomName);
+  await page.goto(`/room/${roomName}`);
+  await expect(page.getByRole('heading', { name: 'Ready to join?' })).toBeVisible();
+  return roomName;
+}
+
+async function joinFromPrejoin(page) {
+  await page.route('**/api/auth/token', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ token: 'fake-token', url: 'wss://example.invalid' }),
+    });
+  });
+  await page.getByLabel('Display name').fill('TestUser');
+  await page.getByRole('button', { name: 'Join meeting' }).click();
+  await expect(page.getByRole('button', { name: /turn .* camera/i })).toBeVisible();
+}
+
 test.describe('Home Screen', () => {
   test('renders correctly', async ({ page }) => {
     await page.goto('/');
@@ -35,13 +63,8 @@ test.describe('Home Screen', () => {
 
 test.describe('Meeting Room Layout', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
-    await page.getByRole('button', { name: 'Start Meeting' }).click();
-    await expect(page.getByPlaceholder('Your name')).toBeVisible();
-    await page.getByPlaceholder('Your name').fill('TestUser');
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.waitForURL(/\/room\//);
-    await page.waitForTimeout(3000);
+    await gotoPrejoin(page);
+    await joinFromPrejoin(page);
   });
 
   test('control bar is visible and compact on mobile', async ({ page }, testInfo) => {
@@ -53,7 +76,7 @@ test.describe('Meeting Room Layout', () => {
     const micBtn = page.getByRole('button', { name: /microphone/i });
     await expect(micBtn).toBeVisible();
 
-    const cameraBtn = page.getByRole('button', { name: /camera/i });
+    const cameraBtn = page.getByRole('button', { name: /turn .* camera/i });
     await expect(cameraBtn).toBeVisible();
 
     if (isMobile) {
@@ -62,39 +85,51 @@ test.describe('Meeting Room Layout', () => {
     }
   });
 
-  test('mobile shows caption bar instead of full bottom sheet', async ({ page }, testInfo) => {
+  test('mobile captions open in-flow above control bar without overlap', async ({ page }, testInfo) => {
     const isMobile = testInfo.project.name.includes('Mobile');
     if (!isMobile) {
       test.skip();
       return;
     }
 
-    // Desktop side panel should be hidden on mobile
     const desktopPanel = page.locator('[data-no-translate="true"].hidden.sm\\:flex');
     await expect(desktopPanel).toBeHidden();
 
-    // Mobile caption bar should be visible (thin bar with "Waiting for speech...")
-    const captionBar = page.locator('.sm\\:hidden.fixed.bottom-12');
-    const isVisible = await captionBar.isVisible().catch(() => false);
-    expect(isVisible).toBeTruthy();
+    // Default: expanded in-flow sheet (not a fixed overlay)
+    const sheet = page.locator('[data-meeting-mobile-sheet="captions"]');
+    await expect(sheet).toBeVisible();
+
+    const controlBar = page.locator('[data-meeting-control-bar="true"]');
+    await expect(controlBar).toBeVisible();
+
+    const sheetBox = await sheet.boundingBox();
+    const barBox = await controlBar.boundingBox();
+    expect(sheetBox).not.toBeNull();
+    expect(barBox).not.toBeNull();
+    // Sheet bottom should sit at or above control bar top (no overlap)
+    expect(sheetBox.y + sheetBox.height).toBeLessThanOrEqual(barBox.y + 1);
   });
 
-  test('mobile caption bar expands to full sheet on tap', async ({ page }, testInfo) => {
+  test('mobile captions minimize to in-flow bar above control bar', async ({ page }, testInfo) => {
     const isMobile = testInfo.project.name.includes('Mobile');
     if (!isMobile) {
       test.skip();
       return;
     }
 
-    const captionBar = page.locator('.sm\\:hidden.fixed.bottom-12 button');
-    if (await captionBar.isVisible()) {
-      await captionBar.click();
-      await page.waitForTimeout(300);
+    const sheet = page.locator('[data-meeting-mobile-sheet="captions"]');
+    await expect(sheet).toBeVisible();
 
-      const expandedSheet = page.locator('.sm\\:hidden.fixed.bottom-12.rounded-t-xl');
-      const isExpanded = await expandedSheet.isVisible().catch(() => false);
-      expect(isExpanded).toBeTruthy();
-    }
+    await page.getByRole('button', { name: 'Minimize panel' }).click();
+    const captionBar = page.locator('[data-meeting-mobile-sheet="captions-bar"]');
+    await expect(captionBar).toBeVisible({ timeout: 3000 });
+    await expect(sheet).toBeHidden();
+
+    const barBox = await page.locator('[data-meeting-control-bar="true"]').boundingBox();
+    const captionBox = await captionBar.boundingBox();
+    expect(barBox).not.toBeNull();
+    expect(captionBox).not.toBeNull();
+    expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(barBox.y + 1);
   });
 
   test('video grid is visible', async ({ page }) => {
@@ -145,5 +180,39 @@ test.describe('Meeting Room Layout', () => {
 
   test('leave button is visible', async ({ page }) => {
     await expect(page.getByRole('button', { name: /leave/i })).toBeVisible();
+  });
+
+});
+
+test.describe('Effects Runtime Loading', () => {
+  test('prejoin with no selected effect does not fetch MediaPipe assets', async ({ page }) => {
+    const requested = [];
+    page.on('request', (request) => {
+      const url = request.url();
+      if (url.includes('/mediapipe/') || url.includes('track-processors')) {
+        requested.push(url);
+      }
+    });
+
+    // No fake media is needed here: this catches eager prejoin prewarm/import
+    // regressions before a user selects any effect.
+    await gotoPrejoin(page, 'no-effects-room');
+    await page.waitForTimeout(1500);
+
+    expect(requested).toEqual([]);
+  });
+
+  test('camera menu owns background effects and standalone effects button is hidden', async ({ page }) => {
+    await gotoPrejoin(page, 'camera-effects-menu-room');
+    await joinFromPrejoin(page);
+
+    await expect(page.getByRole('button', { name: /background effects/i })).toHaveCount(0);
+
+    const cameraMenu = page.getByRole('button', { name: /camera settings/i });
+    await expect(cameraMenu).toBeVisible();
+    await cameraMenu.click();
+
+    await expect(page.getByText('Background')).toBeVisible();
+    await expect(page.getByRole('button', { name: /Background effect: None/i })).toBeVisible();
   });
 });

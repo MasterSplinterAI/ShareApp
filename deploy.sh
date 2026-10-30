@@ -90,6 +90,13 @@ else
   echo "$CHANGED_FILES" | grep -q '^livekit-app/backend/package'  && NEED_BACKEND_INSTALL=true || true
 fi
 
+# If package-lock changed but git diff missed it, still install backend deps (avoids MODULE_NOT_FOUND after code-only rsync).
+if [ "$NEED_BACKEND_INSTALL" != true ] && [ -f "$BACKEND_DIR/package-lock.json" ]; then
+  if ! cmp -s "$TEMP_DIR/livekit-app/backend/package-lock.json" "$BACKEND_DIR/package-lock.json" 2>/dev/null; then
+    NEED_BACKEND_INSTALL=true
+  fi
+fi
+
 # ---------- Backend ----------
 # ALWAYS preserve the production .env. This is the production secret store;
 # it is NOT in git and must survive every deploy.
@@ -112,6 +119,8 @@ if [ "$NEED_BACKEND_INSTALL" = true ] || [ ! -d "$BACKEND_DIR/node_modules" ]; t
     --exclude '.env.*' \
     --exclude 'node_modules' \
     --exclude 'translations.db' \
+    --exclude 'v2-platform.db' \
+    --exclude 'uploads' \
     "$TEMP_DIR/livekit-app/backend/" "$BACKEND_DIR/"
   cd "$BACKEND_DIR"
   npm install --production --prefer-offline --no-audit --silent
@@ -122,6 +131,8 @@ else
     --exclude '.env.*' \
     --exclude 'node_modules' \
     --exclude 'translations.db' \
+    --exclude 'v2-platform.db' \
+    --exclude 'uploads' \
     "$TEMP_DIR/livekit-app/backend/" "$BACKEND_DIR/"
 fi
 

@@ -1,0 +1,273 @@
+"""
+Pure helpers for the LLM translation lanes (no LiveKit imports — fully unit-testable).
+
+Covers:
+- TranslationCache: LRU cache so repeated utterances skip the LLM round trip.
+- stable_common_prefix: word-level local agreement (LA-2) for interim translation,
+  the standard stability heuristic from simultaneous-MT literature — only display
+  the prefix two consecutive candidate translations agree on, so live translated
+  captions never flicker or retract.
+- ends_sentence / split_tail / join_nonempty: sentence-boundary freezing of the
+  utterance translation. Re-translating the whole utterance on every Deepgram
+  is_final fixes cross-segment grammar (verb-final / SOV targets) but is O(n^2)
+  on long monologues; freezing completed sentences bounds the re-translated tail.
+- build_translation_messages: prompt assembly with rolling (source -> target)
+  context pairs as few-shot messages plus must-preserve keyterms.
+"""
+
+from __future__ import annotations
+
+import re
+from collections import OrderedDict
+from typing import List, Optional, Sequence, Tuple
+
+# Sentence-final punctuation across supported languages (Latin, CJK, Arabic),
+# optionally followed by closing quotes/brackets.
+_SENTENCE_END_RE = re.compile(
+    r"[.!?。！？؟…]['\"”’»)\]]*\s*$"
+)
+
+_WS_RE = re.compile(r"\s+")
+
+
+class TranslationCache:
+    """LRU cache keyed on (source_lang, target_lang, normalized text).
+
+    max_size=0 disables caching entirely.
+    """
+
+    def __init__(self, max_size: int = 512):
+        self.max_size = max(0, int(max_size))
+        self._data: "OrderedDict[Tuple[str, str, str], str]" = OrderedDict()
+
+    @staticmethod
+    def _key(source_lang: str, target_lang: str, text: str) -> Optional[Tuple[str, str, str]]:
+        norm = _WS_RE.sub(" ", text).strip().lower()
+        if not norm:
+            return None
+        return (source_lang, target_lang, norm)
+
+    def get(self, source_lang: str, target_lang: str, text: str) -> Optional[str]:
+        if self.max_size == 0:
+            return None
+        key = self._key(source_lang, target_lang, text)
+        if key is None:
+            return None
+        value = self._data.get(key)
+        if value is not None:
+            self._data.move_to_end(key)
+        return value
+
+    def put(self, source_lang: str, target_lang: str, text: str, translation: str) -> None:
+        if self.max_size == 0:
+            return
+        key = self._key(source_lang, target_lang, text)
+        if key is None or not translation.strip():
+            return
+        self._data[key] = translation
+        self._data.move_to_end(key)
+        while len(self._data) > self.max_size:
+            self._data.popitem(last=False)
+
+
+def stable_common_prefix(previous: str, current: str) -> str:
+    """Word-level longest common prefix of two candidate translations (local agreement)."""
+    prev_words = previous.split()
+    curr_words = current.split()
+    agreed: List[str] = []
+    for a, b in zip(prev_words, curr_words):
+        if a != b:
+            break
+        agreed.append(a)
+    return " ".join(agreed)
+
+
+def ends_sentence(text: str) -> bool:
+    """True when text ends with sentence-final punctuation (safe point to freeze)."""
+    return bool(_SENTENCE_END_RE.search(text.strip())) if text.strip() else False
+
+
+def stt_idle_timeout_ms(live_text: str, base_idle_ms: int = 2000) -> int:
+    """Adaptive STT idle window before closing the current bubble into a new thought.
+
+    - When the current text ends with sentence punctuation (. ? ! etc.), close
+      slightly sooner (80% of base_idle_ms, e.g. 1600ms for a 2000ms base) so
+      completed thoughts separate cleanly into a new bubble when the speaker
+      starts talking again.
+    - When paused mid-sentence (no terminal punctuation yet), hold for the full
+      base_idle_ms (2000ms) so a brief breath doesn't chop a clause in half.
+    """
+    base = max(400, int(base_idle_ms))
+    if ends_sentence(live_text or ""):
+        return max(400, int(round(base * 0.8)))
+    return base
+
+
+def should_break_turn(
+    committed_text: str,
+    age_sec: float,
+    *,
+    max_age_sec: float = 45.0,
+    max_words: int = 110,
+) -> bool:
+    """True when an open caption bubble should close at a sentence boundary.
+
+    Without this, a long monologue stays one ever-growing bubble (and TTS
+    stays silent) until the speaker pauses for the full idle window. Breaks
+    happen only at sentence-final punctuation so bubbles never split
+    mid-sentence; the idle timer still closes sub-threshold thoughts.
+    """
+    text = (committed_text or "").strip()
+    if not text or not ends_sentence(text):
+        return False
+    return age_sec >= max_age_sec or len(text.split()) >= max_words
+
+
+def tts_remainder(already_enqueued: str, full_text: str) -> str:
+    """Text still to speak: full_text minus the prefix already sent to TTS.
+
+    Frozen sentences are enqueued to TTS as they commit; at turn finalize
+    only the unspoken remainder may be sent or listeners hear repeats.
+    """
+    full = (full_text or "").strip()
+    spoken = (already_enqueued or "").strip()
+    if not full:
+        return ""
+    if not spoken:
+        return full
+    if full == spoken:
+        return ""
+    if full.startswith(spoken):
+        return full[len(spoken):].strip()
+    return full
+
+
+def should_handoff_turn(
+    *,
+    other_has_open_turn: bool,
+    other_vad_active: bool,
+    other_idle_sec: float,
+    interjector_is_final: bool,
+    interjector_word_count: int,
+    min_pause_sec: float = 0.35,
+) -> bool:
+    """True when Speaker B's speech should finalize Speaker A's paused turn (A -> B -> A).
+
+    - Never hand off if Speaker A has no open turn.
+    - Never cut off Speaker A while Speaker A is actively talking (simultaneous
+      cross-talk: other_vad_active is True and other_idle_sec < min_pause_sec).
+    - Require Speaker B to have actual recognized speech (any is_final, or an
+      interim with >= 2 words, or >= 1 word once Speaker A has been paused >= 0.8s)
+      so a mic bump / cough never splits Speaker A's bubble.
+    """
+    if not other_has_open_turn:
+        return False
+    other_paused = (not other_vad_active) or (other_idle_sec >= min_pause_sec)
+    if not other_paused:
+        return False
+    if interjector_is_final and interjector_word_count >= 1:
+        return True
+    if interjector_word_count >= 2:
+        return True
+    if interjector_word_count >= 1 and other_idle_sec >= 0.8:
+        return True
+    return False
+
+
+def should_mark_interjection(
+    *,
+    other_has_open_turn: bool,
+    interjector_is_final: bool,
+    interjector_word_count: int,
+) -> bool:
+    """True when Speaker B spoke during Speaker A's active turn (simultaneous talk-over).
+
+    When Speaker A is actively talking (so `should_handoff_turn` is False to
+    avoid chopping Speaker A mid-clause), marking Speaker A's turn as
+    interjected causes Speaker A's bubble to close cleanly as soon as Speaker A
+    finishes their current clause (`is_final`), so Speaker A's continuation
+    opens a new bubble below Speaker B (`A (part 1) -> B -> A (part 2)`).
+    """
+    if not other_has_open_turn:
+        return False
+    if interjector_is_final and interjector_word_count >= 1:
+        return True
+    if interjector_word_count >= 2:
+        return True
+    return False
+
+
+def split_tail(committed_text: str, frozen_src: str) -> str:
+    """Portion of the committed utterance not yet frozen.
+
+    If Deepgram revised earlier text so the frozen prefix no longer matches,
+    fall back to the full committed text (correctness over cost).
+    """
+    if not frozen_src:
+        return committed_text
+    if committed_text.startswith(frozen_src):
+        return committed_text[len(frozen_src):].strip()
+    return committed_text
+
+
+def join_nonempty(*parts: str) -> str:
+    return " ".join(p.strip() for p in parts if p and p.strip())
+
+
+def context_pairs_for_translation_call(
+    context_pairs: Sequence[Tuple[str, str]],
+    *,
+    partial: bool,
+) -> List[Tuple[str, str]]:
+    """Few-shot examples are useful for finals, but wasteful for interim calls."""
+    if partial:
+        return []
+    return list(context_pairs)
+
+
+def llm_completion_token_cap(source_text: str) -> int:
+    """Length-proportional output cap for translation completions."""
+    word_cap = 16 + 4 * len(source_text.split())
+    char_cap = 8 + len(source_text) // 2
+    return min(768, max(64, word_cap, char_cap))
+
+
+def build_translation_messages(
+    *,
+    target_lang_name: str,
+    source_text: str,
+    context_pairs: Sequence[Tuple[str, str]],
+    keyterms: Sequence[str],
+    partial: bool = False,
+) -> List[Tuple[str, str]]:
+    """Assemble (role, content) messages for one translation call.
+
+    Rolling context pairs are injected as few-shot user/assistant turns — this both
+    demonstrates the expected output format (translation only, no commentary) and
+    keeps pronouns / register / terminology consistent across utterances.
+    """
+    sys_lines = [
+        f"You are a professional simultaneous interpreter translating live captions to {target_lang_name}.",
+        "Translate the user's text. Output ONLY the translation — no explanations, no quotes, no preamble.",
+        "Preserve the speaker's tone and register. Keep names, numbers, and acronyms accurate.",
+    ]
+    if partial:
+        sys_lines.append(
+            "The text is a partial, incomplete utterance still being spoken. "
+            "Translate only what is given; do not complete or guess the rest of the sentence."
+        )
+    terms = [t.strip() for t in keyterms if t and t.strip()]
+    if terms:
+        sys_lines.append(
+            "Keep these terms exactly as written (do not translate them): " + ", ".join(terms) + "."
+        )
+
+    messages: List[Tuple[str, str]] = [("system", " ".join(sys_lines))]
+    for src, tgt in context_pairs:
+        src = (src or "").strip()
+        tgt = (tgt or "").strip()
+        if src and tgt:
+            messages.append(("user", src))
+            messages.append(("assistant", tgt))
+    messages.append(("user", source_text))
+    return messages

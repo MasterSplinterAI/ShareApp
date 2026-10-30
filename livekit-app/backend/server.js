@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
 // Load environment variables
@@ -8,11 +10,52 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust the first proxy hop (nginx) so express-rate-limit / req.ip see the real client IP.
+app.set('trust proxy', 1);
+
+// Security headers. CSP/CORP are disabled because this process only serves a
+// JSON API (the SPA is served statically by nginx) and CORS is handled below.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: false }));
+
+// Throttle auth + public endpoints to blunt credential stuffing / brute force.
+// In-memory store is sufficient for the current single-instance PM2 deploy.
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+});
+const publicJoinLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please wait a moment and try again.' },
+});
+const demoLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demo rate limit reached. Please wait a few minutes or sign up free.' },
+});
+const demoTurnLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many demo tries. Please wait a moment.' },
+});
+
 // Middleware
 // Allow CORS from localhost, network IP, and ngrok domains
 const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.NETWORK_URL,
+  process.env.STAGING_FRONTEND_URL,
+  'https://staging.jarmetals.com',
+  'https://share.jarmetals.com',
   'https://cockatoo-easy-similarly.ngrok.app', // Your custom ngrok domain
   'https://45304f934cbd.ngrok.app', // Previous ngrok URL
   'https://f46bc88e5f4e.ngrok.app', // Previous ngrok URL
@@ -58,16 +101,55 @@ app.use(cors({
   },
   credentials: true
 }));
+const { handleV2BillingWebhook } = require('./routes/v2/billingWebhook');
+const { handleLiveKitWebhook } = require('./routes/webhooks');
+const { handleResendInboundWebhook } = require('./routes/v2/resendInboundWebhook');
+
+// Raw-body routes must come before express.json()
+app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
+app.post('/api/webhooks/livekit', express.raw({ type: '*/*' }), handleLiveKitWebhook);
+app.post('/api/v2/webhooks/resend/inbound', express.raw({ type: 'application/json' }), handleResendInboundWebhook);
 app.use(express.json());
 
 // Routes
 const authRoutes = require('./routes/auth');
 const roomsRoutes = require('./routes/rooms');
 const translateRoutes = require('./routes/translate');
+const demoRoutes = require('./routes/demo');
+
+const v2Routes = require('./routes/v2');
+const v2Database = require('./db/v2Database');
+
+// Rate limits on sensitive auth + public join endpoints (mounted before the
+// route handlers so they run first, then fall through). /me and prefs are left
+// unthrottled since the app polls them.
+app.use('/api/v2/auth/login', authLimiter);
+app.use('/api/v2/auth/signup', authLimiter);
+app.use('/api/v2/auth/forgot-password', authLimiter);
+app.use('/api/v2/auth/reset-password', authLimiter);
+app.use('/api/v2/auth/change-password', authLimiter);
+app.use('/api/v2/join-info', publicJoinLimiter);
+app.use('/api/v2/guest-token', publicJoinLimiter);
+app.use('/api/demo/session', demoLimiter);
+app.use('/api/demo/room', demoLimiter);
+app.use('/api/demo/turn', demoTurnLimiter);
+app.use('/api/demo/orchestrate', demoTurnLimiter);
+app.use('/api/demo', demoRoutes);
+app.use('/api/auth', authLimiter);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateRoutes);
+app.use('/api/v2', v2Routes);
+app.use('/api/cost-events', require('./routes/costEvents'));
+const qualityEventsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many quality events' },
+});
+app.use('/api/quality-events', qualityEventsLimiter, require('./routes/qualityEvents'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -83,10 +165,59 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`LiveKit backend server running on port ${PORT}`);
-  console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
-  console.log(`Network URL: ${process.env.NETWORK_URL}`);
-  console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
-  console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
-});
+(async function start() {
+  try {
+    await v2Database.initDatabase();
+  } catch (e) {
+    console.error('[v2Database] init failed:', e.message);
+  }
+  try {
+    const { supportKitEnabled, ensureSupportSchema } = require('./lib/supportKit');
+    if (supportKitEnabled()) {
+      await ensureSupportSchema();
+    }
+  } catch (e) {
+    console.error('[support] schema ensure failed:', e.message);
+  }
+  try {
+    const { startGuestInviteReminders } = require('./lib/guestInvites');
+    const baseUrl = (process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'https://staging.jarmetals.com').replace(/\/$/, '');
+    startGuestInviteReminders((roomName, token) =>
+      token
+        ? `${baseUrl}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(token)}`
+        : `${baseUrl}/join/${encodeURIComponent(roomName)}`
+    );
+  } catch (e) {
+    console.error('[guestInvites] scheduler start failed:', e.message);
+  }
+  try {
+    const { settleDueOverageCycles } = require('./lib/v2OverageSettlement');
+    const defaultInterval =
+      process.env.NODE_ENV === 'production' || process.env.APP_ENV === 'staging' ? 3600000 : 0;
+    const intervalMs = Number(
+      process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS !== undefined &&
+        process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS !== ''
+        ? process.env.V2_OVERAGE_SETTLEMENT_INTERVAL_MS
+        : defaultInterval
+    );
+    if (intervalMs > 0) {
+      const tick = () => {
+        settleDueOverageCycles().catch((err) => console.error('[overage-settlement]', err.message));
+      };
+      tick();
+      setInterval(tick, intervalMs);
+      console.log(`[overage-settlement] scheduler every ${intervalMs}ms`);
+    } else {
+      console.log('[overage-settlement] scheduler off (set V2_OVERAGE_SETTLEMENT_INTERVAL_MS to enable)');
+    }
+  } catch (e) {
+    console.error('[overage-settlement] scheduler start failed:', e.message);
+  }
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`LiveKit backend server running on port ${PORT}`);
+    console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
+    console.log(`Network URL: ${process.env.NETWORK_URL}`);
+    console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
+    console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
+  });
+})();

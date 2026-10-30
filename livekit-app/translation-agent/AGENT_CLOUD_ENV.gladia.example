@@ -1,0 +1,29 @@
+# Gladia test agent — translation-cloud-gladia (separate LiveKit Cloud worker)
+# Copy secrets into LiveKit Cloud → Agents → translation-cloud-gladia
+#
+# IMPORTANT: the agent opens ONE Gladia live session PER SPEAKER. Gladia's free
+# tier allows only 1 concurrent live session (second speaker gets HTTP 429 and
+# falls back to the next STT provider). A paid Gladia plan (30 concurrent live
+# sessions) is required for multi-participant rooms.
+
+STT_PROVIDER=gladia
+GLADIA_API_KEY=
+LLM_PROVIDER=openai
+OPENAI_API_KEY=
+AGENT_NAME=translation-cloud-gladia
+
+# Use Gladia built-in translation for cross-language listeners (default: true).
+# When true and a listener needs a different language, OpenAI translation lanes are skipped.
+# Set to false to A/B test Gladia STT-only + OpenAI translation (previous behavior).
+GLADIA_TRANSLATION_ENABLED=true
+
+# Latency tuning — Gladia translates only after an utterance finalizes, so total
+# translation lag ≈ endpointing silence + ASR final + translation. Lower endpointing
+# for snappier finals (risk: more mid-sentence splits).
+GLADIA_ENDPOINTING_SEC=0.45
+# Force a final after N seconds of continuous speech (long monologues otherwise
+# produce no finals/translations until the speaker pauses).
+GLADIA_MAX_NO_ENDPOINT_SEC=5
+# Max wait for remaining target languages' translations before committing a turn.
+GLADIA_TRANSLATION_GRACE_SEC=0.6
+DEEPGRAM_STT_IDLE_MS=3500

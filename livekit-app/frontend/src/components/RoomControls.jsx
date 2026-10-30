@@ -1,8 +1,18 @@
 import { useEffect, useCallback } from 'react';
 import { useRoomContext, useLocalParticipant } from '@livekit/components-react';
-import { DataPacket_Kind, RoomEvent } from 'livekit-client';
+import { DataPacket_Kind, RoomEvent, Track } from 'livekit-client';
 
-function RoomControls({ selectedLanguage, translationEnabled, participantName, isHost = false }) {
+const SHARED_TEXT_DECODER = new TextDecoder();
+
+function RoomControls({
+  selectedLanguage,
+  spokenLanguage,
+  translationEnabled,
+  voiceTranslationEnabled = false,
+  ttsVoiceId,
+  participantName,
+  isHost = false,
+}) {
   const room = useRoomContext();
   const localParticipant = useLocalParticipant();
 
@@ -17,8 +27,10 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
         type: 'language_update',
         participantName: participantName,
         participantIdentity: lp?.identity,
-        language: selectedLanguage,
+        language: spokenLanguage || selectedLanguage,
         enabled: translationEnabled,
+        voiceEnabled: Boolean(translationEnabled && voiceTranslationEnabled),
+        ttsVoiceId: ttsVoiceId || undefined,
       };
 
       const encoder = new TextEncoder();
@@ -36,7 +48,16 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
       }
       console.error('Error sending language preference:', error);
     }
-  }, [room, localParticipant, selectedLanguage, translationEnabled, participantName]);
+  }, [
+    room,
+    localParticipant,
+    spokenLanguage,
+    selectedLanguage,
+    translationEnabled,
+    voiceTranslationEnabled,
+    ttsVoiceId,
+    participantName,
+  ]);
 
   // Send when language/prefs change
   useEffect(() => {
@@ -50,6 +71,43 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
       sendLanguagePreference();
     }, 800);
     return () => clearTimeout(id);
+  }, [room?.state, sendLanguagePreference]);
+
+  // Agent STT starts only after language_update AND a published mic track (see transcription_only_agent).
+  // Mic often publishes after "connected"; resend when local audio publishes or unmutes.
+  useEffect(() => {
+    if (!room) return;
+    const onLocalTrackPublished = (publication) => {
+      if (publication?.kind === Track.Kind.Audio) {
+        sendLanguagePreference();
+      }
+    };
+    room.on(RoomEvent.LocalTrackPublished, onLocalTrackPublished);
+    return () => room.off(RoomEvent.LocalTrackPublished, onLocalTrackPublished);
+  }, [room, sendLanguagePreference]);
+
+  useEffect(() => {
+    if (!room) return;
+    const onTrackUnmuted = (publication, participant) => {
+      if (participant?.isLocal && publication?.kind === Track.Kind.Audio) {
+        sendLanguagePreference();
+      }
+    };
+    room.on(RoomEvent.TrackUnmuted, onTrackUnmuted);
+    return () => room.off(RoomEvent.TrackUnmuted, onTrackUnmuted);
+  }, [room, sendLanguagePreference]);
+
+  // Staggered resync: aligns with agent agent_ready (~1.5s) and slow permission / track publish.
+  useEffect(() => {
+    if (!room || room.state !== 'connected') return;
+    const t1 = setTimeout(() => sendLanguagePreference(), 1600);
+    const t2 = setTimeout(() => sendLanguagePreference(), 3200);
+    const t3 = setTimeout(() => sendLanguagePreference(), 6000);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [room?.state, sendLanguagePreference]);
 
   // Resend when agent joins (agent may join after us, so it needs our language).
@@ -79,11 +137,13 @@ function RoomControls({ selectedLanguage, translationEnabled, participantName, i
   useEffect(() => {
     if (!room) return;
 
-    const handleDataReceived = (payload) => {
+    const handleDataReceived = (payload, _participant, _kind, topic) => {
+      if (topic && topic !== 'agent') return;
       try {
-        const msg = JSON.parse(new TextDecoder().decode(payload));
+        const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
+        if (!raw) return;
+        const msg = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         if (msg?.type === 'agent_ready') {
-          console.log('[RoomControls] agent_ready received — re-syncing language preferences');
           sendLanguagePreference();
         }
       } catch {

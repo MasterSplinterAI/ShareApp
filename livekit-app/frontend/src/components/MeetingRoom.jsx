@@ -1,20 +1,49 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LiveKitRoom, useRoomContext, RoomAudioRenderer, StartAudio } from '@livekit/components-react';
+import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks } from '@livekit/components-react';
+import { ConnectionState, RoomEvent } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { Loader2 } from 'lucide-react';
-import { authService } from '../services/api';
+import { authService, joinPublicService } from '../services/api';
+import { v2Meetings, v2Orgs } from '../services/apiV2';
+import { normalizeMeetingBranding } from '../lib/meetingBranding';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
 import ChatPanel from './ChatPanel';
+import ParticipantsPanel from './ParticipantsPanel';
 import RoomControls from './RoomControls';
 import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
+import TtsAudioController from './TtsAudioController';
+import RoomConnectionGuard from './RoomConnectionGuard';
+import MeetingUsageBanner from './MeetingUsageBanner';
+import LocalDisplayNameSync from './LocalDisplayNameSync';
 import VideoGrid from './VideoGrid';
+import PreJoinScreen from './PreJoinScreen';
+import PublishPreviewTracks from './PublishPreviewTracks';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
-// Autopilot Translator SDK — for DOM/UI translation (navigation, buttons, labels)
-import { AutopilotTranslator } from '../lib/autopilot-translator';
+import { autopilotTranslator } from '../lib/autopilot-translator';
+import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
+
+function HostSessionReporter({ meetingId, isHost }) {
+  const room = useRoomContext();
+  useEffect(() => {
+    if (!room || !isHost || !meetingId) return undefined;
+    const markHostPresent = () => {
+      v2Meetings.hostSessionOpen(meetingId).catch(() => {});
+    };
+    if (room.state === ConnectionState.Connected) {
+      markHostPresent();
+    }
+    room.on(RoomEvent.Connected, markHostPresent);
+    return () => {
+      room.off(RoomEvent.Connected, markHostPresent);
+    };
+  }, [room, meetingId, isHost]);
+  return null;
+}
 
 function MeetingRoom() {
   const { roomName } = useParams();
@@ -27,6 +56,49 @@ function MeetingRoom() {
   const [error, setError] = useState(null);
   const [participantInfo, setParticipantInfo] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  // Device + AV choices from the prejoin lobby; room connects only after this is set.
+  const [prejoinChoices, setPrejoinChoices] = useState(null);
+  const [meetingBranding, setMeetingBranding] = useState(null);
+  const [meetingTitle, setMeetingTitle] = useState(null);
+  const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const intentionalLeaveRef = useRef(false);
+  const reconnectingRef = useRef(false);
+  const [previewMedia, setPreviewMedia] = useState({
+    audioEnabled: true,
+    videoEnabled: true,
+    audioDeviceId: '',
+    videoDeviceId: '',
+  });
+  // Freeze preview track options at join so usePreviewTracks keeps the same instances
+  // (with any attached background processor) through the prejoin → room transition.
+  const [frozenPreviewTrackOptions, setFrozenPreviewTrackOptions] = useState(null);
+
+  const previewTrackOptions = useMemo(() => {
+    if (!isInitialized) return { audio: false, video: false };
+    if (frozenPreviewTrackOptions) return frozenPreviewTrackOptions;
+    return {
+      audio: previewMedia.audioEnabled
+        ? { deviceId: previewMedia.audioDeviceId || undefined }
+        : false,
+      video: previewMedia.videoEnabled
+        ? {
+            deviceId: previewMedia.videoDeviceId || undefined,
+            resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+          }
+        : false,
+    };
+  }, [isInitialized, frozenPreviewTrackOptions, previewMedia]);
+
+  const onPreviewMediaError = useCallback((err) => {
+    console.warn('PreJoin media error:', err);
+  }, []);
+
+  const previewTracks = usePreviewTracks(previewTrackOptions, onPreviewMediaError);
+
+  const handlePreviewMediaChange = useCallback((partial) => {
+    setPreviewMedia((prev) => ({ ...prev, ...partial }));
+  }, []);
 
   // Initialize participant info on mount
   useEffect(() => {
@@ -53,6 +125,10 @@ function MeetingRoom() {
     const hostCode = stateInfo.hostCode || sessionInfo.hostCode;
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
     const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
+    const meetingId = stateInfo.meetingId || sessionInfo.meetingId;
+    const inviteToken = stateInfo.inviteToken || sessionInfo.inviteToken;
+    const brandingFromSession = stateInfo.branding || sessionInfo.branding || null;
+    const titleFromSession = stateInfo.meetingTitle || sessionInfo.meetingTitle || null;
     const selectedLanguage = normalizeMeetingLanguageCode(
       stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en'
     );
@@ -60,61 +136,192 @@ function MeetingRoom() {
       stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage
     );
 
-    if (!participantName) {
+    // Bounce to /join only when there's no join context at all (cold hit on /room URL).
+    // The prejoin screen collects the display name, so an empty name with valid
+    // context (validated invite, host dashboard) is fine.
+    const hasJoinContext =
+      Boolean(participantName) ||
+      stateInfo.roomName === roomName ||
+      sessionInfo.roomName === roomName ||
+      Boolean(stateInfo.meetingId || sessionInfo.meetingId);
+    if (!hasJoinContext) {
       navigate(`/join/${roomName}`, { replace: true });
       return;
     }
 
     setParticipantInfo({
-      participantName,
+      participantName: participantName || '',
+      numParticipants: stateInfo.numParticipants ?? sessionInfo.numParticipants ?? null,
       isHost,
       hostCode,
       shareableLink,
       shareableLinkNetwork,
+      meetingId,
+      inviteToken,
       selectedLanguage,
       spokenLanguage,
     });
+    setMeetingBranding(normalizeMeetingBranding(brandingFromSession));
+    setMeetingTitle(titleFromSession);
 
     setIsInitialized(true);
   }, [roomName, navigate]);
 
-  // Connect to room once initialized
+  // Hosts joining from the dashboard may not have guest-session branding — load org branding.
   useEffect(() => {
-    if (!isInitialized || !participantInfo) return;
+    if (meetingBranding || !isInitialized) return;
+    if (typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) return;
+    v2Orgs
+      .me()
+      .then((res) => {
+        const orgRow = res?.org;
+        const configured =
+          orgRow?.brand_logo_file || orgRow?.brand_welcome_message || orgRow?.brand_accent_color;
+        if (!configured) return;
+        setMeetingBranding(
+          normalizeMeetingBranding({
+            ...res.branding,
+            hostName: orgRow?.name || null,
+          })
+        );
+      })
+      .catch(() => {});
+  }, [isInitialized, meetingBranding]);
+
+  // Connect to room only after the prejoin lobby confirms name/language/devices.
+  useEffect(() => {
+    if (!isInitialized || !participantInfo || !prejoinChoices) return;
     connectToRoom();
-  }, [isInitialized, participantInfo]);
+  }, [isInitialized, participantInfo, prejoinChoices]);
+
+  const handlePrejoinJoin = useCallback(
+    ({ name, language, audioEnabled, videoEnabled, audioDeviceId, videoDeviceId, videoEffectId }) => {
+      setFrozenPreviewTrackOptions({
+        audio: audioEnabled ? { deviceId: audioDeviceId || undefined } : false,
+        video: videoEnabled
+          ? {
+              deviceId: videoDeviceId || undefined,
+              resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+            }
+          : false,
+      });
+      setParticipantInfo((prev) => {
+        const next = {
+          ...prev,
+          participantName: name,
+          selectedLanguage: language,
+          spokenLanguage: language,
+        };
+        try {
+          sessionStorage.setItem('participantInfo', JSON.stringify({ ...next, roomName }));
+        } catch {
+          /* storage unavailable — state alone is enough for this session */
+        }
+        return next;
+      });
+      setPrejoinChoices({ audioEnabled, videoEnabled, audioDeviceId, videoDeviceId, videoEffectId });
+    },
+    [roomName]
+  );
+
+  const fetchRoomToken = useCallback(async () => {
+    if (!participantInfo) throw new Error('No participant info');
+    const v2Tok = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
+    let tokenData;
+    if (participantInfo.meetingId) {
+      if (participantInfo.isHost) {
+        if (!v2Tok) {
+          throw new Error('Sign in required for host');
+        }
+        tokenData = await v2Meetings.token(participantInfo.meetingId, {
+          participantName: participantInfo.participantName,
+          isHost: true,
+        });
+      } else {
+        tokenData = await joinPublicService.guestToken({
+          roomName,
+          participantName: participantInfo.participantName,
+          inviteToken: participantInfo.inviteToken || '',
+        });
+      }
+    } else {
+      tokenData = await authService.getToken(
+        roomName,
+        participantInfo.participantName,
+        participantInfo.isHost
+      );
+    }
+    if (!tokenData?.token || typeof tokenData.token !== 'string') {
+      throw new Error('Invalid token received from server');
+    }
+    return tokenData;
+  }, [participantInfo, roomName]);
 
   const connectToRoom = async () => {
     if (!participantInfo) return;
 
     try {
-      const tokenData = await authService.getToken(
-        roomName,
-        participantInfo.participantName,
-        participantInfo.isHost
-      );
-
-      if (!tokenData.token || typeof tokenData.token !== 'string') {
-        throw new Error('Invalid token received from server');
-      }
+      const tokenData = await fetchRoomToken();
+      const persist =
+        Boolean(participantInfo.meetingId) &&
+        Boolean(participantInfo.isHost) &&
+        Boolean(tokenData.policy?.store_transcripts);
+      setTranscriptPersistEnabled(persist);
 
       setToken(tokenData.token);
       if (tokenData.url) {
         setLivekitUrl(tokenData.url);
       }
+      if (tokenData.qualityEventToken) {
+        try {
+          const raw = sessionStorage.getItem('participantInfo');
+          const prev = raw ? JSON.parse(raw) : {};
+          sessionStorage.setItem(
+            'participantInfo',
+            JSON.stringify({ ...prev, roomName, qualityEventToken: tokenData.qualityEventToken })
+          );
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (error) {
       console.error('Failed to get token:', error);
-      setError(error.response?.data?.error || 'Failed to connect to room');
+      setError(error.response?.data?.error || error.message || 'Failed to connect to room');
       toast.error('Failed to connect to room');
     } finally {
       setIsConnecting(false);
     }
   };
 
-  const handleDisconnected = () => {
-    toast('Disconnected from room');
+  const navigateAfterLeave = useCallback(() => {
+    const hasV2 = typeof localStorage !== 'undefined' && localStorage.getItem('v2_token');
+    const mid = participantInfo?.meetingId;
+    if (hasV2 && mid) {
+      navigate(`/v2/app/meetings/${mid}`);
+      return;
+    }
+    if (hasV2) {
+      navigate('/v2/app');
+      return;
+    }
     navigate('/');
-  };
+  }, [navigate, participantInfo?.meetingId]);
+
+  const handleGiveUpConnection = useCallback(() => {
+    setReconnecting(false);
+    navigateAfterLeave();
+  }, [navigateAfterLeave]);
+
+  const handleReconnected = useCallback(async () => {
+    setReconnecting(false);
+    if (participantInfo?.meetingId && participantInfo?.isHost) {
+      try {
+        await v2Meetings.hostSessionOpen(participantInfo.meetingId);
+      } catch {
+        /* non-fatal */
+      }
+    }
+  }, [participantInfo?.meetingId, participantInfo?.isHost]);
 
   // Handle orientation changes
   useEffect(() => {
@@ -135,14 +342,17 @@ function MeetingRoom() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
         <div className="text-center">
-          <p className="text-red-400 mb-4">{error}</p>
+          <p className="mb-4 text-destructive">{error}</p>
           <button
-            onClick={() => navigate('/')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+            type="button"
+            onClick={navigateAfterLeave}
+            className="rounded-lg bg-primary px-4 py-2 text-primary-foreground transition-colors hover:bg-primary/90"
           >
-            Go Home
+            {typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')
+              ? 'Back to workspace'
+              : 'Back to home'}
           </button>
         </div>
       </div>
@@ -151,21 +361,38 @@ function MeetingRoom() {
 
   if (!isInitialized || !participantInfo) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
-          <p className="text-gray-300">Loading participant info...</p>
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading participant info…</p>
         </div>
       </div>
     );
   }
 
+  if (!prejoinChoices) {
+    return (
+      <PreJoinScreen
+        roomName={roomName}
+        defaultName={participantInfo.participantName}
+        defaultLanguage={participantInfo.selectedLanguage}
+        participantCount={participantInfo.numParticipants}
+        meetingTitle={meetingTitle}
+        branding={meetingBranding}
+        previewTracks={previewTracks}
+        media={previewMedia}
+        onMediaChange={handlePreviewMediaChange}
+        onJoin={handlePrejoinJoin}
+      />
+    );
+  }
+
   if (isConnecting || !token) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
-          <Loader2 className="w-12 h-12 text-blue-400 animate-spin mx-auto mb-4" />
-          <p className="text-gray-300">Connecting to room...</p>
+          <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-primary" />
+          <p className="text-muted-foreground">Connecting to room…</p>
         </div>
       </div>
     );
@@ -175,131 +402,173 @@ function MeetingRoom() {
     <MeetingProvider
       initialState={{
         roomName,
+        meetingId: participantInfo.meetingId || '',
+        transcriptPersistEnabled,
         isHost: participantInfo.isHost,
         participantName: participantInfo.participantName,
         selectedLanguage: participantInfo.selectedLanguage,
         spokenLanguage: participantInfo.spokenLanguage,
         translationEnabled: true,
+        voiceTranslationEnabled: false,
         meetingMode: 'translation',
       }}
     >
       <MeetingRoomInner
         token={token}
         livekitUrl={livekitUrl}
+        prejoinChoices={prejoinChoices}
+        previewTracks={previewTracks}
         participantInfo={participantInfo}
         roomName={roomName}
-        onDisconnected={handleDisconnected}
+        meetingId={participantInfo.meetingId}
+        intentionalLeaveRef={intentionalLeaveRef}
+        reconnectingRef={reconnectingRef}
+        reconnecting={reconnecting}
+        setReconnecting={setReconnecting}
+        fetchRoomToken={fetchRoomToken}
+        onGiveUpConnection={handleGiveUpConnection}
+        onReconnected={handleReconnected}
+        onNavigateAfterLeave={navigateAfterLeave}
       />
     </MeetingProvider>
   );
 }
 
-function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisconnected }) {
+function MeetingRoomInner({
+  token,
+  livekitUrl,
+  prejoinChoices,
+  previewTracks,
+  participantInfo,
+  roomName,
+  meetingId,
+  intentionalLeaveRef,
+  reconnectingRef,
+  reconnecting,
+  setReconnecting,
+  fetchRoomToken,
+  onGiveUpConnection,
+  onReconnected,
+  onNavigateAfterLeave,
+}) {
   const {
     selectedLanguage,
     setSelectedLanguage,
     translationEnabled,
     setTranslationEnabled,
+    voiceTranslationEnabled,
+    setVoiceTranslationEnabled,
+    ttsVoiceId,
+    setTtsVoiceId,
     isPanelOpen,
   } = useMeeting();
+  const t = useRoomControlLabels(selectedLanguage);
 
   const [showShareModal, setShowShareModal] = useState(false);
-  const translatorRef = useRef(null);
-  const selectedLanguageRef = useRef(selectedLanguage);
 
-  // Keep ref in sync
+  // Live meetings are React-heavy (captions, chat, video tiles). AutopilotTranslator
+  // mutates text nodes in the DOM and causes React removeChild crashes when users pick
+  // a non-English caption language. Caption/translation is handled by the agent; UI
+  // chrome uses room-label translations instead.
   useEffect(() => {
-    selectedLanguageRef.current = selectedLanguage;
-  }, [selectedLanguage]);
-
-  // Autopilot Translator — DOM/UI translation (navigation, buttons, labels)
-  useEffect(() => {
-    if (!selectedLanguage || selectedLanguage === 'en') {
-      if (translatorRef.current) {
-        translatorRef.current.setLanguage('en').catch(() => {});
-        translatorRef.current.destroy();
-        translatorRef.current = null;
-        localStorage.removeItem('app_language');
-      }
-      return;
+    autopilotTranslator.destroy();
+    const html = document.documentElement;
+    html.setAttribute('translate', 'no');
+    html.classList.add('notranslate');
+    let meta = document.querySelector('meta[name="google"]');
+    const createdMeta = !meta;
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.setAttribute('name', 'google');
+      document.head.appendChild(meta);
     }
-
-    // Get API endpoint
-    const isNetworkAccess = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-    const isNgrok = window.location.hostname.includes('ngrok');
-    const isHTTPS = window.location.protocol === 'https:';
-    let API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-    if (isNgrok || (isNetworkAccess && isHTTPS)) {
-      API_BASE_URL = '/api';
-    } else if (isNetworkAccess) {
-      API_BASE_URL = `http://${window.location.hostname}:3001/api`;
-    }
-
-    if (translatorRef.current) {
-      translatorRef.current.setLanguage(selectedLanguage).catch(err => {
-        console.error('Error changing DOM language:', err);
-      });
-    } else {
-      const translator = new AutopilotTranslator({
-        apiEndpoint: API_BASE_URL,
-        language: selectedLanguage,
-        enabledPages: [],
-      });
-      translatorRef.current = translator;
-      translator.init(selectedLanguage, []);
-    }
-
+    const previousContent = meta.getAttribute('content');
+    meta.setAttribute('content', 'notranslate');
     return () => {
-      // Only destroy on unmount, not on language change
-    };
-  }, [selectedLanguage]);
-
-  // Cleanup translator on unmount
-  useEffect(() => {
-    return () => {
-      if (translatorRef.current) {
-        translatorRef.current.destroy();
-        translatorRef.current = null;
-      }
+      html.removeAttribute('translate');
+      html.classList.remove('notranslate');
+      if (createdMeta) meta.remove();
+      else if (previousContent == null) meta.removeAttribute('content');
+      else meta.setAttribute('content', previousContent);
     };
   }, []);
 
+  const handleFetchTokenForReconnect = useCallback(async () => {
+    setReconnecting(true);
+    const tokenData = await fetchRoomToken();
+    return { token: tokenData.token, url: tokenData.url };
+  }, [fetchRoomToken, setReconnecting]);
+
   return (
-    <div className="h-[100dvh] bg-gray-900 relative overflow-hidden w-full">
+    <div translate="no" className="meeting-surface meeting-room-root notranslate relative h-[100dvh] w-full overflow-hidden">
       <LiveKitRoom
-        video={true}
-        audio={true}
+        video={false}
+        audio={false}
         token={token}
         serverUrl={livekitUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://production-uiycx4ku.livekit.cloud'}
-        onDisconnected={onDisconnected}
+        onDisconnected={() => {
+          if (intentionalLeaveRef?.current) {
+            onNavigateAfterLeave();
+          }
+        }}
         options={{
+          disconnectOnPageLeave: false,
           adaptiveStream: true,
           dynacast: true,
-          publishDefaults: {
-            videoSimulcastLayers: [],
-            videoCodec: 'vp8',
+          audioCaptureDefaults: prejoinChoices?.audioDeviceId
+            ? { deviceId: prejoinChoices.audioDeviceId }
+            : undefined,
+          videoCaptureDefaults: {
+            resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+            ...(prejoinChoices?.videoDeviceId ? { deviceId: prejoinChoices.videoDeviceId } : {}),
           },
+          publishDefaults: ROOM_PUBLISH_DEFAULTS,
         }}
         className="h-full flex flex-col"
       >
-        {/* Main content area: video grid + optional transcription panel */}
-        <div className="flex-1 min-h-0 flex overflow-hidden">
-          {/* Video grid takes remaining space */}
-          <div className="flex-1 min-w-0 overflow-hidden">
+        <PublishPreviewTracks
+          tracks={previewTracks}
+          videoEnabled={prejoinChoices?.videoEnabled ?? false}
+          audioEnabled={prejoinChoices?.audioEnabled ?? false}
+          publishOptions={ROOM_PUBLISH_DEFAULTS}
+        />
+        <RoomConnectionGuard
+          intentionalLeaveRef={intentionalLeaveRef}
+          reconnectingRef={reconnectingRef}
+          onFetchToken={handleFetchTokenForReconnect}
+          onReconnected={onReconnected}
+          onGiveUp={onGiveUpConnection}
+          onReconnectingChange={setReconnecting}
+        />
+        <HostSessionReporter meetingId={meetingId} isHost={participantInfo?.isHost} />
+        <LocalDisplayNameSync displayName={participantInfo?.participantName} />
+        <MeetingUsageBanner meetingId={meetingId} isHost={participantInfo?.isHost} />
+        {/* Main content: column on mobile portrait (video + in-flow sheet), row on desktop & mobile landscape */}
+        <div className="meeting-stage-layout flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <VideoGrid />
+            {reconnecting && (
+              <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+                <div className="text-center px-4">
+                  <Loader2 className="mx-auto mb-3 h-10 w-10 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Reconnecting to meeting…</p>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Transcription panel — side panel on desktop, bottom sheet on mobile */}
+          {/* Captions / chat / people — side rail on desktop, in-flow bottom region on mobile */}
           <TranscriptionPanel />
-
-          {/* In-meeting chat (LiveKit data channel; mutually exclusive with captions panel via context) */}
           <ChatPanel />
+          <ParticipantsPanel meetingId={meetingId} />
         </div>
 
         {/* Room controls for broadcasting language preferences */}
         <RoomControls
           selectedLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
+          voiceTranslationEnabled={voiceTranslationEnabled}
+          ttsVoiceId={ttsVoiceId}
           participantName={participantInfo?.participantName || ''}
           isHost={participantInfo?.isHost || false}
         />
@@ -310,21 +579,42 @@ function MeetingRoomInner({ token, livekitUrl, participantInfo, roomName, onDisc
           setSelectedLanguage={setSelectedLanguage}
           translationEnabled={translationEnabled}
           setTranslationEnabled={setTranslationEnabled}
+          voiceTranslationEnabled={voiceTranslationEnabled}
+          setVoiceTranslationEnabled={setVoiceTranslationEnabled}
+          ttsVoiceId={ttsVoiceId}
+          setTtsVoiceId={setTtsVoiceId}
           isHost={participantInfo?.isHost || false}
           onShareClick={() => setShowShareModal(true)}
-          onDisconnect={onDisconnected}
+          intentionalLeaveRef={intentionalLeaveRef}
+          onNavigateAfterLeave={onNavigateAfterLeave}
+          initialVideoEffectId={prejoinChoices?.videoEffectId ?? null}
         />
 
-        {/* Debug panel — add ?debug=1 to URL */}
-        <TranslationDebugPanel
+        {/* Debug panel — only mount when ?debug=1 is in URL */}
+        {typeof window !== 'undefined' &&
+          new URLSearchParams(window.location.search).get('debug') === '1' && (
+            <TranslationDebugPanel
+              selectedLanguage={selectedLanguage}
+              spokenLanguage={selectedLanguage}
+              translationEnabled={translationEnabled}
+              voiceTranslationEnabled={voiceTranslationEnabled}
+              participantName={participantInfo?.participantName || ''}
+              meetingId={meetingId}
+              isHost={participantInfo?.isHost || false}
+            />
+          )}
+
+        <TtsAudioController
           selectedLanguage={selectedLanguage}
-          spokenLanguage={selectedLanguage}
           translationEnabled={translationEnabled}
-          participantName={participantInfo?.participantName || ''}
+          voiceTranslationEnabled={voiceTranslationEnabled}
         />
-
         <RoomAudioRenderer />
-        <StartAudio label="Click to enable audio" />
+        <div className="pointer-events-none fixed inset-x-0 bottom-[var(--control-bar-h)] z-[60] flex justify-center px-3 pb-2">
+          <div className="pointer-events-auto">
+            <StartAudio label={t('startAudio')} />
+          </div>
+        </div>
       </LiveKitRoom>
 
       {/* Share Modal */}
