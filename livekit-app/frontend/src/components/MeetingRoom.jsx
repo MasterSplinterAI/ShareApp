@@ -25,7 +25,7 @@ import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { autopilotTranslator } from '../lib/autopilot-translator';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
-import { ROOM_PUBLISH_DEFAULTS } from '../lib/roomPublishDefaults';
+import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
 
 function HostSessionReporter({ meetingId, isHost }) {
   const room = useRoomContext();
@@ -82,7 +82,10 @@ function MeetingRoom() {
         ? { deviceId: previewMedia.audioDeviceId || undefined }
         : false,
       video: previewMedia.videoEnabled
-        ? { deviceId: previewMedia.videoDeviceId || undefined }
+        ? {
+            deviceId: previewMedia.videoDeviceId || undefined,
+            resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+          }
         : false,
     };
   }, [isInitialized, frozenPreviewTrackOptions, previewMedia]);
@@ -195,7 +198,12 @@ function MeetingRoom() {
     ({ name, language, audioEnabled, videoEnabled, audioDeviceId, videoDeviceId, videoEffectId }) => {
       setFrozenPreviewTrackOptions({
         audio: audioEnabled ? { deviceId: audioDeviceId || undefined } : false,
-        video: videoEnabled ? { deviceId: videoDeviceId || undefined } : false,
+        video: videoEnabled
+          ? {
+              deviceId: videoDeviceId || undefined,
+              resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+            }
+          : false,
       });
       setParticipantInfo((prev) => {
         const next = {
@@ -510,9 +518,10 @@ function MeetingRoomInner({
           audioCaptureDefaults: prejoinChoices?.audioDeviceId
             ? { deviceId: prejoinChoices.audioDeviceId }
             : undefined,
-          videoCaptureDefaults: prejoinChoices?.videoDeviceId
-            ? { deviceId: prejoinChoices.videoDeviceId }
-            : undefined,
+          videoCaptureDefaults: {
+            resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+            ...(prejoinChoices?.videoDeviceId ? { deviceId: prejoinChoices.videoDeviceId } : {}),
+          },
           publishDefaults: ROOM_PUBLISH_DEFAULTS,
         }}
         className="h-full flex flex-col"

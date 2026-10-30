@@ -10,6 +10,7 @@ import { useMeeting } from '../context/MeetingContext';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
 import {
   applyVideoEffect,
   isMobileViewport,
@@ -162,9 +163,14 @@ export default function CustomControlBar({
       if (enabled && selectedCameraId) {
         await localParticipant.setCameraEnabled(true, {
           deviceId: { exact: selectedCameraId },
+          resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+        });
+      } else if (enabled) {
+        await localParticipant.setCameraEnabled(true, {
+          resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
         });
       } else {
-        await localParticipant.setCameraEnabled(enabled);
+        await localParticipant.setCameraEnabled(false);
       }
       setIsCameraEnabled(enabled);
     } catch (error) {
@@ -240,6 +246,7 @@ export default function CustomControlBar({
       await localParticipant.setCameraEnabled(false);
       await localParticipant.setCameraEnabled(true, {
         deviceId: { exact: deviceId },
+        resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
       });
       setSelectedCameraId(deviceId);
       setIsCameraEnabled(true);

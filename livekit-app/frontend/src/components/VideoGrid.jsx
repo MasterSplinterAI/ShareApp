@@ -50,6 +50,22 @@ function VideoGrid() {
   const { isMobile, isLandscape } = useViewportLayout();
   const [activeSpeakerIdentity, setActiveSpeakerIdentity] = useState(null);
   const [pinnedIdentity, setPinnedIdentity] = useState(null);
+  const [stageWide, setStageWide] = useState(true);
+
+  useEffect(() => {
+    const el = fullScreenRef.current;
+    if (!el) return undefined;
+    const update = () => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        setStageWide(rect.width >= rect.height * 1.1);
+      }
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const tracks = useTracks(
     [Track.Source.Camera, Track.Source.ScreenShare, Track.Source.Microphone],
@@ -100,11 +116,20 @@ function VideoGrid() {
   const getGridClass = (count) => {
     if (count <= 1) return 'grid-cols-1 grid-rows-1';
     if (count === 2) {
-      return isLandscape ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2 sm:grid-cols-2 sm:grid-rows-1';
+      return stageWide || isLandscape ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2';
     }
-    if (count <= 4) return 'grid-cols-2 grid-rows-2';
-    if (count <= 6) return 'grid-cols-2 sm:grid-cols-3';
-    return 'grid-cols-3 sm:grid-cols-4';
+    if (count === 3 || count === 4) return 'grid-cols-2 grid-rows-2';
+    if (count === 5) return 'grid-cols-6 grid-rows-2';
+    if (count === 6) return 'grid-cols-3 grid-rows-2';
+    if (count <= 9) return 'grid-cols-3 grid-rows-3';
+    return 'grid-cols-4 grid-rows-3';
+  };
+
+  const getTileSpanClass = (count, index) => {
+    if (count === 3 && index === 2) return 'col-span-2';
+    if (count === 5) return index < 3 ? 'col-span-2' : 'col-span-3';
+    if (count === 7 && index === 6) return 'col-span-3';
+    return '';
   };
 
   // Screen share layout
@@ -194,8 +219,8 @@ function VideoGrid() {
     );
   }
 
-  // Normal grid layout
-  const isTwoDesktop = !isMobile && humanParticipants.length === 2;
+  // Normal grid layout — every tile fills 100% of its grid cell (auto-rows-fr)
+  const count = humanParticipants.length;
   return (
     <div ref={fullScreenRef} className="group relative h-full w-full overflow-hidden meeting-video-matte p-1.5 sm:p-3">
       <button
@@ -207,17 +232,13 @@ function VideoGrid() {
       >
         {isFullScreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
       </button>
-      <div
-        className={`grid ${getGridClass(humanParticipants.length)} gap-1.5 sm:gap-3 h-full ${
-          isTwoDesktop ? 'sm:items-center' : 'auto-rows-fr'
-        }`}
-      >
-        {humanParticipants.map((participant) => (
+      <div className={`grid ${getGridClass(count)} gap-1.5 sm:gap-3 h-full w-full auto-rows-fr`}>
+        {humanParticipants.map((participant, index) => (
           <ParticipantTile
             key={participant.identity}
             participant={participant}
             tracks={tracks}
-            aspectVideoDesktop={isTwoDesktop}
+            spanClass={getTileSpanClass(count, index)}
           />
         ))}
       </div>
@@ -225,7 +246,7 @@ function VideoGrid() {
   );
 }
 
-function ParticipantTile({ participant, tracks, compact = false, aspectVideoDesktop = false }) {
+function ParticipantTile({ participant, tracks, compact = false, spanClass = '' }) {
   const { localParticipant, cameraTrack: localCameraPub, microphoneTrack: localMicPub, isCameraEnabled: localCameraEnabled } = useLocalParticipant();
   const isLocal = participant.identity === localParticipant?.identity;
 
@@ -251,11 +272,7 @@ function ParticipantTile({ participant, tracks, compact = false, aspectVideoDesk
   return (
     <div
       className={`relative min-h-0 overflow-hidden rounded-lg border meeting-participant-tile ${
-        compact
-          ? 'w-24 sm:w-44 flex-shrink-0 aspect-video'
-          : aspectVideoDesktop
-            ? 'w-full h-full sm:h-auto sm:max-h-full sm:aspect-video'
-            : 'w-full h-full'
+        compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : `w-full h-full ${spanClass}`
       } ${isSpeaking ? 'ring-2 ring-emerald-500' : ''}`}
     >
       {hasVideo ? (

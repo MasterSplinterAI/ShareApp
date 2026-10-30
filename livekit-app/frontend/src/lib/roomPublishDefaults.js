@@ -1,3 +1,10 @@
+/** Default 16:9 HD camera capture resolution so getUserMedia doesn't fall back to 640x480 4:3 VGA. */
+export const DEFAULT_VIDEO_CAPTURE_RESOLUTION = {
+  width: 1280,
+  height: 720,
+  frameRate: 30,
+};
+
 /** Shared camera / screen-share publish settings for LiveKitRoom and preview-track publish. */
 export const ROOM_PUBLISH_DEFAULTS = {
   videoSimulcastLayers: [
