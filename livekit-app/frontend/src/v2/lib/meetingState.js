@@ -15,6 +15,13 @@ export function isMeetingEffectivelyEnded(meeting, extras = {}) {
   if (s === 'archived' || s === 'ended') return true;
   const inRoom = Number(meeting?.roomPresence?.humanCount ?? meeting?.room_human_count ?? extras.roomHumanCount ?? 0);
   if (inRoom > 0) return false;
+  if (meeting?.is_direct_call && meeting?.created_at) {
+    const ageMs = Date.now() - new Date(meeting.created_at).getTime();
+    if (ageMs > 2 * 60 * 1000) return true;
+  }
+  if (!meeting?.scheduled_start && Number(meeting?.transcript_line_count) > 0) {
+    return true;
+  }
   if (s === 'scheduled' || s === 'live') return !isGuestAccessActive(meeting);
   return false;
 }

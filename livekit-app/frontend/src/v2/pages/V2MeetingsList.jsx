@@ -75,6 +75,23 @@ function meetingAnchorTime(m) {
   return Number.isNaN(t) ? 0 : t;
 }
 
+function isJoinableState(uiKey, meeting) {
+  if (!uiKey || uiKey === 'ended' || uiKey === 'archived' || uiKey === 'unknown') {
+    return false;
+  }
+  if (meeting?.is_direct_call) {
+    // Direct calls are only joinable while someone is actively in the room
+    return uiKey === 'live_active' || uiKey === 'scheduled_active';
+  }
+  return (
+    uiKey === 'live_active' ||
+    uiKey === 'live_ready' ||
+    uiKey === 'scheduled_active' ||
+    uiKey === 'scheduled_ready' ||
+    uiKey === 'waiting_for_host'
+  );
+}
+
 function isLiveState(uiKey) {
   return uiKey === 'live_active' || uiKey === 'scheduled_active';
 }
@@ -101,9 +118,9 @@ function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore,
   const live = isLiveState(ui.key);
   const lineCount = Number(m.transcript_line_count) || 0;
   const url = inviteUrlFor(m);
-  const canCopyInvite = Boolean(url) && m.guestAccessActive !== false;
+  const canQuickJoin = !isArchivedView && isJoinableState(ui.key, m);
+  const canCopyInvite = canQuickJoin && Boolean(url) && m.guestAccessActive !== false;
   const timeLabel = friendlyTime(m.scheduled_start || m.created_at);
-  const canQuickJoin = !isArchivedView && m.status !== 'archived' && m.status !== 'ended';
 
   const copyInvite = async () => {
     try {
@@ -310,9 +327,10 @@ export default function V2MeetingsList() {
       const ui = getMeetingUiState(m);
       const anchor = new Date(m.scheduled_start || m.created_at);
       const anchorOk = !Number.isNaN(anchor.getTime());
-      if (isLiveState(ui.key) || (anchorOk && isToday(anchor))) {
+      const ended = ui.key === 'ended' || ui.key === 'archived';
+      if (!ended && (isLiveState(ui.key) || (anchorOk && isToday(anchor)))) {
         today.push(m);
-      } else if (m.scheduled_start && anchorOk && anchor.getTime() > now) {
+      } else if (!ended && m.scheduled_start && anchorOk && anchor.getTime() > now) {
         upcoming.push(m);
       } else {
         recent.push(m);
