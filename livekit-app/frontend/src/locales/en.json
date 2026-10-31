@@ -382,7 +382,17 @@
     "manageBilling": "Manage billing",
     "loadFailed": "Could not load workspace",
     "todayAt": "Today {{time}}",
-    "tomorrowAt": "Tomorrow {{time}}"
+    "tomorrowAt": "Tomorrow {{time}}",
+    "instantMeetingTitle": "Instant meeting",
+    "instantMeetingDesc": "Launch a live translated room right now and share a 1-click guest link.",
+    "startAndJoinNow": "Start & join now",
+    "directCallTitle": "Direct 1-on-1 call",
+    "directCallDesc": "Ring a contact directly in the app or send an instant call link.",
+    "allCallsAndContacts": "All calls & contacts",
+    "openCallsAndContacts": "Open Calls & Contacts",
+    "haveMeetingLink": "Have a meeting link or code?",
+    "pasteInvitePlaceholder": "Paste invite link or room code…",
+    "joinRoom": "Join room"
   },
   "app": {
     "home": "Home",
@@ -396,7 +406,8 @@
     "role": "Role: {{role}}",
     "openMenu": "Open menu",
     "dismissAnnouncement": "Dismiss announcement",
-    "calls": "Calls"
+    "calls": "Calls",
+    "help": "Help"
   },
   "language": {
     "label": "Language",
@@ -419,5 +430,15 @@
     "myLanguage": "My language (speak & hear)",
     "languageHint": "Captions and translations will appear in this language.",
     "joinMeeting": "Join meeting"
+  },
+  "calls": {
+    "pageTitle": "Calls & Contacts",
+    "pageSubtitle": "Call contacts 1-on-1 with live translation, review your call log & missed calls, and open AI transcripts.",
+    "sectionTitle": "Direct calls & contacts",
+    "sectionSubtitle": "Call contacts 1-on-1, view call history & missed calls, and open AI transcripts & summaries.",
+    "contactsTab": "Contacts",
+    "callLogTab": "Call log",
+    "missedTab": "Missed",
+    "addContact": "Add contact"
   }
 }

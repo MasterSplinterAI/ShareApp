@@ -318,7 +318,17 @@
     "manageBilling": "Abrechnung verwalten",
     "loadFailed": "Arbeitsbereich konnte nicht geladen werden",
     "todayAt": "Heute {{time}}",
-    "tomorrowAt": "Morgen {{time}}"
+    "tomorrowAt": "Morgen {{time}}",
+    "instantMeetingTitle": "Sofort-Meeting",
+    "instantMeetingDesc": "Starten Sie sofort einen live übersetzten Raum und teilen Sie einen Gastlink.",
+    "startAndJoinNow": "Jetzt starten & beitreten",
+    "directCallTitle": "Direkter 1:1-Anruf",
+    "directCallDesc": "Rufen Sie einen Kontakt direkt in der App an oder senden Sie einen Anruflink.",
+    "allCallsAndContacts": "Alle Anrufe & Kontakte",
+    "openCallsAndContacts": "Anrufe & Kontakte öffnen",
+    "haveMeetingLink": "Haben Sie einen Link oder Code?",
+    "pasteInvitePlaceholder": "Einladungslink oder Raumcode einfügen…",
+    "joinRoom": "Raum beitreten"
   },
   "app": {
     "home": "Start",
@@ -332,7 +342,8 @@
     "role": "Rolle: {{role}}",
     "openMenu": "Menü öffnen",
     "dismissAnnouncement": "Ankündigung schließen",
-    "calls": "Anrufe"
+    "calls": "Anrufe",
+    "help": "Hilfe"
   },
   "language": {
     "label": "Sprache",
@@ -421,5 +432,15 @@
         "enterprise": "Enterprise volume, DPA support & custom terms"
       }
     }
+  },
+  "calls": {
+    "pageTitle": "Anrufe & Kontakte",
+    "pageSubtitle": "1:1-Anrufe mit Live-Übersetzung, Anrufliste & verpasste Anrufe sowie KI-Transkripte.",
+    "sectionTitle": "Direktanrufe & Kontakte",
+    "sectionSubtitle": "Kontakte 1:1 anrufen, Anrufverlauf prüfen und KI-Transkripte öffnen.",
+    "contactsTab": "Kontakte",
+    "callLogTab": "Anrufliste",
+    "missedTab": "Verpasst",
+    "addContact": "Kontakt hinzufügen"
   }
 }

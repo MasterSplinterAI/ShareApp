@@ -18,6 +18,7 @@ import { v2Calls, v2Contacts } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
+import { useTranslation } from '../../lib/i18n/I18nProvider';
 
 function parseUtcDate(raw) {
   if (!raw) return null;
@@ -81,6 +82,7 @@ function callStatusMeta(call) {
 }
 
 export default function DirectCallsSection({ hostDisplayName, fullPage = false }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [callHistory, setCallHistory] = useState([]);
@@ -230,9 +232,9 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
       <div className="flex flex-wrap items-center justify-between gap-2">
         {!fullPage ? (
           <div>
-            <h2 className="text-sm font-semibold text-foreground">Direct calls &amp; contacts</h2>
+            <h2 className="text-sm font-semibold text-foreground">{t('calls.sectionTitle')}</h2>
             <p className="text-xs text-muted-foreground">
-              Call contacts 1-on-1, view call history &amp; missed calls, and open AI transcripts &amp; summaries.
+              {t('calls.sectionSubtitle')}
             </p>
           </div>
         ) : <div />}
@@ -247,7 +249,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Contacts ({contacts.length})
+              {t('calls.contactsTab')} ({contacts.length})
             </button>
             <button
               type="button"
@@ -258,7 +260,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Call log ({callHistory.length})
+              {t('calls.callLogTab')} ({callHistory.length})
             </button>
             <button
               type="button"
@@ -269,7 +271,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              Missed
+              {t('calls.missedTab')}
               {missedIncomingCount > 0 && (
                 <span className="rounded-full bg-destructive px-1.5 py-0 text-[10px] font-semibold text-destructive-foreground">
                   {missedIncomingCount}
@@ -285,7 +287,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
             onClick={() => setShowAddForm((v) => !v)}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add contact
+            {t('calls.addContact')}
           </Button>
         </div>
       </div>

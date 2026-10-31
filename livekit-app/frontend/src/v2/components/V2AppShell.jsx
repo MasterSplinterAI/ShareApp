@@ -350,6 +350,14 @@ export default function V2AppShell({ me, onLogout }) {
             <Settings className="h-4 w-4" />
             <span>{t('app.settings')}</span>
           </NavLink>
+          <button
+            type="button"
+            onClick={() => openHelpRef.current?.()}
+            className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-primary transition-colors hover:text-primary/80"
+          >
+            <LifeBuoy className="h-4 w-4" />
+            <span>{t('app.help')}</span>
+          </button>
         </nav>
 
         <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} audience="app" />

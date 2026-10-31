@@ -285,9 +285,9 @@ export default function V2AppHome() {
                 <Zap className="h-5 w-5" />
               </span>
               <div>
-                <h2 className="text-base font-semibold text-foreground">Instant meeting</h2>
+                <h2 className="text-base font-semibold text-foreground">{t('appHome.instantMeetingTitle')}</h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Launch a live translated room right now and share a 1-click guest link.
+                  {t('appHome.instantMeetingDesc')}
                 </p>
               </div>
             </div>
@@ -299,12 +299,12 @@ export default function V2AppHome() {
                 onClick={startAndJoinInstantMeeting}
               >
                 <Video className="h-4 w-4" />
-                {startingInstant ? 'Starting…' : 'Start & join now'}
+                {startingInstant ? 'Starting…' : t('appHome.startAndJoinNow')}
               </Button>
               <Button variant="outline" asChild className="gap-1.5">
                 <Link to="/v2/app/meetings?create=1">
                   <CalendarClock className="h-4 w-4" />
-                  Schedule
+                  {t('appHome.schedule')}
                 </Link>
               </Button>
             </div>
@@ -320,9 +320,9 @@ export default function V2AppHome() {
                   <Phone className="h-5 w-5" />
                 </span>
                 <div>
-                  <h2 className="text-base font-semibold text-foreground">Direct 1-on-1 call</h2>
+                  <h2 className="text-base font-semibold text-foreground">{t('appHome.directCallTitle')}</h2>
                   <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                    Ring a contact directly in the app or send an instant call link.
+                    {t('appHome.directCallDesc')}
                   </p>
                 </div>
               </div>
@@ -346,7 +346,7 @@ export default function V2AppHome() {
                   to="/v2/app/calls"
                   className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                 >
-                  All calls &amp; contacts
+                  {t('appHome.allCallsAndContacts')}
                   <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </div>
@@ -354,7 +354,7 @@ export default function V2AppHome() {
               <Button variant="outline" asChild className="w-full gap-2">
                 <Link to="/v2/app/calls">
                   <Phone className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-                  Open Calls &amp; Contacts
+                  {t('appHome.openCallsAndContacts')}
                   <ArrowRight className="ml-auto h-4 w-4 opacity-70" />
                 </Link>
               </Button>
@@ -369,18 +369,18 @@ export default function V2AppHome() {
         className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/70 p-3.5 sm:flex-row sm:items-center"
       >
         <span className="text-xs font-medium text-muted-foreground sm:shrink-0 sm:px-1">
-          Have a meeting link or code?
+          {t('appHome.haveMeetingLink')}
         </span>
         <Input
           value={joinInput}
           onChange={(e) => setJoinInput(e.target.value)}
-          placeholder="Paste invite link or room code…"
+          placeholder={t('appHome.pasteInvitePlaceholder')}
           className="h-9 flex-1 text-xs"
           autoCapitalize="none"
           autoCorrect="off"
         />
         <Button type="submit" size="sm" variant="secondary" className="h-9 shrink-0 gap-1.5">
-          Join room
+          {t('appHome.joinRoom')}
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </form>

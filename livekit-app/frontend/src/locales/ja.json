@@ -318,7 +318,17 @@
     "manageBilling": "請求を管理",
     "loadFailed": "ワークスペースを読み込めませんでした",
     "todayAt": "今日 {{time}}",
-    "tomorrowAt": "明日 {{time}}"
+    "tomorrowAt": "明日 {{time}}",
+    "instantMeetingTitle": "インスタント会議",
+    "instantMeetingDesc": "リアルタイム翻訳付きのルームをすぐに開始し、招待リンクを共有します。",
+    "startAndJoinNow": "開始して参加",
+    "directCallTitle": "1対1のダイレクト通話",
+    "directCallDesc": "アプリ内で連絡先に直接発信するか、通話リンクを送信します。",
+    "allCallsAndContacts": "すべての通話と連絡先",
+    "openCallsAndContacts": "通話と連絡先を開く",
+    "haveMeetingLink": "会議リンクまたはコードをお持ちですか？",
+    "pasteInvitePlaceholder": "招待リンクまたはルームコードを貼り付け…",
+    "joinRoom": "参加する"
   },
   "app": {
     "home": "ホーム",
@@ -332,7 +342,8 @@
     "role": "ロール：{{role}}",
     "openMenu": "メニューを開く",
     "dismissAnnouncement": "お知らせを閉じる",
-    "calls": "通話"
+    "calls": "通話",
+    "help": "ヘルプ"
   },
   "language": {
     "label": "言語",
@@ -421,5 +432,15 @@
         "enterprise": "Enterprise volume, DPA support & custom terms"
       }
     }
+  },
+  "calls": {
+    "pageTitle": "通話と連絡先",
+    "pageSubtitle": "リアルタイム翻訳で1対1通話、通話履歴や不在着信の確認、AI文字起こしの閲覧ができます。",
+    "sectionTitle": "ダイレクト通話と連絡先",
+    "sectionSubtitle": "1対1で発信し、通話履歴やAI要約・文字起こしを確認できます。",
+    "contactsTab": "連絡先",
+    "callLogTab": "通話履歴",
+    "missedTab": "不在着信",
+    "addContact": "連絡先を追加"
   }
 }

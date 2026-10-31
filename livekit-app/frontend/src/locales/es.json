@@ -318,7 +318,17 @@
     "manageBilling": "Gestionar facturación",
     "loadFailed": "No se pudo cargar el espacio de trabajo",
     "todayAt": "Hoy {{time}}",
-    "tomorrowAt": "Mañana {{time}}"
+    "tomorrowAt": "Mañana {{time}}",
+    "instantMeetingTitle": "Reunión instantánea",
+    "instantMeetingDesc": "Inicia una sala traducida en vivo ahora mismo y comparte un enlace para invitados.",
+    "startAndJoinNow": "Iniciar y entrar",
+    "directCallTitle": "Llamada directa 1 a 1",
+    "directCallDesc": "Llama a un contacto directamente en la app o envía un enlace instantáneo.",
+    "allCallsAndContacts": "Llamadas y contactos",
+    "openCallsAndContacts": "Abrir llamadas y contactos",
+    "haveMeetingLink": "¿Tienes un enlace o código?",
+    "pasteInvitePlaceholder": "Pega el enlace o código de sala…",
+    "joinRoom": "Entrar a la sala"
   },
   "app": {
     "home": "Inicio",
@@ -332,7 +342,8 @@
     "role": "Rol: {{role}}",
     "openMenu": "Abrir menú",
     "dismissAnnouncement": "Descartar anuncio",
-    "calls": "Llamadas"
+    "calls": "Llamadas",
+    "help": "Ayuda"
   },
   "language": {
     "label": "Idioma",
@@ -421,5 +432,15 @@
         "enterprise": "Enterprise volume, DPA support & custom terms"
       }
     }
+  },
+  "calls": {
+    "pageTitle": "Llamadas y contactos",
+    "pageSubtitle": "Llama 1 a 1 con traducción en vivo, revisa tu historial y llamadas perdidas, y abre transcripciones con IA.",
+    "sectionTitle": "Llamadas directas y contactos",
+    "sectionSubtitle": "Llama a contactos 1 a 1, consulta tu historial y abre transcripciones y resúmenes con IA.",
+    "contactsTab": "Contactos",
+    "callLogTab": "Historial",
+    "missedTab": "Perdidas",
+    "addContact": "Añadir contacto"
   }
 }

@@ -318,7 +318,17 @@
     "manageBilling": "管理账单",
     "loadFailed": "无法加载工作区",
     "todayAt": "今天 {{time}}",
-    "tomorrowAt": "明天 {{time}}"
+    "tomorrowAt": "明天 {{time}}",
+    "instantMeetingTitle": "即时会议",
+    "instantMeetingDesc": "立即启动实时翻译会议室并分享一键访客链接。",
+    "startAndJoinNow": "立即开始并加入",
+    "directCallTitle": "一对一直拨通话",
+    "directCallDesc": "在应用内直接呼叫联系人或发送即时通话链接。",
+    "allCallsAndContacts": "全部通话与联系人",
+    "openCallsAndContacts": "打开通话与联系人",
+    "haveMeetingLink": "有会议链接或房间代码？",
+    "pasteInvitePlaceholder": "粘贴邀请链接或房间代码…",
+    "joinRoom": "加入房间"
   },
   "app": {
     "home": "首页",
@@ -332,7 +342,8 @@
     "role": "角色：{{role}}",
     "openMenu": "打开菜单",
     "dismissAnnouncement": "关闭公告",
-    "calls": "通话"
+    "calls": "通话",
+    "help": "帮助"
   },
   "language": {
     "label": "语言",
@@ -421,5 +432,15 @@
         "enterprise": "Enterprise volume, DPA support & custom terms"
       }
     }
+  },
+  "calls": {
+    "pageTitle": "通话与联系人",
+    "pageSubtitle": "使用实时翻译进行一对一通话，查看通话记录与未接来电，并打开 AI 转录。",
+    "sectionTitle": "直拨通话与联系人",
+    "sectionSubtitle": "呼叫联系人、查看通话记录与未接来电，并打开 AI 转录与摘要。",
+    "contactsTab": "联系人",
+    "callLogTab": "通话记录",
+    "missedTab": "未接",
+    "addContact": "添加联系人"
   }
 }
