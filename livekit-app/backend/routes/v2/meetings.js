@@ -825,7 +825,7 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
         // Reset reminder state & RSVP status for invited guests, and send updated .ics invite if requested
         await db.run(
           `UPDATE v2_meeting_guest_invites
-           SET reminders_sent_json = '{}', reminder_sent_at = NULL, rsvp_status = 'pending', rsvp_at = NULL
+           SET reminders_sent_json = '{}', reminder_sent_at = NULL, rsvp_status = NULL, rsvp_updated_at = NULL
            WHERE meeting_id = ?`,
           [req.params.id]
         );
