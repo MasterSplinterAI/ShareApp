@@ -80,7 +80,7 @@ function callStatusMeta(call) {
   };
 }
 
-export default function DirectCallsSection({ hostDisplayName }) {
+export default function DirectCallsSection({ hostDisplayName, fullPage = false }) {
   const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [callHistory, setCallHistory] = useState([]);
@@ -228,13 +228,15 @@ export default function DirectCallsSection({ hostDisplayName }) {
   return (
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">Direct calls &amp; contacts</h2>
-          <p className="text-xs text-muted-foreground">
-            Call contacts 1-on-1, view call history &amp; missed calls, and open AI transcripts &amp; summaries.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+        {!fullPage ? (
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">Direct calls &amp; contacts</h2>
+            <p className="text-xs text-muted-foreground">
+              Call contacts 1-on-1, view call history &amp; missed calls, and open AI transcripts &amp; summaries.
+            </p>
+          </div>
+        ) : <div />}
+        <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-lg border border-border/80 bg-muted/30 p-0.5 text-xs">
             <button
               type="button"

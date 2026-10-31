@@ -20,6 +20,7 @@ const V2Login = lazy(() => import('./v2/pages/V2Login'))
 const V2Signup = lazy(() => import('./v2/pages/V2Signup'))
 const V2ResetPassword = lazy(() => import('./v2/pages/V2ResetPassword'))
 const V2AppHome = lazy(() => import('./v2/pages/V2AppHome'))
+const V2CallsPage = lazy(() => import('./v2/pages/V2CallsPage'))
 const V2MeetingsList = lazy(() => import('./v2/pages/V2MeetingsList'))
 const V2MeetingDetail = lazy(() => import('./v2/pages/V2MeetingDetail'))
 const V2OrgSettings = lazy(() => import('./v2/pages/V2OrgSettings'))
@@ -119,6 +120,7 @@ function App() {
           <Route path="reset-password" element={<V2ResetPassword />} />
           <Route path="app" element={<V2RequireAuth />}>
             <Route index element={<V2AppHome />} />
+            <Route path="calls" element={<V2CallsPage />} />
             <Route path="meetings" element={<V2MeetingsList />} />
             <Route path="meetings/:id" element={<V2MeetingDetail />} />
             <Route path="settings" element={<V2OrgSettings />} />

@@ -331,7 +331,8 @@
     "account": "账号",
     "role": "角色：{{role}}",
     "openMenu": "打开菜单",
-    "dismissAnnouncement": "关闭公告"
+    "dismissAnnouncement": "关闭公告",
+    "calls": "通话"
   },
   "language": {
     "label": "语言",

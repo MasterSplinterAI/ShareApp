@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { getPublicAppOrigin } from '../../lib/nativePlatform';
 import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisYear } from 'date-fns';
 import {
@@ -95,13 +96,14 @@ function LiveBadge({ label }) {
   );
 }
 
-function MeetingCard({ meeting: m, isArchivedView, onArchive, onRestore, onDelete }) {
+function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore, onDelete }) {
   const ui = getMeetingUiState(m);
   const live = isLiveState(ui.key);
   const lineCount = Number(m.transcript_line_count) || 0;
   const url = inviteUrlFor(m);
   const canCopyInvite = Boolean(url) && m.guestAccessActive !== false;
   const timeLabel = friendlyTime(m.scheduled_start || m.created_at);
+  const canQuickJoin = !isArchivedView && m.status !== 'archived' && m.status !== 'ended';
 
   const copyInvite = async () => {
     try {
@@ -138,24 +140,35 @@ function MeetingCard({ meeting: m, isArchivedView, onArchive, onRestore, onDelet
           {lineCount > 0 && (
             <span className="inline-flex items-center gap-1.5" title={`${lineCount} transcript lines`}>
               <FileText className="h-3.5 w-3.5" />
-              {lineCount}
+              {lineCount} lines
             </span>
           )}
         </div>
 
-        <div className="mt-auto flex items-center gap-1.5 border-t border-border/50 pt-3">
-          {canCopyInvite && (
-            <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={copyInvite}>
-              <Link2 className="h-3.5 w-3.5" />
-              Copy invite link
+        <div className="mt-auto flex flex-wrap items-center gap-1.5 border-t border-border/50 pt-3">
+          {canQuickJoin && onJoin && (
+            <Button
+              type="button"
+              size="sm"
+              className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-500"
+              onClick={() => onJoin(m)}
+            >
+              <Video className="h-3.5 w-3.5" />
+              Join
             </Button>
           )}
           <Button variant="outline" size="sm" asChild className="h-8 gap-1 px-2.5 text-xs">
             <Link to={`/v2/app/meetings/${m.id}`}>
-              Open
+              {lineCount > 0 ? 'Transcript & AI' : 'Details'}
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>
           </Button>
+          {canCopyInvite && (
+            <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={copyInvite}>
+              <Link2 className="h-3.5 w-3.5" />
+              Copy link
+            </Button>
+          )}
           <div className="ml-auto">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -228,6 +241,7 @@ function LoadingGrid() {
 }
 
 export default function V2MeetingsList() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [me, setMe] = useState(null);
   const [view, setView] = useState('meetings'); // 'meetings' | 'direct_calls' | 'archived'
@@ -365,12 +379,62 @@ export default function V2MeetingsList() {
         title: 'Instant meeting',
         host_required_to_start: false,
       });
-      toast.success('Meeting created');
-      window.location.href = `/v2/app/meetings/${m.id}`;
+      await v2Meetings.hostSessionOpen(m.id).catch(() => {});
+      const hostDisplayName =
+        (me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || 'Host').trim();
+      const participantInfo = {
+        isHost: true,
+        participantName: hostDisplayName,
+        hostCode: m.hostCode,
+        shareableLink: m.joinUrl,
+        shareableLinkNetwork: m.joinUrl,
+        roomName: m.livekitRoomName,
+        meetingId: m.id,
+        inviteToken: '',
+      };
+      try {
+        sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
+      } catch {
+        /* ignore */
+      }
+      navigate(`/room/${encodeURIComponent(m.livekitRoomName)}`, {
+        state: {
+          ...participantInfo,
+          meetingTitle: m.title,
+        },
+      });
     } catch (e) {
       handleCreateError(e);
     } finally {
       setStartingInstant(false);
+    }
+  };
+
+  const joinMeetingAsHost = async (m) => {
+    const hostDisplayName =
+      (me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || 'Host').trim();
+    try {
+      await v2Meetings.hostSessionOpen(m.id).catch(() => {});
+      const share = m.joinUrl || `${getPublicAppOrigin()}/join/${encodeURIComponent(m.livekit_room_name)}`;
+      const participantInfo = {
+        isHost: true,
+        participantName: hostDisplayName,
+        hostCode: m.host_code,
+        shareableLink: share,
+        shareableLinkNetwork: share,
+        roomName: m.livekit_room_name,
+        meetingId: m.id,
+        inviteToken: '',
+      };
+      sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
+      navigate(`/room/${encodeURIComponent(m.livekit_room_name)}`, {
+        state: {
+          ...participantInfo,
+          meetingTitle: m.title,
+        },
+      });
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not join meeting');
     }
   };
 
@@ -415,6 +479,7 @@ export default function V2MeetingsList() {
 
   const cardProps = {
     isArchivedView: archivedView,
+    onJoin: joinMeetingAsHost,
     onArchive: archiveMeeting,
     onRestore: restoreMeeting,
     onDelete: setPendingDelete,

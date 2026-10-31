@@ -1,8 +1,8 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisYear } from 'date-fns';
-import { ArrowRight, CalendarClock, Clock, Plus, UserPlus, Video } from 'lucide-react';
+import { ArrowRight, CalendarClock, Clock, Phone, Plus, UserPlus, Video, Zap } from 'lucide-react';
 import { v2Auth, v2Orgs, v2Meetings } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
@@ -17,11 +17,13 @@ import { UpgradeUsageCard } from '../components/UpgradePrompt';
 import DirectCallsSection from '../components/DirectCallsSection';
 
 export default function V2AppHome() {
+  const navigate = useNavigate();
   const { t, locale } = useTranslation();
   const [me, setMe] = useState(null);
   const [orgData, setOrgData] = useState(null);
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [startingInstant, setStartingInstant] = useState(false);
   const { offer, checkoutLoading, startCheckout, subscription: sub, usage } = useUpgradeOffer(me);
 
   const dateLocale = dateFnsLocale(locale);
@@ -80,6 +82,42 @@ export default function V2AppHome() {
   const usageMinutes = Math.round(Number(usage?.meetingMinutes ?? orgData?.usageThisMonth?.meetingMinutes) || 0);
   const planName = sub?.plan?.name;
 
+  const startAndJoinInstantMeeting = async () => {
+    if (startingInstant) return;
+    setStartingInstant(true);
+    try {
+      const m = await v2Meetings.create({
+        title: `${firstName}’s meeting`,
+        host_required_to_start: false,
+      });
+      await v2Meetings.hostSessionOpen(m.id).catch(() => {});
+      const participantInfo = {
+        isHost: true,
+        participantName: displayName,
+        hostCode: m.hostCode,
+        shareableLink: m.joinUrl,
+        shareableLinkNetwork: m.joinUrl,
+        roomName: m.livekitRoomName,
+        meetingId: m.id,
+        inviteToken: '',
+      };
+      try {
+        sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
+      } catch {
+        /* ignore */
+      }
+      navigate(`/room/${encodeURIComponent(m.livekitRoomName)}`, {
+        state: {
+          ...participantInfo,
+          meetingTitle: m.title,
+        },
+      });
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not start meeting');
+      setStartingInstant(false);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl space-y-10">
       {!loading && (offer?.show || sub?.plan) && (
@@ -103,16 +141,25 @@ export default function V2AppHome() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild className="gap-2">
-            <Link to="/v2/app/meetings?create=1">
-              <Plus className="h-4 w-4" />
-              {t('appHome.newMeeting')}
-            </Link>
+          <Button
+            type="button"
+            className="gap-2"
+            disabled={startingInstant}
+            onClick={startAndJoinInstantMeeting}
+          >
+            <Zap className="h-4 w-4" />
+            {startingInstant ? 'Starting…' : 'Start instant meeting'}
           </Button>
           <Button variant="outline" asChild className="gap-2">
             <Link to="/v2/app/meetings?create=1">
               <CalendarClock className="h-4 w-4" />
               {t('appHome.schedule')}
+            </Link>
+          </Button>
+          <Button variant="outline" asChild className="gap-2">
+            <Link to="/v2/app/calls">
+              <Phone className="h-4 w-4" />
+              {t('app.calls')}
             </Link>
           </Button>
           <Button variant="ghost" asChild className="gap-2">

@@ -331,7 +331,8 @@
     "account": "Compte",
     "role": "Rôle : {{role}}",
     "openMenu": "Ouvrir le menu",
-    "dismissAnnouncement": "Fermer l'annonce"
+    "dismissAnnouncement": "Fermer l'annonce",
+    "calls": "Appels"
   },
   "language": {
     "label": "Langue",

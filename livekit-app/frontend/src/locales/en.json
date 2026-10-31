@@ -395,7 +395,8 @@
     "account": "Account",
     "role": "Role: {{role}}",
     "openMenu": "Open menu",
-    "dismissAnnouncement": "Dismiss announcement"
+    "dismissAnnouncement": "Dismiss announcement",
+    "calls": "Calls"
   },
   "language": {
     "label": "Language",

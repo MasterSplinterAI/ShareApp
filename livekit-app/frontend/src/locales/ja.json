@@ -331,7 +331,8 @@
     "account": "アカウント",
     "role": "ロール：{{role}}",
     "openMenu": "メニューを開く",
-    "dismissAnnouncement": "お知らせを閉じる"
+    "dismissAnnouncement": "お知らせを閉じる",
+    "calls": "通話"
   },
   "language": {
     "label": "言語",

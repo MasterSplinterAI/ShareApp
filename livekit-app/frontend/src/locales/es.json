@@ -331,7 +331,8 @@
     "account": "Cuenta",
     "role": "Rol: {{role}}",
     "openMenu": "Abrir menú",
-    "dismissAnnouncement": "Descartar anuncio"
+    "dismissAnnouncement": "Descartar anuncio",
+    "calls": "Llamadas"
   },
   "language": {
     "label": "Idioma",

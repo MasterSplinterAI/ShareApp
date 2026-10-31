@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
+import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
 import { v2Announcements, v2Auth } from '../../services/apiV2';
 import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
 import LaliaSupportLauncher from './LaliaSupportLauncher';
@@ -41,6 +41,10 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
         <Home className="h-4 w-4 shrink-0" />
         {t('app.home')}
       </NavLink>
+      <NavLink to="/v2/app/calls" className={navLinkClass}>
+        <Phone className="h-4 w-4 shrink-0" />
+        {t('app.calls')}
+      </NavLink>
       <NavLink to="/v2/app/meetings" className={navLinkClass}>
         <Video className="h-4 w-4 shrink-0" />
         {t('app.meetings')}
@@ -56,6 +60,13 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
         </NavLink>
       )}
     </nav>
+  );
+}
+
+function mobileTabClass({ isActive }) {
+  return cn(
+    'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium transition-colors',
+    isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
   );
 }
 
@@ -224,7 +235,7 @@ export default function V2AppShell({ me, onLogout }) {
           <LanguageSwitcher compact />
         </header>
 
-        <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 md:pb-6 lg:px-8">
           {visibleAnnouncements.length > 0 && (
             <div className="mb-4 space-y-2">
               {visibleAnnouncements.map((a) => (
@@ -248,6 +259,31 @@ export default function V2AppShell({ me, onLogout }) {
           )}
           <Outlet />
         </main>
+
+        {/* Native-style mobile bottom navigation bar for 1-tap switching */}
+        <nav
+          className="app-sidebar fixed inset-x-0 bottom-0 z-30 flex items-center border-t border-border/70 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+          aria-label="Mobile navigation"
+          data-no-translate="true"
+        >
+          <NavLink to="/v2/app" end className={mobileTabClass}>
+            <Home className="h-4 w-4" />
+            <span>{t('app.home')}</span>
+          </NavLink>
+          <NavLink to="/v2/app/calls" className={mobileTabClass}>
+            <Phone className="h-4 w-4" />
+            <span>{t('app.calls')}</span>
+          </NavLink>
+          <NavLink to="/v2/app/meetings" className={mobileTabClass}>
+            <Video className="h-4 w-4" />
+            <span>{t('app.meetings')}</span>
+          </NavLink>
+          <NavLink to="/v2/app/settings" className={mobileTabClass}>
+            <Settings className="h-4 w-4" />
+            <span>{t('app.settings')}</span>
+          </NavLink>
+        </nav>
+
         <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} audience="app" />
       </div>
     </div>

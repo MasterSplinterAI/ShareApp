@@ -331,7 +331,8 @@
     "account": "Conta",
     "role": "Função: {{role}}",
     "openMenu": "Abrir menu",
-    "dismissAnnouncement": "Dispensar anúncio"
+    "dismissAnnouncement": "Dispensar anúncio",
+    "calls": "Chamadas"
   },
   "language": {
     "label": "Idioma",
