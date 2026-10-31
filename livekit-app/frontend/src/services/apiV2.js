@@ -16,10 +16,37 @@ apiV2.interceptors.request.use((config) => {
   return config;
 });
 
+const SQL_UTC_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/;
+
+export function normalizeUtcTimestamps(value) {
+  if (typeof value === 'string') {
+    const m = SQL_UTC_DATETIME_RE.exec(value);
+    return m ? `${m[1]}T${m[2]}Z` : value;
+  }
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i += 1) {
+      value[i] = normalizeUtcTimestamps(value[i]);
+    }
+    return value;
+  }
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    for (const key of Object.keys(value)) {
+      value[key] = normalizeUtcTimestamps(value[key]);
+    }
+    return value;
+  }
+  return value;
+}
+
 let handling401 = false;
 
 apiV2.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response && response.data) {
+      response.data = normalizeUtcTimestamps(response.data);
+    }
+    return response;
+  },
   (error) => {
     const status = error.response?.status;
     const requestUrl = String(error.config?.url || '');

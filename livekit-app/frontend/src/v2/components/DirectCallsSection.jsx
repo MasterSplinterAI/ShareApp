@@ -19,13 +19,23 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 
+function parseUtcDate(raw) {
+  if (!raw) return null;
+  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? null : raw;
+  const s = String(raw).trim();
+  const normalized = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2}(?:\.\d+)?)$/.test(s)
+    ? `${s.replace(' ', 'T')}Z`
+    : s;
+  const d = new Date(normalized);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 function formatCallTimestamp(iso) {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  if (isToday(d)) return `Today, ${format(d, 'p')}`;
-  if (isYesterday(d)) return `Yesterday, ${format(d, 'p')}`;
-  return format(d, 'MMM d, p');
+  const d = parseUtcDate(iso);
+  if (!d) return '';
+  if (isToday(d)) return `Today, ${format(d, 'h:mm a')}`;
+  if (isYesterday(d)) return `Yesterday, ${format(d, 'h:mm a')}`;
+  return format(d, 'MMM d, h:mm a');
 }
 
 function callStatusMeta(call) {
