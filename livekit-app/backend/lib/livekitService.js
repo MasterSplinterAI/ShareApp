@@ -206,7 +206,7 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
  * Never creates a second dispatch when one exists or an agent is present —
  * that is how duplicate caption/TTS streams (and double inference cost) start.
  */
-async function ensureAgentDispatchLocked(roomName, agentName) {
+async function ensureAgentDispatchLocked(roomName, agentName, dispatchMetadata = null) {
   const roomService = getRoomService();
   let participants = [];
   try {
@@ -245,7 +245,8 @@ async function ensureAgentDispatchLocked(roomName, agentName) {
   }
 
   try {
-    await agentDispatch.createDispatch(roomName, agentName);
+    const opts = dispatchMetadata ? { metadata: dispatchMetadata } : undefined;
+    await agentDispatch.createDispatch(roomName, agentName, opts);
     console.log(`[livekitService] Agent dispatched to ${roomName} (${agentName})`);
     return 'created';
   } catch (e) {
@@ -269,15 +270,16 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     demo: true,
     ...demoMeta,
   };
+  const metadataJson = JSON.stringify(metadata);
   const room = await roomService.createRoom({
     name: roomName,
     emptyTimeout,
     departureTimeout,
     maxParticipants: 10,
-    metadata: JSON.stringify(metadata),
+    metadata: metadataJson,
   });
   const agentName = agentNameForPipeline('deepgram_codeswitch');
-  await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName));
+  await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName, metadataJson));
   return room;
 }
 

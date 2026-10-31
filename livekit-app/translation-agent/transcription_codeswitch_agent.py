@@ -797,82 +797,110 @@ class TranscriptionOnlyAgent:
         )
 
         org_id: Optional[str] = None
-        # Read caption_config and org_id from room metadata (persisted by host, supports late-joining agent)
+
+        async def _init_from_metadata(raw_meta_str: str) -> Optional[str]:
+            nonlocal org_id
+            if not raw_meta_str:
+                return None
+            meta = json.loads(raw_meta_str)
+            if not isinstance(meta, dict):
+                return None
+            org_id = meta.get("org_id") or org_id
+            self._apply_caption_config(meta.get("caption_config"), "room metadata (startup)")
+            if meta.get("demo") and meta.get("demoSessionId") and self.demo_orchestrator is None:
+                read_lang = meta.get("readLang") or "en"
+                speak_lang = meta.get("speakLang") or "en"
+                agent_names = meta.get("agentNames") or []
+                self._demo_room = True
+                self._demo_speak_lang = str(speak_lang).split("-")[0].lower()
+                self._demo_read_lang = str(read_lang).split("-")[0].lower()
+
+                async def publish_demo_caption(msg_dict: dict, reliable: bool) -> None:
+                    await ctx.room.local_participant.publish_data(
+                        json.dumps(msg_dict).encode("utf-8"),
+                        topic="transcription",
+                        reliable=reliable,
+                    )
+
+                async def publish_demo_phase(phase: str, active_speaker: Optional[str]) -> None:
+                    await ctx.room.local_participant.publish_data(
+                        json.dumps(
+                            {
+                                "type": "demo_phase",
+                                "phase": phase,
+                                "activeSpeaker": active_speaker,
+                            }
+                        ).encode("utf-8"),
+                        topic="demo",
+                        reliable=True,
+                    )
+
+                self.demo_orchestrator = DemoRoomOrchestrator(
+                    demo_session_id=str(meta["demoSessionId"]),
+                    read_lang=str(read_lang),
+                    publish_caption=publish_demo_caption,
+                    get_tts_lane=lambda lang: self.tts_lanes.get(
+                        str(lang).split("-")[0].lower()
+                    ),
+                    on_phase=publish_demo_phase,
+                    agent_names=set(str(n) for n in agent_names),
+                    backend_url=str(meta.get("backendBaseUrl") or "").strip() or None,
+                )
+                logger.info(
+                    "🎭 Demo room orchestrator active session=%s readLang=%s",
+                    meta["demoSessionId"],
+                    read_lang,
+                )
+                self._spawn_bg(self.demo_orchestrator.schedule_opening())
+
+                agent_langs = meta.get("agentLangs") or {}
+                for name, lang in agent_langs.items():
+                    virtual_id = f"demo:{name}"
+                    norm_lang = str(lang).split("-")[0].lower()
+                    self.participant_languages[virtual_id] = norm_lang
+                    self.translation_enabled[virtual_id] = True
+                    self.voice_enabled[virtual_id] = False
+                # TTS for demo agent lines is spoken in the visitor's read/caption language.
+                reader_id = "demo:reader"
+                self.participant_languages[reader_id] = self._demo_read_lang
+                self.translation_enabled[reader_id] = True
+                self.voice_enabled[reader_id] = True
+                await self.update_assistants(ctx)
+                if agent_langs:
+                    logger.info(
+                        "🎭 Demo virtual listeners registered: %s",
+                        agent_langs,
+                    )
+                logger.info(
+                    "🎭 Demo TTS reader lane language=%s speakLang=%s",
+                    self._demo_read_lang,
+                    self._demo_speak_lang,
+                )
+            return org_id
+
+        # Read caption_config and org_id from room or job metadata (persisted by host/demo, supports late-joining agent)
         try:
-            raw_meta = getattr(ctx.room, "metadata", None) or ""
+            job_obj = getattr(ctx, "job", None)
+            job_room = getattr(job_obj, "room", None) if job_obj else None
+            raw_meta = (
+                getattr(ctx.room, "metadata", None)
+                or getattr(job_obj, "metadata", None)
+                or getattr(job_room, "metadata", None)
+                or ""
+            )
+            if not raw_meta and ctx.room.name.startswith("demo-"):
+                for _ in range(8):
+                    await asyncio.sleep(0.15)
+                    raw_meta = (
+                        getattr(ctx.room, "metadata", None)
+                        or getattr(job_obj, "metadata", None)
+                        or getattr(job_room, "metadata", None)
+                        or ""
+                    )
+                    if raw_meta:
+                        break
             if raw_meta:
-                meta = json.loads(raw_meta)
-                org_id = meta.get("org_id") or None
-                self._apply_caption_config(meta.get("caption_config"), "room metadata (startup)")
-                if meta.get("demo") and meta.get("demoSessionId"):
-                    read_lang = meta.get("readLang") or "en"
-                    speak_lang = meta.get("speakLang") or "en"
-                    agent_names = meta.get("agentNames") or []
-                    self._demo_room = True
-                    self._demo_speak_lang = str(speak_lang).split("-")[0].lower()
-                    self._demo_read_lang = str(read_lang).split("-")[0].lower()
-
-                    async def publish_demo_caption(msg_dict: dict, reliable: bool) -> None:
-                        await ctx.room.local_participant.publish_data(
-                            json.dumps(msg_dict).encode("utf-8"),
-                            topic="transcription",
-                            reliable=reliable,
-                        )
-
-                    async def publish_demo_phase(phase: str, active_speaker: Optional[str]) -> None:
-                        await ctx.room.local_participant.publish_data(
-                            json.dumps(
-                                {
-                                    "type": "demo_phase",
-                                    "phase": phase,
-                                    "activeSpeaker": active_speaker,
-                                }
-                            ).encode("utf-8"),
-                            topic="demo",
-                            reliable=True,
-                        )
-
-                    self.demo_orchestrator = DemoRoomOrchestrator(
-                        demo_session_id=str(meta["demoSessionId"]),
-                        read_lang=str(read_lang),
-                        publish_caption=publish_demo_caption,
-                        get_tts_lane=lambda lang: self.tts_lanes.get(
-                            str(lang).split("-")[0].lower()
-                        ),
-                        on_phase=publish_demo_phase,
-                        agent_names=set(str(n) for n in agent_names),
-                        backend_url=str(meta.get("backendBaseUrl") or "").strip() or None,
-                    )
-                    logger.info(
-                        "🎭 Demo room orchestrator active session=%s readLang=%s",
-                        meta["demoSessionId"],
-                        read_lang,
-                    )
-                    self._spawn_bg(self.demo_orchestrator.schedule_opening())
-
-                    agent_langs = meta.get("agentLangs") or {}
-                    for name, lang in agent_langs.items():
-                        virtual_id = f"demo:{name}"
-                        norm_lang = str(lang).split("-")[0].lower()
-                        self.participant_languages[virtual_id] = norm_lang
-                        self.translation_enabled[virtual_id] = True
-                        self.voice_enabled[virtual_id] = False
-                    # TTS for demo agent lines is spoken in the visitor's read/caption language.
-                    reader_id = "demo:reader"
-                    self.participant_languages[reader_id] = self._demo_read_lang
-                    self.translation_enabled[reader_id] = True
-                    self.voice_enabled[reader_id] = True
-                    await self.update_assistants(ctx)
-                    if agent_langs:
-                        logger.info(
-                            "🎭 Demo virtual listeners registered: %s",
-                            agent_langs,
-                        )
-                    logger.info(
-                        "🎭 Demo TTS reader lane language=%s speakLang=%s",
-                        self._demo_read_lang,
-                        self._demo_speak_lang,
-                    )
+                await _init_from_metadata(raw_meta)
         except Exception as e:
             logger.warning(f"Room metadata parse failed: {e}")
 
@@ -1058,6 +1086,8 @@ class TranscriptionOnlyAgent:
             except Exception as e:
                 logger.warning(f"room_metadata_changed: parse failed: {e}")
                 return
+            if meta.get("demo") and meta.get("demoSessionId") and self.demo_orchestrator is None:
+                self._spawn_bg(_init_from_metadata(new_metadata))
             if self._apply_caption_config(meta.get("caption_config"), "room metadata"):
                 _schedule_update()
 
