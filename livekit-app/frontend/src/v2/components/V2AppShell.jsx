@@ -290,6 +290,17 @@ export default function V2AppShell({ me, onLogout }) {
             Lalia
           </Link>
           <LanguageSwitcher compact />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => openHelpRef.current?.()}
+            aria-label={t('app.helpSupport')}
+            title={t('app.helpSupport')}
+          >
+            <LifeBuoy className="h-4 w-4" />
+          </Button>
         </header>
 
         <main className="mx-auto w-full max-w-screen-2xl flex-1 px-4 pb-[calc(5rem+env(safe-area-inset-bottom))] pt-6 sm:px-6 md:pb-6 lg:px-8">

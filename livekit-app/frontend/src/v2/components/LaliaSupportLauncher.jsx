@@ -53,8 +53,8 @@ export default function LaliaSupportLauncher({ user, openRef, audience }) {
                   type="button"
                   aria-label="Open Lalia help"
                   onClick={open}
+                  className="hidden md:inline-flex"
                   style={{
-                    display: 'inline-flex',
                     alignItems: 'center',
                     padding: '12px 18px',
                     border: 'none',
