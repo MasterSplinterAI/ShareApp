@@ -280,9 +280,13 @@ export default function V2MeetingDetail() {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   };
   const openRescheduleModal = () => {
-    const existing = meeting?.scheduled_start ? new Date(meeting.scheduled_start) : null;
-    const valid = existing && !Number.isNaN(existing.getTime()) ? existing : getNextRoundedScheduleDate();
-    setRescheduleDate(valid);
+    const rawTime = meeting?.scheduled_start || meeting?.started_at || meeting?.created_at;
+    const existing = rawTime ? new Date(rawTime) : null;
+    const validFuture =
+      existing && !Number.isNaN(existing.getTime()) && existing.getTime() > Date.now()
+        ? existing
+        : getNextRoundedScheduleDate();
+    setRescheduleDate(validFuture);
     setNotifyGuestsOnReschedule(true);
     setRescheduleOpen(true);
   };
@@ -521,7 +525,12 @@ export default function V2MeetingDetail() {
 
   const startDate = meeting.scheduled_start ? new Date(meeting.scheduled_start) : null;
   const validStart = startDate && !Number.isNaN(startDate.getTime()) ? startDate : null;
-  const scheduleText = validStart ? format(validStart, 'EEEE, MMM d · h:mm a') : null;
+  const fallbackAnchor = !validStart && (meeting.started_at || meeting.created_at)
+    ? new Date(meeting.started_at || meeting.created_at)
+    : null;
+  const validDisplayDate =
+    validStart || (fallbackAnchor && !Number.isNaN(fallbackAnchor.getTime()) ? fallbackAnchor : null);
+  const scheduleText = validDisplayDate ? format(validDisplayDate, 'EEEE, MMM d · h:mm a') : null;
 
   let quietLine = null;
   if (isUpcoming) {
@@ -843,7 +852,7 @@ export default function V2MeetingDetail() {
                     className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-muted"
                   >
                     <CalendarClock className="h-3.5 w-3.5 text-primary" />
-                    {scheduleText ? 'Reschedule' : 'Set time'}
+                    Reschedule
                   </button>
                 )}
                 {scheduleText && !joinDemoted && (
