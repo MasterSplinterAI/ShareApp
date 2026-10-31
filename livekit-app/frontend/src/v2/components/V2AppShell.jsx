@@ -205,14 +205,14 @@ export default function V2AppShell({ me, onLogout }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="app-sidebar sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border/70 px-4 backdrop-blur-md md:hidden">
+        <header className="app-sidebar sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-3 border-b border-border/70 px-4 pt-[env(safe-area-inset-top)] backdrop-blur-md md:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label={t('app.openMenu')}>
                 <Menu className="h-5 w-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="left" className="flex w-[min(100vw-2rem,18rem)] flex-col p-0">
+            <SheetContent side="left" className="flex w-[min(100vw-2rem,18rem)] flex-col p-0 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
               <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{sidebarBody}</div>
             </SheetContent>
           </Sheet>

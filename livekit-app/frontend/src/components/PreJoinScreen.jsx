@@ -259,7 +259,7 @@ function PreJoinScreen({
 
   return (
     <div
-      className="flex min-h-[100dvh] items-center justify-center bg-muted/40 px-4 py-6"
+      className="flex min-h-[100dvh] items-center justify-center bg-muted/40 px-4 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]"
       style={brandingStyleVars(branding)}
     >
       <div className="w-full max-w-3xl overflow-hidden rounded-2xl border border-border/70 bg-card shadow-lg">

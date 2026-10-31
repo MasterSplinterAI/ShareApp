@@ -67,7 +67,7 @@ function DemoLiveRoomInner({
   useMeetingWakeLock(true);
 
   return (
-    <div translate="no" className="meeting-surface meeting-room-root notranslate relative flex h-[100dvh] w-full flex-col overflow-hidden bg-background">
+    <div translate="no" className="meeting-surface meeting-room-root notranslate relative flex h-[100dvh] w-full flex-col overflow-hidden bg-background pt-[env(safe-area-inset-top)]">
       <TtsAudioController
         selectedLanguage={selectedLanguage}
         translationEnabled={translationEnabled}
