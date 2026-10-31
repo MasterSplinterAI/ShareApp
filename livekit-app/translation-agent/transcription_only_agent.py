@@ -1774,6 +1774,38 @@ class TranscriptionOnlyAgent:
                 elif use_gladia_native_translation[0]:
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                 else:
+                    unfrozen_tail = split_tail(full_original, lane.frozen_src)
+                    if (
+                        lane.llm_instance is not None
+                        and lane.frozen_tgt
+                        and unfrozen_tail.strip()
+                        and unfrozen_tail.strip() != full_original.strip()
+                        and not _translation_covers_thought(unfrozen_tail, lane.tail_translation)
+                    ):
+                        cached_tail = self._translation_cache.get(
+                            speaker_lang, tgt, unfrozen_tail
+                        )
+                        if cached_tail is not None:
+                            lane.tail_translation = cached_tail
+                        else:
+                            try:
+                                tail_res, tail_usage = await asyncio.wait_for(
+                                    run_llm_stream(lane, tgt, unfrozen_tail, partial=False),
+                                    timeout=_llm_timeout_sec(),
+                                )
+                                if tail_res:
+                                    lane.tail_translation = tail_res
+                                    self._translation_cache.put(
+                                        speaker_lang, tgt, unfrozen_tail, tail_res
+                                    )
+                                    emit_llm_cost(lane, unfrozen_tail, tail_res, tail_usage)
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as e:  # noqa: BLE001
+                                logger.warning(
+                                    f"{L}→{tgt} ⚠️ finalize tail translation failed: {e}"
+                                )
+
                     full_translated = lane.display_translation()
                     if (
                         lane.llm_instance is not None

@@ -22,9 +22,12 @@ from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
 from tts_lane import TtsLane, is_valid_elevenlabs_voice_id, resolve_tts_provider
 from codeswitch_source_language import (
+    infer_script_language,
     lane_is_same_language,
     next_source_flip,
+    resolve_detected_language,
     speech_data_detected_language,
+    text_has_mixed_scripts,
 )
 from residual_guard import is_residual_repeat
 from demo_orchestrator import DemoRoomOrchestrator
@@ -1489,6 +1492,8 @@ class TranscriptionOnlyAgent:
         L = f"[{speaker_id}]"
         configured_speaker_lang = self.participant_languages.get(speaker_id) or "en"
         effective_source_lang: List[str] = [configured_speaker_lang]
+        turn_is_multilingual: List[bool] = [False]
+        turn_seen_langs: Set[str] = set()
         lanes: Dict[str, TargetLaneState] = {}
         use_gladia_native_translation: List[bool] = [False]
         stt_instance: Optional[Any] = None
@@ -1524,9 +1529,30 @@ class TranscriptionOnlyAgent:
             except Exception as e:
                 logger.warning(f"{L} Gladia update_options failed: {e}")
 
+        def packet_source_lang_for_lane(tgt_lang: str, lane: TargetLaneState, text_sample: str = "") -> str:
+            """Source language tag for data packets on `lane`.
+
+            In a mixed-language turn (e.g. English + Russian in one bubble), both
+            'en' and 'ru' lanes are active foreign lanes (`lane.is_same_language == False`).
+            Ensure `sourceLanguage != tgt_lang` on translated packets so the frontend's
+            `sourceLanguage !== targetLang` guard treats `text` as a valid translation.
+            """
+            eff = effective_source_lang[0]
+            if lane.is_same_language or eff != tgt_lang:
+                return eff
+            for cand in (
+                infer_script_language(text_sample, configured_speaker_lang, list(self.participant_languages.values())),
+                *(lang for lang in turn_seen_langs if lang != tgt_lang),
+                configured_speaker_lang,
+            ):
+                if cand and cand != tgt_lang:
+                    return cand
+            return "multi"
+
         async def reconcile_lanes() -> None:
             targets = await run_ctx.get_targets()
             eff = effective_source_lang[0]
+            multilingual = turn_is_multilingual[0]
             for tgt in list(lanes.keys()):
                 if tgt not in targets:
                     st = lanes.pop(tgt)
@@ -1538,7 +1564,9 @@ class TranscriptionOnlyAgent:
             for tgt in targets:
                 if tgt in lanes:
                     lane = lanes[tgt]
-                    new_same = lane_is_same_language(eff, tgt)
+                    new_same = lane_is_same_language(
+                        eff, tgt, turn_is_multilingual=multilingual
+                    )
                     if lane.is_same_language == new_same:
                         continue
                     lane.cancel_inflight()
@@ -1559,10 +1587,13 @@ class TranscriptionOnlyAgent:
                         lane.llm_provider = llm_pname
                         self._spawn_bg(self._prewarm_llm(llm, speaker_id, tgt))
                     logger.info(
-                        f"{L}→{tgt} lane mode updated effective={eff!r} same_language={new_same}"
+                        f"{L}→{tgt} lane mode updated effective={eff!r} "
+                        f"multilingual={multilingual} same_language={new_same}"
                     )
                     continue
-                is_same = lane_is_same_language(eff, tgt)
+                is_same = lane_is_same_language(
+                    eff, tgt, turn_is_multilingual=multilingual
+                )
                 llm = None
                 llm_pname = "openai"
                 if not is_same:
@@ -1718,13 +1749,14 @@ class TranscriptionOnlyAgent:
             return pairs
 
         async def publish_lane_translation_partial(lane: TargetLaneState, tgt_lang: str) -> None:
+            orig_sample = dg_buffer.committed_text() or dg_buffer.live_text()
             await publish_lane(
                 {
                     "type": "transcription",
-                    "originalText": dg_buffer.committed_text() or dg_buffer.live_text(),
+                    "originalText": orig_sample,
                     "text": lane.display_translation(),
                     "language": tgt_lang,
-                    "sourceLanguage": effective_source_lang[0],
+                    "sourceLanguage": packet_source_lang_for_lane(tgt_lang, lane, orig_sample),
                     "participant_id": speaker_id,
                     "partial": True,
                     "final": False,
@@ -2032,15 +2064,50 @@ class TranscriptionOnlyAgent:
                 elif use_gladia_native_translation[0]:
                     full_translated = " ".join(p for p in lane.turn_translated_parts if p)
                 else:
+                    unfrozen_tail = split_tail(full_original, lane.frozen_src)
+                    # If sentence 1 froze into frozen_tgt, check whether the unfrozen
+                    # trailing clause (`unfrozen_tail`) has been translated into
+                    # `lane.tail_translation`. Previously `_translation_covers_thought`
+                    # checked `full_original` vs `full_translated`, which passed whenever
+                    # sentence 1 alone was >=55% of the turn and silently dropped sentence 2!
+                    if (
+                        lane.llm_instance is not None
+                        and lane.frozen_tgt
+                        and unfrozen_tail.strip()
+                        and unfrozen_tail.strip() != full_original.strip()
+                        and not _translation_covers_thought(unfrozen_tail, lane.tail_translation)
+                    ):
+                        cached_tail = self._translation_cache.get(
+                            effective_source_lang[0], tgt, unfrozen_tail
+                        )
+                        if cached_tail is not None:
+                            lane.tail_translation = cached_tail
+                        else:
+                            try:
+                                tail_res, tail_usage = await asyncio.wait_for(
+                                    run_llm_stream(lane, tgt, unfrozen_tail, partial=False),
+                                    timeout=_llm_timeout_sec(),
+                                )
+                                if tail_res:
+                                    lane.tail_translation = tail_res
+                                    self._translation_cache.put(
+                                        effective_source_lang[0], tgt, unfrozen_tail, tail_res
+                                    )
+                                    emit_llm_cost(lane, unfrozen_tail, tail_res, tail_usage)
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as e:  # noqa: BLE001
+                                logger.warning(
+                                    f"{L}→{tgt} ⚠️ finalize tail translation failed: {e}"
+                                )
+
                     full_translated = lane.display_translation()
                     if (
                         lane.llm_instance is not None
                         and not _translation_covers_thought(full_original, full_translated)
                     ):
-                        # Lane joined mid-turn (listener language arrived after speech
-                        # started) so no translation was ever attempted — one direct
-                        # call here keeps the FIRST utterance from publishing
-                        # untranslated and sticking on 'Translating…' downstream.
+                        # Lane joined mid-turn (or switched mid-turn) so full_original
+                        # needs a single whole-turn translation pass.
                         cached = self._translation_cache.get(effective_source_lang[0], tgt, full_original)
                         if cached is not None:
                             full_translated = cached
@@ -2069,7 +2136,7 @@ class TranscriptionOnlyAgent:
                         "text": full_translated or full_original,
                         "originalText": full_original,
                         "language": tgt,
-                        "sourceLanguage": effective_source_lang[0],
+                        "sourceLanguage": packet_source_lang_for_lane(tgt, lane, full_original),
                         "participant_id": speaker_id,
                         "partial": False,
                         "final": True,
@@ -2134,7 +2201,10 @@ class TranscriptionOnlyAgent:
                 lane.reset_turn()
             gladia_satisfied_targets.clear()
             interjected_during_turn[0] = False
+            turn_is_multilingual[0] = False
+            turn_seen_langs.clear()
             turn_id[0] = None
+            await reconcile_lanes()
 
             # Emit STT cost for the completed turn (fire-and-forget)
             if self.cost_reporter and turn_stt_seconds[0] > 0:
@@ -2147,6 +2217,8 @@ class TranscriptionOnlyAgent:
                 turn_stt_seconds[0] = 0.0
 
         async def start_new_turn() -> None:
+            turn_is_multilingual[0] = False
+            turn_seen_langs.clear()
             await reconcile_lanes()
             for lane in lanes.values():
                 lane.cancel_inflight()
@@ -2309,7 +2381,7 @@ class TranscriptionOnlyAgent:
                         "originalText": display_text,
                         "text": lane_live_text(lane, display_text),
                         "language": tgt,
-                        "sourceLanguage": effective_source_lang[0],
+                        "sourceLanguage": packet_source_lang_for_lane(tgt, lane, display_text),
                         "participant_id": speaker_id,
                         "partial": True,
                         "final": False,
@@ -2402,7 +2474,25 @@ class TranscriptionOnlyAgent:
         ) -> None:
             if stt_provider_name != "deepgram":
                 return
-            detected = speech_data_detected_language(speech_data)
+            room_langs = list(self.participant_languages.values())
+            detected = resolve_detected_language(
+                speech_data,
+                text=text,
+                configured_lang=configured_speaker_lang,
+                room_langs=room_langs,
+            )
+            if detected:
+                turn_seen_langs.add(detected)
+
+            # Check if the open turn itself now mixes scripts (e.g. English + Russian in one bubble)
+            live_turn_text = join_nonempty(dg_buffer.live_text(), text)
+            became_multilingual = False
+            if not turn_is_multilingual[0] and (
+                len(turn_seen_langs) > 1 or text_has_mixed_scripts(live_turn_text)
+            ):
+                turn_is_multilingual[0] = True
+                became_multilingual = True
+
             prev = effective_source_lang[0]
             word_count = len((text or "").split())
             new_eff, pending, count, flipped = next_source_flip(
@@ -2417,16 +2507,21 @@ class TranscriptionOnlyAgent:
             source_flip_pending[0] = pending
             source_flip_count[0] = count
             if not flipped:
+                if became_multilingual:
+                    last_live_publish[0] = ""
+                    await reconcile_lanes()
                 return
+
+            had_prior_turn_content = dg_buffer.has_content()
+            if had_prior_turn_content:
+                turn_is_multilingual[0] = True
+
             effective_source_lang[0] = new_eff
             logger.info(
                 f"{L} codeswitch source {prev!r} → {new_eff!r} "
-                f"(detected={detected!r} is_final={is_final} words={word_count})"
+                f"(detected={detected!r} is_final={is_final} words={word_count} "
+                f"multilingual_turn={turn_is_multilingual[0]})"
             )
-            # Lane modes (same/cross) depend on the source language. Restart
-            # lane translation state so the open bubble isn't half old-language,
-            # and clear last_live_publish so the next partial re-sends with the
-            # updated sourceLanguage.
             last_live_publish[0] = ""
             for lane in lanes.values():
                 lane.cancel_inflight()
@@ -2434,7 +2529,14 @@ class TranscriptionOnlyAgent:
                 lane.current_task = None
                 lane.interim_task = None
                 lane.turn_translated_parts.clear()
-                lane.reset_turn()
+                if not had_prior_turn_content:
+                    lane.reset_turn()
+                else:
+                    # Preserve frozen_src / frozen_tgt from the first half of the
+                    # turn so mid-turn code-switching doesn't erase earlier sentences!
+                    lane.interim_candidate = ""
+                    lane.interim_stable = ""
+                    lane.last_interim_src = ""
             await reconcile_lanes()
 
         async def process_vad() -> None:

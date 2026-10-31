@@ -2,10 +2,13 @@
 
 from codeswitch_source_language import (
     effective_source_language,
+    infer_script_language,
     lane_is_same_language,
     next_source_flip,
     normalize_language_code,
+    resolve_detected_language,
     speech_data_detected_language,
+    text_has_mixed_scripts,
 )
 
 
@@ -129,3 +132,35 @@ class TestLaneIsSameLanguage:
 
     def test_mismatch(self):
         assert lane_is_same_language("es", "en") is False
+
+    def test_multilingual_turn_forces_translation_for_all_lanes(self):
+        assert lane_is_same_language("en", "en", turn_is_multilingual=True) is False
+        assert lane_is_same_language("ru", "ru", turn_is_multilingual=True) is False
+
+
+class TestScriptAndMixedTurnDetection:
+    def test_cyrillic_tail_after_english_prefix_resolves_to_russian(self):
+        mixed = (
+            "I'm growing it out till next Halloween and the one after "
+            "Я хочу попробовать отрастить натуральный цвет волос"
+        )
+        sd = type("SD", (), {"language": "en"})()
+        assert infer_script_language(mixed, "ru", ["en", "ru"]) == "ru"
+        assert resolve_detected_language(sd, mixed, "ru", ["en", "ru"]) == "ru"
+
+    def test_pure_cyrillic_never_overridden_by_bogus_english_tag(self):
+        ru_text = "красить Краска течет, это нужно красить каждые три недели."
+        sd = type("SD", (), {"language": "en"})()
+        assert resolve_detected_language(sd, ru_text, "ru", ["en", "ru"]) == "ru"
+
+    def test_english_tail_after_russian_resolves_to_english(self):
+        en_tail = "Привет как дела Hold on let me turn the camera on"
+        sd = type("SD", (), {"language": "multi"})()
+        assert resolve_detected_language(sd, en_tail, "ru", ["en", "ru"]) == "en"
+
+    def test_text_has_mixed_scripts_detects_english_plus_russian(self):
+        mixed = "Hi. Sorry. Oh, I'm Да, да, перевод был точный."
+        assert text_has_mixed_scripts(mixed) is True
+        assert text_has_mixed_scripts("Just speaking English right now.") is False
+        assert text_has_mixed_scripts("Только по-русски без английского.") is False
+
