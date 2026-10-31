@@ -154,6 +154,11 @@ function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore,
             <Clock className="h-3.5 w-3.5" />
             {timeLabel}
           </span>
+          {!m.is_mine && m.host_name && (
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+              Host: {m.host_name}
+            </span>
+          )}
           {lineCount > 0 && (
             <span className="inline-flex items-center gap-1.5" title={`${lineCount} transcript lines`}>
               <FileText className="h-3.5 w-3.5" />
@@ -262,6 +267,7 @@ export default function V2MeetingsList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [me, setMe] = useState(null);
   const [view, setView] = useState('meetings'); // 'meetings' | 'direct_calls' | 'archived'
+  const [hostScope, setHostScope] = useState('all'); // 'mine' | 'all'
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAllRecent, setShowAllRecent] = useState(false);
@@ -309,9 +315,20 @@ export default function V2MeetingsList() {
     }
   }, [searchParams, setSearchParams]);
 
-  const conferenceMeetings = useMemo(
+  const allConferenceMeetings = useMemo(
     () => meetings.filter((m) => !m.is_direct_call),
     [meetings]
+  );
+  const hasTeammateMeetings = useMemo(
+    () => allConferenceMeetings.some((m) => m.is_mine === false),
+    [allConferenceMeetings]
+  );
+  const conferenceMeetings = useMemo(
+    () =>
+      hostScope === 'mine' && hasTeammateMeetings
+        ? allConferenceMeetings.filter((m) => m.is_mine !== false)
+        : allConferenceMeetings,
+    [allConferenceMeetings, hostScope, hasTeammateMeetings]
   );
   const directCallMeetings = useMemo(
     () => meetings.filter((m) => Boolean(m.is_direct_call)),
@@ -580,13 +597,40 @@ export default function V2MeetingsList() {
             Archived
           </button>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {archivedView
-            ? 'Archived rooms & calls'
-            : directCallsView
-              ? '1-on-1 direct call rooms & transcripts'
-              : 'Scheduled & instant meetings — live and today first'}
-        </span>
+        {hasTeammateMeetings && view === 'meetings' ? (
+          <div className="inline-flex rounded-lg border border-border/80 bg-muted/30 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setHostScope('all')}
+              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                hostScope === 'all'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              All team ({allConferenceMeetings.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setHostScope('mine')}
+              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                hostScope === 'mine'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              My meetings ({allConferenceMeetings.filter((m) => m.is_mine !== false).length})
+            </button>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">
+            {archivedView
+              ? 'Archived rooms & calls'
+              : directCallsView
+                ? '1-on-1 direct call rooms & transcripts'
+                : 'Scheduled & instant meetings — live and today first'}
+          </span>
+        )}
       </div>
 
       {loading ? (

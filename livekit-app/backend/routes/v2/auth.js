@@ -104,9 +104,20 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
     let membership = await db.get(
-      `SELECT org_id, role FROM v2_org_members WHERE user_id = ? ORDER BY datetime(created_at) ASC LIMIT 1`,
+      `SELECT m.org_id, m.role
+       FROM v2_org_members m
+       JOIN v2_organizations o ON o.id = m.org_id
+       WHERE m.user_id = ? AND o.suspended_at IS NULL
+       ORDER BY CASE WHEN o.account_type = 'team' THEN 0 ELSE 1 END, datetime(m.created_at) DESC
+       LIMIT 1`,
       [user.id]
     );
+    if (!membership) {
+      membership = await db.get(
+        `SELECT org_id, role FROM v2_org_members WHERE user_id = ? ORDER BY datetime(created_at) ASC LIMIT 1`,
+        [user.id]
+      );
+    }
     if (!membership) {
       // Self-heal orphans from historical non-transactional signups: provision the
       // missing org instead of locking the account out forever.
@@ -301,14 +312,64 @@ router.get('/me', requireV2Auth, async (req, res) => {
       `SELECT id, name, billing_status, account_type FROM v2_organizations WHERE id = ?`,
       [req.v2Auth.orgId]
     );
+    const workspaces = await db.all(
+      `SELECT o.id, o.name, o.account_type, o.billing_status, m.role
+       FROM v2_org_members m
+       JOIN v2_organizations o ON o.id = m.org_id
+       WHERE m.user_id = ? AND o.suspended_at IS NULL
+       ORDER BY CASE WHEN o.account_type = 'team' THEN 0 ELSE 1 END, o.name ASC`,
+      [req.v2Auth.userId]
+    );
     res.json({
       user,
       org,
       role: req.v2Auth.role,
+      workspaces,
       isSuperadmin: isSuperadminEmail(req.v2Auth.email),
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.post('/switch-workspace', requireV2Auth, async (req, res) => {
+  try {
+    const { orgId } = req.body || {};
+    if (!orgId || typeof orgId !== 'string') {
+      return res.status(400).json({ error: 'orgId required' });
+    }
+    const membership = await db.get(
+      `SELECT m.org_id, m.role, o.name, o.account_type, o.suspended_at
+       FROM v2_org_members m
+       JOIN v2_organizations o ON o.id = m.org_id
+       WHERE m.user_id = ? AND m.org_id = ?`,
+      [req.v2Auth.userId, orgId]
+    );
+    if (!membership) {
+      return res.status(403).json({ error: 'You are not a member of that workspace' });
+    }
+    if (membership.suspended_at) {
+      return res.status(403).json({ error: 'Workspace suspended', code: 'org_suspended' });
+    }
+    const token = signSession({
+      sub: req.v2Auth.userId,
+      email: req.v2Auth.email,
+      orgId: membership.org_id,
+      role: membership.role,
+    });
+    res.json({
+      token,
+      orgId: membership.org_id,
+      role: membership.role,
+      org: {
+        id: membership.org_id,
+        name: membership.name,
+        account_type: membership.account_type,
+      },
+    });
+  } catch (e) {
+    console.error('[v2/auth/switch-workspace]', e);
+    res.status(500).json({ error: 'Failed to switch workspace' });
   }
 });
 

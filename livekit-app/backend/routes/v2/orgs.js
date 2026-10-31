@@ -116,25 +116,115 @@ router.post('/members', requireV2Auth, async (req, res) => {
         code: 'plan_no_team_workspace',
       });
     }
-    const { email, role } = req.body || {};
+    const { email, role, name } = req.body || {};
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
       return res.status(400).json({ error: 'Valid email required' });
     }
-    const user = await db.get(`SELECT id FROM v2_users WHERE email = ?`, [email.trim().toLowerCase()]);
-    if (!user) {
-      return res.status(404).json({ error: 'No user with that email — they must sign up first' });
+    const normEmail = email.trim().toLowerCase();
+    const r = role === 'admin' ? 'admin' : 'member';
+    if (r === 'admin' && req.v2Auth.role !== 'owner') {
+      return res.status(403).json({ error: 'Only owners can add admins' });
     }
+
+    const org = await db.get(`SELECT id, name FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    const inviterLabel = inviter?.display_name || inviter?.email || 'Your team admin';
+    const orgName = org?.name || 'your team workspace';
+
+    let user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE LOWER(email) = LOWER(?)`, [normEmail]);
+    let createdNewAccount = false;
+
+    if (!user) {
+      // Pre-provision the invited member directly into this team workspace so they don't hit a "must sign up first" wall
+      const crypto = require('crypto');
+      const { hashPassword } = require('../../lib/authAdapter');
+      const newUserId = db.uuid();
+      const tempPass = crypto.randomBytes(24).toString('base64url');
+      const passHash = await hashPassword(tempPass);
+      const displayName = (name && String(name).trim().slice(0, 80)) || normEmail.split('@')[0];
+
+      await db.run(
+        `INSERT INTO v2_users (id, email, password_hash, display_name) VALUES (?,?,?,?)`,
+        [newUserId, normEmail, passHash, displayName]
+      );
+      user = { id: newUserId, email: normEmail, display_name: displayName };
+      createdNewAccount = true;
+    }
+
     const exists = await db.get(`SELECT 1 AS x FROM v2_org_members WHERE org_id = ? AND user_id = ?`, [
       req.v2Auth.orgId,
       user.id,
     ]);
     if (exists) return res.status(409).json({ error: 'Already a member' });
-    const r = role === 'admin' ? 'admin' : 'member';
-    if (r === 'admin' && req.v2Auth.role !== 'owner') {
-      return res.status(403).json({ error: 'Only owners can add admins' });
+
+    await db.run(`INSERT INTO v2_org_members (org_id, user_id, role) VALUES (?,?,?)`, [
+      req.v2Auth.orgId,
+      user.id,
+      r,
+    ]);
+
+    // Send an onboarding / workspace-added email
+    try {
+      const crypto = require('crypto');
+      const { sendEmail } = require('../../lib/mailer');
+      const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
+      const base = publicFrontendBaseUrl(req) || 'https://lalia.cloud';
+
+      if (createdNewAccount) {
+        const token = crypto.randomBytes(32).toString('hex');
+        const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+        const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+        await db.run(
+          `INSERT INTO v2_password_resets (id, user_id, token_hash, expires_at) VALUES (?,?,?,?)`,
+          [db.uuid(), user.id, tokenHash, expiresAt]
+        );
+        const setupUrl = `${base}/v2/reset-password?token=${token}`;
+        await sendEmail({
+          to: normEmail,
+          subject: `${inviterLabel} invited you to join ${orgName} on Lalia`,
+          text: `${inviterLabel} added you to ${orgName} on Lalia (${r}).\n\nSet your password to sign in and start hosting or calling:\n${setupUrl}`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #0f172a;">
+              <p style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #2563eb; margin: 0 0 8px;">Team Invitation</p>
+              <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 12px;">Join ${orgName} on Lalia</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 20px;">
+                ${inviterLabel} added you to <strong>${orgName}</strong> as a <strong>${r}</strong>. Click below to set your password and access your team workspace, meetings, and contacts.
+              </p>
+              <p style="margin: 0 0 20px;">
+                <a href="${setupUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 22px; border-radius: 10px;">
+                  Set Password &amp; Join Workspace
+                </a>
+              </p>
+            </div>
+          `,
+        });
+      } else {
+        const appUrl = `${base}/v2/app`;
+        await sendEmail({
+          to: normEmail,
+          subject: `You've been added to ${orgName} on Lalia`,
+          text: `${inviterLabel} added you to ${orgName} on Lalia (${r}).\n\nOpen your workspace:\n${appUrl}`,
+          html: `
+            <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #0f172a;">
+              <p style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #2563eb; margin: 0 0 8px;">Team Workspace</p>
+              <h2 style="font-size: 20px; font-weight: 600; margin: 0 0 12px;">You’re now a member of ${orgName}</h2>
+              <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 20px;">
+                ${inviterLabel} added your account to <strong>${orgName}</strong> (${r}). You can switch between workspaces anytime in the Lalia sidebar.
+              </p>
+              <p style="margin: 0 0 20px;">
+                <a href="${appUrl}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: 600; font-size: 14px; padding: 12px 22px; border-radius: 10px;">
+                  Open Lalia Workspace
+                </a>
+              </p>
+            </div>
+          `,
+        });
+      }
+    } catch (mailErr) {
+      console.warn('[orgs/members POST] invite email warning:', mailErr.message);
     }
-    await db.run(`INSERT INTO v2_org_members (org_id, user_id, role) VALUES (?,?,?)`, [req.v2Auth.orgId, user.id, r]);
-    res.status(201).json({ ok: true });
+
+    res.status(201).json({ ok: true, createdNewAccount });
   } catch (e) {
     console.error('[orgs/members POST]', e);
     res.status(500).json({ error: 'Failed' });

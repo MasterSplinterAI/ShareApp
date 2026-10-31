@@ -71,6 +71,7 @@ export const v2Auth = {
   signup: (body) => apiV2.post('/auth/signup', body).then((r) => r.data),
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
   me: () => apiV2.get('/auth/me').then((r) => r.data),
+  switchWorkspace: (orgId) => apiV2.post('/auth/switch-workspace', { orgId }).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/auth/me', body).then((r) => r.data),
   changePassword: (body) => apiV2.post('/auth/change-password', body).then((r) => r.data),
   communicationPrefs: () => apiV2.get('/auth/communication-prefs').then((r) => r.data),

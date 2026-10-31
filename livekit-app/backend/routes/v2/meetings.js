@@ -355,20 +355,24 @@ router.get('/', requireV2Auth, async (req, res) => {
   try {
     const archivedOnly = req.query.archived === '1' || req.query.status === 'archived';
     const statusClause = archivedOnly ? `m.status = 'archived'` : `m.status != 'archived'`;
-    const rows = await db.all(
-      `SELECT m.id, m.livekit_room_name, m.title, m.status, m.scheduled_start, m.scheduled_end, m.host_code,
+    const rawRows = await db.all(
+      `SELECT m.id, m.host_user_id, m.livekit_room_name, m.title, m.status, m.scheduled_start, m.scheduled_end, m.host_code,
               m.created_at, m.started_at, m.ended_at, m.host_present, m.metadata,
+              u.display_name AS host_display_name, u.email AS host_email,
               IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
               IFNULL(p.require_invite_token, 0) AS require_invite_token,
               IFNULL(p.store_transcripts, 0) AS store_transcripts,
               (SELECT COUNT(*) FROM v2_meeting_transcript_lines t WHERE t.meeting_id = m.id) AS transcript_line_count
        FROM v2_meetings m
        LEFT JOIN v2_meeting_policies p ON p.meeting_id = m.id
+       LEFT JOIN v2_users u ON u.id = m.host_user_id
        WHERE m.org_id = ? AND ${statusClause} ORDER BY datetime(m.created_at) DESC LIMIT 100`,
       [req.v2Auth.orgId]
     );
 
-    for (const m of rows) {
+    const isOrgAdmin = ['owner', 'admin'].includes(req.v2Auth.role);
+    const rows = [];
+    for (const m of rawRows) {
       let isDirectCall = false;
       if (m.metadata) {
         try {
@@ -379,6 +383,15 @@ router.get('/', requireV2Auth, async (req, res) => {
         }
       }
       m.is_direct_call = isDirectCall;
+      m.is_mine = m.host_user_id === req.v2Auth.userId;
+      m.host_name = m.host_display_name || (m.host_email ? m.host_email.split('@')[0] : null);
+
+      // 1-on-1 direct calls are always private to the host who placed them
+      if (isDirectCall && !m.is_mine) continue;
+      // Regular team members see their own hosted meetings; owners/admins can view all team meetings
+      if (!isOrgAdmin && !m.is_mine) continue;
+
+      rows.push(m);
     }
 
     // Enrich live/scheduled meetings with room presence (best-effort)

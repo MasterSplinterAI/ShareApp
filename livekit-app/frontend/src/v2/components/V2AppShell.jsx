@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { v2Announcements, v2Auth } from '../../services/apiV2';
 import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
 import LaliaSupportLauncher from './LaliaSupportLauncher';
@@ -131,6 +132,21 @@ export default function V2AppShell({ me, onLogout }) {
   const sidebarTitle = workspaceLabel({ org: me?.org, user: me?.user });
   const sidebarSubtitle = workspaceKindLabel(me?.org);
   const planStatus = me?.org?.billing_status || null;
+  const workspaces = Array.isArray(me?.workspaces) ? me.workspaces : [];
+
+  const handleSwitchWorkspace = async (targetOrgId) => {
+    if (!targetOrgId || targetOrgId === me?.org?.id) return;
+    try {
+      const res = await v2Auth.switchWorkspace(targetOrgId);
+      if (res?.token) {
+        localStorage.setItem('v2_token', res.token);
+        toast.success(`Switched to ${res.org?.name || 'workspace'}`);
+        window.location.href = '/v2/app';
+      }
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not switch workspace');
+    }
+  };
 
   const sidebarBody = (
     <>
@@ -139,19 +155,60 @@ export default function V2AppShell({ me, onLogout }) {
           <LayoutDashboard className="h-5 w-5 text-primary" />
           Lalia
         </Link>
-        <div className="mt-2.5 flex flex-col gap-0.5">
-          <p className="min-w-0 truncate text-xs font-medium text-foreground" title={sidebarTitle}>
-            {sidebarTitle}
-          </p>
-          <div className="flex items-center gap-2">
-            <p className="text-[10px] text-muted-foreground">{sidebarSubtitle}</p>
-            {planStatus && (
-              <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-medium capitalize">
-                {planStatus}
-              </Badge>
-            )}
+        {workspaces.length > 1 ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="mt-2.5 flex w-full items-center justify-between gap-2 rounded-lg border border-border/70 bg-muted/30 px-2.5 py-1.5 text-left transition-colors hover:bg-muted/60"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-medium text-foreground">{sidebarTitle}</p>
+                  <p className="text-[10px] text-muted-foreground">{sidebarSubtitle}</p>
+                </div>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                Switch workspace
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {workspaces.map((ws) => {
+                const active = ws.id === me?.org?.id;
+                return (
+                  <DropdownMenuItem
+                    key={ws.id}
+                    onClick={() => handleSwitchWorkspace(ws.id)}
+                    className="flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium">{ws.name}</p>
+                      <p className="text-[10px] capitalize text-muted-foreground">
+                        {ws.account_type === 'team' ? 'Team workspace' : 'Personal'} · {ws.role}
+                      </p>
+                    </div>
+                    {active && <Check className="h-3.5 w-3.5 shrink-0 text-primary" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="mt-2.5 flex flex-col gap-0.5">
+            <p className="min-w-0 truncate text-xs font-medium text-foreground" title={sidebarTitle}>
+              {sidebarTitle}
+            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-[10px] text-muted-foreground">{sidebarSubtitle}</p>
+              {planStatus && (
+                <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px] font-medium capitalize">
+                  {planStatus}
+                </Badge>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
       <UpgradeSidebarCard offer={offer} checkoutLoading={checkoutLoading} onCheckout={startCheckout} />

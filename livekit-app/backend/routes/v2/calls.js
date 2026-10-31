@@ -155,25 +155,74 @@ function sendDirectCallEmailAsync({ toEmail, calleeName, callerName, joinUrl }) 
 
 router.get('/contacts', requireV2Auth, async (req, res) => {
   try {
-    const rows = await db.all(
-      `SELECT c.id, c.contact_email, c.contact_name, c.preferred_language, c.created_at,
-              u.id AS matched_user_id, u.display_name AS matched_display_name
-       FROM v2_contacts c
-       LEFT JOIN v2_users u ON LOWER(u.email) = LOWER(c.contact_email)
-       WHERE c.owner_user_id = ?
-       ORDER BY c.contact_name ASC, c.contact_email ASC`,
-      [req.v2Auth.userId]
-    );
+    const [savedRows, teamRows] = await Promise.all([
+      db.all(
+        `SELECT c.id, c.contact_email, c.contact_name, c.preferred_language, c.created_at,
+                u.id AS matched_user_id, u.display_name AS matched_display_name
+         FROM v2_contacts c
+         LEFT JOIN v2_users u ON LOWER(u.email) = LOWER(c.contact_email)
+         WHERE c.owner_user_id = ?
+         ORDER BY c.contact_name ASC, c.contact_email ASC`,
+        [req.v2Auth.userId]
+      ),
+      db.all(
+        `SELECT u.id, u.email, u.display_name, m.role, m.created_at
+         FROM v2_org_members m
+         JOIN v2_users u ON u.id = m.user_id
+         WHERE m.org_id = ? AND m.user_id != ?
+         ORDER BY u.display_name ASC, u.email ASC`,
+        [req.v2Auth.orgId, req.v2Auth.userId]
+      ),
+    ]);
 
-    const contacts = rows.map((r) => ({
-      id: r.id,
-      email: r.contact_email,
-      name: r.contact_name || r.matched_display_name || r.contact_email.split('@')[0],
-      preferredLanguage: r.preferred_language || null,
-      contactUserId: r.matched_user_id || null,
-      hasAccount: Boolean(r.matched_user_id),
-      createdAt: r.created_at,
-    }));
+    const teamByEmail = new Map(
+      teamRows.map((t) => [String(t.email || '').toLowerCase(), t])
+    );
+    const seenEmails = new Set();
+    const contacts = [];
+
+    // 1. Include all workspace teammates first (Team Directory)
+    for (const tm of teamRows) {
+      const emailKey = String(tm.email || '').toLowerCase();
+      if (!emailKey) continue;
+      const savedMatch = savedRows.find(
+        (s) => String(s.contact_email || '').toLowerCase() === emailKey
+      );
+      seenEmails.add(emailKey);
+      contacts.push({
+        id: savedMatch ? savedMatch.id : `teammate:${tm.id}`,
+        email: tm.email,
+        name:
+          savedMatch?.contact_name ||
+          tm.display_name ||
+          tm.email.split('@')[0],
+        preferredLanguage: savedMatch?.preferred_language || null,
+        contactUserId: tm.id,
+        hasAccount: true,
+        isTeammate: true,
+        teamRole: tm.role,
+        isSavedContact: Boolean(savedMatch),
+        createdAt: savedMatch?.created_at || tm.created_at,
+      });
+    }
+
+    // 2. Append the user's personal/external saved contacts
+    for (const r of savedRows) {
+      const emailKey = String(r.contact_email || '').toLowerCase();
+      if (seenEmails.has(emailKey)) continue;
+      seenEmails.add(emailKey);
+      contacts.push({
+        id: r.id,
+        email: r.contact_email,
+        name: r.contact_name || r.matched_display_name || r.contact_email.split('@')[0],
+        preferredLanguage: r.preferred_language || null,
+        contactUserId: r.matched_user_id || null,
+        hasAccount: Boolean(r.matched_user_id),
+        isTeammate: teamByEmail.has(emailKey),
+        isSavedContact: true,
+        createdAt: r.created_at,
+      });
+    }
 
     res.json({ contacts });
   } catch (e) {
@@ -228,7 +277,26 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       req.body || {};
 
     let targetContact = null;
-    if (contactId) {
+    if (contactId && String(contactId).startsWith('teammate:')) {
+      const tmUserId = String(contactId).slice('teammate:'.length);
+      const tmUser = await db.get(
+        `SELECT u.id, u.email, u.display_name
+         FROM v2_org_members m
+         JOIN v2_users u ON u.id = m.user_id
+         WHERE m.org_id = ? AND u.id = ?`,
+        [req.v2Auth.orgId, tmUserId]
+      );
+      if (!tmUser) return res.status(404).json({ error: 'Teammate not found' });
+      targetContact = {
+        id: `teammate:${tmUser.id}`,
+        email: tmUser.email,
+        name: tmUser.display_name || tmUser.email.split('@')[0],
+        preferredLanguage: null,
+        contactUserId: tmUser.id,
+        hasAccount: true,
+        isTeammate: true,
+      };
+    } else if (contactId) {
       const row = await db.get(
         `SELECT * FROM v2_contacts WHERE id = ? AND owner_user_id = ?`,
         [String(contactId), req.v2Auth.userId]

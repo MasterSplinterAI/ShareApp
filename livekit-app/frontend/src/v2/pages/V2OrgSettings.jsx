@@ -474,8 +474,12 @@ export default function V2OrgSettings() {
     e.preventDefault();
     if (!email.trim()) return;
     try {
-      await v2Orgs.addMember({ email: email.trim(), role: memberRole });
-      toast.success('Member added');
+      const res = await v2Orgs.addMember({ email: email.trim(), role: memberRole });
+      toast.success(
+        res?.createdNewAccount
+          ? 'Member invited — sent password setup email'
+          : 'Member added to workspace'
+      );
       setEmail('');
       load();
     } catch (err) {

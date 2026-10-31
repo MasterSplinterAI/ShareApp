@@ -383,10 +383,15 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                       {initial}
                     </div>
                     <div className="min-w-0">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
                         <p className="truncate text-sm font-medium text-foreground">
                           {contact.name}
                         </p>
+                        {contact.isTeammate && (
+                          <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium text-primary">
+                            Teammate
+                          </Badge>
+                        )}
                         {contact.hasAccount ? (
                           <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                             <UserCheck className="h-2.5 w-2.5" />
@@ -413,15 +418,17 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                       <Phone className="h-3.5 w-3.5" />
                       {isCalling ? 'Calling…' : 'Call'}
                     </Button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveContact(contact.id, contact.name)}
-                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-                      aria-label={`Remove ${contact.name}`}
-                      title={`Remove ${contact.name}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {contact.isSavedContact !== false && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveContact(contact.id, contact.name)}
+                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                        aria-label={`Remove ${contact.name}`}
+                        title={`Remove ${contact.name}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );
