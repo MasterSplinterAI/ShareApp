@@ -55,7 +55,7 @@ import {
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
-import { DatetimePicker } from '../../components/ui/datetime-picker';
+import { DatetimePicker, getNextRoundedScheduleDate } from '../../components/ui/datetime-picker';
 
 const RECENT_CAP = 10;
 
@@ -297,13 +297,14 @@ export default function V2MeetingsList() {
   }, [archivedView]);
 
   useEffect(() => {
-    if (searchParams.get('create') === '1') {
-      setNewTitle('Instant meeting');
+    if (searchParams.get('create') === '1' || searchParams.get('schedule') === '1') {
+      setNewTitle('Scheduled meeting');
       setHostRequired(false);
-      setScheduledDate(undefined);
+      setScheduledDate(getNextRoundedScheduleDate());
       setShowCreate(true);
       const next = new URLSearchParams(searchParams);
       next.delete('create');
+      next.delete('schedule');
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
@@ -364,9 +365,9 @@ export default function V2MeetingsList() {
   };
 
   const openCreateModal = () => {
-    setNewTitle('Instant meeting');
+    setNewTitle('Scheduled meeting');
     setHostRequired(false);
-    setScheduledDate(undefined);
+    setScheduledDate(getNextRoundedScheduleDate());
     setShowCreate(true);
   };
 
@@ -695,20 +696,26 @@ export default function V2MeetingsList() {
       )}
 
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] w-[calc(100vw-1.5rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">
           <DialogHeader>
-            <DialogTitle>New meeting</DialogTitle>
-            <DialogDescription>Optional schedule and host gate. Transcripts save on the server by default.</DialogDescription>
+            <DialogTitle>{scheduledDate ? 'Schedule a meeting' : 'New instant meeting'}</DialogTitle>
+            <DialogDescription>
+              Pick a date and time to schedule, or clear the date to create an instant room.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="mtitle">Title</Label>
+          <div className="space-y-4 py-1">
+            <div className="space-y-1.5">
+              <Label htmlFor="mtitle">Meeting title</Label>
               <Input id="mtitle" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
             </div>
-            <div className="space-y-2">
-              <Label>Start time (optional)</Label>
-              <p className="text-xs text-muted-foreground">Leave unset for an instant meeting.</p>
-              <DatetimePicker value={scheduledDate} onChange={setScheduledDate} placeholder="Instant — add date & time to schedule" />
+            <div className="space-y-1.5">
+              <Label>When</Label>
+              <DatetimePicker
+                value={scheduledDate}
+                onChange={setScheduledDate}
+                defaultExpanded={Boolean(scheduledDate)}
+                placeholder="Instant — tap to schedule date & time"
+              />
             </div>
             <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
               <div className="space-y-0.5">
@@ -725,7 +732,7 @@ export default function V2MeetingsList() {
               Cancel
             </Button>
             <Button type="button" onClick={createNow} disabled={creating}>
-              {creating ? 'Creating…' : 'Create'}
+              {creating ? 'Creating…' : scheduledDate ? 'Schedule meeting' : 'Create meeting'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,38 +2,42 @@ import * as React from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { DayPicker } from 'react-day-picker';
 import { cn } from '../../lib/utils';
-import 'react-day-picker/dist/style.css';
 
 function Calendar({ className, classNames, showOutsideDays = true, ...props }) {
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
-      className={cn('p-3', className)}
+      className={cn('p-3 w-full', className)}
       classNames={{
-        months: 'flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0',
-        month: 'space-y-4',
-        caption: 'flex justify-center pt-1 relative items-center',
-        caption_label: 'text-sm font-medium text-foreground',
-        nav: 'space-x-1 flex items-center',
+        months: 'flex flex-col w-full',
+        month: 'space-y-3 w-full',
+        caption: 'flex justify-between pt-0.5 relative items-center px-1',
+        caption_label: 'text-sm font-semibold text-foreground',
+        nav: 'flex items-center gap-1',
         nav_button: cn(
-          'h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 inline-flex items-center justify-center rounded-md border border-transparent hover:bg-accent'
+          'h-8 w-8 bg-transparent p-0 text-muted-foreground hover:text-foreground inline-flex items-center justify-center rounded-lg border border-border/60 hover:bg-muted transition-colors'
         ),
-        nav_button_previous: 'absolute left-1',
-        nav_button_next: 'absolute right-1',
-        table: 'w-full border-collapse space-y-1',
-        head_row: 'flex',
-        head_cell: 'text-muted-foreground rounded-md w-9 font-normal text-[0.8rem]',
-        row: 'flex w-full mt-2',
-        cell: 'h-9 w-9 text-center text-sm p-0 relative focus-within:relative focus-within:z-20',
+        nav_button_previous: '',
+        nav_button_next: '',
+        table: 'w-full border-collapse',
+        head_row: 'grid grid-cols-7 w-full mb-1',
+        head_cell:
+          'text-muted-foreground rounded-md font-medium text-[0.75rem] text-center py-1',
+        row: 'grid grid-cols-7 w-full mt-1 gap-y-1',
+        cell: 'text-center text-sm p-0 relative flex items-center justify-center focus-within:relative focus-within:z-20',
         day: cn(
-          'h-9 w-9 p-0 font-normal aria-selected:opacity-100 rounded-md hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center'
+          'h-9 w-9 sm:h-9 sm:w-9 p-0 font-normal rounded-lg transition-colors hover:bg-muted hover:text-foreground inline-flex items-center justify-center text-sm cursor-pointer select-none'
         ),
         day_selected:
-          'bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground',
-        day_today: 'bg-accent text-accent-foreground',
-        day_outside: 'day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground',
-        day_disabled: 'text-muted-foreground opacity-50',
-        day_range_middle: 'aria-selected:bg-accent aria-selected:text-accent-foreground',
+          '!bg-primary !text-primary-foreground font-semibold shadow-sm hover:!bg-primary/90 focus:!bg-primary',
+        day_today:
+          'ring-2 ring-primary/70 bg-primary/10 font-semibold text-primary',
+        day_outside:
+          'day-outside text-muted-foreground/45 aria-selected:bg-primary/80 aria-selected:text-primary-foreground',
+        day_disabled:
+          'text-muted-foreground/30 opacity-40 pointer-events-none cursor-not-allowed',
+        day_range_middle:
+          'aria-selected:bg-accent aria-selected:text-accent-foreground',
         day_hidden: 'invisible',
         ...classNames,
       }}
