@@ -1,40 +1,53 @@
+import { useMemo } from 'react';
 import VideoGrid from '../VideoGrid';
-import { DemoAgentFilmstrip } from './DemoAgentFilmstrip';
 
 const PHASE_HINTS = {
-  opening: 'Meeting starting — you can speak anytime',
-  your_turn: 'Your turn — speak now',
-  you_speaking: 'Listening…',
+  opening: 'Joining room — teammates are saying hello…',
+  your_turn: 'Your turn — speak naturally into your mic',
+  you_speaking: 'Listening & translating live…',
   processing: 'Translating your line…',
   agent_speaking: 'Teammate responding…',
-  complete: 'Demo complete',
+  complete: 'Demo complete — start a free meeting anytime',
 };
 
-export function DemoMeetingStage({ agents, activeSpeaker, turnPhase, scenarioTitle }) {
-  const hint = PHASE_HINTS[turnPhase] || '';
+export function DemoMeetingStage({ agents = [], activeSpeaker, turnPhase, scenarioTitle }) {
+  const hint =
+    turnPhase === 'agent_speaking' && activeSpeaker
+      ? `${activeSpeaker} is speaking…`
+      : PHASE_HINTS[turnPhase] || '';
+  const micActive = turnPhase === 'your_turn' || turnPhase === 'you_speaking';
+
+  const demoParticipants = useMemo(
+    () =>
+      agents.map((agent) => ({
+        ...agent,
+        isSpeaking: activeSpeaker === agent.name,
+        isThinking: turnPhase === 'processing',
+      })),
+    [agents, activeSpeaker, turnPhase]
+  );
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-muted/15">
-      {/* Mobile: compact phase line only. Desktop: fake window chrome + hint */}
-      <div className="shrink-0 border-b border-border/60 bg-muted/40 px-3 py-1.5 sm:px-4 sm:py-2">
-        <div className="hidden items-center gap-2 sm:flex">
-          <span className="h-2.5 w-2.5 rounded-full bg-red-400/90" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/90" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/90" />
-          <span className="ml-1 truncate text-xs font-medium text-muted-foreground">
-            Lalia · {scenarioTitle || 'Translation lab'}
+    <div className="relative flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      {hint && (
+        <div className="pointer-events-none absolute left-1/2 top-2.5 z-20 flex max-w-[92%] -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-black/70 px-3 py-1 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+          <span
+            className={`h-2 w-2 shrink-0 rounded-full ${
+              micActive
+                ? 'animate-pulse bg-emerald-400'
+                : turnPhase === 'agent_speaking'
+                  ? 'animate-pulse bg-sky-400'
+                  : 'bg-amber-400'
+            }`}
+          />
+          <span className="truncate">
+            {scenarioTitle ? `${scenarioTitle} · ` : ''}
+            {hint}
           </span>
         </div>
-        {hint && (
-          <p className="text-center text-xs text-muted-foreground sm:mt-1.5">{hint}</p>
-        )}
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative min-h-0 flex-1 overflow-hidden">
-          <VideoGrid />
-        </div>
-        <DemoAgentFilmstrip agents={agents} activeSpeaker={activeSpeaker} />
+      )}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <VideoGrid demoParticipants={demoParticipants} />
       </div>
     </div>
   );

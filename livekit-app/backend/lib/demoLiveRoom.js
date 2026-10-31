@@ -39,6 +39,12 @@ function checkIpBudget(ip) {
   return { ok: true, hourKey };
 }
 
+function sanitizeLangCode(code, fallback = 'en') {
+  if (!code || typeof code !== 'string') return fallback;
+  const base = code.trim().split('-')[0].toLowerCase();
+  return /^[a-z]{2,3}$/.test(base) ? base : fallback;
+}
+
 function incrementIpBudget(hourKey) {
   ipHourCounts.set(hourKey, (ipHourCounts.get(hourKey) || 0) + 1);
 }
@@ -91,11 +97,19 @@ async function createDemoLiveRoomSession({
   const identity = displayName;
   const agents = getAgentsForScenario(scenarioId, mergedLangs);
 
+  const backendBaseUrl = (
+    process.env.BACKEND_BASE_URL ||
+    process.env.PUBLIC_FRONTEND_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    'https://lalia.cloud'
+  ).replace(/\/$/, '');
+
   await createDemoLiveKitRoom(roomName, {
     demoSessionId,
     scenarioId,
     readLang: read,
     speakLang: speak,
+    backendBaseUrl,
     agentNames: agents.map((a) => a.name),
     agentLangs: Object.fromEntries(agents.map((a) => [a.name, a.speakLang])),
   });
@@ -148,11 +162,15 @@ async function createDemoLiveRoomSession({
   };
 }
 
-async function orchestrateDemoRoom({ demoSessionId, userText, trigger }) {
+async function orchestrateDemoRoom({ demoSessionId, userText, trigger, readLang }) {
   pruneSessions();
   const session = sessions.get(demoSessionId);
   if (!session) {
     return { ok: false, error: 'invalid_session', message: 'Demo session expired. Refresh to start again.' };
+  }
+
+  if (readLang && typeof readLang === 'string') {
+    session.readLang = sanitizeLangCode(readLang, session.readLang);
   }
 
   const isOpening = trigger === 'opening' || (!session.openingDone && !userText);

@@ -7,7 +7,10 @@
     "faq": "Perguntas frequentes",
     "openWorkspace": "Abrir espaço de trabalho",
     "signIn": "Entrar",
-    "startFree": "Começar grátis"
+    "startFree": "Começar grátis",
+    "platform": "Plataforma",
+    "openMenu": "Abrir menu",
+    "menuTitle": "Menu"
   },
   "hero": {
     "eyebrow": "Tradução ao vivo · legendas · IA",
@@ -16,7 +19,9 @@
     "startFree": "Começar grátis",
     "seePricing": "Ver preços",
     "seeDemo": "Ver demo ao vivo",
-    "footnote": "Sem cartão de crédito · Convidados entram com um clique · Funciona no seu navegador"
+    "footnote": "Sem cartão de crédito · Convidados entram com um clique · Funciona no seu navegador",
+    "tryTranslation": "Testar tradução",
+    "seeHowItWorks": "See how it works"
   },
   "footer": {
     "tagline": "Legendas ao vivo, tradução em tempo real e relatórios de reunião com IA—para equipes globais.",
@@ -31,7 +36,9 @@
     "privacy": "Privacidade",
     "contactSales": "Falar com vendas",
     "copyright": "© {{year}} Lalia. Todos os direitos reservados.",
-    "support": "Suporte:"
+    "support": "Suporte:",
+    "tryDemo": "Testar tradução",
+    "platform": "Plataforma"
   },
   "meetingPreview": {
     "windowTitle": "Lalia — Lançamento Q3 · Legendas ao vivo ATIVAS",
@@ -154,8 +161,27 @@
           "overages": "Excedente (opcional): reunião 2¢/min · tradução 5¢/min",
           "hardCap": "Limite rígido em 2× os minutos incluídos · espaço de trabalho de equipe"
         }
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "blurb": "Higher volume, custom terms, and hands-on onboarding.",
+        "priceLabel": "Custom",
+        "ctaDemo": "Book a demo",
+        "ctaSales": "Talk to sales",
+        "features": {
+          "volume": "Custom participant-minute & translation pools",
+          "security": "Security review & DPA support",
+          "support": "Dedicated success contact",
+          "terms": "Invoicing & custom contract terms"
+        }
       }
-    }
+    },
+    "periodAnnual": "/ org / mo · billed yearly",
+    "monthly": "Monthly",
+    "annual": "Annual",
+    "annualSave": "save 20%",
+    "billingToggleLabel": "Billing period",
+    "billedAnnually": "{{total}} billed once per year"
   },
   "faq": {
     "eyebrow": "Perguntas frequentes",
@@ -185,6 +211,26 @@
       "planLimit": {
         "q": "O que acontece quando atingo o limite do meu plano?",
         "a": "Planos Free param em 60 minutos por medidor por mês. No Starter/Pro, uso além do pool incluído pode ser cobrado automaticamente apenas se você optar (reunião 3¢/2¢ por min; tradução 6¢/5¢). Em 2× os minutos incluídos para reunião ou tradução, novas reuniões e entradas são bloqueadas até o próximo período ou upgrade. Veja Preços para os valores incluídos."
+      },
+      "languages": {
+        "q": "Which languages are supported?",
+        "a": "Lalia supports 30+ meeting languages for live captions and cross-language translation—including English, Spanish, French, German, Portuguese, Japanese, Chinese, Arabic, Hebrew, and more. Hosts and guests each pick their own language lane in the meeting."
+      },
+      "participants": {
+        "q": "How many participants can join a meeting?",
+        "a": "Lalia is built for team calls and client meetings with multiple speakers. Typical group sizes work well on all plans. Need a large event or webinar-style session? Contact us—we'll help you size the right plan."
+      },
+      "recording": {
+        "q": "Are meetings recorded?",
+        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+      },
+      "aiTraining": {
+        "q": "Do you use my meetings to train AI models?",
+        "a": "No—we do not use your meeting content to train Lalia's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
+      },
+      "stack": {
+        "q": "How is Lalia different from transcription-only tools?",
+        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
       }
     }
   },
@@ -310,6 +356,69 @@
     "joinMeeting": "Entrar na reunião"
   },
   "trust": {
-    "poweredBy": "Vídeo em tempo real no navegador"
+    "poweredBy": "Vídeo em tempo real no navegador",
+    "ariaLabel": "Security and trust",
+    "items": {
+      "encrypted": "Encrypted in transit",
+      "transcripts": "Transcripts off by default",
+      "retention": "You control retention"
+    }
+  },
+  "cta": {
+    "title": "Comece sua primeira reunião multilíngue",
+    "subtitle": "Plano gratuito · Sem cartão de crédito · Convidados entram por link",
+    "startFree": "Começar grátis",
+    "contactSales": "Falar com vendas"
+  },
+  "platform": {
+    "eyebrow": "One platform",
+    "title": "Fewer tools. One meeting stack.",
+    "subtitle": "Stop stitching together interpreters, caption add-ons, and note-taking bots. Lalia is built for live multilingual conversation first—and keeps a record when you want one.",
+    "pillars": {
+      "live": {
+        "title": "Live in the meeting",
+        "description": "Real-time speech-to-text, live captions, and cross-language translation—each participant in their own language lane."
+      },
+      "after": {
+        "title": "After the meeting",
+        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+      },
+      "insights": {
+        "title": "Without the busywork",
+        "description": "AI summaries, action items, and decisions—grounded only in what was actually said. Gaps flagged, never invented."
+      }
+    },
+    "replaces": {
+      "title": "Replaces a patchwork of:",
+      "items": {
+        "interpreter": "Scheduled interpreters for recurring syncs",
+        "captions": "Caption-only add-ons",
+        "transcription": "Separate transcription bots",
+        "notes": "Manual meeting notes & follow-up docs"
+      }
+    }
+  },
+  "audience": {
+    "eyebrow": "Who it's for",
+    "title": "Individuals and teams, same platform",
+    "subtitle": "Start free on your own—or bring your whole organization when you're ready.",
+    "personal": {
+      "title": "For you",
+      "description": "Consultants, freelancers, remote workers, and anyone who meets across languages.",
+      "items": {
+        "free": "Free tier with 60 participant-minutes/month",
+        "guest": "One-click guest links—no download",
+        "solo": "Personal workspace—no company required"
+      }
+    },
+    "team": {
+      "title": "For your team",
+      "description": "Sales, customer success, HR, ops, and global product teams who need shared access.",
+      "items": {
+        "workspace": "Team workspace with roles & invites",
+        "usage": "Usage dashboard & centralized billing",
+        "enterprise": "Enterprise volume, DPA support & custom terms"
+      }
+    }
   }
 }

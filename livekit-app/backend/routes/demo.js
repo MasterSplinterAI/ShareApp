@@ -123,7 +123,7 @@ router.post('/orchestrate', async (req, res) => {
     if (!verifyOrchestratorSecret(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const { demoSessionId, userText, trigger } = req.body || {};
+    const { demoSessionId, userText, trigger, readLang } = req.body || {};
     if (!demoSessionId) {
       return res.status(400).json({ error: 'demoSessionId required' });
     }
@@ -131,6 +131,7 @@ router.post('/orchestrate', async (req, res) => {
       demoSessionId: String(demoSessionId),
       userText: typeof userText === 'string' ? userText.slice(0, 600) : '',
       trigger,
+      readLang: typeof readLang === 'string' ? readLang.slice(0, 16) : undefined,
     });
     if (!result.ok) {
       const status = result.error === 'turn_limit' || result.error === 'rate_limit_ip' ? 429 : 400;

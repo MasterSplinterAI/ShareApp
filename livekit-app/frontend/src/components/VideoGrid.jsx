@@ -43,7 +43,7 @@ function isAgentParticipant(p) {
   );
 }
 
-function VideoGrid() {
+function VideoGrid({ demoParticipants = [] }) {
   const participants = useParticipants();
   const room = useRoomContext();
   const { localParticipant } = useLocalParticipant();
@@ -77,7 +77,34 @@ function VideoGrid() {
     { onlySubscribed: false }
   );
 
-  const humanParticipants = participants.filter((p) => !isAgentParticipant(p));
+  const virtualDemoParticipants = useMemo(
+    () =>
+      (demoParticipants || []).map((agent) => ({
+        identity: `demo-ai:${agent.id || agent.name}`,
+        name: agent.name,
+        isDemoVirtual: true,
+        speakLang: String(agent.speakLang || agent.nativeLang || 'en')
+          .split('-')[0]
+          .toUpperCase(),
+        gradient: agent.gradient || 'from-slate-700 via-slate-800 to-slate-900',
+        isSpeaking: Boolean(agent.isSpeaking),
+        isThinking: Boolean(agent.isThinking),
+        connectionQuality: ConnectionQuality.Excellent,
+      })),
+    [demoParticipants]
+  );
+
+  const humanParticipants = useMemo(
+    () => [
+      ...participants.filter((p) => !isAgentParticipant(p)),
+      ...virtualDemoParticipants,
+    ],
+    [participants, virtualDemoParticipants]
+  );
+
+  const activeDemoVirtual = virtualDemoParticipants.find((p) => p.isSpeaking);
+  const effectiveActiveSpeakerIdentity =
+    activeDemoVirtual?.identity || activeSpeakerIdentity;
 
   const screenShareTracks = tracks.filter(t => t.source === Track.Source.ScreenShare);
   const activeScreenShare = screenShareTracks.length > 0 ? screenShareTracks[0] : null;
@@ -110,8 +137,8 @@ function VideoGrid() {
     return [...humanParticipants].sort((a, b) => {
       if (a.identity === pinnedIdentity) return -1;
       if (b.identity === pinnedIdentity) return 1;
-      if (a.identity === activeSpeakerIdentity) return -1;
-      if (b.identity === activeSpeakerIdentity) return 1;
+      if (a.identity === effectiveActiveSpeakerIdentity) return -1;
+      if (b.identity === effectiveActiveSpeakerIdentity) return 1;
       if (a.identity === localId) return -1;
       if (b.identity === localId) return 1;
       const ai = recentOrder.indexOf(a.identity);
@@ -121,7 +148,7 @@ function VideoGrid() {
       if (bi !== -1) return 1;
       return 0;
     });
-  }, [humanParticipants, activeScreenShare, localParticipant?.identity, pinnedIdentity, activeSpeakerIdentity]);
+  }, [humanParticipants, activeScreenShare, localParticipant?.identity, pinnedIdentity, effectiveActiveSpeakerIdentity]);
 
   const totalPages = Math.max(1, Math.ceil(orderedParticipants.length / DESKTOP_PAGE_SIZE));
   const safePageIndex = Math.min(pageIndex, totalPages - 1);
@@ -237,7 +264,7 @@ function VideoGrid() {
   if (isMobile && humanParticipants.length >= 3) {
     const speaker =
       humanParticipants.find((p) => p.identity === pinnedIdentity) ||
-      humanParticipants.find((p) => p.identity === activeSpeakerIdentity) ||
+      humanParticipants.find((p) => p.identity === effectiveActiveSpeakerIdentity) ||
       humanParticipants.find((p) => p.identity !== localParticipant?.identity) ||
       humanParticipants[0];
     const others = humanParticipants.filter((p) => p.identity !== speaker.identity);
@@ -346,6 +373,81 @@ function VideoGrid() {
 
 function ParticipantTile({ participant, tracks, compact = false, spanClass = '' }) {
   const { localParticipant, cameraTrack: localCameraPub, microphoneTrack: localMicPub, isCameraEnabled: localCameraEnabled } = useLocalParticipant();
+
+  if (participant.isDemoVirtual) {
+    const initial = (participant.name || '?').charAt(0).toUpperCase();
+    const isSpeaking = Boolean(participant.isSpeaking);
+    return (
+      <div
+        className={`relative min-h-0 overflow-hidden rounded-lg border meeting-participant-tile ${
+          compact ? 'w-24 sm:w-44 flex-shrink-0 aspect-video' : `w-full h-full ${spanClass}`
+        } ${isSpeaking ? 'ring-2 ring-emerald-500 border-emerald-400/80' : ''}`}
+      >
+        <div className="relative flex h-full w-full items-center justify-center bg-slate-900">
+          <div className={`absolute inset-0 bg-gradient-to-br opacity-35 ${participant.gradient || 'from-violet-500 to-slate-800'}`} />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.08),transparent_70%)]" />
+          <div className="relative flex flex-col items-center justify-center gap-2">
+            <div
+              className={`relative flex items-center justify-center rounded-full border border-white/20 bg-white/10 font-semibold text-white shadow-inner backdrop-blur-sm transition-transform duration-200 ${
+                compact ? 'h-9 w-9 text-sm' : 'h-16 w-16 text-xl sm:h-20 sm:w-20 sm:text-2xl'
+              } ${isSpeaking ? 'scale-105 ring-4 ring-emerald-400/35' : ''}`}
+            >
+              {initial}
+            </div>
+            {!compact && isSpeaking && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/20 px-2.5 py-0.5 text-[11px] font-medium text-emerald-300 ring-1 ring-emerald-400/40">
+                <span className="h-1.5 w-1.5 animate-ping rounded-full bg-emerald-400" />
+                Speaking ({participant.speakLang})
+              </span>
+            )}
+            {!compact && !isSpeaking && participant.isThinking && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/80">
+                Translating…
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Top-left language badge */}
+        <div className={`absolute flex items-center gap-1 ${compact ? 'left-1 top-1' : 'left-2 top-2'}`}>
+          <span className="rounded bg-primary/90 px-1.5 py-0.5 text-[10px] font-bold tracking-wide text-primary-foreground shadow-sm">
+            {participant.speakLang}
+          </span>
+        </div>
+
+        {/* Top-right speaking + signal bars */}
+        <div className={`absolute flex items-center gap-1 ${compact ? 'right-1 top-1' : 'right-2 top-2'}`}>
+          {isSpeaking && (
+            <div
+              className={`animate-pulse rounded-full bg-emerald-400 shadow-[0_0_0_2px_rgb(0_0_0/0.25)] ${compact ? 'h-2 w-2' : 'h-3 w-3'}`}
+              title="Speaking"
+              aria-label="Speaking"
+            />
+          )}
+          {!compact && (
+            <div className="inline-flex items-end gap-[2px] rounded-md bg-black/55 px-1.5 py-1">
+              <span className="h-1.5 w-[3px] rounded-[1px] bg-emerald-400" />
+              <span className="h-2.5 w-[3px] rounded-[1px] bg-emerald-400" />
+              <span className="h-3.5 w-[3px] rounded-[1px] bg-emerald-400" />
+            </div>
+          )}
+        </div>
+
+        {/* Bottom name bar */}
+        <div className={`pointer-events-none absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent ${compact ? 'px-1.5 pb-1 pt-3' : 'px-3 pb-2 pt-6'}`}>
+          <span className={`block truncate font-medium text-white [text-shadow:0_1px_2px_rgb(0_0_0/0.6)] ${compact ? 'text-[10px]' : 'text-xs sm:text-sm'}`} data-no-translate="true">
+            {participant.name}
+            {!compact && (
+              <span className="ml-1.5 text-[11px] font-normal text-white/75">
+                · {participant.speakLang}
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+    );
+  }
+
   const isLocal = participant.identity === localParticipant?.identity;
 
   // For local participant: use useLocalParticipant's cameraTrack directly (useTracks can lag)

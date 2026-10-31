@@ -841,6 +841,7 @@ class TranscriptionOnlyAgent:
                         ),
                         on_phase=publish_demo_phase,
                         agent_names=set(str(n) for n in agent_names),
+                        backend_url=str(meta.get("backendBaseUrl") or "").strip() or None,
                     )
                     logger.info(
                         "🎭 Demo room orchestrator active session=%s readLang=%s",
@@ -986,11 +987,38 @@ class TranscriptionOnlyAgent:
                 old_voice = self.voice_enabled.get(participant_id)
                 lang_changed = old_lang is not None and old_lang != lang
 
+                demo_reader_changed = False
+                if self._demo_room:
+                    read_lang_raw = (
+                        msg.get("readLanguage")
+                        or msg.get("read_language")
+                        or lang
+                    )
+                    read_lang = str(read_lang_raw).split("-")[0].lower()
+                    reader_id = "demo:reader"
+                    old_reader_lang = self.participant_languages.get(reader_id)
+                    old_reader_voice = self.voice_enabled.get(reader_id)
+                    if old_reader_lang != read_lang or old_reader_voice != new_voice:
+                        demo_reader_changed = True
+                        self._demo_read_lang = read_lang
+                        self.participant_languages[reader_id] = read_lang
+                        self.translation_enabled[reader_id] = True
+                        self.voice_enabled[reader_id] = new_voice
+                        if self.demo_orchestrator is not None:
+                            self.demo_orchestrator.read_lang = read_lang
+                            self.demo_orchestrator.voice_enabled = new_voice
+                        logger.info(
+                            "🎭 Demo reader updated: readLang=%s voiceEnabled=%s",
+                            read_lang,
+                            new_voice,
+                        )
+
                 if (
                     old_lang == lang
                     and old_enabled == new_enabled
                     and old_voice == new_voice
                     and not lang_changed
+                    and not demo_reader_changed
                 ):
                     return
 

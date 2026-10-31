@@ -72,7 +72,7 @@ export function MarketingNav() {
             {t('nav.faq')}
           </a>
           <Link to="/demo" className={navLinkClass}>
-            {t('hero.ctaSecondary')}
+            {t('hero.tryTranslation')}
           </Link>
           <LanguageSwitcher />
           {authButtons}
@@ -106,7 +106,7 @@ export function MarketingNav() {
                   className="text-base font-medium text-primary"
                   onClick={() => setOpen(false)}
                 >
-                  {t('hero.ctaSecondary')}
+                  {t('hero.tryTranslation')}
                 </Link>
                 <div className="mt-4 flex flex-col gap-2 border-t border-border pt-6">
                   {hasToken ? (

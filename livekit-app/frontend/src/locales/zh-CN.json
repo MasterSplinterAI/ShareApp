@@ -7,7 +7,10 @@
     "faq": "常见问题",
     "openWorkspace": "打开工作区",
     "signIn": "登录",
-    "startFree": "免费开始"
+    "startFree": "免费开始",
+    "platform": "平台",
+    "openMenu": "打开菜单",
+    "menuTitle": "菜单"
   },
   "hero": {
     "eyebrow": "实时翻译 · 字幕 · AI 洞察",
@@ -16,7 +19,9 @@
     "startFree": "免费开始",
     "seePricing": "查看定价",
     "seeDemo": "查看实时演示",
-    "footnote": "无需信用卡 · 访客一键加入 · 在浏览器中运行"
+    "footnote": "无需信用卡 · 访客一键加入 · 在浏览器中运行",
+    "tryTranslation": "试用实时翻译",
+    "seeHowItWorks": "See how it works"
   },
   "footer": {
     "tagline": "实时字幕、即时翻译和 AI 会议报告——为全球团队打造。",
@@ -31,7 +36,9 @@
     "privacy": "隐私",
     "contactSales": "联系销售",
     "copyright": "© {{year}} Lalia. 保留所有权利。",
-    "support": "支持："
+    "support": "支持：",
+    "tryDemo": "试用实时翻译",
+    "platform": "平台"
   },
   "meetingPreview": {
     "windowTitle": "Lalia — Q3 上线 · 实时字幕已开启",
@@ -154,8 +161,27 @@
           "overages": "超量（可选）：会议 2¢/分钟 · 翻译 5¢/分钟",
           "hardCap": "达到 2× 包含分钟数时硬性停止 · 团队工作区"
         }
+      },
+      "enterprise": {
+        "name": "Enterprise",
+        "blurb": "Higher volume, custom terms, and hands-on onboarding.",
+        "priceLabel": "Custom",
+        "ctaDemo": "Book a demo",
+        "ctaSales": "Talk to sales",
+        "features": {
+          "volume": "Custom participant-minute & translation pools",
+          "security": "Security review & DPA support",
+          "support": "Dedicated success contact",
+          "terms": "Invoicing & custom contract terms"
+        }
       }
-    }
+    },
+    "periodAnnual": "/ org / mo · billed yearly",
+    "monthly": "Monthly",
+    "annual": "Annual",
+    "annualSave": "save 20%",
+    "billingToggleLabel": "Billing period",
+    "billedAnnually": "{{total}} billed once per year"
   },
   "faq": {
     "eyebrow": "常见问题",
@@ -185,6 +211,26 @@
       "planLimit": {
         "q": "达到方案上限会怎样？",
         "a": "Free 方案在每个计量器每月 60 分钟处停止。Starter/Pro 超出包含额度后，仅在您选择加入时自动计费（会议 3¢/2¢/分钟；翻译 6¢/5¢/分钟）。会议或翻译达到 2× 包含分钟数时，将阻止新会议和加入，直至下一周期或升级。包含额度见定价页。"
+      },
+      "languages": {
+        "q": "Which languages are supported?",
+        "a": "Lalia supports 30+ meeting languages for live captions and cross-language translation—including English, Spanish, French, German, Portuguese, Japanese, Chinese, Arabic, Hebrew, and more. Hosts and guests each pick their own language lane in the meeting."
+      },
+      "participants": {
+        "q": "How many participants can join a meeting?",
+        "a": "Lalia is built for team calls and client meetings with multiple speakers. Typical group sizes work well on all plans. Need a large event or webinar-style session? Contact us—we'll help you size the right plan."
+      },
+      "recording": {
+        "q": "Are meetings recorded?",
+        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+      },
+      "aiTraining": {
+        "q": "Do you use my meetings to train AI models?",
+        "a": "No—we do not use your meeting content to train Lalia's own models. Audio is processed in real time to deliver captions and translation. Speech and translation providers act as our subprocessors under contract solely to operate the service, not to sell your data."
+      },
+      "stack": {
+        "q": "How is Lalia different from transcription-only tools?",
+        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
       }
     }
   },
@@ -310,6 +356,69 @@
     "joinMeeting": "加入会议"
   },
   "trust": {
-    "poweredBy": "浏览器中的实时视频"
+    "poweredBy": "浏览器中的实时视频",
+    "ariaLabel": "Security and trust",
+    "items": {
+      "encrypted": "Encrypted in transit",
+      "transcripts": "Transcripts off by default",
+      "retention": "You control retention"
+    }
+  },
+  "cta": {
+    "title": "开启您的第一场多语言会议",
+    "subtitle": "免费方案 · 无需信用卡 · 访客一键链接加入",
+    "startFree": "免费开始",
+    "contactSales": "联系销售"
+  },
+  "platform": {
+    "eyebrow": "One platform",
+    "title": "Fewer tools. One meeting stack.",
+    "subtitle": "Stop stitching together interpreters, caption add-ons, and note-taking bots. Lalia is built for live multilingual conversation first—and keeps a record when you want one.",
+    "pillars": {
+      "live": {
+        "title": "Live in the meeting",
+        "description": "Real-time speech-to-text, live captions, and cross-language translation—each participant in their own language lane."
+      },
+      "after": {
+        "title": "After the meeting",
+        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+      },
+      "insights": {
+        "title": "Without the busywork",
+        "description": "AI summaries, action items, and decisions—grounded only in what was actually said. Gaps flagged, never invented."
+      }
+    },
+    "replaces": {
+      "title": "Replaces a patchwork of:",
+      "items": {
+        "interpreter": "Scheduled interpreters for recurring syncs",
+        "captions": "Caption-only add-ons",
+        "transcription": "Separate transcription bots",
+        "notes": "Manual meeting notes & follow-up docs"
+      }
+    }
+  },
+  "audience": {
+    "eyebrow": "Who it's for",
+    "title": "Individuals and teams, same platform",
+    "subtitle": "Start free on your own—or bring your whole organization when you're ready.",
+    "personal": {
+      "title": "For you",
+      "description": "Consultants, freelancers, remote workers, and anyone who meets across languages.",
+      "items": {
+        "free": "Free tier with 60 participant-minutes/month",
+        "guest": "One-click guest links—no download",
+        "solo": "Personal workspace—no company required"
+      }
+    },
+    "team": {
+      "title": "For your team",
+      "description": "Sales, customer success, HR, ops, and global product teams who need shared access.",
+      "items": {
+        "workspace": "Team workspace with roles & invites",
+        "usage": "Usage dashboard & centralized billing",
+        "enterprise": "Enterprise volume, DPA support & custom terms"
+      }
+    }
   }
 }

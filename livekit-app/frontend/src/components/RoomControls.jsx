@@ -28,6 +28,7 @@ function RoomControls({
         participantName: participantName,
         participantIdentity: lp?.identity,
         language: spokenLanguage || selectedLanguage,
+        readLanguage: selectedLanguage,
         enabled: translationEnabled,
         voiceEnabled: Boolean(translationEnabled && voiceTranslationEnabled),
         ttsVoiceId: ttsVoiceId || undefined,

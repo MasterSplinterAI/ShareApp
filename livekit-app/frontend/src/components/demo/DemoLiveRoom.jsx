@@ -6,10 +6,12 @@ import {
   StartAudio,
   usePreviewTracks,
 } from '@livekit/components-react';
-import { ArrowRight, Loader2 } from 'lucide-react';
+import { ArrowRight, Loader2, Users, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MeetingProvider, useMeeting } from '../../context/MeetingContext';
 import TranscriptionPanel from '../TranscriptionPanel';
+import ChatPanel from '../ChatPanel';
+import ParticipantsPanel from '../ParticipantsPanel';
 import RoomControls from '../RoomControls';
 import CustomControlBar from '../CustomControlBar';
 import TtsAudioController from '../TtsAudioController';
@@ -20,7 +22,7 @@ import { DemoMeetingStage } from './DemoMeetingStage';
 import { useDemoPhase } from '../../hooks/useDemoPhase';
 import { demoLabService } from '../../services/demoLab';
 import { Button } from '../ui/button';
-import { ROOM_PUBLISH_DEFAULTS } from '../../lib/roomPublishDefaults';
+import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../../lib/roomPublishDefaults';
 import { useRoomControlLabels } from '../../hooks/useRoomControlLabels';
 
 const LANGUAGE_LABELS = {
@@ -60,40 +62,27 @@ function DemoLiveRoomInner({
   const { turnPhase, activeSpeaker } = useDemoPhase();
   const displayName = userDisplayName || 'Guest';
   const t = useRoomControlLabels(selectedLanguage);
-
-  const micLive = turnPhase === 'your_turn' || turnPhase === 'you_speaking';
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   return (
-    <div className="meeting-surface meeting-room-root relative flex h-[100dvh] flex-col overflow-hidden bg-background">
+    <div translate="no" className="meeting-surface meeting-room-root notranslate relative flex h-[100dvh] w-full flex-col overflow-hidden bg-background">
       <TtsAudioController
         selectedLanguage={selectedLanguage}
         translationEnabled={translationEnabled}
         voiceTranslationEnabled={voiceTranslationEnabled}
       />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="shrink-0 border-b border-border/60 bg-gradient-to-r from-primary/5 via-background to-emerald-500/5 px-3 py-2 text-center text-xs text-muted-foreground">
-          <span className="font-medium text-foreground">{scenarioTitle || 'Translation lab'}</span>
-          <span className="mx-2 text-border">·</span>
-          {maxTurns} turns max · Deepgram STT
-          {micLive ? (
-            <span className="ml-2 font-medium text-emerald-600">· Mic live</span>
-          ) : turnPhase === 'complete' ? (
-            <span className="ml-2 font-medium text-primary">· Demo complete</span>
-          ) : null}
+      <div className="meeting-stage-layout flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+          <DemoMeetingStage
+            agents={agents}
+            activeSpeaker={activeSpeaker}
+            turnPhase={turnPhase}
+            scenarioTitle={scenarioTitle}
+          />
         </div>
-
-        {/* Column on mobile (video + in-flow caption sheet), row on desktop — matches MeetingRoom */}
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
-          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
-            <DemoMeetingStage
-              agents={agents}
-              activeSpeaker={activeSpeaker}
-              turnPhase={turnPhase}
-              scenarioTitle={scenarioTitle}
-            />
-          </div>
-          <TranscriptionPanel />
-        </div>
+        <TranscriptionPanel />
+        <ChatPanel />
+        <ParticipantsPanel />
       </div>
 
       <RoomControls
@@ -114,12 +103,47 @@ function DemoLiveRoomInner({
         setVoiceTranslationEnabled={setVoiceTranslationEnabled}
         ttsVoiceId={ttsVoiceId}
         setTtsVoiceId={setTtsVoiceId}
-        isHost={false}
-        onShareClick={() => toast('Guest links and invites are available on full Lalia meetings.')}
+        isHost={true}
+        onShareClick={() => setShowInviteModal(true)}
         intentionalLeaveRef={intentionalLeaveRef}
         onNavigateAfterLeave={onLeave}
         initialVideoEffectId={prejoinChoices?.videoEffectId ?? null}
       />
+
+      {showInviteModal && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="relative w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+            <button
+              type="button"
+              onClick={() => setShowInviteModal(false)}
+              className="absolute right-4 top-4 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Users className="h-5 w-5" />
+            </div>
+            <h3 className="mt-4 text-lg font-semibold text-foreground">
+              Invite real participants with a free workspace
+            </h3>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+              In this interactive demo you’re meeting with AI teammates so you can test live speech-to-text, captions, and voice translation right away. Create a free account to host real meetings and invite anyone with a 1-click link.
+            </p>
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Button variant="outline" onClick={() => setShowInviteModal(false)}>
+                Keep testing demo
+              </Button>
+              <Button asChild onClick={() => demoLabService.track(demoSessionId, 'signup_click')}>
+                <Link to="/v2/signup">
+                  Start free — 60 min/mo
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {turnPhase === 'complete' && (
         <div className="flex shrink-0 items-center justify-center gap-3 border-t border-border/60 bg-card/90 px-4 py-3">
@@ -176,7 +200,10 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
         ? { deviceId: previewMedia.audioDeviceId || undefined }
         : false,
       video: previewMedia.videoEnabled
-        ? { deviceId: previewMedia.videoDeviceId || undefined }
+        ? {
+            deviceId: previewMedia.videoDeviceId || undefined,
+            resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+          }
         : false,
     }),
     [previewMedia]
@@ -320,9 +347,10 @@ export function DemoJoinFlow({ config, maxTurns, onLeave }) {
           audioCaptureDefaults: prejoinChoices.audioDeviceId
             ? { deviceId: prejoinChoices.audioDeviceId }
             : undefined,
-          videoCaptureDefaults: prejoinChoices.videoDeviceId
-            ? { deviceId: prejoinChoices.videoDeviceId }
-            : undefined,
+          videoCaptureDefaults: {
+            resolution: DEFAULT_VIDEO_CAPTURE_RESOLUTION,
+            ...(prejoinChoices.videoDeviceId ? { deviceId: prejoinChoices.videoDeviceId } : {}),
+          },
           publishDefaults: ROOM_PUBLISH_DEFAULTS,
         }}
         className="h-[100dvh]"

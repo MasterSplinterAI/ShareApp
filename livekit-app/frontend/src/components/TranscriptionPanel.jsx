@@ -635,13 +635,21 @@ function TranscriptionPanel() {
             }
 
             // Late-arriving translation for an already-finalized bubble.
-            const finalIdx = prev.findIndex(
-              (m) =>
-                !m.isPartial &&
-                m.speaker === speakerId &&
-                m.originalText === originalText &&
-                Math.abs(m.timestamp - messageTimestamp) < 3000,
-            );
+            let finalIdx = -1;
+            if (transcriptionId != null) {
+              finalIdx = prev.findIndex(
+                (m) => !m.isPartial && m.transcriptionId === transcriptionId,
+              );
+            }
+            if (finalIdx < 0) {
+              finalIdx = prev.findIndex(
+                (m) =>
+                  !m.isPartial &&
+                  m.speaker === speakerId &&
+                  m.originalText === originalText &&
+                  Math.abs(m.timestamp - messageTimestamp) < 5000,
+              );
+            }
             if (finalIdx >= 0) {
               const existing = prev[finalIdx];
               const newTranslations = { ...existing.translations };
@@ -1040,9 +1048,12 @@ const CaptionRow = memo(function CaptionRow({
     item.isPartial,
     item.sourceLanguage,
   );
+  const localIdentity = room?.localParticipant?.identity;
   const showTeammateCaptions =
     demoTeammates.length > 0 &&
-    (item.speaker === participantName || item.speakerLabel === participantName);
+    (item.speaker === participantName ||
+      item.speakerLabel === participantName ||
+      (localIdentity && item.speaker === localIdentity));
   const teammateCaptions = showTeammateCaptions
     ? getTeammateCaptions(item.translations, demoTeammates, item.sourceLanguage)
     : EMPTY_ARRAY;

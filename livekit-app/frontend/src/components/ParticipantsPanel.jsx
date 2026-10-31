@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { useParticipants } from '@livekit/components-react';
-import { Users, MicOff, Mic, UserX, VolumeX, Loader2 } from 'lucide-react';
+import { Users, MicOff, Mic, UserX, VolumeX, Loader2, ArrowRight } from 'lucide-react';
 import { Track } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { useMeeting } from '../context/MeetingContext';
@@ -121,13 +122,15 @@ function ParticipantRow({ participant, meetingId, isLocalHost, localIdentity }) 
 }
 
 export default function ParticipantsPanel({ meetingId }) {
-  const { sidePanelOpen, sidePanelTab, isHost, mobileSheetSize, desktopPanelWide } = useMeeting();
+  const { sidePanelOpen, sidePanelTab, isHost, mobileSheetSize, desktopPanelWide, demoTeammates } = useMeeting();
   const participants = useParticipants();
   const [muteAllBusy, setMuteAllBusy] = useState(false);
 
   const isVisible = sidePanelOpen && sidePanelTab === 'participants';
 
   const humanParticipants = participants.filter((p) => !isAgentParticipant(p.identity));
+  const aiTeammates = Array.isArray(demoTeammates) ? demoTeammates : [];
+  const totalParticipantCount = humanParticipants.length + aiTeammates.length;
 
   const localIdentity = participants.find((p) => p.isLocal)?.identity;
 
@@ -161,7 +164,7 @@ export default function ParticipantsPanel({ meetingId }) {
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Users className="w-4 h-4" />
           <span className="text-sm font-medium">
-            {humanParticipants.length} participant{humanParticipants.length !== 1 ? 's' : ''}
+            {totalParticipantCount} participant{totalParticipantCount !== 1 ? 's' : ''}
           </span>
         </div>
       </div>
@@ -172,14 +175,53 @@ export default function ParticipantsPanel({ meetingId }) {
             key={p.identity}
             participant={p}
             meetingId={meetingId}
-            isLocalHost={isHost}
+            isLocalHost={isHost && aiTeammates.length === 0}
             localIdentity={localIdentity}
           />
         ))}
-        {humanParticipants.length === 0 && (
+        {aiTeammates.map((agent) => {
+          const langCode = String(agent.lang || 'en').split('-')[0].toUpperCase();
+          return (
+            <div
+              key={`demo-ai-${agent.name}`}
+              className="flex items-center justify-between rounded-lg px-3 py-2 transition-colors hover:bg-muted/40"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                  {(agent.name?.[0] || '?').toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-foreground">
+                    {agent.name}
+                    <span className="ml-1.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      AI · {langCode}
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <Mic className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-label="Active" />
+            </div>
+          );
+        })}
+        {totalParticipantCount === 0 && (
           <p className="py-8 text-center text-sm text-muted-foreground">No participants yet</p>
         )}
       </div>
+
+      {aiTeammates.length > 0 && (
+        <div className="border-t border-border/60 bg-muted/20 p-3">
+          <p className="text-xs text-muted-foreground">
+            Adding real participants is disabled in the interactive demo. Start a free workspace to invite anyone with a link.
+          </p>
+          <Link
+            to="/v2/signup"
+            className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+          >
+            Start free meeting
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Link>
+        </div>
+      )}
 
       {isHost && humanParticipants.length > 1 && (
         <div className="border-t border-border px-3 py-2">

@@ -205,6 +205,7 @@ class TtsLane:
         self._queue_lock = asyncio.Lock()
         self._queue_event = asyncio.Event()
         self._worker_task: asyncio.Task | None = None
+        self._speaking = False
         self._closed = False
 
         self._sequence = 0
@@ -286,6 +287,18 @@ class TtsLane:
     def queue_depth(self) -> int:
         return len(self._queue)
 
+    @property
+    def is_busy(self) -> bool:
+        return self._speaking or len(self._queue) > 0
+
+    async def wait_until_idle(self, timeout_sec: float = 12.0) -> None:
+        """Wait until the queue is empty and active synthesis/playback finishes."""
+        deadline = time.monotonic() + max(0.2, timeout_sec)
+        # Brief initial yield so the worker task can pick up a newly enqueued item.
+        await asyncio.sleep(0.05)
+        while self.is_busy and not self._closed and time.monotonic() < deadline:
+            await asyncio.sleep(0.08)
+
     async def _run_worker(self) -> None:
         while not self._closed:
             item = await self._pop_next_item()
@@ -304,6 +317,7 @@ class TtsLane:
             if item.sequence <= self._superseded_up_to_by_speaker.get(item.speaker_id, 0):
                 continue
 
+            self._speaking = True
             await self._emit_tts_event("tts_start", item.speaker_id)
             try:
                 await self._speak_item(item)
@@ -338,6 +352,7 @@ class TtsLane:
                     message=str(exc),
                 )
             finally:
+                self._speaking = False
                 await self._emit_tts_event("tts_end", item.speaker_id)
 
     async def _pop_next_item(self) -> _QueuedSentence | None:

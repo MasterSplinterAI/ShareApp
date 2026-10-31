@@ -18,8 +18,9 @@ GetTtsLaneFn = Callable[[str], Any]
 PhaseFn = Callable[[str, Optional[str]], Awaitable[None]]
 
 
-def _backend_url() -> str:
-    return (os.getenv("BACKEND_BASE_URL") or "http://127.0.0.1:3001").rstrip("/")
+def _backend_url(explicit: Optional[str] = None) -> str:
+    candidate = (explicit or os.getenv("BACKEND_BASE_URL") or "https://lalia.cloud").strip()
+    return candidate.rstrip("/")
 
 
 def _orchestrator_secret() -> str:
@@ -55,6 +56,8 @@ class DemoRoomOrchestrator:
         get_tts_lane: GetTtsLaneFn,
         on_phase: Optional[PhaseFn] = None,
         agent_names: Optional[set[str]] = None,
+        backend_url: Optional[str] = None,
+        voice_enabled: bool = True,
     ) -> None:
         self.demo_session_id = demo_session_id
         self.read_lang = (read_lang or "en").split("-")[0].lower()
@@ -62,6 +65,8 @@ class DemoRoomOrchestrator:
         self.get_tts_lane = get_tts_lane
         self.on_phase = on_phase
         self.agent_names = {n.lower() for n in (agent_names or set())}
+        self.backend_url = backend_url
+        self.voice_enabled = bool(voice_enabled)
         self._busy = False
         self._opening_sent = False
         self._processed_turns: set[str] = set()
@@ -107,13 +112,16 @@ class DemoRoomOrchestrator:
         if trigger != "opening":
             await self._set_phase("processing", None)
 
-        url = f"{_backend_url()}/api/demo/orchestrate"
+        url = f"{_backend_url(self.backend_url)}/api/demo/orchestrate"
         headers = {"Content-Type": "application/json"}
         secret = _orchestrator_secret()
         if secret:
             headers["X-Demo-Orchestrator-Secret"] = secret
 
-        payload = {"demoSessionId": self.demo_session_id}
+        payload = {
+            "demoSessionId": self.demo_session_id,
+            "readLang": self.read_lang,
+        }
         if user_text:
             payload["userText"] = user_text
         if trigger:
@@ -153,6 +161,13 @@ class DemoRoomOrchestrator:
                 continue
 
             await self._set_phase("agent_speaking", speaker)
+            tts_lane = self.get_tts_lane(target_lang) if self.voice_enabled else None
+            if tts_lane is not None and primary:
+                try:
+                    await tts_lane.enqueue_final(speaker_id=speaker, text=primary)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Demo TTS enqueue failed for %s: %s", speaker, exc)
+
             await self._publish_agent_sequence(
                 speaker_id=speaker,
                 original_text=original,
@@ -161,14 +176,15 @@ class DemoRoomOrchestrator:
                 target_lang=target_lang,
             )
 
-            tts_lane = self.get_tts_lane(target_lang)
-            if tts_lane is not None and primary:
+            if tts_lane is not None and primary and hasattr(tts_lane, "wait_until_idle"):
                 try:
-                    await tts_lane.enqueue_final(speaker_id=speaker, text=primary)
-                except Exception as exc:  # noqa: BLE001
-                    logger.warning("Demo TTS enqueue failed for %s: %s", speaker, exc)
-
-            await asyncio.sleep(0.25)
+                    await tts_lane.wait_until_idle(timeout_sec=12.0)
+                except Exception:
+                    pass
+                await asyncio.sleep(0.25)
+            else:
+                words = len(primary.split())
+                await asyncio.sleep(max(1.2, min(2.8, words * 0.16)))
 
         await self._set_phase("your_turn", None)
 
