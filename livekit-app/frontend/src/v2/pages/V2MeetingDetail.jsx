@@ -558,77 +558,96 @@ export default function V2MeetingDetail() {
 
   const transcriptCount = meeting.transcriptLineCount || 0;
 
+  const scrollToGuests = () => {
+    const el = document.getElementById('meeting-guests');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const input = el.querySelector(
+        'input[inputmode="email"], input[type="email"], #guest-emails-' + meeting.id
+      );
+      if (input instanceof HTMLElement) {
+        window.setTimeout(() => input.focus(), 350);
+      }
+    }
+  };
+
   const primaryHostActions = !joinDemoted && (
-    <div className="flex flex-col gap-2.5 sm:flex-row sm:items-stretch">
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button type="button" size="lg" className="h-12 flex-1 gap-2.5 text-base font-semibold shadow-sm">
-            <Video className="h-4 w-4 shrink-0" />
-            Join as host
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <Button
+        type="button"
+        size="lg"
+        className="h-11 w-full gap-2 text-sm font-semibold shadow-sm sm:flex-1"
+        onClick={joinAsHost}
+      >
+        <Video className="h-4 w-4 shrink-0" />
+        Join as host
+      </Button>
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-1">
+        {meeting.joinUrl && (
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
+            onClick={copyGuestUrl}
+          >
+            <Copy className="h-4 w-4 shrink-0 text-primary" />
+            <span className="truncate">Copy guest link</span>
           </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-80">
-          <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
-        </PopoverContent>
-      </Popover>
-      {meeting.joinUrl && (
-        <Button
-          type="button"
-          size="lg"
-          className="h-12 flex-1 gap-2.5 bg-sky-600 text-base font-semibold text-white shadow-sm hover:bg-sky-700"
-          onClick={copyGuestUrl}
-        >
-          <Copy className="h-4 w-4 shrink-0" />
-          Copy guest link
-        </Button>
-      )}
-      {canManageMeeting && (
-        <Button
-          type="button"
-          size="lg"
-          className="h-12 flex-1 gap-2.5 bg-emerald-600 text-base font-semibold text-white shadow-sm hover:bg-emerald-700"
-          onClick={() => {
-            const el = document.getElementById('meeting-guests');
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              const input = el.querySelector('input[inputmode="email"], input[type="email"], #guest-emails-' + meeting.id);
-              if (input instanceof HTMLElement) {
-                window.setTimeout(() => input.focus(), 350);
-              }
-            }
-          }}
-        >
-          <UserPlus className="h-4 w-4 shrink-0" />
-          Invite guests
-        </Button>
-      )}
+        )}
+        {canManageMeeting && (
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
+            onClick={scrollToGuests}
+          >
+            <UserPlus className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <span className="truncate">Invite guests</span>
+          </Button>
+        )}
+      </div>
     </div>
   );
 
-  const secondaryHostActions = (isLive && canEndMeeting) || canManageMeeting ? (
-    <div className="flex flex-wrap items-center justify-end gap-2 border-t border-border/60 pt-3">
+  const headerActionsMenu = ((isLive && canEndMeeting) || canManageMeeting) && (
+    <div className="flex items-center gap-1.5">
       {isLive && canEndMeeting && (
         <Button
           type="button"
           variant="outline"
           size="sm"
-          className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+          className="h-8 gap-1.5 border-destructive/40 px-2.5 text-xs text-destructive hover:bg-destructive/10"
           disabled={ending}
           onClick={() => setEndOpen(true)}
         >
           <PhoneOff className="h-3.5 w-3.5" />
-          {ending ? 'Ending…' : 'End for everyone'}
+          <span className="hidden sm:inline">{ending ? 'Ending…' : 'End for everyone'}</span>
+          <span className="sm:hidden">{ending ? 'Ending…' : 'End'}</span>
         </Button>
       )}
       {canManageMeeting && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button type="button" variant="ghost" size="sm" className="gap-2 text-muted-foreground">
-              <MoreHorizontal className="h-3.5 w-3.5" />
-              More actions
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+              <MoreHorizontal className="h-4 w-4" />
+              <span className="sr-only">More actions</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
+            {hostShareUrl && (
+              <DropdownMenuItem onSelect={copyHostLink}>
+                <Copy className="mr-2 h-4 w-4" />
+                Copy private host link
+              </DropdownMenuItem>
+            )}
+            {joinDemoted && (
+              <DropdownMenuItem onSelect={joinAsHost}>
+                <Video className="mr-2 h-4 w-4" />
+                Reopen room as host
+              </DropdownMenuItem>
+            )}
             {!isArchived && (
               <DropdownMenuItem onSelect={() => setArchiveOpen(true)}>
                 <Archive className="mr-2 h-4 w-4" />
@@ -653,111 +672,81 @@ export default function V2MeetingDetail() {
         </DropdownMenu>
       )}
     </div>
-  ) : null;
-
-  const joinHostButtonDemoted = joinDemoted && (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button type="button" variant="outline" className="gap-2">
-          <Video className="h-4 w-4" />
-          Join as host
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80">
-        <MeetingJoinCard onJoinAsHost={joinAsHost} hostShareUrl={hostShareUrl} onCopyHostLink={copyHostLink} />
-      </PopoverContent>
-    </Popover>
   );
 
   const metricCards = (
-    <div className="grid gap-3 sm:grid-cols-3">
-      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
-        <Users className="mb-2 h-4 w-4 text-muted-foreground" />
-        <div className="text-xl font-semibold text-foreground">{presence.humanCount || 0}</div>
-        <div className="text-xs text-muted-foreground">People live</div>
+    <div className="grid grid-cols-3 gap-2 border-t border-border/60 pt-3.5">
+      <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+        <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold leading-tight text-foreground">{presence.humanCount || 0}</div>
+          <div className="truncate text-[11px] text-muted-foreground">In room</div>
+        </div>
       </div>
-      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
-        <Globe className="mb-2 h-4 w-4 text-muted-foreground" />
-        <div className="text-xl font-semibold text-foreground">Live</div>
-        <div className="text-xs text-muted-foreground">Translation ready</div>
+      <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+        <Globe className="h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold leading-tight text-foreground">Live</div>
+          <div className="truncate text-[11px] text-muted-foreground">Translation</div>
+        </div>
       </div>
-      <div className="rounded-xl border border-border/70 bg-background/70 p-3">
-        <FileText className="mb-2 h-4 w-4 text-muted-foreground" />
-        <div className="text-xl font-semibold text-foreground">{transcriptCount}</div>
-        <div className="text-xs text-muted-foreground">Caption lines</div>
+      <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
+        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold leading-tight text-foreground">{transcriptCount}</div>
+          <div className="truncate text-[11px] text-muted-foreground">Lines saved</div>
+        </div>
       </div>
     </div>
   );
 
+  const showTranscriptExpanded = transcriptOpen || transcriptCount > 0;
+
   const transcriptCard = (
-    <Card className="app-card border-primary/30 bg-gradient-to-br from-primary/5 via-card to-card">
-      <CardHeader className="border-b border-border/60 pb-4">
-        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <Card className="app-card border-primary/25 bg-gradient-to-br from-primary/[0.04] via-card to-card">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Sparkles className="h-5 w-5 text-primary" />
-              AI insights & transcript
+            <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <Sparkles className="h-4 w-4 text-primary sm:h-5 sm:w-5" />
+              AI insights &amp; transcript
+              {transcriptCount > 0 && (
+                <Badge variant="secondary" className="text-xs font-normal">
+                  {transcriptCount} lines
+                </Badge>
+              )}
             </CardTitle>
-            <CardDescription>
-              Meeting summary, action items, exports, and saved caption lines.
+            <CardDescription className="mt-0.5 text-xs sm:text-sm">
+              {transcriptCount > 0
+                ? 'Generate AI summaries, action items, or export the saved bilingual transcript.'
+                : 'Captions and AI summaries will appear here once people speak in the meeting.'}
             </CardDescription>
           </div>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button type="button" size="sm" className="gap-1.5" onClick={() => setTranscriptOpen(true)}>
-              <Sparkles className="h-3.5 w-3.5" />
-              Open insights
-            </Button>
+          {transcriptCount > 0 && (
             <Button
               type="button"
               variant="outline"
               size="sm"
-              className="gap-1.5"
+              className="h-8 gap-1.5 text-xs"
               onClick={() => setTranscriptOpen((v) => !v)}
             >
               <FileText className="h-3.5 w-3.5" />
-              {transcriptOpen ? 'Hide transcript' : 'View transcript'}
+              {showTranscriptExpanded ? 'Hide' : 'Open transcript & AI'}
             </Button>
-          </div>
+          )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-4 pt-4">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-border/60 bg-background/65 p-3">
-            <div className="text-xs text-muted-foreground">Transcript</div>
-            <div className="mt-1 text-lg font-semibold text-foreground">{transcriptCount} lines</div>
-          </div>
-          <div className="rounded-xl border border-border/60 bg-background/65 p-3">
-            <div className="text-xs text-muted-foreground">Insights</div>
-            <div className="mt-1 text-lg font-semibold text-foreground">
-              {policy.store_transcripts ? 'Ready' : 'Off'}
-            </div>
-          </div>
-          <div className="rounded-xl border border-border/60 bg-background/65 p-3">
-            <div className="text-xs text-muted-foreground">Exports</div>
-            <div className="mt-1 text-lg font-semibold text-foreground">TXT / JSON</div>
-          </div>
-        </div>
-        <div className="rounded-xl border border-primary/20 bg-primary/5 p-3">
-          <div className="mb-1 flex items-center gap-2 text-sm font-medium text-foreground">
-            <Sparkles className="h-4 w-4 text-primary" />
-            What you can do here
-          </div>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            Generate an AI report, review the saved captions, or export the transcript after the meeting.
-          </p>
-        </div>
-        {transcriptOpen && (
-          <div className="border-t border-border/60 pt-4">
-            <MeetingTranscriptPanel
-              meetingId={id}
-              lineCount={meeting.transcriptLineCount}
-              storeTranscripts={policy.store_transcripts}
-              onDownloadJson={downloadTranscriptJson}
-              onDownloadTxt={downloadTranscriptTxt}
-            />
-          </div>
-        )}
-      </CardContent>
+      {showTranscriptExpanded && (
+        <CardContent className="border-t border-border/60 pt-4">
+          <MeetingTranscriptPanel
+            meetingId={id}
+            lineCount={meeting.transcriptLineCount}
+            storeTranscripts={policy.store_transcripts}
+            onDownloadJson={downloadTranscriptJson}
+            onDownloadTxt={downloadTranscriptTxt}
+          />
+        </CardContent>
+      )}
     </Card>
   );
 
@@ -805,14 +794,34 @@ export default function V2MeetingDetail() {
     </Accordion>
   );
 
+  const guestsCard = canManageMeeting && (
+    <Card id="meeting-guests" className="app-card scroll-mt-24 border-border/60">
+      <CardHeader className="border-b border-border/60 pb-3.5">
+        <CardTitle className="flex items-center gap-2 text-base sm:text-lg">
+          <UserPlus className="h-4 w-4 text-emerald-600 sm:h-5 sm:w-5" />
+          Guests &amp; RSVPs
+        </CardTitle>
+        <CardDescription className="text-xs sm:text-sm">
+          Invite by email and track who accepted, declined, or still needs to reply.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pt-4">
+        <MeetingEmailInvites meetingId={meeting.id} />
+      </CardContent>
+    </Card>
+  );
+
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <div className="rounded-[1.5rem] border border-border/70 bg-card p-5 shadow-sm sm:p-6">
-        <div className="space-y-5">
-          <div className="space-y-3">
-            <Link to="/v2/app/meetings" className="text-sm font-medium text-primary hover:underline">
-              ← Meetings
-            </Link>
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm sm:p-6">
+        <div className="space-y-4">
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <Link to="/v2/app/meetings" className="text-xs font-medium text-primary hover:underline sm:text-sm">
+                ← Meetings
+              </Link>
+              {headerActionsMenu}
+            </div>
             <div className="min-w-0 space-y-2">
               <EditableTitle
                 value={titleEdit}
@@ -820,41 +829,39 @@ export default function V2MeetingDetail() {
                 onCommit={onTitleBlur}
                 onCancel={() => setTitleEdit(meeting.title || '')}
               />
-              <div className="flex flex-wrap items-center gap-2 text-sm">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs sm:gap-2 sm:text-sm">
                 {ui && (
                   <Badge variant={toneToBadgeVariant(ui.tone)} className="uppercase tracking-wide">
                     {ui.label}
                   </Badge>
                 )}
-                {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
+                {scheduleText && <span className="font-medium text-muted-foreground">{scheduleText}</span>}
                 {canManageMeeting && !joinDemoted && (
                   <button
                     type="button"
                     onClick={openRescheduleModal}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-muted"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-muted/40 px-2 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-muted"
                   >
                     <CalendarClock className="h-3.5 w-3.5 text-primary" />
-                    {scheduleText ? 'Reschedule' : 'Set date & time'}
+                    {scheduleText ? 'Reschedule' : 'Set time'}
                   </button>
                 )}
                 {scheduleText && !joinDemoted && (
                   <button
                     type="button"
                     onClick={downloadHostIcs}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
                     title="Add or update on your calendar (.ics)"
                   >
-                    + Add to calendar (.ics)
+                    + Calendar (.ics)
                   </button>
                 )}
               </div>
-              {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
+              {quietLine && <p className="text-xs text-muted-foreground sm:text-sm">{quietLine}</p>}
             </div>
           </div>
           {primaryHostActions}
-          {joinHostButtonDemoted}
           {metricCards}
-          {secondaryHostActions}
         </div>
       </div>
 
@@ -870,40 +877,22 @@ export default function V2MeetingDetail() {
         </div>
       )}
 
-      {transcriptCard}
-
-      {canManageMeeting && (
-        <Card id="meeting-guests" className="app-card scroll-mt-24 border-border/60">
-          <CardHeader className="border-b border-border/60 pb-4">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <UserPlus className="h-5 w-5 text-emerald-600" />
-              Guests
-            </CardTitle>
-            <CardDescription>
-              Invite by email and track who accepted, declined, or still needs to reply.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <MeetingEmailInvites meetingId={meeting.id} />
-          </CardContent>
-        </Card>
+      {/* Show Guests first when upcoming/empty transcript; show Transcript & AI first once lines are recorded */}
+      {transcriptCount > 0 ? (
+        <>
+          {transcriptCard}
+          {guestsCard}
+        </>
+      ) : (
+        <>
+          {guestsCard}
+          {transcriptCard}
+        </>
       )}
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-        {isLive ? (
-          <MeetingPresenceCard presence={presence} />
-        ) : (
-          <Card className="app-card border-border/60">
-            <CardHeader className="border-b border-border/60 pb-3">
-              <CardTitle className="text-base">Participants</CardTitle>
-              <CardDescription>No one is connected right now.</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-4">
-              <p className="text-sm text-muted-foreground">Participants appear here when the meeting is live.</p>
-            </CardContent>
-          </Card>
-        )}
-        {settingsSections}
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        {isLive && <MeetingPresenceCard presence={presence} />}
+        <div className={isLive ? '' : 'lg:col-span-2'}>{settingsSections}</div>
       </div>
 
       <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
