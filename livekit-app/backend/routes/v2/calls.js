@@ -316,7 +316,7 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       await db.run(
         `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts)
          VALUES (?,?,?,?)`,
-        [newMeetingId, 0, 1, 0]
+        [newMeetingId, 0, 1, 1]
       );
 
       const linkId = db.uuid();
@@ -427,6 +427,69 @@ router.get('/calls/incoming', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/calls/incoming GET]', e);
     res.status(500).json({ error: 'Failed to check incoming calls' });
+  }
+});
+
+router.get('/calls/history', requireV2Auth, async (req, res) => {
+  try {
+    const user = await db.get(`SELECT id, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    if (!user) return res.json({ calls: [] });
+
+    const nowIso = new Date().toISOString();
+    // Mark any expired ringing calls involving this user as missed
+    await db.run(
+      `UPDATE v2_direct_calls
+       SET status = 'missed', updated_at = ?
+       WHERE status = 'ringing'
+         AND expires_at <= ?
+         AND (caller_user_id = ? OR callee_user_id = ? OR LOWER(callee_email) = LOWER(?))`,
+      [nowIso, nowIso, user.id, user.id, user.email]
+    );
+
+    const rows = await db.all(
+      `SELECT dc.id, dc.caller_user_id, dc.caller_name, dc.caller_email,
+              dc.callee_user_id, dc.callee_name, dc.callee_email,
+              dc.meeting_id, dc.room_name, dc.join_url, dc.status,
+              dc.created_at, dc.updated_at, dc.expires_at,
+              m.title AS meeting_title,
+              (SELECT COUNT(*) FROM v2_meeting_transcript_lines t WHERE t.meeting_id = dc.meeting_id) AS transcript_line_count,
+              (SELECT COUNT(*) FROM v2_meeting_transcript_reports r WHERE r.meeting_id = dc.meeting_id) AS report_count
+       FROM v2_direct_calls dc
+       LEFT JOIN v2_meetings m ON m.id = dc.meeting_id
+       WHERE dc.caller_user_id = ?
+          OR dc.callee_user_id = ?
+          OR LOWER(dc.callee_email) = LOWER(?)
+       ORDER BY dc.created_at DESC
+       LIMIT 30`,
+      [user.id, user.id, user.email]
+    );
+
+    const calls = rows.map((r) => {
+      const isOutgoing = r.caller_user_id === user.id;
+      const counterpartName = isOutgoing
+        ? r.callee_name || r.callee_email?.split('@')[0] || 'Contact'
+        : r.caller_name || r.caller_email?.split('@')[0] || 'Caller';
+      const counterpartEmail = isOutgoing ? r.callee_email : r.caller_email;
+      return {
+        id: r.id,
+        direction: isOutgoing ? 'outgoing' : 'incoming',
+        status: r.status,
+        counterpartName,
+        counterpartEmail,
+        meetingId: r.meeting_id,
+        roomName: r.room_name,
+        meetingTitle: r.meeting_title || `Call with ${counterpartName}`,
+        transcriptLineCount: Number(r.transcript_line_count || 0),
+        reportCount: Number(r.report_count || 0),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      };
+    });
+
+    res.json({ calls });
+  } catch (e) {
+    console.error('[v2/calls/history GET]', e);
+    res.status(500).json({ error: 'Failed to load call history' });
   }
 });
 

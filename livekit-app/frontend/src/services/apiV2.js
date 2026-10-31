@@ -245,6 +245,7 @@ export const v2Contacts = {
 export const v2Calls = {
   start: (body) => apiV2.post('/calls/start', body).then((r) => r.data),
   incoming: () => apiV2.get('/calls/incoming').then((r) => r.data),
+  history: () => apiV2.get('/calls/history').then((r) => r.data),
   status: (id) => apiV2.get(`/calls/${encodeURIComponent(id)}/status`).then((r) => r.data),
   respond: (id, action) =>
     apiV2.post(`/calls/${encodeURIComponent(id)}/respond`, { action }).then((r) => r.data),

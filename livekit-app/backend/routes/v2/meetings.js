@@ -42,11 +42,43 @@ function transcriptDedupeKey(meetingId, transcriptionId, language, originalText)
   return `${meetingId}|${transcriptionId || 'na'}|${language || 'en'}|${h}`;
 }
 
+async function isDirectCallParticipant(meetingId, auth) {
+  if (!meetingId || !auth?.userId) return false;
+  const user = await db.get(`SELECT id, email FROM v2_users WHERE id = ?`, [auth.userId]);
+  if (!user) return false;
+  const dc = await db.get(
+    `SELECT id FROM v2_direct_calls
+     WHERE meeting_id = ?
+       AND (caller_user_id = ? OR callee_user_id = ? OR LOWER(callee_email) = LOWER(?))
+     LIMIT 1`,
+    [meetingId, user.id, user.id, user.email || '']
+  );
+  return Boolean(dc);
+}
+
 async function assertMeetingAccess(row, auth) {
   if (!row) return false;
   if (row.host_user_id === auth.userId) return true;
-  if (['owner', 'admin'].includes(auth.role)) return true;
+  if (row.org_id === auth.orgId && ['owner', 'admin'].includes(auth.role)) return true;
+  if (await isDirectCallParticipant(row.id, auth)) return true;
   return false;
+}
+
+async function loadMeetingForAccess(meetingId, auth, withPolicies = false) {
+  const sql = withPolicies
+    ? `SELECT m.*,
+         IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
+         IFNULL(p.require_invite_token, 0) AS require_invite_token,
+         IFNULL(p.store_transcripts, 0) AS store_transcripts
+       FROM v2_meetings m
+       LEFT JOIN v2_meeting_policies p ON p.meeting_id = m.id
+       WHERE m.id = ?`
+    : `SELECT * FROM v2_meetings WHERE id = ?`;
+  const row = await db.get(sql, [meetingId]);
+  if (!row) return null;
+  if (row.org_id === auth.orgId) return row;
+  if (await isDirectCallParticipant(row.id, auth)) return row;
+  return null;
 }
 
 async function ensureEmailInviteLink(row, meetingId) {
@@ -639,16 +671,7 @@ router.get('/:id/usage-status', requireV2Auth, async (req, res) => {
 
 router.get('/:id', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(
-      `SELECT m.*,
-         IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
-         IFNULL(p.require_invite_token, 0) AS require_invite_token,
-         IFNULL(p.store_transcripts, 0) AS store_transcripts
-       FROM v2_meetings m
-       LEFT JOIN v2_meeting_policies p ON p.meeting_id = m.id
-       WHERE m.id = ? AND m.org_id = ?`,
-      [req.params.id, req.v2Auth.orgId]
-    );
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth, true);
     if (!row) return res.status(404).json({ error: 'Not found' });
     await ensureSecureInviteForMeeting(row);
     const base = publicFrontendBaseUrl(req);
@@ -923,7 +946,7 @@ router.post('/:id/transcript-lines', requireV2Auth, async (req, res) => {
 
 router.get('/:id/transcript', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const lines = await loadTranscriptLines(req.params.id);
@@ -936,7 +959,7 @@ router.get('/:id/transcript', requireV2Auth, async (req, res) => {
 
 router.get('/:id/transcript/reports', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const reports = await db.all(
@@ -953,7 +976,7 @@ router.get('/:id/transcript/reports', requireV2Auth, async (req, res) => {
 
 router.get('/:id/transcript/reports/:reportId/export', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const report = await db.get(
@@ -1052,7 +1075,7 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
 
 router.post('/:id/transcript/synthesize', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
 

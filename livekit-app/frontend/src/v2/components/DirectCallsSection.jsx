@@ -1,15 +1,80 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Phone, Plus, Trash2, UserCheck, Users } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { format, isToday, isYesterday } from 'date-fns';
+import {
+  FileText,
+  Phone,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
+  Plus,
+  Sparkles,
+  Trash2,
+  UserCheck,
+  Users,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Calls, v2Contacts } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 
+function formatCallTimestamp(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  if (isToday(d)) return `Today, ${format(d, 'p')}`;
+  if (isYesterday(d)) return `Yesterday, ${format(d, 'p')}`;
+  return format(d, 'MMM d, p');
+}
+
+function callStatusMeta(call) {
+  const isOutgoing = call.direction === 'outgoing';
+  if (call.status === 'accepted') {
+    return {
+      label: isOutgoing ? 'Outgoing call' : 'Incoming call',
+      tone: 'text-emerald-600 dark:text-emerald-400',
+      badgeClass: 'text-emerald-600 dark:text-emerald-400',
+      Icon: isOutgoing ? PhoneOutgoing : PhoneIncoming,
+    };
+  }
+  if (call.status === 'missed') {
+    return {
+      label: isOutgoing ? 'No answer' : 'Missed call',
+      tone: 'text-destructive',
+      badgeClass: 'border-destructive/40 bg-destructive/10 text-destructive',
+      Icon: PhoneMissed,
+    };
+  }
+  if (call.status === 'declined') {
+    return {
+      label: isOutgoing ? 'Declined' : 'Declined call',
+      tone: 'text-amber-600 dark:text-amber-400',
+      badgeClass: 'text-amber-600 dark:text-amber-400',
+      Icon: PhoneMissed,
+    };
+  }
+  if (call.status === 'canceled') {
+    return {
+      label: isOutgoing ? 'Canceled' : 'Missed call',
+      tone: 'text-muted-foreground',
+      badgeClass: 'text-muted-foreground',
+      Icon: PhoneMissed,
+    };
+  }
+  return {
+    label: 'Ringing…',
+    tone: 'text-primary',
+    badgeClass: 'text-primary',
+    Icon: isOutgoing ? PhoneOutgoing : PhoneIncoming,
+  };
+}
+
 export default function DirectCallsSection({ hostDisplayName }) {
   const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
+  const [callHistory, setCallHistory] = useState([]);
+  const [activeTab, setActiveTab] = useState('contacts'); // 'contacts' | 'history' | 'missed'
   const [loading, setLoading] = useState(true);
   const [callingKey, setCallingKey] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -17,17 +82,25 @@ export default function DirectCallsSection({ hostDisplayName }) {
   const [nameInput, setNameInput] = useState('');
   const [savingContact, setSavingContact] = useState(false);
 
-  const loadContacts = () => {
-    v2Contacts
-      .list()
-      .then((res) => setContacts(res.contacts || []))
-      .catch(() => {})
+  const loadAll = () => {
+    Promise.all([
+      v2Contacts.list().catch(() => ({ contacts: [] })),
+      v2Calls.history().catch(() => ({ calls: [] })),
+    ])
+      .then(([cRes, hRes]) => {
+        setContacts(cRes.contacts || []);
+        setCallHistory(hRes.calls || []);
+      })
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    loadContacts();
+    loadAll();
   }, []);
+
+  const missedIncomingCount = callHistory.filter(
+    (c) => c.direction === 'incoming' && (c.status === 'missed' || c.status === 'canceled')
+  ).length;
 
   const enterCallRoom = (data) => {
     const { call, meeting } = data;
@@ -69,6 +142,19 @@ export default function DirectCallsSection({ hostDisplayName }) {
     }
   };
 
+  const handleCallByEmail = async (email, name, key) => {
+    if (callingKey || !email) return;
+    setCallingKey(key || email);
+    try {
+      const data = await v2Calls.start({ email, name: name || undefined });
+      toast.success(`Ringing ${name || email}…`);
+      enterCallRoom(data);
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not start call');
+      setCallingKey(null);
+    }
+  };
+
   const handleQuickCallOrSave = async (e, mode = 'call') => {
     e?.preventDefault?.();
     const email = emailInput.trim();
@@ -91,6 +177,7 @@ export default function DirectCallsSection({ hostDisplayName }) {
         setEmailInput('');
         setNameInput('');
         setShowAddForm(false);
+        setActiveTab('contacts');
         toast.success('Saved to contacts');
       } catch (err) {
         toast.error(err.response?.data?.error || 'Could not save contact');
@@ -121,25 +208,74 @@ export default function DirectCallsSection({ hostDisplayName }) {
     }
   };
 
+  const filteredCalls =
+    activeTab === 'missed'
+      ? callHistory.filter(
+          (c) => c.status === 'missed' || c.status === 'declined' || c.status === 'canceled'
+        )
+      : callHistory;
+
   return (
     <section className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">Direct call &amp; contacts</h2>
+          <h2 className="text-sm font-semibold text-foreground">Direct calls &amp; contacts</h2>
           <p className="text-xs text-muted-foreground">
-            Call a contact 1-on-1 (rings their app &amp; sends an instant join link). Add more people anytime during the call.
+            Call contacts 1-on-1, view call history &amp; missed calls, and open AI transcripts &amp; summaries.
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="shrink-0 gap-1.5"
-          onClick={() => setShowAddForm((v) => !v)}
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Add contact
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded-lg border border-border/80 bg-muted/30 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab('contacts')}
+              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                activeTab === 'contacts'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Contacts ({contacts.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('history')}
+              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+                activeTab === 'history'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Call log ({callHistory.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('missed')}
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
+                activeTab === 'missed'
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Missed
+              {missedIncomingCount > 0 && (
+                <span className="rounded-full bg-destructive px-1.5 py-0 text-[10px] font-semibold text-destructive-foreground">
+                  {missedIncomingCount}
+                </span>
+              )}
+            </button>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1.5"
+            onClick={() => setShowAddForm((v) => !v)}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Add contact
+          </Button>
+        </div>
       </div>
 
       {showAddForm && (
@@ -195,84 +331,180 @@ export default function DirectCallsSection({ hostDisplayName }) {
         </form>
       )}
 
-      {!loading && contacts.length === 0 && !showAddForm ? (
-        <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-dashed border-border/80 bg-card/40 p-4 sm:flex-row sm:items-center">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Users className="h-4 w-4" />
+      {activeTab === 'contacts' ? (
+        !loading && contacts.length === 0 && !showAddForm ? (
+          <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-dashed border-border/80 bg-card/40 p-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Users className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium text-foreground">No saved contacts yet</p>
+                <p className="text-xs text-muted-foreground">
+                  Add friends or teammates to call them in 1 tap — works whether they have the Lalia app or join via web link.
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">No saved contacts yet</p>
-              <p className="text-xs text-muted-foreground">
-                Add friends or teammates to call them in 1 tap — works whether they have the Lalia app or join via web link.
-              </p>
-            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="shrink-0 gap-1.5"
+              onClick={() => setShowAddForm(true)}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add first contact
+            </Button>
           </div>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            className="shrink-0 gap-1.5"
-            onClick={() => setShowAddForm(true)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Add first contact
-          </Button>
+        ) : (
+          <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card">
+            {contacts.map((contact) => {
+              const initial = (contact.name || contact.email || '?').charAt(0).toUpperCase();
+              const isCalling = callingKey === contact.id;
+              return (
+                <div
+                  key={contact.id}
+                  className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                      {initial}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-sm font-medium text-foreground">
+                          {contact.name}
+                        </p>
+                        {contact.hasAccount ? (
+                          <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            <UserCheck className="h-2.5 w-2.5" />
+                            On Lalia
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">
+                            Guest link
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-500"
+                      disabled={Boolean(callingKey)}
+                      onClick={() => handleCallContact(contact)}
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      {isCalling ? 'Calling…' : 'Call'}
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveContact(contact.id, contact.name)}
+                      className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                      aria-label={`Remove ${contact.name}`}
+                      title={`Remove ${contact.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )
+      ) : filteredCalls.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border/80 bg-card/40 p-6 text-center">
+          <p className="text-sm font-medium text-foreground">
+            {activeTab === 'missed' ? 'No missed calls' : 'No call history yet'}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {activeTab === 'missed'
+              ? 'You’re all caught up on incoming calls.'
+              : 'Direct calls you place or receive will appear here with their transcripts and AI summaries.'}
+          </p>
         </div>
       ) : (
         <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card">
-          {contacts.map((contact) => {
-            const initial = (contact.name || contact.email || '?').charAt(0).toUpperCase();
-            const isCalling = callingKey === contact.id;
+          {filteredCalls.map((call) => {
+            const meta = callStatusMeta(call);
+            const StatusIcon = meta.Icon;
+            const isCallingBack = callingKey === `hist-${call.id}`;
+
             return (
               <div
-                key={contact.id}
-                className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
+                key={call.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
               >
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                    {initial}
+                  <div
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted ${meta.tone}`}
+                  >
+                    <StatusIcon className="h-4 w-4" />
                   </div>
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate text-sm font-medium text-foreground">
-                        {contact.name}
+                        {call.counterpartName}
                       </p>
-                      {contact.hasAccount ? (
-                        <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                          <UserCheck className="h-2.5 w-2.5" />
-                          On Lalia
+                      <Badge variant="outline" className={`px-1.5 py-0 text-[10px] font-medium ${meta.badgeClass}`}>
+                        {meta.label}
+                      </Badge>
+                      {call.transcriptLineCount > 0 && (
+                        <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-normal">
+                          <FileText className="h-2.5 w-2.5" />
+                          {call.transcriptLineCount} lines
                         </Badge>
-                      ) : (
-                        <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">
-                          Guest link
+                      )}
+                      {call.reportCount > 0 && (
+                        <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-normal text-primary">
+                          <Sparkles className="h-2.5 w-2.5" />
+                          AI summary
                         </Badge>
                       )}
                     </div>
-                    <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {formatCallTimestamp(call.createdAt)}
+                      {call.counterpartEmail ? ` · ${call.counterpartEmail}` : ''}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-500"
-                    disabled={Boolean(callingKey)}
-                    onClick={() => handleCallContact(contact)}
-                  >
-                    <Phone className="h-3.5 w-3.5" />
-                    {isCalling ? 'Calling…' : 'Call'}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveContact(contact.id, contact.name)}
-                    className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-                    aria-label={`Remove ${contact.name}`}
-                    title={`Remove ${contact.name}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                <div className="flex shrink-0 items-center gap-2">
+                  {call.meetingId && (
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2.5 text-xs"
+                    >
+                      <Link to={`/v2/app/meetings/${encodeURIComponent(call.meetingId)}`}>
+                        <Sparkles className="h-3.5 w-3.5 text-primary" />
+                        Transcript &amp; AI
+                      </Link>
+                    </Button>
+                  )}
+                  {call.counterpartEmail && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-500"
+                      disabled={Boolean(callingKey)}
+                      onClick={() =>
+                        handleCallByEmail(
+                          call.counterpartEmail,
+                          call.counterpartName,
+                          `hist-${call.id}`
+                        )
+                      }
+                    >
+                      <Phone className="h-3.5 w-3.5" />
+                      {isCallingBack ? 'Calling…' : 'Call back'}
+                    </Button>
+                  )}
                 </div>
               </div>
             );
