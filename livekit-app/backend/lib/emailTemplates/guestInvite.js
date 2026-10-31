@@ -19,11 +19,16 @@ async function renderGuestInvite({
   const title = meetingTitle || 'Meeting';
   const when = friendlyWhen(scheduledStart, timeZone);
   const inviter = inviterName || 'Your host';
-  const subject = `You're invited: ${title} — Lalia`;
+  const isRescheduled = Number(icsSequence) > 0;
+  const subject = isRescheduled
+    ? `Updated time: ${title} — Lalia`
+    : `You're invited: ${title} — Lalia`;
   const text = [
-    `${inviter} invited you to "${title}" on Lalia.`,
+    isRescheduled
+      ? `${inviter} updated the scheduled time for "${title}" on Lalia.`
+      : `${inviter} invited you to "${title}" on Lalia.`,
     '',
-    when ? `Scheduled for: ${when}` : 'This meeting can start at any time.',
+    when ? `New time: ${when}` : 'This meeting can start at any time.',
     ...(when ? ['', 'Times shown in the host\'s timezone.'] : []),
     '',
     'Join from your browser (no account needed):',
@@ -34,14 +39,18 @@ async function renderGuestInvite({
 
   const detailRows = [
     { label: 'Host', value: inviter },
-    ...(when ? [{ label: 'When', value: when }] : []),
+    ...(when ? [{ label: isRescheduled ? 'New time' : 'When', value: when }] : []),
     { label: 'Meeting', value: title },
   ];
 
   const html = renderEmailLayout({
-    preheader: `${inviter} invited you to a Lalia meeting.`,
-    title: `You're invited to ${title}`,
-    introHtml: `<p style="margin:0;">${escapeHtml(inviter)} invited you to join a Lalia video meeting with live captions and real-time translation. No account is required — just open the link in your browser.</p>`,
+    preheader: isRescheduled
+      ? `${inviter} updated the time for ${title}.`
+      : `${inviter} invited you to a Lalia meeting.`,
+    title: isRescheduled ? `Updated time: ${title}` : `You're invited to ${title}`,
+    introHtml: isRescheduled
+      ? `<p style="margin:0;">${escapeHtml(inviter)} updated the schedule for <strong>${escapeHtml(title)}</strong>. The attached calendar invite will automatically move the event on your calendar — please confirm if the new time works for you.</p>`
+      : `<p style="margin:0;">${escapeHtml(inviter)} invited you to join a Lalia video meeting with live captions and real-time translation. No account is required — just open the link in your browser.</p>`,
     detailRows,
     ctaUrl: joinUrl,
     ctaLabel: 'Join meeting',

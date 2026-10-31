@@ -5,6 +5,7 @@ import toast from 'react-hot-toast';
 import { format, isFuture } from 'date-fns';
 import {
   Archive,
+  CalendarClock,
   Copy,
   FileText,
   Globe,
@@ -25,6 +26,15 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import { DatetimePicker, getNextRoundedScheduleDate } from '../../components/ui/datetime-picker';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -131,6 +141,10 @@ export default function V2MeetingDetail() {
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  const [rescheduleOpen, setRescheduleOpen] = useState(false);
+  const [rescheduleDate, setRescheduleDate] = useState(undefined);
+  const [notifyGuestsOnReschedule, setNotifyGuestsOnReschedule] = useState(true);
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const load = () =>
     v2Meetings
@@ -220,6 +234,42 @@ export default function V2MeetingDetail() {
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Update failed');
+    }
+  };
+
+  const openRescheduleModal = () => {
+    const existing = meeting?.scheduled_start ? new Date(meeting.scheduled_start) : null;
+    const valid = existing && !Number.isNaN(existing.getTime()) ? existing : getNextRoundedScheduleDate();
+    setRescheduleDate(valid);
+    setNotifyGuestsOnReschedule(true);
+    setRescheduleOpen(true);
+  };
+
+  const saveReschedule = async () => {
+    if (savingSchedule) return;
+    setSavingSchedule(true);
+    try {
+      const iso =
+        rescheduleDate instanceof Date && !Number.isNaN(rescheduleDate.getTime())
+          ? rescheduleDate.toISOString()
+          : null;
+      const res = await v2Meetings.patch(id, {
+        scheduled_start: iso,
+        notify_guests: notifyGuestsOnReschedule,
+      });
+      setRescheduleOpen(false);
+      if (res?.notifiedGuestCount > 0) {
+        toast.success(
+          `Meeting rescheduled — sent updated calendar invite (.ics) to ${res.notifiedGuestCount} guest${res.notifiedGuestCount === 1 ? '' : 's'}`
+        );
+      } else {
+        toast.success(iso ? 'Meeting time updated' : 'Converted to unscheduled meeting');
+      }
+      load();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Could not update schedule');
+    } finally {
+      setSavingSchedule(false);
     }
   };
 
@@ -735,6 +785,16 @@ export default function V2MeetingDetail() {
                   </Badge>
                 )}
                 {scheduleText && <span className="text-muted-foreground">{scheduleText}</span>}
+                {canManageMeeting && !joinDemoted && (
+                  <button
+                    type="button"
+                    onClick={openRescheduleModal}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border/70 bg-muted/40 px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-muted"
+                  >
+                    <CalendarClock className="h-3.5 w-3.5 text-primary" />
+                    {scheduleText ? 'Reschedule' : 'Set date & time'}
+                  </button>
+                )}
               </div>
               {quietLine && <p className="text-sm text-muted-foreground">{quietLine}</p>}
             </div>
@@ -793,6 +853,53 @@ export default function V2MeetingDetail() {
         )}
         {settingsSections}
       </div>
+
+      <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
+        <DialogContent className="max-h-[90dvh] w-[calc(100vw-1.5rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">
+          <DialogHeader>
+            <DialogTitle>{scheduleText ? 'Reschedule meeting' : 'Schedule meeting'}</DialogTitle>
+            <DialogDescription>
+              Pick the new date and time. Invited guests will receive an updated calendar invite (<code>.ics</code>) that moves the event on their calendar automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-1">
+            <DatetimePicker
+              value={rescheduleDate}
+              onChange={setRescheduleDate}
+              defaultExpanded
+              placeholder="Pick date & time"
+            />
+            {rescheduleDate && (
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border/70 bg-muted/30 p-3 text-xs">
+                <input
+                  type="checkbox"
+                  checked={notifyGuestsOnReschedule}
+                  onChange={(e) => setNotifyGuestsOnReschedule(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+                />
+                <span className="leading-relaxed text-muted-foreground">
+                  <strong className="font-medium text-foreground">Send updated calendar invite to invited guests</strong>
+                  <br />
+                  Sends an updated <code>.ics</code> attachment (same event UID, incremented sequence) so Google Calendar, Apple Calendar, and Outlook move the event to the new time and ask guests to re-confirm.
+                </span>
+              </label>
+            )}
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRescheduleOpen(false)}
+              disabled={savingSchedule}
+            >
+              Cancel
+            </Button>
+            <Button type="button" onClick={saveReschedule} disabled={savingSchedule}>
+              {savingSchedule ? 'Saving…' : 'Save & update calendar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={endOpen} onOpenChange={setEndOpen}>
         <AlertDialogContent>

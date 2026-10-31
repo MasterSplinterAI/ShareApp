@@ -760,8 +760,97 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
     const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
-    const { title, status, host_required_to_start, store_transcripts } = req.body || {};
+    const {
+      title,
+      status,
+      host_required_to_start,
+      store_transcripts,
+      scheduled_start,
+      scheduled_end,
+      notify_guests,
+    } = req.body || {};
     if (title != null) await db.run(`UPDATE v2_meetings SET title = ? WHERE id = ?`, [String(title).slice(0, 200), req.params.id]);
+
+    let scheduleChanged = false;
+    let notifiedGuestCount = 0;
+
+    if (scheduled_start !== undefined) {
+      const nextStart = scheduled_start ? new Date(scheduled_start).toISOString() : null;
+      const nextEnd =
+        scheduled_end !== undefined
+          ? scheduled_end
+            ? new Date(scheduled_end).toISOString()
+            : null
+          : row.scheduled_end;
+
+      const prevStartMs = row.scheduled_start ? new Date(row.scheduled_start).getTime() : null;
+      const nextStartMs = nextStart ? new Date(nextStart).getTime() : null;
+      scheduleChanged = prevStartMs !== nextStartMs;
+
+      if (scheduleChanged) {
+        const nextSeq = (Number(row.ics_sequence) || 0) + 1;
+        const nextStatus =
+          nextStartMs && nextStartMs > Date.now() && row.status !== 'archived'
+            ? 'scheduled'
+            : row.status === 'scheduled' && !nextStart
+              ? 'live'
+              : row.status;
+
+        await db.run(
+          `UPDATE v2_meetings
+           SET scheduled_start = ?, scheduled_end = ?, ics_sequence = ?, status = ?
+           WHERE id = ?`,
+          [nextStart, nextEnd, nextSeq, nextStatus, req.params.id]
+        );
+
+        // Extend any active schedule-bound invite links so calendar links remain valid at the new time
+        if (nextStart) {
+          const updatedMeetingRow = {
+            ...row,
+            scheduled_start: nextStart,
+            scheduled_end: nextEnd,
+            ics_sequence: nextSeq,
+          };
+          const newExpiresAt = computeInviteExpiresAt(updatedMeetingRow, {
+            mode: 'after_scheduled_end',
+          });
+          await db.run(
+            `UPDATE v2_meeting_invite_links
+             SET expires_at = ?
+             WHERE meeting_id = ? AND revoked_at IS NULL AND expiry_mode = 'after_scheduled_end'`,
+            [newExpiresAt, req.params.id]
+          );
+        }
+
+        // Reset reminder state & RSVP status for invited guests, and send updated .ics invite if requested
+        await db.run(
+          `UPDATE v2_meeting_guest_invites
+           SET reminders_sent_json = '{}', reminder_sent_at = NULL, rsvp_status = 'pending', rsvp_at = NULL
+           WHERE meeting_id = ?`,
+          [req.params.id]
+        );
+
+        if (notify_guests !== false && nextStart) {
+          const guestRows = await db.all(
+            `SELECT DISTINCT email FROM v2_meeting_guest_invites WHERE meeting_id = ? AND email IS NOT NULL`,
+            [req.params.id]
+          );
+          const emails = guestRows.map((g) => g.email).filter(Boolean);
+          if (emails.length > 0) {
+            const freshRow = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [req.params.id]);
+            const results = await deliverGuestEmailInvites({
+              row: freshRow,
+              meetingId: req.params.id,
+              emails,
+              userId: req.v2Auth.userId,
+              req,
+              resendAlreadySent: true,
+            });
+            notifiedGuestCount = results.filter((r) => r.sent).length;
+          }
+        }
+      }
+    }
     if (status && ['scheduled', 'live', 'ended', 'archived'].includes(status)) {
       const now = new Date().toISOString();
       if (status === 'live') {
@@ -818,8 +907,13 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
       [req.params.id]
     );
     await ensureSecureInviteForMeeting(updated);
-    res.json(updated);
+    res.json({
+      ...updated,
+      scheduleChanged,
+      notifiedGuestCount,
+    });
   } catch (e) {
+    console.error('[v2/meetings PATCH]', e);
     res.status(500).json({ error: 'Failed to update' });
   }
 });
