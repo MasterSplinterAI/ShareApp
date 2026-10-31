@@ -73,7 +73,7 @@ export default function V2AppHome() {
   }, [meetings]);
 
   const recentMeetings = useMemo(
-    () => meetings.filter((m) => m.id !== nextUpcoming?.id).slice(0, 3),
+    () => meetings.filter((m) => !m.is_direct_call && m.id !== nextUpcoming?.id).slice(0, 3),
     [meetings, nextUpcoming],
   );
 

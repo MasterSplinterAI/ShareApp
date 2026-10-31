@@ -12,6 +12,7 @@ import {
   FileText,
   Link2,
   MoreHorizontal,
+  Phone,
   Plus,
   RotateCcw,
   Trash2,
@@ -229,7 +230,7 @@ function LoadingGrid() {
 export default function V2MeetingsList() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [me, setMe] = useState(null);
-  const [view, setView] = useState('meetings'); // 'meetings' | 'archived'
+  const [view, setView] = useState('meetings'); // 'meetings' | 'direct_calls' | 'archived'
   const [meetings, setMeetings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAllRecent, setShowAllRecent] = useState(false);
@@ -245,6 +246,7 @@ export default function V2MeetingsList() {
   const { offer, checkoutLoading, startCheckout } = useUpgradeOffer(me);
 
   const archivedView = view === 'archived';
+  const directCallsView = view === 'direct_calls';
 
   useEffect(() => {
     v2Auth.me().then(setMe).catch(() => {});
@@ -275,13 +277,22 @@ export default function V2MeetingsList() {
     }
   }, [searchParams, setSearchParams]);
 
+  const conferenceMeetings = useMemo(
+    () => meetings.filter((m) => !m.is_direct_call),
+    [meetings]
+  );
+  const directCallMeetings = useMemo(
+    () => meetings.filter((m) => Boolean(m.is_direct_call)),
+    [meetings]
+  );
+
   const groups = useMemo(() => {
-    if (archivedView) return { today: [], upcoming: [], recent: [] };
+    if (archivedView || directCallsView) return { today: [], upcoming: [], recent: [] };
     const now = Date.now();
     const today = [];
     const upcoming = [];
     const recent = [];
-    for (const m of meetings) {
+    for (const m of conferenceMeetings) {
       const ui = getMeetingUiState(m);
       const anchor = new Date(m.scheduled_start || m.created_at);
       const anchorOk = !Number.isNaN(anchor.getTime());
@@ -303,7 +314,7 @@ export default function V2MeetingsList() {
     upcoming.sort((a, b) => meetingAnchorTime(a) - meetingAnchorTime(b));
     recent.sort((a, b) => meetingAnchorTime(b) - meetingAnchorTime(a));
     return { today, upcoming, recent };
-  }, [meetings, archivedView]);
+  }, [conferenceMeetings, archivedView, directCallsView]);
 
   const visibleRecent = showAllRecent ? groups.recent : groups.recent.slice(0, RECENT_CAP);
 
@@ -436,29 +447,62 @@ export default function V2MeetingsList() {
         </div>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        {archivedView ? (
-          <Button type="button" variant="ghost" size="sm" className="gap-1.5 px-2" onClick={() => setView('meetings')}>
-            <ArrowLeft className="h-4 w-4" />
-            Back to meetings
-          </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            Organized by time — live and today first.
-          </span>
-        )}
-        {!archivedView && (
-          <Button
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="inline-flex rounded-lg border border-border/80 bg-muted/30 p-0.5 text-xs">
+          <button
             type="button"
-            variant="ghost"
-            size="sm"
-            className="gap-1.5 px-2 text-muted-foreground"
-            onClick={() => setView('archived')}
+            onClick={() => setView('meetings')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+              view === 'meetings'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
           >
-            <Archive className="h-4 w-4" />
+            <Video className="h-3.5 w-3.5" />
+            Meetings
+            {!archivedView && (
+              <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] tabular-nums text-muted-foreground">
+                {conferenceMeetings.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('direct_calls')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+              view === 'direct_calls'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Phone className="h-3.5 w-3.5" />
+            Direct calls
+            {!archivedView && (
+              <span className="rounded-full bg-muted px-1.5 py-0 text-[10px] tabular-nums text-muted-foreground">
+                {directCallMeetings.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => setView('archived')}
+            className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 font-medium transition-colors ${
+              view === 'archived'
+                ? 'bg-background text-foreground shadow-sm'
+                : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Archive className="h-3.5 w-3.5" />
             Archived
-          </Button>
-        )}
+          </button>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          {archivedView
+            ? 'Archived rooms & calls'
+            : directCallsView
+              ? '1-on-1 direct call rooms & transcripts'
+              : 'Scheduled & instant meetings — live and today first'}
+        </span>
       </div>
 
       {loading ? (
@@ -483,7 +527,30 @@ export default function V2MeetingsList() {
             ))}
           </CardGrid>
         )
-      ) : meetings.length === 0 ? (
+      ) : directCallsView ? (
+        directCallMeetings.length === 0 ? (
+          <Card className="border-dashed border-border bg-muted/30 shadow-none">
+            <CardContent className="flex flex-col items-center py-14 text-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+                <Phone className="h-5 w-5 text-primary" />
+              </span>
+              <p className="mt-4 text-sm font-medium text-foreground">No direct calls yet</p>
+              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                1-on-1 calls you place from your Contacts list appear here with their transcripts and AI summaries, keeping your main Meetings list clean.
+              </p>
+              <Button asChild variant="outline" className="mt-5 gap-2">
+                <Link to="/v2/app">Go to Contacts &amp; Call Log</Link>
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <CardGrid>
+            {directCallMeetings.map((m) => (
+              <MeetingCard key={m.id} meeting={m} {...cardProps} />
+            ))}
+          </CardGrid>
+        )
+      ) : conferenceMeetings.length === 0 ? (
         <Card className="border-dashed border-border bg-muted/30 shadow-none">
           <CardContent className="flex flex-col items-center py-16 text-center">
             <span className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">

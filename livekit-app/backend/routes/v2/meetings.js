@@ -302,7 +302,7 @@ router.get('/', requireV2Auth, async (req, res) => {
     const statusClause = archivedOnly ? `m.status = 'archived'` : `m.status != 'archived'`;
     const rows = await db.all(
       `SELECT m.id, m.livekit_room_name, m.title, m.status, m.scheduled_start, m.scheduled_end, m.host_code,
-              m.created_at, m.started_at, m.ended_at, m.host_present,
+              m.created_at, m.started_at, m.ended_at, m.host_present, m.metadata,
               IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
               IFNULL(p.require_invite_token, 0) AS require_invite_token,
               IFNULL(p.store_transcripts, 0) AS store_transcripts,
@@ -312,6 +312,19 @@ router.get('/', requireV2Auth, async (req, res) => {
        WHERE m.org_id = ? AND ${statusClause} ORDER BY datetime(m.created_at) DESC LIMIT 100`,
       [req.v2Auth.orgId]
     );
+
+    for (const m of rows) {
+      let isDirectCall = false;
+      if (m.metadata) {
+        try {
+          const parsed = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata;
+          if (parsed?.source === 'v2_direct_call') isDirectCall = true;
+        } catch {
+          if (String(m.metadata).includes('v2_direct_call')) isDirectCall = true;
+        }
+      }
+      m.is_direct_call = isDirectCall;
+    }
 
     // Enrich live/scheduled meetings with room presence (best-effort)
     const liveMeetings = rows.filter((m) => m.status === 'live' || m.status === 'scheduled');
