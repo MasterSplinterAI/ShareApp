@@ -47,7 +47,7 @@ function getShortTimezoneName() {
   }
 }
 
-/** Build 30-min quick slot chips for the selected day. */
+/** Build 4 compact quick slot chips for the selected day (fits in a 4-col grid with zero horizontal overflow). */
 function buildQuickSlots(selectedDate) {
   const base = selectedDate || startOfToday();
   const now = new Date();
@@ -60,7 +60,7 @@ function buildQuickSlots(selectedDate) {
       if (todaySelected && slotDate.getTime() <= now.getTime() + 5 * 60 * 1000) {
         continue;
       }
-      if (!todaySelected && (h < 7 || h > 21)) {
+      if (!todaySelected && (h < 9 || h > 17)) {
         continue;
       }
       slots.push({
@@ -70,7 +70,7 @@ function buildQuickSlots(selectedDate) {
       });
     }
   }
-  return slots.slice(0, 12);
+  return slots.slice(0, 4);
 }
 
 /**
@@ -86,17 +86,18 @@ export function DatetimePicker({
   className,
   id,
   defaultExpanded = false,
+  alwaysOpen = false,
 }) {
   const validDate =
     value instanceof Date && !Number.isNaN(value.getTime()) ? value : undefined;
-  const [expanded, setExpanded] = React.useState(Boolean(defaultExpanded || validDate));
+  const [expanded, setExpanded] = React.useState(Boolean(alwaysOpen || defaultExpanded || validDate));
 
   React.useEffect(() => {
-    if (defaultExpanded && !validDate) {
+    if ((alwaysOpen || defaultExpanded) && !validDate) {
       onChange?.(getNextRoundedScheduleDate());
       setExpanded(true);
     }
-  }, [defaultExpanded]);
+  }, [alwaysOpen, defaultExpanded]);
 
   const activeDate = validDate || getNextRoundedScheduleDate();
   const hour24 = activeDate.getHours();
@@ -155,74 +156,84 @@ export function DatetimePicker({
   };
 
   const summaryLabel = validDate
-    ? `${isToday(validDate) ? 'Today' : isTomorrow(validDate) ? 'Tomorrow' : format(validDate, 'EEE, MMM d')} at ${format(validDate, 'h:mm a')}${tzLabel ? ` (${tzLabel})` : ''}`
+    ? `${isToday(validDate) ? 'Today' : isTomorrow(validDate) ? 'Tomorrow' : format(validDate, 'EEE, MMM d')} · ${format(validDate, 'h:mm a')}${tzLabel ? ` ${tzLabel}` : ''}`
     : placeholder;
 
-  return (
-    <div className={cn('space-y-2.5', className)}>
-      {/* Summary trigger button */}
-      <div className="flex items-center gap-2">
-        <Button
-          id={id}
-          type="button"
-          variant="outline"
-          disabled={disabled}
-          onClick={handleToggleOpen}
-          className={cn(
-            'h-10 flex-1 justify-start text-left font-normal transition-colors',
-            validDate
-              ? 'border-primary/50 bg-primary/[0.04] font-medium text-foreground'
-              : 'text-muted-foreground'
-          )}
-        >
-          <CalendarIcon className={cn('mr-2.5 h-4 w-4 shrink-0', validDate ? 'text-primary' : 'text-muted-foreground')} />
-          <span className="truncate">{summaryLabel}</span>
-        </Button>
-        {validDate && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={handleClear}
-            className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Clear scheduled time"
-            title="Switch back to instant meeting"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+  const isPanelOpen = alwaysOpen || expanded;
 
-      {/* Expandable modern Date + Time panel (renders inline so it never clips on mobile!) */}
-      {expanded && (
-        <div className="overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm">
-          {/* Quick day pills */}
-          <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/30 px-3 py-2">
-            {[
-              { label: 'Today', date: today },
-              { label: 'Tomorrow', date: tomorrow },
-              { label: format(inTwoDays, 'EEE, MMM d'), date: inTwoDays },
-            ].map((preset) => {
-              const active = isSameDay(activeDate, preset.date);
-              return (
-                <button
-                  key={preset.label}
-                  type="button"
-                  onClick={() => selectDay(preset.date)}
-                  className={cn(
-                    'rounded-lg px-2.5 py-1 text-xs font-medium transition-colors',
-                    active
-                      ? 'bg-primary text-primary-foreground shadow-sm'
-                      : 'bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
-                  )}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
+  return (
+    <div className={cn('min-w-0 space-y-2', className)}>
+      {/* Summary trigger button (hidden when alwaysOpen is true so the modal stays compact) */}
+      {!alwaysOpen && (
+        <div className="flex min-w-0 items-center gap-2">
+          <Button
+            id={id}
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            onClick={handleToggleOpen}
+            className={cn(
+              'h-10 min-w-0 flex-1 justify-start text-left font-normal transition-colors',
+              validDate
+                ? 'border-primary/50 bg-primary/[0.04] font-medium text-foreground'
+                : 'text-muted-foreground'
+            )}
+          >
+            <CalendarIcon className={cn('mr-2 h-4 w-4 shrink-0', validDate ? 'text-primary' : 'text-muted-foreground')} />
+            <span className="truncate text-xs sm:text-sm">{summaryLabel}</span>
+          </Button>
+          {validDate && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={handleClear}
+              className="h-10 w-10 shrink-0 text-muted-foreground hover:text-foreground"
+              aria-label="Clear scheduled time"
+              title="Switch back to instant meeting"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )}
+
+      {isPanelOpen && (
+        <div className="min-w-0 overflow-hidden rounded-xl border border-border/80 bg-card shadow-sm">
+          {/* Quick day pills + selected summary */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-border/60 bg-muted/30 px-2.5 py-2">
+            <div className="flex items-center gap-1">
+              {[
+                { label: 'Today', date: today },
+                { label: 'Tomorrow', date: tomorrow },
+                { label: format(inTwoDays, 'EEE d'), date: inTwoDays },
+              ].map((preset) => {
+                const active = isSameDay(activeDate, preset.date);
+                return (
+                  <button
+                    key={preset.label}
+                    type="button"
+                    onClick={() => selectDay(preset.date)}
+                    className={cn(
+                      'rounded-md px-2 py-1 text-xs font-medium transition-colors',
+                      active
+                        ? 'bg-primary text-primary-foreground shadow-sm'
+                        : 'bg-background/80 text-muted-foreground hover:bg-background hover:text-foreground'
+                    )}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+            {alwaysOpen && validDate && (
+              <span className="truncate text-[11px] font-medium text-primary">
+                {summaryLabel}
+              </span>
+            )}
           </div>
 
-          {/* Month Calendar with Today ring highlight & past dates disabled */}
+          {/* Month Calendar */}
           <Calendar
             mode="single"
             selected={activeDate}
@@ -233,8 +244,8 @@ export function DatetimePicker({
             }}
           />
 
-          {/* Modern Time Selector */}
-          <div className="border-t border-border/60 bg-muted/20 p-3 space-y-3">
+          {/* Compact Time Selector */}
+          <div className="border-t border-border/60 bg-muted/20 p-2.5 sm:p-3 space-y-2">
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
                 <Clock className="h-3.5 w-3.5 text-primary" />
@@ -247,9 +258,9 @@ export function DatetimePicker({
               )}
             </div>
 
-            {/* 1-tap quick time chips */}
+            {/* 4-column grid of quick time chips (never overflows horizontally) */}
             {quickSlots.length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              <div className="grid grid-cols-4 gap-1.5">
                 {quickSlots.map((slot) => {
                   const selected =
                     hour24 === slot.hour24 && roundedMinute === slot.minute;
@@ -261,7 +272,7 @@ export function DatetimePicker({
                         onChange?.(applyTime(activeDate, slot.hour24, slot.minute))
                       }
                       className={cn(
-                        'shrink-0 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                        'truncate rounded-lg border px-1.5 py-1.5 text-[11px] font-medium transition-colors',
                         selected
                           ? 'border-primary bg-primary text-primary-foreground shadow-sm'
                           : 'border-border/70 bg-background text-foreground hover:border-primary/40 hover:bg-muted/60'
@@ -274,14 +285,13 @@ export function DatetimePicker({
               </div>
             )}
 
-            {/* Fine-grained 12-hour + minute + AM/PM controls */}
-            <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
-              {/* Hour (1-12) */}
+            {/* 12-hour + minute + AM/PM controls */}
+            <div className="grid grid-cols-[1fr_auto_1fr_auto] items-center gap-1.5 sm:gap-2">
               <select
                 aria-label="Hour"
                 value={hour12}
                 onChange={(e) => selectHour12(Number(e.target.value))}
-                className="h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 text-center text-base font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:h-9 sm:text-sm"
+                className="h-9 w-full cursor-pointer rounded-lg border border-input bg-background px-2 text-center text-base font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:text-sm"
               >
                 {HOURS_12.map((h) => (
                   <option key={h} value={h}>
@@ -292,12 +302,11 @@ export function DatetimePicker({
 
               <span className="text-sm font-bold text-muted-foreground">:</span>
 
-              {/* Minute (00, 15, 30, 45) */}
               <select
                 aria-label="Minute"
                 value={roundedMinute}
                 onChange={(e) => selectMinute(Number(e.target.value))}
-                className="h-10 w-full cursor-pointer rounded-lg border border-input bg-background px-3 text-center text-base font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:h-9 sm:text-sm"
+                className="h-9 w-full cursor-pointer rounded-lg border border-input bg-background px-2 text-center text-base font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring sm:text-sm"
               >
                 {MINUTE_STEPS.map((m) => (
                   <option key={m} value={m}>
@@ -306,13 +315,12 @@ export function DatetimePicker({
                 ))}
               </select>
 
-              {/* AM / PM segmented toggle */}
-              <div className="inline-flex h-10 rounded-lg border border-input bg-background p-0.5 sm:h-9">
+              <div className="inline-flex h-9 rounded-lg border border-input bg-background p-0.5">
                 <button
                   type="button"
                   onClick={() => selectPeriod(false)}
                   className={cn(
-                    'rounded-md px-2.5 text-xs font-semibold transition-colors',
+                    'rounded-md px-2 text-xs font-semibold transition-colors',
                     !isPm
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'
@@ -324,7 +332,7 @@ export function DatetimePicker({
                   type="button"
                   onClick={() => selectPeriod(true)}
                   className={cn(
-                    'rounded-md px-2.5 text-xs font-semibold transition-colors',
+                    'rounded-md px-2 text-xs font-semibold transition-colors',
                     isPm
                       ? 'bg-primary text-primary-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground'

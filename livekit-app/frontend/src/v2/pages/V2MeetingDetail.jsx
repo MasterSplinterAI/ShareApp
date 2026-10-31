@@ -855,47 +855,46 @@ export default function V2MeetingDetail() {
       </div>
 
       <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
-        <DialogContent className="max-h-[90dvh] w-[calc(100vw-1.5rem)] overflow-y-auto p-4 sm:max-w-md sm:p-6">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{scheduleText ? 'Reschedule meeting' : 'Schedule meeting'}</DialogTitle>
             <DialogDescription>
-              Pick the new date and time. Invited guests will receive an updated calendar invite (<code>.ics</code>) that moves the event on their calendar automatically.
+              Pick a new date and time. Invited guests can receive an updated calendar invite automatically.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-1">
+          <div className="min-w-0 space-y-3">
             <DatetimePicker
               value={rescheduleDate}
               onChange={setRescheduleDate}
-              defaultExpanded
+              alwaysOpen
               placeholder="Pick date & time"
             />
             {rescheduleDate && (
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border/70 bg-muted/30 p-3 text-xs">
+              <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border/70 bg-muted/30 px-3 py-2 text-xs">
                 <input
                   type="checkbox"
                   checked={notifyGuestsOnReschedule}
                   onChange={(e) => setNotifyGuestsOnReschedule(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+                  className="h-4 w-4 shrink-0 rounded border-border accent-primary"
                 />
-                <span className="leading-relaxed text-muted-foreground">
-                  <strong className="font-medium text-foreground">Send updated calendar invite to invited guests</strong>
-                  <br />
-                  Sends an updated <code>.ics</code> attachment (same event UID, incremented sequence) so Google Calendar, Apple Calendar, and Outlook move the event to the new time and ask guests to re-confirm.
+                <span className="font-medium text-foreground">
+                  Email updated calendar invite (<code>.ics</code>) to invited guests
                 </span>
               </label>
             )}
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setRescheduleOpen(false)}
               disabled={savingSchedule}
             >
               Cancel
             </Button>
-            <Button type="button" onClick={saveReschedule} disabled={savingSchedule}>
-              {savingSchedule ? 'Saving…' : 'Save & update calendar'}
+            <Button type="button" size="sm" onClick={saveReschedule} disabled={savingSchedule}>
+              {savingSchedule ? 'Saving…' : 'Save schedule'}
             </Button>
           </DialogFooter>
         </DialogContent>
