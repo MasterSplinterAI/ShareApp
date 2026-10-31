@@ -17,7 +17,7 @@ import { MarketingFooter } from './marketing/MarketingFooter';
 import LaliaSupportLauncher from '../v2/components/LaliaSupportLauncher';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { isNativeApp, parseJoinTarget } from '../lib/nativePlatform';
+import { isNativeApp, isStandalonePwa, parseJoinTarget } from '../lib/nativePlatform';
 
 function NativeMobileWelcome() {
   const navigate = useNavigate();
@@ -115,7 +115,13 @@ function NativeMobileWelcome() {
 }
 
 export default function HomeScreen() {
-  if (isNativeApp()) {
+  const isAppMode =
+    isNativeApp() ||
+    isStandalonePwa() ||
+    (typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('app') === '1');
+
+  if (isAppMode) {
     return <NativeMobileWelcome />;
   }
 
