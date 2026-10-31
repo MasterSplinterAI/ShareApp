@@ -75,11 +75,12 @@ function buildMeetingIcs({
   joinUrl,
   description,
   hostName,
+  hostEmail,
   guestEmail,
   sequence = 0,
 }) {
   const dtStart = formatIcsUtc(startIso);
-  if (!dtStart || !meetingId || !domain || !guestEmail) return null;
+  if (!dtStart || !meetingId || !domain || (!guestEmail && !hostEmail)) return null;
 
   const endDate = endIso
     ? new Date(endIso)
@@ -94,6 +95,22 @@ function buildMeetingIcs({
   const organizerCn = escapeIcsText(hostName || 'Meeting host');
   const attendeeEmail = extractEmailAddress(guestEmail);
   const attendeeCn = escapeIcsText(attendeeEmail);
+  const cleanHostEmail = extractEmailAddress(hostEmail);
+
+  const attendeeLines = [];
+  if (cleanHostEmail && cleanHostEmail !== attendeeEmail) {
+    attendeeLines.push(
+      `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=CHAIR;PARTSTAT=ACCEPTED;RSVP=FALSE;CN=${organizerCn}:mailto:${cleanHostEmail}`
+    );
+  }
+  if (attendeeEmail) {
+    const isHostSelf = cleanHostEmail && attendeeEmail === cleanHostEmail;
+    attendeeLines.push(
+      isHostSelf
+        ? `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=CHAIR;PARTSTAT=ACCEPTED;RSVP=FALSE;CN=${organizerCn}:mailto:${attendeeEmail}`
+        : `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${attendeeCn}:mailto:${attendeeEmail}`
+    );
+  }
 
   const lines = [
     'BEGIN:VCALENDAR',
@@ -107,7 +124,7 @@ function buildMeetingIcs({
     `DTSTART:${dtStart}`,
     `DTEND:${dtEnd}`,
     `ORGANIZER;CN=${organizerCn}:mailto:${organizerEmail}`,
-    `ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE;CN=${attendeeCn}:mailto:${attendeeEmail}`,
+    ...attendeeLines,
     `SUMMARY:${summary}`,
     `DESCRIPTION:${desc}`,
     `LOCATION:${location}`,

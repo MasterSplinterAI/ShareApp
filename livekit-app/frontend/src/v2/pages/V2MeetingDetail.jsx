@@ -237,6 +237,48 @@ export default function V2MeetingDetail() {
     }
   };
 
+  const downloadHostIcs = () => {
+    if (!meeting?.scheduled_start) return;
+    const start = new Date(meeting.scheduled_start);
+    if (Number.isNaN(start.getTime())) return;
+    const end = meeting.scheduled_end
+      ? new Date(meeting.scheduled_end)
+      : new Date(start.getTime() + 60 * 60 * 1000);
+    const fmt = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    const joinLink =
+      meeting.joinUrl || `${getPublicAppOrigin()}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Lalia//Meeting Invite//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:${meeting.id}@lalia.cloud`,
+      `DTSTAMP:${fmt(new Date())}`,
+      `DTSTART:${fmt(start)}`,
+      `DTEND:${fmt(end)}`,
+      `SUMMARY:${(meeting.title || 'Lalia meeting').replace(/[\r\n,;]/g, ' ')}`,
+      `DESCRIPTION:Join on Lalia: ${joinLink}`,
+      `LOCATION:${joinLink}`,
+      `URL:${joinLink}`,
+      `SEQUENCE:${Number(meeting.ics_sequence) || 0}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR',
+      '',
+    ].join('\r\n');
+
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(meeting.title || 'lalia-meeting').toLowerCase().replace(/[^a-z0-9]+/g, '-')}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  };
   const openRescheduleModal = () => {
     const existing = meeting?.scheduled_start ? new Date(meeting.scheduled_start) : null;
     const valid = existing && !Number.isNaN(existing.getTime()) ? existing : getNextRoundedScheduleDate();
@@ -793,6 +835,16 @@ export default function V2MeetingDetail() {
                   >
                     <CalendarClock className="h-3.5 w-3.5 text-primary" />
                     {scheduleText ? 'Reschedule' : 'Set date & time'}
+                  </button>
+                )}
+                {scheduleText && !joinDemoted && (
+                  <button
+                    type="button"
+                    onClick={downloadHostIcs}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+                    title="Add or update on your calendar (.ics)"
+                  >
+                    + Add to calendar (.ics)
                   </button>
                 )}
               </div>

@@ -13,6 +13,7 @@ async function renderGuestInvite({
   meetingId,
   timeZone,
   hostName,
+  hostEmail,
   guestEmail,
   icsSequence,
 }) {
@@ -65,7 +66,7 @@ async function renderGuestInvite({
   });
 
   const attachments = [];
-  if (scheduledStart && guestEmail) {
+  if (scheduledStart && (guestEmail || hostEmail)) {
     const ics = await meetingIcsAttachment({
       meetingId,
       title,
@@ -73,6 +74,7 @@ async function renderGuestInvite({
       endIso: scheduledEnd,
       joinUrl,
       hostName: hostName || inviter,
+      hostEmail,
       guestEmail,
       sequence: icsSequence,
       description: `${inviter} invited you to a Lalia meeting. Live captions and real-time translation. Join: ${joinUrl}`,

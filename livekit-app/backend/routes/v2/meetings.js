@@ -143,6 +143,7 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
       timeZone: invitePrefs.timezone,
       cc,
       hostName,
+      hostEmail: host?.email || inviter?.email,
       icsSequence,
     });
     const sentAt = sendResult?.sent ? new Date().toISOString() : null;
@@ -164,6 +165,43 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
   }
 
   return { results, joinUrl };
+}
+
+async function sendHostCalendarSyncEmail({ row, meetingId, userId, req }) {
+  try {
+    if (!row?.scheduled_start) return { sent: false };
+    const { sendGuestInvite } = require('../../lib/guestInvites');
+    const { getGuestInvitePrefs } = require('../../lib/guestInviteReminderPrefs');
+    const invitePrefs = await getGuestInvitePrefs(userId);
+    if (!invitePrefs.ccHost) return { sent: false };
+
+    const host = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [
+      row.host_user_id || userId,
+    ]);
+    if (!host?.email) return { sent: false };
+
+    const link = await ensureEmailInviteLink(row, meetingId);
+    const base = publicFrontendBaseUrl(req);
+    const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
+    const hostName = host.display_name || host.email;
+
+    return await sendGuestInvite({
+      email: host.email,
+      meetingTitle: row.title || 'Meeting',
+      scheduledStart: row.scheduled_start,
+      scheduledEnd: row.scheduled_end,
+      joinUrl,
+      inviterName: hostName,
+      meetingId,
+      timeZone: invitePrefs.timezone,
+      hostName,
+      hostEmail: host.email,
+      icsSequence: row.ics_sequence || 0,
+    });
+  } catch (e) {
+    console.warn('[v2/meetings] sendHostCalendarSyncEmail failed:', e.message);
+    return { sent: false };
+  }
 }
 
 async function buildGuestInviteSendResponse(results, joinUrl) {
@@ -279,6 +317,23 @@ router.post('/', requireV2Auth, async (req, res) => {
 
     const base = publicFrontendBaseUrl(req);
     const guestPath = `${base}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(defaultInviteToken)}`;
+    if (scheduled_start) {
+      const createdRow = {
+        id: meetingId,
+        host_user_id: req.v2Auth.userId,
+        livekit_room_name: roomName,
+        title: title || 'Meeting',
+        scheduled_start,
+        scheduled_end: scheduled_end || null,
+        ics_sequence: 0,
+      };
+      sendHostCalendarSyncEmail({
+        row: createdRow,
+        meetingId,
+        userId: req.v2Auth.userId,
+        req,
+      }).catch(() => {});
+    }
     res.status(201).json({
       id: meetingId,
       livekitRoomName: roomName,
@@ -836,9 +891,9 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
             [req.params.id]
           );
           const emails = guestRows.map((g) => g.email).filter(Boolean);
+          const freshRow = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [req.params.id]);
           if (emails.length > 0) {
-            const freshRow = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [req.params.id]);
-            const results = await deliverGuestEmailInvites({
+            const { results } = await deliverGuestEmailInvites({
               row: freshRow,
               meetingId: req.params.id,
               emails,
@@ -846,7 +901,15 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
               req,
               resendAlreadySent: true,
             });
-            notifiedGuestCount = results.filter((r) => r.sent).length;
+            notifiedGuestCount = (results || []).filter((r) => r.sent).length;
+          } else {
+            // Even if no guests have been emailed yet, sync the new time to the host's own calendar
+            sendHostCalendarSyncEmail({
+              row: freshRow,
+              meetingId: req.params.id,
+              userId: req.v2Auth.userId,
+              req,
+            }).catch(() => {});
           }
         }
       }

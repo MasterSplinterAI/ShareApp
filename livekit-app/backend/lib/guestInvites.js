@@ -28,6 +28,7 @@ async function sendGuestInvite({
   timeZone,
   cc,
   hostName,
+  hostEmail,
   icsSequence,
 }) {
   const rendered = await renderGuestInvite({
@@ -39,6 +40,7 @@ async function sendGuestInvite({
     meetingId,
     timeZone,
     hostName,
+    hostEmail,
     guestEmail: email,
     icsSequence,
   });
