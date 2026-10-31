@@ -102,7 +102,9 @@ async function createDemoLiveRoomSession({
     process.env.PUBLIC_FRONTEND_BASE_URL ||
     process.env.FRONTEND_URL ||
     'https://lalia.cloud'
-  ).replace(/\/$/, '');
+  )
+    .replace(/\/$/, '')
+    .replace(/^https:\/\/www\.lalia\.cloud$/i, 'https://lalia.cloud');
 
   await createDemoLiveKitRoom(roomName, {
     demoSessionId,
