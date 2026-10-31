@@ -14,6 +14,7 @@ import { useTranslation } from '../../lib/i18n/I18nProvider';
 import { dateFnsLocale } from '../../lib/i18n/dateLocale';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeUsageCard } from '../components/UpgradePrompt';
+import DirectCallsSection from '../components/DirectCallsSection';
 
 export default function V2AppHome() {
   const { t, locale } = useTranslation();
@@ -130,6 +131,8 @@ export default function V2AppHome() {
           )}
         </div>
       </section>
+
+      <DirectCallsSection hostDisplayName={displayName} />
 
       {!loading && nextUpcoming && (
         <section>

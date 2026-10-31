@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
-import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks } from '@livekit/components-react';
+import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks, useParticipants } from '@livekit/components-react';
 import { ConnectionState, RoomEvent } from 'livekit-client';
 import toast from 'react-hot-toast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Phone } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
-import { v2Meetings, v2Orgs } from '../services/apiV2';
+import { v2Calls, v2Meetings, v2Orgs } from '../services/apiV2';
 import { normalizeMeetingBranding } from '../lib/meetingBranding';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
@@ -28,6 +28,87 @@ import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
 import { getPublicAppOrigin } from '../lib/nativePlatform';
 import { useMeetingWakeLock } from '../hooks/useMeetingWakeLock';
+
+function DirectCallRingBanner({ initialDirectCall }) {
+  const participants = useParticipants();
+  const [callState, setCallState] = useState(initialDirectCall || null);
+
+  const remoteHumans = participants.filter((p) => {
+    if (p.isLocal) return false;
+    const id = String(p.identity || '').toLowerCase();
+    return !(
+      id.startsWith('agent-') ||
+      id.startsWith('agent_') ||
+      id.includes('translation') ||
+      id.includes('-agent')
+    );
+  });
+
+  useEffect(() => {
+    if (!callState?.id || callState.status !== 'ringing') return undefined;
+    if (remoteHumans.length > 0) {
+      setCallState(null);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await v2Calls.status(callState.id);
+        if (cancelled || !res?.call) return;
+        if (res.call.status === 'declined') {
+          toast(`${callState.calleeName || 'Contact'} declined the call`);
+          setCallState(null);
+        } else if (res.call.status === 'missed' || res.call.status === 'canceled') {
+          toast(`${callState.calleeName || 'Contact'} didn’t answer — they can still join from the link`);
+          setCallState(null);
+        } else if (res.call.status === 'accepted') {
+          setCallState((prev) => (prev ? { ...prev, status: 'accepted' } : null));
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+
+    const id = setInterval(poll, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [callState?.id, callState?.status, callState?.calleeName, remoteHumans.length]);
+
+  if (!callState || remoteHumans.length > 0) return null;
+
+  const handleCancelRing = async () => {
+    const id = callState.id;
+    setCallState(null);
+    try {
+      await v2Calls.respond(id, 'cancel');
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2.5 rounded-full border border-emerald-400/30 bg-slate-950/85 px-3.5 py-1.5 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+      <Phone className="h-3.5 w-3.5 animate-pulse text-emerald-400" />
+      <span>
+        {callState.status === 'accepted'
+          ? `${callState.calleeName || 'Contact'} is joining…`
+          : `Ringing ${callState.calleeName || callState.calleeEmail}…`}
+      </span>
+      {callState.status === 'ringing' && (
+        <button
+          type="button"
+          onClick={handleCancelRing}
+          className="ml-1 rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/80 transition-colors hover:bg-white/20 hover:text-white"
+        >
+          Stop ringing
+        </button>
+      )}
+    </div>
+  );
+}
 
 function HostSessionReporter({ meetingId, isHost }) {
   const room = useRoomContext();
@@ -423,6 +504,7 @@ function MeetingRoom() {
         participantInfo={participantInfo}
         roomName={roomName}
         meetingId={participantInfo.meetingId}
+        directCall={location.state?.directCall || null}
         intentionalLeaveRef={intentionalLeaveRef}
         reconnectingRef={reconnectingRef}
         reconnecting={reconnecting}
@@ -444,6 +526,7 @@ function MeetingRoomInner({
   participantInfo,
   roomName,
   meetingId,
+  directCall,
   intentionalLeaveRef,
   reconnectingRef,
   reconnecting,
@@ -549,6 +632,7 @@ function MeetingRoomInner({
         {/* Main content: column on mobile portrait (video + in-flow sheet), row on desktop & mobile landscape */}
         <div className="meeting-stage-layout flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
           <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
+            <DirectCallRingBanner initialDirectCall={directCall} />
             <VideoGrid />
             {reconnecting && (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
@@ -626,6 +710,8 @@ function MeetingRoomInner({
           shareableLink={participantInfo?.shareableLink || `${getPublicAppOrigin()}/join/${roomName}`}
           shareableLinkNetwork={participantInfo?.shareableLinkNetwork}
           hostCode={participantInfo?.hostCode}
+          meetingId={meetingId}
+          roomName={roomName}
           onClose={() => setShowShareModal(false)}
         />
       )}

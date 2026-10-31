@@ -236,4 +236,18 @@ export const v2Usage = {
   rollup: (body) => apiV2.post('/usage/rollup', body || {}).then((r) => r.data),
 };
 
+export const v2Contacts = {
+  list: () => apiV2.get('/contacts').then((r) => r.data),
+  save: (body) => apiV2.post('/contacts', body).then((r) => r.data),
+  remove: (id) => apiV2.delete(`/contacts/${encodeURIComponent(id)}`).then((r) => r.data),
+};
+
+export const v2Calls = {
+  start: (body) => apiV2.post('/calls/start', body).then((r) => r.data),
+  incoming: () => apiV2.get('/calls/incoming').then((r) => r.data),
+  status: (id) => apiV2.get(`/calls/${encodeURIComponent(id)}/status`).then((r) => r.data),
+  respond: (id, action) =>
+    apiV2.post(`/calls/${encodeURIComponent(id)}/respond`, { action }).then((r) => r.data),
+};
+
 export default apiV2;

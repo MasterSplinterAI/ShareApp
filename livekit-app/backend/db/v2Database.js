@@ -813,6 +813,52 @@ async function migrate() {
   ).catch(() => {
     /* may already exist or have dupes — ignore */
   });
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_contacts (
+      id TEXT PRIMARY KEY,
+      owner_user_id TEXT NOT NULL,
+      contact_email TEXT NOT NULL COLLATE NOCASE,
+      contact_name TEXT,
+      contact_user_id TEXT,
+      preferred_language TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (owner_user_id) REFERENCES v2_users(id),
+      FOREIGN KEY (contact_user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_contacts_owner_email ON v2_contacts(owner_user_id, contact_email)`
+  );
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_contacts_owner ON v2_contacts(owner_user_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_direct_calls (
+      id TEXT PRIMARY KEY,
+      caller_user_id TEXT NOT NULL,
+      caller_name TEXT NOT NULL,
+      caller_email TEXT,
+      callee_user_id TEXT,
+      callee_email TEXT NOT NULL COLLATE NOCASE,
+      callee_name TEXT,
+      meeting_id TEXT NOT NULL,
+      room_name TEXT NOT NULL,
+      join_url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ringing',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY (caller_user_id) REFERENCES v2_users(id),
+      FOREIGN KEY (callee_user_id) REFERENCES v2_users(id),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_direct_calls_callee_user ON v2_direct_calls(callee_user_id, status, expires_at)`
+  );
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_direct_calls_callee_email ON v2_direct_calls(callee_email, status, expires_at)`
+  );
 }
 
 async function initPostgres() {

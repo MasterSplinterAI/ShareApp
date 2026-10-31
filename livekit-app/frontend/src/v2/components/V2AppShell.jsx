@@ -21,6 +21,7 @@ import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeSidebarCard } from './UpgradePrompt';
+import IncomingCallOverlay from './IncomingCallOverlay';
 
 function navLinkClass({ isActive }) {
   return cn(
@@ -200,6 +201,7 @@ export default function V2AppShell({ me, onLogout }) {
 
   return (
     <div className="app-surface flex min-h-screen w-full text-foreground">
+      <IncomingCallOverlay currentUser={me?.user} />
       <aside className="app-sidebar hidden w-60 shrink-0 flex-col border-r border-border/70 md:flex">
         {sidebarBody}
       </aside>
