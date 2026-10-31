@@ -1,5 +1,7 @@
+import defaultMessages from '../../locales/en.json';
+
 /** Bump when locale JSON changes to invalidate localStorage cache. */
-export const I18N_VERSION = 7;
+export const I18N_VERSION = 9;
 
 export const LOCALE_STORAGE_KEY = 'parley_locale';
 
@@ -17,7 +19,7 @@ export const SUPPORTED_LOCALES = [
 ];
 
 export const LOCALE_LOADERS = {
-  en: () => import('../../locales/en.json'),
+  en: () => Promise.resolve({ default: defaultMessages }),
   es: () => import('../../locales/es.json'),
   fr: () => import('../../locales/fr.json'),
   de: () => import('../../locales/de.json'),
