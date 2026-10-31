@@ -26,6 +26,8 @@ import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { autopilotTranslator } from '../lib/autopilot-translator';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
+import { getPublicAppOrigin } from '../lib/nativePlatform';
+import { useMeetingWakeLock } from '../hooks/useMeetingWakeLock';
 
 function HostSessionReporter({ meetingId, isHost }) {
   const room = useRoomContext();
@@ -463,6 +465,7 @@ function MeetingRoomInner({
     isPanelOpen,
   } = useMeeting();
   const t = useRoomControlLabels(selectedLanguage);
+  useMeetingWakeLock(true);
 
   const [showShareModal, setShowShareModal] = useState(false);
 
@@ -620,7 +623,7 @@ function MeetingRoomInner({
       {/* Share Modal */}
       {showShareModal && (
         <ShareModal
-          shareableLink={participantInfo?.shareableLink || `${window.location.origin}/join/${roomName}`}
+          shareableLink={participantInfo?.shareableLink || `${getPublicAppOrigin()}/join/${roomName}`}
           shareableLinkNetwork={participantInfo?.shareableLinkNetwork}
           hostCode={participantInfo?.hostCode}
           onClose={() => setShowShareModal(false)}

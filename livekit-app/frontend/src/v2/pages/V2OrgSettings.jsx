@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { isIosNativeApp } from '../../lib/nativePlatform';
 import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
@@ -87,6 +88,10 @@ export default function V2OrgSettings() {
   const [savingOverageAutoCharge, setSavingOverageAutoCharge] = useState(false);
 
   const startCheckout = async (planId) => {
+    if (isIosNativeApp()) {
+      toast('Manage your plan on the web at lalia.cloud');
+      return;
+    }
     setCheckoutLoading(planId);
     try {
       const { url } = await v2Billing.checkout(planId);
@@ -99,6 +104,10 @@ export default function V2OrgSettings() {
   };
 
   const openPortal = async (flow) => {
+    if (isIosNativeApp()) {
+      toast('Manage billing and invoices on the web at lalia.cloud');
+      return;
+    }
     setPortalLoading(flow || 'manage');
     try {
       const body = flow === 'cancel' ? { flow: 'cancel' } : {};

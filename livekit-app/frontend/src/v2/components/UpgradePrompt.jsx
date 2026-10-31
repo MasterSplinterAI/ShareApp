@@ -3,6 +3,7 @@ import { ArrowUpRight, Sparkles } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { formatPlanPrice } from '../lib/upgradeOffers';
+import { isIosNativeApp } from '../../lib/nativePlatform';
 
 const BILLING_PLANS_HREF = '/v2/app/settings?section=billing';
 
@@ -43,7 +44,7 @@ function CheckoutButton({ offer, planId, checkoutLoading, onCheckout, className,
 
 /** Compact card for app sidebar — always visible on upgradable plans. */
 export function UpgradeSidebarCard({ offer, checkoutLoading, onCheckout, className }) {
-  if (!offer?.show) return null;
+  if (!offer?.show || isIosNativeApp()) return null;
   const upgrades = offer.upgrades || [];
   const showPlanChoices = offer.canCheckout && upgrades.length > 1;
 
@@ -139,7 +140,7 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
             <p className="text-sm text-muted-foreground">You&apos;re on our top self-serve plan.</p>
           )}
         </div>
-        {offer?.show && (
+        {offer?.show && !isIosNativeApp() && (
           <CheckoutButton
             offer={offer}
             planId={offer.primaryPlan?.id}

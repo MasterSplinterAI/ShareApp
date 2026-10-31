@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { SupportLauncher } from '@rhule/support-react';
+import { resolveApiBaseUrl } from '../../lib/nativePlatform';
 
-const SUPPORT_API_BASE = '/api/v2/support';
+const SUPPORT_API_BASE = `${resolveApiBaseUrl().replace(/\/$/, '')}/v2/support`;
 
 export function getSupportAccessToken() {
   try {

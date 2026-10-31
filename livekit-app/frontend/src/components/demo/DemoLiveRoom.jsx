@@ -24,6 +24,7 @@ import { demoLabService } from '../../services/demoLab';
 import { Button } from '../ui/button';
 import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../../lib/roomPublishDefaults';
 import { useRoomControlLabels } from '../../hooks/useRoomControlLabels';
+import { useMeetingWakeLock } from '../../hooks/useMeetingWakeLock';
 
 const LANGUAGE_LABELS = {
   en: 'English',
@@ -63,6 +64,7 @@ function DemoLiveRoomInner({
   const displayName = userDisplayName || 'Guest';
   const t = useRoomControlLabels(selectedLanguage);
   const [showInviteModal, setShowInviteModal] = useState(false);
+  useMeetingWakeLock(true);
 
   return (
     <div translate="no" className="meeting-surface meeting-room-root notranslate relative flex h-[100dvh] w-full flex-col overflow-hidden bg-background">

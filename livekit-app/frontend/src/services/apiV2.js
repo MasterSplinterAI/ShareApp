@@ -1,18 +1,7 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from '../lib/nativePlatform';
 
-const isNgrok =
-  window.location.hostname.includes('ngrok.app') ||
-  window.location.hostname.includes('ngrok-free.app') ||
-  window.location.hostname.includes('ngrok.io');
-const isNetworkAccess = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-const isHTTPS = window.location.protocol === 'https:';
-
-let base = import.meta.env.VITE_API_URL || '/api';
-if (isNgrok || (isNetworkAccess && isHTTPS)) {
-  base = '/api';
-} else if (isNetworkAccess) {
-  base = `http://${window.location.hostname}:3001/api`;
-}
+const base = resolveApiBaseUrl();
 
 const apiV2 = axios.create({
   baseURL: `${base.replace(/\/$/, '')}/v2`,

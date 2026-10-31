@@ -5,6 +5,7 @@ import SeoHead from './components/SeoHead'
 import HomeScreen from './components/HomeScreen'
 import ErrorBoundary from './components/ErrorBoundary'
 import DomTranslationFallback from './components/DomTranslationFallback'
+import NativeAppBridge from './components/NativeAppBridge'
 
 const MeetingRoom = lazy(() => import('./components/MeetingRoom'))
 const JoinMeeting = lazy(() => import('./components/JoinMeeting'))
@@ -96,6 +97,7 @@ function App() {
   return (
     <>
       <SeoHead />
+      <NativeAppBridge />
       <DomTranslationFallback />
       <Toaster
         position="top-right"

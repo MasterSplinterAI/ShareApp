@@ -1,0 +1,32 @@
+{
+  "name": "Lalia — Live Meeting Translation & Captions",
+  "short_name": "Lalia",
+  "description": "Live multilingual video meetings with real-time speech-to-text, captions, voice translation, and AI summaries.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#090d16",
+  "theme_color": "#2563eb",
+  "categories": ["productivity", "business", "communication"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-1024.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

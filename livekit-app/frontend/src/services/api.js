@@ -1,32 +1,7 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from '../lib/nativePlatform';
 
-// Detect if we're accessing via ngrok or network
-const isNgrok = window.location.hostname.includes('ngrok.app') || 
-                 window.location.hostname.includes('ngrok-free.app') ||
-                 window.location.hostname.includes('ngrok.io');
-const isNetworkAccess = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
-const isHTTPS = window.location.protocol === 'https:';
-
-// Determine API base URL
-let API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
-
-if (isNgrok) {
-  // When using ngrok, try to use Vite proxy first, but fallback to network IP if proxy fails
-  // The Vite proxy should work when ngrok forwards to the Vite dev server
-  API_BASE_URL = '/api'; // Use Vite proxy which should work with ngrok
-  console.log('🌐 Using ngrok, API_BASE_URL:', API_BASE_URL);
-} else if (isNetworkAccess && isHTTPS) {
-  // Network HTTPS access (not ngrok) - use Vite proxy
-  API_BASE_URL = '/api';
-} else if (isNetworkAccess) {
-  // Network access without HTTPS - use HTTP backend directly
-  API_BASE_URL = `http://${window.location.hostname}:3001/api`;
-  console.log('🌐 Using network IP, API_BASE_URL:', API_BASE_URL);
-} else {
-  // Localhost - use Vite proxy
-  API_BASE_URL = '/api';
-  console.log('🏠 Using localhost, API_BASE_URL:', API_BASE_URL);
-}
+const API_BASE_URL = resolveApiBaseUrl();
 
 // Create axios instance with default config
 const api = axios.create({

@@ -18,6 +18,12 @@ translation-agent/env
 # Build outputs
 frontend/dist/
 frontend/build/
+livekit-app/frontend/dist/
+livekit-app/frontend/ios/App/App/public/
+livekit-app/frontend/android/app/src/main/assets/public/
+livekit-app/frontend/android/.gradle/
+livekit-app/frontend/android/app/build/
+livekit-app/frontend/ios/App/DerivedData/
 *.log
 
 # IDE

@@ -72,6 +72,10 @@ const allowedOrigins = [
   'https://www.lalia.cloud',
   'https://staging.jarmetals.com',
   'https://share.jarmetals.com',
+  'capacitor://localhost',
+  'ionic://localhost',
+  'https://localhost',
+  'http://localhost',
 ].filter(Boolean); // Remove undefined values
 
 app.use(cors({

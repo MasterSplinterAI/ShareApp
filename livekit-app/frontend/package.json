@@ -8,6 +8,9 @@
     "dev": "vite --host 0.0.0.0 --port 5174",
     "build": "vite build && node scripts/prerender.mjs",
     "build:app": "vite build",
+    "cap:sync": "vite build && npx cap sync",
+    "cap:ios": "vite build && npx cap sync ios && npx cap open ios",
+    "cap:android": "vite build && npx cap sync android && npx cap open android",
     "prerender": "node scripts/prerender.mjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
@@ -17,6 +20,8 @@
     "test:report": "npx playwright show-report"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.6.0",
     "@livekit/components-react": "^2.0.0",
     "@livekit/components-styles": "^1.0.0",
     "@livekit/track-processors": "^0.7.2",
@@ -29,6 +34,8 @@
     "@radix-ui/react-slot": "^1.1.1",
     "@radix-ui/react-switch": "^1.1.2",
     "@radix-ui/react-tabs": "^1.1.2",
+    "@rhule/support-react": "file:../vendor/support-kit/packages/react",
+    "@rhule/support-shared": "file:../vendor/support-kit/packages/shared",
     "axios": "^1.6.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -42,11 +49,12 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.20.1",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
-    "@rhule/support-shared": "file:../vendor/support-kit/packages/shared",
-    "@rhule/support-react": "file:../vendor/support-kit/packages/react"
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/ios": "^8.6.0",
     "@playwright/test": "^1.58.2",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",

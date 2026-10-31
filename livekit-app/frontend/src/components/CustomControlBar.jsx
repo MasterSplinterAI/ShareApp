@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { resolveApiBaseUrl } from '../lib/nativePlatform';
 import { useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
@@ -294,7 +295,7 @@ export default function CustomControlBar({
     }
 
     if (roomName) {
-      const apiBase = import.meta.env.VITE_API_URL || '/api';
+      const apiBase = resolveApiBaseUrl();
       fetch(`${apiBase}/v2/rooms/${encodeURIComponent(roomName)}/caption-config`, {
         method: 'POST',
         headers: {

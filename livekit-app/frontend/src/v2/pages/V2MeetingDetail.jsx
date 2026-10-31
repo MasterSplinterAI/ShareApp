@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { getPublicAppOrigin } from '../../lib/nativePlatform';
 import toast from 'react-hot-toast';
 import { format, isFuture } from 'date-fns';
 import {
@@ -158,7 +159,7 @@ export default function V2MeetingDetail() {
 
   const hostShareUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/v2/app/meetings/${id}?join=1`;
+    return `${getPublicAppOrigin()}/v2/app/meetings/${id}?join=1`;
   }, [id]);
 
   const copyHostLink = async () => {
@@ -323,7 +324,7 @@ export default function V2MeetingDetail() {
     if (!meeting) return;
     try {
       await v2Meetings.hostSessionOpen(id);
-      const share = meeting.joinUrl || `${window.location.origin}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
+      const share = meeting.joinUrl || `${getPublicAppOrigin()}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
       const participantInfo = {
         isHost: true,
         participantName: hostDisplayName,
