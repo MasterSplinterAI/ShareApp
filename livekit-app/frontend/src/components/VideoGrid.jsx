@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useTracks, useParticipants, useLocalParticipant, VideoTrack, ParticipantContext } from '@livekit/components-react';
 import { Track, RoomEvent, VideoQuality, ConnectionQuality } from 'livekit-client';
-import { Maximize, Minimize, User, MicOff, VideoOff, ChevronLeft, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Maximize, Minimize, User, MicOff, VideoOff, ChevronLeft, ChevronRight, Eye, EyeOff, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 import { participantDisplayName } from '../lib/participantDisplayName';
@@ -208,42 +208,19 @@ function VideoGrid({ demoParticipants = [] }) {
     return '';
   };
 
-  // Screen share layout
+  // Screen share layout (with 2-finger pinch-to-zoom, 1-finger pan, double-tap zoom, and + / - / Reset controls)
   if (activeScreenShare) {
     return (
       <div ref={fullScreenRef} className="flex h-full w-full flex-col meeting-video-matte">
-        <div className="flex-1 min-h-0 relative">
-          <VideoTrackRenderer
-            track={activeScreenShare}
-            className="w-full h-full object-contain bg-black"
-          />
-          <ScreenShareQualityChip trackRef={activeScreenShare} meetingId={meetingId} />
-          <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
-            {!isFullScreen && orderedParticipants.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setFilmstripVisible((v) => !v)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-2 text-xs font-medium text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
-                aria-label={filmstripVisible ? 'Hide participant thumbnails' : 'Show participant thumbnails'}
-                title={filmstripVisible ? 'Hide participant thumbnails' : 'Show participant thumbnails'}
-              >
-                {filmstripVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                <span className="hidden sm:inline">
-                  {filmstripVisible ? 'Hide strip' : `Show strip (${orderedParticipants.length})`}
-                </span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={toggleFullScreen}
-              className="rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
-              aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
-              title={isFullScreen ? 'Exit full screen' : 'Full screen'}
-            >
-              {isFullScreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-            </button>
-          </div>
-        </div>
+        <PinchZoomScreenShare
+          trackRef={activeScreenShare}
+          meetingId={meetingId}
+          isFullScreen={isFullScreen}
+          onToggleFullScreen={toggleFullScreen}
+          filmstripVisible={filmstripVisible}
+          onToggleFilmstrip={() => setFilmstripVisible((v) => !v)}
+          participantCount={orderedParticipants.length}
+        />
         {!isFullScreen && filmstripVisible && (
           <div className="h-20 sm:h-32 flex gap-1.5 sm:gap-2 p-1.5 sm:p-2 overflow-x-auto meeting-filmstrip border-t border-border">
             {orderedParticipants.map((participant) => (
@@ -367,6 +344,218 @@ function VideoGrid({ demoParticipants = [] }) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function PinchZoomScreenShare({
+  trackRef,
+  meetingId,
+  isFullScreen,
+  onToggleFullScreen,
+  filmstripVisible,
+  onToggleFilmstrip,
+  participantCount,
+}) {
+  const containerRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const gestureRef = useRef({
+    mode: null, // 'pinch' | 'pan'
+    startDist: 0,
+    startScale: 1,
+    startX: 0,
+    startY: 0,
+    startOffsetX: 0,
+    startOffsetY: 0,
+    lastTapAt: 0,
+  });
+
+  const clampOffset = useCallback((nextX, nextY, nextScale) => {
+    if (nextScale <= 1.01) return { x: 0, y: 0 };
+    const el = containerRef.current;
+    if (!el) return { x: nextX, y: nextY };
+    const maxX = ((nextScale - 1) * el.clientWidth) / 2;
+    const maxY = ((nextScale - 1) * el.clientHeight) / 2;
+    return {
+      x: Math.max(-maxX, Math.min(maxX, nextX)),
+      y: Math.max(-maxY, Math.min(maxY, nextY)),
+    };
+  }, []);
+
+  const resetZoom = useCallback(() => {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }, []);
+
+  const stepZoom = useCallback(
+    (delta) => {
+      setScale((prev) => {
+        const next = Math.max(1, Math.min(4, Number((prev + delta).toFixed(2))));
+        setOffset((off) => clampOffset(off.x, off.y, next));
+        return next;
+      });
+    },
+    [clampOffset]
+  );
+
+  useEffect(() => {
+    resetZoom();
+  }, [trackRef?.publication?.trackSid, resetZoom]);
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      gestureRef.current.mode = 'pinch';
+      gestureRef.current.startDist = Math.hypot(dx, dy) || 1;
+      gestureRef.current.startScale = scale;
+    } else if (e.touches.length === 1) {
+      const now = Date.now();
+      if (now - gestureRef.current.lastTapAt < 280) {
+        // Double-tap toggles 1x <-> 2.5x zoom
+        gestureRef.current.lastTapAt = 0;
+        if (scale > 1.1) {
+          resetZoom();
+        } else {
+          setScale(2.5);
+          setOffset({ x: 0, y: 0 });
+        }
+        return;
+      }
+      gestureRef.current.lastTapAt = now;
+      if (scale > 1.01) {
+        gestureRef.current.mode = 'pan';
+        gestureRef.current.startX = e.touches[0].clientX;
+        gestureRef.current.startY = e.touches[0].clientY;
+        gestureRef.current.startOffsetX = offset.x;
+        gestureRef.current.startOffsetY = offset.y;
+      }
+    }
+  };
+
+  const handleTouchMove = (e) => {
+    if (e.touches.length === 2 && gestureRef.current.mode === 'pinch') {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.hypot(dx, dy) || 1;
+      const nextScale = Math.max(
+        1,
+        Math.min(4, gestureRef.current.startScale * (dist / gestureRef.current.startDist))
+      );
+      setScale(nextScale);
+      setOffset((prev) => clampOffset(prev.x, prev.y, nextScale));
+    } else if (e.touches.length === 1 && gestureRef.current.mode === 'pan' && scale > 1.01) {
+      const dx = e.touches[0].clientX - gestureRef.current.startX;
+      const dy = e.touches[0].clientY - gestureRef.current.startY;
+      setOffset(
+        clampOffset(
+          gestureRef.current.startOffsetX + dx,
+          gestureRef.current.startOffsetY + dy,
+          scale
+        )
+      );
+    }
+  };
+
+  const handleTouchEnd = (e) => {
+    if (e.touches.length < 2 && gestureRef.current.mode === 'pinch') {
+      gestureRef.current.mode = null;
+      if (scale < 1.05) resetZoom();
+    } else if (e.touches.length === 0) {
+      gestureRef.current.mode = null;
+    }
+  };
+
+  const handleWheel = (e) => {
+    if (!e.ctrlKey && !e.metaKey && scale <= 1.01) return;
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.25 : -0.25;
+    stepZoom(delta);
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative flex-1 min-h-0 overflow-hidden bg-black select-none"
+      style={{ touchAction: 'none' }}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+      onWheel={handleWheel}
+    >
+      <div
+        className="h-full w-full transition-transform duration-75 ease-out will-change-transform"
+        style={{
+          transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
+          transformOrigin: 'center center',
+        }}
+      >
+        <VideoTrackRenderer
+          track={trackRef}
+          className="w-full h-full object-contain bg-black pointer-events-none"
+        />
+      </div>
+
+      <ScreenShareQualityChip trackRef={trackRef} meetingId={meetingId} />
+
+      <div className="absolute top-3 right-3 z-10 flex items-center gap-1.5">
+        {scale > 1.05 && (
+          <button
+            type="button"
+            onClick={resetZoom}
+            className="inline-flex items-center gap-1 rounded-lg bg-black/65 px-2 py-1.5 text-xs font-medium text-white transition-colors hover:bg-black/85"
+            aria-label="Reset zoom"
+            title="Reset zoom (double-tap screen share to zoom)"
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            <span>{scale.toFixed(1)}×</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => stepZoom(-0.5)}
+          disabled={scale <= 1.01}
+          className="rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 disabled:opacity-35"
+          aria-label="Zoom out"
+          title="Zoom out"
+        >
+          <ZoomOut className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => stepZoom(0.5)}
+          disabled={scale >= 3.99}
+          className="rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 disabled:opacity-35"
+          aria-label="Zoom in"
+          title="Zoom in (or pinch with 2 fingers)"
+        >
+          <ZoomIn className="h-4 w-4" />
+        </button>
+        {!isFullScreen && participantCount > 0 && (
+          <button
+            type="button"
+            onClick={onToggleFilmstrip}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-black/60 px-2.5 py-2 text-xs font-medium text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
+            aria-label={filmstripVisible ? 'Hide participant thumbnails' : 'Show participant thumbnails'}
+            title={filmstripVisible ? 'Hide participant thumbnails' : 'Show participant thumbnails'}
+          >
+            {filmstripVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            <span className="hidden sm:inline">
+              {filmstripVisible ? 'Hide strip' : `Show strip (${participantCount})`}
+            </span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onToggleFullScreen}
+          className="rounded-lg bg-black/60 p-2 text-white transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/90"
+          aria-label={isFullScreen ? 'Exit full screen' : 'Enter full screen'}
+          title={isFullScreen ? 'Exit full screen' : 'Full screen'}
+        >
+          {isFullScreen ? <Minimize className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize className="w-4 h-4 sm:w-5 sm:h-5" />}
+        </button>
+      </div>
     </div>
   );
 }

@@ -4,6 +4,8 @@
   "webDir": "dist",
   "bundledWebRuntime": false,
   "server": {
+    "url": "https://lalia.cloud",
+    "cleartext": false,
     "androidScheme": "https",
     "iosScheme": "capacitor",
     "allowNavigation": [
@@ -13,7 +15,7 @@
     ]
   },
   "ios": {
-    "contentInset": "automatic",
+    "contentInset": "never",
     "allowsLinkPreview": false,
     "backgroundColor": "#090d16"
   },

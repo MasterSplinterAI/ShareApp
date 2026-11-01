@@ -182,6 +182,10 @@ export default function CustomControlBar({
   const toggleScreenShare = async (e) => {
     e?.stopPropagation();
     if (!localParticipant) return;
+    if (!isScreenSharing && typeof navigator?.mediaDevices?.getDisplayMedia !== 'function') {
+      toast('iPhone screen broadcast requires the Apple Developer ReplayKit extension. You can use the camera menu to switch to your rear camera in the meantime.');
+      return;
+    }
     try {
       await localParticipant.setScreenShareEnabled(!isScreenSharing);
       setIsScreenSharing(!isScreenSharing);

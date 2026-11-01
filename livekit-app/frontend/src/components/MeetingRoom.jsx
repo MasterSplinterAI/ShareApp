@@ -586,7 +586,7 @@ function MeetingRoomInner({
   }, [fetchRoomToken, setReconnecting]);
 
   return (
-    <div translate="no" className="meeting-surface meeting-room-root notranslate relative h-[100dvh] w-full overflow-hidden pt-[env(safe-area-inset-top)]">
+    <div translate="no" className="meeting-surface meeting-room-root notranslate relative h-[100dvh] w-full overflow-hidden pt-[var(--safe-top)]">
       <LiveKitRoom
         video={false}
         audio={false}

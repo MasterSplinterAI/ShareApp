@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { isNativeApp, getNativePlatform } from '../lib/nativePlatform';
+import { isNativeApp, isStandalonePwa, getNativePlatform } from '../lib/nativePlatform';
 
 function extractInAppPath(rawUrl) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
@@ -18,11 +18,25 @@ export default function NativeAppBridge() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!isNativeApp()) return undefined;
-
     const html = document.documentElement;
-    html.setAttribute('data-native-app', 'true');
-    html.setAttribute('data-native-platform', getNativePlatform());
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+    const isIosDevice = /iPhone|iPad|iPod/i.test(ua);
+    const native = isNativeApp();
+    const standalone = isStandalonePwa();
+
+    if (native) {
+      html.setAttribute('data-native-app', 'true');
+      html.setAttribute('data-native-platform', getNativePlatform());
+    }
+    if (isIosDevice && (native || standalone)) {
+      html.setAttribute('data-ios-standalone', 'true');
+    }
+
+    if (!native) {
+      return () => {
+        html.removeAttribute('data-ios-standalone');
+      };
+    }
 
     const capApp = window.Capacitor?.Plugins?.App;
     const listeners = [];
@@ -59,6 +73,7 @@ export default function NativeAppBridge() {
     return () => {
       html.removeAttribute('data-native-app');
       html.removeAttribute('data-native-platform');
+      html.removeAttribute('data-ios-standalone');
       listeners.forEach((h) => {
         try {
           h?.remove?.();
