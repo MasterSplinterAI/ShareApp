@@ -32,8 +32,20 @@ export default function NativeAppBridge() {
       html.setAttribute('data-ios-standalone', 'true');
     }
 
+    const syncAndroidToken = () => {
+      try {
+        const token = localStorage.getItem('v2_token') || '';
+        window.LaliaAndroid?.setAuthToken?.(token);
+      } catch {
+        /* ignore */
+      }
+    };
+    syncAndroidToken();
+    const tokenSyncId = setInterval(syncAndroidToken, 4000);
+
     if (!native) {
       return () => {
+        clearInterval(tokenSyncId);
         html.removeAttribute('data-ios-standalone');
       };
     }
@@ -71,6 +83,7 @@ export default function NativeAppBridge() {
     }
 
     return () => {
+      clearInterval(tokenSyncId);
       html.removeAttribute('data-native-app');
       html.removeAttribute('data-native-platform');
       html.removeAttribute('data-ios-standalone');
