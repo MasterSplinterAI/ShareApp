@@ -279,4 +279,9 @@ export const v2Calls = {
     apiV2.post(`/calls/${encodeURIComponent(id)}/respond`, { action }).then((r) => r.data),
 };
 
+export const v2Push = {
+  vapidPublicKey: () => apiV2.get('/push/vapid-public-key').then((r) => r.data),
+  subscribe: (subscription) => apiV2.post('/push/subscribe', { subscription }).then((r) => r.data),
+};
+
 export default apiV2;

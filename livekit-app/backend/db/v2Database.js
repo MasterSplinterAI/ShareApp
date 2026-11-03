@@ -859,6 +859,30 @@ async function migrate() {
   await run(
     `CREATE INDEX IF NOT EXISTS idx_v2_direct_calls_callee_email ON v2_direct_calls(callee_email, status, expires_at)`
   );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_push_settings (
+      id TEXT PRIMARY KEY,
+      public_key TEXT NOT NULL,
+      private_key TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_push_subscriptions_user ON v2_push_subscriptions(user_id)`);
 }
 
 async function initPostgres() {

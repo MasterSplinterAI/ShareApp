@@ -285,6 +285,10 @@ public class CallPollingService extends Service {
             if (nm != null) {
                 nm.notify(CALL_NOTIFICATION_ID, builder.build());
             }
+
+            try {
+                startActivity(openIntent);
+            } catch (Exception ignored) {}
         } catch (Exception ignored) {}
     }
 
@@ -312,6 +316,24 @@ public class CallPollingService extends Service {
                 nm.cancel(CALL_NOTIFICATION_ID);
             }
         } catch (Exception ignored) {}
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        // Keep call receiver alive even if the user swipes the app away from Recent Apps
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        String token = prefs.getString(KEY_AUTH_TOKEN, null);
+        if (token != null && !token.isEmpty()) {
+            try {
+                Intent restart = new Intent(getApplicationContext(), CallPollingService.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    getApplicationContext().startForegroundService(restart);
+                } else {
+                    getApplicationContext().startService(restart);
+                }
+            } catch (Exception ignored) {}
+        }
+        super.onTaskRemoved(rootIntent);
     }
 
     @Override

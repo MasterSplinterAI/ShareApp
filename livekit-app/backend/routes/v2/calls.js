@@ -11,6 +11,11 @@ const {
   computeInviteExpiresAt,
 } = require('../../lib/inviteExpiry');
 const { sendEmail } = require('../../lib/mailer');
+const {
+  getVapidPublicKey,
+  savePushSubscription,
+  sendIncomingCallPush,
+} = require('../../lib/v2PushNotifications');
 
 const CALL_RING_TTL_MS = 60 * 1000;
 
@@ -443,6 +448,14 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       joinUrl: meetingInfo.joinUrl,
     });
 
+    sendIncomingCallPush({
+      calleeUserId: targetContact.contactUserId || null,
+      calleeEmail: targetContact.email,
+      callerName,
+      joinUrl: meetingInfo.joinUrl,
+      callId,
+    }).catch(() => {});
+
     res.status(201).json({
       call: {
         id: callId,
@@ -636,6 +649,34 @@ router.post('/calls/:id/respond', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/calls/:id/respond POST]', e);
     res.status(500).json({ error: 'Failed to respond to call' });
+  }
+});
+
+router.get('/push/vapid-public-key', requireV2Auth, async (_req, res) => {
+  try {
+    const publicKey = await getVapidPublicKey();
+    res.json({ publicKey });
+  } catch (e) {
+    console.error('[v2/push/vapid-public-key GET]', e);
+    res.status(500).json({ error: 'Failed to load push key' });
+  }
+});
+
+router.post('/push/subscribe', requireV2Auth, async (req, res) => {
+  try {
+    const { subscription } = req.body || {};
+    const result = await savePushSubscription({
+      userId: req.v2Auth.userId,
+      subscription,
+      userAgent: req.get('user-agent') || '',
+    });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.status(201).json({ ok: true });
+  } catch (e) {
+    console.error('[v2/push/subscribe POST]', e);
+    res.status(500).json({ error: 'Failed to save push subscription' });
   }
 });
 
