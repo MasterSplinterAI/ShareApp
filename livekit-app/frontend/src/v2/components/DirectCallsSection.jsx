@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { format, isToday, isYesterday } from 'date-fns';
 import {
+  Bell,
   FileText,
   Phone,
   PhoneIncoming,
@@ -14,7 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { v2Calls, v2Contacts } from '../../services/apiV2';
+import { v2Calls, v2Contacts, v2Push } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
@@ -93,6 +94,44 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [savingContact, setSavingContact] = useState(false);
+  const [notifPerm, setNotifPerm] = useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
+  );
+
+  const enablePushNotifications = async () => {
+    if (typeof Notification === 'undefined') {
+      toast.error('To get push notifications on iPhone right now, open lalia.cloud in Safari → Share → Add to Home Screen.');
+      return;
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setNotifPerm(perm);
+      if (perm !== 'granted') {
+        toast.error('Notification permission was not granted');
+        return;
+      }
+      if ('serviceWorker' in navigator && 'PushManager' in window) {
+        const reg = await navigator.serviceWorker.register('/sw.js');
+        await navigator.serviceWorker.ready;
+        const { publicKey } = await v2Push.vapidPublicKey();
+        if (publicKey) {
+          const padding = '='.repeat((4 - (publicKey.length % 4)) % 4);
+          const base64 = (publicKey + padding).replace(/-/g, '+').replace(/_/g, '/');
+          const rawData = window.atob(base64);
+          const keyArray = new Uint8Array(rawData.length);
+          for (let i = 0; i < rawData.length; ++i) keyArray[i] = rawData.charCodeAt(i);
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: keyArray,
+          });
+          await v2Push.subscribe(sub.toJSON ? sub.toJSON() : sub);
+        }
+      }
+      toast.success('Call notifications enabled for this device!');
+    } catch {
+      toast.error('Could not enable push notifications on this device');
+    }
+  };
 
   const loadAll = () => {
     Promise.all([
@@ -289,6 +328,18 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
             <Plus className="h-3.5 w-3.5" />
             {t('calls.addContact')}
           </Button>
+          {notifPerm === 'default' && (
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              onClick={enablePushNotifications}
+            >
+              <Bell className="h-3.5 w-3.5 text-primary" />
+              Enable call alerts
+            </Button>
+          )}
         </div>
       </div>
 
