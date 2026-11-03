@@ -63,7 +63,9 @@ export default function IncomingCallOverlay({ currentUser }) {
     let cancelled = false;
 
     const poll = async () => {
-      if (cancelled || document.visibilityState === 'hidden') return;
+      const hasNativeAndroidBridge =
+        typeof window !== 'undefined' && Boolean(window.LaliaAndroid);
+      if (cancelled || (document.visibilityState === 'hidden' && !hasNativeAndroidBridge)) return;
       if (typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) return;
       try {
         const res = await v2Calls.incoming();
@@ -86,7 +88,37 @@ export default function IncomingCallOverlay({ currentUser }) {
   }, [inLiveRoom]);
 
   useEffect(() => {
-    if (!incomingCall) return undefined;
+    if (!incomingCall) {
+      try {
+        window.LaliaAndroid?.stopIncomingCallRing?.();
+      } catch {
+        /* ignore */
+      }
+      return undefined;
+    }
+
+    const hasAndroidRing =
+      typeof window !== 'undefined' &&
+      typeof window.LaliaAndroid?.ringIncomingCall === 'function';
+
+    if (hasAndroidRing) {
+      try {
+        window.LaliaAndroid.ringIncomingCall(
+          incomingCall.callerName || 'Someone',
+          incomingCall.joinUrl || ''
+        );
+      } catch {
+        /* ignore */
+      }
+      return () => {
+        try {
+          window.LaliaAndroid?.stopIncomingCallRing?.();
+        } catch {
+          /* ignore */
+        }
+      };
+    }
+
     playRingChime();
     try {
       navigator.vibrate?.([200, 100, 200]);
