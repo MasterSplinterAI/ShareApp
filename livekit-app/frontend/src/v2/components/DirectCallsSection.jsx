@@ -553,7 +553,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                       size="sm"
                       className="h-8 gap-1.5 px-2.5 text-xs"
                     >
-                      <Link to={`/v2/app/meetings/${encodeURIComponent(call.meetingId)}`}>
+                      <Link to={`/v2/app/meetings/${encodeURIComponent(call.meetingId)}?tab=insights`}>
                         <Sparkles className="h-3.5 w-3.5 text-primary" />
                         Transcript &amp; AI
                       </Link>

@@ -1,5 +1,5 @@
 {
-  "_version": 6,
+  "_version": 7,
   "nav": {
     "platform": "Platform",
     "features": "Features",
@@ -13,68 +13,68 @@
     "menuTitle": "Menu"
   },
   "hero": {
-    "eyebrow": "Live translation · captions · AI insights",
-    "title": "Live meeting translation and captions—in every language.",
-    "subtitle": "One browser platform for multilingual meetings: real-time translation, speech-to-text, optional transcripts, and AI insights—for individuals and teams.",
+    "eyebrow": "1-on-1 Direct Calls · Group Meetings · Live Translation · AI Insights",
+    "title": "Call anyone or host a meeting—translated live in every language.",
+    "subtitle": "Ring a contact 1-on-1 like a phone call or launch a multi-person meeting. Hear real-time voice translation, read live bilingual captions, and email AI summaries & action items to participants in one click.",
     "startFree": "Start free — 60 min/month",
-    "tryTranslation": "Try translation",
+    "tryTranslation": "Try live demo",
     "seeHowItWorks": "See how it works",
-    "footnote": "No credit card · Guests join in one click · Transcripts off by default · Runs in your browser"
+    "footnote": "No credit card · 1-tap direct calling & 1-click guest links · Bilingual transcripts & AI insights"
   },
   "platform": {
-    "eyebrow": "One platform",
-    "title": "Fewer tools. One meeting stack.",
-    "subtitle": "Stop stitching together interpreters, caption add-ons, and note-taking bots. Lalia is built for live multilingual conversation first—and keeps a record when you want one.",
+    "eyebrow": "One platform for calls, meetings & follow-ups",
+    "title": "Direct calling, group meetings, and AI insights in one place.",
+    "subtitle": "Whether you're ringing one person across languages or hosting an international team meeting, Lalia translates live speech, captures the bilingual transcript, and emails the takeaways.",
     "pillars": {
       "live": {
-        "title": "Live in the meeting",
-        "description": "Real-time speech-to-text, live captions, and cross-language translation—each participant in their own language lane."
+        "title": "1-on-1 Direct Calling & Group Meetings",
+        "description": "Ring any contact in one tap with phone-style call alerts, or host multi-person video meetings where everyone speaks and hears in their own language."
       },
       "after": {
-        "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "title": "Live Bilingual Transcription",
+        "description": "Every spoken sentence is transcribed and translated side-by-side in real time—searchable by speaker and exportable as JSON or plain text."
       },
       "insights": {
-        "title": "Without the busywork",
-        "description": "AI summaries, action items, and decisions—grounded only in what was actually said. Gaps flagged, never invented."
+        "title": "AI Insights & 1-Click Email Sharing",
+        "description": "Turn any call or meeting into an Executive Summary, Action Items, or Decisions report—and email the PDF + transcript to participants or others in one click."
       }
     },
     "replaces": {
       "title": "Replaces a patchwork of:",
       "items": {
-        "interpreter": "Scheduled interpreters for recurring syncs",
-        "captions": "Caption-only add-ons",
-        "transcription": "Separate transcription bots",
-        "notes": "Manual meeting notes & follow-up docs"
+        "interpreter": "Separate calling apps & human interpreters",
+        "captions": "Single-language caption add-ons",
+        "transcription": "Third-party transcription bots",
+        "notes": "Manual meeting notes & follow-up emails"
       }
     }
   },
   "audience": {
     "eyebrow": "Who it's for",
-    "title": "Individuals and teams, same platform",
-    "subtitle": "Start free on your own—or bring your whole organization when you're ready.",
+    "title": "Built for 1-on-1 callers and global teams alike",
+    "subtitle": "Use Lalia like a multilingual phone for everyday 1-on-1 calls—or scale up to scheduled multi-person meetings and shared team workspaces.",
     "personal": {
-      "title": "For you",
-      "description": "Consultants, freelancers, remote workers, and anyone who meets across languages.",
+      "title": "1-on-1 Calls & Individuals",
+      "description": "Call friends, clients, contractors, or partners across languages—plus capture transcripts and email AI insights after every call.",
       "items": {
-        "free": "Free tier with 60 participant-minutes/month",
-        "guest": "One-click guest links—no download",
-        "solo": "Personal workspace—no company required"
+        "free": "Save contacts & ring them in 1 tap (or share an instant link)",
+        "guest": "Bilingual transcript + AI summaries even on same-language calls",
+        "solo": "Free tier with 60 minutes/month—no company required"
       }
     },
     "team": {
-      "title": "For your team",
-      "description": "Sales, customer success, HR, ops, and global product teams who need shared access.",
+      "title": "Multi-Person Meetings & Teams",
+      "description": "Sales, customer success, operations, and global teams running multi-language group meetings with shared insights.",
       "items": {
-        "workspace": "Team workspace with roles & invites",
-        "usage": "Usage dashboard & centralized billing",
-        "enterprise": "Enterprise volume, DPA support & custom terms"
+        "workspace": "Multi-speaker rooms where each participant picks their own language",
+        "usage": "1-click email of AI action items & PDFs to all attendees or external stakeholders",
+        "enterprise": "Team directory, calendar sync (.ics), and centralized billing"
       }
     }
   },
   "cta": {
-    "title": "Start your first multilingual meeting",
-    "subtitle": "Free tier · No credit card · Guests join from a link",
+    "title": "Make your first live translated call or meeting",
+    "subtitle": "Free 60 min/mo · 1-tap direct calling · Bilingual transcripts & AI insights",
     "startFree": "Start free",
     "contactSales": "Talk to sales"
   },
@@ -82,13 +82,13 @@
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
-      "retention": "You control retention"
+      "transcripts": "Bilingual transcripts & AI summaries",
+      "retention": "1-click email to participants"
     },
-    "poweredBy": "Real-time video in the browser"
+    "poweredBy": "Works on Web, iOS & Android"
   },
   "footer": {
-    "tagline": "The multilingual meeting platform—live translation, transcripts, and AI insights for individuals and teams.",
+    "tagline": "Live translated 1-on-1 calls, multi-person meetings, bilingual transcripts, and email-ready AI insights.",
     "product": "Product",
     "platform": "Platform",
     "tryDemo": "Try translation",
@@ -105,81 +105,81 @@
     "support": "Support:"
   },
   "meetingPreview": {
-    "windowTitle": "Lalia — Q3 rollout · Live captions ON",
+    "windowTitle": "Lalia — Live Call & Meeting · Voice Translation + Captions ON",
     "captions": "Captions",
     "chat": "Chat",
     "people": "People",
-    "translating": "Translating EN → ES, JA",
+    "translating": "Translating EN ↔ ES, JA",
     "presenting": "Kenny is presenting",
-    "footnote": "Product preview — screen share, participant tiles, and live captions in the side panel."
+    "footnote": "Works for 1-on-1 direct calls and multi-person meetings — with live voice translation, bilingual captions, and post-call AI insights."
   },
   "features": {
     "eyebrow": "Capabilities",
-    "title": "Everything in one browser tab",
-    "subtitle": "Host meetings, invite guests, and manage transcripts from a focused workspace—no plugins required.",
+    "title": "Direct calling, group meetings & AI follow-ups",
+    "subtitle": "Everything you need to talk across languages—and send clear takeaways the moment you hang up.",
     "items": {
       "translation": {
-        "title": "Real-time translation",
-        "description": "Participants choose a language lane; speech is transcribed and translated in the flow of the meeting."
+        "title": "1-Tap Direct Calling & Group Rooms",
+        "description": "Ring saved contacts directly like a phone call, or schedule multi-person meetings with calendar invites (.ics) and 1-click guest links."
       },
       "captions": {
-        "title": "Live captions",
-        "description": "Side-by-side captions keep everyone on the same page—even in noisy environments or accessibility-first teams."
+        "title": "Real-time voice translation & captions",
+        "description": "Speak naturally in 30+ languages. Hear translated voice and read live original + translated captions side-by-side."
       },
       "transcripts": {
-        "title": "Transcripts you control",
-        "description": "Per-meeting policy to save finalized lines on the server, with JSON and plain-text download when you need records."
+        "title": "Bilingual transcripts & AI insights",
+        "description": "Automatically capture searchable transcripts and generate Executive Summaries, Action Items, and Decisions in seconds."
       },
       "accounts": {
-        "title": "Personal or team accounts",
-        "description": "Start solo on a free personal account, or add a team workspace with roles when you need shared access."
+        "title": "Email insights to participants or anyone",
+        "description": "Select call participants, saved contacts, or custom emails to send the AI report (PDF) and bilingual transcript right after the call."
       }
     }
   },
   "howItWorks": {
     "eyebrow": "How it works",
-    "title": "From signup to your first translated call",
-    "subtitle": "Three quick steps—no downloads, no setup.",
+    "title": "From ringing a contact to emailing the AI summary",
+    "subtitle": "Three steps—whether it's a quick 1-on-1 call or a global team meeting.",
     "steps": {
       "one": {
-        "title": "Create your account",
-        "body": "Sign up free — no company name required. Use a personal account or add a team workspace anytime."
+        "title": "Ring a contact 1-on-1 or start a meeting",
+        "body": "Call a saved contact or email in one tap—or schedule a multi-person meeting with automatic calendar invites."
       },
       "two": {
-        "title": "Schedule or start a meeting",
-        "body": "Instant or scheduled sessions with policies for host presence and guest links."
+        "title": "Talk naturally in any language",
+        "body": "Each person speaks and hears in their own language with live voice translation and bilingual captions."
       },
       "three": {
-        "title": "Share the guest link",
-        "body": "Guests join in one click; optional invite tokens keep access tight when you need them."
+        "title": "Generate & email AI insights in 1 click",
+        "body": "When the call ends, review the transcript, generate AI action items or summaries, and email them to participants or others."
       }
     }
   },
   "aiReports": {
-    "eyebrow": "Transcripts & AI insights",
-    "title": "Your meeting, distilled—in any language it was spoken.",
-    "subtitle": "When transcript storage is on, Lalia turns the multilingual conversation into a polished report: executive summaries, action items with owners, decisions and open questions. The third pillar of the platform—after live translation and saved transcripts.",
+    "eyebrow": "Transcription, AI Insights & Email Follow-up",
+    "title": "Every call & meeting distilled—and emailed in one click.",
+    "subtitle": "Even when everyone speaks the same language, people love Lalia for its instant post-call intelligence. Generate Executive Summaries, Action Items, or Decisions from the transcript, then select participants, contacts, or any email to send the report.",
     "templates": {
       "executive": {
         "label": "Executive summary",
-        "desc": "Overview, key points, decisions, risks, next steps"
+        "desc": "Overview, key points, decisions, risks, and next steps from your call or meeting"
       },
       "actions": {
-        "label": "Action items",
-        "desc": "Owners, actions, and due dates pulled from the conversation"
+        "label": "Action items & owners",
+        "desc": "Who owns what and by when—extracted directly from what was said"
       },
       "decisions": {
         "label": "Decisions & open questions",
-        "desc": "What was decided vs. what still needs an answer"
+        "desc": "Clear record of what was agreed on vs. what still needs follow-up"
       }
     },
     "badges": {
-      "download": "Download as PDF or Markdown",
-      "email": "Email to your team"
+      "download": "Export PDF, Markdown or .txt transcript",
+      "email": "Email to call participants, contacts, or custom emails"
     },
     "mock": {
-      "label": "Lalia meeting report",
-      "meta": "Executive summary · Generated in 12s · 214 transcript lines · EN / ES / FR",
+      "label": "Post-Call AI Insights & Email",
+      "meta": "Executive summary · Generated in 8s · 1-on-1 Call & Group Meeting ready",
       "keyPoints": "Key points",
       "decisions": "Decisions",
       "nextSteps": "Next steps"

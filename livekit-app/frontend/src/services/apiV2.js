@@ -168,10 +168,12 @@ export const v2Meetings = {
         responseType: 'blob',
       })
       .then((r) => r),
-  emailTranscriptReport: (id, reportId, to) =>
+  emailTranscriptReport: (id, reportId, to, opts = {}) =>
     apiV2
       .post(`/meetings/${encodeURIComponent(id)}/transcript/reports/${encodeURIComponent(reportId)}/email`, {
         to: Array.isArray(to) ? to : [to],
+        includeTranscript: Boolean(opts.includeTranscript),
+        note: opts.note || undefined,
       })
       .then((r) => r.data),
 };

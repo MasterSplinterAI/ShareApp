@@ -128,6 +128,7 @@ export default function V2MeetingDetail() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const autoJoinIntent = searchParams.get('join') === '1';
+  const requestedTab = searchParams.get('tab');
   const [meeting, setMeeting] = useState(null);
   const [me, setMe] = useState(null);
   const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
@@ -709,7 +710,8 @@ export default function V2MeetingDetail() {
     </div>
   );
 
-  const showTranscriptExpanded = transcriptOpen || transcriptCount > 0;
+  const showTranscriptExpanded =
+    transcriptOpen || transcriptCount > 0 || requestedTab === 'insights' || requestedTab === 'view';
 
   const transcriptCard = (
     <Card className="app-card border-primary/25 bg-gradient-to-br from-primary/[0.04] via-card to-card">
@@ -727,8 +729,8 @@ export default function V2MeetingDetail() {
             </CardTitle>
             <CardDescription className="mt-0.5 text-xs sm:text-sm">
               {transcriptCount > 0
-                ? 'Generate AI summaries, action items, or export the saved bilingual transcript.'
-                : 'Captions and AI summaries will appear here once people speak in the meeting.'}
+                ? 'Generate AI summaries, action items, or email insights & transcripts to participants.'
+                : 'Captions and AI summaries will appear here once people speak in the call or meeting.'}
             </CardDescription>
           </div>
           {transcriptCount > 0 && (
@@ -751,6 +753,7 @@ export default function V2MeetingDetail() {
             meetingId={id}
             lineCount={meeting.transcriptLineCount}
             storeTranscripts={policy.store_transcripts}
+            initialTab={requestedTab === 'insights' ? 'insights' : 'view'}
             onDownloadJson={downloadTranscriptJson}
             onDownloadTxt={downloadTranscriptTxt}
           />

@@ -1,9 +1,9 @@
-import { Globe2, Mic, Shield, FileText } from 'lucide-react';
+import { Globe2, Mic, Mail, FileText, Phone } from 'lucide-react';
 import { Card, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 
 const FEATURE_KEYS = ['translation', 'captions', 'transcripts', 'accounts'];
-const ICONS = { translation: Globe2, captions: Mic, transcripts: FileText, accounts: Shield };
+const ICONS = { translation: Phone, captions: Globe2, transcripts: FileText, accounts: Mail };
 
 export function FeatureGrid() {
   const { t } = useTranslation();

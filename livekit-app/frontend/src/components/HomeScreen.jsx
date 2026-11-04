@@ -53,10 +53,10 @@ function NativeMobileWelcome() {
         </div>
 
         <h1 className="mt-7 text-2xl font-semibold tracking-tight sm:text-3xl">
-          Meet across any language in real time
+          Call anyone or meet across any language
         </h1>
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-          Join a meeting from an invite link, try live AI voice translation, or sign in to host meetings.
+          Ring contacts 1-on-1, join a multi-person meeting, or get live transcripts &amp; AI insights emailed after every call.
         </p>
 
         <form

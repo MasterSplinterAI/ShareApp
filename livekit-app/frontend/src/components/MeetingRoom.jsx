@@ -345,9 +345,10 @@ function MeetingRoom() {
 
     try {
       const tokenData = await fetchRoomToken();
+      const hasV2Token = typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('v2_token'));
       const persist =
         Boolean(participantInfo.meetingId) &&
-        Boolean(participantInfo.isHost) &&
+        (Boolean(participantInfo.isHost) || hasV2Token) &&
         Boolean(tokenData.policy?.store_transcripts);
       setTranscriptPersistEnabled(persist);
 
@@ -380,7 +381,7 @@ function MeetingRoom() {
     const hasV2 = typeof localStorage !== 'undefined' && localStorage.getItem('v2_token');
     const mid = participantInfo?.meetingId;
     if (hasV2 && mid) {
-      navigate(`/v2/app/meetings/${mid}`);
+      navigate(`/v2/app/meetings/${mid}?tab=insights`);
       return;
     }
     if (hasV2) {

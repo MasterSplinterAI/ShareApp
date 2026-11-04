@@ -588,14 +588,51 @@ router.patch('/:id/invites/default', requireV2Auth, async (req, res) => {
 
 router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
-    const guests = await db.all(
-      `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, rsvp_status, rsvp_updated_at, created_at
-       FROM v2_meeting_guest_invites WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`,
-      [req.params.id]
-    );
+    const [guests, directCalls, hostRow] = await Promise.all([
+      db.all(
+        `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, rsvp_status, rsvp_updated_at, created_at
+         FROM v2_meeting_guest_invites WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`,
+        [req.params.id]
+      ),
+      db.all(
+        `SELECT id, caller_name, caller_email, callee_name, callee_email, status, created_at
+         FROM v2_direct_calls WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 20`,
+        [req.params.id]
+      ),
+      row.host_user_id
+        ? db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [row.host_user_id])
+        : Promise.resolve(null),
+    ]);
+
+    const seenEmails = new Set();
+    const participants = [];
+    const addParticipant = (email, name, role, defaultSelected = true) => {
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) return;
+      if (seenEmails.has(cleanEmail)) return;
+      seenEmails.add(cleanEmail);
+      participants.push({
+        email: cleanEmail,
+        name: String(name || cleanEmail.split('@')[0]).trim(),
+        role,
+        defaultSelected,
+      });
+    };
+
+    for (const dc of directCalls || []) {
+      if (dc.callee_email) addParticipant(dc.callee_email, dc.callee_name, 'Call participant', true);
+      if (dc.caller_email) addParticipant(dc.caller_email, dc.caller_name, 'Caller', true);
+    }
+    for (const g of guests || []) {
+      if (g.email) addParticipant(g.email, null, 'Invited guest', true);
+    }
+    if (hostRow?.email) {
+      addParticipant(hostRow.email, hostRow.display_name, 'Host', true);
+    }
+
     const { getMeetingInviteEmailSettings, parseRemindersSent } = require('../../lib/guestInviteReminderPrefs');
     const settings = await getMeetingInviteEmailSettings(req.params.id, req.v2Auth.userId);
     res.json({
@@ -603,6 +640,7 @@ router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
         ...g,
         reminders_sent: parseRemindersSent(g),
       })),
+      participants,
       settings,
     });
   } catch (e) {
@@ -1077,18 +1115,9 @@ async function loadTranscriptLines(meetingId) {
 
 router.post('/:id/transcript-lines', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(
-      `SELECT m.*, IFNULL(p.store_transcripts, 0) AS store_transcripts
-       FROM v2_meetings m
-       LEFT JOIN v2_meeting_policies p ON p.meeting_id = m.id
-       WHERE m.id = ? AND m.org_id = ?`,
-      [req.params.id, req.v2Auth.orgId]
-    );
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth, true);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
-    if (row.host_user_id !== req.v2Auth.userId && !['owner', 'admin'].includes(req.v2Auth.role)) {
-      return res.status(403).json({ error: 'Only the meeting host or an org admin can upload transcripts' });
-    }
     if (!row.store_transcripts) {
       return res.status(403).json({ error: 'Transcript storage is off for this meeting', code: 'transcripts_disabled' });
     }
@@ -1191,12 +1220,12 @@ router.get('/:id/transcript/reports/:reportId/export', requireV2Auth, async (req
 
 router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const report = await db.get(
       `SELECT * FROM v2_meeting_transcript_reports WHERE id = ? AND meeting_id = ?`,
-      [req.params.reportId, req.params.id]
+      [req.params.id && req.params.reportId, req.params.id]
     );
     if (!report) return res.status(404).json({ error: 'Report not found' });
 
@@ -1219,29 +1248,63 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
       return res.status(400).json({ error: 'At least one valid recipient email is required' });
     }
 
+    const includeTranscript = Boolean(req.body?.includeTranscript);
+    const personalNote = req.body?.note ? String(req.body.note).trim().slice(0, 600) : '';
+
     const { reportToPdfBuffer, reportToMarkdown, templateLabel, safeFilename } = require('../../lib/reportExport');
     const { sendEmail } = require('../../lib/mailer');
     const { renderTranscriptReport } = require('../../lib/emailTemplates');
-    const org = await db.get(`SELECT name FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+    const [org, senderUser] = await Promise.all([
+      db.get(`SELECT name FROM v2_organizations WHERE id = ?`, [row.org_id || req.v2Auth.orgId]),
+      db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]),
+    ]);
+    const senderName = senderUser?.display_name || senderUser?.email?.split('@')[0] || '';
     const pdf = await reportToPdfBuffer({ report, meetingTitle: row.title, orgName: org?.name });
     const md = reportToMarkdown({ report, meetingTitle: row.title, orgName: org?.name });
     const label = templateLabel(report.template_id);
     const base = safeFilename(`${row.title || 'meeting'}-${label}`);
+
+    let transcriptTxt = '';
+    if (includeTranscript) {
+      const lines = await loadTranscriptLines(req.params.id);
+      transcriptTxt = (lines || [])
+        .map((l) => {
+          const ts = l.recorded_at ? new Date(l.recorded_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+          const who = l.participant_identity || 'Speaker';
+          const body = [
+            l.original_text,
+            l.translated_text && l.translated_text !== l.original_text ? ` → ${l.translated_text}` : '',
+          ].join('');
+          return `${ts ? `[${ts}] ` : ''}${who}: ${body}`;
+        })
+        .join('\n');
+    }
+
     const email = renderTranscriptReport({
       meetingTitle: row.title,
       label,
       orgName: org?.name,
-      summaryExcerpt: md,
+      summaryExcerpt: report.content_markdown || md,
+      senderName,
+      personalNote,
+      transcriptPreview: transcriptTxt,
+      includeTranscript: Boolean(includeTranscript && transcriptTxt),
     });
+
+    const attachments = [{ filename: `${base}.pdf`, content: pdf.toString('base64') }];
+    if (includeTranscript && transcriptTxt) {
+      attachments.push({
+        filename: `${safeFilename(row.title || 'meeting')}-transcript.txt`,
+        content: Buffer.from(transcriptTxt, 'utf-8').toString('base64'),
+      });
+    }
 
     const result = await sendEmail({
       to: recipients,
       subject: email.subject,
       text: email.text,
       html: email.html,
-      attachments: [
-        { filename: `${base}.pdf`, content: pdf.toString('base64') },
-      ],
+      attachments,
     });
     if (!result?.sent) {
       return res.status(503).json({
@@ -1364,7 +1427,7 @@ router.delete('/:id', requireV2Auth, async (req, res) => {
 
 router.get('/:id/transcript.txt', requireV2Auth, async (req, res) => {
   try {
-    const row = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [req.params.id, req.v2Auth.orgId]);
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const lines = await loadTranscriptLines(req.params.id);

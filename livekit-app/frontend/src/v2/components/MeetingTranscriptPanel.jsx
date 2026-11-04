@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
-import { Copy, FileDown, FileText, Loader2, Mail, RefreshCw, Search, Sparkles } from 'lucide-react';
-import { v2Meetings } from '../../services/apiV2';
+import { Copy, FileDown, FileText, Loader2, Mail, RefreshCw, Search, Sparkles, Users } from 'lucide-react';
+import { v2Meetings, v2Contacts } from '../../services/apiV2';
+import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -25,10 +26,11 @@ export default function MeetingTranscriptPanel({
   meetingId,
   lineCount,
   storeTranscripts,
+  initialTab = 'view',
   onDownloadJson,
   onDownloadTxt,
 }) {
-  const [tab, setTab] = useState('view');
+  const [tab, setTab] = useState(initialTab === 'insights' ? 'insights' : 'view');
   const [lines, setLines] = useState([]);
   const [loadingLines, setLoadingLines] = useState(false);
   const [search, setSearch] = useState('');
@@ -40,6 +42,12 @@ export default function MeetingTranscriptPanel({
   const [generating, setGenerating] = useState(false);
   const [report, setReport] = useState(null);
   const [reports, setReports] = useState([]);
+
+  useEffect(() => {
+    if (initialTab === 'insights') {
+      setTab('insights');
+    }
+  }, [initialTab]);
 
   const loadLines = useCallback(async () => {
     if (!meetingId || !lineCount) return;
@@ -58,7 +66,9 @@ export default function MeetingTranscriptPanel({
     if (!meetingId) return;
     try {
       const { reports: r } = await v2Meetings.listTranscriptReports(meetingId);
-      setReports(r || []);
+      const list = r || [];
+      setReports(list);
+      setReport((prev) => prev || list[0] || null);
     } catch {
       setReports([]);
     }
@@ -70,6 +80,12 @@ export default function MeetingTranscriptPanel({
       .then((r) => setTemplates(r.templates || []))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (lineCount > 0) {
+      loadReports();
+    }
+  }, [lineCount, loadReports]);
 
   useEffect(() => {
     if (tab === 'view' && lineCount > 0 && lines.length === 0) {
@@ -108,8 +124,8 @@ export default function MeetingTranscriptPanel({
         regenerate,
       });
       setReport(r.report);
-      if (!r.cached) toast.success('Report generated');
-      else toast.success('Loaded cached report');
+      if (!r.cached) toast.success('AI insights generated');
+      else toast.success('Loaded saved AI report');
       loadReports();
     } catch (e) {
       toast.error(e.response?.data?.error || 'Could not generate report');
@@ -120,55 +136,92 @@ export default function MeetingTranscriptPanel({
 
   const [exporting, setExporting] = useState(null);
   const [emailTo, setEmailTo] = useState('');
+  const [emailNote, setEmailNote] = useState('');
+  const [includeTranscriptInEmail, setIncludeTranscriptInEmail] = useState(true);
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailSending, setEmailSending] = useState(false);
-  const [inviteGuests, setInviteGuests] = useState([]);
-  const [selectedInviteEmails, setSelectedInviteEmails] = useState(() => new Set());
-  const [loadingInviteGuests, setLoadingInviteGuests] = useState(false);
+  const [sessionParticipants, setSessionParticipants] = useState([]);
+  const [savedContacts, setSavedContacts] = useState([]);
+  const [selectedRecipientEmails, setSelectedRecipientEmails] = useState(() => new Set());
+  const [loadingRecipients, setLoadingRecipients] = useState(false);
 
-  const inviteEmailOptions = useMemo(() => {
+  const participantOptions = useMemo(() => {
     const seen = new Set();
     const opts = [];
-    for (const g of inviteGuests) {
-      const email = String(g.email || '')
-        .trim()
-        .toLowerCase();
+    for (const p of sessionParticipants) {
+      const email = String(p.email || '').trim().toLowerCase();
       if (!email || seen.has(email)) continue;
       seen.add(email);
-      opts.push({ email, id: g.id });
+      opts.push({
+        email,
+        name: p.name || email.split('@')[0],
+        role: p.role || 'Participant',
+      });
     }
     return opts;
-  }, [inviteGuests]);
+  }, [sessionParticipants]);
 
-  const loadInviteGuests = useCallback(async () => {
+  const contactOptions = useMemo(() => {
+    const participantSet = new Set(participantOptions.map((p) => p.email));
+    const seen = new Set();
+    const opts = [];
+    for (const c of savedContacts) {
+      const email = String(c.email || '').trim().toLowerCase();
+      if (!email || participantSet.has(email) || seen.has(email)) continue;
+      seen.add(email);
+      opts.push({
+        email,
+        name: c.name || email.split('@')[0],
+        isTeammate: Boolean(c.isTeammate),
+      });
+    }
+    return opts;
+  }, [savedContacts, participantOptions]);
+
+  const loadRecipientOptions = useCallback(async () => {
     if (!meetingId) return;
-    setLoadingInviteGuests(true);
+    setLoadingRecipients(true);
     try {
-      const data = await v2Meetings.listEmailInvites(meetingId);
-      const guests = data.guests || [];
-      setInviteGuests(guests);
-      const emails = [
+      const [inviteData, contactsData] = await Promise.all([
+        v2Meetings.listEmailInvites(meetingId).catch(() => ({ guests: [], participants: [] })),
+        v2Contacts.list().catch(() => ({ contacts: [] })),
+      ]);
+
+      const rawParticipants =
+        Array.isArray(inviteData.participants) && inviteData.participants.length > 0
+          ? inviteData.participants
+          : (inviteData.guests || []).map((g) => ({
+              email: g.email,
+              name: String(g.email || '').split('@')[0],
+              role: 'Invited guest',
+            }));
+
+      setSessionParticipants(rawParticipants);
+      setSavedContacts(contactsData.contacts || []);
+
+      const defaultChecked = [
         ...new Set(
-          guests
-            .map((g) => String(g.email || '').trim().toLowerCase())
+          rawParticipants
+            .map((p) => String(p.email || '').trim().toLowerCase())
             .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e))
         ),
       ];
-      setSelectedInviteEmails(new Set(emails));
+      setSelectedRecipientEmails(new Set(defaultChecked));
     } catch {
-      setInviteGuests([]);
-      setSelectedInviteEmails(new Set());
+      setSessionParticipants([]);
+      setSavedContacts([]);
+      setSelectedRecipientEmails(new Set());
     } finally {
-      setLoadingInviteGuests(false);
+      setLoadingRecipients(false);
     }
   }, [meetingId]);
 
   useEffect(() => {
-    if (emailOpen) loadInviteGuests();
-  }, [emailOpen, loadInviteGuests]);
+    if (emailOpen) loadRecipientOptions();
+  }, [emailOpen, loadRecipientOptions]);
 
-  const toggleInviteEmail = (email) => {
-    setSelectedInviteEmails((prev) => {
+  const toggleRecipientEmail = (email) => {
+    setSelectedRecipientEmails((prev) => {
       const next = new Set(prev);
       if (next.has(email)) next.delete(email);
       else next.add(email);
@@ -176,12 +229,15 @@ export default function MeetingTranscriptPanel({
     });
   };
 
-  const setAllInviteEmails = (checked) => {
-    if (checked) {
-      setSelectedInviteEmails(new Set(inviteEmailOptions.map((o) => o.email)));
-    } else {
-      setSelectedInviteEmails(new Set());
-    }
+  const setAllParticipantEmails = (checked) => {
+    setSelectedRecipientEmails((prev) => {
+      const next = new Set(prev);
+      for (const p of participantOptions) {
+        if (checked) next.add(p.email);
+        else next.delete(p.email);
+      }
+      return next;
+    });
   };
 
   const downloadReport = async (format) => {
@@ -218,19 +274,25 @@ export default function MeetingTranscriptPanel({
       toast.error(`Invalid email: ${invalidExtra[0]}`);
       return;
     }
-    const recipients = [...new Set([...selectedInviteEmails, ...extra])];
+    const recipients = [...new Set([...selectedRecipientEmails, ...extra])];
     if (!recipients.length) {
-      toast.error('Select at least one invitee or enter an email address');
+      toast.error('Select at least one participant/contact or enter an email address');
       return;
     }
     setEmailSending(true);
     try {
-      await v2Meetings.emailTranscriptReport(meetingId, report.id, recipients);
+      await v2Meetings.emailTranscriptReport(meetingId, report.id, recipients, {
+        includeTranscript: includeTranscriptInEmail,
+        note: emailNote.trim() || undefined,
+      });
       toast.success(
-        recipients.length === 1 ? `Report sent to ${recipients[0]}` : `Report sent to ${recipients.length} recipients`
+        recipients.length === 1
+          ? `Insights sent to ${recipients[0]}`
+          : `Insights sent to ${recipients.length} recipients`
       );
       setEmailOpen(false);
       setEmailTo('');
+      setEmailNote('');
     } catch (e) {
       const data = e.response?.data;
       toast.error(data?.message || data?.error || 'Email failed');
@@ -261,16 +323,29 @@ export default function MeetingTranscriptPanel({
   if (!lineCount || lineCount <= 0) {
     return (
       <p className="text-sm text-muted-foreground">
-        No saved transcript lines yet. Lines appear when the host is in the meeting with storage enabled.
+        No saved transcript lines yet. Lines appear automatically as people speak during the call or meeting.
       </p>
     );
   }
 
+  const totalSelectedCount = [
+    ...new Set([
+      ...selectedRecipientEmails,
+      ...emailTo
+        .split(/[,;\s]+/)
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
+    ]),
+  ].length;
+
   return (
     <Tabs value={tab} onValueChange={setTab} className="w-full">
       <TabsList className="grid w-full grid-cols-3">
-        <TabsTrigger value="view">View</TabsTrigger>
-        <TabsTrigger value="insights">Insights</TabsTrigger>
+        <TabsTrigger value="view">Transcript ({lineCount})</TabsTrigger>
+        <TabsTrigger value="insights" className="gap-1.5">
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          AI Insights &amp; Email
+        </TabsTrigger>
         <TabsTrigger value="export">Export</TabsTrigger>
       </TabsList>
 
@@ -311,6 +386,15 @@ export default function MeetingTranscriptPanel({
           >
             {loadingLines ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setTab('insights')}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            AI Insights &amp; Email
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
           {filteredLines.length} of {lineCount} lines
@@ -341,43 +425,52 @@ export default function MeetingTranscriptPanel({
       </TabsContent>
 
       <TabsContent value="insights" className="space-y-4">
-        <div className="space-y-2">
-          <Label>Report type</Label>
-          <Select value={templateId} onValueChange={setTemplateId}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(templates.length ? templates : [{ id: 'executive_summary', label: 'Executive summary' }]).map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Insight template</Label>
+            <Select value={templateId} onValueChange={setTemplateId}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(templates.length ? templates : [{ id: 'executive_summary', label: 'Executive summary' }]).map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="custom-instructions">Custom focus (optional)</Label>
+            <Input
+              id="custom-instructions"
+              value={customInstructions}
+              onChange={(e) => setCustomInstructions(e.target.value)}
+              placeholder="e.g. Highlight action items, dates & pricing decisions"
+              maxLength={1000}
+            />
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="custom-instructions">Additional instructions (optional)</Label>
-          <textarea
-            id="custom-instructions"
-            rows={3}
-            value={customInstructions}
-            onChange={(e) => setCustomInstructions(e.target.value)}
-            placeholder="e.g. Only list dates and actionable items; ignore small talk."
-            className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-            maxLength={1000}
-          />
-          <p className="text-xs text-muted-foreground">
-            AI analyzes saved transcript lines. Results are cached until you regenerate or the transcript grows.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="flex flex-wrap items-center gap-2">
           <Button type="button" size="sm" className="gap-1.5" onClick={() => runSynthesis(false)} disabled={generating}>
             {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-            {generating ? 'Generating…' : 'Generate report'}
+            {generating ? 'Generating…' : report ? 'Generate selected template' : 'Generate AI insights'}
           </Button>
           {report && (
             <>
+              <Button
+                type="button"
+                size="sm"
+                variant={emailOpen ? 'default' : 'secondary'}
+                className="gap-1.5 font-medium"
+                disabled={!report.id}
+                onClick={() => setEmailOpen((v) => !v)}
+              >
+                <Mail className="h-4 w-4 text-primary" />
+                Send via Email
+              </Button>
               <Button type="button" variant="outline" size="sm" onClick={() => runSynthesis(true)} disabled={generating}>
                 Regenerate
               </Button>
@@ -407,106 +500,167 @@ export default function MeetingTranscriptPanel({
                 {exporting === 'md' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                 .md
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="gap-1.5"
-                disabled={!report.id}
-                onClick={() => setEmailOpen((v) => !v)}
-              >
-                <Mail className="h-4 w-4" />
-                Email
-              </Button>
             </>
           )}
         </div>
+
         {report && emailOpen && (
-          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Label className="text-sm">Meeting invitees</Label>
-                {inviteEmailOptions.length > 0 && (
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      className="text-xs text-primary hover:underline"
-                      onClick={() => setAllInviteEmails(true)}
-                    >
-                      Select all
-                    </button>
-                    <button
-                      type="button"
-                      className="text-xs text-muted-foreground hover:underline"
-                      onClick={() => setAllInviteEmails(false)}
-                    >
-                      Clear
-                    </button>
+          <div className="space-y-4 rounded-xl border border-primary/30 bg-primary/[0.03] p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h4 className="text-sm font-semibold text-foreground">
+                  Email AI Insights &amp; Report
+                </h4>
+                <p className="text-xs text-muted-foreground">
+                  Select call/meeting participants, pick from your saved contacts, or add any email address.
+                </p>
+              </div>
+              {participantOptions.length > 0 && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() => setAllParticipantEmails(true)}
+                  >
+                    Select all participants
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-muted-foreground hover:underline"
+                    onClick={() => setSelectedRecipientEmails(new Set())}
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {loadingRecipients ? (
+              <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                Loading participants &amp; contacts…
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {participantOptions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Call / Meeting Participants
+                    </Label>
+                    <ul className="grid gap-1.5 sm:grid-cols-2">
+                      {participantOptions.map((opt) => {
+                        const checked = selectedRecipientEmails.has(opt.email);
+                        return (
+                          <li key={opt.email}>
+                            <label
+                              className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs transition-colors ${
+                                checked
+                                  ? 'border-primary/50 bg-primary/10 text-foreground'
+                                  : 'border-border/60 bg-background/80 text-muted-foreground hover:bg-muted/40'
+                              }`}
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  className="h-4 w-4 shrink-0 rounded border-border accent-primary"
+                                  checked={checked}
+                                  onChange={() => toggleRecipientEmail(opt.email)}
+                                />
+                                <div className="min-w-0">
+                                  <p className="truncate font-medium text-foreground">{opt.name}</p>
+                                  <p className="truncate text-[11px] text-muted-foreground">{opt.email}</p>
+                                </div>
+                              </div>
+                              <Badge variant="secondary" className="shrink-0 px-1.5 py-0 text-[10px]">
+                                {opt.role}
+                              </Badge>
+                            </label>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                )}
+
+                {contactOptions.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      <Users className="h-3.5 w-3.5" />
+                      Other Contacts &amp; Teammates
+                    </Label>
+                    <div className="flex max-h-32 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-border/60 bg-background/60 p-2">
+                      {contactOptions.map((c) => {
+                        const checked = selectedRecipientEmails.has(c.email);
+                        return (
+                          <button
+                            key={c.email}
+                            type="button"
+                            onClick={() => toggleRecipientEmail(c.email)}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                              checked
+                                ? 'border-primary bg-primary text-primary-foreground font-medium'
+                                : 'border-border/70 bg-background text-foreground hover:bg-muted'
+                            }`}
+                          >
+                            <span>{c.name}</span>
+                            <span className={checked ? 'text-primary-foreground/80' : 'text-muted-foreground'}>
+                              ({c.email})
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
-              {loadingInviteGuests ? (
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading invitees…
-                </p>
-              ) : inviteEmailOptions.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No email invitees on this meeting yet. Add addresses below, or invite guests from the meeting page
-                  first.
-                </p>
-              ) : (
-                <ul className="max-h-40 space-y-1.5 overflow-y-auto rounded-md border border-border/50 bg-background/60 p-2">
-                  {inviteEmailOptions.map((opt) => {
-                    const checked = selectedInviteEmails.has(opt.email);
-                    return (
-                      <li key={opt.email}>
-                        <label className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-muted/50">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 shrink-0 rounded border-border accent-primary"
-                            checked={checked}
-                            onChange={() => toggleInviteEmail(opt.email)}
-                          />
-                          <span className="truncate">{opt.email}</span>
-                        </label>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+            )}
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="report-email-extra" className="text-xs font-medium">
+                  Additional email addresses
+                </Label>
+                <Input
+                  id="report-email-extra"
+                  aria-label="Additional recipient emails"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="client@company.com, teammate@company.com"
+                  className="h-9"
+                  onKeyDown={(e) => e.key === 'Enter' && !emailSending && sendReportEmail()}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="report-email-note" className="text-xs font-medium">
+                  Personal note (optional)
+                </Label>
+                <Input
+                  id="report-email-note"
+                  value={emailNote}
+                  onChange={(e) => setEmailNote(e.target.value)}
+                  placeholder="e.g. Great speaking today — here are our action items!"
+                  className="h-9"
+                  maxLength={500}
+                />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="report-email-extra" className="text-sm">
-                Additional emails
-              </Label>
-              <Input
-                id="report-email-extra"
-                aria-label="Additional recipient emails"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-                placeholder="colleague@company.com, another@company.com"
-                className="h-9"
-                onKeyDown={(e) => e.key === 'Enter' && !emailSending && sendReportEmail()}
+
+            <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-border/70 bg-background/80 px-3 py-2 text-xs">
+              <input
+                type="checkbox"
+                className="h-4 w-4 shrink-0 rounded border-border accent-primary"
+                checked={includeTranscriptInEmail}
+                onChange={(e) => setIncludeTranscriptInEmail(e.target.checked)}
               />
-              <p className="text-xs text-muted-foreground">Comma-separated is fine. PDF attaches to one email.</p>
-            </div>
+              <span className="font-medium text-foreground">
+                Include bilingual transcript (<code>.txt</code> attachment + preview) alongside the AI Insights PDF
+              </span>
+            </label>
+
             <div className="flex flex-wrap items-center gap-2">
               <Button type="button" size="sm" className="gap-1.5" disabled={emailSending} onClick={sendReportEmail}>
                 {emailSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                Send PDF
-                {(() => {
-                  const n = [
-                    ...new Set([
-                      ...selectedInviteEmails,
-                      ...emailTo
-                        .split(/[,;\s]+/)
-                        .map((e) => e.trim().toLowerCase())
-                        .filter(Boolean),
-                    ]),
-                  ].length;
-                  return n > 0 ? ` (${n})` : '';
-                })()}
+                Send Insights Email{totalSelectedCount > 0 ? ` (${totalSelectedCount})` : ''}
               </Button>
               <Button type="button" variant="ghost" size="sm" disabled={emailSending} onClick={() => setEmailOpen(false)}>
                 Cancel
@@ -514,17 +668,31 @@ export default function MeetingTranscriptPanel({
             </div>
           </div>
         )}
+
         {report?.content_markdown && (
           <div className="rounded-lg border border-border/60 bg-card p-4">
-            <p className="mb-2 text-xs text-muted-foreground">
-              {templateLabel(report.template_id, templates)} · {report.line_count} lines ·{' '}
-              {report.created_at ? new Date(report.created_at).toLocaleString() : ''}
-            </p>
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {templateLabel(report.template_id, templates)} · {report.line_count} lines ·{' '}
+                {report.created_at ? new Date(report.created_at).toLocaleString() : ''}
+              </p>
+              {!emailOpen && (
+                <button
+                  type="button"
+                  onClick={() => setEmailOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                >
+                  <Mail className="h-3.5 w-3.5" />
+                  Email to participants or others
+                </button>
+              )}
+            </div>
             <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-foreground dark:prose-invert">
               {report.content_markdown}
             </div>
           </div>
         )}
+
         {reports.length > 1 && (
           <div className="space-y-2 border-t border-border/60 pt-3">
             <p className="text-xs font-medium text-muted-foreground">Previous reports</p>

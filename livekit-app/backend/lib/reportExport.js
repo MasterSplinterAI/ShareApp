@@ -123,7 +123,7 @@ function reportToPdfBuffer({ report, meetingTitle, orgName }) {
     doc.on('error', reject);
 
     // ---- Title block
-    doc.fontSize(9).font('Helvetica').fillColor(COLORS.accent).text('PARLEY MEETING REPORT', { characterSpacing: 1 });
+    doc.fontSize(9).font('Helvetica').fillColor(COLORS.accent).text('LALIA MEETING REPORT', { characterSpacing: 1 });
     doc.moveDown(0.3);
     doc.fontSize(20).font('Helvetica-Bold').fillColor(COLORS.text).text(meetingTitle || 'Meeting');
     doc.moveDown(0.15);
