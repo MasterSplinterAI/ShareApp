@@ -1062,14 +1062,16 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
     }
     await ensureRoomAndAgent(row.livekit_room_name, 'multi-language', row.org_id);
     const { mintMeetingQualityToken } = require('../../lib/meetingQualityToken');
-    const hostDisplayName = String(participantName).trim().slice(0, 128);
-    // Prevent a caller from choosing a display name that looks like an agent identity.
-    const looksLikeAgent = /^(agent[-_]|.*-agent|.*translation.*)/i.test(hostDisplayName);
-    const safeIdentity = looksLikeAgent ? `user-${req.v2Auth.userId}` : hostDisplayName;
+    const hostDisplayName = String(participantName).trim().slice(0, 128) || 'Host';
+    const safeIdentity = `${host ? 'host' : 'member'}-${crypto.randomUUID()}`;
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: safeIdentity,
       name: hostDisplayName,
-      metadata: JSON.stringify({ displayName: hostDisplayName, role: host ? 'host' : 'member' }),
+      metadata: JSON.stringify({
+        displayName: hostDisplayName,
+        role: host ? 'host' : 'member',
+        userId: req.v2Auth.userId,
+      }),
       ttl: '24h',
     });
     at.name = hostDisplayName;

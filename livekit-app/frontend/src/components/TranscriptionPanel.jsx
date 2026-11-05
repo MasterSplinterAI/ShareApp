@@ -307,7 +307,7 @@ function buildTranscriptPayload(m, selectedLanguage) {
   }
   if (translated && translated === m.originalText) translated = null;
   return {
-    participant_identity: String(m.speaker || 'unknown').slice(0, 200),
+    participant_identity: String(m.speakerLabel || m.speaker || 'unknown').slice(0, 200),
     original_text: m.originalText || '',
     language: selectedLanguage || 'en',
     source_language: m.sourceLanguage || undefined,

@@ -5,7 +5,7 @@ import { ConnectionState, RoomEvent } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { Loader2, Phone } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
-import { v2Calls, v2Meetings, v2Orgs } from '../services/apiV2';
+import { v2Auth, v2Calls, v2Meetings, v2Orgs } from '../services/apiV2';
 import { normalizeMeetingBranding } from '../lib/meetingBranding';
 import ShareModal from './ShareModal';
 import TranscriptionPanel from './TranscriptionPanel';
@@ -246,6 +246,21 @@ function MeetingRoom() {
     });
     setMeetingBranding(normalizeMeetingBranding(brandingFromSession));
     setMeetingTitle(titleFromSession);
+
+    // If the user is signed in to Lalia, pre-populate their display name automatically
+    // so they don't have to type it when answering a call or joining a meeting link.
+    if (!participantName && typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
+      v2Auth
+        .me()
+        .then((res) => {
+          const u = res?.user;
+          const resolvedName = (u?.display_name || u?.displayName || u?.email?.split('@')[0] || '').trim();
+          if (resolvedName) {
+            setParticipantInfo((prev) => (prev && !prev.participantName ? { ...prev, participantName: resolvedName } : prev));
+          }
+        })
+        .catch(() => {});
+    }
 
     setIsInitialized(true);
   }, [roomName, navigate]);

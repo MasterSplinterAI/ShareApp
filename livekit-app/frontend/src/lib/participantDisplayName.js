@@ -7,7 +7,7 @@ export function isWeakDisplayLabel(label) {
   const s = String(label || '').trim();
   if (!s) return true;
   if (s === 'Guest' || s === 'Unknown') return true;
-  return /^guest-[0-9a-f-]{36}$/i.test(s);
+  return /^(guest|host|member|user)-[0-9a-f-]{8,64}$/i.test(s);
 }
 
 /** Prefer a real typed name over guest-uuid / generic fallbacks. */
@@ -34,7 +34,7 @@ export function participantDisplayName(participant) {
     /* ignore bad metadata */
   }
 
-  if (/^guest-[0-9a-f-]{36}$/i.test(identity)) return 'Guest';
+  if (/^(guest|host|member|user)-[0-9a-f-]{8,64}$/i.test(identity)) return 'Guest';
   return name || identity || 'Unknown';
 }
 
@@ -43,7 +43,7 @@ export function resolveSpeakerLabel(speakerId, room) {
   if (!speakerId) return 'Unknown';
   const id = String(speakerId);
   if (!room) {
-    return /^guest-[0-9a-f-]{36}$/i.test(id) ? 'Guest' : id;
+    return /^(guest|host|member|user)-[0-9a-f-]{8,64}$/i.test(id) ? 'Guest' : id;
   }
 
   const local = room.localParticipant;
@@ -58,5 +58,5 @@ export function resolveSpeakerLabel(speakerId, room) {
     if (p.identity === id) return participantDisplayName(p);
   }
 
-  return /^guest-[0-9a-f-]{36}$/i.test(id) ? 'Guest' : id;
+  return /^(guest|host|member|user)-[0-9a-f-]{8,64}$/i.test(id) ? 'Guest' : id;
 }

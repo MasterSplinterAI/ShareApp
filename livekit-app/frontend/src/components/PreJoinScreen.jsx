@@ -125,6 +125,13 @@ function PreJoinScreen({
     normalizeMeetingLanguageCode(defaultLanguage || readStoredMeetingLanguage())
   );
 
+  // If defaultName resolves asynchronously (e.g. from signed-in user profile), fill the field if still empty.
+  useEffect(() => {
+    if (defaultName && !name.trim()) {
+      setName(defaultName);
+    }
+  }, [defaultName]);
+
   const syncUiLocaleToMeetingLanguage = useCallback((code) => {
     const uiLocale = resolveUiLocale(normalizeMeetingLanguageCode(code));
     if (isUiLocale(uiLocale)) {

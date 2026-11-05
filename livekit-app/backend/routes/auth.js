@@ -30,16 +30,20 @@ router.post('/token', requireV2Auth, async (req, res) => {
     }
 
     const safeName = String(participantName).trim().slice(0, 128);
-    // Create access token (never grant roomAdmin on the legacy route)
+    // Create access token with a per-connection unique identity so two people with the same name
+    // (or the same user on two devices) never collide on LiveKit identity.
+    const uniqueSuffix = require('crypto').randomUUID().slice(0, 8);
     const at = new AccessToken(
       process.env.LIVEKIT_API_KEY,
       process.env.LIVEKIT_API_SECRET,
       {
-        identity: `user-${req.v2Auth.userId}`,
+        identity: `user-${req.v2Auth.userId}-${uniqueSuffix}`,
         name: safeName,
+        metadata: JSON.stringify({ displayName: safeName, role: 'member' }),
         ttl: '24h',
       }
     );
+    at.name = safeName;
 
     // Grant permissions
     at.addGrant({

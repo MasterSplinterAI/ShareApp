@@ -160,6 +160,22 @@ router.get('/join-info', async (req, res) => {
     // Guest is allowed — ensure LiveKit room exists before the client calls GET /rooms/:name.
     // Without this, host-not-required meetings fail with 404 even though join-info said allowed.
     await ensureRoomAndAgent(meeting.livekit_room_name, 'multi-language', meeting.org_id);
+
+    // If this room was started as a Direct Call to a contact, return the contact's name
+    // so the callee's join screen can pre-populate their name automatically.
+    let suggestedParticipantName = null;
+    try {
+      const dc = await db.get(
+        `SELECT callee_name FROM v2_direct_calls WHERE meeting_id = ? AND callee_name IS NOT NULL ORDER BY datetime(created_at) DESC LIMIT 1`,
+        [meeting.id]
+      );
+      if (dc?.callee_name) {
+        suggestedParticipantName = String(dc.callee_name).trim();
+      }
+    } catch {
+      /* ignore */
+    }
+
     return res.json({
       mode: 'v2',
       allowed: true,
@@ -167,6 +183,7 @@ router.get('/join-info', async (req, res) => {
       title: meeting.title,
       inviteRequired: true,
       branding: meetingBranding(req, meeting),
+      suggestedParticipantName,
     });
   } catch (e) {
     console.error('[v2/join-info]', e);

@@ -21,10 +21,10 @@ export default function MeetingPresenceCard({ presence }) {
             {(presence.participants || []).map((p) => (
               <span
                 key={p.identity}
-                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-foreground"
+                className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-border bg-muted/30 px-3 py-1 text-xs font-medium text-foreground"
               >
-                <span className="truncate font-mono text-muted-foreground">{p.identity}</span>
-                {p.name && p.name !== p.identity && <span className="truncate text-muted-foreground">· {p.name}</span>}
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+                <span className="truncate">{p.name || p.identity}</span>
               </span>
             ))}
           </div>

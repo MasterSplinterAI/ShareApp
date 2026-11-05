@@ -31,11 +31,21 @@ function JoinMeeting() {
   const goHome = useCallback(() => navigate(homePath()), [navigate]);
 
   // Name + language + devices are collected on the prejoin screen (/room/:roomName).
-  // This page only validates access, then forwards the join context.
+  // Preserve any existing participantName (e.g. from answering an incoming call) or suggested contact name.
   const goToPrejoin = useCallback(
     (info, v2Ctx, joinMeta = {}) => {
+      let existingName = '';
+      try {
+        const prev = JSON.parse(sessionStorage.getItem('participantInfo') || '{}');
+        if (prev?.participantName && (!prev.roomName || prev.roomName === roomName)) {
+          existingName = String(prev.participantName).trim();
+        }
+      } catch {
+        /* ignore */
+      }
+      const initialName = existingName || joinMeta.suggestedParticipantName || '';
       const participantInfo = {
-        participantName: '',
+        participantName: initialName,
         isHost: !!info?.hostCode,
         hostCode: info?.hostCode,
         shareableLink: info?.shareableLink,
@@ -94,7 +104,11 @@ function JoinMeeting() {
         const branding = normalizeMeetingBranding(joinPreview.branding);
         setJoinBranding(branding);
         setMeetingTitle(joinPreview.title || '');
-        const joinMeta = { branding, meetingTitle: joinPreview.title || null };
+        const joinMeta = {
+          branding,
+          meetingTitle: joinPreview.title || null,
+          suggestedParticipantName: joinPreview.suggestedParticipantName || null,
+        };
         if (!joinPreview.allowed && joinPreview.reason === 'waiting_for_host') {
           setWaitingHost(true);
           setIsLoading(false);
