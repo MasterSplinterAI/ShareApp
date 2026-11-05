@@ -1,4 +1,4 @@
-import { Mic, Video, MonitorUp, MessageSquare, Users, Phone, Subtitles } from 'lucide-react';
+import { Mic, Video, MonitorUp, MessageSquare, Users, Phone, Subtitles, Volume2 } from 'lucide-react';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 import { DEFAULT_LOCALE } from '../../lib/i18n/constants';
 
@@ -173,8 +173,9 @@ export function MeetingPreview() {
                 <span className="rounded-md px-1.5 py-0.5 text-muted-foreground">{t('meetingPreview.chat')}</span>
                 <span className="rounded-md px-1.5 py-0.5 text-muted-foreground">{t('meetingPreview.people')}</span>
               </div>
-              <p className="border-b border-border/40 bg-primary/5 px-2 py-1 text-[9px] font-medium text-primary sm:text-[10px]">
-                {t('meetingPreview.translating')}
+              <p className="flex items-center gap-1 border-b border-border/40 bg-primary/5 px-2 py-1 text-[9px] font-medium text-primary sm:text-[10px]">
+                <Volume2 className="h-3 w-3 shrink-0" />
+                <span className="truncate">{t('meetingPreview.translating')}</span>
               </p>
               <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 text-[9px] leading-snug sm:text-[10px]">
                 {CAPTION_LINES.map((line) => {

@@ -1,5 +1,5 @@
 {
-  "_version": 7,
+  "_version": 8,
   "nav": {
     "platform": "Platform",
     "features": "Features",
@@ -13,26 +13,26 @@
     "menuTitle": "Menu"
   },
   "hero": {
-    "eyebrow": "1-on-1 Direct Calls · Group Meetings · Live Translation · AI Insights",
-    "title": "Call anyone or host a meeting—translated live in every language.",
-    "subtitle": "Ring a contact 1-on-1 like a phone call or launch a multi-person meeting. Hear real-time voice translation, read live bilingual captions, and email AI summaries & action items to participants in one click.",
+    "eyebrow": "1-on-1 Direct Calls · Group Meetings · Spoken Voice Translation · AI Insights",
+    "title": "Call anyone or host a meeting—hear and read every language live.",
+    "subtitle": "Ring a contact 1-on-1 like a phone call or launch a multi-person meeting. Hear live spoken voice translation in your native language, read side-by-side voice captions, and email AI summaries & action items to participants in one click.",
     "startFree": "Start free — 60 min/month",
-    "tryTranslation": "Try live demo",
+    "tryTranslation": "Try live voice demo",
     "seeHowItWorks": "See how it works",
-    "footnote": "No credit card · 1-tap direct calling & 1-click guest links · Bilingual transcripts & AI insights"
+    "footnote": "No credit card · Hear spoken voice + read live captions in your language · Bilingual transcripts & AI insights"
   },
   "platform": {
     "eyebrow": "One platform for calls, meetings & follow-ups",
-    "title": "Direct calling, group meetings, and AI insights in one place.",
-    "subtitle": "Whether you're ringing one person across languages or hosting an international team meeting, Lalia translates live speech, captures the bilingual transcript, and emails the takeaways.",
+    "title": "Direct calling, spoken voice translation, and AI insights in one place.",
+    "subtitle": "Whether you're ringing one person across languages or hosting an international team meeting, Lalia speaks the translation aloud in your native language, shows live captions, and emails the takeaways.",
     "pillars": {
       "live": {
         "title": "1-on-1 Direct Calling & Group Meetings",
-        "description": "Ring any contact in one tap with phone-style call alerts, or host multi-person video meetings where everyone speaks and hears in their own language."
+        "description": "Ring any contact in one tap with phone-style call alerts, or host multi-person video meetings where everyone speaks their own language and hears the call in theirs."
       },
       "after": {
-        "title": "Live Bilingual Transcription",
-        "description": "Every spoken sentence is transcribed and translated side-by-side in real time—searchable by speaker and exportable as JSON or plain text."
+        "title": "Spoken Voice Translation & Live Captions",
+        "description": "Don't just read subtitles—hear real-time spoken voice translation in your native language alongside live bilingual captions, saved automatically to a searchable transcript."
       },
       "insights": {
         "title": "AI Insights & 1-Click Email Sharing",
@@ -105,26 +105,26 @@
     "support": "Support:"
   },
   "meetingPreview": {
-    "windowTitle": "Lalia — Live Call & Meeting · Voice Translation + Captions ON",
-    "captions": "Captions",
+    "windowTitle": "Lalia — Live Call & Meeting · Spoken Voice + Captions ON",
+    "captions": "Voice & Captions",
     "chat": "Chat",
     "people": "People",
-    "translating": "Translating EN ↔ ES, JA",
+    "translating": "Spoken audio + captions: EN ↔ ES, JA",
     "presenting": "Kenny is presenting",
-    "footnote": "Works for 1-on-1 direct calls and multi-person meetings — with live voice translation, bilingual captions, and post-call AI insights."
+    "footnote": "Hear translated speech out loud in your native language while reading live bilingual captions—for 1-on-1 calls and group meetings."
   },
   "features": {
     "eyebrow": "Capabilities",
-    "title": "Direct calling, group meetings & AI follow-ups",
-    "subtitle": "Everything you need to talk across languages—and send clear takeaways the moment you hang up.",
+    "title": "Direct calling, spoken voice translation & AI follow-ups",
+    "subtitle": "Everything you need to hear and be understood in any language—and send clear takeaways the moment you hang up.",
     "items": {
       "translation": {
         "title": "1-Tap Direct Calling & Group Rooms",
         "description": "Ring saved contacts directly like a phone call, or schedule multi-person meetings with calendar invites (.ics) and 1-click guest links."
       },
       "captions": {
-        "title": "Real-time voice translation & captions",
-        "description": "Speak naturally in 30+ languages. Hear translated voice and read live original + translated captions side-by-side."
+        "title": "Hear Spoken Voice + Read Live Captions",
+        "description": "Speak naturally in 30+ languages. Hear the other person translated out loud into your native language while reading live side-by-side voice captions."
       },
       "transcripts": {
         "title": "Bilingual transcripts & AI insights",
