@@ -149,11 +149,13 @@ def _deepgram_stt_idle_ms() -> int:
     A thought stays open across breaths; this is "done speaking," not a clause pause.
     Does not depend on room silence — background noise won't block finalize.
     """
-    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "2000").strip()
+    raw = os.getenv("DEEPGRAM_STT_IDLE_MS", "3600").strip()
     try:
         ms = int(raw)
     except ValueError:
-        ms = 2000
+        ms = 3600
+    if ms <= 2000:
+        ms = 3600
     return max(400, min(ms, 8000))
 
 
@@ -569,6 +571,7 @@ class TranscriptionOnlyAgent:
         *,
         is_final: bool = True,
         word_count: int = 1,
+        interjector_vad_active: bool = True,
     ) -> None:
         """Conversational A -> B -> A handoff: commit paused speakers' open bubbles when another speaker talks."""
         async with self._caption_sessions_lock:
@@ -583,6 +586,7 @@ class TranscriptionOnlyAgent:
                     other_idle_sec=session.idle_seconds(),
                     interjector_is_final=is_final,
                     interjector_word_count=word_count,
+                    interjector_vad_active=interjector_vad_active,
                 ):
                     logger.info(
                         f"[{active_speaker_id}] ↪︎ committing paused open caption from "
@@ -593,6 +597,7 @@ class TranscriptionOnlyAgent:
                     other_has_open_turn=session.has_open_turn(),
                     interjector_is_final=is_final,
                     interjector_word_count=word_count,
+                    interjector_vad_active=interjector_vad_active,
                 ):
                     session.mark_interjected()
             except Exception as e:
@@ -2344,6 +2349,10 @@ class TranscriptionOnlyAgent:
                 await asyncio.sleep(idle_sec)
                 if not turn_id[0] or not dg_buffer.has_content():
                     return
+                if vad_speech_active[0]:
+                    logger.debug(f"{L} 🎙️ Deferring STT idle finalize while VAD speech is active")
+                    arm_stt_idle_finalize()
+                    return
                 if time.time() - last_stt_text_at[0] < idle_sec * 0.85:
                     return
                 logger.info(
@@ -2351,7 +2360,7 @@ class TranscriptionOnlyAgent:
                 )
                 maybe_flush_stt()
                 await asyncio.sleep(0.15)
-                if turn_id[0] and dg_buffer.has_content():
+                if turn_id[0] and dg_buffer.has_content() and not vad_speech_active[0]:
                     await finalize_turn()
             except asyncio.CancelledError:
                 logger.debug(f"{L} ↩️ STT idle finalize cancelled (new speech)")
@@ -2610,7 +2619,10 @@ class TranscriptionOnlyAgent:
                     await ensure_lanes_for_caption()
                     self._spawn_bg(
                         self._finalize_other_speakers(
-                            speaker_id, is_final=False, word_count=len(text.split())
+                            speaker_id,
+                            is_final=False,
+                            word_count=len(text.split()),
+                            interjector_vad_active=bool(vad_speech_active[0]),
                         )
                     )
                     await note_detected_language(speech_data, is_final=False, text=text)
@@ -2627,7 +2639,10 @@ class TranscriptionOnlyAgent:
                     await ensure_lanes_for_caption()
                     self._spawn_bg(
                         self._finalize_other_speakers(
-                            speaker_id, is_final=True, word_count=len(text.split())
+                            speaker_id,
+                            is_final=True,
+                            word_count=len(text.split()),
+                            interjector_vad_active=bool(vad_speech_active[0]),
                         )
                     )
                     await note_detected_language(speech_data, is_final=True, text=text)

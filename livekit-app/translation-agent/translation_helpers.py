@@ -87,15 +87,15 @@ def ends_sentence(text: str) -> bool:
     return bool(_SENTENCE_END_RE.search(text.strip())) if text.strip() else False
 
 
-def stt_idle_timeout_ms(live_text: str, base_idle_ms: int = 2000) -> int:
+def stt_idle_timeout_ms(live_text: str, base_idle_ms: int = 3500) -> int:
     """Adaptive STT idle window before closing the current bubble into a new thought.
 
     - When the current text ends with sentence punctuation (. ? ! etc.), close
-      slightly sooner (80% of base_idle_ms, e.g. 1600ms for a 2000ms base) so
+      slightly sooner (80% of base_idle_ms, e.g. 2800ms for a 3500ms base) so
       completed thoughts separate cleanly into a new bubble when the speaker
-      starts talking again.
+      starts talking again after a real pause.
     - When paused mid-sentence (no terminal punctuation yet), hold for the full
-      base_idle_ms (2000ms) so a brief breath doesn't chop a clause in half.
+      base_idle_ms (3500ms) so a brief breath doesn't chop a clause in half.
     """
     base = max(400, int(base_idle_ms))
     if ends_sentence(live_text or ""):
@@ -149,27 +149,29 @@ def should_handoff_turn(
     other_idle_sec: float,
     interjector_is_final: bool,
     interjector_word_count: int,
-    min_pause_sec: float = 0.35,
+    interjector_vad_active: bool = True,
+    min_pause_sec: float = 0.85,
 ) -> bool:
     """True when Speaker B's speech should finalize Speaker A's paused turn (A -> B -> A).
 
     - Never hand off if Speaker A has no open turn.
-    - Never cut off Speaker A while Speaker A is actively talking (simultaneous
-      cross-talk: other_vad_active is True and other_idle_sec < min_pause_sec).
-    - Require Speaker B to have actual recognized speech (any is_final, or an
-      interim with >= 2 words, or >= 1 word once Speaker A has been paused >= 0.8s)
-      so a mic bump / cough never splits Speaker A's bubble.
+    - Never cut off Speaker A while Speaker A's VAD is active or paused < min_pause_sec.
+    - Ignore noise hallucinations when Speaker B's VAD is inactive on interim events.
+    - Require Speaker B to speak a real phrase (>= 3 final words, or >= 4 interim words
+      with active VAD, or >= 2 final words after Speaker A has been silent >= 1.5s)
+      so 1-word backchannels ("Yeah", "Okay", "Sí") or speakerphone echo never split A's bubble.
     """
     if not other_has_open_turn:
         return False
-    other_paused = (not other_vad_active) or (other_idle_sec >= min_pause_sec)
-    if not other_paused:
+    if other_vad_active or other_idle_sec < min_pause_sec:
         return False
-    if interjector_is_final and interjector_word_count >= 1:
+    if not interjector_is_final and not interjector_vad_active:
+        return False
+    if interjector_is_final and interjector_word_count >= 3:
         return True
-    if interjector_word_count >= 2:
+    if interjector_vad_active and interjector_word_count >= 4:
         return True
-    if interjector_word_count >= 1 and other_idle_sec >= 0.8:
+    if interjector_is_final and interjector_word_count >= 2 and other_idle_sec >= 1.5:
         return True
     return False
 
@@ -179,20 +181,21 @@ def should_mark_interjection(
     other_has_open_turn: bool,
     interjector_is_final: bool,
     interjector_word_count: int,
+    interjector_vad_active: bool = True,
 ) -> bool:
-    """True when Speaker B spoke during Speaker A's active turn (simultaneous talk-over).
+    """True when Speaker B spoke a substantial turn during Speaker A's active turn.
 
-    When Speaker A is actively talking (so `should_handoff_turn` is False to
-    avoid chopping Speaker A mid-clause), marking Speaker A's turn as
-    interjected causes Speaker A's bubble to close cleanly as soon as Speaker A
-    finishes their current clause (`is_final`), so Speaker A's continuation
-    opens a new bubble below Speaker B (`A (part 1) -> B -> A (part 2)`).
+    Requires real sustained speech (>= 5 final words or >= 6 interim words with
+    active VAD) so short backchannels ("Yeah", "Okay", "Mhmm") or speakerphone
+    bleed never chop Speaker A's bubble at every clause boundary.
     """
     if not other_has_open_turn:
         return False
-    if interjector_is_final and interjector_word_count >= 1:
+    if not interjector_is_final and not interjector_vad_active:
+        return False
+    if interjector_is_final and interjector_word_count >= 5:
         return True
-    if interjector_word_count >= 2:
+    if interjector_vad_active and interjector_word_count >= 6:
         return True
     return False
 

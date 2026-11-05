@@ -253,23 +253,37 @@ class TestShouldHandoffTurn:
             should_handoff_turn(
                 other_has_open_turn=True,
                 other_vad_active=False,
-                other_idle_sec=0.6,
+                other_idle_sec=1.0,
                 interjector_is_final=False,
-                interjector_word_count=2,
+                interjector_word_count=4,
+                interjector_vad_active=True,
             )
             is True
         )
 
-    def test_handoff_on_short_one_word_final_from_speaker_b(self):
+    def test_no_handoff_on_short_one_word_backchannel_from_speaker_b(self):
         assert (
             should_handoff_turn(
                 other_has_open_turn=True,
                 other_vad_active=False,
-                other_idle_sec=0.5,
+                other_idle_sec=0.9,
                 interjector_is_final=True,
                 interjector_word_count=1,
             )
-            is True
+            is False
+        )
+
+    def test_no_handoff_when_interjector_vad_is_inactive_on_interim(self):
+        assert (
+            should_handoff_turn(
+                other_has_open_turn=True,
+                other_vad_active=False,
+                other_idle_sec=1.2,
+                interjector_is_final=False,
+                interjector_word_count=5,
+                interjector_vad_active=False,
+            )
+            is False
         )
 
     def test_no_handoff_when_speaker_a_is_actively_speaking(self):
@@ -277,9 +291,9 @@ class TestShouldHandoffTurn:
             should_handoff_turn(
                 other_has_open_turn=True,
                 other_vad_active=True,
-                other_idle_sec=0.1,
+                other_idle_sec=1.2,
                 interjector_is_final=True,
-                interjector_word_count=3,
+                interjector_word_count=5,
             )
             is False
         )
@@ -298,26 +312,27 @@ class TestShouldHandoffTurn:
 
 
 class TestShouldMarkInterjection:
-    """Simultaneous talk-over: mark Speaker A so A splits at A's next clause boundary."""
+    """Simultaneous talk-over: mark Speaker A only on real sustained speech from B."""
 
-    def test_marks_interjection_when_speaker_a_actively_talking_and_b_speaks(self):
+    def test_marks_interjection_when_speaker_b_speaks_full_thought_with_vad(self):
         assert (
             should_mark_interjection(
                 other_has_open_turn=True,
                 interjector_is_final=False,
-                interjector_word_count=2,
+                interjector_word_count=6,
+                interjector_vad_active=True,
             )
             is True
         )
 
-    def test_marks_interjection_on_one_word_final_from_b(self):
+    def test_ignores_short_backchannel_final_from_b(self):
         assert (
             should_mark_interjection(
                 other_has_open_turn=True,
                 interjector_is_final=True,
-                interjector_word_count=1,
+                interjector_word_count=2,
             )
-            is True
+            is False
         )
 
     def test_ignores_single_word_interim_from_b(self):
@@ -333,9 +348,10 @@ class TestShouldMarkInterjection:
     def test_ignores_when_speaker_a_has_no_open_turn(self):
         assert (
             should_mark_interjection(
-                other_has_open_turn=False,
-                interjector_is_final=True,
-                interjector_word_count=3,
+                other_has_open_turn=True,
+                interjector_is_final=False,
+                interjector_word_count=6,
+                interjector_vad_active=False,
             )
             is False
         )
