@@ -664,7 +664,8 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         DispatchQueue.main.async { [weak self] in
             self?.pollTimer?.invalidate()
             let timer = Timer(timeInterval: 2.5, repeats: true) { [weak self] _ in
-                guard let self = self, UIApplication.shared.applicationState == .active else { return }
+                guard let self = self,
+                      UIApplication.shared.applicationState == .active || self.currentlyRingingCallId != nil else { return }
                 self.pullAuthTokenFromWebView()
                 self.pollIncomingCallsNow()
             }
