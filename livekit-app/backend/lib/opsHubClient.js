@@ -388,10 +388,43 @@ async function backfillLaliaStateToOpsHub(db) {
 }
 
 /**
- * Middleware that proxies or mirrors `/api/v2/support/*` to Ops Hub with `X-Support-User-Json`
- * (falling back gracefully to the local SQLite support-kit handler if Ops Hub is unset or unreachable).
+ * Sync all Lalia support_tickets, support_messages, support_proposals, support_knowledge_gaps,
+ * and support_leads from local DB into Ops Hub's central Unified Support Ops console.
  */
-function createOpsSupportProxyMiddleware({ resolveUser, localHandler }) {
+async function syncSupportHistoryToOpsHub(db) {
+  if (!isOpsHubConfigured() || !db) return null;
+  try {
+    const [tickets, messages, proposals, gaps, leads] = await Promise.all([
+      db.all(`SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 500`).catch(() => []),
+      db.all(`SELECT * FROM support_messages ORDER BY created_at ASC LIMIT 2000`).catch(() => []),
+      db.all(`SELECT * FROM support_proposals ORDER BY created_at DESC LIMIT 500`).catch(() => []),
+      db.all(`SELECT * FROM support_knowledge_gaps ORDER BY created_at DESC LIMIT 500`).catch(() => []),
+      db.all(`SELECT * FROM support_leads ORDER BY updated_at DESC LIMIT 500`).catch(() => []),
+    ]);
+
+    const res = await opsHubRequest('/api/v1/support/import', {
+      method: 'POST',
+      body: {
+        tenantId: TENANT_SLUG,
+        tickets,
+        messages,
+        proposals,
+        gaps,
+        leads,
+      },
+    });
+    return res?.imported ?? null;
+  } catch (err) {
+    console.warn('[opsHubClient] syncSupportHistoryToOpsHub skipped:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Middleware that proxies or mirrors `/api/v2/support/*` to Ops Hub with `X-Support-User-Json`
+ * (falling back gracefully to the local support-kit handler if Ops Hub is unset or unreachable).
+ */
+function createOpsSupportProxyMiddleware({ resolveUser, localHandler, db }) {
   return async function laliaSupportOpsMiddleware(req, res, next) {
     const cfg = getOpsHubConfig();
     if (!cfg.configured || cfg.supportMode === 'local') {
@@ -433,24 +466,14 @@ function createOpsSupportProxyMiddleware({ resolveUser, localHandler }) {
       }
     }
 
-    // Default 'mirror' mode: serve locally and mirror ticket/lead creations to Ops Hub
-    if (
-      method === 'POST' &&
-      (pathAndQuery.startsWith('/tickets') || pathAndQuery.startsWith('/leads'))
-    ) {
-      void (async () => {
-        try {
-          const user = resolveUser ? await resolveUser(req) : null;
-          const targetPath = `/api/v1/support${pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`}`;
-          await opsHubRequest(targetPath, {
-            method: 'POST',
-            forwardedUser: user,
-            body: req.body || {},
-          });
-        } catch {
-          // non-blocking mirror
+    // Default 'mirror' mode: serve locally (running AI triage, creating tickets/messages/proposals/gaps/leads)
+    // and sync the full support snapshot to Ops Hub as soon as the response completes.
+    if (method === 'POST' || method === 'PATCH') {
+      res?.on?.('finish', () => {
+        if (db) {
+          void syncSupportHistoryToOpsHub(db);
         }
-      })();
+      });
     }
 
     return localHandler(req, res, next);
@@ -466,5 +489,6 @@ module.exports = {
   syncContact,
   syncCuratedDocsToOpsHub,
   backfillLaliaStateToOpsHub,
+  syncSupportHistoryToOpsHub,
   createOpsSupportProxyMiddleware,
 };

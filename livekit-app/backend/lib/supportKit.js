@@ -21,6 +21,7 @@ const {
   syncContact,
   syncCuratedDocsToOpsHub,
   backfillLaliaStateToOpsHub,
+  syncSupportHistoryToOpsHub,
 } = require('./opsHubClient');
 
 const LIVEKIT_ROOT = path.join(__dirname, '../..');
@@ -327,6 +328,7 @@ function createShareAppSupportRouter() {
   const proxiedHandler = createOpsSupportProxyMiddleware({
     resolveUser,
     localHandler: (req, res, next) => localRouter.handler(req, res, next),
+    db,
   });
   return {
     ...localRouter,
@@ -364,6 +366,7 @@ async function ensureSupportSchema() {
       );
       void syncCuratedDocsToOpsHub(DOCS_ROOT);
       void backfillLaliaStateToOpsHub(db);
+      void syncSupportHistoryToOpsHub(db);
     } catch (e) {
       console.warn('[support] seedCuratedDocs skipped:', e.message);
     }
