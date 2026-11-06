@@ -14,6 +14,18 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
 
+    func sceneDidEnterBackground(_ scene: UIScene) {
+        LaliaCallManager.shared.applicationDidEnterBackground()
+    }
+
+    func sceneWillEnterForeground(_ scene: UIScene) {
+        LaliaCallManager.shared.applicationDidBecomeActive()
+    }
+
+    func sceneDidBecomeActive(_ scene: UIScene) {
+        LaliaCallManager.shared.applicationDidBecomeActive()
+    }
+
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
     }

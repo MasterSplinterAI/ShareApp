@@ -78,6 +78,8 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
 
     private var pollTimer: Timer?
     private var ringTimer: Timer?
+    private var ringPlayer: AVAudioPlayer?
+    private var standbyPlayer: AVAudioPlayer?
     private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
 
     private var currentlyRingingCallId: String?
@@ -85,6 +87,9 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     private var callUuidByCallId = [String: UUID]()
     private var callInfoByUuid = [UUID: [String: String]]()
     private var answeredCallIds = Set<String>()
+
+    private lazy var ringtoneWavData: Data = Self.buildWavData(silent: false)
+    private lazy var silentWavData: Data = Self.buildWavData(silent: true)
 
     private override init() {
         super.init()
@@ -94,12 +99,130 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         setupCallKit()
         setupNotifications()
         setupVoipPushKit()
+        setupLifecycleObservers()
+        startStandbyBackgroundAudioIfAuthenticated()
         startCallPolling()
+    }
+
+    private func setupLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applicationDidEnterBackground()
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.startStandbyBackgroundAudioIfAuthenticated()
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applicationDidBecomeActive()
+        }
     }
 
     func attachWebView(_ wv: WKWebView?) {
         self.webView = wv
         syncTokensToWebView()
+    }
+
+    // MARK: - Synthesized PCM WAV Ringtone & Standby Audio
+
+    private static func buildWavData(silent: Bool) -> Data {
+        let sampleRate = 22050
+        let durationSec = silent ? 1.0 : 2.4
+        let numSamples = Int(Double(sampleRate) * durationSec)
+        let dataSize = numSamples * 2
+        let totalSize = 44 + dataSize
+
+        var data = Data(capacity: totalSize)
+        data.append("RIFF".data(using: .ascii)!)
+        var chunkSize = UInt32(36 + dataSize).littleEndian
+        data.append(Data(bytes: &chunkSize, count: 4))
+        data.append("WAVE".data(using: .ascii)!)
+        data.append("fmt ".data(using: .ascii)!)
+        var subchunk1Size = UInt32(16).littleEndian
+        var audioFormat = UInt16(1).littleEndian
+        var numChannels = UInt16(1).littleEndian
+        var sr = UInt32(sampleRate).littleEndian
+        var byteRate = UInt32(sampleRate * 2).littleEndian
+        var blockAlign = UInt16(2).littleEndian
+        var bitsPerSample = UInt16(16).littleEndian
+        data.append(Data(bytes: &subchunk1Size, count: 4))
+        data.append(Data(bytes: &audioFormat, count: 2))
+        data.append(Data(bytes: &numChannels, count: 2))
+        data.append(Data(bytes: &sr, count: 4))
+        data.append(Data(bytes: &byteRate, count: 4))
+        data.append(Data(bytes: &blockAlign, count: 2))
+        data.append(Data(bytes: &bitsPerSample, count: 2))
+        data.append("data".data(using: .ascii)!)
+        var subchunk2Size = UInt32(dataSize).littleEndian
+        data.append(Data(bytes: &subchunk2Size, count: 4))
+
+        if silent {
+            data.append(Data(count: dataSize))
+            return data
+        }
+
+        let notes: [(start: Double, end: Double, f1: Double, f2: Double)] = [
+            (0.00, 0.22, 587.33, 880.00),
+            (0.25, 0.58, 880.00, 1174.66),
+            (0.70, 0.92, 587.33, 880.00),
+            (0.95, 1.32, 880.00, 1174.66),
+        ]
+
+        for i in 0..<numSamples {
+            let t = Double(i) / Double(sampleRate)
+            var sample = 0.0
+            for n in notes where t >= n.start && t <= n.end {
+                let localT = t - n.start
+                let len = n.end - n.start
+                let attack = min(1.0, localT / 0.015)
+                let release = min(1.0, (len - localT) / 0.04)
+                let env = attack * release
+                sample += env * (0.45 * sin(2.0 * .pi * n.f1 * localT) + 0.35 * sin(2.0 * .pi * n.f2 * localT))
+            }
+            let clamped = max(-1.0, min(1.0, sample))
+            var pcm = Int16(clamped * 32767.0).littleEndian
+            data.append(Data(bytes: &pcm, count: 2))
+        }
+        return data
+    }
+
+    private func startStandbyBackgroundAudioIfAuthenticated() {
+        let token = UserDefaults.standard.string(forKey: prefsAuthTokenKey) ?? ""
+        guard !token.isEmpty else {
+            stopStandbyBackgroundAudio()
+            return
+        }
+        if standbyPlayer?.isPlaying == true {
+            return
+        }
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try session.setActive(true)
+            let player = try AVAudioPlayer(data: silentWavData)
+            player.numberOfLoops = -1
+            player.volume = 0.001
+            player.prepareToPlay()
+            player.play()
+            self.standbyPlayer = player
+        } catch {
+            // Ignore audio session conflict while in an active WebRTC call
+        }
+    }
+
+    private func stopStandbyBackgroundAudio() {
+        standbyPlayer?.stop()
+        standbyPlayer = nil
     }
 
     // MARK: - Setup
@@ -256,6 +379,13 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         let joinUrl = (dict["joinUrl"] as? String) ?? "https://lalia.cloud/v2/app"
         let roomName = (dict["roomName"] as? String) ?? ""
 
+        postLocalIncomingCallNotification(
+            callId: callId,
+            callerName: callerName,
+            joinUrl: joinUrl,
+            roomName: roomName
+        )
+        startSystemRingTimer(callId: callId)
         reportIncomingCallToCallKit(
             callId: callId,
             callerName: callerName,
@@ -303,17 +433,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         update.supportsUngrouping = false
         update.supportsHolding = false
 
-        callProvider?.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
-            if error != nil {
-                // Fallback to local notification + system alert sound if CallKit is blocked
-                self?.postLocalIncomingCallNotification(
-                    callId: callId,
-                    callerName: callerName,
-                    joinUrl: joinUrl,
-                    roomName: roomName
-                )
-                self?.startSystemRingTimer(callId: callId)
-            }
+        callProvider?.reportNewIncomingCall(with: uuid, update: update) { _ in
             completion?()
         }
     }
@@ -335,6 +455,9 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 answeredCallIds.insert(callId)
                 dismissedCallIds.insert(callId)
                 respondToCallOnBackend(callId: callId, action: "accept")
+                UNUserNotificationCenter.current().removeDeliveredNotifications(
+                    withIdentifiers: ["lalia-call-\(callId)"]
+                )
             }
             navigateWebViewToCall(joinUrl: joinUrl, roomName: roomName, callId: callId)
         }
@@ -347,6 +470,9 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             let callId = info["callId"] ?? ""
             if !callId.isEmpty {
                 dismissedCallIds.insert(callId)
+                UNUserNotificationCenter.current().removeDeliveredNotifications(
+                    withIdentifiers: ["lalia-call-\(callId)"]
+                )
                 if !answeredCallIds.contains(callId) {
                     respondToCallOnBackend(callId: callId, action: "decline")
                     dispatchDismissedToWebView(callId: callId)
@@ -366,7 +492,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         callInfoByUuid.removeValue(forKey: uuid)
     }
 
-    // MARK: - Local Notifications & System Sound Ringing
+    // MARK: - Local Notifications & AVAudioPlayer Ringing (Ignores Silent Switch)
 
     private func postLocalIncomingCallNotification(
         callId: String,
@@ -375,7 +501,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         roomName: String
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "\(callerName) is calling you on Lalia"
+        content.title = "📞 \(callerName) is calling you on Lalia"
         content.body = "Tap to answer with live translation & captions"
         content.sound = .default
         content.categoryIdentifier = "INCOMING_CALL"
@@ -407,8 +533,24 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             guard let self = self else { return }
             self.currentlyRingingCallId = callId
             self.ringTimer?.invalidate()
+
+            // Play synthesized WAV ringtone on .playback category so it rings even when Silent Mode is ON
+            do {
+                let session = AVAudioSession.sharedInstance()
+                try session.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+                try session.setActive(true)
+                let player = try AVAudioPlayer(data: self.ringtoneWavData)
+                player.numberOfLoops = -1
+                player.volume = 1.0
+                player.prepareToPlay()
+                player.play()
+                self.ringPlayer = player
+            } catch {
+                // Fallback to system sound if AVAudioSession fails
+            }
+
             self.playSystemRingBurst()
-            self.ringTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            self.ringTimer = Timer.scheduledTimer(withTimeInterval: 2.4, repeats: true) { [weak self] _ in
                 self?.playSystemRingBurst()
             }
         }
@@ -416,8 +558,12 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
 
     private func stopSystemRingTimer() {
         DispatchQueue.main.async { [weak self] in
-            self?.ringTimer?.invalidate()
-            self?.ringTimer = nil
+            guard let self = self else { return }
+            self.ringTimer?.invalidate()
+            self.ringTimer = nil
+            self.ringPlayer?.stop()
+            self.ringPlayer = nil
+            self.startStandbyBackgroundAudioIfAuthenticated()
         }
     }
 
@@ -464,11 +610,13 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     // MARK: - Background & Foreground Call Polling
 
     func applicationDidEnterBackground() {
-        guard backgroundTaskId == .invalid else { return }
-        backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "LaliaCallWatcher") { [weak self] in
-            guard let self = self else { return }
-            UIApplication.shared.endBackgroundTask(self.backgroundTaskId)
-            self.backgroundTaskId = .invalid
+        startStandbyBackgroundAudioIfAuthenticated()
+        if backgroundTaskId == .invalid {
+            backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "LaliaCallWatcher") { [weak self] in
+                guard let self = self else { return }
+                UIApplication.shared.endBackgroundTask(self.backgroundTaskId)
+                self.backgroundTaskId = .invalid
+            }
         }
         pollIncomingCallsNow()
     }
@@ -478,15 +626,18 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             UIApplication.shared.endBackgroundTask(backgroundTaskId)
             backgroundTaskId = .invalid
         }
+        startStandbyBackgroundAudioIfAuthenticated()
         pollIncomingCallsNow()
     }
 
     private func startCallPolling() {
         DispatchQueue.main.async { [weak self] in
             self?.pollTimer?.invalidate()
-            self?.pollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: 2.5, repeats: true) { [weak self] _ in
                 self?.pollIncomingCallsNow()
             }
+            RunLoop.main.add(timer, forMode: .common)
+            self?.pollTimer = timer
         }
     }
 
@@ -529,21 +680,20 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
 
                     if self.currentlyRingingCallId != callId {
                         self.currentlyRingingCallId = callId
+                        self.postLocalIncomingCallNotification(
+                            callId: callId,
+                            callerName: callerName,
+                            joinUrl: joinUrl,
+                            roomName: roomName
+                        )
+                        self.startSystemRingTimer(callId: callId)
                         if UIApplication.shared.applicationState != .active {
-                            self.postLocalIncomingCallNotification(
-                                callId: callId,
-                                callerName: callerName,
-                                joinUrl: joinUrl,
-                                roomName: roomName
-                            )
                             self.reportIncomingCallToCallKit(
                                 callId: callId,
                                 callerName: callerName,
                                 joinUrl: joinUrl,
                                 roomName: roomName
                             )
-                        } else {
-                            self.startSystemRingTimer(callId: callId)
                         }
                     }
                 } else if let ringingId = self.currentlyRingingCallId {
@@ -614,9 +764,14 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             let token = (body["token"] as? String) ?? ""
             let previous = UserDefaults.standard.string(forKey: prefsAuthTokenKey) ?? ""
             UserDefaults.standard.set(token, forKey: prefsAuthTokenKey)
-            if !token.isEmpty && token != previous {
-                uploadIosTokensToBackend()
-                pollIncomingCallsNow()
+            if !token.isEmpty {
+                startStandbyBackgroundAudioIfAuthenticated()
+                if token != previous {
+                    uploadIosTokensToBackend()
+                    pollIncomingCallsNow()
+                }
+            } else {
+                stopStandbyBackgroundAudio()
             }
         case "ringIncomingCall":
             let callId = (body["callId"] as? String) ?? UUID().uuidString
@@ -624,9 +779,15 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             let joinUrl = (body["joinUrl"] as? String) ?? "https://lalia.cloud/v2/app"
             let roomName = (body["roomName"] as? String) ?? ""
             if currentlyRingingCallId != callId {
+                postLocalIncomingCallNotification(
+                    callId: callId,
+                    callerName: callerName,
+                    joinUrl: joinUrl,
+                    roomName: roomName
+                )
                 startSystemRingTimer(callId: callId)
                 if UIApplication.shared.applicationState != .active {
-                    postLocalIncomingCallNotification(
+                    reportIncomingCallToCallKit(
                         callId: callId,
                         callerName: callerName,
                         joinUrl: joinUrl,
@@ -673,7 +834,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        // Ignore on Personal Team provisioning profiles without APNs entitlement
     }
 
     func applicationWillResignActive(_ application: UIApplication) {
