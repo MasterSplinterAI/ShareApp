@@ -531,27 +531,52 @@ async function sendIncomingCallPush({
 
     const apnsConfig = getApnsConfig();
     if (iosTokens.length > 0 && apnsConfig.configured) {
-      await Promise.all(
-        iosTokens.map(async (row) => {
-          try {
-            const res = await dispatchApnsToTokenRow(
-              row,
-              {
-                callId,
-                callerName: callerName || 'Someone',
-                joinUrl: joinUrl || '/v2/app',
-                roomName: roomName || '',
-              },
-              apnsConfig
-            );
-            if (res.ok) {
-              iosSent += 1;
+      const callData = {
+        callId,
+        callerName: callerName || 'Someone',
+        joinUrl: joinUrl || '/v2/app',
+        roomName: roomName || '',
+      };
+      const voipRows = iosTokens.filter((r) => r.push_type === 'voip');
+      const alertRows = iosTokens.filter((r) => r.push_type !== 'voip');
+
+      let voipSent = 0;
+      if (voipRows.length > 0) {
+        await Promise.all(
+          voipRows.map(async (row) => {
+            try {
+              const res = await dispatchApnsToTokenRow(row, callData, apnsConfig);
+              console.log(
+                `[v2PushNotifications] APNs VoIP push -> status=${res.statusCode} ok=${res.ok} reason=${res.reason || 'none'}`
+              );
+              if (res.ok) {
+                voipSent += 1;
+                iosSent += 1;
+              }
+            } catch {
+              /* ignore single token dispatch failure */
             }
-          } catch {
-            /* ignore single token dispatch failure */
-          }
-        })
-      );
+          })
+        );
+      }
+
+      if (voipSent === 0 && alertRows.length > 0) {
+        await Promise.all(
+          alertRows.map(async (row) => {
+            try {
+              const res = await dispatchApnsToTokenRow(row, callData, apnsConfig);
+              console.log(
+                `[v2PushNotifications] APNs alert push -> status=${res.statusCode} ok=${res.ok} reason=${res.reason || 'none'}`
+              );
+              if (res.ok) {
+                iosSent += 1;
+              }
+            } catch {
+              /* ignore single token dispatch failure */
+            }
+          })
+        );
+      }
     }
 
     return {
