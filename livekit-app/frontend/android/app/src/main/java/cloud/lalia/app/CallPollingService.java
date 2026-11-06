@@ -23,8 +23,11 @@ import android.os.Vibrator;
 import androidx.core.app.NotificationCompat;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -37,6 +40,13 @@ public class CallPollingService extends Service {
     public static final String PREFS_NAME = "lalia_native_prefs";
     public static final String KEY_AUTH_TOKEN = "v2_token";
     public static final String ACTION_STOP_RING = "cloud.lalia.app.STOP_RING";
+    public static final String ACTION_DECLINE_CALL = "cloud.lalia.app.DECLINE_CALL";
+
+    public static final String EXTRA_CALL_ID = "lalia_call_id";
+    public static final String EXTRA_CALLER_NAME = "lalia_caller_name";
+    public static final String EXTRA_JOIN_URL = "lalia_join_url";
+    public static final String EXTRA_AUTO_JOIN = "lalia_auto_join";
+    public static final String EXTRA_AUTO_ANSWER = "lalia_auto_answer";
 
     private static final String STANDBY_CHANNEL_ID = "lalia_call_standby";
     private static final String CALL_CHANNEL_ID = "lalia_incoming_calls_v2";
@@ -48,7 +58,55 @@ public class CallPollingService extends Service {
     private Ringtone activeRingtone = null;
     private Vibrator activeVibrator = null;
     private String currentlyRingingCallId = null;
-    private final Set<String> dismissedCallIds = new HashSet<>();
+    private final Set<String> dismissedCallIds = Collections.synchronizedSet(new HashSet<>());
+
+    public static String appendAutoJoinParam(String rawUrl) {
+        String normalized = (rawUrl == null || rawUrl.trim().isEmpty())
+            ? "https://lalia.cloud/v2/app"
+            : rawUrl.trim();
+        if (normalized.startsWith("/")) {
+            normalized = "https://lalia.cloud" + normalized;
+        }
+        if ((normalized.contains("/join/") || normalized.contains("/room/")) && !normalized.contains("autoJoin=1")) {
+            normalized += normalized.contains("?") ? "&autoJoin=1" : "?autoJoin=1";
+        }
+        return normalized;
+    }
+
+    public static void respondToCallAsync(final Context context, final String callId, final String action) {
+        if (context == null || callId == null || callId.isEmpty() || action == null || action.isEmpty()) {
+            return;
+        }
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE);
+        final String token = prefs.getString(KEY_AUTH_TOKEN, null);
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+        Executors.newSingleThreadExecutor().execute(() -> {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL("https://lalia.cloud/api/v2/calls/" + Uri.encode(callId) + "/respond");
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setConnectTimeout(4000);
+                conn.setReadTimeout(4000);
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Authorization", "Bearer " + token);
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("Accept", "application/json");
+                String payload = "{\"action\":\"" + action + "\"}";
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(payload.getBytes(StandardCharsets.UTF_8));
+                }
+                conn.getResponseCode();
+            } catch (Exception ignored) {
+            } finally {
+                if (conn != null) {
+                    conn.disconnect();
+                }
+            }
+        });
+    }
 
     @Override
     public void onCreate() {
@@ -61,15 +119,25 @@ public class CallPollingService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP_RING.equals(intent.getAction())) {
-            String callId = intent.getStringExtra("callId");
-            if (callId != null && !callId.isEmpty()) {
-                dismissedCallIds.add(callId);
-            } else if (currentlyRingingCallId != null) {
-                dismissedCallIds.add(currentlyRingingCallId);
+        if (intent != null) {
+            String action = intent.getAction();
+            if (ACTION_STOP_RING.equals(action) || ACTION_DECLINE_CALL.equals(action)) {
+                String callId = intent.getStringExtra(EXTRA_CALL_ID);
+                if (callId == null || callId.isEmpty()) {
+                    callId = intent.getStringExtra("callId");
+                }
+                if (callId == null || callId.isEmpty()) {
+                    callId = currentlyRingingCallId;
+                }
+                if (callId != null && !callId.isEmpty()) {
+                    dismissedCallIds.add(callId);
+                    if (ACTION_DECLINE_CALL.equals(action)) {
+                        respondToCallAsync(getApplicationContext(), callId, "decline");
+                    }
+                }
+                mainHandler.post(this::stopRinging);
+                return START_STICKY;
             }
-            mainHandler.post(this::stopRinging);
-            return START_STICKY;
         }
         startForegroundStandby();
         return START_STICKY;
@@ -247,48 +315,61 @@ public class CallPollingService extends Service {
         } catch (Exception ignored) {}
 
         try {
-            Intent openIntent = new Intent(this, MainActivity.class);
-            openIntent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK |
-                Intent.FLAG_ACTIVITY_SINGLE_TOP |
-                Intent.FLAG_ACTIVITY_CLEAR_TOP
-            );
-            if (joinUrl != null && !joinUrl.isEmpty()) {
-                openIntent.setData(Uri.parse(joinUrl));
-            }
+            final String answerUrl = appendAutoJoinParam(joinUrl);
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
             }
-            PendingIntent fullScreenPi = PendingIntent.getActivity(this, 101, openIntent, flags);
 
-            Intent dismissIntent = new Intent(this, CallPollingService.class);
-            dismissIntent.setAction(ACTION_STOP_RING);
-            dismissIntent.putExtra("callId", callId);
-            PendingIntent dismissPi = PendingIntent.getService(this, 102, dismissIntent, flags);
+            Intent fullScreenIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(answerUrl), this, MainActivity.class);
+            fullScreenIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+            );
+            fullScreenIntent.putExtra(EXTRA_CALL_ID, callId);
+            fullScreenIntent.putExtra(EXTRA_CALLER_NAME, callerName);
+            fullScreenIntent.putExtra(EXTRA_JOIN_URL, answerUrl);
+            fullScreenIntent.putExtra(EXTRA_AUTO_JOIN, true);
+            PendingIntent fullScreenPi = PendingIntent.getActivity(this, 101, fullScreenIntent, flags);
+
+            Intent answerIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(answerUrl), this, MainActivity.class);
+            answerIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                Intent.FLAG_ACTIVITY_CLEAR_TOP
+            );
+            answerIntent.putExtra(EXTRA_CALL_ID, callId);
+            answerIntent.putExtra(EXTRA_CALLER_NAME, callerName);
+            answerIntent.putExtra(EXTRA_JOIN_URL, answerUrl);
+            answerIntent.putExtra(EXTRA_AUTO_JOIN, true);
+            answerIntent.putExtra(EXTRA_AUTO_ANSWER, true);
+            PendingIntent answerPi = PendingIntent.getActivity(this, 103, answerIntent, flags);
+
+            Intent declineIntent = new Intent(this, CallPollingService.class);
+            declineIntent.setAction(ACTION_DECLINE_CALL);
+            declineIntent.putExtra(EXTRA_CALL_ID, callId);
+            declineIntent.putExtra("callId", callId);
+            PendingIntent declinePi = PendingIntent.getService(this, 102, declineIntent, flags);
 
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CALL_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.sym_action_call)
                 .setContentTitle(callerName + " is calling you on Lalia…")
-                .setContentText("Tap to answer with live translation")
+                .setContentText("Tap Answer to join immediately with live translation")
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
                 .setOngoing(true)
                 .setAutoCancel(true)
                 .setFullScreenIntent(fullScreenPi, true)
-                .setContentIntent(fullScreenPi)
-                .addAction(android.R.drawable.sym_action_call, "Answer", fullScreenPi)
-                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Silence", dismissPi);
+                .setContentIntent(answerPi)
+                .addAction(android.R.drawable.sym_action_call, "Answer", answerPi)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Decline", declinePi);
 
             NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
             if (nm != null) {
                 nm.notify(CALL_NOTIFICATION_ID, builder.build());
             }
-
-            try {
-                startActivity(openIntent);
-            } catch (Exception ignored) {}
         } catch (Exception ignored) {}
     }
 

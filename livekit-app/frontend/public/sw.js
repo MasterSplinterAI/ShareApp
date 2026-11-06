@@ -43,7 +43,14 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   if (event.action === 'dismiss') return;
 
-  const targetUrl = event.notification.data?.joinUrl || '/v2/app';
+  let targetUrl = event.notification.data?.joinUrl || '/v2/app';
+  if (
+    typeof targetUrl === 'string' &&
+    (targetUrl.includes('/join/') || targetUrl.includes('/room/')) &&
+    !targetUrl.includes('autoJoin=1')
+  ) {
+    targetUrl += targetUrl.includes('?') ? '&autoJoin=1' : '?autoJoin=1';
+  }
 
   event.waitUntil(
     self.clients
