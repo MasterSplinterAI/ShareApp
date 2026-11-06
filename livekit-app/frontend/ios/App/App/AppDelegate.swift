@@ -463,11 +463,6 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     }
 
     func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-        try? audioSession.setCategory(
-            .playAndRecord,
-            mode: .voiceChat,
-            options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .mixWithOthers]
-        )
         clearNowPlayingInfo()
     }
 
@@ -492,22 +487,27 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             pendingAnsweredRoomName = roomName
             pendingAnsweredCallId = callId
 
-            try? AVAudioSession.sharedInstance().setCategory(
-                .playAndRecord,
-                mode: .voiceChat,
-                options: [.allowBluetooth, .allowBluetoothA2DP, .defaultToSpeaker, .mixWithOthers]
-            )
-            try? AVAudioSession.sharedInstance().setActive(true)
-
             navigateWebViewToCall(joinUrl: joinUrl, roomName: roomName, callId: callId)
 
-            if UIApplication.shared.applicationState != .active {
-                postAnsweredCallOpenBanner(
-                    callId: callId,
-                    callerName: callerName,
-                    joinUrl: joinUrl,
-                    roomName: roomName
-                )
+            // Release CallKit's lock on the iOS microphone/camera after answering so WKWebView's
+            // PreJoinScreen and LiveKit WebRTC engine have 100% exclusive access to camera & mic
+            let uuid = action.callUUID
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let self = self else { return }
+                self.callUuidByCallId.removeValue(forKey: callId)
+                self.callInfoByUuid.removeValue(forKey: uuid)
+                let endAction = CXEndCallAction(call: uuid)
+                self.callController.request(CXTransaction(action: endAction)) { _ in
+                    try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+                }
+                if UIApplication.shared.applicationState != .active {
+                    self.postAnsweredCallOpenBanner(
+                        callId: callId,
+                        callerName: callerName,
+                        joinUrl: joinUrl,
+                        roomName: roomName
+                    )
+                }
             }
         }
         action.fulfill()
@@ -627,7 +627,9 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 answeredCallIds.insert(callId)
                 dismissedCallIds.insert(callId)
                 respondToCallOnBackend(callId: callId, action: "accept")
+                endCallKitCallIfActive(callId: callId)
             }
+            try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
             pendingAnsweredJoinUrl = joinUrl
             pendingAnsweredRoomName = roomName
             pendingAnsweredCallId = callId
@@ -761,11 +763,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
 
     private func navigateWebViewToCall(joinUrl: String, roomName: String, callId: String) {
         inLiveRoom = true
-        var finalUrl = joinUrl
-        if !finalUrl.contains("autoJoin=1") {
-            finalUrl += finalUrl.contains("?") ? "&autoJoin=1" : "?autoJoin=1"
-        }
-        let escapedUrl = finalUrl.replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedUrl = joinUrl.replacingOccurrences(of: "\"", with: "\\\"")
         let escapedRoom = roomName.replacingOccurrences(of: "\"", with: "\\\"")
         let escapedCallId = callId.replacingOccurrences(of: "\"", with: "\\\"")
         let js = """

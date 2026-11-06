@@ -121,18 +121,13 @@ function stopNativeIosRing(callId = '') {
   }
 }
 
-function extractJoinPath(joinUrl, roomName, autoJoin = false) {
-  let path = `/join/${encodeURIComponent(roomName)}`;
+function extractJoinPath(joinUrl, roomName) {
   try {
     const url = new URL(joinUrl, window.location.origin);
-    path = `${url.pathname}${url.search || ''}`;
+    return `${url.pathname}${url.search || ''}`;
   } catch {
-    /* fallback to /join/:roomName */
+    return `/join/${encodeURIComponent(roomName)}`;
   }
-  if (autoJoin) {
-    path += path.includes('?') ? '&autoJoin=1' : '?autoJoin=1';
-  }
-  return path;
 }
 
 export default function IncomingCallOverlay({ currentUser }) {
@@ -331,7 +326,6 @@ export default function IncomingCallOverlay({ currentUser }) {
               participantName: displayName,
               roomName: res.roomName || incomingCall.roomName,
               isHost: false,
-              autoJoin: true,
             })
           );
         } catch {
@@ -340,8 +334,7 @@ export default function IncomingCallOverlay({ currentUser }) {
       }
       const targetPath = extractJoinPath(
         res.joinUrl || incomingCall.joinUrl,
-        res.roomName || incomingCall.roomName,
-        true
+        res.roomName || incomingCall.roomName
       );
       navigate(targetPath);
     } catch (e) {

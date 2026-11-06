@@ -18,7 +18,6 @@ function JoinMeeting() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const inviteFromUrl = searchParams.get('i') || '';
-  const autoJoinFromCall = searchParams.get('autoJoin') === '1';
   const pollRef = useRef(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -60,7 +59,6 @@ function JoinMeeting() {
         inviteToken: v2Ctx?.inviteToken || inviteFromUrl,
         meetingTitle: joinMeta.meetingTitle || null,
         branding: joinMeta.branding || null,
-        autoJoin: autoJoinFromCall,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       navigate(`/room/${roomName}${window.location.search}`, {
@@ -68,7 +66,7 @@ function JoinMeeting() {
         replace: true,
       });
     },
-    [navigate, roomName, inviteFromUrl, autoJoinFromCall]
+    [navigate, roomName, inviteFromUrl]
   );
 
   useEffect(() => {

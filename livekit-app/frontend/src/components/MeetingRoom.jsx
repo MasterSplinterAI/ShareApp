@@ -218,12 +218,6 @@ function MeetingRoom() {
     const spokenLanguage = normalizeMeetingLanguageCode(
       stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage
     );
-    const urlParams = new URLSearchParams(location.search || '');
-    const shouldAutoJoin =
-      Boolean(stateInfo.autoJoin) ||
-      Boolean(sessionInfo.autoJoin) ||
-      Boolean(stateInfo.directCall) ||
-      urlParams.get('autoJoin') === '1';
 
     // Bounce to /join only when there's no join context at all (cold hit on /room URL).
     // The prejoin screen collects the display name, so an empty name with valid
@@ -239,7 +233,7 @@ function MeetingRoom() {
     }
 
     setParticipantInfo({
-      participantName: participantName || 'Guest',
+      participantName: participantName || '',
       numParticipants: stateInfo.numParticipants ?? sessionInfo.numParticipants ?? null,
       isHost,
       hostCode,
@@ -253,32 +247,16 @@ function MeetingRoom() {
     setMeetingBranding(normalizeMeetingBranding(brandingFromSession));
     setMeetingTitle(titleFromSession);
 
-    if (shouldAutoJoin) {
-      setPrejoinChoices((prev) =>
-        prev || {
-          audioEnabled: true,
-          videoEnabled: true,
-          audioDeviceId: '',
-          videoDeviceId: '',
-          videoEffectId: 'none',
-        }
-      );
-    }
-
     // If the user is signed in to Lalia, pre-populate their display name automatically
     // so they don't have to type it when answering a call or joining a meeting link.
-    if ((!participantName || participantName === 'Guest') && typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
+    if (!participantName && typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
       v2Auth
         .me()
         .then((res) => {
           const u = res?.user;
           const resolvedName = (u?.display_name || u?.displayName || u?.email?.split('@')[0] || '').trim();
           if (resolvedName) {
-            setParticipantInfo((prev) =>
-              prev && (!prev.participantName || prev.participantName === 'Guest')
-                ? { ...prev, participantName: resolvedName }
-                : prev
-            );
+            setParticipantInfo((prev) => (prev && !prev.participantName ? { ...prev, participantName: resolvedName } : prev));
           }
         })
         .catch(() => {});
