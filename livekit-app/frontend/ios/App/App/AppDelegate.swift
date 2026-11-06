@@ -59,6 +59,9 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     private var callUuidByCallId = [String: UUID]()
     private var callInfoByUuid = [UUID: [String: String]]()
     private var answeredCallIds = Set<String>()
+    private var pendingAnsweredJoinUrl: String?
+    private var pendingAnsweredRoomName: String?
+    private var pendingAnsweredCallId: String?
 
     private lazy var ringtoneWavData: Data = Self.buildWavData(silent: false)
     private lazy var standbyWavData: Data = Self.buildWavData(silent: true)
@@ -574,6 +577,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         stopSystemRingTimer()
         if let info = callInfoByUuid[action.callUUID] {
             let callId = info["callId"] ?? ""
+            let callerName = info["callerName"] ?? "Someone"
             let joinUrl = info["joinUrl"] ?? "https://lalia.cloud/v2/app"
             let roomName = info["roomName"] ?? ""
             if !callId.isEmpty {
@@ -584,7 +588,26 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                     withIdentifiers: ["lalia-call-\(callId)"]
                 )
             }
+            sendDebugBeacon(event: "callkit_answered", detail: ["callId": callId, "joinUrl": joinUrl])
+            pendingAnsweredJoinUrl = joinUrl
+            pendingAnsweredRoomName = roomName
+            pendingAnsweredCallId = callId
             navigateWebViewToCall(joinUrl: joinUrl, roomName: roomName, callId: callId)
+            // End the CallKit wrapper call after 0.6s so iOS returns audio session control to WebRTC and shows our open-app banner if locked
+            let uuid = action.callUUID
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+                guard let self = self else { return }
+                let endAction = CXEndCallAction(call: uuid)
+                self.callController.request(CXTransaction(action: endAction)) { _ in }
+                if UIApplication.shared.applicationState != .active {
+                    self.postAnsweredCallOpenBanner(
+                        callId: callId,
+                        callerName: callerName,
+                        joinUrl: joinUrl,
+                        roomName: roomName
+                    )
+                }
+            }
         }
         action.fulfill()
     }
@@ -651,6 +674,34 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 detail: ["callId": callId, "error": error?.localizedDescription ?? ""]
             )
         }
+    }
+
+    private func postAnsweredCallOpenBanner(
+        callId: String,
+        callerName: String,
+        joinUrl: String,
+        roomName: String
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = "🟢 Connected with \(callerName)"
+        content.body = "Tap to open live translation & video room"
+        content.sound = .default
+        content.categoryIdentifier = "INCOMING_CALL"
+        if #available(iOS 15.0, *) {
+            content.interruptionLevel = .timeSensitive
+        }
+        content.userInfo = [
+            "callId": callId,
+            "callerName": callerName,
+            "joinUrl": joinUrl,
+            "roomName": roomName
+        ]
+        let request = UNNotificationRequest(
+            identifier: "lalia-open-\(callId)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
     }
 
     private func playSystemRingBurst() {
@@ -734,6 +785,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
 
         stopSystemRingTimer()
         if response.actionIdentifier == "DECLINE_CALL" {
+            sendDebugBeacon(event: "notification_declined", detail: ["callId": callId])
             if !callId.isEmpty {
                 dismissedCallIds.insert(callId)
                 respondToCallOnBackend(callId: callId, action: "decline")
@@ -741,12 +793,16 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 dispatchDismissedToWebView(callId: callId)
             }
         } else {
+            sendDebugBeacon(event: "notification_answered", detail: ["callId": callId, "joinUrl": joinUrl])
             if !callId.isEmpty {
                 answeredCallIds.insert(callId)
                 dismissedCallIds.insert(callId)
                 respondToCallOnBackend(callId: callId, action: "accept")
                 endCallKitCallIfActive(callId: callId)
             }
+            pendingAnsweredJoinUrl = joinUrl
+            pendingAnsweredRoomName = roomName
+            pendingAnsweredCallId = callId
             navigateWebViewToCall(joinUrl: joinUrl, roomName: roomName, callId: callId)
         }
         completionHandler()
@@ -772,7 +828,16 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             UIApplication.shared.endBackgroundTask(backgroundTaskId)
             backgroundTaskId = .invalid
         }
-        ensureStandbyAudioRunning()
+        if let joinUrl = pendingAnsweredJoinUrl {
+            let roomName = pendingAnsweredRoomName ?? ""
+            let callId = pendingAnsweredCallId ?? ""
+            pendingAnsweredJoinUrl = nil
+            pendingAnsweredRoomName = nil
+            pendingAnsweredCallId = nil
+            navigateWebViewToCall(joinUrl: joinUrl, roomName: roomName, callId: callId)
+        } else {
+            ensureStandbyAudioRunning()
+        }
         pullAuthTokenFromWebView()
         sendDebugBeacon(event: "became_active", detail: [:])
         pollIncomingCallsNow()
@@ -847,14 +912,6 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                             roomName: roomName
                         )
                         self.startSystemRingTimer(callId: callId)
-                        if UIApplication.shared.applicationState != .active {
-                            self.reportIncomingCallToCallKit(
-                                callId: callId,
-                                callerName: callerName,
-                                joinUrl: joinUrl,
-                                roomName: roomName
-                            )
-                        }
                     }
                 } else if let ringingId = self.currentlyRingingCallId {
                     self.currentlyRingingCallId = nil
@@ -885,7 +942,13 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     }
 
     private func navigateWebViewToCall(joinUrl: String, roomName: String, callId: String) {
-        let escapedUrl = joinUrl.replacingOccurrences(of: "\"", with: "\\\"")
+        stopStandbyBackgroundAudio()
+        inLiveRoom = true
+        var finalUrl = joinUrl
+        if !finalUrl.contains("autoJoin=1") {
+            finalUrl += finalUrl.contains("?") ? "&autoJoin=1" : "?autoJoin=1"
+        }
+        let escapedUrl = finalUrl.replacingOccurrences(of: "\"", with: "\\\"")
         let escapedRoom = roomName.replacingOccurrences(of: "\"", with: "\\\"")
         let escapedCallId = callId.replacingOccurrences(of: "\"", with: "\\\"")
         let js = """
@@ -936,14 +999,6 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                     roomName: roomName
                 )
                 startSystemRingTimer(callId: callId)
-                if UIApplication.shared.applicationState != .active {
-                    reportIncomingCallToCallKit(
-                        callId: callId,
-                        callerName: callerName,
-                        joinUrl: joinUrl,
-                        roomName: roomName
-                    )
-                }
             }
         case "stopRing":
             let callId = (body["callId"] as? String) ?? (currentlyRingingCallId ?? "")

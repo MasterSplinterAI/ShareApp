@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { isNativeApp, isStandalonePwa, getNativePlatform } from '../lib/nativePlatform';
 import { v2Push } from '../services/apiV2';
 
-function extractInAppPath(rawUrl) {
+function extractInAppPath(rawUrl, forceAutoJoin = false) {
   if (!rawUrl || typeof rawUrl !== 'string') return null;
   try {
     const normalized = rawUrl.replace(/^lalia:\/\//i, 'https://lalia.cloud/');
-    const url = new URL(normalized);
-    const path = `${url.pathname || '/'}${url.search || ''}${url.hash || ''}`;
-    return path.startsWith('/') ? path : `/${path}`;
+    const url = new URL(normalized, 'https://lalia.cloud');
+    let path = `${url.pathname || '/'}${url.search || ''}${url.hash || ''}`;
+    if (!path.startsWith('/')) path = `/${path}`;
+    if (forceAutoJoin && !path.includes('autoJoin=1')) {
+      path += path.includes('?') ? '&autoJoin=1' : '?autoJoin=1';
+    }
+    return path;
   } catch {
     return null;
   }
@@ -140,7 +144,7 @@ export default function NativeAppBridge() {
 
     const onIosCallNavigate = (event) => {
       const rawUrl = event?.detail?.joinUrl || event?.detail?.url;
-      const target = extractInAppPath(rawUrl);
+      const target = extractInAppPath(rawUrl, true);
       if (target) {
         navigate(target);
       }
