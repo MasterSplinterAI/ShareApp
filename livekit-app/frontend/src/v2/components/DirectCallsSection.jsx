@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Calls, v2Contacts, v2Push } from '../../services/apiV2';
+import { unlockIncomingCallAudio } from './IncomingCallOverlay';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
@@ -94,13 +95,52 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [savingContact, setSavingContact] = useState(false);
-  const [notifPerm, setNotifPerm] = useState(() =>
-    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
-  );
+  const [notifPerm, setNotifPerm] = useState(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('lalia_call_alerts_enabled') === '1') {
+      return 'granted';
+    }
+    return typeof Notification !== 'undefined' ? Notification.permission : 'default';
+  });
 
   const enablePushNotifications = async () => {
+    unlockIncomingCallAudio();
+
+    const hasIosBridge =
+      typeof window !== 'undefined' &&
+      (Boolean(window.LaliaIOS) || Boolean(window.webkit?.messageHandlers?.laliaIOS));
+
+    if (hasIosBridge) {
+      try {
+        const token = localStorage.getItem('v2_token') || '';
+        window.LaliaIOS?.setAuthToken?.(token);
+        window.LaliaIOS?.requestNotificationPermission?.();
+        window.webkit?.messageHandlers?.laliaIOS?.postMessage?.({
+          action: 'requestNotificationPermission',
+          token,
+        });
+        if (window.__laliaIosTokens?.voipToken || window.__laliaIosTokens?.apnsToken) {
+          await v2Push.registerIosToken({
+            voipToken: window.__laliaIosTokens.voipToken || undefined,
+            apnsToken: window.__laliaIosTokens.apnsToken || undefined,
+            bundleId: window.__laliaIosTokens.bundleId || 'cloud.lalia.app',
+            environment: window.__laliaIosTokens.environment || 'sandbox',
+          });
+        }
+        localStorage.setItem('lalia_call_alerts_enabled', '1');
+        setNotifPerm('granted');
+        toast.success('iOS call alerts & ringtone enabled!');
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+
     if (typeof Notification === 'undefined') {
-      toast.error('To get push notifications on iPhone right now, open lalia.cloud in Safari → Share → Add to Home Screen.');
+      localStorage.setItem('lalia_call_alerts_enabled', '1');
+      setNotifPerm('granted');
+      toast.success(
+        'In-app call ringtone enabled! For lock-screen alerts without the native update, open lalia.cloud in Safari → Share → Add to Home Screen.'
+      );
       return;
     }
     try {
@@ -127,6 +167,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
           await v2Push.subscribe(sub.toJSON ? sub.toJSON() : sub);
         }
       }
+      localStorage.setItem('lalia_call_alerts_enabled', '1');
       toast.success('Call notifications enabled for this device!');
     } catch {
       toast.error('Could not enable push notifications on this device');

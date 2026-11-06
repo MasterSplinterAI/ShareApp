@@ -14,7 +14,9 @@ const { sendEmail } = require('../../lib/mailer');
 const {
   getVapidPublicKey,
   savePushSubscription,
+  saveIosPushToken,
   sendIncomingCallPush,
+  getUserPushDiagnostics,
 } = require('../../lib/v2PushNotifications');
 
 const CALL_RING_TTL_MS = 60 * 1000;
@@ -454,6 +456,7 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       callerName,
       joinUrl: meetingInfo.joinUrl,
       callId,
+      roomName: meetingInfo.livekitRoomName,
     }).catch(() => {});
 
     res.status(201).json({
@@ -677,6 +680,72 @@ router.post('/push/subscribe', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/push/subscribe POST]', e);
     res.status(500).json({ error: 'Failed to save push subscription' });
+  }
+});
+
+router.post('/push/ios-token', requireV2Auth, async (req, res) => {
+  try {
+    const { token, pushType, voipToken, apnsToken, bundleId, environment } = req.body || {};
+    const userAgent = req.get('user-agent') || '';
+    const saved = [];
+
+    if (voipToken) {
+      const r = await saveIosPushToken({
+        userId: req.v2Auth.userId,
+        token: voipToken,
+        pushType: 'voip',
+        bundleId,
+        environment,
+        userAgent,
+      });
+      if (r.ok) saved.push(r);
+    }
+
+    if (apnsToken) {
+      const r = await saveIosPushToken({
+        userId: req.v2Auth.userId,
+        token: apnsToken,
+        pushType: 'apns',
+        bundleId,
+        environment,
+        userAgent,
+      });
+      if (r.ok) saved.push(r);
+    }
+
+    if (token) {
+      const r = await saveIosPushToken({
+        userId: req.v2Auth.userId,
+        token,
+        pushType: pushType || 'voip',
+        bundleId,
+        environment,
+        userAgent,
+      });
+      if (!r.ok && saved.length === 0) {
+        return res.status(400).json({ error: r.error });
+      }
+      if (r.ok) saved.push(r);
+    }
+
+    if (saved.length === 0) {
+      return res.status(400).json({ error: 'Valid iOS push token is required' });
+    }
+
+    res.status(201).json({ ok: true, saved });
+  } catch (e) {
+    console.error('[v2/push/ios-token POST]', e);
+    res.status(500).json({ error: 'Failed to save iOS push token' });
+  }
+});
+
+router.get('/push/status', requireV2Auth, async (req, res) => {
+  try {
+    const status = await getUserPushDiagnostics(req.v2Auth.userId);
+    res.json(status);
+  } catch (e) {
+    console.error('[v2/push/status GET]', e);
+    res.status(500).json({ error: 'Failed to load push status' });
   }
 });
 

@@ -284,6 +284,8 @@ export const v2Calls = {
 export const v2Push = {
   vapidPublicKey: () => apiV2.get('/push/vapid-public-key').then((r) => r.data),
   subscribe: (subscription) => apiV2.post('/push/subscribe', { subscription }).then((r) => r.data),
+  registerIosToken: (payload) => apiV2.post('/push/ios-token', payload).then((r) => r.data),
+  status: () => apiV2.get('/push/status').then((r) => r.data),
 };
 
 export default apiV2;

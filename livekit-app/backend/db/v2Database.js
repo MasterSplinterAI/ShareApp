@@ -883,6 +883,22 @@ async function migrate() {
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_push_subscriptions_user ON v2_push_subscriptions(user_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_ios_push_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      push_type TEXT NOT NULL DEFAULT 'voip',
+      bundle_id TEXT NOT NULL DEFAULT 'cloud.lalia.app',
+      environment TEXT NOT NULL DEFAULT 'sandbox',
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_ios_push_tokens_user ON v2_ios_push_tokens(user_id)`);
 }
 
 async function initPostgres() {

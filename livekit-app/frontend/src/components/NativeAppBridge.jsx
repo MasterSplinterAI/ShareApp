@@ -61,6 +61,26 @@ async function ensureWebPushRegistered() {
   }
 }
 
+async function syncIosPushTokensIfPresent() {
+  if (typeof window === 'undefined') return;
+  const authToken = localStorage.getItem('v2_token');
+  if (!authToken) return;
+
+  const bag = window.__laliaIosTokens;
+  if (!bag || (!bag.voipToken && !bag.apnsToken)) return;
+
+  try {
+    await v2Push.registerIosToken({
+      voipToken: bag.voipToken || undefined,
+      apnsToken: bag.apnsToken || undefined,
+      bundleId: bag.bundleId || 'cloud.lalia.app',
+      environment: bag.environment || 'sandbox',
+    });
+  } catch {
+    /* ignore transient network errors */
+  }
+}
+
 export default function NativeAppBridge() {
   const navigate = useNavigate();
 
@@ -79,21 +99,55 @@ export default function NativeAppBridge() {
       html.setAttribute('data-ios-standalone', 'true');
     }
 
-    const syncAndroidToken = () => {
+    const syncNativeTokens = () => {
       try {
         const token = localStorage.getItem('v2_token') || '';
         window.LaliaAndroid?.setAuthToken?.(token);
+        window.LaliaIOS?.setAuthToken?.(token);
+        window.webkit?.messageHandlers?.laliaIOS?.postMessage?.({
+          action: 'setAuthToken',
+          token,
+        });
       } catch {
         /* ignore */
       }
+      syncIosPushTokensIfPresent();
     };
-    syncAndroidToken();
+    syncNativeTokens();
     ensureWebPushRegistered();
-    const tokenSyncId = setInterval(syncAndroidToken, 4000);
+    const tokenSyncId = setInterval(syncNativeTokens, 4000);
+
+    const onIosPushTokens = (event) => {
+      const detail = event?.detail || {};
+      window.__laliaIosTokens = {
+        ...(window.__laliaIosTokens || {}),
+        ...detail,
+      };
+      syncIosPushTokensIfPresent();
+    };
+
+    const onIosCallNavigate = (event) => {
+      const rawUrl = event?.detail?.joinUrl || event?.detail?.url;
+      const target = extractInAppPath(rawUrl);
+      if (target) {
+        navigate(target);
+      }
+    };
+
+    window.addEventListener('lalia:ios-push-tokens', onIosPushTokens);
+    window.addEventListener('lalia:ios-call-navigate', onIosCallNavigate);
 
     // Re-attempt Web Push registration after first user tap if permission was 'default'
     const onFirstInteraction = () => {
       ensureWebPushRegistered();
+      syncNativeTokens();
+      try {
+        window.webkit?.messageHandlers?.laliaIOS?.postMessage?.({
+          action: 'requestNotificationPermission',
+        });
+      } catch {
+        /* ignore */
+      }
       window.removeEventListener('click', onFirstInteraction);
     };
     window.addEventListener('click', onFirstInteraction, { once: true });
@@ -102,6 +156,8 @@ export default function NativeAppBridge() {
       return () => {
         clearInterval(tokenSyncId);
         window.removeEventListener('click', onFirstInteraction);
+        window.removeEventListener('lalia:ios-push-tokens', onIosPushTokens);
+        window.removeEventListener('lalia:ios-call-navigate', onIosCallNavigate);
         html.removeAttribute('data-ios-standalone');
       };
     }
@@ -141,6 +197,8 @@ export default function NativeAppBridge() {
     return () => {
       clearInterval(tokenSyncId);
       window.removeEventListener('click', onFirstInteraction);
+      window.removeEventListener('lalia:ios-push-tokens', onIosPushTokens);
+      window.removeEventListener('lalia:ios-call-navigate', onIosCallNavigate);
       html.removeAttribute('data-native-app');
       html.removeAttribute('data-native-platform');
       html.removeAttribute('data-ios-standalone');
