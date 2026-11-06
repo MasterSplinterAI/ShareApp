@@ -7,82 +7,18 @@ import { isNativeApp } from '../../lib/nativePlatform';
 import { Button } from '../../components/ui/button';
 
 let sharedAudioCtx = null;
-let sharedRingAudio = null;
-let ringWavDataUri = null;
 let audioUnlockInstalled = false;
-
-function getRingtoneWavDataUri() {
-  if (ringWavDataUri) return ringWavDataUri;
-  try {
-    const sampleRate = 22050;
-    const durationSec = 2.4;
-    const numSamples = Math.floor(sampleRate * durationSec);
-    const buffer = new ArrayBuffer(44 + numSamples * 2);
-    const view = new DataView(buffer);
-
-    const writeStr = (offset, str) => {
-      for (let i = 0; i < str.length; i += 1) {
-        view.setUint8(offset + i, str.charCodeAt(i));
-      }
-    };
-
-    writeStr(0, 'RIFF');
-    view.setUint32(4, 36 + numSamples * 2, true);
-    writeStr(8, 'WAVE');
-    writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM
-    view.setUint16(22, 1, true); // mono
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeStr(36, 'data');
-    view.setUint32(40, numSamples * 2, true);
-
-    // Two-note chime burst (D5 587.33 Hz + A5 880 Hz, repeated twice per cycle)
-    const notes = [
-      { start: 0.0, end: 0.22, f1: 587.33, f2: 880.0 },
-      { start: 0.25, end: 0.58, f1: 880.0, f2: 1174.66 },
-      { start: 0.72, end: 0.94, f1: 587.33, f2: 880.0 },
-      { start: 0.97, end: 1.32, f1: 880.0, f2: 1174.66 },
-    ];
-
-    for (let i = 0; i < numSamples; i += 1) {
-      const t = i / sampleRate;
-      let sample = 0;
-      for (const n of notes) {
-        if (t >= n.start && t <= n.end) {
-          const localT = t - n.start;
-          const len = n.end - n.start;
-          const attack = Math.min(1, localT / 0.02);
-          const release = Math.min(1, (len - localT) / 0.05);
-          const env = attack * release;
-          sample +=
-            env *
-            (0.28 * Math.sin(2 * Math.PI * n.f1 * localT) +
-              0.2 * Math.sin(2 * Math.PI * n.f2 * localT));
-        }
-      }
-      const clamped = Math.max(-1, Math.min(1, sample));
-      view.setInt16(44 + i * 2, Math.floor(clamped * 32767), true);
-    }
-
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-    const chunkSize = 8192;
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-    }
-    ringWavDataUri = `data:audio/wav;base64,${window.btoa(binary)}`;
-    return ringWavDataUri;
-  } catch {
-    return null;
-  }
-}
 
 export function unlockIncomingCallAudio() {
   if (typeof window === 'undefined') return;
+  // On native iOS/Android, native CallKit / RingtoneManager handles ringing without HTML5/WebAudio
+  if (
+    window.LaliaIOS ||
+    window.webkit?.messageHandlers?.laliaIOS ||
+    window.LaliaAndroid
+  ) {
+    return;
+  }
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (AudioCtx && !sharedAudioCtx) {
@@ -90,31 +26,6 @@ export function unlockIncomingCallAudio() {
     }
     if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
       sharedAudioCtx.resume().catch(() => {});
-    }
-    if (!sharedRingAudio) {
-      const uri = getRingtoneWavDataUri();
-      if (uri) {
-        const audio = new Audio(uri);
-        audio.loop = true;
-        audio.preload = 'auto';
-        audio.playsInline = true;
-        audio.volume = 0.01;
-        const p = audio.play();
-        if (p && typeof p.then === 'function') {
-          p.then(() => {
-            audio.pause();
-            audio.currentTime = 0;
-            audio.volume = 1.0;
-          }).catch(() => {
-            audio.volume = 1.0;
-          });
-        } else {
-          audio.pause();
-          audio.currentTime = 0;
-          audio.volume = 1.0;
-        }
-        sharedRingAudio = audio;
-      }
     }
   } catch {
     /* ignore */
@@ -166,37 +77,6 @@ function playRingChime() {
     playTone(1174.66, 0.92, 0.34); // D6
   } catch {
     /* AudioContext may be blocked before user gesture */
-  }
-}
-
-function startHtmlAudioRing() {
-  try {
-    if (!sharedRingAudio) {
-      const uri = getRingtoneWavDataUri();
-      if (uri) {
-        sharedRingAudio = new Audio(uri);
-        sharedRingAudio.loop = true;
-        sharedRingAudio.playsInline = true;
-      }
-    }
-    if (sharedRingAudio) {
-      sharedRingAudio.volume = 1.0;
-      sharedRingAudio.currentTime = 0;
-      sharedRingAudio.play().catch(() => {});
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
-function stopHtmlAudioRing() {
-  try {
-    if (sharedRingAudio) {
-      sharedRingAudio.pause();
-      sharedRingAudio.currentTime = 0;
-    }
-  } catch {
-    /* ignore */
   }
 }
 
@@ -261,7 +141,6 @@ export default function IncomingCallOverlay({ currentUser }) {
   const [incomingCall, setIncomingCall] = useState(null);
   const [busy, setBusy] = useState(false);
   const dismissedIdsRef = useRef(new Set());
-  const domAudioRef = useRef(null);
 
   const inLiveRoom = location.pathname.startsWith('/room/');
 
@@ -329,7 +208,6 @@ export default function IncomingCallOverlay({ currentUser }) {
 
   useEffect(() => {
     if (!incomingCall) {
-      stopHtmlAudioRing();
       stopNativeIosRing();
       try {
         window.LaliaAndroid?.stopIncomingCallRing?.();
@@ -364,53 +242,20 @@ export default function IncomingCallOverlay({ currentUser }) {
     }
 
     const iosHandled = notifyNativeIosRing(incomingCall);
-    startHtmlAudioRing();
-    playRingChime();
+    v2Push.iosDebug({
+      source: 'js_overlay',
+      event: 'ring_effect',
+      callId: activeCallId,
+      iosHandled,
+    });
 
-    if (domAudioRef.current) {
-      try {
-        domAudioRef.current.volume = 1.0;
-        domAudioRef.current.currentTime = 0;
-        const p = domAudioRef.current.play();
-        if (p && typeof p.then === 'function') {
-          p.then(() => {
-            v2Push.iosDebug({
-              source: 'js_overlay',
-              event: 'dom_audio_play_ok',
-              callId: activeCallId,
-              iosHandled,
-              audioCtxState: sharedAudioCtx?.state || 'none',
-            });
-          }).catch((err) => {
-            v2Push.iosDebug({
-              source: 'js_overlay',
-              event: 'dom_audio_play_err',
-              callId: activeCallId,
-              iosHandled,
-              error: String(err?.message || err || 'unknown'),
-              audioCtxState: sharedAudioCtx?.state || 'none',
-            });
-          });
-        }
-      } catch (err) {
-        v2Push.iosDebug({
-          source: 'js_overlay',
-          event: 'dom_audio_exception',
-          callId: activeCallId,
-          error: String(err?.message || err || 'unknown'),
-        });
-      }
-    } else {
-      v2Push.iosDebug({
-        source: 'js_overlay',
-        event: 'ring_effect',
-        callId: activeCallId,
-        iosHandled,
-        hasLaliaIOS: Boolean(window.LaliaIOS),
-        hasWebkitHandler: Boolean(window.webkit?.messageHandlers?.laliaIOS),
-        audioCtxState: sharedAudioCtx?.state || 'none',
-      });
+    if (iosHandled) {
+      return () => {
+        stopNativeIosRing(activeCallId);
+      };
     }
+
+    playRingChime();
 
     try {
       navigator.vibrate?.([250, 120, 250, 120, 400]);
@@ -457,7 +302,6 @@ export default function IncomingCallOverlay({ currentUser }) {
 
     return () => {
       clearInterval(chimeInterval);
-      stopHtmlAudioRing();
       stopNativeIosRing(activeCallId);
     };
   }, [incomingCall?.id]);
@@ -469,7 +313,6 @@ export default function IncomingCallOverlay({ currentUser }) {
     setBusy(true);
     unlockIncomingCallAudio();
     const callId = incomingCall.id;
-    stopHtmlAudioRing();
     stopNativeIosRing(callId);
     try {
       const res = await v2Calls.respond(callId, 'accept');
@@ -514,7 +357,6 @@ export default function IncomingCallOverlay({ currentUser }) {
     if (busy) return;
     setBusy(true);
     const callId = incomingCall.id;
-    stopHtmlAudioRing();
     stopNativeIosRing(callId);
     dismissedIdsRef.current.add(callId);
     setIncomingCall(null);
@@ -535,14 +377,6 @@ export default function IncomingCallOverlay({ currentUser }) {
       role="alertdialog"
       aria-label="Incoming call"
     >
-      <audio
-        ref={domAudioRef}
-        src={getRingtoneWavDataUri() || undefined}
-        autoPlay
-        loop
-        playsInline
-        className="hidden"
-      />
       <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-slate-950/95 p-4 text-white shadow-2xl ring-1 ring-emerald-400/30 backdrop-blur-md">
         <div className="flex min-w-0 items-center gap-3">
           <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-lg font-semibold text-emerald-300 ring-2 ring-emerald-400/60">
