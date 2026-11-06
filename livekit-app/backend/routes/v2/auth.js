@@ -7,6 +7,7 @@ const { hashPassword, verifyPassword, signSession } = require('../../lib/authAda
 const { sendPasswordResetEmail } = require('../../lib/passwordReset');
 const { PERSONAL, TEAM, normalizeAccountTypeHint, resolveNewWorkspace } = require('../../lib/v2Workspace');
 const { getPrefs, setSignupPrefs, updatePrefs } = require('../../lib/communicationPrefs');
+const { syncContact } = require('../../lib/opsHubClient');
 
 function emailValid(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -69,6 +70,15 @@ router.post('/signup', async (req, res) => {
       accountType: accountTypeHint,
     });
     await setSignupPrefs(userId, { marketingEmail: Boolean(marketingEmail) }, req);
+    void syncContact({
+      externalUserId: userId,
+      email: email.trim().toLowerCase(),
+      name: displayName || email.split('@')[0],
+      planTier: 'free',
+      lifecycleState: 'trial_active',
+      marketingOptIn: Boolean(marketingEmail),
+      source: 'lalia_signup',
+    });
     const token = signSession({ sub: userId, email: email.trim().toLowerCase(), orgId, role: 'owner' });
     res.status(201).json({
       token,
