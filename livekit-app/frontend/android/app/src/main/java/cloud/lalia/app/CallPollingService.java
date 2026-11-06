@@ -45,7 +45,6 @@ public class CallPollingService extends Service {
     public static final String EXTRA_CALL_ID = "lalia_call_id";
     public static final String EXTRA_CALLER_NAME = "lalia_caller_name";
     public static final String EXTRA_JOIN_URL = "lalia_join_url";
-    public static final String EXTRA_AUTO_JOIN = "lalia_auto_join";
     public static final String EXTRA_AUTO_ANSWER = "lalia_auto_answer";
 
     private static final String STANDBY_CHANNEL_ID = "lalia_call_standby";
@@ -60,15 +59,12 @@ public class CallPollingService extends Service {
     private String currentlyRingingCallId = null;
     private final Set<String> dismissedCallIds = Collections.synchronizedSet(new HashSet<>());
 
-    public static String appendAutoJoinParam(String rawUrl) {
+    public static String normalizeJoinUrl(String rawUrl) {
         String normalized = (rawUrl == null || rawUrl.trim().isEmpty())
             ? "https://lalia.cloud/v2/app"
             : rawUrl.trim();
         if (normalized.startsWith("/")) {
             normalized = "https://lalia.cloud" + normalized;
-        }
-        if ((normalized.contains("/join/") || normalized.contains("/room/")) && !normalized.contains("autoJoin=1")) {
-            normalized += normalized.contains("?") ? "&autoJoin=1" : "?autoJoin=1";
         }
         return normalized;
     }
@@ -315,7 +311,7 @@ public class CallPollingService extends Service {
         } catch (Exception ignored) {}
 
         try {
-            final String answerUrl = appendAutoJoinParam(joinUrl);
+            final String answerUrl = normalizeJoinUrl(joinUrl);
             int flags = PendingIntent.FLAG_UPDATE_CURRENT;
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 flags |= PendingIntent.FLAG_IMMUTABLE;
@@ -330,7 +326,6 @@ public class CallPollingService extends Service {
             fullScreenIntent.putExtra(EXTRA_CALL_ID, callId);
             fullScreenIntent.putExtra(EXTRA_CALLER_NAME, callerName);
             fullScreenIntent.putExtra(EXTRA_JOIN_URL, answerUrl);
-            fullScreenIntent.putExtra(EXTRA_AUTO_JOIN, true);
             PendingIntent fullScreenPi = PendingIntent.getActivity(this, 101, fullScreenIntent, flags);
 
             Intent answerIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(answerUrl), this, MainActivity.class);
@@ -342,7 +337,6 @@ public class CallPollingService extends Service {
             answerIntent.putExtra(EXTRA_CALL_ID, callId);
             answerIntent.putExtra(EXTRA_CALLER_NAME, callerName);
             answerIntent.putExtra(EXTRA_JOIN_URL, answerUrl);
-            answerIntent.putExtra(EXTRA_AUTO_JOIN, true);
             answerIntent.putExtra(EXTRA_AUTO_ANSWER, true);
             PendingIntent answerPi = PendingIntent.getActivity(this, 103, answerIntent, flags);
 
@@ -355,7 +349,7 @@ public class CallPollingService extends Service {
             NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CALL_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.sym_action_call)
                 .setContentTitle(callerName + " is calling you on Lalia…")
-                .setContentText("Tap Answer to join immediately with live translation")
+                .setContentText("Tap Answer to open call settings & join")
                 .setPriority(NotificationCompat.PRIORITY_MAX)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)

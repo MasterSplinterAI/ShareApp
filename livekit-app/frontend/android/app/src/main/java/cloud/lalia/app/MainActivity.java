@@ -112,9 +112,9 @@ public class MainActivity extends BridgeActivity {
             joinUrl = data.toString();
         }
         if (joinUrl != null && (joinUrl.contains("/join/") || joinUrl.contains("/room/"))) {
-            String autoJoinUrl = CallPollingService.appendAutoJoinParam(joinUrl);
+            String normalizedUrl = CallPollingService.normalizeJoinUrl(joinUrl);
             intent.setAction(Intent.ACTION_VIEW);
-            intent.setData(Uri.parse(autoJoinUrl));
+            intent.setData(Uri.parse(normalizedUrl));
         }
     }
 
@@ -126,18 +126,16 @@ public class MainActivity extends BridgeActivity {
             rawJoinUrl = intent.getData().toString();
         }
         final boolean autoAnswer = intent.getBooleanExtra(CallPollingService.EXTRA_AUTO_ANSWER, false);
-        final boolean autoJoin = intent.getBooleanExtra(CallPollingService.EXTRA_AUTO_JOIN, false) ||
-            (rawJoinUrl != null && rawJoinUrl.contains("autoJoin=1"));
 
         if (callId != null && !callId.isEmpty()) {
             stopCallWatcherRing(callId);
-            if (autoAnswer || autoJoin) {
+            if (autoAnswer) {
                 CallPollingService.respondToCallAsync(getApplicationContext(), callId, "accept");
             }
         }
 
         if (rawJoinUrl != null && (rawJoinUrl.contains("/join/") || rawJoinUrl.contains("/room/"))) {
-            final String targetUrl = CallPollingService.appendAutoJoinParam(rawJoinUrl);
+            final String targetUrl = CallPollingService.normalizeJoinUrl(rawJoinUrl);
             navigateWebViewToCallUrl(targetUrl, callId != null ? callId : "");
         }
     }
@@ -156,15 +154,12 @@ public class MainActivity extends BridgeActivity {
             "try{" +
             "var url=" + quotedUrl + ";" +
             "var cid=" + quotedCallId + ";" +
-            "window.dispatchEvent(new CustomEvent('lalia:ios-call-navigate',{detail:{joinUrl:url,url:url,callId:cid}}));" +
             "window.dispatchEvent(new CustomEvent('lalia:android-call-navigate',{detail:{joinUrl:url,url:url,callId:cid}}));" +
             "var parsed=new URL(url,window.location.origin);" +
             "var targetPath=parsed.pathname+(parsed.search||'')+(parsed.hash||'');" +
-            "setTimeout(function(){" +
             "if(window.location.pathname.indexOf('/join/')!==0 && window.location.pathname.indexOf('/room/')!==0){" +
             "window.location.assign(targetPath);" +
             "}" +
-            "},250);" +
             "}catch(e){}" +
             "})();";
     }
