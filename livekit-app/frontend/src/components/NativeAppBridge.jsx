@@ -117,6 +117,18 @@ export default function NativeAppBridge() {
     ensureWebPushRegistered();
     const tokenSyncId = setInterval(syncNativeTokens, 4000);
 
+    if (isIosDevice) {
+      v2Push.iosDebug({
+        source: 'js_bridge',
+        event: 'mount',
+        native,
+        standalone,
+        hasLaliaIOS: Boolean(window.LaliaIOS),
+        hasWebkitHandler: Boolean(window.webkit?.messageHandlers?.laliaIOS),
+        hasIosTokens: Boolean(window.__laliaIosTokens?.voipToken || window.__laliaIosTokens?.apnsToken),
+      });
+    }
+
     const onIosPushTokens = (event) => {
       const detail = event?.detail || {};
       window.__laliaIosTokens = {

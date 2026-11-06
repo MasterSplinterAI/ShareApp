@@ -12,14 +12,77 @@ final class LaliaBridgeViewController: CAPBridgeViewController {
         let config = super.webViewConfiguration(for: instanceConfiguration)
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
+        return config
+    }
 
-        let contentController = config.userContentController
+    override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
+        configuration.allowsInlineMediaPlayback = true
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        LaliaCallManager.shared.installIntoUserContentController(configuration.userContentController)
+        let wv = super.webView(with: frame, configuration: configuration)
+        LaliaCallManager.shared.attachWebView(wv)
+        return wv
+    }
+
+    override func capacitorDidLoad() {
+        super.capacitorDidLoad()
+        if let uc = self.webView?.configuration.userContentController {
+            LaliaCallManager.shared.installIntoUserContentController(uc)
+        }
+        LaliaCallManager.shared.attachWebView(self.webView)
+    }
+}
+
+final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDelegate, CXProviderDelegate, UNUserNotificationCenterDelegate {
+    static let shared = LaliaCallManager()
+
+    private let prefsAuthTokenKey = "lalia_v2_auth_token"
+    private let prefsVoipTokenKey = "lalia_ios_voip_token"
+    private let prefsApnsTokenKey = "lalia_ios_apns_token"
+    private let apiBaseUrl = "https://lalia.cloud/api/v2"
+
+    private weak var webView: WKWebView?
+    private var voipRegistry: PKPushRegistry?
+    private var callProvider: CXProvider?
+    private let callController = CXCallController()
+
+    private var pollTimer: Timer?
+    private var ringTimer: Timer?
+    private var ringPlayer: AVAudioPlayer?
+    private var standbyPlayer: AVAudioPlayer?
+    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    private var inLiveRoom: Bool = false
+    private var pollCount: Int = 0
+
+    private var currentlyRingingCallId: String?
+    private var dismissedCallIds = Set<String>()
+    private var callUuidByCallId = [String: UUID]()
+    private var callInfoByUuid = [UUID: [String: String]]()
+    private var answeredCallIds = Set<String>()
+
+    private lazy var ringtoneWavData: Data = Self.buildWavData(silent: false)
+    private lazy var standbyWavData: Data = Self.buildWavData(silent: true)
+
+    private override init() {
+        super.init()
+    }
+
+    func start() {
+        setupCallKit()
+        setupNotifications()
+        setupVoipPushKit()
+        setupLifecycleObservers()
+        ensureStandbyAudioRunning()
+        startCallPolling()
+        sendDebugBeacon(event: "native_start", detail: [:])
+    }
+
+    func installIntoUserContentController(_ contentController: WKUserContentController) {
         contentController.removeScriptMessageHandler(forName: "laliaIOS")
-        contentController.add(LaliaCallManager.shared, name: "laliaIOS")
+        contentController.add(self, name: "laliaIOS")
 
         let bridgeJs = """
         (function() {
-          if (window.LaliaIOS) return;
           function post(payload) {
             try {
               if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.laliaIOS) {
@@ -54,90 +117,58 @@ final class LaliaBridgeViewController: CAPBridgeViewController {
             forMainFrameOnly: false
         )
         contentController.addUserScript(userScript)
-        return config
-    }
-
-    override func capacitorDidLoad() {
-        super.capacitorDidLoad()
-        LaliaCallManager.shared.attachWebView(self.webView)
-    }
-}
-
-final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDelegate, CXProviderDelegate, UNUserNotificationCenterDelegate {
-    static let shared = LaliaCallManager()
-
-    private let prefsAuthTokenKey = "lalia_v2_auth_token"
-    private let prefsVoipTokenKey = "lalia_ios_voip_token"
-    private let prefsApnsTokenKey = "lalia_ios_apns_token"
-    private let apiBaseUrl = "https://lalia.cloud/api/v2"
-
-    private weak var webView: WKWebView?
-    private var voipRegistry: PKPushRegistry?
-    private var callProvider: CXProvider?
-    private let callController = CXCallController()
-
-    private var pollTimer: Timer?
-    private var ringTimer: Timer?
-    private var ringPlayer: AVAudioPlayer?
-    private var standbyPlayer: AVAudioPlayer?
-    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
-
-    private var currentlyRingingCallId: String?
-    private var dismissedCallIds = Set<String>()
-    private var callUuidByCallId = [String: UUID]()
-    private var callInfoByUuid = [UUID: [String: String]]()
-    private var answeredCallIds = Set<String>()
-
-    private lazy var ringtoneWavData: Data = Self.buildWavData(silent: false)
-    private lazy var silentWavData: Data = Self.buildWavData(silent: true)
-
-    private override init() {
-        super.init()
-    }
-
-    func start() {
-        setupCallKit()
-        setupNotifications()
-        setupVoipPushKit()
-        setupLifecycleObservers()
-        startStandbyBackgroundAudioIfAuthenticated()
-        startCallPolling()
-    }
-
-    private func setupLifecycleObservers() {
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didEnterBackgroundNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.applicationDidEnterBackground()
-        }
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.startStandbyBackgroundAudioIfAuthenticated()
-        }
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.didBecomeActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            self?.applicationDidBecomeActive()
-        }
     }
 
     func attachWebView(_ wv: WKWebView?) {
+        guard let wv = wv else { return }
         self.webView = wv
         syncTokensToWebView()
+        pullAuthTokenFromWebView()
+        sendDebugBeacon(event: "webview_attached", detail: [:])
     }
 
-    // MARK: - Synthesized PCM WAV Ringtone & Standby Audio
+    // MARK: - Telemetry Beacon
+
+    private func sendDebugBeacon(event: String, detail: [String: Any]) {
+        guard let url = URL(string: "\(apiBaseUrl)/push/ios-debug") else { return }
+        let build = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "?"
+        let hasToken = !(UserDefaults.standard.string(forKey: prefsAuthTokenKey) ?? "").isEmpty
+        let stateStr: String = {
+            switch UIApplication.shared.applicationState {
+            case .active: return "active"
+            case .inactive: return "inactive"
+            case .background: return "background"
+            @unknown default: return "unknown"
+            }
+        }()
+
+        var payload: [String: Any] = [
+            "source": "ios_swift",
+            "event": event,
+            "build": build,
+            "appState": stateStr,
+            "hasAuthToken": hasToken,
+            "standbyPlaying": standbyPlayer?.isPlaying ?? false,
+            "ringPlaying": ringPlayer?.isPlaying ?? false,
+            "inLiveRoom": inLiveRoom
+        ]
+        for (k, v) in detail {
+            payload[k] = v
+        }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 4.0
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload, options: [])
+        URLSession.shared.dataTask(with: req).resume()
+    }
+
+    // MARK: - Synthesized PCM WAV Ringtone & Non-Zero Standby Audio
 
     private static func buildWavData(silent: Bool) -> Data {
         let sampleRate = 22050
-        let durationSec = silent ? 1.0 : 2.4
+        let durationSec = silent ? 2.0 : 2.4
         let numSamples = Int(Double(sampleRate) * durationSec)
         let dataSize = numSamples * 2
         let totalSize = 44 + dataSize
@@ -167,15 +198,21 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         data.append(Data(bytes: &subchunk2Size, count: 4))
 
         if silent {
-            data.append(Data(count: dataSize))
+            // Non-zero inaudible sub-bass dither (amplitude 3 / 32767) so iOS mediaserverd never treats standby stream as digital zero
+            for i in 0..<numSamples {
+                let t = Double(i) / Double(sampleRate)
+                let dither = Int16(3.0 * sin(2.0 * .pi * 20.0 * t))
+                var pcm = dither.littleEndian
+                data.append(Data(bytes: &pcm, count: 2))
+            }
             return data
         }
 
         let notes: [(start: Double, end: Double, f1: Double, f2: Double)] = [
-            (0.00, 0.22, 587.33, 880.00),
-            (0.25, 0.58, 880.00, 1174.66),
-            (0.70, 0.92, 587.33, 880.00),
-            (0.95, 1.32, 880.00, 1174.66),
+            (0.00, 0.24, 587.33, 880.00),
+            (0.27, 0.60, 880.00, 1174.66),
+            (0.72, 0.96, 587.33, 880.00),
+            (0.99, 1.36, 880.00, 1174.66),
         ]
 
         for i in 0..<numSamples {
@@ -187,7 +224,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 let attack = min(1.0, localT / 0.015)
                 let release = min(1.0, (len - localT) / 0.04)
                 let env = attack * release
-                sample += env * (0.45 * sin(2.0 * .pi * n.f1 * localT) + 0.35 * sin(2.0 * .pi * n.f2 * localT))
+                sample += env * (0.48 * sin(2.0 * .pi * n.f1 * localT) + 0.38 * sin(2.0 * .pi * n.f2 * localT))
             }
             let clamped = max(-1.0, min(1.0, sample))
             var pcm = Int16(clamped * 32767.0).littleEndian
@@ -196,10 +233,8 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         return data
     }
 
-    private func startStandbyBackgroundAudioIfAuthenticated() {
-        let token = UserDefaults.standard.string(forKey: prefsAuthTokenKey) ?? ""
-        guard !token.isEmpty else {
-            stopStandbyBackgroundAudio()
+    private func ensureStandbyAudioRunning() {
+        if inLiveRoom || ringPlayer?.isPlaying == true {
             return
         }
         if standbyPlayer?.isPlaying == true {
@@ -209,14 +244,15 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
-            let player = try AVAudioPlayer(data: silentWavData)
+            let player = try AVAudioPlayer(data: standbyWavData)
             player.numberOfLoops = -1
-            player.volume = 0.001
+            player.volume = 0.01
             player.prepareToPlay()
-            player.play()
+            let ok = player.play()
             self.standbyPlayer = player
+            sendDebugBeacon(event: "standby_audio_started", detail: ["playReturned": ok])
         } catch {
-            // Ignore audio session conflict while in an active WebRTC call
+            sendDebugBeacon(event: "standby_audio_error", detail: ["error": error.localizedDescription])
         }
     }
 
@@ -226,6 +262,37 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     }
 
     // MARK: - Setup
+
+    private func setupLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applicationDidEnterBackground()
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.ensureStandbyAudioRunning()
+        }
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.applicationDidBecomeActive()
+        }
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.ensureStandbyAudioRunning()
+        }
+    }
 
     private func setupCallKit() {
         let config = CXProviderConfiguration(localizedName: "Lalia")
@@ -272,7 +339,11 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     }
 
     func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, err in
+            self?.sendDebugBeacon(
+                event: "notif_permission_result",
+                detail: ["granted": granted, "error": err?.localizedDescription ?? ""]
+            )
             if granted {
                 DispatchQueue.main.async {
                     UIApplication.shared.registerForRemoteNotifications()
@@ -312,6 +383,56 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         guard type == .voIP else { return }
         UserDefaults.standard.removeObject(forKey: prefsVoipTokenKey)
+    }
+
+    private func updateAuthToken(_ token: String) {
+        let clean = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = UserDefaults.standard.string(forKey: prefsAuthTokenKey) ?? ""
+        UserDefaults.standard.set(clean, forKey: prefsAuthTokenKey)
+        if !clean.isEmpty && clean != previous {
+            sendDebugBeacon(event: "auth_token_synced", detail: ["tokenLen": clean.count])
+            uploadIosTokensToBackend()
+            pollIncomingCallsNow()
+        }
+    }
+
+    private func pullAuthTokenFromWebView() {
+        guard UIApplication.shared.applicationState == .active, let wv = self.webView else { return }
+        let js = """
+        (function() {
+          try {
+            return JSON.stringify({
+              token: localStorage.getItem('v2_token') || '',
+              path: window.location ? window.location.pathname : ''
+            });
+          } catch (e) {
+            return '';
+          }
+        })()
+        """
+        wv.evaluateJavaScript(js) { [weak self] result, _ in
+            guard let self = self,
+                  let str = result as? String,
+                  !str.isEmpty,
+                  let data = str.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                return
+            }
+            if let token = obj["token"] as? String, !token.isEmpty {
+                self.updateAuthToken(token)
+            }
+            if let path = obj["path"] as? String {
+                let nowInRoom = path.hasPrefix("/room/")
+                if nowInRoom != self.inLiveRoom {
+                    self.inLiveRoom = nowInRoom
+                    if nowInRoom {
+                        self.stopStandbyBackgroundAudio()
+                    } else {
+                        self.ensureStandbyAudioRunning()
+                    }
+                }
+            }
+        }
     }
 
     private func syncTokensToWebView() {
@@ -433,7 +554,11 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         update.supportsUngrouping = false
         update.supportsHolding = false
 
-        callProvider?.reportNewIncomingCall(with: uuid, update: update) { _ in
+        callProvider?.reportNewIncomingCall(with: uuid, update: update) { [weak self] error in
+            self?.sendDebugBeacon(
+                event: "callkit_reported",
+                detail: ["callId": callId, "error": error?.localizedDescription ?? ""]
+            )
             completion?()
         }
     }
@@ -520,12 +645,18 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+        UNUserNotificationCenter.current().add(request) { [weak self] error in
+            self?.sendDebugBeacon(
+                event: "local_notification_posted",
+                detail: ["callId": callId, "error": error?.localizedDescription ?? ""]
+            )
+        }
     }
 
     private func playSystemRingBurst() {
-        AudioServicesPlayAlertSound(1005)
         AudioServicesPlayAlertSound(SystemSoundID(kSystemSoundID_Vibrate))
+        AudioServicesPlaySystemSound(SystemSoundID(kSystemSoundID_Vibrate))
+        AudioServicesPlayAlertSound(1005)
     }
 
     private func startSystemRingTimer(callId: String) {
@@ -534,7 +665,8 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             self.currentlyRingingCallId = callId
             self.ringTimer?.invalidate()
 
-            // Play synthesized WAV ringtone on .playback category so it rings even when Silent Mode is ON
+            var ringPlayOk = false
+            var ringErr = ""
             do {
                 let session = AVAudioSession.sharedInstance()
                 try session.setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
@@ -543,16 +675,29 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 player.numberOfLoops = -1
                 player.volume = 1.0
                 player.prepareToPlay()
-                player.play()
+                ringPlayOk = player.play()
                 self.ringPlayer = player
             } catch {
-                // Fallback to system sound if AVAudioSession fails
+                ringErr = error.localizedDescription
             }
 
             self.playSystemRingBurst()
-            self.ringTimer = Timer.scheduledTimer(withTimeInterval: 2.4, repeats: true) { [weak self] _ in
-                self?.playSystemRingBurst()
+            let timer = Timer(timeInterval: 1.8, repeats: true) { [weak self] _ in
+                guard let self = self else { return }
+                if self.ringPlayer?.isPlaying != true {
+                    try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers, .duckOthers])
+                    try? AVAudioSession.sharedInstance().setActive(true)
+                    _ = self.ringPlayer?.play()
+                }
+                self.playSystemRingBurst()
             }
+            RunLoop.main.add(timer, forMode: .common)
+            self.ringTimer = timer
+
+            self.sendDebugBeacon(
+                event: "ring_started",
+                detail: ["callId": callId, "ringPlayOk": ringPlayOk, "error": ringErr]
+            )
         }
     }
 
@@ -563,7 +708,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             self.ringTimer = nil
             self.ringPlayer?.stop()
             self.ringPlayer = nil
-            self.startStandbyBackgroundAudioIfAuthenticated()
+            self.ensureStandbyAudioRunning()
         }
     }
 
@@ -610,7 +755,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
     // MARK: - Background & Foreground Call Polling
 
     func applicationDidEnterBackground() {
-        startStandbyBackgroundAudioIfAuthenticated()
+        ensureStandbyAudioRunning()
         if backgroundTaskId == .invalid {
             backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "LaliaCallWatcher") { [weak self] in
                 guard let self = self else { return }
@@ -618,6 +763,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
                 self.backgroundTaskId = .invalid
             }
         }
+        sendDebugBeacon(event: "entered_background", detail: [:])
         pollIncomingCallsNow()
     }
 
@@ -626,14 +772,18 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             UIApplication.shared.endBackgroundTask(backgroundTaskId)
             backgroundTaskId = .invalid
         }
-        startStandbyBackgroundAudioIfAuthenticated()
+        ensureStandbyAudioRunning()
+        pullAuthTokenFromWebView()
+        sendDebugBeacon(event: "became_active", detail: [:])
         pollIncomingCallsNow()
     }
 
     private func startCallPolling() {
         DispatchQueue.main.async { [weak self] in
             self?.pollTimer?.invalidate()
-            let timer = Timer(timeInterval: 2.5, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: 2.0, repeats: true) { [weak self] _ in
+                self?.pullAuthTokenFromWebView()
+                self?.ensureStandbyAudioRunning()
                 self?.pollIncomingCallsNow()
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -648,11 +798,17 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             return
         }
 
+        pollCount += 1
+        if pollCount == 1 || pollCount % 15 == 0 {
+            sendDebugBeacon(event: "native_poll_heartbeat", detail: ["pollCount": pollCount])
+        }
+
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.timeoutInterval = 4.0
         req.setValue("Bearer \(authToken)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("LaliaNativeIOS/6", forHTTPHeaderField: "X-Lalia-Client")
 
         URLSession.shared.dataTask(with: req) { [weak self] data, response, error in
             guard let self = self,
@@ -680,6 +836,10 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
 
                     if self.currentlyRingingCallId != callId {
                         self.currentlyRingingCallId = callId
+                        self.sendDebugBeacon(
+                            event: "incoming_call_detected_native",
+                            detail: ["callId": callId, "callerName": callerName]
+                        )
                         self.postLocalIncomingCallNotification(
                             callId: callId,
                             callerName: callerName,
@@ -762,17 +922,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
         switch action {
         case "setAuthToken":
             let token = (body["token"] as? String) ?? ""
-            let previous = UserDefaults.standard.string(forKey: prefsAuthTokenKey) ?? ""
-            UserDefaults.standard.set(token, forKey: prefsAuthTokenKey)
-            if !token.isEmpty {
-                startStandbyBackgroundAudioIfAuthenticated()
-                if token != previous {
-                    uploadIosTokensToBackend()
-                    pollIncomingCallsNow()
-                }
-            } else {
-                stopStandbyBackgroundAudio()
-            }
+            updateAuthToken(token)
         case "ringIncomingCall":
             let callId = (body["callId"] as? String) ?? UUID().uuidString
             let callerName = (body["callerName"] as? String) ?? "Someone"
@@ -809,7 +959,7 @@ final class LaliaCallManager: NSObject, WKScriptMessageHandler, PKPushRegistryDe
             currentlyRingingCallId = nil
         case "requestNotificationPermission":
             if let token = body["token"] as? String, !token.isEmpty {
-                UserDefaults.standard.set(token, forKey: prefsAuthTokenKey)
+                updateAuthToken(token)
             }
             requestNotificationPermission()
             uploadIosTokensToBackend()

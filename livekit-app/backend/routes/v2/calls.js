@@ -739,10 +739,35 @@ router.post('/push/ios-token', requireV2Auth, async (req, res) => {
   }
 });
 
+const iosDebugEvents = [];
+
+router.post('/push/ios-debug', (req, res) => {
+  try {
+    const entry = {
+      ts: new Date().toISOString(),
+      ip: req.ip || req.headers['x-forwarded-for'] || '',
+      ua: (req.get('user-agent') || '').slice(0, 140),
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+    };
+    iosDebugEvents.push(entry);
+    if (iosDebugEvents.length > 100) {
+      iosDebugEvents.shift();
+    }
+    console.log('[ios-debug]', JSON.stringify(entry));
+    res.json({ ok: true });
+  } catch {
+    res.json({ ok: false });
+  }
+});
+
+router.get('/push/ios-debug', requireV2Auth, (_req, res) => {
+  res.json({ events: iosDebugEvents.slice(-50) });
+});
+
 router.get('/push/status', requireV2Auth, async (req, res) => {
   try {
     const status = await getUserPushDiagnostics(req.v2Auth.userId);
-    res.json(status);
+    res.json({ ...status, recentIosDebug: iosDebugEvents.slice(-20) });
   } catch (e) {
     console.error('[v2/push/status GET]', e);
     res.status(500).json({ error: 'Failed to load push status' });

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Phone, PhoneOff } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { v2Calls } from '../../services/apiV2';
+import { v2Calls, v2Push } from '../../services/apiV2';
 import { isNativeApp } from '../../lib/nativePlatform';
 import { Button } from '../../components/ui/button';
 
@@ -256,6 +256,7 @@ export default function IncomingCallOverlay({ currentUser }) {
   const [incomingCall, setIncomingCall] = useState(null);
   const [busy, setBusy] = useState(false);
   const dismissedIdsRef = useRef(new Set());
+  const domAudioRef = useRef(null);
 
   const inLiveRoom = location.pathname.startsWith('/room/');
 
@@ -357,9 +358,54 @@ export default function IncomingCallOverlay({ currentUser }) {
       };
     }
 
-    notifyNativeIosRing(incomingCall);
+    const iosHandled = notifyNativeIosRing(incomingCall);
     startHtmlAudioRing();
     playRingChime();
+
+    if (domAudioRef.current) {
+      try {
+        domAudioRef.current.volume = 1.0;
+        domAudioRef.current.currentTime = 0;
+        const p = domAudioRef.current.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => {
+            v2Push.iosDebug({
+              source: 'js_overlay',
+              event: 'dom_audio_play_ok',
+              callId: activeCallId,
+              iosHandled,
+              audioCtxState: sharedAudioCtx?.state || 'none',
+            });
+          }).catch((err) => {
+            v2Push.iosDebug({
+              source: 'js_overlay',
+              event: 'dom_audio_play_err',
+              callId: activeCallId,
+              iosHandled,
+              error: String(err?.message || err || 'unknown'),
+              audioCtxState: sharedAudioCtx?.state || 'none',
+            });
+          });
+        }
+      } catch (err) {
+        v2Push.iosDebug({
+          source: 'js_overlay',
+          event: 'dom_audio_exception',
+          callId: activeCallId,
+          error: String(err?.message || err || 'unknown'),
+        });
+      }
+    } else {
+      v2Push.iosDebug({
+        source: 'js_overlay',
+        event: 'ring_effect',
+        callId: activeCallId,
+        iosHandled,
+        hasLaliaIOS: Boolean(window.LaliaIOS),
+        hasWebkitHandler: Boolean(window.webkit?.messageHandlers?.laliaIOS),
+        audioCtxState: sharedAudioCtx?.state || 'none',
+      });
+    }
 
     try {
       navigator.vibrate?.([250, 120, 250, 120, 400]);
@@ -482,6 +528,14 @@ export default function IncomingCallOverlay({ currentUser }) {
       role="alertdialog"
       aria-label="Incoming call"
     >
+      <audio
+        ref={domAudioRef}
+        src={getRingtoneWavDataUri() || undefined}
+        autoPlay
+        loop
+        playsInline
+        className="hidden"
+      />
       <div className="flex w-full max-w-md items-center justify-between gap-3 rounded-2xl border border-emerald-500/40 bg-slate-950/95 p-4 text-white shadow-2xl ring-1 ring-emerald-400/30 backdrop-blur-md">
         <div className="flex min-w-0 items-center gap-3">
           <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-emerald-500/20 text-lg font-semibold text-emerald-300 ring-2 ring-emerald-400/60">

@@ -286,6 +286,7 @@ export const v2Push = {
   subscribe: (subscription) => apiV2.post('/push/subscribe', { subscription }).then((r) => r.data),
   registerIosToken: (payload) => apiV2.post('/push/ios-token', payload).then((r) => r.data),
   status: () => apiV2.get('/push/status').then((r) => r.data),
+  iosDebug: (payload) => apiV2.post('/push/ios-debug', payload).then((r) => r.data).catch(() => {}),
 };
 
 export default apiV2;
