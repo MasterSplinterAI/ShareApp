@@ -2,14 +2,59 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Phone, PhoneOff } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { v2Calls } from '../../services/apiV2';
+import { v2Calls, v2Push } from '../../services/apiV2';
+import { isNativeApp } from '../../lib/nativePlatform';
 import { Button } from '../../components/ui/button';
+
+let sharedAudioCtx = null;
+let audioUnlockInstalled = false;
+
+export function unlockIncomingCallAudio() {
+  if (typeof window === 'undefined') return;
+  // On native iOS/Android, native CallKit / RingtoneManager handles ringing without HTML5/WebAudio
+  if (
+    window.LaliaIOS ||
+    window.webkit?.messageHandlers?.laliaIOS ||
+    window.LaliaAndroid
+  ) {
+    return;
+  }
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx && !sharedAudioCtx) {
+      sharedAudioCtx = new AudioCtx();
+    }
+    if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+      sharedAudioCtx.resume().catch(() => {});
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function ensureAudioUnlockListeners() {
+  if (typeof window === 'undefined' || audioUnlockInstalled) return;
+  audioUnlockInstalled = true;
+  const events = ['touchstart', 'pointerdown', 'click', 'keydown'];
+  const handler = () => {
+    unlockIncomingCallAudio();
+  };
+  events.forEach((ev) => {
+    window.addEventListener(ev, handler, { passive: true, capture: true });
+  });
+}
 
 function playRingChime() {
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
     if (!AudioCtx) return;
-    const ctx = new AudioCtx();
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new AudioCtx();
+    }
+    const ctx = sharedAudioCtx;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     const now = ctx.currentTime;
 
     const playTone = (freq, startOffset, duration) => {
@@ -18,7 +63,7 @@ function playRingChime() {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(freq, now + startOffset);
       gain.gain.setValueAtTime(0.001, now + startOffset);
-      gain.gain.exponentialRampToValueAtTime(0.12, now + startOffset + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.22, now + startOffset + 0.025);
       gain.gain.exponentialRampToValueAtTime(0.001, now + startOffset + duration);
       osc.connect(gain);
       gain.connect(ctx.destination);
@@ -28,11 +73,51 @@ function playRingChime() {
 
     playTone(587.33, 0, 0.22); // D5
     playTone(880.0, 0.24, 0.32); // A5
-    setTimeout(() => {
-      ctx.close().catch(() => {});
-    }, 800);
+    playTone(587.33, 0.68, 0.22); // D5
+    playTone(1174.66, 0.92, 0.34); // D6
   } catch {
     /* AudioContext may be blocked before user gesture */
+  }
+}
+
+function notifyNativeIosRing(call) {
+  if (typeof window === 'undefined' || !call) return false;
+  let handled = false;
+  try {
+    if (typeof window.LaliaIOS?.ringIncomingCall === 'function') {
+      window.LaliaIOS.ringIncomingCall(
+        call.callerName || 'Someone',
+        call.joinUrl || '',
+        call.id || ''
+      );
+      handled = true;
+    }
+    if (window.webkit?.messageHandlers?.laliaIOS?.postMessage) {
+      window.webkit.messageHandlers.laliaIOS.postMessage({
+        action: 'ringIncomingCall',
+        callId: call.id || '',
+        callerName: call.callerName || 'Someone',
+        joinUrl: call.joinUrl || '',
+        roomName: call.roomName || '',
+      });
+      handled = true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return handled;
+}
+
+function stopNativeIosRing(callId = '') {
+  if (typeof window === 'undefined') return;
+  try {
+    window.LaliaIOS?.stopIncomingCallRing?.(callId);
+    window.webkit?.messageHandlers?.laliaIOS?.postMessage?.({
+      action: 'stopRing',
+      callId: callId || '',
+    });
+  } catch {
+    /* ignore */
   }
 }
 
@@ -55,6 +140,10 @@ export default function IncomingCallOverlay({ currentUser }) {
   const inLiveRoom = location.pathname.startsWith('/room/');
 
   useEffect(() => {
+    ensureAudioUnlockListeners();
+  }, []);
+
+  useEffect(() => {
     if (inLiveRoom) {
       setIncomingCall(null);
       return undefined;
@@ -63,9 +152,13 @@ export default function IncomingCallOverlay({ currentUser }) {
     let cancelled = false;
 
     const poll = async () => {
-      const hasNativeAndroidBridge =
-        typeof window !== 'undefined' && Boolean(window.LaliaAndroid);
-      if (cancelled || (document.visibilityState === 'hidden' && !hasNativeAndroidBridge)) return;
+      const allowBackgroundPoll =
+        typeof window !== 'undefined' &&
+        (Boolean(window.LaliaAndroid) ||
+          Boolean(window.LaliaIOS) ||
+          Boolean(window.webkit?.messageHandlers?.laliaIOS) ||
+          isNativeApp());
+      if (cancelled || (document.visibilityState === 'hidden' && !allowBackgroundPoll)) return;
       if (typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) return;
       try {
         const res = await v2Calls.incoming();
@@ -79,16 +172,38 @@ export default function IncomingCallOverlay({ currentUser }) {
       }
     };
 
+    const onVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        poll();
+      }
+    };
+
+    const onNativeCallDismissed = (ev) => {
+      const id = ev?.detail?.callId;
+      if (id) dismissedIdsRef.current.add(id);
+      setIncomingCall(null);
+    };
+
     poll();
-    const id = setInterval(poll, 3000);
+    const id = setInterval(poll, 2500);
+    document.addEventListener('visibilitychange', onVisibilityOrFocus);
+    window.addEventListener('focus', onVisibilityOrFocus);
+    window.addEventListener('pageshow', onVisibilityOrFocus);
+    window.addEventListener('lalia:ios-call-dismissed', onNativeCallDismissed);
+
     return () => {
       cancelled = true;
       clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisibilityOrFocus);
+      window.removeEventListener('focus', onVisibilityOrFocus);
+      window.removeEventListener('pageshow', onVisibilityOrFocus);
+      window.removeEventListener('lalia:ios-call-dismissed', onNativeCallDismissed);
     };
   }, [inLiveRoom]);
 
   useEffect(() => {
     if (!incomingCall) {
+      stopNativeIosRing();
       try {
         window.LaliaAndroid?.stopIncomingCallRing?.();
       } catch {
@@ -96,6 +211,8 @@ export default function IncomingCallOverlay({ currentUser }) {
       }
       return undefined;
     }
+
+    const activeCallId = incomingCall.id || '';
 
     const hasAndroidRing =
       typeof window !== 'undefined' &&
@@ -119,16 +236,69 @@ export default function IncomingCallOverlay({ currentUser }) {
       };
     }
 
+    const iosHandled = notifyNativeIosRing(incomingCall);
+    v2Push.iosDebug({
+      source: 'js_overlay',
+      event: 'ring_effect',
+      callId: activeCallId,
+      iosHandled,
+    });
+
+    if (iosHandled) {
+      return () => {
+        stopNativeIosRing(activeCallId);
+      };
+    }
+
     playRingChime();
+
     try {
-      navigator.vibrate?.([200, 100, 200]);
+      navigator.vibrate?.([250, 120, 250, 120, 400]);
     } catch {
       /* ignore */
     }
+
+    if (
+      typeof document !== 'undefined' &&
+      document.visibilityState === 'hidden' &&
+      typeof Notification !== 'undefined' &&
+      Notification.permission === 'granted' &&
+      'serviceWorker' in navigator
+    ) {
+      navigator.serviceWorker.ready
+        .then((reg) =>
+          reg.showNotification(
+            `${incomingCall.callerName || 'Someone'} is calling you on Lalia`,
+            {
+              body: 'Tap to answer with live translation & captions',
+              icon: '/icon-192.png',
+              badge: '/icon-192.png',
+              tag: `lalia-call-${activeCallId || 'incoming'}`,
+              renotify: true,
+              requireInteraction: true,
+              data: {
+                joinUrl: incomingCall.joinUrl || '/v2/app',
+                callId: activeCallId,
+              },
+            }
+          )
+        )
+        .catch(() => {});
+    }
+
     const chimeInterval = setInterval(() => {
       playRingChime();
-    }, 2600);
-    return () => clearInterval(chimeInterval);
+      try {
+        navigator.vibrate?.([250, 120, 250]);
+      } catch {
+        /* ignore */
+      }
+    }, 2400);
+
+    return () => {
+      clearInterval(chimeInterval);
+      stopNativeIosRing(activeCallId);
+    };
   }, [incomingCall?.id]);
 
   if (!incomingCall) return null;
@@ -136,9 +306,12 @@ export default function IncomingCallOverlay({ currentUser }) {
   const handleAnswer = async () => {
     if (busy) return;
     setBusy(true);
+    unlockIncomingCallAudio();
+    const callId = incomingCall.id;
+    stopNativeIosRing(callId);
     try {
-      const res = await v2Calls.respond(incomingCall.id, 'accept');
-      dismissedIdsRef.current.add(incomingCall.id);
+      const res = await v2Calls.respond(callId, 'accept');
+      dismissedIdsRef.current.add(callId);
       setIncomingCall(null);
       const displayName =
         currentUser?.display_name ||
@@ -166,7 +339,7 @@ export default function IncomingCallOverlay({ currentUser }) {
       navigate(targetPath);
     } catch (e) {
       toast.error(e.response?.data?.error || 'Call is no longer active');
-      dismissedIdsRef.current.add(incomingCall.id);
+      dismissedIdsRef.current.add(callId);
       setIncomingCall(null);
     } finally {
       setBusy(false);
@@ -176,10 +349,12 @@ export default function IncomingCallOverlay({ currentUser }) {
   const handleDecline = async () => {
     if (busy) return;
     setBusy(true);
-    dismissedIdsRef.current.add(incomingCall.id);
+    const callId = incomingCall.id;
+    stopNativeIosRing(callId);
+    dismissedIdsRef.current.add(callId);
     setIncomingCall(null);
     try {
-      await v2Calls.respond(incomingCall.id, 'decline');
+      await v2Calls.respond(callId, 'decline');
     } catch {
       /* ignore */
     } finally {
@@ -191,7 +366,7 @@ export default function IncomingCallOverlay({ currentUser }) {
 
   return (
     <div
-      className="fixed inset-x-0 top-[max(1rem,calc(env(safe-area-inset-top)+0.5rem))] z-[100] flex justify-center px-4"
+      className="fixed inset-x-0 top-[max(1rem,calc(var(--safe-top,env(safe-area-inset-top,0px))+0.5rem))] z-[100] flex justify-center px-4"
       role="alertdialog"
       aria-label="Incoming call"
     >
@@ -202,9 +377,25 @@ export default function IncomingCallOverlay({ currentUser }) {
             <span className="relative">{initial}</span>
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">
-              {incomingCall.callerName || 'Someone'} is calling…
-            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <p className="truncate text-sm font-semibold text-white">
+                {incomingCall.callerName || 'Someone'} is calling…
+              </p>
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  incomingCall.isSavedContact
+                    ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30'
+                    : 'bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/30'
+                }`}
+              >
+                {incomingCall.isSavedContact ? 'Saved contact' : 'New caller'}
+              </span>
+            </div>
+            {incomingCall.callerEmail && (
+              <p className="truncate text-xs text-emerald-200/90">
+                {incomingCall.callerEmail}
+              </p>
+            )}
             <p className="truncate text-xs text-slate-300">
               Live translation &amp; captions · Tap Answer to join
             </p>

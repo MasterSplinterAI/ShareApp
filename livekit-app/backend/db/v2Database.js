@@ -822,6 +822,8 @@ async function migrate() {
       contact_name TEXT,
       contact_user_id TEXT,
       preferred_language TEXT,
+      recipient_status TEXT NOT NULL DEFAULT 'pending',
+      recipient_responded_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (owner_user_id) REFERENCES v2_users(id),
       FOREIGN KEY (contact_user_id) REFERENCES v2_users(id)
@@ -831,6 +833,18 @@ async function migrate() {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_contacts_owner_email ON v2_contacts(owner_user_id, contact_email)`
   );
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_contacts_owner ON v2_contacts(owner_user_id)`);
+
+  const contactCols = await all(`PRAGMA table_info(v2_contacts)`);
+  const contactColNames = new Set((contactCols || []).map((c) => c.name));
+  if (!contactColNames.has('recipient_status')) {
+    await run(`ALTER TABLE v2_contacts ADD COLUMN recipient_status TEXT NOT NULL DEFAULT 'pending'`);
+  }
+  if (!contactColNames.has('recipient_responded_at')) {
+    await run(`ALTER TABLE v2_contacts ADD COLUMN recipient_responded_at TEXT`);
+  }
+  await run(
+    `CREATE INDEX IF NOT EXISTS idx_v2_contacts_reverse_lookup ON v2_contacts(LOWER(contact_email), contact_user_id, recipient_status)`
+  ).catch(() => {});
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_direct_calls (
@@ -883,6 +897,22 @@ async function migrate() {
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_push_subscriptions_user ON v2_push_subscriptions(user_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_ios_push_tokens (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      push_type TEXT NOT NULL DEFAULT 'voip',
+      bundle_id TEXT NOT NULL DEFAULT 'cloud.lalia.app',
+      environment TEXT NOT NULL DEFAULT 'sandbox',
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_ios_push_tokens_user ON v2_ios_push_tokens(user_id)`);
 }
 
 async function initPostgres() {

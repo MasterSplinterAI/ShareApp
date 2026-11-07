@@ -270,6 +270,10 @@ export const v2Contacts = {
   list: () => apiV2.get('/contacts').then((r) => r.data),
   save: (body) => apiV2.post('/contacts', body).then((r) => r.data),
   remove: (id) => apiV2.delete(`/contacts/${encodeURIComponent(id)}`).then((r) => r.data),
+  acceptRequest: (id, body = {}) =>
+    apiV2.post(`/contacts/requests/${encodeURIComponent(id)}/accept`, body).then((r) => r.data),
+  dismissRequest: (id, body = {}) =>
+    apiV2.post(`/contacts/requests/${encodeURIComponent(id)}/dismiss`, body).then((r) => r.data),
 };
 
 export const v2Calls = {
@@ -284,6 +288,9 @@ export const v2Calls = {
 export const v2Push = {
   vapidPublicKey: () => apiV2.get('/push/vapid-public-key').then((r) => r.data),
   subscribe: (subscription) => apiV2.post('/push/subscribe', { subscription }).then((r) => r.data),
+  registerIosToken: (payload) => apiV2.post('/push/ios-token', payload).then((r) => r.data),
+  status: () => apiV2.get('/push/status').then((r) => r.data),
+  iosDebug: (payload) => apiV2.post('/push/ios-debug', payload).then((r) => r.data).catch(() => {}),
 };
 
 export default apiV2;

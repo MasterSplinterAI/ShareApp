@@ -4,6 +4,7 @@ const { getStripeSettings } = require('../../lib/v2StripeSettings');
 const { applyStripeSubscriptionToOrg, applyCheckoutSessionToOrg } = require('../../lib/v2StripeSubscriptionSync');
 const { applyStripeDisputeEvent } = require('../../lib/v2StripeDispute');
 const { markOverageLedgerForInvoice } = require('../../lib/v2OverageSettlement');
+const { forwardStripeWebhookToOpsHub } = require('../../lib/opsHubClient');
 
 const MAX_PAYLOAD_CHARS = 500_000;
 
@@ -135,6 +136,7 @@ async function handleV2BillingWebhook(req, res) {
     }
 
     await processStripeEvent(event);
+    void forwardStripeWebhookToOpsHub(event);
 
     await db.run(`UPDATE v2_webhook_events SET processed_at = datetime('now'), type = ? WHERE id = ?`, [
       String(event.type || 'unknown').slice(0, 128),

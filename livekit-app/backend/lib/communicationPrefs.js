@@ -160,6 +160,21 @@ async function updatePrefs(userId, body, req) {
 
   if (body.marketingEmail !== undefined && Boolean(body.marketingEmail) !== Boolean(current.marketing_email)) {
     await recordConsentEvent(userId, 'marketing_email', next.marketingEmail, req);
+    try {
+      const { syncContact } = require('./opsHubClient');
+      const u = await db.get(`SELECT email, display_name FROM v2_users WHERE id = ?`, [userId]);
+      if (u?.email) {
+        void syncContact({
+          externalUserId: userId,
+          email: u.email,
+          name: u.display_name || u.email.split('@')[0],
+          marketingOptIn: next.marketingEmail,
+          source: 'lalia_prefs_update',
+        });
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   return { ok: true, prefs: await getPrefs(userId) };

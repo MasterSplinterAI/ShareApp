@@ -16,6 +16,13 @@ const {
   createFilesystemCodebaseAdapter,
 } = require('@rhule/support-core');
 const { createTelegramOpsNotifier } = require('@rhule/support-channels');
+const {
+  createOpsSupportProxyMiddleware,
+  syncContact,
+  syncCuratedDocsToOpsHub,
+  backfillLaliaStateToOpsHub,
+  syncSupportHistoryToOpsHub,
+} = require('./opsHubClient');
 
 const LIVEKIT_ROOT = path.join(__dirname, '../..');
 const DOCS_ROOT = path.join(__dirname, '../docs/support');
@@ -286,6 +293,19 @@ function createShareAppSupportRouter() {
           chatId: cfg.chatId,
         }),
     },
+    onLeadCaptured: async (lead) => {
+      void syncContact({
+        externalUserId: `lead:${lead.id}`,
+        email: lead.email,
+        name: lead.name,
+        phone: lead.phone || undefined,
+        planTier: 'free',
+        lifecycleState: 'lead_only',
+        marketingOptIn: Boolean(lead.marketingEmailOptIn),
+        source: `support_lead:${lead.source || 'public_launcher'}`,
+        consentText: lead.consentText || undefined,
+      });
+    },
   };
 
   const github = createGithubAdapter();
@@ -304,7 +324,16 @@ function createShareAppSupportRouter() {
     };
   }
 
-  return createSupportRouter(options);
+  const localRouter = createSupportRouter(options);
+  const proxiedHandler = createOpsSupportProxyMiddleware({
+    resolveUser,
+    localHandler: (req, res, next) => localRouter.handler(req, res, next),
+    db,
+  });
+  return {
+    ...localRouter,
+    handler: proxiedHandler,
+  };
 }
 
 function supportKitEnabled() {
@@ -335,6 +364,9 @@ async function ensureSupportSchema() {
       console.log(
         `[support] curated docs seeded (ingested=${seeded.ingested}, promoted=${seeded.promoted})`
       );
+      void syncCuratedDocsToOpsHub(DOCS_ROOT);
+      void backfillLaliaStateToOpsHub(db);
+      void syncSupportHistoryToOpsHub(db);
     } catch (e) {
       console.warn('[support] seedCuratedDocs skipped:', e.message);
     }

@@ -12,10 +12,13 @@ import {
   Sparkles,
   Trash2,
   UserCheck,
+  UserPlus,
   Users,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Calls, v2Contacts, v2Push } from '../../services/apiV2';
+import { unlockIncomingCallAudio } from './IncomingCallOverlay';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
@@ -86,21 +89,62 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
+  const [addedYou, setAddedYou] = useState([]);
   const [callHistory, setCallHistory] = useState([]);
   const [activeTab, setActiveTab] = useState('contacts'); // 'contacts' | 'history' | 'missed'
   const [loading, setLoading] = useState(true);
   const [callingKey, setCallingKey] = useState(null);
+  const [busyRequestKey, setBusyRequestKey] = useState(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [savingContact, setSavingContact] = useState(false);
-  const [notifPerm, setNotifPerm] = useState(() =>
-    typeof Notification !== 'undefined' ? Notification.permission : 'unsupported'
-  );
+  const [notifPerm, setNotifPerm] = useState(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('lalia_call_alerts_enabled') === '1') {
+      return 'granted';
+    }
+    return typeof Notification !== 'undefined' ? Notification.permission : 'default';
+  });
 
   const enablePushNotifications = async () => {
+    unlockIncomingCallAudio();
+
+    const hasIosBridge =
+      typeof window !== 'undefined' &&
+      (Boolean(window.LaliaIOS) || Boolean(window.webkit?.messageHandlers?.laliaIOS));
+
+    if (hasIosBridge) {
+      try {
+        const token = localStorage.getItem('v2_token') || '';
+        window.LaliaIOS?.setAuthToken?.(token);
+        window.LaliaIOS?.requestNotificationPermission?.();
+        window.webkit?.messageHandlers?.laliaIOS?.postMessage?.({
+          action: 'requestNotificationPermission',
+          token,
+        });
+        if (window.__laliaIosTokens?.voipToken || window.__laliaIosTokens?.apnsToken) {
+          await v2Push.registerIosToken({
+            voipToken: window.__laliaIosTokens.voipToken || undefined,
+            apnsToken: window.__laliaIosTokens.apnsToken || undefined,
+            bundleId: window.__laliaIosTokens.bundleId || 'cloud.lalia.app',
+            environment: window.__laliaIosTokens.environment || 'sandbox',
+          });
+        }
+        localStorage.setItem('lalia_call_alerts_enabled', '1');
+        setNotifPerm('granted');
+        toast.success('iOS call alerts & ringtone enabled!');
+        return;
+      } catch {
+        /* fall through */
+      }
+    }
+
     if (typeof Notification === 'undefined') {
-      toast.error('To get push notifications on iPhone right now, open lalia.cloud in Safari → Share → Add to Home Screen.');
+      localStorage.setItem('lalia_call_alerts_enabled', '1');
+      setNotifPerm('granted');
+      toast.success(
+        'In-app call ringtone enabled! For lock-screen alerts without the native update, open lalia.cloud in Safari → Share → Add to Home Screen.'
+      );
       return;
     }
     try {
@@ -127,6 +171,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
           await v2Push.subscribe(sub.toJSON ? sub.toJSON() : sub);
         }
       }
+      localStorage.setItem('lalia_call_alerts_enabled', '1');
       toast.success('Call notifications enabled for this device!');
     } catch {
       toast.error('Could not enable push notifications on this device');
@@ -135,11 +180,12 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
 
   const loadAll = () => {
     Promise.all([
-      v2Contacts.list().catch(() => ({ contacts: [] })),
+      v2Contacts.list().catch(() => ({ contacts: [], addedYou: [] })),
       v2Calls.history().catch(() => ({ calls: [] })),
     ])
       .then(([cRes, hRes]) => {
         setContacts(cRes.contacts || []);
+        setAddedYou(cRes.addedYou || []);
         setCallHistory(hRes.calls || []);
       })
       .finally(() => setLoading(false));
@@ -221,9 +267,18 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
         const res = await v2Contacts.save({ email, name: name || undefined });
         if (res.contact) {
           setContacts((prev) => {
-            const filtered = prev.filter((c) => c.id !== res.contact.id);
+            const filtered = prev.filter(
+              (c) =>
+                c.id !== res.contact.id &&
+                String(c.email || '').toLowerCase() !== String(res.contact.email || '').toLowerCase()
+            );
             return [res.contact, ...filtered];
           });
+          setAddedYou((prev) =>
+            prev.filter(
+              (r) => String(r.email || '').toLowerCase() !== String(res.contact.email || '').toLowerCase()
+            )
+          );
         }
         setEmailInput('');
         setNameInput('');
@@ -259,6 +314,82 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
     }
   };
 
+  const handleAcceptRequest = async (reqItem) => {
+    const reqId = reqItem.requestId || reqItem.id;
+    if (!reqId || busyRequestKey) return;
+    setBusyRequestKey(`accept-${reqId}`);
+    try {
+      const res = await v2Contacts.acceptRequest(reqId, { name: reqItem.name });
+      if (res.contact) {
+        setContacts((prev) => {
+          const filtered = prev.filter(
+            (c) =>
+              c.id !== res.contact.id &&
+              String(c.email || '').toLowerCase() !== String(res.contact.email || '').toLowerCase()
+          );
+          return [res.contact, ...filtered];
+        });
+      }
+      setAddedYou((prev) => prev.filter((r) => (r.requestId || r.id) !== reqId));
+      toast.success(`Added ${reqItem.name || reqItem.email} to contacts`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not add contact');
+    } finally {
+      setBusyRequestKey(null);
+    }
+  };
+
+  const handleDismissRequest = async (reqItem) => {
+    const reqId = reqItem.requestId || reqItem.id;
+    if (!reqId || busyRequestKey) return;
+    setBusyRequestKey(`dismiss-${reqId}`);
+    try {
+      await v2Contacts.dismissRequest(reqId);
+      setAddedYou((prev) => prev.filter((r) => (r.requestId || r.id) !== reqId));
+    } catch {
+      toast.error('Could not dismiss request');
+    } finally {
+      setBusyRequestKey(null);
+    }
+  };
+
+  const handleAddFromCallHistory = async (call) => {
+    if (!call?.counterpartEmail || busyRequestKey) return;
+    const key = `hist-add-${call.id}`;
+    setBusyRequestKey(key);
+    try {
+      const res = await v2Contacts.save({
+        email: call.counterpartEmail,
+        name: call.counterpartName || undefined,
+      });
+      if (res.contact) {
+        setContacts((prev) => {
+          const filtered = prev.filter(
+            (c) =>
+              c.id !== res.contact.id &&
+              String(c.email || '').toLowerCase() !== String(res.contact.email || '').toLowerCase()
+          );
+          return [res.contact, ...filtered];
+        });
+        setAddedYou((prev) =>
+          prev.filter(
+            (r) =>
+              String(r.email || '').toLowerCase() !== String(res.contact.email || '').toLowerCase()
+          )
+        );
+      }
+      toast.success(`Added ${call.counterpartName || call.counterpartEmail} to contacts`);
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not save contact');
+    } finally {
+      setBusyRequestKey(null);
+    }
+  };
+
+  const savedEmailSet = new Set(
+    contacts.map((c) => String(c.email || '').trim().toLowerCase()).filter(Boolean)
+  );
+
   const filteredCalls =
     activeTab === 'missed'
       ? callHistory.filter(
@@ -282,13 +413,23 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
             <button
               type="button"
               onClick={() => setActiveTab('contacts')}
-              className={`rounded-md px-2.5 py-1 font-medium transition-colors ${
+              className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 font-medium transition-colors ${
                 activeTab === 'contacts'
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground'
               }`}
             >
-              {t('calls.contactsTab')} ({contacts.length})
+              <span>
+                {t('calls.contactsTab')} ({contacts.length})
+              </span>
+              {addedYou.length > 0 && (
+                <span
+                  className="rounded-full bg-primary px-1.5 py-0 text-[10px] font-semibold text-primary-foreground"
+                  title={`${addedYou.length} added you`}
+                >
+                  +{addedYou.length}
+                </span>
+              )}
             </button>
             <button
               type="button"
@@ -397,97 +538,178 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
       )}
 
       {activeTab === 'contacts' ? (
-        !loading && contacts.length === 0 && !showAddForm ? (
-          <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-dashed border-border/80 bg-card/40 p-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <Users className="h-4 w-4" />
+        <div className="space-y-3">
+          {addedYou.length > 0 && (
+            <div className="overflow-hidden rounded-xl border border-primary/30 bg-primary/5 shadow-sm">
+              <div className="flex items-center justify-between gap-2 border-b border-primary/15 px-4 py-2.5">
+                <div className="flex items-center gap-2">
+                  <UserPlus className="h-4 w-4 text-primary" />
+                  <p className="text-xs font-semibold text-foreground">
+                    Added you ({addedYou.length})
+                  </p>
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  Tap + Add back to save them to your contacts
+                </span>
               </div>
-              <div>
-                <p className="text-sm font-medium text-foreground">No saved contacts yet</p>
-                <p className="text-xs text-muted-foreground">
-                  Add friends or teammates to call them in 1 tap — works whether they have the Lalia app or join via web link.
-                </p>
+              <div className="divide-y divide-border/50">
+                {addedYou.map((reqItem) => {
+                  const reqId = reqItem.requestId || reqItem.id;
+                  const initial = (reqItem.name || reqItem.email || '?')
+                    .charAt(0)
+                    .toUpperCase();
+                  const isAccepting = busyRequestKey === `accept-${reqId}`;
+                  const isDismissing = busyRequestKey === `dismiss-${reqId}`;
+                  return (
+                    <div
+                      key={reqId}
+                      className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
+                          {initial}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {reqItem.name}
+                            </p>
+                            <Badge
+                              variant="secondary"
+                              className="px-1.5 py-0 text-[10px] font-medium text-primary"
+                            >
+                              Added you
+                            </Badge>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {reqItem.email}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 gap-1.5 px-3 text-xs font-medium"
+                          disabled={Boolean(busyRequestKey)}
+                          onClick={() => handleAcceptRequest(reqItem)}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          {isAccepting ? 'Adding…' : '+ Add back'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1 px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                          disabled={Boolean(busyRequestKey)}
+                          onClick={() => handleDismissRequest(reqItem)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          {isDismissing ? '…' : 'Dismiss'}
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="shrink-0 gap-1.5"
-              onClick={() => setShowAddForm(true)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add first contact
-            </Button>
-          </div>
-        ) : (
-          <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card">
-            {contacts.map((contact) => {
-              const initial = (contact.name || contact.email || '?').charAt(0).toUpperCase();
-              const isCalling = callingKey === contact.id;
-              return (
-                <div
-                  key={contact.id}
-                  className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
-                >
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
-                      {initial}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <p className="truncate text-sm font-medium text-foreground">
-                          {contact.name}
-                        </p>
-                        {contact.isTeammate && (
-                          <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium text-primary">
-                            Teammate
-                          </Badge>
-                        )}
-                        {contact.hasAccount ? (
-                          <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
-                            <UserCheck className="h-2.5 w-2.5" />
-                            On Lalia
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">
-                            Guest link
-                          </Badge>
+          )}
+
+          {!loading && contacts.length === 0 && !showAddForm ? (
+            <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-dashed border-border/80 bg-card/40 p-4 sm:flex-row sm:items-center">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                  <Users className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-foreground">No saved contacts yet</p>
+                  <p className="text-xs text-muted-foreground">
+                    Add friends or teammates to call them in 1 tap — works whether they have the Lalia app or join via web link.
+                  </p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="shrink-0 gap-1.5"
+                onClick={() => setShowAddForm(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add first contact
+              </Button>
+            </div>
+          ) : (
+            contacts.length > 0 && (
+              <div className="divide-y divide-border/60 overflow-hidden rounded-xl border border-border/80 bg-card">
+                {contacts.map((contact) => {
+                  const initial = (contact.name || contact.email || '?').charAt(0).toUpperCase();
+                  const isCalling = callingKey === contact.id;
+                  return (
+                    <div
+                      key={contact.id}
+                      className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                          {initial}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {contact.name}
+                            </p>
+                            {contact.isTeammate && (
+                              <Badge variant="secondary" className="px-1.5 py-0 text-[10px] font-medium text-primary">
+                                Teammate
+                              </Badge>
+                            )}
+                            {contact.hasAccount ? (
+                              <Badge variant="secondary" className="gap-1 px-1.5 py-0 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                                <UserCheck className="h-2.5 w-2.5" />
+                                On Lalia
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground">
+                                Guest link
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-500"
+                          disabled={Boolean(callingKey)}
+                          onClick={() => handleCallContact(contact)}
+                        >
+                          <Phone className="h-3.5 w-3.5" />
+                          {isCalling ? 'Calling…' : 'Call'}
+                        </Button>
+                        {contact.isSavedContact !== false && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveContact(contact.id, contact.name)}
+                            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
+                            aria-label={`Remove ${contact.name}`}
+                            title={`Remove ${contact.name}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         )}
                       </div>
-                      <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
                     </div>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <Button
-                      type="button"
-                      size="sm"
-                      className="h-8 gap-1.5 bg-emerald-600 px-3 text-xs font-medium text-white hover:bg-emerald-500"
-                      disabled={Boolean(callingKey)}
-                      onClick={() => handleCallContact(contact)}
-                    >
-                      <Phone className="h-3.5 w-3.5" />
-                      {isCalling ? 'Calling…' : 'Call'}
-                    </Button>
-                    {contact.isSavedContact !== false && (
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveContact(contact.id, contact.name)}
-                        className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-                        aria-label={`Remove ${contact.name}`}
-                        title={`Remove ${contact.name}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )
+                  );
+                })}
+              </div>
+            )
+          )}
+        </div>
       ) : filteredCalls.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border/80 bg-card/40 p-6 text-center">
           <p className="text-sm font-medium text-foreground">
@@ -546,6 +768,21 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                 </div>
 
                 <div className="flex shrink-0 items-center gap-2">
+                  {call.direction === 'incoming' &&
+                    call.counterpartEmail &&
+                    !savedEmailSet.has(String(call.counterpartEmail).trim().toLowerCase()) && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1.5 px-2.5 text-xs"
+                        disabled={Boolean(busyRequestKey)}
+                        onClick={() => handleAddFromCallHistory(call)}
+                      >
+                        <UserPlus className="h-3.5 w-3.5 text-primary" />
+                        {busyRequestKey === `hist-add-${call.id}` ? 'Adding…' : '+ Add contact'}
+                      </Button>
+                    )}
                   {call.meetingId && (
                     <Button
                       asChild

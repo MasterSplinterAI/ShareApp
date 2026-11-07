@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const { computeCost } = require('../lib/costConstants');
 const { run } = require('../db/v2Database');
+const { ingestCogs } = require('../lib/opsHubClient');
 
 function safeSecretEqual(a, b) {
   if (!a || !b) return false;
@@ -55,7 +56,8 @@ router.post('/', async (req, res) => {
     }
 
     await ensureTable();
-    await run(
+    const ts = Date.now();
+    const insertResult = await run(
       `INSERT INTO meeting_cost_events (meeting_id, org_id, event_type, provider, units, unit_cost_usd, total_cost_usd, ts, meta_json)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -66,10 +68,21 @@ router.post('/', async (req, res) => {
         units,
         costInfo.unit_cost_usd,
         costInfo.total_cost_usd,
-        Date.now(),
+        ts,
         meta ? JSON.stringify(meta) : null,
       ]
     );
+
+    if (costInfo.total_cost_usd >= 0.01) {
+      const isLlm = String(event_type).toLowerCase().includes('llm') || String(event_type).toLowerCase().includes('translate');
+      void ingestCogs({
+        externalEventId: `lalia_cost_${meeting_id}_${insertResult?.lastID || ts}`,
+        cogsCategory: isLlm ? 'ai_inference' : 'media_stt',
+        amountUsd: costInfo.total_cost_usd,
+        provider: costInfo.provider,
+        description: `Lalia meeting ${meeting_id} (${event_type})`,
+      });
+    }
 
     res.json({ ok: true, total_cost_usd: costInfo.total_cost_usd });
   } catch (err) {

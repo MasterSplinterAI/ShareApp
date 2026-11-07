@@ -22,7 +22,7 @@ import VideoGrid from './VideoGrid';
 import PreJoinScreen from './PreJoinScreen';
 import PublishPreviewTracks from './PublishPreviewTracks';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
-import { normalizeMeetingLanguageCode } from '../lib/languages';
+import { normalizeMeetingLanguageCode, readStoredMeetingLanguage } from '../lib/languages';
 import { autopilotTranslator } from '../lib/autopilot-translator';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
@@ -213,7 +213,7 @@ function MeetingRoom() {
     const brandingFromSession = stateInfo.branding || sessionInfo.branding || null;
     const titleFromSession = stateInfo.meetingTitle || sessionInfo.meetingTitle || null;
     const selectedLanguage = normalizeMeetingLanguageCode(
-      stateInfo.selectedLanguage || sessionInfo.selectedLanguage || 'en'
+      stateInfo.selectedLanguage || sessionInfo.selectedLanguage || readStoredMeetingLanguage() || 'en'
     );
     const spokenLanguage = normalizeMeetingLanguageCode(
       stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage
