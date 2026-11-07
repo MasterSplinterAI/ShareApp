@@ -591,6 +591,208 @@ async function sendIncomingCallPush({
   }
 }
 
+async function dispatchApnsAlertToTokenRow(row, alertPayload, config) {
+  const jwt = getApnsProviderJwt(config);
+  const bundleId = row.bundle_id || config.bundleId || 'cloud.lalia.app';
+  const topic = bundleId;
+  const pushType = 'alert';
+  const expiration = String(Math.floor(Date.now() / 1000) + 86400);
+
+  const apnsBody = JSON.stringify({
+    aps: {
+      alert: {
+        title: alertPayload.title || 'New contact on Lalia',
+        body: alertPayload.body || 'Someone added you as a contact — tap to add them back',
+      },
+      sound: 'default',
+    },
+    type: alertPayload.type || 'contact_added',
+    adderUserId: alertPayload.adderUserId || '',
+    adderName: alertPayload.adderName || '',
+    adderEmail: alertPayload.adderEmail || '',
+    joinUrl: alertPayload.joinUrl || '/v2/app/calls',
+    timestamp: Date.now(),
+  });
+
+  const headers = {
+    authorization: `bearer ${jwt}`,
+    'apns-topic': topic,
+    'apns-push-type': pushType,
+    'apns-priority': '10',
+    'apns-expiration': expiration,
+    'content-type': 'application/json',
+  };
+
+  const primaryEnv = row.environment === 'production' ? 'production' : 'sandbox';
+  const primaryHost =
+    primaryEnv === 'production' ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
+
+  let res = await sendSingleApnsHttp2Request({
+    host: primaryHost,
+    token: row.token,
+    headers,
+    bodyJson: apnsBody,
+  });
+
+  if (
+    !res.ok &&
+    (res.reason === 'BadDeviceToken' || res.reason === 'DeviceTokenNotForTopic')
+  ) {
+    const fallbackEnv = primaryEnv === 'production' ? 'sandbox' : 'production';
+    const fallbackHost =
+      fallbackEnv === 'production' ? 'api.push.apple.com' : 'api.sandbox.push.apple.com';
+    const retryRes = await sendSingleApnsHttp2Request({
+      host: fallbackHost,
+      token: row.token,
+      headers,
+      bodyJson: apnsBody,
+    });
+    if (retryRes.ok) {
+      await db
+        .run(`UPDATE v2_ios_push_tokens SET environment = ?, updated_at = ? WHERE id = ?`, [
+          fallbackEnv,
+          new Date().toISOString(),
+          row.id,
+        ])
+        .catch(() => {});
+      return retryRes;
+    }
+    res = retryRes;
+  }
+
+  if (!res.ok && (res.statusCode === 410 || res.reason === 'Unregistered')) {
+    await db.run(`DELETE FROM v2_ios_push_tokens WHERE id = ?`, [row.id]).catch(() => {});
+  }
+
+  return res;
+}
+
+async function sendContactAddedPush({
+  recipientUserId,
+  recipientEmail,
+  adderUserId,
+  adderName,
+  adderEmail,
+}) {
+  try {
+    await ensureVapidKeys();
+    await ensureIosPushTable();
+
+    let targetUserId = recipientUserId;
+    if (!targetUserId && recipientEmail) {
+      const u = await db.get(
+        `SELECT id FROM v2_users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
+        [String(recipientEmail).trim()]
+      );
+      targetUserId = u?.id || null;
+    }
+    if (!targetUserId || targetUserId === adderUserId) {
+      return { sent: 0, webSent: 0, iosSent: 0 };
+    }
+
+    const [subs, iosTokens] = await Promise.all([
+      db
+        .all(
+          `SELECT id, endpoint, p256dh, auth FROM v2_push_subscriptions WHERE user_id = ?`,
+          [targetUserId]
+        )
+        .catch(() => []),
+      db
+        .all(
+          `SELECT id, token, push_type, bundle_id, environment FROM v2_ios_push_tokens WHERE user_id = ?`,
+          [targetUserId]
+        )
+        .catch(() => []),
+    ]);
+
+    const displayAdder = adderName || adderEmail?.split('@')[0] || 'Someone';
+    const title = 'New contact on Lalia';
+    const body = `${displayAdder} added you as a contact — tap to add them back`;
+    const targetUrl = '/v2/app/calls';
+
+    const payload = JSON.stringify({
+      type: 'contact_added',
+      title,
+      body,
+      adderUserId: adderUserId || '',
+      adderName: displayAdder,
+      adderEmail: adderEmail || '',
+      joinUrl: targetUrl,
+      tag: `lalia-contact-added-${adderUserId || displayAdder}`,
+      timestamp: Date.now(),
+    });
+
+    let webSent = 0;
+    let iosSent = 0;
+
+    if (subs.length > 0) {
+      await Promise.all(
+        subs.map(async (sub) => {
+          try {
+            await webPush.sendNotification(
+              {
+                endpoint: sub.endpoint,
+                keys: {
+                  p256dh: sub.p256dh,
+                  auth: sub.auth,
+                },
+              },
+              payload,
+              {
+                TTL: 86400,
+                urgency: 'normal',
+              }
+            );
+            webSent += 1;
+          } catch (err) {
+            if (err?.statusCode === 404 || err?.statusCode === 410) {
+              await db
+                .run(`DELETE FROM v2_push_subscriptions WHERE id = ?`, [sub.id])
+                .catch(() => {});
+            }
+          }
+        })
+      );
+    }
+
+    const apnsConfig = getApnsConfig();
+    if (iosTokens.length > 0 && apnsConfig.configured) {
+      const alertRows = iosTokens.filter((r) => r.push_type !== 'voip');
+      if (alertRows.length > 0) {
+        await Promise.all(
+          alertRows.map(async (row) => {
+            try {
+              const res = await dispatchApnsAlertToTokenRow(
+                row,
+                {
+                  type: 'contact_added',
+                  title,
+                  body,
+                  adderUserId,
+                  adderName: displayAdder,
+                  adderEmail,
+                  joinUrl: targetUrl,
+                },
+                apnsConfig
+              );
+              if (res.ok) {
+                iosSent += 1;
+              }
+            } catch {
+              /* ignore single token dispatch failure */
+            }
+          })
+        );
+      }
+    }
+
+    return { sent: webSent + iosSent, webSent, iosSent };
+  } catch (e) {
+    console.warn('[v2PushNotifications] sendContactAddedPush error:', e.message);
+    return { sent: 0, webSent: 0, iosSent: 0 };
+  }
+}
+
 async function getUserPushDiagnostics(userId) {
   await ensureIosPushTable();
   const [webSubs, iosTokens] = await Promise.all([
@@ -625,6 +827,7 @@ module.exports = {
   savePushSubscription,
   saveIosPushToken,
   sendIncomingCallPush,
+  sendContactAddedPush,
   getUserPushDiagnostics,
   isApnsConfigured,
 };

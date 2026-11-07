@@ -377,9 +377,25 @@ export default function IncomingCallOverlay({ currentUser }) {
             <span className="relative">{initial}</span>
           </div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-white">
-              {incomingCall.callerName || 'Someone'} is calling…
-            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <p className="truncate text-sm font-semibold text-white">
+                {incomingCall.callerName || 'Someone'} is calling…
+              </p>
+              <span
+                className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  incomingCall.isSavedContact
+                    ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-400/30'
+                    : 'bg-amber-500/20 text-amber-200 ring-1 ring-amber-400/30'
+                }`}
+              >
+                {incomingCall.isSavedContact ? 'Saved contact' : 'New caller'}
+              </span>
+            </div>
+            {incomingCall.callerEmail && (
+              <p className="truncate text-xs text-emerald-200/90">
+                {incomingCall.callerEmail}
+              </p>
+            )}
             <p className="truncate text-xs text-slate-300">
               Live translation &amp; captions · Tap Answer to join
             </p>

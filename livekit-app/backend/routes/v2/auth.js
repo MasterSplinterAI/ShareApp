@@ -64,6 +64,12 @@ router.post('/signup', async (req, res) => {
       [userId, email.trim().toLowerCase(), hash, displayName || email.split('@')[0]]
     );
     cleanup.push(() => db.run(`DELETE FROM v2_users WHERE id = ?`, [userId]));
+    await db
+      .run(
+        `UPDATE v2_contacts SET contact_user_id = ? WHERE contact_user_id IS NULL AND LOWER(contact_email) = LOWER(?)`,
+        [userId, email.trim().toLowerCase()]
+      )
+      .catch(() => {});
     const { orgId, orgName: org, accountType } = await provisionOrgForUser(userId, email, {
       orgName: trimmedOrgName || undefined,
       displayName: displayName || email.split('@')[0],

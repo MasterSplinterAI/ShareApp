@@ -16,6 +16,7 @@ const {
   savePushSubscription,
   saveIosPushToken,
   sendIncomingCallPush,
+  sendContactAddedPush,
   getUserPushDiagnostics,
 } = require('../../lib/v2PushNotifications');
 
@@ -41,56 +42,109 @@ async function upsertContactForUser({ ownerUserId, email, name, preferredLanguag
   const normEmail = normalizeEmail(email);
   if (!normEmail || !isValidEmail(normEmail)) return null;
 
-  const matchedUser = await db.get(
-    `SELECT id, email, display_name FROM v2_users WHERE LOWER(email) = LOWER(?) LIMIT 1`,
-    [normEmail]
-  );
-
-  const existing = await db.get(
-    `SELECT * FROM v2_contacts WHERE owner_user_id = ? AND LOWER(contact_email) = LOWER(?) LIMIT 1`,
-    [ownerUserId, normEmail]
-  );
+  const [ownerUser, matchedUser, existing] = await Promise.all([
+    db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ? LIMIT 1`, [ownerUserId]),
+    db.get(`SELECT id, email, display_name FROM v2_users WHERE LOWER(email) = LOWER(?) LIMIT 1`, [
+      normEmail,
+    ]),
+    db.get(
+      `SELECT * FROM v2_contacts WHERE owner_user_id = ? AND LOWER(contact_email) = LOWER(?) LIMIT 1`,
+      [ownerUserId, normEmail]
+    ),
+  ]);
 
   const cleanName = String(name || matchedUser?.display_name || normEmail.split('@')[0])
     .trim()
     .slice(0, 80);
   const cleanLang = preferredLanguage ? String(preferredLanguage).trim().slice(0, 16) : null;
   const contactUserId = matchedUser?.id || null;
+  const now = new Date().toISOString();
+
+  // Check if the other person has already added this ownerUserId
+  let reverseRow = null;
+  if (contactUserId || ownerUser?.email) {
+    reverseRow = await db.get(
+      `SELECT id, recipient_status
+       FROM v2_contacts
+       WHERE (owner_user_id = ? OR owner_user_id IN (SELECT id FROM v2_users WHERE LOWER(email) = LOWER(?)))
+         AND (contact_user_id = ? OR LOWER(contact_email) = LOWER(?))
+       LIMIT 1`,
+      [
+        contactUserId || '',
+        normEmail,
+        ownerUserId,
+        ownerUser?.email || '',
+      ]
+    );
+  }
+
+  const isMutual = Boolean(reverseRow && reverseRow.recipient_status !== 'blocked');
+  const nextRecipientStatus = isMutual
+    ? 'accepted'
+    : existing?.recipient_status && existing.recipient_status !== 'blocked'
+      ? existing.recipient_status
+      : 'pending';
+
+  let contactId = existing?.id;
+  let isNew = false;
 
   if (existing) {
     const nextName = name ? cleanName : existing.contact_name || cleanName;
     const nextLang = cleanLang || existing.preferred_language || null;
     await db.run(
       `UPDATE v2_contacts
-       SET contact_name = ?, contact_user_id = ?, preferred_language = ?
+       SET contact_name = ?, contact_user_id = ?, preferred_language = ?, recipient_status = ?
        WHERE id = ?`,
-      [nextName, contactUserId, nextLang, existing.id]
+      [nextName, contactUserId, nextLang, nextRecipientStatus, existing.id]
     );
-    return {
-      id: existing.id,
-      email: normEmail,
-      name: nextName,
-      preferredLanguage: nextLang,
-      contactUserId,
-      hasAccount: Boolean(contactUserId),
-    };
+  } else {
+    isNew = true;
+    contactId = db.uuid();
+    await db.run(
+      `INSERT INTO v2_contacts (
+         id, owner_user_id, contact_email, contact_name, contact_user_id,
+         preferred_language, recipient_status, recipient_responded_at, created_at
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        contactId,
+        ownerUserId,
+        normEmail,
+        cleanName,
+        contactUserId,
+        cleanLang,
+        nextRecipientStatus,
+        isMutual ? now : null,
+        now,
+      ]
+    );
   }
 
-  const id = db.uuid();
-  const now = new Date().toISOString();
-  await db.run(
-    `INSERT INTO v2_contacts (id, owner_user_id, contact_email, contact_name, contact_user_id, preferred_language, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [id, ownerUserId, normEmail, cleanName, contactUserId, cleanLang, now]
-  );
+  // If the other user had previously added us, mark their contact row as accepted too
+  if (reverseRow && reverseRow.recipient_status !== 'blocked') {
+    await db
+      .run(
+        `UPDATE v2_contacts
+         SET recipient_status = 'accepted',
+             recipient_responded_at = COALESCE(recipient_responded_at, ?),
+             contact_user_id = COALESCE(contact_user_id, ?)
+         WHERE id = ?`,
+        [now, ownerUserId, reverseRow.id]
+      )
+      .catch(() => {});
+  }
 
   return {
-    id,
+    id: contactId,
     email: normEmail,
-    name: cleanName,
-    preferredLanguage: cleanLang,
+    name: existing && !name ? existing.contact_name || cleanName : cleanName,
+    preferredLanguage: cleanLang || existing?.preferred_language || null,
     contactUserId,
     hasAccount: Boolean(contactUserId),
+    isSavedContact: true,
+    isMutual,
+    isNew,
+    ownerUser,
   };
 }
 
@@ -162,9 +216,16 @@ function sendDirectCallEmailAsync({ toEmail, calleeName, callerName, joinUrl }) 
 
 router.get('/contacts', requireV2Auth, async (req, res) => {
   try {
-    const [savedRows, teamRows] = await Promise.all([
+    const meUser = await db.get(
+      `SELECT id, email, display_name FROM v2_users WHERE id = ? LIMIT 1`,
+      [req.v2Auth.userId]
+    );
+    const myEmail = normalizeEmail(meUser?.email || req.v2Auth.email || '');
+
+    const [savedRows, teamRows, reverseRows] = await Promise.all([
       db.all(
-        `SELECT c.id, c.contact_email, c.contact_name, c.preferred_language, c.created_at,
+        `SELECT c.id, c.contact_email, c.contact_name, c.preferred_language,
+                c.recipient_status, c.recipient_responded_at, c.created_at,
                 u.id AS matched_user_id, u.display_name AS matched_display_name
          FROM v2_contacts c
          LEFT JOIN v2_users u ON LOWER(u.email) = LOWER(c.contact_email)
@@ -180,7 +241,25 @@ router.get('/contacts', requireV2Auth, async (req, res) => {
          ORDER BY u.display_name ASC, u.email ASC`,
         [req.v2Auth.orgId, req.v2Auth.userId]
       ),
+      db.all(
+        `SELECT c.id AS request_id, c.owner_user_id, c.recipient_status, c.created_at,
+                u.id AS adder_user_id, u.email AS adder_email, u.display_name AS adder_display_name
+         FROM v2_contacts c
+         JOIN v2_users u ON u.id = c.owner_user_id
+         WHERE (c.contact_user_id = ? OR LOWER(c.contact_email) = LOWER(?))
+           AND c.owner_user_id != ?
+         ORDER BY c.created_at DESC`,
+        [req.v2Auth.userId, myEmail, req.v2Auth.userId]
+      ),
     ]);
+
+    const reverseByEmail = new Map();
+    for (const rev of reverseRows || []) {
+      const k = normalizeEmail(rev.adder_email);
+      if (k && !reverseByEmail.has(k)) {
+        reverseByEmail.set(k, rev);
+      }
+    }
 
     const teamByEmail = new Map(
       teamRows.map((t) => [String(t.email || '').toLowerCase(), t])
@@ -209,6 +288,7 @@ router.get('/contacts', requireV2Auth, async (req, res) => {
         isTeammate: true,
         teamRole: tm.role,
         isSavedContact: Boolean(savedMatch),
+        isMutual: true,
         createdAt: savedMatch?.created_at || tm.created_at,
       });
     }
@@ -218,6 +298,11 @@ router.get('/contacts', requireV2Auth, async (req, res) => {
       const emailKey = String(r.contact_email || '').toLowerCase();
       if (seenEmails.has(emailKey)) continue;
       seenEmails.add(emailKey);
+      const rev = reverseByEmail.get(emailKey);
+      const isMutual = Boolean(
+        r.recipient_status === 'accepted' ||
+          (rev && rev.recipient_status !== 'blocked')
+      );
       contacts.push({
         id: r.id,
         email: r.contact_email,
@@ -227,11 +312,34 @@ router.get('/contacts', requireV2Auth, async (req, res) => {
         hasAccount: Boolean(r.matched_user_id),
         isTeammate: teamByEmail.has(emailKey),
         isSavedContact: true,
+        isMutual,
         createdAt: r.created_at,
       });
     }
 
-    res.json({ contacts });
+    // 3. Build "addedYou" list for people who added the current user and aren't yet in contacts/teammates
+    const addedYou = [];
+    const seenAddedYou = new Set();
+    for (const rev of reverseRows || []) {
+      const adderEmailKey = normalizeEmail(rev.adder_email);
+      if (!adderEmailKey || seenEmails.has(adderEmailKey) || seenAddedYou.has(adderEmailKey)) {
+        continue;
+      }
+      if ((rev.recipient_status || 'pending') !== 'pending') {
+        continue;
+      }
+      seenAddedYou.add(adderEmailKey);
+      addedYou.push({
+        id: rev.request_id,
+        requestId: rev.request_id,
+        userId: rev.adder_user_id,
+        email: rev.adder_email,
+        name: rev.adder_display_name || rev.adder_email.split('@')[0],
+        createdAt: rev.created_at,
+      });
+    }
+
+    res.json({ contacts, addedYou });
   } catch (e) {
     console.error('[v2/contacts GET]', e);
     res.status(500).json({ error: 'Failed to load contacts' });
@@ -246,17 +354,119 @@ router.post('/contacts', requireV2Auth, async (req, res) => {
       return res.status(400).json({ error: 'Valid email address is required' });
     }
 
-    const contact = await upsertContactForUser({
+    const result = await upsertContactForUser({
       ownerUserId: req.v2Auth.userId,
       email: normEmail,
       name,
       preferredLanguage,
     });
 
+    if (
+      result?.isNew &&
+      result.contactUserId &&
+      result.contactUserId !== req.v2Auth.userId
+    ) {
+      const adderName =
+        result.ownerUser?.display_name ||
+        result.ownerUser?.email?.split('@')[0] ||
+        'Someone';
+      sendContactAddedPush({
+        recipientUserId: result.contactUserId,
+        recipientEmail: result.email,
+        adderUserId: req.v2Auth.userId,
+        adderName,
+        adderEmail: result.ownerUser?.email || req.v2Auth.email || '',
+      }).catch(() => {});
+    }
+
+    const { ownerUser: _omitOwner, isNew: _omitNew, ...contact } = result || {};
     res.status(201).json({ contact });
   } catch (e) {
     console.error('[v2/contacts POST]', e);
     res.status(500).json({ error: 'Failed to save contact' });
+  }
+});
+
+router.post('/contacts/requests/:id/accept', requireV2Auth, async (req, res) => {
+  try {
+    const meUser = await db.get(
+      `SELECT id, email, display_name FROM v2_users WHERE id = ? LIMIT 1`,
+      [req.v2Auth.userId]
+    );
+    const myEmail = normalizeEmail(meUser?.email || req.v2Auth.email || '');
+
+    const reqRow = await db.get(
+      `SELECT c.*, u.email AS adder_email, u.display_name AS adder_display_name
+       FROM v2_contacts c
+       JOIN v2_users u ON u.id = c.owner_user_id
+       WHERE c.id = ?
+         AND (c.contact_user_id = ? OR LOWER(c.contact_email) = LOWER(?))
+       LIMIT 1`,
+      [req.params.id, req.v2Auth.userId, myEmail]
+    );
+    if (!reqRow) {
+      return res.status(404).json({ error: 'Contact request not found' });
+    }
+
+    const result = await upsertContactForUser({
+      ownerUserId: req.v2Auth.userId,
+      email: reqRow.adder_email,
+      name: req.body?.name || reqRow.adder_display_name || reqRow.adder_email.split('@')[0],
+      preferredLanguage: req.body?.preferredLanguage || null,
+    });
+
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `UPDATE v2_contacts
+       SET recipient_status = 'accepted',
+           recipient_responded_at = ?,
+           contact_user_id = COALESCE(contact_user_id, ?)
+       WHERE id = ?`,
+      [nowIso, req.v2Auth.userId, reqRow.id]
+    );
+
+    const { ownerUser: _omitOwner, isNew: _omitNew, ...contact } = result || {};
+    res.json({ ok: true, contact });
+  } catch (e) {
+    console.error('[v2/contacts/requests/:id/accept POST]', e);
+    res.status(500).json({ error: 'Failed to accept contact request' });
+  }
+});
+
+router.post('/contacts/requests/:id/dismiss', requireV2Auth, async (req, res) => {
+  try {
+    const meUser = await db.get(
+      `SELECT id, email FROM v2_users WHERE id = ? LIMIT 1`,
+      [req.v2Auth.userId]
+    );
+    const myEmail = normalizeEmail(meUser?.email || req.v2Auth.email || '');
+    const nextStatus =
+      req.body?.status === 'blocked' || req.body?.block === true ? 'blocked' : 'dismissed';
+    const nowIso = new Date().toISOString();
+
+    const r = await db.run(
+      `UPDATE v2_contacts
+       SET recipient_status = ?,
+           recipient_responded_at = ?,
+           contact_user_id = COALESCE(contact_user_id, ?)
+       WHERE id = ?
+         AND (contact_user_id = ? OR LOWER(contact_email) = LOWER(?))`,
+      [
+        nextStatus,
+        nowIso,
+        req.v2Auth.userId,
+        req.params.id,
+        req.v2Auth.userId,
+        myEmail,
+      ]
+    );
+    if (!r.changes) {
+      return res.status(404).json({ error: 'Contact request not found' });
+    }
+    res.json({ ok: true, status: nextStatus });
+  } catch (e) {
+    console.error('[v2/contacts/requests/:id/dismiss POST]', e);
+    res.status(500).json({ error: 'Failed to dismiss contact request' });
   }
 });
 
@@ -332,8 +542,44 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       `SELECT id, email, display_name FROM v2_users WHERE id = ?`,
       [req.v2Auth.userId]
     );
-    const callerName =
+    const defaultCallerName =
       caller?.display_name || caller?.email?.split('@')[0] || 'Lalia Host';
+
+    // Check if the callee has saved the caller with a custom contact_name or blocked the caller
+    let recipientSavedCallerRow = null;
+    let isBlockedByRecipient = false;
+    if (targetContact?.contactUserId) {
+      recipientSavedCallerRow = await db.get(
+        `SELECT contact_name, recipient_status
+         FROM v2_contacts
+         WHERE owner_user_id = ?
+           AND (contact_user_id = ? OR LOWER(contact_email) = LOWER(?))
+         LIMIT 1`,
+        [targetContact.contactUserId, req.v2Auth.userId, caller?.email || '']
+      );
+    }
+    const callerRowStatus = await db.get(
+      `SELECT recipient_status
+       FROM v2_contacts
+       WHERE owner_user_id = ?
+         AND (contact_user_id = ? OR LOWER(contact_email) = LOWER(?))
+       LIMIT 1`,
+      [
+        req.v2Auth.userId,
+        targetContact?.contactUserId || '',
+        targetContact?.email || '',
+      ]
+    );
+    if (
+      callerRowStatus?.recipient_status === 'blocked' ||
+      recipientSavedCallerRow?.recipient_status === 'blocked'
+    ) {
+      isBlockedByRecipient = true;
+    }
+
+    const callerNameForRecipient =
+      recipientSavedCallerRow?.contact_name || defaultCallerName;
+    const callerName = defaultCallerName;
 
     const base = publicFrontendBaseUrl(req);
     let meetingInfo = null;
@@ -436,28 +682,32 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
         meetingInfo.id,
         meetingInfo.livekitRoomName,
         meetingInfo.joinUrl,
-        'ringing',
+        isBlockedByRecipient ? 'declined' : 'ringing',
         nowIso,
         nowIso,
         expiresIso,
       ]
     );
 
-    sendDirectCallEmailAsync({
-      toEmail: targetContact.email,
-      calleeName: targetContact.name,
-      callerName,
-      joinUrl: meetingInfo.joinUrl,
-    });
+    if (!isBlockedByRecipient) {
+      sendDirectCallEmailAsync({
+        toEmail: targetContact.email,
+        calleeName: targetContact.name,
+        callerName: callerNameForRecipient,
+        joinUrl: meetingInfo.joinUrl,
+      });
 
-    sendIncomingCallPush({
-      calleeUserId: targetContact.contactUserId || null,
-      calleeEmail: targetContact.email,
-      callerName,
-      joinUrl: meetingInfo.joinUrl,
-      callId,
-      roomName: meetingInfo.livekitRoomName,
-    }).catch(() => {});
+      sendIncomingCallPush({
+        calleeUserId: targetContact.contactUserId || null,
+        calleeEmail: targetContact.email,
+        callerName: callerNameForRecipient,
+        joinUrl: meetingInfo.joinUrl,
+        callId,
+        roomName: meetingInfo.livekitRoomName,
+      }).catch(() => {});
+    }
+
+    const { ownerUser: _omitOwner, isNew: _omitNew, ...cleanContact } = targetContact || {};
 
     res.status(201).json({
       call: {
@@ -469,7 +719,7 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
         expiresAt: expiresIso,
       },
       meeting: meetingInfo,
-      contact: targetContact,
+      contact: cleanContact,
     });
   } catch (e) {
     console.error('[v2/calls/start POST]', e);
@@ -483,31 +733,75 @@ router.get('/calls/incoming', requireV2Auth, async (req, res) => {
     if (!user) return res.json({ incomingCalls: [] });
 
     const nowIso = new Date().toISOString();
-    const rows = await db.all(
-      `SELECT id, caller_user_id, caller_name, caller_email, meeting_id, room_name, join_url, status, created_at, expires_at
-       FROM v2_direct_calls
-       WHERE status = 'ringing'
-         AND expires_at > ?
-         AND (callee_user_id = ? OR LOWER(callee_email) = LOWER(?))
-       ORDER BY created_at DESC
-       LIMIT 5`,
-      [nowIso, user.id, user.email]
-    );
+    const [rows, myContacts, blockedCallerRows] = await Promise.all([
+      db.all(
+        `SELECT id, caller_user_id, caller_name, caller_email, meeting_id, room_name, join_url, status, created_at, expires_at
+         FROM v2_direct_calls
+         WHERE status = 'ringing'
+           AND expires_at > ?
+           AND (callee_user_id = ? OR LOWER(callee_email) = LOWER(?))
+         ORDER BY created_at DESC
+         LIMIT 5`,
+        [nowIso, user.id, user.email]
+      ),
+      db.all(
+        `SELECT contact_user_id, contact_email, contact_name, recipient_status
+         FROM v2_contacts
+         WHERE owner_user_id = ?`,
+        [user.id]
+      ),
+      db.all(
+        `SELECT owner_user_id
+         FROM v2_contacts
+         WHERE (contact_user_id = ? OR LOWER(contact_email) = LOWER(?))
+           AND recipient_status = 'blocked'`,
+        [user.id, user.email]
+      ),
+    ]);
 
-    res.json({
-      incomingCalls: rows.map((r) => ({
+    const blockedCallerIds = new Set(
+      (blockedCallerRows || []).map((b) => b.owner_user_id)
+    );
+    const savedByEmail = new Map();
+    const savedByUserId = new Map();
+    for (const c of myContacts || []) {
+      if (c.recipient_status === 'blocked') {
+        if (c.contact_user_id) blockedCallerIds.add(c.contact_user_id);
+        continue;
+      }
+      if (c.contact_email) {
+        savedByEmail.set(normalizeEmail(c.contact_email), c);
+      }
+      if (c.contact_user_id) {
+        savedByUserId.set(c.contact_user_id, c);
+      }
+    }
+
+    const incomingCalls = [];
+    for (const r of rows || []) {
+      if (r.caller_user_id && blockedCallerIds.has(r.caller_user_id)) {
+        continue;
+      }
+      const savedMatch =
+        (r.caller_user_id && savedByUserId.get(r.caller_user_id)) ||
+        (r.caller_email && savedByEmail.get(normalizeEmail(r.caller_email))) ||
+        null;
+      incomingCalls.push({
         id: r.id,
         callerUserId: r.caller_user_id,
-        callerName: r.caller_name,
-        callerEmail: r.caller_email,
+        callerName: savedMatch?.contact_name || r.caller_name,
+        callerEmail: r.caller_email || null,
+        isSavedContact: Boolean(savedMatch),
         meetingId: r.meeting_id,
         roomName: r.room_name,
         joinUrl: r.join_url,
         status: r.status,
         createdAt: r.created_at,
         expiresAt: r.expires_at,
-      })),
-    });
+      });
+    }
+
+    res.json({ incomingCalls });
   } catch (e) {
     console.error('[v2/calls/incoming GET]', e);
     res.status(500).json({ error: 'Failed to check incoming calls' });

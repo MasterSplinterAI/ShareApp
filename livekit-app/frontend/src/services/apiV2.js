@@ -270,6 +270,10 @@ export const v2Contacts = {
   list: () => apiV2.get('/contacts').then((r) => r.data),
   save: (body) => apiV2.post('/contacts', body).then((r) => r.data),
   remove: (id) => apiV2.delete(`/contacts/${encodeURIComponent(id)}`).then((r) => r.data),
+  acceptRequest: (id, body = {}) =>
+    apiV2.post(`/contacts/requests/${encodeURIComponent(id)}/accept`, body).then((r) => r.data),
+  dismissRequest: (id, body = {}) =>
+    apiV2.post(`/contacts/requests/${encodeURIComponent(id)}/dismiss`, body).then((r) => r.data),
 };
 
 export const v2Calls = {
