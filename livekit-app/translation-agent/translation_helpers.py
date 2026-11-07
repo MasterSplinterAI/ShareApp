@@ -7,19 +7,54 @@ Covers:
   the standard stability heuristic from simultaneous-MT literature — only display
   the prefix two consecutive candidate translations agree on, so live translated
   captions never flicker or retract.
-- ends_sentence / split_tail / join_nonempty: sentence-boundary freezing of the
-  utterance translation. Re-translating the whole utterance on every Deepgram
-  is_final fixes cross-segment grammar (verb-final / SOV targets) but is O(n^2)
-  on long monologues; freezing completed sentences bounds the re-translated tail.
+- ends_sentence / ends_clause / ends_freeze_boundary / maybe_freeze_lane / split_tail / join_nonempty:
+  sentence- and long-clause-boundary freezing of the utterance translation. Re-translating
+  the whole utterance on every Deepgram is_final fixes cross-segment grammar (verb-final / SOV
+  targets) but is O(n^2) on long monologues; freezing completed sentences or >10-word clauses
+  bounds the re-translated tail and dispatches TTS earlier.
+- resolve_livekit_display_name / _translation_covers_thought: shared between
+  transcription_codeswitch_agent and transcription_only_agent so they never drift.
 - build_translation_messages: prompt assembly with rolling (source -> target)
-  context pairs as few-shot messages plus must-preserve keyterms.
+  context pairs as few-shot messages, optional source language context, plus must-preserve keyterms.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from collections import OrderedDict
-from typing import List, Optional, Sequence, Tuple
+from typing import Any, List, Optional, Sequence, Tuple
+
+LANG_NAMES = {
+    "es": "Spanish",
+    "es-DO": "Dominican Spanish (República Dominicana — use natural Dominican/Caribbean Spanish phrasing, vocabulary, and 'ustedes', never Castilian 'vosotros')",
+    "es-CO": "Colombian Spanish (Colombia — use natural Colombian Spanish phrasing and 'ustedes')",
+    "es-MX": "Mexican Spanish (México — use natural Mexican Spanish phrasing and 'ustedes')",
+    "en": "English",
+    "fr": "French",
+    "fr-CA": "Canadian French",
+    "de": "German",
+    "de-CH": "Swiss German",
+    "it": "Italian",
+    "pt": "Portuguese",
+    "pt-BR": "Brazilian Portuguese",
+    "pt-PT": "European Portuguese",
+    "zh": "Chinese",
+    "zh-CN": "Mandarin Chinese",
+    "zh-TW": "Traditional Chinese",
+    "zh-HK": "Cantonese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "ru": "Russian",
+    "ar": "Arabic",
+    "hi": "Hindi",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "tr": "Turkish",
+    "vi": "Vietnamese",
+    "uk": "Ukrainian",
+    "tiv": "Tiv",
+}
 
 # Sentence-final punctuation across supported languages (Latin, CJK, Arabic),
 # optionally followed by closing quotes/brackets.
@@ -27,7 +62,51 @@ _SENTENCE_END_RE = re.compile(
     r"[.!?。！？؟…]['\"”’»)\]]*\s*$"
 )
 
+# Clause-final punctuation (comma, semicolon, colon, em-dash, Arabic/CJK comma)
+_CLAUSE_END_RE = re.compile(
+    r"[,;:—–،、；：]['\"”’»)\]]*\s*$"
+)
+
 _WS_RE = re.compile(r"\s+")
+
+
+def _parse_display_name_from_metadata(metadata: Any) -> str:
+    if not metadata:
+        return ""
+    try:
+        meta = json.loads(metadata) if isinstance(metadata, str) else metadata
+        if isinstance(meta, dict):
+            return str(meta.get("displayName") or meta.get("name") or "").strip()
+    except Exception:
+        return ""
+    return ""
+
+
+def resolve_livekit_display_name(participant: Any, identity: str = "") -> str:
+    """Human label for a LiveKit participant (name / metadata), never the guest-uuid identity."""
+    pid = identity or str(getattr(participant, "identity", "") or "")
+    name = str(getattr(participant, "name", None) or "").strip() if participant is not None else ""
+    if name and name != pid:
+        return name
+    from_meta = _parse_display_name_from_metadata(
+        getattr(participant, "metadata", None) if participant is not None else None
+    )
+    if from_meta:
+        return from_meta
+    if re.match(r"^guest-[0-9a-f-]{36}$", pid, re.I):
+        return "Guest"
+    return name or pid or "Unknown"
+
+
+def _translation_covers_thought(source: str, translated: str) -> bool:
+    """False when the translation is only the first clause of a longer thought."""
+    src_words = [w for w in (source or "").split() if w]
+    tgt_words = [w for w in (translated or "").split() if w]
+    if not src_words:
+        return True
+    if len(src_words) <= 8:
+        return bool(tgt_words)
+    return len(tgt_words) >= max(4, int(len(src_words) * 0.55))
 
 
 class TranslationCache:
@@ -87,6 +166,48 @@ def ends_sentence(text: str) -> bool:
     return bool(_SENTENCE_END_RE.search(text.strip())) if text.strip() else False
 
 
+def ends_clause(text: str) -> bool:
+    """True when text ends with a clause separator (comma, semicolon, colon, dash)."""
+    return bool(_CLAUSE_END_RE.search(text.strip())) if text.strip() else False
+
+
+def ends_freeze_boundary(text: str, *, min_clause_words: int = 11) -> bool:
+    """True when text ends a sentence OR ends a clause with >10 words."""
+    stripped = (text or "").strip()
+    if not stripped:
+        return False
+    if ends_sentence(stripped):
+        return True
+    if ends_clause(stripped) and len(stripped.split()) >= min_clause_words:
+        return True
+    return False
+
+
+def maybe_freeze_lane(
+    lane: Any,
+    tail_src: str,
+    committed_snapshot: str,
+    translation: str,
+    *,
+    min_clause_words: int = 11,
+) -> str:
+    """Fold a sentence-complete (or >10-word clause-complete) tail into the frozen prefix.
+
+    Returns the newly frozen translation chunk (or "" if not frozen) so the caller
+    can immediately enqueue it to TTS.
+    """
+    clean_trans = (translation or "").strip()
+    if not clean_trans or not ends_freeze_boundary(tail_src, min_clause_words=min_clause_words):
+        return ""
+    lane.frozen_tgt = join_nonempty(getattr(lane, "frozen_tgt", ""), clean_trans)
+    lane.frozen_src = committed_snapshot
+    lane.tail_translation = ""
+    lane.interim_candidate = ""
+    lane.interim_stable = ""
+    lane.last_interim_src = ""
+    return clean_trans
+
+
 def stt_idle_timeout_ms(live_text: str, base_idle_ms: int = 3500) -> int:
     """Adaptive STT idle window before closing the current bubble into a new thought.
 
@@ -123,14 +244,17 @@ def should_break_turn(
     return age_sec >= max_age_sec or len(text.split()) >= max_words
 
 
-def tts_remainder(already_enqueued: str, full_text: str) -> str:
+def tts_remainder(already_enqueued: str, full_text: str = "") -> str:
     """Text still to speak: full_text minus the prefix already sent to TTS.
 
-    Frozen sentences are enqueued to TTS as they commit; at turn finalize
-    only the unspoken remainder may be sent or listeners hear repeats.
+    Supports both `tts_remainder(spoken_prefix, full_text)` and
+    `tts_remainder(full_text, spoken_prefix)` when one argument is a strict
+    prefix of the other.
     """
     full = (full_text or "").strip()
     spoken = (already_enqueued or "").strip()
+    if not full and spoken:
+        return spoken
     if not full:
         return ""
     if not spoken:
@@ -139,6 +263,8 @@ def tts_remainder(already_enqueued: str, full_text: str) -> str:
         return ""
     if full.startswith(spoken):
         return full[len(spoken):].strip()
+    if spoken.startswith(full):
+        return spoken[len(full):].strip()
     return full
 
 
@@ -152,15 +278,7 @@ def should_handoff_turn(
     interjector_vad_active: bool = True,
     min_pause_sec: float = 0.85,
 ) -> bool:
-    """True when Speaker B's speech should finalize Speaker A's paused turn (A -> B -> A).
-
-    - Never hand off if Speaker A has no open turn.
-    - Never cut off Speaker A while Speaker A's VAD is active or paused < min_pause_sec.
-    - Ignore noise hallucinations when Speaker B's VAD is inactive on interim events.
-    - Require Speaker B to speak a real phrase (>= 3 final words, or >= 4 interim words
-      with active VAD, or >= 2 final words after Speaker A has been silent >= 1.5s)
-      so 1-word backchannels ("Yeah", "Okay", "Sí") or speakerphone echo never split A's bubble.
-    """
+    """True when Speaker B's speech should finalize Speaker A's paused turn (A -> B -> A)."""
     if not other_has_open_turn:
         return False
     if other_vad_active or other_idle_sec < min_pause_sec:
@@ -183,12 +301,7 @@ def should_mark_interjection(
     interjector_word_count: int,
     interjector_vad_active: bool = True,
 ) -> bool:
-    """True when Speaker B spoke a substantial turn during Speaker A's active turn.
-
-    Requires real sustained speech (>= 5 final words or >= 6 interim words with
-    active VAD) so short backchannels ("Yeah", "Okay", "Mhmm") or speakerphone
-    bleed never chop Speaker A's bubble at every clause boundary.
-    """
+    """True when Speaker B spoke a substantial turn during Speaker A's active turn."""
     if not other_has_open_turn:
         return False
     if not interjector_is_final and not interjector_vad_active:
@@ -201,11 +314,7 @@ def should_mark_interjection(
 
 
 def split_tail(committed_text: str, frozen_src: str) -> str:
-    """Portion of the committed utterance not yet frozen.
-
-    If Deepgram revised earlier text so the frozen prefix no longer matches,
-    fall back to the full committed text (correctness over cost).
-    """
+    """Portion of the committed utterance not yet frozen."""
     if not frozen_src:
         return committed_text
     if committed_text.startswith(frozen_src):
@@ -235,6 +344,18 @@ def llm_completion_token_cap(source_text: str) -> int:
     return min(768, max(64, word_cap, char_cap))
 
 
+def resolve_language_name(lang: Optional[str]) -> str:
+    if not lang:
+        return ""
+    cleaned = str(lang).strip()
+    if not cleaned or cleaned.lower() == "multi":
+        return ""
+    if cleaned in LANG_NAMES:
+        return LANG_NAMES[cleaned]
+    base = cleaned.split("-")[0].lower()
+    return LANG_NAMES.get(base, cleaned)
+
+
 def build_translation_messages(
     *,
     target_lang_name: str,
@@ -242,16 +363,28 @@ def build_translation_messages(
     context_pairs: Sequence[Tuple[str, str]],
     keyterms: Sequence[str],
     partial: bool = False,
+    source_lang: Optional[str] = None,
 ) -> List[Tuple[str, str]]:
     """Assemble (role, content) messages for one translation call.
 
     Rolling context pairs are injected as few-shot user/assistant turns — this both
     demonstrates the expected output format (translation only, no commentary) and
     keeps pronouns / register / terminology consistent across utterances.
+    When `source_lang` is provided, `SOURCE_LANGUAGE: <name>` is included so short
+    or ambiguous words translate accurately without echoing source words.
     """
+    source_lang_name = resolve_language_name(source_lang)
+    if source_lang_name:
+        intro = (
+            f"You are a professional simultaneous interpreter translating live captions "
+            f"from {source_lang_name} to {target_lang_name}."
+        )
+    else:
+        intro = f"You are a professional simultaneous interpreter translating live captions to {target_lang_name}."
+
     sys_lines = [
-        f"You are a professional simultaneous interpreter translating live captions to {target_lang_name}.",
-        "Translate the user's text. Output ONLY the translation — no explanations, no quotes, no preamble.",
+        intro,
+        "Translate the user's text into the target language. Output ONLY the translation — no explanations, no quotes, no preamble, and never echo the SOURCE_LANGUAGE header.",
         "Preserve the speaker's tone and register. Keep names, numbers, and acronyms accurate.",
     ]
     if partial:
@@ -272,5 +405,11 @@ def build_translation_messages(
         if src and tgt:
             messages.append(("user", src))
             messages.append(("assistant", tgt))
-    messages.append(("user", source_text))
+
+    user_content = (
+        f"SOURCE_LANGUAGE: {source_lang_name}\n{source_text}"
+        if source_lang_name
+        else source_text
+    )
+    messages.append(("user", user_content))
     return messages

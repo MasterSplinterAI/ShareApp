@@ -28,8 +28,8 @@ except ImportError:  # pragma: no cover - local test stubs often omit plugin pac
 logger = logging.getLogger(__name__)
 
 # Aura-2 voices verified against the Deepgram /v1/speak API (2026-07).
-# Aura-2 supports en/es/fr/de/it/ja/nl only; other languages (e.g. pt, zh)
-# fall back to the English voice, which is degraded but still audible.
+# Aura-2 supports en/es/fr/de/it/ja/nl only; other languages (e.g. pt, zh, ru, ar, ko, hi)
+# use ElevenLabs Flash v2.5 or OpenAI multilingual TTS (gpt-4o-mini-tts / tts-1).
 _AURA_VOICE_BY_LANG = {
     "en": "aura-2-thalia-en",
     "es": "aura-2-celeste-es",
@@ -52,6 +52,9 @@ _ELEVENLABS_LANGS = {
     "cs", "sk", "uk", "ru", "ro", "bg", "hr", "el", "hu", "tr", "ar", "hi",
     "ja", "ko", "zh", "vi", "id", "ms", "ta", "fil",
 }
+
+_OPENAI_TTS_DEFAULT_MODEL = "gpt-4o-mini-tts"
+_OPENAI_TTS_DEFAULT_VOICE = "alloy"
 
 
 def is_valid_elevenlabs_voice_id(voice_id: str | None) -> bool:
@@ -97,7 +100,12 @@ def classify_tts_api_error(
 ) -> tuple[str, str]:
     """Map provider HTTP failures to short debug codes + human messages."""
     detail_l = (detail or "").lower()
-    provider_label = "ElevenLabs" if provider == "elevenlabs" else "Deepgram"
+    if provider == "elevenlabs":
+        provider_label = "ElevenLabs"
+    elif provider == "openai":
+        provider_label = "OpenAI TTS"
+    else:
+        provider_label = "Deepgram"
 
     if http_status == 401 or "invalid api key" in detail_l or "unauthorized" in detail_l:
         return (
@@ -131,16 +139,22 @@ def classify_tts_api_error(
 def resolve_tts_provider(language: str) -> str:
     """Pick the TTS provider for a target language.
 
-    Honors TTS_PROVIDER env ("elevenlabs" | "deepgram" | "auto", default auto).
+    Honors TTS_PROVIDER env ("elevenlabs" | "deepgram" | "openai" | "auto", default auto).
     Auto prefers ElevenLabs (broader coverage, faster) when a key is configured,
-    keeping Deepgram for its 7 natively supported languages if no key exists.
+    keeping Deepgram for its 7 natively supported languages if no ElevenLabs key exists.
+    At synthesis time, `_synthesize_with_fallback` automatically falls back to
+    OpenAI multilingual TTS (`gpt-4o-mini-tts`) for any non-Aura language when
+    ElevenLabs is unavailable or rate-limited.
     """
     base = (language or "en").split("-")[0].lower()
     pref = os.getenv("TTS_PROVIDER", "auto").strip().lower()
     has_eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+    has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
 
     if pref == "deepgram":
         return "deepgram"
+    if pref == "openai":
+        return "openai" if has_openai else "deepgram"
     if pref == "elevenlabs":
         return "elevenlabs" if has_eleven else "deepgram"
     # auto
@@ -228,9 +242,26 @@ class TtsLane:
             return
         self.voice_id = cleaned
 
+    def _get_http_session(self) -> aiohttp.ClientSession:
+        """Return (or lazily create) the shared aiohttp session for HTTP TTS streaming."""
+        if self._http_session is None or self._http_session.closed:
+            self._http_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=30, sock_connect=5)
+            )
+        return self._http_session
+
+    def _http(self) -> aiohttp.ClientSession:
+        return self._get_http_session()
+
     async def start(self) -> None:
         if self._closed:
             return
+        # Eagerly initialize the HTTP session when the lane starts so the first
+        # spoken phrase doesn't pay session creation overhead.
+        try:
+            self._get_http_session()
+        except Exception:  # noqa: BLE001
+            pass
         if self.publish_track:
             await self._ensure_track_published()
         if self._worker_task is None or self._worker_task.done():
@@ -398,24 +429,108 @@ class TtsLane:
                     exc,
                 )
 
-        synthesis = self._synthesize(item.text, playback_rate)
-        async for frame in self._iter_audio_frames(synthesis):
+        if self._synthesize_hook is not None:
+            synthesis = self._synthesize_hook(item.text, self.language, playback_rate)
+            async for frame in self._iter_audio_frames(synthesis):
+                if self._audio_source is not None:
+                    await self._capture_frame(frame)
+            return
+
+        async for frame in self._synthesize_with_fallback(item.text, playback_rate):
             if self._audio_source is not None:
                 await self._capture_frame(frame)
+
+    def _build_provider_ladder(self) -> list[str]:
+        """Ordered TTS providers for this lane's language.
+
+        Never allows Deepgram Aura-2 to speak an unsupported language (e.g. pt, zh,
+        ru, ar, ko, hi) with an English voice when OpenAI multilingual TTS is available.
+        """
+        base_lang = (self.language or "en").split("-")[0].lower()
+        aura_ok = base_lang in _AURA_SUPPORTED_LANGS
+        has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
+        has_eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+
+        ladder: list[str] = []
+        if self.provider == "elevenlabs":
+            ladder.append("elevenlabs")
+            if aura_ok:
+                ladder.append("deepgram")
+            if has_openai:
+                ladder.append("openai")
+            if not aura_ok and not has_openai:
+                ladder.append("deepgram")
+        elif self.provider == "openai":
+            ladder.append("openai")
+            if has_eleven:
+                ladder.append("elevenlabs")
+            if aura_ok:
+                ladder.append("deepgram")
+        else:
+            # provider == "deepgram"
+            if aura_ok:
+                ladder.append("deepgram")
+                if has_openai:
+                    ladder.append("openai")
+            elif has_openai:
+                # Avoid speaking non-Aura languages (pt, zh, ru, ar, ko, hi) with an English voice!
+                ladder.append("openai")
+                ladder.append("deepgram")
+            else:
+                ladder.append("deepgram")
+        return ladder
+
+    async def _synthesize_with_fallback(self, text: str, playback_rate: float):
+        """Try primary TTS provider and automatically fall back on failure."""
+        ladder = self._build_provider_ladder()
+        last_exc: Exception | None = None
+
+        for idx, prov in enumerate(ladder):
+            yielded_any = False
+            try:
+                synthesis = self._synthesize_for_provider(prov, text, playback_rate)
+                async for frame in self._iter_audio_frames(synthesis):
+                    yielded_any = True
+                    yield frame
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                if yielded_any or idx == len(ladder) - 1:
+                    break
+                next_prov = ladder[idx + 1]
+                logger.warning(
+                    "[TTS:%s] %s failed (%s) — falling back to %s",
+                    self.language,
+                    prov,
+                    exc,
+                    next_prov,
+                )
+
+        if last_exc is not None:
+            raise last_exc
 
     def _synthesize(self, text: str, playback_rate: float) -> Any:
         if self._synthesize_hook is not None:
             return self._synthesize_hook(text, self.language, playback_rate)
+        return self._synthesize_for_provider(self.provider, text, playback_rate)
 
-        if self.provider == "elevenlabs":
+    def _synthesize_for_provider(self, provider: str, text: str, playback_rate: float) -> Any:
+        if provider == "elevenlabs":
             return self._synthesize_elevenlabs(text, playback_rate)
+        if provider == "openai":
+            return self._synthesize_openai(text, playback_rate)
+        return self._synthesize_deepgram(text, playback_rate)
 
+    def _synthesize_deepgram(self, text: str, playback_rate: float) -> Any:
         if not DEEPGRAM_AVAILABLE or deepgram is None:
             raise RuntimeError("Deepgram plugin unavailable for TTS lane")
 
+        base_lang = self.language.split("-")[0].lower()
         if self._deepgram_tts is None:
             voice = _AURA_VOICE_BY_LANG.get(
-                self.language.split("-")[0].lower(),
+                base_lang,
                 os.getenv("DEEPGRAM_AURA_FALLBACK_VOICE", "aura-2-thalia-en"),
             )
             self._deepgram_tts = self._create_deepgram_tts(voice)
@@ -462,13 +577,6 @@ class TtsLane:
                 continue
         return deepgram.TTS()
 
-    def _http(self) -> aiohttp.ClientSession:
-        if self._http_session is None or self._http_session.closed:
-            self._http_session = aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=30, sock_connect=5)
-            )
-        return self._http_session
-
     async def _synthesize_elevenlabs(self, text: str, playback_rate: float):
         """Stream raw PCM from ElevenLabs Flash v2.5, yielding frame-aligned byte blocks."""
         api_key = os.getenv("ELEVENLABS_API_KEY", "").strip()
@@ -499,7 +607,7 @@ class TtsLane:
         frame_bytes = max(1, int(self.sample_rate * 0.02)) * self.num_channels * 2
         buf = bytearray()
 
-        async with self._http().post(
+        async with self._get_http_session().post(
             url, json=body, headers={"xi-api-key": api_key}
         ) as resp:
             if resp.status != 200:
@@ -507,6 +615,59 @@ class TtsLane:
                 code, message = classify_tts_api_error("elevenlabs", resp.status, detail)
                 raise TtsApiError(
                     provider="elevenlabs",
+                    code=code,
+                    message=message,
+                    http_status=resp.status,
+                )
+            async for chunk in resp.content.iter_chunked(4096):
+                buf.extend(chunk)
+                aligned = len(buf) - (len(buf) % frame_bytes)
+                if aligned:
+                    yield bytes(buf[:aligned])
+                    del buf[:aligned]
+        if buf:
+            yield bytes(buf)
+
+    async def _synthesize_openai(self, text: str, playback_rate: float):
+        """Stream raw 24kHz 16-bit mono PCM from OpenAI multilingual TTS (`gpt-4o-mini-tts` / `tts-1`)."""
+        api_key = os.getenv("OPENAI_API_KEY", "").strip()
+        if not api_key:
+            raise TtsApiError(
+                provider="openai",
+                code="missing_api_key",
+                message="OpenAI API key not configured on agent",
+            )
+
+        model = os.getenv("OPENAI_TTS_MODEL", _OPENAI_TTS_DEFAULT_MODEL).strip() or _OPENAI_TTS_DEFAULT_MODEL
+        voice = os.getenv("OPENAI_TTS_VOICE", _OPENAI_TTS_DEFAULT_VOICE).strip() or _OPENAI_TTS_DEFAULT_VOICE
+        speed = max(0.75, min(playback_rate, 1.35))
+
+        body: dict[str, Any] = {
+            "model": model,
+            "voice": voice,
+            "input": text,
+            "response_format": "pcm",
+        }
+        if abs(speed - 1.0) > 0.01:
+            body["speed"] = speed
+
+        url = "https://api.openai.com/v1/audio/speech"
+        frame_bytes = max(1, int(self.sample_rate * 0.02)) * self.num_channels * 2
+        buf = bytearray()
+
+        async with self._get_http_session().post(
+            url,
+            json=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        ) as resp:
+            if resp.status != 200:
+                detail = (await resp.text())[:200]
+                code, message = classify_tts_api_error("openai", resp.status, detail)
+                raise TtsApiError(
+                    provider="openai",
                     code=code,
                     message=message,
                     http_status=resp.status,

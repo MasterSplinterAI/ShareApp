@@ -290,3 +290,52 @@ def test_tts_error_event_emitted_on_failure() -> None:
         assert payload["language"] == "es"
 
     asyncio.run(_run())
+
+
+def test_start_prewarms_http_session_and_aclose_closes_it() -> None:
+    async def _run() -> None:
+        room = _FakeRoom()
+        lane = TtsLane(room=room, language="es", publish_track=False)
+        assert lane._http_session is None
+        await lane.start()
+        assert lane._http_session is not None
+        assert not lane._http_session.closed
+        await lane.aclose()
+        assert lane._http_session is None
+
+    asyncio.run(_run())
+
+
+def test_multilingual_fallback_uses_openai_for_non_aura_language(monkeypatch) -> None:
+    async def _run() -> None:
+        monkeypatch.setenv("ELEVENLABS_API_KEY", "test-eleven-key")
+        monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+        room = _FakeRoom()
+        lane = TtsLane(room=room, language="ru", provider="elevenlabs", publish_track=False)
+        ladder = lane._build_provider_ladder()
+        # Russian is not in Aura-2's 7 languages, so OpenAI must be the fallback (not English Aura-2)
+        assert ladder == ["elevenlabs", "openai"]
+
+        called_providers: list[str] = []
+
+        async def fake_eleven(text: str, rate: float):
+            called_providers.append("elevenlabs")
+            raise RuntimeError("elevenlabs 429 rate limited")
+            yield b""  # pragma: no cover
+
+        async def fake_openai(text: str, rate: float):
+            called_providers.append("openai")
+            yield b"\x00\x00" * 480
+
+        monkeypatch.setattr(lane, "_synthesize_elevenlabs", fake_eleven)
+        monkeypatch.setattr(lane, "_synthesize_openai", fake_openai)
+
+        frames = []
+        async for f in lane._synthesize_with_fallback("Привет мир", 1.0):
+            frames.append(f)
+
+        assert called_providers == ["elevenlabs", "openai"]
+        await lane.aclose()
+
+    asyncio.run(_run())
+

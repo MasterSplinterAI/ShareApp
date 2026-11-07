@@ -4,9 +4,13 @@ from translation_helpers import (
     TranslationCache,
     build_translation_messages,
     context_pairs_for_translation_call,
+    ends_clause,
+    ends_freeze_boundary,
     ends_sentence,
     join_nonempty,
     llm_completion_token_cap,
+    maybe_freeze_lane,
+    resolve_livekit_display_name,
     should_break_turn,
     should_handoff_turn,
     should_mark_interjection,
@@ -106,6 +110,36 @@ class TestEndsSentence:
         assert not ends_sentence("")
 
 
+class TestClauseFreezeBoundary:
+    def test_short_clause_with_comma_does_not_freeze(self):
+        short_clause = "Well first of all,"
+        assert ends_clause(short_clause)
+        assert not ends_freeze_boundary(short_clause)
+
+    def test_long_clause_exceeding_10_words_freezes_at_comma(self):
+        long_clause = "When we reviewed the international shipping schedule for next Tuesday morning,"
+        assert len(long_clause.split()) > 10
+        assert ends_freeze_boundary(long_clause)
+
+    def test_maybe_freeze_lane_freezes_long_clause_and_clears_tail(self):
+        class DummyLane:
+            frozen_src = ""
+            frozen_tgt = ""
+            tail_translation = "Cuando revisamos el horario,"
+            interim_candidate = "cand"
+            interim_stable = "stab"
+            last_interim_src = "src"
+
+        lane = DummyLane()
+        tail_src = "When we reviewed the international shipping schedule for next Tuesday morning,"
+        chunk = maybe_freeze_lane(lane, tail_src, tail_src, "Cuando revisamos el horario internacional,")
+        assert chunk == "Cuando revisamos el horario internacional,"
+        assert lane.frozen_tgt == "Cuando revisamos el horario internacional,"
+        assert lane.frozen_src == tail_src
+        assert lane.tail_translation == ""
+        assert lane.interim_stable == ""
+
+
 # ------------------------------------------------------------- split_tail
 
 class TestSplitTail:
@@ -182,6 +216,19 @@ class TestBuildTranslationMessages:
             partial=True,
         )
         assert "incomplete" in msgs[0][1].lower() or "partial" in msgs[0][1].lower()
+
+    def test_source_lang_injected_when_provided(self):
+        msgs = build_translation_messages(
+            target_lang_name="Spanish",
+            source_text="Yes",
+            context_pairs=[],
+            keyterms=[],
+            source_lang="en",
+        )
+        assert "English" in msgs[0][1]
+        assert msgs[-1][0] == "user"
+        assert "SOURCE_LANGUAGE: English" in msgs[-1][1]
+        assert msgs[-1][1].endswith("\nYes")
 
 
 # ------------------------------------------------------- LLM call helpers

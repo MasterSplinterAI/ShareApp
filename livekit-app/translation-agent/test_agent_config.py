@@ -47,14 +47,25 @@ def test_invalid_llm_temperature_falls_back_to_zero(monkeypatch):
     assert _llm_temperature() == 0.0
 
 
-def test_deepgram_keyterms_use_domain_defaults_when_env_unset(monkeypatch):
+def test_deepgram_keyterms_use_neutral_defaults_when_env_unset(monkeypatch):
     monkeypatch.delenv("DEEPGRAM_KEYTERMS", raising=False)
+    monkeypatch.delenv("DEEPGRAM_EXTRA_KEYTERMS", raising=False)
     terms = _deepgram_keyterms()
-    assert "LME" in terms
-    assert "Contango" in terms
-    assert "KYC" in terms
-    # Deepgram returns HTTP 400 ("Keyterm limit exceeded: 500 tokens") when too
-    # many multi-syllable keyterms are passed on nova-3 language=multi.
+    assert terms == ["Lalia"]
+    # Mineral/mining terms must not be hardcoded into default rooms
+    assert "Cassiterite" not in terms
+    assert "LME" not in terms
+
+
+def test_deepgram_keyterms_merges_extra_and_participant_names(monkeypatch):
+    monkeypatch.delenv("DEEPGRAM_KEYTERMS", raising=False)
+    monkeypatch.setenv("DEEPGRAM_EXTRA_KEYTERMS", "LiveKit,Capacitor")
+    terms = _deepgram_keyterms(["Kenneth Rhule", "Lacey Holt", "Guest"])
+    assert "Lalia" in terms
+    assert "LiveKit" in terms
+    assert "Kenneth Rhule" in terms
+    assert "Lacey Holt" in terms
+    assert "Guest" not in terms
     assert len(terms) <= 45
 
 

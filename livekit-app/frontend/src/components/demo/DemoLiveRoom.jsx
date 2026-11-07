@@ -160,7 +160,6 @@ function DemoLiveRoomInner({
         </div>
       )}
 
-      <RoomAudioRenderer />
       <div className="pointer-events-none fixed inset-x-0 bottom-[var(--control-bar-h)] z-[60] flex justify-center px-3 pb-2">
         <div className="pointer-events-auto">
           <StartAudio label={t('startAudio')} />

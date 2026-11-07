@@ -16,11 +16,13 @@ const COSTS = {
   xai_llm_input_mtok:          { provider: 'xai',       unit_cost_usd: 1.25    },
   xai_llm_output_mtok:         { provider: 'xai',       unit_cost_usd: 2.50    },
 
-  // OpenAI gpt-4o-mini
-  openai_llm_input_mtok:       { provider: 'openai',    unit_cost_usd: 0.15    },
-  openai_llm_output_mtok:      { provider: 'openai',    unit_cost_usd: 0.60    },
+  // OpenAI gpt-4.1-mini ($0.40 input / $1.60 output per 1M tokens)
+  openai_llm_input_mtok:       { provider: 'openai',    unit_cost_usd: 0.40    },
+  openai_llm_output_mtok:      { provider: 'openai',    unit_cost_usd: 1.60    },
   // OpenAI gpt-4o-transcribe (fallback STT), $0.006/min audio
   openai_stt_minute:           { provider: 'openai',    unit_cost_usd: 0.0060  },
+  // OpenAI gpt-4o-mini-tts / tts-1 ($0.015/1k chars)
+  openai_tts_char:             { provider: 'openai',    unit_cost_usd: 0.000015 },
 
   // Deepgram Nova-3
   deepgram_stt_minute:         { provider: 'deepgram',  unit_cost_usd: 0.0043  },

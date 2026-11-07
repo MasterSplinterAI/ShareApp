@@ -35,6 +35,7 @@ def _install_livekit_stubs() -> None:
 
     rtc.TrackSource = _TrackSource
     agents.JobContext = object
+    agents.JobProcess = object
     agents.WorkerOptions = _WorkerOptions
     agents.AutoSubscribe = _AutoSubscribe
     agents.cli = types.SimpleNamespace(run_app=lambda *args, **kwargs: None)

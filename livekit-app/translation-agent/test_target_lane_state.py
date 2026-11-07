@@ -64,3 +64,23 @@ class TestResetTurn:
         assert lane.frozen_src == "" and lane.frozen_tgt == ""
         # Rolling cross-turn context survives turn resets by design.
         assert list(lane.context_pairs) == [("Hello.", "Hola.")]
+
+    def test_spoken_target_tracks_pause_flush_and_prevents_duplicate_finalize_speech(self):
+        from translation_helpers import tts_remainder
+
+        lane = make_lane()
+        lane.tail_translation = "Sí, enviemos eso el martes"
+        # Simulate 750ms pause flush speaking the clause before bubble finalize
+        flushed = tts_remainder(lane.spoken_target, lane.display_translation())
+        assert flushed == "Sí, enviemos eso el martes"
+        lane.spoken_target = lane.display_translation()
+
+        # When finalize_lane runs 2.5s later with no new words, remainder is empty
+        assert tts_remainder(lane.spoken_target, lane.display_translation()) == ""
+
+        # If speaker adds another clause before finalize, only the new clause is spoken
+        lane.tail_translation = "Sí, enviemos eso el martes por la mañana."
+        assert (
+            tts_remainder(lane.spoken_target, lane.display_translation())
+            == "por la mañana."
+        )

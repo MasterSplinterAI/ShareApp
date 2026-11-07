@@ -11,6 +11,7 @@ import os
 import json
 import asyncio
 import logging
+import re
 import sys
 import time
 from collections import deque
@@ -32,12 +33,19 @@ from codeswitch_source_language import (
 from residual_guard import is_residual_repeat
 from demo_orchestrator import DemoRoomOrchestrator
 from translation_helpers import (
+    LANG_NAMES,
     TranslationCache,
+    _parse_display_name_from_metadata,
+    _translation_covers_thought,
     build_translation_messages,
     context_pairs_for_translation_call,
+    ends_clause,
+    ends_freeze_boundary,
     ends_sentence,
     join_nonempty,
     llm_completion_token_cap,
+    maybe_freeze_lane as freeze_lane_helper,
+    resolve_livekit_display_name,
     should_break_turn,
     should_handoff_turn,
     should_mark_interjection,
@@ -49,6 +57,10 @@ from translation_helpers import (
 
 from livekit import rtc
 from livekit.agents import JobContext, WorkerOptions, cli, AutoSubscribe
+try:
+    from livekit.agents import JobProcess
+except ImportError:
+    JobProcess = Any
 from livekit.plugins import silero
 
 try:
@@ -159,6 +171,21 @@ def _deepgram_stt_idle_ms() -> int:
     return max(400, min(ms, 8000))
 
 
+def _deepgram_tts_pause_flush_ms() -> int:
+    """Short pause window (ms) before flushing unspoken translated text to TTS.
+
+    Decouples spoken TTS phrase delivery (~750ms after speech pauses) from visual
+    caption bubble finalization (2880-3600ms), so single-clause utterances speak
+    promptly while the visual bubble stays open across natural breaths.
+    """
+    raw = os.getenv("DEEPGRAM_TTS_PAUSE_FLUSH_MS", "750").strip()
+    try:
+        ms = int(raw)
+    except ValueError:
+        ms = 750
+    return max(250, min(ms, 5000))
+
+
 def _turn_max_sec() -> float:
     """Close a bubble at a sentence boundary after this much continuous turn time."""
     raw = os.getenv("TURN_MAX_SEC", "45").strip()
@@ -177,20 +204,18 @@ def _turn_max_words() -> int:
         return 110
 
 
-def _translation_covers_thought(source: str, translated: str) -> bool:
-    """False when the translation is only the first clause of a longer thought."""
-    src_words = [w for w in (source or "").split() if w]
-    tgt_words = [w for w in (translated or "").split() if w]
-    if not src_words:
-        return True
-    if len(src_words) <= 8:
-        return bool(tgt_words)
-    return len(tgt_words) >= max(4, int(len(src_words) * 0.55))
-
-
 def _llm_model() -> str:
-    """Translation model — pinned so plugin upgrades can't silently change it."""
-    return os.getenv("LLM_MODEL", "gpt-4.1-mini").strip() or "gpt-4.1-mini"
+    """Primary translation model — supports TRANSLATION_LLM_MODEL or LLM_MODEL."""
+    for env_key in ("TRANSLATION_LLM_MODEL", "LLM_MODEL"):
+        val = os.getenv(env_key, "").strip()
+        if val:
+            return val
+    return "gpt-4.1-mini"
+
+
+def _llm_fallback_model() -> str:
+    """Secondary fallback translation model when primary times out or errors."""
+    return os.getenv("TRANSLATION_LLM_FALLBACK_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
 
 
 def _llm_temperature() -> float:
@@ -265,21 +290,32 @@ MAX_DEEPGRAM_KEYTERMS = 45
 
 DEFAULT_DEEPGRAM_KEYTERMS = [
     "Lalia",
-    "Cassiterite", "Rutile", "Ilmenite", "Bauxite", "Chalcopyrite", "Galena",
-    "Sphalerite", "Pentlandite", "Magnetite", "Hematite", "Chromite", "Molybdenite",
-    "Scheelite", "Wolframite", "Coltan", "Monazite", "Sperrylite", "Cooperite",
-    "Kimberlite", "Zircon", "Xenotime", "Molybdenum", "Tungsten", "Palladium",
-    "Rhodium", "Iridium", "Ruthenium", "Osmium", "PGM", "Platinum Group Metals",
-    "LME", "London Metal Exchange", "Backwardation", "Contango", "Arbitrage",
-    "Assay", "Bullion", "Ingot", "Dore", "KYC", "AML", "SaaS", "BaaS", "FaaS",
 ]
 
 
-def _deepgram_keyterms() -> List[str]:
-    """Nova-3 keyterm prompting (capped to stay under Deepgram's 500-token limit)."""
+def _deepgram_keyterms(extra_terms: Optional[Sequence[str]] = None) -> List[str]:
+    """Nova-3 keyterm prompting (capped to stay under Deepgram's 500-token limit).
+
+    Combines explicit DEEPGRAM_KEYTERMS (or DEFAULT_DEEPGRAM_KEYTERMS), optional
+    DEEPGRAM_EXTRA_KEYTERMS, room caption_config.keyterms, and participant display names.
+    """
     configured = _csv_env("DEEPGRAM_KEYTERMS")
-    terms = configured or list(DEFAULT_DEEPGRAM_KEYTERMS)
-    return terms[:MAX_DEEPGRAM_KEYTERMS]
+    base_terms = configured or list(DEFAULT_DEEPGRAM_KEYTERMS)
+    env_extra = _csv_env("DEEPGRAM_EXTRA_KEYTERMS")
+    merged: List[str] = []
+    seen: Set[str] = set()
+    for term in [*base_terms, *env_extra, *(extra_terms or [])]:
+        clean = str(term or "").strip()
+        if not clean or len(clean) < 2 or len(clean) > 64:
+            continue
+        low = clean.lower()
+        if low in ("guest", "unknown", "host") or low in seen:
+            continue
+        seen.add(low)
+        merged.append(clean)
+        if len(merged) >= MAX_DEEPGRAM_KEYTERMS:
+            break
+    return merged
 
 
 def _speech_times(speech_data: Any) -> Tuple[float, float]:
@@ -365,20 +401,6 @@ logger.info("=" * 60)
 logger.info("📝 TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)")
 logger.info("=" * 60)
 
-
-LANG_NAMES = {
-    "es": "Spanish",
-    "es-DO": "Dominican Spanish (República Dominicana — use natural Dominican/Caribbean Spanish phrasing, vocabulary, and 'ustedes', never Castilian 'vosotros')",
-    "es-CO": "Colombian Spanish (Colombia — use natural Colombian Spanish phrasing and 'ustedes')",
-    "es-MX": "Mexican Spanish (México — use natural Mexican Spanish phrasing and 'ustedes')",
-    "en": "English", "fr": "French", "fr-CA": "Canadian French", "de": "German", "de-CH": "Swiss German",
-    "it": "Italian", "pt": "Portuguese", "pt-BR": "Brazilian Portuguese", "pt-PT": "European Portuguese",
-    "zh": "Chinese", "zh-CN": "Mandarin Chinese", "zh-TW": "Traditional Chinese", "zh-HK": "Cantonese",
-    "ja": "Japanese",
-    "ko": "Korean", "ru": "Russian", "ar": "Arabic", "hi": "Hindi",
-    "tiv": "Tiv",
-}
-
 VALID_CAPTION_MODES = ("off", "transcription_only", "transcription_translation")
 
 # Process-wide Silero VAD cache (see _load_shared_vad).
@@ -434,15 +456,12 @@ class TargetLaneState:
     llm_instance: Optional[Any]
     target_lang_name: str
     llm_provider: str = "openai"
+    fallback_llm_instance: Optional[Any] = None
     # Same-language lanes mirror STT segments here (multi-slot). Foreign lanes
     # derive their text from frozen_tgt/tail_translation via display_translation().
     turn_translated_parts: List[str] = field(default_factory=list)
     pending_translate_tasks: List[asyncio.Task] = field(default_factory=list)
     # --- whole-utterance translation state (foreign lanes) ---
-    # The utterance translation is re-derived from the full unfrozen source tail on
-    # every is_final (fixes cross-segment grammar for verb-final/SOV targets), and
-    # sentence-complete prefixes are frozen so long monologues don't re-translate
-    # the whole utterance forever.
     frozen_src: str = ""  # sentence-complete source prefix already translated
     frozen_tgt: str = ""  # its committed translation
     tail_translation: str = ""  # streaming translation of the unfrozen tail
@@ -455,8 +474,16 @@ class TargetLaneState:
     last_interim_src: str = ""
     # --- rolling cross-turn context for pronoun/terminology consistency ---
     context_pairs: Deque[Tuple[str, str]] = field(default_factory=lambda: deque(maxlen=3))
-    # Translated text already handed to the TTS lane this turn (frozen chunks).
+    # Translated text already handed to the TTS lane this turn (frozen + pause-flushed chunks).
     tts_enqueued_text: str = ""
+
+    @property
+    def spoken_target(self) -> str:
+        return self.tts_enqueued_text
+
+    @spoken_target.setter
+    def spoken_target(self, value: str) -> None:
+        self.tts_enqueued_text = value or ""
 
     def display_translation(self) -> str:
         """Current best translation for this lane: frozen prefix + live tail.
@@ -493,6 +520,8 @@ class TranscriptionOnlyAgent:
         self.participant_languages: Dict[str, str] = {}
         self.translation_enabled: Dict[str, bool] = {}
         self.voice_enabled: Dict[str, bool] = {}
+        # Display labels for caption packets (identity stays guest-{uuid}).
+        self.participant_display_names: Dict[str, str] = {}
         # One asyncio task per speaker: shared STT/VAD, fan-out to per-target translation lanes.
         self.speaker_pipelines: Dict[str, asyncio.Task] = {}
         self.tts_lanes: Dict[str, TtsLane] = {}
@@ -504,22 +533,14 @@ class TranscriptionOnlyAgent:
         # Caption config set by host via data channel
         self.caption_mode: str = "transcription_translation"
         self.caption_languages: List[str] = []
+        self.caption_keyterms: List[str] = []
         # Cost reporter — initialized in entrypoint once room name is known
         self.cost_reporter: Optional[CostReporter] = None
         self._caption_sessions: Dict[str, SpeakerCaptionSession] = {}
         self._caption_sessions_lock = asyncio.Lock()
-        # Serializes update_assistants: it awaits mid-flight while mutating
-        # speaker_pipelines, so concurrent invocations (debounce + disconnect +
-        # translation-off) could create duplicate pipelines or cancel fresh ones.
         self._reconcile_lock = asyncio.Lock()
-        # Fire-and-forget tasks (cost emits, data handlers) tracked so shutdown can
-        # drain them and a flood can't leak unbounded orphans.
         self._bg_tasks: Set[asyncio.Task] = set()
-        # Providers that failed fast for a speaker (e.g. Gladia 429 concurrency limit
-        # — free tier allows ONE concurrent live session). The next pipeline attempt
-        # skips them and falls through the provider ladder; cleared after a healthy run.
         self._stt_skip_providers: Dict[str, Set[str]] = {}
-        # Repeated utterances (greetings, confirmations) skip the LLM round trip.
         self._translation_cache = TranslationCache(max_size=_translation_cache_size())
         self.demo_orchestrator: Optional[DemoRoomOrchestrator] = None
         self._demo_room: bool = False
@@ -532,6 +553,42 @@ class TranscriptionOnlyAgent:
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
         return task
+
+    def _remember_display_name(self, identity: str, name: str) -> None:
+        label = str(name or "").strip()
+        if not identity or not label or label == identity:
+            return
+        if re.match(r"^guest-[0-9a-f-]{36}$", label, re.I):
+            return
+        self.participant_display_names[identity] = label[:128]
+
+    def _display_name_for(self, room: Any, speaker_id: str) -> str:
+        cached = self.participant_display_names.get(speaker_id)
+        if cached:
+            return cached
+        participant = None
+        for p in getattr(room, "remote_participants", {}).values():
+            if getattr(p, "identity", None) == speaker_id:
+                participant = p
+                break
+        label = resolve_livekit_display_name(participant, speaker_id)
+        self._remember_display_name(speaker_id, label)
+        return label
+
+    def _collect_room_keyterms(self, room: Any = None) -> List[str]:
+        terms: List[str] = list(self.caption_keyterms)
+        for name in self.participant_display_names.values():
+            if name:
+                terms.append(name)
+        if room is not None:
+            for p in getattr(room, "remote_participants", {}).values():
+                ident = getattr(p, "identity", "") or ""
+                if is_likely_agent_identity(ident):
+                    continue
+                label = resolve_livekit_display_name(p, ident)
+                if label:
+                    terms.append(label)
+        return terms
 
     def _apply_caption_config(self, cc: Any, source: str) -> bool:
         """Validate + apply caption_config; returns True when something changed."""
@@ -547,13 +604,24 @@ class TranscriptionOnlyAgent:
             if isinstance(raw_langs, list)
             else self.caption_languages
         )
-        if new_mode == self.caption_mode and new_langs == self.caption_languages:
+        raw_keyterms = cc.get("keyterms", self.caption_keyterms)
+        new_keyterms = (
+            [str(k).strip() for k in raw_keyterms if isinstance(k, str) and str(k).strip()]
+            if isinstance(raw_keyterms, list)
+            else self.caption_keyterms
+        )
+        if (
+            new_mode == self.caption_mode
+            and new_langs == self.caption_languages
+            and new_keyterms == self.caption_keyterms
+        ):
             return False
         self.caption_mode = new_mode
         self.caption_languages = new_langs
+        self.caption_keyterms = new_keyterms
         logger.info(
             f"📋 caption_config applied from {source}: "
-            f"mode={self.caption_mode!r} languages={self.caption_languages}"
+            f"mode={self.caption_mode!r} languages={self.caption_languages} keyterms={len(self.caption_keyterms)}"
         )
         return True
 
@@ -956,6 +1024,16 @@ class TranscriptionOnlyAgent:
                 participant_id = data.participant.identity
                 msg_type = msg.get("type")
 
+                # Display-only cache (never used for auth). Prefer LiveKit name/metadata.
+                self._remember_display_name(
+                    participant_id,
+                    resolve_livekit_display_name(data.participant, participant_id),
+                )
+                self._remember_display_name(
+                    participant_id,
+                    msg.get("participantName") or msg.get("participant_name") or "",
+                )
+
                 if msg_type == "language_update":
                     lang = (
                         msg.get("language")
@@ -1101,6 +1179,9 @@ class TranscriptionOnlyAgent:
 
         async def on_connected(participant: rtc.RemoteParticipant):
             ident = participant.identity or ""
+            self._remember_display_name(
+                ident, resolve_livekit_display_name(participant, ident)
+            )
             if not is_likely_agent_identity(ident):
                 if self._demo_room:
                     self.participant_languages[ident] = self._demo_speak_lang
@@ -1295,6 +1376,7 @@ class TranscriptionOnlyAgent:
         *,
         skip_providers: Optional[Set[str]] = None,
         gladia_translation_targets: Optional[List[str]] = None,
+        room: Any = None,
     ):
         """Single shared STT for one speaker (one instance per speaker pipeline).
 
@@ -1327,7 +1409,7 @@ class TranscriptionOnlyAgent:
                 smart_format=True,
                 endpointing_ms=endpointing_ms,
             )
-            keyterms = _deepgram_keyterms()
+            keyterms = _deepgram_keyterms(self._collect_room_keyterms(room))
             if keyterms:
                 stt_kwargs["keyterm"] = keyterms
             try:
@@ -1418,43 +1500,59 @@ class TranscriptionOnlyAgent:
             logger.error(f"{L} No STT provider available (STT_PROVIDER={stt_provider})")
         return stt_instance, stt_provider_name
 
-    def _create_llm_for_target(self, speaker_id: str, target_lang: str):
+    def _create_openai_llm_instance(self, model: str, label: str) -> Optional[Any]:
+        is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
+        if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
+            return None
+        llm_kwargs = dict(
+            model=model,
+            temperature=_llm_temperature(),
+            timeout=_llm_timeout_sec(),
+            max_retries=1,
+        )
+        try:
+            inst = openai.LLM(**llm_kwargs)
+        except TypeError:
+            inst = openai.LLM(model=model, temperature=_llm_temperature())
+        logger.info(
+            f"{label} LLM: OpenAI {model} temp={_llm_temperature()} "
+            f"timeout={_llm_timeout_sec()}s"
+        )
+        return inst
+
+    def _create_llm_for_target(self, speaker_id: str, target_lang: str, model_override: Optional[str] = None):
         """Returns (llm_instance, provider_name) tuple; provider_name used for cost reporting."""
         L = f"[{speaker_id}→{target_lang}]"
-        is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         llm_provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
         llm_provider_name = "openai"
+        primary_model = (model_override or _llm_model()).strip() or _llm_model()
+        fallback_model = _llm_fallback_model()
 
-        def _try_openai_llm():
+        def _try_primary_openai_llm():
             nonlocal llm_provider_name
-            if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
-                return None
-            model = _llm_model()
-            # Client-level timeout/retries guard connection failures; the per-call
-            # asyncio.wait_for in translate_tail guards mid-stream hangs.
-            llm_kwargs = dict(
-                model=model,
-                temperature=_llm_temperature(),
-                timeout=_llm_timeout_sec(),
-                max_retries=1,
-            )
-            try:
-                inst = openai.LLM(**llm_kwargs)
-            except TypeError:
-                # Older plugin without timeout/max_retries kwargs
-                inst = openai.LLM(model=model, temperature=_llm_temperature())
-            logger.info(
-                f"{L} LLM: OpenAI {model} temp={_llm_temperature()} "
-                f"timeout={_llm_timeout_sec()}s"
-            )
-            llm_provider_name = "openai"
+            inst = self._create_openai_llm_instance(primary_model, L)
+            if inst is not None:
+                llm_provider_name = "openai"
             return inst
 
-        llm_order = [_try_openai_llm]
+        def _try_fallback_openai_llm():
+            nonlocal llm_provider_name
+            if fallback_model == primary_model:
+                return None
+            inst = self._create_openai_llm_instance(fallback_model, f"{L}(fallback)")
+            if inst is not None:
+                llm_provider_name = "openai"
+            return inst
+
+        llm_order = [_try_primary_openai_llm, _try_fallback_openai_llm]
 
         llm_instance = None
         for attempt in llm_order:
-            llm_instance = attempt()
+            try:
+                llm_instance = attempt()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"{L} LLM init attempt failed: {e}")
+                llm_instance = None
             if llm_instance is not None:
                 break
         if llm_instance is None:
@@ -1633,6 +1731,11 @@ class TranscriptionOnlyAgent:
             # frontend render the dominant line in its own selected language while still
             # seeing translations underneath. is_same_language_lane is kept for future
             # targeted-delivery options but is unused on the broadcast path.
+            if "participant_name" not in msg_dict:
+                msg_dict = {
+                    **msg_dict,
+                    "participant_name": self._display_name_for(job_ctx.room, speaker_id),
+                }
             payload = json.dumps(msg_dict).encode("utf-8")
             await job_ctx.room.local_participant.publish_data(
                 payload,
@@ -1657,6 +1760,7 @@ class TranscriptionOnlyAgent:
             speaker_lang,
             skip_providers=skip,
             gladia_translation_targets=initial_gladia_targets,
+            room=job_ctx.room,
         )
         gladia_applied_targets[0] = initial_gladia_targets
         use_gladia_native_translation[0] = (
@@ -1780,11 +1884,19 @@ class TranscriptionOnlyAgent:
             *,
             partial: bool,
             on_delta: Optional[Callable[[str], Awaitable[None]]] = None,
+            llm_override: Optional[Any] = None,
+            model_name: Optional[str] = None,
         ) -> Tuple[str, Any]:
             """One LLM streaming call. Returns (text, usage). Raises on failure."""
+            active_llm = llm_override or lane.llm_instance
+            if active_llm is None:
+                raise RuntimeError("no LLM instance available for lane")
             context_pairs = context_pairs_for_translation_call(
                 lane_context_pairs(lane),
                 partial=partial,
+            )
+            src_lang_hint = (
+                None if turn_is_multilingual[0] else (effective_source_lang[0] or configured_speaker_lang)
             )
             messages = build_translation_messages(
                 target_lang_name=lane.target_lang_name,
@@ -1792,6 +1904,7 @@ class TranscriptionOnlyAgent:
                 context_pairs=context_pairs,
                 keyterms=_translation_keyterms(),
                 partial=partial,
+                source_lang=src_lang_hint,
             )
             chat_ctx = ChatContext()
             for role, content in messages:
@@ -1802,13 +1915,13 @@ class TranscriptionOnlyAgent:
             ttft_ms: Optional[float] = None
             completion_cap = llm_completion_token_cap(source_text)
             try:
-                stream = lane.llm_instance.chat(
+                stream = active_llm.chat(
                     chat_ctx=chat_ctx,
                     extra_kwargs={"max_completion_tokens": completion_cap},
                 )
             except TypeError:
                 # Older LiveKit OpenAI plugin without per-call extra_kwargs.
-                stream = lane.llm_instance.chat(chat_ctx=chat_ctx)
+                stream = active_llm.chat(chat_ctx=chat_ctx)
             try:
                 async for chunk in stream:
                     if getattr(chunk, "usage", None) is not None:
@@ -1827,7 +1940,7 @@ class TranscriptionOnlyAgent:
             logger.info(
                 f"{L}→{tgt_lang} 📊 translation_latency ttft_ms={ttft_ms and round(ttft_ms) or -1} "
                 f"total_ms={round(total_ms)} chars={len(source_text)} partial={partial} "
-                f"max_completion_tokens={completion_cap} model={_llm_model()}"
+                f"max_completion_tokens={completion_cap} model={model_name or _llm_model()}"
             )
             return accumulated.strip(), last_usage
 
@@ -1853,27 +1966,20 @@ class TranscriptionOnlyAgent:
         def maybe_freeze_lane(
             lane: TargetLaneState, tail_src: str, committed_snapshot: str, translation: str
         ) -> None:
-            """Fold a sentence-complete tail into the frozen prefix (bounds re-translation cost)."""
-            if not translation.strip() or not ends_sentence(tail_src):
+            """Fold a sentence-complete (or >10-word clause-complete) tail into the frozen prefix."""
+            frozen_chunk = freeze_lane_helper(lane, tail_src, committed_snapshot, translation)
+            if not frozen_chunk:
                 return
-            lane.frozen_tgt = join_nonempty(lane.frozen_tgt, translation)
-            lane.frozen_src = committed_snapshot
-            lane.tail_translation = ""
-            # Interim text covered the tail that just froze — clear it or the display
-            # (frozen + interim) would duplicate the sentence.
-            lane.interim_candidate = ""
-            lane.interim_stable = ""
-            lane.last_interim_src = ""
-            # Speak the frozen sentence now instead of waiting for turn finalize;
+            # Speak the newly frozen remainder now instead of waiting for turn finalize;
             # finalize sends only the unspoken remainder (see tts_remainder).
             tts_lane = self.tts_lanes.get(lane.target_lang)
             if tts_lane is not None and not lane.is_same_language:
-                chunk = translation.strip()
-                if chunk:
-                    lane.tts_enqueued_text = join_nonempty(lane.tts_enqueued_text, chunk)
+                chunk_to_speak = tts_remainder(lane.spoken_target, lane.frozen_tgt)
+                lane.spoken_target = lane.frozen_tgt
+                if chunk_to_speak:
                     self._spawn_bg(
                         tts_lane.enqueue_final(
-                            speaker_id=speaker_id, text=chunk, supersede=False
+                            speaker_id=speaker_id, text=chunk_to_speak, supersede=False
                         )
                     )
 
@@ -1882,14 +1988,11 @@ class TranscriptionOnlyAgent:
         ) -> None:
             """Translate the unfrozen source tail of the current utterance (FINAL path).
 
-            Hardened: cache lookup, per-attempt timeout, one retry, latency metrics.
+            Hardened: cache lookup, per-attempt timeout, automatic fallback model retry, latency metrics.
             Supersedes any interim local-agreement text for this lane.
             """
             if lane.llm_instance is None or not tail_src.strip():
                 return
-            # Final translation supersedes interim agreement work. Keep interim_stable
-            # on screen while the final streams (display continuity — captions must
-            # never shrink); it's cleared when the authoritative result lands.
             if lane.interim_task and not lane.interim_task.done():
                 lane.interim_task.cancel()
             lane.interim_candidate = ""
@@ -1909,17 +2012,34 @@ class TranscriptionOnlyAgent:
 
             last_err: Optional[BaseException] = None
             for attempt in (1, 2):
+                llm_override = None
+                model_label = _llm_model()
+                if attempt == 2:
+                    fb_model = _llm_fallback_model()
+                    if fb_model and fb_model != _llm_model():
+                        if lane.fallback_llm_instance is None:
+                            lane.fallback_llm_instance = self._create_openai_llm_instance(
+                                fb_model, f"{L}→{tgt_lang}(fallback)"
+                            )
+                        if lane.fallback_llm_instance is not None:
+                            llm_override = lane.fallback_llm_instance
+                            model_label = fb_model
                 try:
                     result, usage = await asyncio.wait_for(
                         run_llm_stream(
-                            lane, tgt_lang, tail_src, partial=False, on_delta=on_delta
+                            lane,
+                            tgt_lang,
+                            tail_src,
+                            partial=False,
+                            on_delta=on_delta,
+                            llm_override=llm_override,
+                            model_name=model_label,
                         ),
                         timeout=_llm_timeout_sec(),
                     )
                     if not result:
                         raise RuntimeError("empty translation result")
                     lane.tail_translation = result
-                    # Authoritative final result — drop any interim local-agreement text.
                     lane.interim_stable = ""
                     self._translation_cache.put(effective_source_lang[0], tgt_lang, tail_src, result)
                     maybe_freeze_lane(lane, tail_src, committed_snapshot, result)
@@ -1930,17 +2050,13 @@ class TranscriptionOnlyAgent:
                 except (asyncio.TimeoutError, Exception) as e:  # noqa: BLE001
                     last_err = e
                     logger.warning(
-                        f"{L}→{tgt_lang} ⚠️ translation attempt {attempt}/2 failed "
+                        f"{L}→{tgt_lang} ⚠️ translation attempt {attempt}/2 ({model_label}) failed "
                         f"({type(e).__name__}: {e})"
                     )
-            # Both attempts failed — degrade to untranslated source so finalize still
-            # publishes content; hasTranslation=false signals the gap downstream.
             logger.error(
                 f"{L}→{tgt_lang} ❌ translation failed after retries — degrading "
                 f"({type(last_err).__name__ if last_err else 'unknown'})"
             )
-            # Prefer the partial translated text from interim agreement over echoing
-            # untranslated source; fall back to source only when we have nothing.
             lane.tail_translation = lane.interim_stable or tail_src
             lane.interim_stable = ""
 
@@ -2159,11 +2275,11 @@ class TranscriptionOnlyAgent:
                     lane.context_pairs.append((full_original, full_translated))
                 tts_lane = self.tts_lanes.get(tgt)
                 if tts_lane is not None and not lane.is_same_language:
-                    # Frozen sentences were already queued as they committed —
+                    # Frozen sentences and pause-flushed clauses were already queued —
                     # speak only what TTS hasn't seen yet (no repeats).
-                    tts_text = tts_remainder(
-                        lane.tts_enqueued_text, (full_translated or full_original)
-                    )
+                    final_target = full_translated or full_original
+                    tts_text = tts_remainder(lane.spoken_target, final_target)
+                    lane.spoken_target = final_target
                     if tts_text:
                         try:
                             await tts_lane.enqueue_final(
@@ -2250,6 +2366,7 @@ class TranscriptionOnlyAgent:
             # (observed live: the same phrase stitched 3x into one caption).
 
         stt_idle_task: List[Optional[asyncio.Task]] = [None]
+        tts_pause_flush_task: List[Optional[asyncio.Task]] = [None]
         gladia_trans_finalize_task: List[Optional[asyncio.Task]] = [None]
         # Normalized target langs whose Gladia translation FINAL arrived this turn.
         gladia_satisfied_targets: Set[str] = set()
@@ -2309,6 +2426,16 @@ class TranscriptionOnlyAgent:
                     pass
             stt_idle_task[0] = None
 
+        async def cancel_tts_pause_flush() -> None:
+            pending = tts_pause_flush_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+                try:
+                    await pending
+                except (asyncio.CancelledError, Exception):
+                    pass
+            tts_pause_flush_task[0] = None
+
         def maybe_flush_stt() -> None:
             if not _stt_stream_supports_flush(stt_provider_name):
                 return
@@ -2316,6 +2443,109 @@ class TranscriptionOnlyAgent:
                 stt_stream.flush()
             except Exception:
                 pass
+
+        async def flush_unspoken_tts_lanes() -> None:
+            """Flush unspoken translated text to TTS on a ~750ms speech pause without closing the caption bubble."""
+            if not turn_id[0] or not dg_buffer.has_content():
+                return
+            live_src = dg_buffer.committed_text() or dg_buffer.live_text()
+            if not live_src.strip():
+                return
+
+            async def _flush_one_lane(tgt: str, lane: TargetLaneState) -> None:
+                if lane.is_same_language:
+                    return
+                tts_lane = self.tts_lanes.get(tgt)
+                if tts_lane is None:
+                    return
+                if lane.current_task and not lane.current_task.done():
+                    try:
+                        await asyncio.wait_for(
+                            asyncio.shield(lane.current_task),
+                            timeout=min(2.0, _llm_timeout_sec()),
+                        )
+                    except Exception:
+                        pass
+                unfrozen_tail = split_tail(live_src, lane.frozen_src)
+                if (
+                    lane.llm_instance is not None
+                    and unfrozen_tail.strip()
+                    and not _translation_covers_thought(unfrozen_tail, lane.tail_translation)
+                ):
+                    cached = self._translation_cache.get(
+                        effective_source_lang[0], tgt, unfrozen_tail
+                    )
+                    if cached is not None:
+                        lane.tail_translation = cached
+                    else:
+                        try:
+                            res, usage = await asyncio.wait_for(
+                                run_llm_stream(lane, tgt, unfrozen_tail, partial=False),
+                                timeout=_llm_timeout_sec(),
+                            )
+                            if res:
+                                lane.tail_translation = res
+                                self._translation_cache.put(
+                                    effective_source_lang[0], tgt, unfrozen_tail, res
+                                )
+                                emit_llm_cost(lane, unfrozen_tail, res, usage)
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as e:
+                            logger.debug(f"{L}→{tgt} TTS pause flush translation skipped: {e}")
+
+                full_text = lane.display_translation()
+                if not full_text.strip():
+                    return
+                delta = tts_remainder(lane.spoken_target, full_text)
+                if not delta:
+                    return
+                lane.spoken_target = full_text
+                try:
+                    await tts_lane.enqueue_final(
+                        speaker_id=speaker_id,
+                        text=delta,
+                        supersede=False,
+                    )
+                    logger.info(
+                        f"{L}→{tgt} 🔊 Early TTS pause flush ({_deepgram_tts_pause_flush_ms()}ms): "
+                        f"'{delta[:50]}'"
+                    )
+                except Exception as e:
+                    logger.warning(f"{L}→{tgt} Early TTS pause flush enqueue failed: {e}")
+
+            await asyncio.gather(
+                *(_flush_one_lane(tgt, lane) for tgt, lane in list(lanes.items())),
+                return_exceptions=True,
+            )
+
+        async def schedule_tts_pause_flush() -> None:
+            try:
+                flush_ms = _deepgram_tts_pause_flush_ms()
+                flush_sec = flush_ms / 1000.0
+                await asyncio.sleep(flush_sec)
+                if not turn_id[0] or not dg_buffer.has_content():
+                    return
+                if vad_speech_active[0]:
+                    return
+                if time.time() - last_stt_text_at[0] < flush_sec * 0.85:
+                    return
+                maybe_flush_stt()
+                await asyncio.sleep(0.1)
+                if turn_id[0] and dg_buffer.has_content() and not vad_speech_active[0]:
+                    await flush_unspoken_tts_lanes()
+            except asyncio.CancelledError:
+                raise
+
+        def arm_tts_pause_flush() -> None:
+            if stt_provider_name == "gladia" or not _tts_enabled():
+                return
+            if not turn_id[0]:
+                return
+            pending = tts_pause_flush_task[0]
+            if pending and not pending.done():
+                pending.cancel()
+            tts_pause_flush_task[0] = asyncio.create_task(schedule_tts_pause_flush())
 
         def arm_stt_idle_finalize() -> None:
             """Finalize when the transcript stops changing (not when audio is silent).
@@ -2334,6 +2564,7 @@ class TranscriptionOnlyAgent:
             if pending and not pending.done():
                 pending.cancel()
             stt_idle_task[0] = asyncio.create_task(schedule_stt_idle_finalize())
+            arm_tts_pause_flush()
 
         def touch_stt_activity() -> None:
             last_stt_text_at[0] = time.time()
@@ -2367,6 +2598,7 @@ class TranscriptionOnlyAgent:
                 raise
 
         async def cancel_finalization() -> None:
+            await cancel_tts_pause_flush()
             await cancel_stt_idle_finalize()
             await cancel_gladia_translation_finalize()
 
@@ -2913,6 +3145,19 @@ def log_resolved_inference_config() -> None:
     logger.info("=" * 60)
 
 
+def prewarm(proc: JobProcess) -> None:
+    """Preload Silero VAD into the process-wide cache before room jobs arrive."""
+    try:
+        agent = TranscriptionOnlyAgent()
+        vad = agent._load_shared_vad()
+        userdata = getattr(proc, "userdata", None)
+        if isinstance(userdata, dict):
+            userdata["vad"] = vad
+        logger.info("🔥 Worker process prewarmed Silero VAD")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Worker prewarm VAD failed (will load lazily): %s", e)
+
+
 async def main(ctx: JobContext):
     agent = TranscriptionOnlyAgent()
     await agent.entrypoint(ctx)
@@ -2926,6 +3171,7 @@ if __name__ == "__main__":
     agent_name = os.getenv('AGENT_NAME', 'translation-cloud-deepgram-codeswitch')
     worker_opts = WorkerOptions(
         entrypoint_fnc=main,
+        prewarm_fnc=prewarm,
         api_key=os.getenv('LIVEKIT_API_KEY'),
         api_secret=os.getenv('LIVEKIT_API_SECRET'),
         ws_url=os.getenv('LIVEKIT_URL', 'wss://production-uiycx4ku.livekit.cloud'),

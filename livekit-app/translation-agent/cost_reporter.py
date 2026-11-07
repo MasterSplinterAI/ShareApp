@@ -27,6 +27,7 @@ _LLM_EVENT_TYPES = {
 _TTS_EVENT_TYPES = {
     "deepgram": "deepgram_tts_char",
     "elevenlabs": "elevenlabs_tts_char",
+    "openai": "openai_tts_char",
 }
 
 _warned_once = False

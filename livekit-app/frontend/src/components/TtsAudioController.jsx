@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { useRoomContext } from '@livekit/components-react';
+import { AudioTrack, useRoomContext, useTracks } from '@livekit/components-react';
 import { RoomEvent, Track } from 'livekit-client';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 
@@ -44,8 +44,19 @@ function getTrackVolume(track) {
 }
 
 function setTrackAudible(track, audible) {
-  if (!track || typeof track.setVolume !== 'function') return;
-  track.setVolume(audible ? 1 : 0);
+  if (!track) return;
+  if (typeof track.setVolume === 'function') {
+    track.setVolume(audible ? 1 : 0);
+  }
+  if (Array.isArray(track.attachedElements)) {
+    track.attachedElements.forEach((el) => {
+      try {
+        el.muted = !audible;
+      } catch {
+        /* ignore */
+      }
+    });
+  }
 }
 
 function findSpeakerParticipant(room, speakerId) {
@@ -98,6 +109,22 @@ export default function TtsAudioController({
   const activeVoicePlayback = Boolean(translationEnabled && voiceTranslationEnabled);
   const normalizedLanguage = normalizeMeetingLanguageCode(selectedLanguage || 'en').toLowerCase();
   const targetTrackName = `tts-${normalizedLanguage}`;
+
+  const remoteAudioTracks = useTracks(
+    [Track.Source.Microphone, Track.Source.ScreenShareAudio, Track.Source.Unknown],
+    {
+      updateOnlyOn: [],
+      onlySubscribed: true,
+      room,
+    }
+  ).filter((ref) => {
+    if (ref.participant?.isLocal) return false;
+    if (!isAudioPublication(ref.publication)) return false;
+    if (isTtsPublication(ref.publication)) {
+      return activeVoicePlayback && getPublicationName(ref.publication) === targetTrackName;
+    }
+    return true;
+  });
 
   useEffect(() => {
     return () => {
@@ -295,5 +322,12 @@ export default function TtsAudioController({
     };
   }, [room, activeVoicePlayback, normalizedLanguage]);
 
-  return null;
+  return (
+    <div style={{ display: 'none' }} data-testid="filtered-room-audio-renderer">
+      {remoteAudioTracks.map((trackRef) => {
+        const key = `${trackRef.participant?.identity || 'p'}:${trackRef.publication?.trackSid || trackRef.publication?.trackName || trackRef.source}`;
+        return <AudioTrack key={key} trackRef={trackRef} />;
+      })}
+    </div>
+  );
 }
