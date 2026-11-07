@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { isIosNativeApp } from '../../lib/nativePlatform';
 import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
@@ -7,7 +7,8 @@ import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
 import { getRecommendedUpgrade, formatPlanPrice } from '../lib/upgradeOffers';
 import { cn } from '../../lib/utils';
-import { Loader2, ImagePlus, Trash2 } from 'lucide-react';
+import { Compass, Loader2, ImagePlus, Trash2 } from 'lucide-react';
+import { startLaliaOnboardingTour } from '../components/LaliaOnboardingTour';
 import { DEFAULT_BRAND_ACCENT, brandingStyleVars, brandButtonClassName } from '../../lib/meetingBranding';
 import MeetingBrandHeader from '../../components/MeetingBrandHeader';
 import { Button } from '../../components/ui/button';
@@ -48,6 +49,7 @@ function humanizeUsageLabel(eventType) {
 }
 
 export default function V2OrgSettings() {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [section, setSection] = useState(searchParams.get('section') || 'profile');
   const [role, setRole] = useState('');
@@ -583,6 +585,24 @@ export default function V2OrgSettings() {
                       </Button>
                     </form>
                   )}
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border/60 pt-4">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">App walkthrough</p>
+                      <p className="text-xs text-muted-foreground">
+                        Replay the 4-step tour covering language setup, direct calls vs. meetings, and joining via browser or app.
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => startLaliaOnboardingTour(navigate)}
+                    >
+                      <Compass className="h-4 w-4 text-primary" />
+                      Replay quick tour
+                    </Button>
+                  </div>
                   {teamAccount && !canRenameOrg && (
                     <div>
                       <span className="text-muted-foreground">Workspace name</span>

@@ -59,6 +59,7 @@ import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
+import { QrCodeDialogButton } from '../../components/MeetingQrCode';
 import { defaultExpiryMode } from '../../lib/inviteExpiry';
 
 /** Click-to-edit meeting title for the header hero. */
@@ -427,7 +428,6 @@ export default function V2MeetingDetail() {
         participantName: hostDisplayName,
         hostCode: meeting.host_code,
         shareableLink: share,
-        shareableLinkNetwork: share,
         roomName: meeting.livekit_room_name,
         meetingId: id,
         inviteToken: '',
@@ -594,16 +594,26 @@ export default function V2MeetingDetail() {
       </Button>
       <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-1">
         {meeting.joinUrl && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="lg"
-            className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
-            onClick={copyGuestUrl}
-          >
-            <Copy className="h-4 w-4 shrink-0 text-primary" />
-            <span className="truncate">Copy guest link</span>
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              size="lg"
+              className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
+              onClick={copyGuestUrl}
+            >
+              <Copy className="h-4 w-4 shrink-0 text-primary" />
+              <span className="truncate">Copy guest link</span>
+            </Button>
+            <QrCodeDialogButton
+              url={meeting.joinUrl}
+              meetingTitle={meeting.title}
+              variant="outline"
+              size="lg"
+              className="h-11 gap-2 text-xs font-medium sm:text-sm"
+              label="QR code"
+            />
+          </>
         )}
         {canManageMeeting && (
           <Button

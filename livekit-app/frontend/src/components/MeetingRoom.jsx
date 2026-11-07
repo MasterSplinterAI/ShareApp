@@ -207,7 +207,6 @@ function MeetingRoom() {
     const isHost = stateInfo.isHost !== undefined ? stateInfo.isHost : (sessionInfo.isHost ?? false);
     const hostCode = stateInfo.hostCode || sessionInfo.hostCode;
     const shareableLink = stateInfo.shareableLink || sessionInfo.shareableLink;
-    const shareableLinkNetwork = stateInfo.shareableLinkNetwork || sessionInfo.shareableLinkNetwork;
     const meetingId = stateInfo.meetingId || sessionInfo.meetingId;
     const inviteToken = stateInfo.inviteToken || sessionInfo.inviteToken;
     const brandingFromSession = stateInfo.branding || sessionInfo.branding || null;
@@ -238,7 +237,6 @@ function MeetingRoom() {
       isHost,
       hostCode,
       shareableLink,
-      shareableLinkNetwork,
       meetingId,
       inviteToken,
       selectedLanguage,
@@ -724,7 +722,6 @@ function MeetingRoomInner({
       {showShareModal && (
         <ShareModal
           shareableLink={participantInfo?.shareableLink || `${getPublicAppOrigin()}/join/${roomName}`}
-          shareableLinkNetwork={participantInfo?.shareableLinkNetwork}
           hostCode={participantInfo?.hostCode}
           meetingId={meetingId}
           roomName={roomName}

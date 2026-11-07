@@ -3,6 +3,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
+import { QrCodeDialogButton } from '../../components/MeetingQrCode';
 
 export default function MeetingAccessPanel({
   meeting,
@@ -68,12 +69,22 @@ export default function MeetingAccessPanel({
               Copy
             </Button>
             {meeting.joinUrl && (
-              <Button variant="outline" size="sm" className="gap-1" asChild>
-                <a href={meeting.joinUrl} target="_blank" rel="noreferrer">
-                  <ExternalLink className="h-4 w-4" />
-                  Open
-                </a>
-              </Button>
+              <>
+                <QrCodeDialogButton
+                  url={meeting.joinUrl}
+                  meetingTitle={meeting.title}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  label="QR"
+                />
+                <Button variant="outline" size="sm" className="gap-1" asChild>
+                  <a href={meeting.joinUrl} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                    Open
+                  </a>
+                </Button>
+              </>
             )}
           </div>
         </div>

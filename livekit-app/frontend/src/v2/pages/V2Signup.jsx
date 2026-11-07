@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { LALIA_TOUR_FLAG } from '../components/LaliaOnboardingTour';
 
 const PAID_PLANS = new Set(['starter', 'pro']);
 
@@ -53,6 +54,11 @@ export default function V2Signup() {
         marketingEmail: marketingEmail || undefined,
       });
       localStorage.setItem('v2_token', data.token);
+      try {
+        sessionStorage.setItem(LALIA_TOUR_FLAG, '1');
+      } catch {
+        /* ignore */
+      }
       toast.success(t('auth.signup.success'));
       if (planName) {
         navigate(`/v2/app/settings?checkout=${planParam}`, { replace: true });

@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { Check, ChevronsUpDown, Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Check, ChevronsUpDown, Compass, Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Announcements, v2Auth } from '../../services/apiV2';
 import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
 import LaliaSupportLauncher from './LaliaSupportLauncher';
+import LaliaOnboardingTour, { startLaliaOnboardingTour } from './LaliaOnboardingTour';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import {
@@ -42,11 +43,11 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
         <Home className="h-4 w-4 shrink-0" />
         {t('app.home')}
       </NavLink>
-      <NavLink to="/v2/app/calls" className={navLinkClass}>
+      <NavLink to="/v2/app/calls" className={navLinkClass} data-tour="nav-calls-desktop">
         <Phone className="h-4 w-4 shrink-0" />
         {t('app.calls')}
       </NavLink>
-      <NavLink to="/v2/app/meetings" className={navLinkClass}>
+      <NavLink to="/v2/app/meetings" className={navLinkClass} data-tour="nav-meetings-desktop">
         <Video className="h-4 w-4 shrink-0" />
         {t('app.meetings')}
       </NavLink>
@@ -75,6 +76,7 @@ export default function V2AppShell({ me, onLogout }) {
   const { t } = useTranslation();
   const { offer, checkoutLoading, startCheckout } = useUpgradeOffer(me);
   const location = useLocation();
+  const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
   const openHelpRef = useRef(null);
   const [announcements, setAnnouncements] = useState([]);
@@ -213,12 +215,16 @@ export default function V2AppShell({ me, onLogout }) {
       <SidebarNav onNavigate={() => setMobileOpen(false)} isSuperadmin={Boolean(me?.isSuperadmin)} />
       <UpgradeSidebarCard offer={offer} checkoutLoading={checkoutLoading} onCheckout={startCheckout} />
       <div className="mt-auto border-t border-border/60 p-3 space-y-2" data-no-translate="true">
-        <div className="flex justify-center px-1">
+        <div className="flex justify-center px-1" data-tour="language-switcher-desktop">
           <LanguageSwitcher className="w-full justify-center" />
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" className="h-auto w-full justify-start gap-2 rounded-lg border-border/60 px-3 py-2">
+            <Button
+              variant="outline"
+              className="h-auto w-full justify-start gap-2 rounded-lg border-border/60 px-3 py-2"
+              data-tour="user-menu-desktop"
+            >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-semibold text-primary">
                 {initial}
               </span>
@@ -248,6 +254,15 @@ export default function V2AppShell({ me, onLogout }) {
                 </Link>
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem
+              onClick={() => {
+                setMobileOpen(false);
+                startLaliaOnboardingTour(navigate);
+              }}
+            >
+              <Compass className="mr-2 h-4 w-4 text-primary" />
+              Quick tour
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => openHelpRef.current?.()}>
               <LifeBuoy className="mr-2 h-4 w-4" />
               {t('app.helpSupport')}
@@ -270,12 +285,13 @@ export default function V2AppShell({ me, onLogout }) {
   return (
     <div className="app-surface flex min-h-screen w-full text-foreground">
       <IncomingCallOverlay currentUser={me?.user} />
+      <LaliaOnboardingTour user={me?.user} />
       <aside className="app-sidebar hidden w-60 shrink-0 flex-col border-r border-border/70 md:flex">
         {sidebarBody}
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="app-sidebar sticky top-0 z-30 flex h-[calc(3.5rem+var(--safe-top))] items-center gap-3 border-b border-border/70 px-4 pt-[var(--safe-top)] backdrop-blur-md md:hidden">
+        <header className="app-sidebar sticky top-0 z-30 flex h-[calc(3.5rem+var(--safe-top))] items-center gap-2 border-b border-border/70 px-4 pt-[var(--safe-top)] backdrop-blur-md md:hidden">
           <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger asChild>
               <Button type="button" variant="outline" size="icon" className="shrink-0" aria-label={t('app.openMenu')}>
@@ -289,7 +305,21 @@ export default function V2AppShell({ me, onLogout }) {
           <Link to="/v2/app" className="min-w-0 flex-1 truncate text-sm font-semibold">
             Lalia
           </Link>
-          <LanguageSwitcher compact />
+          <div data-tour="language-switcher-mobile" className="shrink-0">
+            <LanguageSwitcher compact />
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+            onClick={() => startLaliaOnboardingTour(navigate)}
+            aria-label="Quick tour"
+            title="Quick tour"
+            data-tour="tour-replay-mobile"
+          >
+            <Compass className="h-4 w-4" />
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -298,6 +328,7 @@ export default function V2AppShell({ me, onLogout }) {
             onClick={() => openHelpRef.current?.()}
             aria-label={t('app.helpSupport')}
             title={t('app.helpSupport')}
+            data-tour="help-trigger-mobile"
           >
             <LifeBuoy className="h-4 w-4" />
           </Button>
@@ -338,11 +369,11 @@ export default function V2AppShell({ me, onLogout }) {
             <Home className="h-4 w-4" />
             <span>{t('app.home')}</span>
           </NavLink>
-          <NavLink to="/v2/app/calls" className={mobileTabClass}>
+          <NavLink to="/v2/app/calls" className={mobileTabClass} data-tour="nav-calls-mobile">
             <Phone className="h-4 w-4" />
             <span>{t('app.calls')}</span>
           </NavLink>
-          <NavLink to="/v2/app/meetings" className={mobileTabClass}>
+          <NavLink to="/v2/app/meetings" className={mobileTabClass} data-tour="nav-meetings-mobile">
             <Video className="h-4 w-4" />
             <span>{t('app.meetings')}</span>
           </NavLink>

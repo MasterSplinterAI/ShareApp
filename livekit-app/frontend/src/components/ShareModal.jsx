@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Copy, Check, Smartphone, Laptop, Phone, Share2, Send } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { Copy, Check, Globe, Phone, Share2, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import { QrCodeShareCard } from './MeetingQrCode';
 import { v2Calls, v2Contacts } from '../services/apiV2';
 
 function ShareModal({
   shareableLink,
-  shareableLinkNetwork,
   hostCode,
   meetingId,
   roomName,
@@ -124,7 +123,7 @@ function ShareModal({
         <DialogHeader>
           <DialogTitle>Invite or ring into call</DialogTitle>
           <DialogDescription>
-            Ring a contact directly in the app, or share a guest link for anyone joining via web or mobile.
+            Ring a contact directly in the app, share the guest link, or let someone scan the QR code to join from any browser or phone.
           </DialogDescription>
         </DialogHeader>
 
@@ -213,8 +212,8 @@ function ShareModal({
 
           <div>
             <div className="mb-1 flex items-center gap-2">
-              <Laptop className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">Guest link (joins via web or app)</span>
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-muted-foreground">Guest join link (works in any browser or app)</span>
             </div>
             <div className="flex items-center gap-2">
               <Input type="text" value={shareableLink} readOnly aria-label="Direct link" className="font-mono text-xs" />
@@ -231,34 +230,14 @@ function ShareModal({
               </Button>
             </div>
           </div>
-
-          {shareableLinkNetwork && shareableLinkNetwork !== shareableLink && (
-            <div>
-              <div className="mb-1 flex items-center gap-2">
-                <Smartphone className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-muted-foreground">Network link (same Wi‑Fi)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Input type="text" value={shareableLinkNetwork} readOnly aria-label="Network link" className="font-mono text-xs" />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => copyToClipboard(shareableLinkNetwork, 'network')}
-                  aria-label={copiedLink === 'network' ? 'Network link copied' : 'Copy network link'}
-                  title="Copy network link"
-                >
-                  {copiedLink === 'network' ? <Check className="h-4 w-4 text-emerald-500" /> : <Copy className="h-4 w-4" />}
-                </Button>
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="flex justify-center rounded-lg border border-border/60 bg-white p-3">
-          <QRCodeSVG value={shareableLink} size={148} />
-        </div>
+        <QrCodeShareCard
+          url={shareableLink}
+          title="Scan QR code to join room"
+          subtitle="Anyone can scan with their phone camera to join via browser or Lalia app"
+          compact
+        />
 
         {hostCode && (
           <div className="rounded-lg border border-border bg-muted/30 p-3">

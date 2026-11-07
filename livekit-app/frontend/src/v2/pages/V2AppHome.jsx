@@ -144,7 +144,6 @@ export default function V2AppHome() {
         participantName: displayName,
         hostCode: m.hostCode,
         shareableLink: m.joinUrl,
-        shareableLinkNetwork: m.joinUrl,
         roomName: m.livekitRoomName,
         meetingId: m.id,
         inviteToken: '',
@@ -176,7 +175,6 @@ export default function V2AppHome() {
         participantName: displayName,
         hostCode: m.host_code,
         shareableLink: share,
-        shareableLinkNetwork: share,
         roomName: m.livekit_room_name,
         meetingId: m.id,
         inviteToken: '',
@@ -205,7 +203,6 @@ export default function V2AppHome() {
         participantName: displayName,
         hostCode: meeting.hostCode,
         shareableLink: meeting.joinUrl,
-        shareableLinkNetwork: meeting.joinUrl,
         roomName: meeting.livekitRoomName,
         meetingId: meeting.id,
         inviteToken: '',
@@ -276,9 +273,9 @@ export default function V2AppHome() {
       )}
 
       {/* 4 Primary Quick Actions */}
-      <section aria-label="Quick actions" className="grid gap-3 sm:grid-cols-2">
+      <section aria-label="Quick actions" data-tour="quick-actions" className="grid gap-3 sm:grid-cols-2">
         {/* 1. Start Instant Meeting */}
-        <Card className="app-card border-primary/30 bg-gradient-to-br from-primary/[0.08] via-card to-card">
+        <Card data-tour="instant-meeting-card" className="app-card border-primary/30 bg-gradient-to-br from-primary/[0.08] via-card to-card">
           <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
             <div className="flex items-start gap-3.5">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
@@ -312,7 +309,7 @@ export default function V2AppHome() {
         </Card>
 
         {/* 2. Direct Call & Contacts */}
-        <Card className="app-card border-border/70">
+        <Card data-tour="direct-call-card" className="app-card border-border/70">
           <CardContent className="flex h-full flex-col justify-between gap-4 p-5">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3.5">
@@ -366,6 +363,7 @@ export default function V2AppHome() {
       {/* Join a meeting by code or link */}
       <form
         onSubmit={handleJoinByCode}
+        data-tour="join-by-code"
         className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/70 p-3.5 sm:flex-row sm:items-center"
       >
         <span className="text-xs font-medium text-muted-foreground sm:shrink-0 sm:px-1">

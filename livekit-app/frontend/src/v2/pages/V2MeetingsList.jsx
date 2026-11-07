@@ -56,6 +56,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
 import { DatetimePicker, getNextRoundedScheduleDate } from '../../components/ui/datetime-picker';
+import { QrCodeDialogButton } from '../../components/MeetingQrCode';
 
 const RECENT_CAP = 10;
 
@@ -186,10 +187,20 @@ function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore,
             </Link>
           </Button>
           {canCopyInvite && (
-            <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={copyInvite}>
-              <Link2 className="h-3.5 w-3.5" />
-              Copy link
-            </Button>
+            <>
+              <Button type="button" variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" onClick={copyInvite}>
+                <Link2 className="h-3.5 w-3.5" />
+                Copy link
+              </Button>
+              <QrCodeDialogButton
+                url={url}
+                meetingTitle={m.title}
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1 px-2 text-xs"
+                label="QR"
+              />
+            </>
           )}
           <div className="ml-auto">
             <DropdownMenu>
@@ -423,7 +434,6 @@ export default function V2MeetingsList() {
         participantName: hostDisplayName,
         hostCode: m.hostCode,
         shareableLink: m.joinUrl,
-        shareableLinkNetwork: m.joinUrl,
         roomName: m.livekitRoomName,
         meetingId: m.id,
         inviteToken: '',
@@ -457,7 +467,6 @@ export default function V2MeetingsList() {
         participantName: hostDisplayName,
         hostCode: m.host_code,
         shareableLink: share,
-        shareableLinkNetwork: share,
         roomName: m.livekit_room_name,
         meetingId: m.id,
         inviteToken: '',

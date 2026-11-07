@@ -2,6 +2,7 @@ import { ExternalLink, Copy } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { QrCodeDialogButton } from '../../components/MeetingQrCode';
 import {
   Select,
   SelectContent,
@@ -113,6 +114,14 @@ export default function MeetingInvitesPanel({
                   <Copy className="h-4 w-4" />
                   Copy
                 </Button>
+                <QrCodeDialogButton
+                  url={inv.joinUrl}
+                  meetingTitle={meeting?.title || inv.label}
+                  variant="outline"
+                  size="sm"
+                  className="gap-1"
+                  label="QR"
+                />
                 <Button variant="outline" size="sm" className="gap-1" asChild>
                   <a href={inv.joinUrl} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-4 w-4" />

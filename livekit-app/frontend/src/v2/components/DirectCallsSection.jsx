@@ -207,7 +207,6 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
       participantName,
       hostCode: meeting.hostCode,
       shareableLink: meeting.joinUrl,
-      shareableLinkNetwork: meeting.joinUrl,
       roomName: meeting.livekitRoomName,
       meetingId: meeting.id,
       inviteToken: '',

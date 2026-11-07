@@ -49,7 +49,6 @@ function JoinMeeting() {
         isHost: !!info?.hostCode,
         hostCode: info?.hostCode,
         shareableLink: info?.shareableLink,
-        shareableLinkNetwork: info?.shareableLinkNetwork,
         roomName,
         roomMode: info?.roomMode || 'multi-language',
         selectedLanguage: 'en',
