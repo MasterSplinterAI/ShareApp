@@ -1,0 +1,12 @@
+.lalia-elementor-root .elementor-widget{margin:0!important;width:100%;max-width:none}
+.lalia-elementor-root .elementor-widget-container{margin:0;padding:0}
+.lalia-elementor-root .elementor-element{--widgets-spacing:0px;--widgets-spacing-row:0px;--widgets-spacing-column:0px}
+.lalia-elementor-root .elementor-widget-lalia-skip{height:0;min-height:0}
+.lalia-elementor-root .elementor-widget-lalia-header{z-index:20}
+.lalia-elementor-root .elementor-widget-lalia-header a,.lalia-elementor-root a{box-shadow:none}
+.lalia-elementor-root .reveal{opacity:1;transform:none}
+.lalia-elementor-root .elementor-widget-empty{background:transparent}
+.lalia-elementor-root select{color:inherit}
+.lalia-elementor-root .site-header{display:block;max-width:none;width:100%;padding:0;margin:0}
+.lalia-elementor-root .avatar-stack img{border-radius:50%;border:2px solid var(--bg);height:29px;width:29px}
+.lalia-elementor-root .person-card>img{height:100%;width:100%}

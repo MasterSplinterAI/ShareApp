@@ -1,88 +1,97 @@
 ---
 name: lalia-editorial-marketing
-description: Design system, editorial voice, CSS product illustration rules, and 8-stage hybrid Claude Opus + OpenAI GPT-5.6 content pipeline for Lalia marketing pages and Lalia Journal articles. Use whenever creating, editing, or reviewing Lalia landing pages, blog posts, SEO pillar pages, or conversion blocks.
+description: How Lalia marketing pages and Lalia Journal articles are built and written. Covers the lalia-elementor CSS architecture (ported 1:1 into public/preview), the Blue/Green palette system, custom CSS/SVG product scenes, and the short, effortless copy rules. Use when creating, editing, or reviewing Lalia landing pages, blog posts, or CTA blocks.
 ---
 
-# Lalia Editorial & Marketing System
+# Lalia Editorial & Marketing
 
-This skill codifies the visual design tokens, typography, live CSS product illustrations, editorial voice, and 8-stage hybrid AI content pipeline for **Lalia** (`https://lalia.cloud`).
+The reference is the Lalia Journal WordPress build (`lalia-elementor` plugin v1.2.0). It is ported
+1:1 to `livekit-app/frontend/public/preview/` and served at `/preview/home`, `/preview/blog`, and
+`/preview/blog/<slug>`. A first attempt re-imagined it as Tailwind/shadcn React components and was
+rejected: it was denser, harder to read, and lost the graphics. **Port, don't reinterpret.**
 
----
+## Why his page works
 
-## 1. Brand Palette: Slate & Royal Blue (Never Green)
+1. **Brevity.** The homepage has ~1,050 visible words in total. The hero is one sentence of value
+   ("Your voice. Their language. A real connection.") plus two short lines. Posts are 800–900
+   words, with 12–15 words per sentence and 35–40 words per paragraph. Nothing is a wall.
+2. **Breathing room.** Each section holds one idea: an eyebrow, a two-line headline, at most one
+   short paragraph, then a single visual. Whitespace does the separating; there are no boxes inside boxes.
+3. **Product scenes, not features.** Every visual shows Lalia working, and each one is readable in
+   about two seconds: an animated globe with María (Madrid, Spanish) and Kenny (New York, English),
+   a translated caption ("It's so good to finally meet you." / TRANSLATED TO ENGLISH),
+   "YOU SAY Hello, team. / THEY HEAR Hola, equipo." bubbles, and a live meeting with a transcript
+   and summary tabs. They are built from HTML, CSS, and SVG, not stock photos or screenshots.
+4. **Two-line headlines.** Line one states, line two turns: "Speak your language. / Hear the world in yours.",
+   "Three steps. / A world closer.", "Good questions. / Clear answers." The second line is tinted.
+5. **Zero SaaS bloat.** No pill rows of features, no icon grids of ten benefits, no comparison
+   walls, no "AI-powered" badges. Just four capability facts in one strip ("30+ languages. One connection.").
+6. **Low-pressure CTAs.** "Start talking for free", "See how it feels", "Try the live demo".
+   The primary goes to `/v2/signup`, the secondary to `/demo`, and pricing is linked only in context.
+7. **Honest limits.** "This is an example of how a meeting could work, rather than a customer case
+   study." and "Legal proceedings, medical discussions… may still call for a qualified human interpreter."
 
-Lalia's editorial aesthetic combines magazine-grade typography and layout restraint with **Lalia's Slate & Royal Blue palette** (never use forest/sage green):
+## Architecture (do not convert to Tailwind)
 
-| Token | Light Mode | Dark Mode | Purpose |
-|---|---|---|---|
-| `--lalia-ink` | `#0f172a` (`slate-900`) | `#f8fafc` (`slate-50`) | Primary headline & body ink |
-| `--lalia-muted` | `#475569` (`slate-600`) | `#94a3b8` (`slate-400`) | Decks, captions, secondary copy |
-| `--lalia-paper` | `#f8fafc` (`slate-50`) | `#090d16` (`slate-950`) | Page background canvas |
-| `--lalia-surface` | `#ffffff` (`white`) | `#0f172a` (`slate-900`) | Card & article surfaces |
-| `--lalia-soft` | `#eff6ff` (`blue-50`) | `rgba(37, 99, 235, 0.12)` | Soft ice-blue feature & callout tint |
-| `--lalia-accent-Wash` | `#dbeafe` (`blue-100`) | `rgba(59, 130, 246, 0.2)` | Pills, badges, illustration accents |
-| `--lalia-primary` | `#2563eb` (`blue-600`) | `#3b82f6` (`blue-500`) | Primary CTAs, tonal H1 second line, active indicators |
-| `--lalia-hairline` | `#e2e8f0` (`slate-200`) | `#1e293b` (`slate-800`) | Magazine 1px borders and dividers |
+- Pages are **static HTML** (the original DOM and class names) under `public/preview/**/index.html`.
+  nginx serves them before the SPA (`try_files $uri $uri/index.html /index.html`). The React route
+  `/preview/*` (`PreviewStaticRedirect`) only hands in-app or dev navigation to the static file.
+- Why static: his `app.css` is a Tailwind **v4** build that keeps its rules in cascade layers. Our app
+  ships unlayered Tailwind v3, and unlayered rules always beat layered ones, so mounting his CSS inside
+  the SPA gets clobbered. Static pages load only his CSS.
+- Stylesheets in `public/preview/assets/`, unmodified except for colors:
+  `app.css` (Tailwind v4 + homepage sections), `elementor.css` (widget resets), `blog.css`
+  (journal index, article layout, `journal-art`), `reference.css` + `reference-layout.css`
+  (`meeting-art`, article chrome), plus Elementor/WP vendor CSS under `vendor/`.
+  `elementor.js` drives the globe canvas, theme toggle, mobile menu, demo widgets, and summary tabs.
+- Fonts are self-hosted: Manrope (headings) and DM Sans (body) in `assets/fonts/`.
+- **Article DOM** (copy it exactly):
+  `main#journal-main > article.journal-single.lalia-reference >`
+  `header.article-heading.section-shell` (`.journal-back`, `p.eyebrow`, `h1` + `<br><span>` second line, `p.article-deck`, `.article-meta`),
+  `.article-cover.section-shell` (`.journal-art` or `.meeting-art-shell`),
+  `.article-layout.section-shell > aside.article-aside` (TOC + `.aside-demo` CTA) `+ .article-body > .article-content`.
+  Inside the content: `p.article-lead`, `h2.wp-block-heading[id]`, `ul.wp-block-list`, `ol.wp-block-list.article-steps`,
+  `.article-pullquote`, `.article-end` (end CTA), `.article-source`.
+- **Index card**: `article.journal-story` (add `.journal-featured` for the lead story) `> a.story-art-link + .story-copy`.
 
----
+## Palette: Lalia Blue (default) and Original Green
 
-## 2. Typography & Magazine Rhythm
+- Every green color literal in the CSS, inline styles, SVG attributes, and globe canvas is generated
+  as `var(--lp-<hex>, <original>)`. `assets/palette.css` defines the originals on `:root` and the Blue/Slate
+  mapping on `html[data-palette="blue"]`. Tinted neutrals become slate (hue 258); accents become Lalia blue (hue ~259).
+- The preview bar (`Theme: Lalia Blue | Original Green`) sets `data-palette` and stores it in
+  `localStorage['lalia-preview-palette']`. `?palette=green|blue` also works. Press `P` to hide or show the bar.
+- His own light/dark toggle (`data-theme`) is independent and works with either palette.
+- Never hand-edit colors in the generated CSS. Change `to_blue()` in `colors.py` and regenerate.
 
-- **Heading Font:** `Manrope` (`font-weight: 600, 700, 800`, tight tracking `-0.03em`, line-height `1.08`).
-- **Body Font:** `DM Sans` (`font-weight: 400, 500, 600`, comfortable `1.85` reading line-height, `680px` measure for long-form articles).
-- **Signature Opening Rhythm (Every Page & Section):**
-  1. **Small-Caps Eyebrow:** `0.72rem`, `font-weight: 700`, `letter-spacing: 0.16em`, uppercase in `#2563eb` (e.g., `MEETINGS WITHOUT BORDERS`, `CHOOSING THE RIGHT SUPPORT`).
-  2. **Two-Tone H1 / H2:** First line in deep slate ink (`#0f172a`), second line in Lalia royal blue (`#2563eb` / `#3b82f6`).
-     - Example: `A little less distance.` / `<span class="text-blue-600">Your voice, their language, the same conversation.</span>`
-  3. **One-Sentence Deck:** Calm, concrete 1–2 sentence summary in `#475569` (`max-w-2xl`).
-  4. **Quiet Byline (on Journal posts):** Monogram badge `l.` + Author (`Lalia Editorial`) + Date + Read time.
+## Regenerating and adding articles
 
----
+```bash
+cd livekit-app/frontend/scripts/preview-port
+./fetch.sh            # pulls his pages and every asset into .cache/ (gitignored)
+python3 port.py       # rewrites public/preview/ (URLs, palette vars, preview bar, third article)
+```
 
-## 3. Live CSS Product Illustrations (Zero Stock Photos)
+- New article: copy `partials/article3-main.html` (same DOM), write the copy, add a card partial, and
+  register both in `port.py` the same way as the third article.
+- Verify with `node compare.mjs <outDir> orig=<his url> port=<our url>?palette=green` and diff the
+  screenshots. The Original Green port must be pixel-identical to his site; it measured 0.000% on home and posts.
 
-Never use generic stock photos. Every hero, feature card, and article cover uses accessible (`role="img"` + `aria-label`) CSS/HTML illustrations showing Lalia at work:
+## Copy rules
 
-1. **`voice-bubbles` ("YOU SAY / THEY HEAR"):**
-   - Top bubble (`YOU SAY · ENGLISH`): *"We can ship the first order on Thursday."*
-   - Center live audio waveform (`▂ ▅ ▇ ▃ ▆ ▇ ▄ ▂`) with latency/translation pill (`Live voice + captions · 30+ languages`).
-   - Bottom bubble (`THEY HEAR · ESPAÑOL` in `#eff6ff` / `#2563eb` border): *"Podemos enviar el primer pedido el jueves."*
-2. **`language-bridge` (Dual-Speaker Bridge):**
-   - Two speaker cards (*English* ↔ *Español / 日本語 / Français*) joined by a royal-blue bridge node, with live bilingual caption strip underneath.
-3. **`decision-bridge` (Interpreter vs. Live AI Translation):**
-   - Split comparison illustration contrasting *Qualified Interpreter (High-stakes, regulated, certified)* with *Live AI Translation (Everyday, instant, self-serve)*.
-4. **`direct-call-qr` (1-Tap Ringing & Instant Guest Join):**
-   - Shows 1-tap contact calling alongside browser/QR guest join with zero app install required for guests.
-
----
-
-## 4. Editorial Voice & Claim Discipline
-
-1. **Story Before Specs:** Open with a concrete human situation in 2–3 short declarative sentences (*"A client has a question. A supplier has an update. Your team needs to make a decision."*) before naming features.
-2. **Human CTA Verbs (3-Tier Progressive Commitment):**
-   - **Primary CTA:** `Start talking for free ↗` (`/v2/signup`)
-   - **Secondary CTA:** `Try the live demo` (`/demo`)
-   - **Tertiary Contextual Link:** `Compare plans` (`/#pricing` or `/preview/home#pricing`)
-3. **Self-Limiting Honesty ("When Not to Use Us"):**
-   - Every comparison or buyer guide must state clearly when a qualified human interpreter is the right choice (legal proceedings, medical consultations, safety-critical or regulated settings).
-   - Label illustrative scenarios explicitly (*"This is an illustrative example of how a meeting works, not a customer case study"*).
-4. **Banned AI Clichés:** Never use *"seamless"*, *"revolutionary"*, *"cutting-edge"*, *"unlock"*, *"leverage"*, *"game-changer"*, *"supercharge"*, or *"in today's fast-paced world"*.
-5. **Product Fact Registry Alignment:**
-   - 30+ languages for live captions and spoken translation.
-   - Guests join in the browser via link or QR code—no download or account required.
-   - Direct 1-on-1 calls ring contacts on web, iOS (CallKit), and Android.
-   - Meetings are not audio/video recorded; transcript storage is optional per meeting; meeting content is never used to train Lalia's own models.
-   - Free plan includes 60 participant-minutes/month with no credit card required.
-
----
-
-## 5. 8-Stage Hybrid Content Pipeline (Claude Opus + OpenAI GPT-5.6)
-
-1. **[0] Signals & Opportunity Discovery:** Mine `support-kit` knowledge gaps, user questions, and search queries into distinct, non-cannibalizing intents.
-2. **[1] Structured Brief (GPT-5.6):** Lock primary query, reader job-to-be-done, required `ProductFactRegistry` IDs, and internal link targets.
-3. **[2] Grounded Research Packet:** Collect verified primary sources; zero unsourced statistics allowed.
-4. **[3] Argument Outline (Claude Opus 5.5):** Map H2 sections, table slots, HowTo steps, and earned CTA positions.
-5. **[4] Sectioned Long-Form Draft (Claude Opus 5.5):** Draft section-by-section using the Lalia voice guide and negative constraints.
-6. **[5] Structured Block Extraction (GPT-5.6 / Sonnet):** Emit typed article blocks (`keyTakeaways`, `comparisonTable`, `decisionMatrix`, `steps`, `pullQuote`, `callout`, `faq`).
-7. **[6] Cross-Vendor Claims Gate (GPT-5.6 + Deterministic Linter):** Verify every factual claim against the Product Fact Registry and block banned absolutes.
-8. **[7–8] SEO Packaging & Prerender Build:** Emit `BlogPosting` + `BreadcrumbList` + `FAQPage` + `HowTo` JSON-LD, sticky TOC with embedded demo CTA, and static HTML shells.
+- Write sentences of 8–15 words and paragraphs of 1–3 sentences (≤ 50 words). Posts run 500–900 words with six H2s.
+- Open with a three-beat scene: "Your supplier has a delay to explain. A new colleague has questions. A client wants a walkthrough."
+- Give each H2 one promise in plain words ("Start with one question", "When to book an interpreter").
+- Use one pullquote per post, two short lines: "Interpreters bring judgment. / Live translation brings availability."
+- Use numbered `article-steps` with a bold lead-in, never more than 4–5 steps.
+- Use bullets for scenarios, written as "label: one sentence". No tables unless a reader truly needs one.
+- Banned: seamless, revolutionary, cutting-edge, unlock, leverage, game-changer, supercharge, "AI-powered", stacked feature pills.
+- Every claim must match shipped product facts:
+  - 30+ languages.
+  - Spoken voice translation plus bilingual captions.
+  - Guests join by link in the browser with no account.
+  - No audio/video recording; transcripts are saved only when the host enables them.
+  - AI summary, action items, and decisions report, which can be emailed.
+  - The free plan is 60 minutes a month with no credit card.
+  - Starter is $49 and Pro is $199 per org per month.
+- Label illustrative examples. State plainly when a qualified interpreter is the right choice.

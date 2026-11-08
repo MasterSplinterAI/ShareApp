@@ -12,9 +12,7 @@ const JoinMeeting = lazy(() => import('./components/JoinMeeting'))
 const TermsPage = lazy(() => import('./components/legal/TermsPage'))
 const PrivacyPage = lazy(() => import('./components/legal/PrivacyPage'))
 const TranslationLabDemo = lazy(() => import('./components/demo/TranslationLabDemo'))
-const PreviewEditorialHome = lazy(() => import('./components/preview/PreviewEditorialHome'))
-const PreviewJournalIndex = lazy(() => import('./components/preview/PreviewJournalIndex'))
-const PreviewJournalArticle = lazy(() => import('./components/preview/PreviewJournalArticle'))
+const PreviewStaticRedirect = lazy(() => import('./components/preview/PreviewStaticRedirect'))
 
 const V2Layout = lazy(() => import('./v2/V2Layout'))
 const V2RootRedirect = lazy(() => import('./v2/V2RootRedirect'))
@@ -149,9 +147,7 @@ function App() {
           </Route>
         </Route>
         <Route path="/" element={<HomeScreen />} />
-        <Route path="/preview/home" element={<PreviewEditorialHome />} />
-        <Route path="/preview/blog" element={<PreviewJournalIndex />} />
-        <Route path="/preview/blog/:slug" element={<PreviewJournalArticle />} />
+        <Route path="/preview/*" element={<PreviewStaticRedirect />} />
         <Route path="/demo" element={<TranslationLabDemo />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/privacy" element={<PrivacyPage />} />
