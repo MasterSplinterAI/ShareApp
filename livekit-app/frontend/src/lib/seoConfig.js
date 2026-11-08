@@ -109,6 +109,34 @@ export function resolveSeo(pathname) {
     };
   }
 
+  // Unlisted editorial design previews (/preview/home, /preview/blog, /preview/blog/:slug): noindex.
+  if (path === '/preview' || path.startsWith('/preview/')) {
+    if (path === '/preview/home') {
+      return {
+        ...DEFAULTS,
+        title: 'Lalia — Your Voice, Their Language, the Same Conversation (Preview)',
+        description:
+          'Speak in your own language and be understood in theirs—with live voice translation, bilingual captions, 1-tap direct calls, and shared meeting summaries.',
+        robots: 'noindex, nofollow',
+      };
+    }
+    if (path === '/preview/blog') {
+      return {
+        ...DEFAULTS,
+        title: 'Lalia Journal — Meetings Without Borders (Preview)',
+        description:
+          'Practical guides and stories on multilingual meetings, live AI voice translation, and clearer conversations across languages.',
+        robots: 'noindex, nofollow',
+      };
+    }
+    return {
+      ...DEFAULTS,
+      title: 'Lalia Journal (Preview)',
+      ogType: 'article',
+      robots: 'noindex, nofollow',
+    };
+  }
+
   // Unknown paths (404).
   return {
     ...DEFAULTS,
