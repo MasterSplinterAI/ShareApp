@@ -300,11 +300,6 @@ class AutopilotTranslator {
         });
 
         this.currentLanguage = 'en';
-        try {
-            localStorage.setItem('app_language', 'en');
-        } catch {
-            /* ignore */
-        }
     }
 
     /**

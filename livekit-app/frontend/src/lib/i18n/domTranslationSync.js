@@ -37,12 +37,12 @@ export function syncDomTranslation(locale, pathname) {
   const path = pathname || window.location.pathname;
 
   if (isDomTranslationExcludedRoute(path) || !isDomTranslationRoute(path)) {
-    autopilotTranslator.setLanguage('en').catch(() => {});
+    autopilotTranslator.clearTranslationArtifacts();
     return;
   }
 
   if (!locale || locale === 'en') {
-    autopilotTranslator.setLanguage('en').catch(() => {});
+    autopilotTranslator.clearTranslationArtifacts();
     return;
   }
 
@@ -70,7 +70,7 @@ export function useDomTranslationFallback({ locale, ready, requireAuth = true })
     if (requireAuth) {
       const token = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
       if (!token) {
-        autopilotTranslator.setLanguage('en').catch(() => {});
+        autopilotTranslator.clearTranslationArtifacts();
         return;
       }
     }
