@@ -1,12 +1,23 @@
 /**
- * Cost rates for all inference and infrastructure providers.
- * Single source of truth — used by costEvents route and rollup logic.
+ * Invoice unit rates for cost rollups.
+ *
+ * These are pay-as-you-go and plan-overage rates. Minutes inside a vendor's
+ * included allowance still cost that much on the rate card once the allowance
+ * is used, so the ledger does not price them at $0. A later committed plan
+ * (LiveKit Scale, Deepgram Growth) is a bit cheaper; the figures below are the
+ * card we pay until that switch.
+ *
+ * Checked against livekit.com/pricing and deepgram.com/pricing on 9 Nov 2026.
+ * LiveKit WebRTC sessions and agent sessions both have a 10-second minimum,
+ * applied when the webhook rollup prices a connection.
  */
 
 const COSTS = {
-  // LiveKit infrastructure
+  // LiveKit Cloud Ship overage. Scale WebRTC is $0.0004/min; agent session stays $0.01.
+  // WebRTC is per participant-minute. The $0.004 figure is third-party SIP, not WebRTC.
   livekit_agent_minute:        { provider: 'livekit',   unit_cost_usd: 0.0100  },
-  livekit_participant_minute:  { provider: 'livekit',   unit_cost_usd: 0.0040  },
+  livekit_participant_minute:  { provider: 'livekit',   unit_cost_usd: 0.0005  },
+  // Downstream data after the included gigabytes. Scale is $0.10/GB. Unused until we meter bytes.
   livekit_bandwidth_gb:        { provider: 'livekit',   unit_cost_usd: 0.1200  },
 
   // xAI Grok STT (grok-stt)
@@ -24,10 +35,14 @@ const COSTS = {
   // OpenAI gpt-4o-mini-tts / tts-1 ($0.015/1k chars)
   openai_tts_char:             { provider: 'openai',    unit_cost_usd: 0.000015 },
 
-  // Deepgram Nova-3
-  deepgram_stt_minute:         { provider: 'deepgram',  unit_cost_usd: 0.0043  },
-  // Deepgram Aura TTS (per character)
-  deepgram_tts_char:           { provider: 'deepgram',  unit_cost_usd: 0.000015 },
+  // Deepgram Nova-3 Multilingual streaming ($0.0092) plus Keyterm Prompting ($0.0013).
+  // The agent streams nova-3 with language=multi and sends keyterms. $0.0043 is
+  // pre-recorded Nova-3 monolingual, which is not this path. Growth is $0.0078 + $0.0012.
+  // Billed per second of audio streamed, including silence on an open mic.
+  deepgram_stt_minute:         { provider: 'deepgram',  unit_cost_usd: 0.0105  },
+  // Deepgram Aura-2 TTS, $0.030 per 1,000 characters. Aura-1 is $0.015; production voices are Aura-2.
+  // Growth is $0.027 per 1,000 characters.
+  deepgram_tts_char:           { provider: 'deepgram',  unit_cost_usd: 0.000030 },
   // ElevenLabs Flash v2.5 TTS (per character, $0.05/1k chars API rate)
   elevenlabs_tts_char:         { provider: 'elevenlabs', unit_cost_usd: 0.00005 },
   gladia_stt_minute:           { provider: 'gladia',    unit_cost_usd: 0.0125 },

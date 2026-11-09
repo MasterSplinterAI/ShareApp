@@ -1926,16 +1926,6 @@ class TranscriptionOnlyAgent:
             interjected_during_turn[0] = False
             turn_id[0] = None
 
-            # Emit STT cost for the completed turn (fire-and-forget)
-            if self.cost_reporter and turn_stt_seconds[0] > 0:
-                self._spawn_bg(self.cost_reporter.emit_stt(
-                    duration_seconds=turn_stt_seconds[0],
-                    provider=stt_provider_name,
-                    participant=speaker_id,
-                    language=speaker_lang,
-                ))
-                turn_stt_seconds[0] = 0.0
-
         async def start_new_turn() -> None:
             await reconcile_lanes()
             for lane in lanes.values():
@@ -2428,6 +2418,17 @@ class TranscriptionOnlyAgent:
         except Exception as e:
             logger.error(f"{L} Pipeline error: {e}", exc_info=True)
         finally:
+            # Deepgram bills every second of audio pushed on the stream, including
+            # silence. VAD speech time under-counts an open mic. One event per
+            # pipeline covers the websocket; a restart emits its own interval.
+            streamed_seconds = max(0.0, time.time() - pipeline_started_at)
+            if self.cost_reporter and streamed_seconds > 0:
+                await self.cost_reporter.emit_stt(
+                    duration_seconds=streamed_seconds,
+                    provider=stt_provider_name,
+                    participant=speaker_id,
+                    language=speaker_lang,
+                )
             # Unlike gather(), asyncio.wait does not propagate cancellation to the
             # legs — cancel them explicitly on every exit path.
             for t in legs:

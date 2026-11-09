@@ -8,6 +8,7 @@ Billable **translation minutes** are derived from agent STT cost telemetry alrea
 ### Flow
 
 1. The translation agent reports STT usage to `POST /api/cost-events` (e.g. `deepgram_stt_minute`).
+   Units are minutes of audio streamed to the provider for that speaker pipeline, including silence on an open mic. That is the duration Deepgram bills per second. Detected-speech time is not the bill.
 2. On LiveKit `room_finished`, `reconcileTranslationMinutesForMeeting()` in `lib/v2TranslationUsage.js`:
    - Reads STT rows for the room (`meeting_id` = LiveKit room name).
    - Inserts `v2_usage_events` rows with `event_type = 'translation_minute'`.
