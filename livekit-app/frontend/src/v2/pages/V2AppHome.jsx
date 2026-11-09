@@ -130,7 +130,7 @@ export default function V2AppHome() {
   );
   const planName = sub?.plan?.name;
 
-  const startAndJoinInstantMeeting = async () => {
+  const startInstantMeeting = async () => {
     if (startingInstant) return;
     setStartingInstant(true);
     try {
@@ -138,29 +138,10 @@ export default function V2AppHome() {
         title: `${firstName}’s meeting`,
         host_required_to_start: false,
       });
-      await v2Meetings.hostSessionOpen(m.id).catch(() => {});
-      const participantInfo = {
-        isHost: true,
-        participantName: displayName,
-        hostCode: m.hostCode,
-        shareableLink: m.joinUrl,
-        roomName: m.livekitRoomName,
-        meetingId: m.id,
-        inviteToken: '',
-      };
-      try {
-        sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      } catch {
-        /* ignore */
-      }
-      navigate(`/room/${encodeURIComponent(m.livekitRoomName)}`, {
-        state: {
-          ...participantInfo,
-          meetingTitle: m.title,
-        },
-      });
+      toast.success('Instant meeting ready — share your link or enter the room');
+      navigate(`/v2/app/meetings/${m.id}?created=instant`);
     } catch (e) {
-      toast.error(e.response?.data?.error || 'Could not start meeting');
+      toast.error(e.response?.data?.error || 'Could not create meeting');
       setStartingInstant(false);
     }
   };
@@ -293,10 +274,10 @@ export default function V2AppHome() {
                 type="button"
                 className="flex-1 gap-2"
                 disabled={startingInstant}
-                onClick={startAndJoinInstantMeeting}
+                onClick={startInstantMeeting}
               >
-                <Video className="h-4 w-4" />
-                {startingInstant ? 'Starting…' : t('appHome.startAndJoinNow')}
+                <Zap className="h-4 w-4" />
+                {startingInstant ? 'Creating…' : t('appHome.startAndJoinNow')}
               </Button>
               <Button variant="outline" asChild className="gap-1.5">
                 <Link to="/v2/app/meetings?create=1">

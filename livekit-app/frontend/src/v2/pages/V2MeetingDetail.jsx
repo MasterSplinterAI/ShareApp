@@ -6,18 +6,22 @@ import { format, isFuture } from 'date-fns';
 import {
   Archive,
   CalendarClock,
+  Check,
   Copy,
   FileText,
   Globe,
+  Link2,
   MoreHorizontal,
   Pencil,
   PhoneOff,
   RotateCcw,
+  Share2,
   Sparkles,
   Trash2,
   UserPlus,
   Users,
   Video,
+  Zap,
 } from 'lucide-react';
 import { v2Meetings, v2Host, v2Auth } from '../../services/apiV2';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
@@ -59,7 +63,7 @@ import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
-import { QrCodeDialogButton } from '../../components/MeetingQrCode';
+import { QrCodeDialogButton, QrCodeShareCard } from '../../components/MeetingQrCode';
 import { defaultExpiryMode } from '../../lib/inviteExpiry';
 
 /** Click-to-edit meeting title for the header hero. */
@@ -129,10 +133,12 @@ export default function V2MeetingDetail() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const autoJoinIntent = searchParams.get('join') === '1';
+  const createdInstant = searchParams.get('created') === 'instant';
   const requestedTab = searchParams.get('tab');
   const [meeting, setMeeting] = useState(null);
   const [me, setMe] = useState(null);
   const [autoJoinTriggered, setAutoJoinTriggered] = useState(false);
+  const [guestLinkCopied, setGuestLinkCopied] = useState(false);
   const [titleEdit, setTitleEdit] = useState('');
   const [newInviteExpiryMode, setNewInviteExpiryMode] = useState('days_after_start');
   const [newInviteCustomHours, setNewInviteCustomHours] = useState(72);
@@ -405,7 +411,27 @@ export default function V2MeetingDetail() {
   const copyGuestUrl = async () => {
     if (!meeting?.joinUrl) return;
     await navigator.clipboard.writeText(meeting.joinUrl);
+    setGuestLinkCopied(true);
+    setTimeout(() => setGuestLinkCopied(false), 2000);
     toast.success('Copied guest link');
+  };
+
+  const shareGuestUrl = async () => {
+    if (!meeting?.joinUrl) return;
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({
+          title: meeting.title ? `Join "${meeting.title}" on Lalia` : 'Join my Lalia meeting',
+          text: 'Join my live translated meeting on Lalia:',
+          url: meeting.joinUrl,
+        });
+        return;
+      } catch {
+        /* user canceled */
+        return;
+      }
+    }
+    await copyGuestUrl();
   };
 
   const copyInviteUrl = async (url) => {
@@ -435,6 +461,7 @@ export default function V2MeetingDetail() {
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       const next = new URLSearchParams(window.location.search);
       next.delete('join');
+      next.delete('created');
       const qs = next.toString();
       navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${qs ? `?${qs}` : ''}`);
     } catch (e) {
@@ -582,52 +609,133 @@ export default function V2MeetingDetail() {
   };
 
   const primaryHostActions = !joinDemoted && (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-      <Button
-        type="button"
-        size="lg"
-        className="h-11 w-full gap-2 text-sm font-semibold shadow-sm sm:flex-1"
-        onClick={joinAsHost}
-      >
-        <Video className="h-4 w-4 shrink-0" />
-        Join as host
-      </Button>
-      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-1">
-        {meeting.joinUrl && (
-          <>
+    <div className="space-y-4">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <Button
+          type="button"
+          size="lg"
+          data-testid="enter-meeting-room-btn"
+          className="h-11 w-full gap-2 text-sm font-semibold shadow-sm sm:flex-1"
+          onClick={joinAsHost}
+        >
+          <Video className="h-4 w-4 shrink-0" />
+          {createdInstant ? 'Enter meeting room' : 'Join as host'}
+        </Button>
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-1">
+          {meeting.joinUrl && (
+            <>
+              <Button
+                type="button"
+                variant="secondary"
+                size="lg"
+                className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
+                onClick={copyGuestUrl}
+              >
+                {guestLinkCopied ? (
+                  <Check className="h-4 w-4 shrink-0 text-emerald-500" />
+                ) : (
+                  <Copy className="h-4 w-4 shrink-0 text-primary" />
+                )}
+                <span className="truncate">{guestLinkCopied ? 'Copied!' : 'Copy guest link'}</span>
+              </Button>
+              <QrCodeDialogButton
+                url={meeting.joinUrl}
+                meetingTitle={meeting.title}
+                variant="outline"
+                size="lg"
+                className="h-11 gap-2 text-xs font-medium sm:text-sm"
+                label="QR code"
+              />
+            </>
+          )}
+          {canManageMeeting && (
             <Button
               type="button"
-              variant="secondary"
-              size="lg"
-              className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
-              onClick={copyGuestUrl}
-            >
-              <Copy className="h-4 w-4 shrink-0 text-primary" />
-              <span className="truncate">Copy guest link</span>
-            </Button>
-            <QrCodeDialogButton
-              url={meeting.joinUrl}
-              meetingTitle={meeting.title}
               variant="outline"
               size="lg"
-              className="h-11 gap-2 text-xs font-medium sm:text-sm"
-              label="QR code"
-            />
-          </>
-        )}
-        {canManageMeeting && (
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
-            onClick={scrollToGuests}
-          >
-            <UserPlus className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
-            <span className="truncate">Invite guests</span>
-          </Button>
-        )}
+              className="h-11 gap-2 text-xs font-medium sm:flex-1 sm:text-sm"
+              onClick={scrollToGuests}
+            >
+              <UserPlus className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span className="truncate">Invite guests</span>
+            </Button>
+          )}
+        </div>
       </div>
+
+      {meeting.joinUrl && (
+        <div
+          data-testid="share-invite-panel"
+          className={`rounded-xl border p-3.5 sm:p-4 ${
+            createdInstant
+              ? 'border-primary/45 bg-gradient-to-br from-primary/[0.08] via-card to-card shadow-sm'
+              : 'border-border/60 bg-muted/20'
+          }`}
+        >
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 flex-1 space-y-2.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-primary">
+                  {createdInstant ? <Zap className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
+                  {createdInstant ? 'Room ready — share before you join' : 'Share guest invite link'}
+                </span>
+                <Badge variant="secondary" className="text-[10px] font-normal">
+                  No guest account needed
+                </Badge>
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Send this link, let someone scan the QR code, or email invites below. When you&apos;re ready, tap{' '}
+                <strong className="font-medium text-foreground">
+                  {createdInstant ? 'Enter meeting room' : 'Join as host'}
+                </strong>{' '}
+                above.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  readOnly
+                  aria-label="Shareable guest link"
+                  value={meeting.joinUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="h-9 min-w-0 flex-1 bg-background font-mono text-xs"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={guestLinkCopied ? 'secondary' : 'default'}
+                  className="h-9 shrink-0 gap-1.5 text-xs"
+                  onClick={copyGuestUrl}
+                >
+                  {guestLinkCopied ? <Check className="h-3.5 w-3.5 text-emerald-500" /> : <Copy className="h-3.5 w-3.5" />}
+                  {guestLinkCopied ? 'Copied' : 'Copy link'}
+                </Button>
+                {typeof navigator !== 'undefined' && typeof navigator.share === 'function' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-9 shrink-0 gap-1.5 text-xs"
+                    onClick={shareGuestUrl}
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                    Share
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {createdInstant && (
+              <div className="shrink-0 md:w-52">
+                <QrCodeShareCard
+                  url={meeting.joinUrl}
+                  title="Scan to join room"
+                  subtitle="Opens directly in mobile browser or app"
+                  compact
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 
