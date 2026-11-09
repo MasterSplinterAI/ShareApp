@@ -2,9 +2,11 @@
  * Post-build prerender for marketing routes.
  * Serves dist/, loads each route in Chromium, writes HTML shells so crawlers
  * see title/H1/FAQ body without waiting on the full app JS graph.
+ * Finally promotes dist/studio-home.html -> dist/index.html so the live Lalia Blue
+ * studio home page is served at / while preserving dist/app-index.html for SPA routes.
  */
 import { createServer } from 'node:http'
-import { readFile, writeFile, mkdir, access } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, access, copyFile } from 'node:fs/promises'
 import { createReadStream } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,7 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST = path.resolve(__dirname, '../dist')
 const PORT = 4179
 
-const ROUTES = ['/', '/demo', '/terms', '/privacy', '/v2/signup']
+const ROUTES = ['/demo', '/terms', '/privacy', '/v2/signup']
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -32,6 +34,7 @@ const MIME = {
   '.xml': 'application/xml',
   '.txt': 'text/plain; charset=utf-8',
   '.wasm': 'application/wasm',
+  '.mp3': 'audio/mpeg',
 }
 
 async function exists(p) {
@@ -53,7 +56,10 @@ function startStaticServer() {
       let filePath = path.join(DIST, pathname)
       if (!(await exists(filePath))) {
         // SPA fallback while capturing routes that are not yet prerendered
-        filePath = path.join(DIST, 'index.html')
+        filePath = path.join(DIST, 'app-index.html')
+        if (!(await exists(filePath))) {
+          filePath = path.join(DIST, 'index.html')
+        }
       }
 
       const ext = path.extname(filePath)
@@ -69,11 +75,28 @@ function outPathForRoute(route) {
   return path.join(DIST, route.replace(/^\//, ''), 'index.html')
 }
 
+async function promoteStudioHome() {
+  const indexHtml = path.join(DIST, 'index.html')
+  const appIndexHtml = path.join(DIST, 'app-index.html')
+  const studioHomeHtml = path.join(DIST, 'studio-home.html')
+
+  if (await exists(indexHtml)) {
+    await copyFile(indexHtml, appIndexHtml)
+  }
+  if (await exists(studioHomeHtml)) {
+    await copyFile(studioHomeHtml, indexHtml)
+    console.log('prerender: promoted studio-home.html -> dist/index.html (SPA shell saved as dist/app-index.html)')
+  }
+}
+
 async function main() {
   if (!(await exists(path.join(DIST, 'index.html')))) {
     console.error('prerender: dist/index.html missing — run vite build first')
     process.exit(1)
   }
+
+  // Save SPA index.html as app-index.html before prerendering
+  await copyFile(path.join(DIST, 'index.html'), path.join(DIST, 'app-index.html'))
 
   // Stamp build-date <lastmod> into dist/sitemap.xml for Google Search Console
   const sitemapPath = path.join(DIST, 'sitemap.xml')
@@ -94,10 +117,9 @@ async function main() {
   try {
     browser = await chromium.launch({ headless: true })
   } catch (err) {
-    // Staging/CI boxes often lack Playwright browser binaries. Vite output is
-    // still valid; skip shells instead of failing the whole deploy.
-    console.warn('prerender: skipping — Chromium unavailable')
+    console.warn('prerender: skipping Chromium — promoting studio-home.html directly')
     console.warn(String(err?.message || err))
+    await promoteStudioHome()
     process.exit(0)
   }
 
@@ -109,9 +131,7 @@ async function main() {
       const url = `http://127.0.0.1:${PORT}${route}`
       console.log(`prerender: ${route}`)
       await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 })
-      // Wait for route heading or explicit seo-ready marker (not generic <main> shell)
       await page.waitForSelector('h1, [data-seo-ready]', { timeout: 20000 }).catch(() => {})
-      // Let React finish route meta + first paint
       await new Promise((r) => setTimeout(r, 500))
       const html = await page.content()
       const out = outPathForRoute(route)
@@ -123,6 +143,8 @@ async function main() {
     await browser.close()
     server.close()
   }
+
+  await promoteStudioHome()
 }
 
 main().catch((err) => {

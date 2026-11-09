@@ -26,6 +26,25 @@ const V2MeetingsList = lazy(() => import('./v2/pages/V2MeetingsList'))
 const V2MeetingDetail = lazy(() => import('./v2/pages/V2MeetingDetail'))
 const V2OrgSettings = lazy(() => import('./v2/pages/V2OrgSettings'))
 
+function SearchAwareRedirect({ to }) {
+  const { search, hash } = useLocation()
+  return <Navigate to={`${to}${search || ''}${hash || ''}`} replace />
+}
+function AppSubpathRedirect() {
+  const { pathname, search, hash } = useLocation()
+  const sub = pathname.replace(/^\/app\/?/, '')
+  const target = sub ? `/v2/app/${sub}` : '/v2/app'
+  return <Navigate to={`${target}${search || ''}${hash || ''}`} replace />
+}
+function BlogStaticRedirect() {
+  const { pathname, search, hash } = useLocation()
+  useEffect(() => {
+    if (pathname.endsWith('.html')) return
+    window.location.replace(`${pathname.replace(/\/$/, '')}/index.html${search || ''}${hash || ''}`)
+  }, [pathname, search, hash])
+  return null
+}
+
 const AdminGate = lazy(() =>
   import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminGate }))
 )
@@ -147,6 +166,14 @@ function App() {
           </Route>
         </Route>
         <Route path="/" element={<HomeScreen />} />
+        <Route path="/login" element={<SearchAwareRedirect to="/v2/login" />} />
+        <Route path="/signup" element={<SearchAwareRedirect to="/v2/signup" />} />
+        <Route path="/reset-password" element={<SearchAwareRedirect to="/v2/reset-password" />} />
+        <Route path="/app" element={<SearchAwareRedirect to="/v2/app" />} />
+        <Route path="/app/*" element={<AppSubpathRedirect />} />
+        <Route path="/blog" element={<BlogStaticRedirect />} />
+        <Route path="/blog/*" element={<BlogStaticRedirect />} />
+        <Route path="/preview" element={<PreviewStaticRedirect />} />
         <Route path="/preview/*" element={<PreviewStaticRedirect />} />
         <Route path="/demo" element={<TranslationLabDemo />} />
         <Route path="/terms" element={<TermsPage />} />

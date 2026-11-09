@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { ArrowRight, Globe2, LogIn, Sparkles, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -115,11 +115,24 @@ function NativeMobileWelcome() {
 }
 
 export default function HomeScreen() {
+  const hasToken =
+    typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('v2_token'));
   const isAppMode =
     isNativeApp() ||
     isStandalonePwa() ||
     (typeof window !== 'undefined' &&
       new URLSearchParams(window.location.search).get('app') === '1');
+
+  useEffect(() => {
+    if (!isAppMode && !hasToken && typeof window !== 'undefined') {
+      const { search, hash } = window.location;
+      window.location.replace(`/studio-home.html${search || ''}${hash || ''}`);
+    }
+  }, [isAppMode, hasToken]);
+
+  if (hasToken) {
+    return <Navigate to="/v2/app" replace />;
+  }
 
   if (isAppMode) {
     return <NativeMobileWelcome />;

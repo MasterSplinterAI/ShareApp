@@ -1,0 +1,132 @@
+.lalia-reference .meeting-art { isolation: isolate; background: radial-gradient(ellipse at 50% 35%,var(--lp-9bcd7f-a13,rgba(146,190,255,0.125)),transparent 65%),var(--journal-art); width: 100%; height: 100%; min-height: 455px; position: relative; overflow: hidden; }
+.lalia-reference .meeting-art-orbit { aspect-ratio: 1 / 1; border: 1px solid var(--journal-border); z-index: -1; border-radius: 50%; width: 85%; position: absolute; top: 1%; left: 7%; transform: rotate(-30deg) scaleY(0.68); }
+.lalia-reference .meeting-art-orbit-two { transform: rotate(35deg) scaleY(0.68); }
+.lalia-reference .meeting-art-label { color: var(--journal-quiet); letter-spacing: 1px; align-items: center; gap: 8px; font-family: monospace; font-size: 7px; display: flex; position: absolute; top: 29px; left: 29px; }
+.lalia-reference .meeting-portrait { border: 1px solid rgba(255, 255, 255, 0.19); border-radius: 10px; width: 32%; height: 43%; max-height: 255px; position: absolute; top: 17%; overflow: hidden; box-shadow: var(--lp-15351b-a12,rgba(24,45,78,0.125)) 0px 15px 30px; }
+.lalia-reference .meeting-portrait img { object-position: 50% 34%; width: 100%; height: 100%; }
+.lalia-reference .meeting-portrait::after { content: ""; background: linear-gradient(rgba(0, 0, 0, 0) 50%, var(--lp-0b190e-a79,rgba(10,21,38,0.79))); position: absolute; inset: 0px; }
+.lalia-reference .meeting-portrait-one { left: 13%; transform: rotate(-7deg); }
+.lalia-reference .meeting-portrait-two { top: 19%; right: 12%; transform: rotate(6deg); }
+.lalia-reference .meeting-portrait > span { color: rgb(255, 255, 255); z-index: 1; justify-content: space-between; align-items: center; gap: 5px; font-size: 10px; display: flex; position: absolute; bottom: 14px; left: 13px; right: 13px; }
+.lalia-reference .meeting-portrait > span svg { color: var(--lp-c2fda7,#b5d3ff); }
+.lalia-reference .meeting-art-bridge { width: 50px; height: 50px; color: var(--mint); background: var(--journal-caption); border: 1px solid var(--journal-border); border-radius: 50%; place-items: center; display: grid; position: absolute; top: 33%; left: calc(50% - 25px); box-shadow: var(--lp-123719-a7,rgba(22,45,83,0.07)) 0px 8px 22px; }
+.lalia-reference .meeting-art-caption { border: 1px solid var(--journal-border); background: var(--journal-caption); border-radius: 9px; padding: 17px 20px; position: absolute; top: 65%; left: 15%; right: 15%; transform: rotate(-2deg); box-shadow: var(--lp-15351b-a4,rgba(24,45,78,0.04)) 0px 16px 30px; }
+.lalia-reference .meeting-art-caption > span { color: var(--mint); letter-spacing: 1px; align-items: center; gap: 6px; font-size: 7px; display: flex; }
+.lalia-reference .meeting-art-caption > p { color: var(--text); margin-top: 7px; font-size: 13px; line-height: 1.5; }
+.lalia-reference .meeting-art-caption > p[lang] { color: var(--muted); margin-top: 4px; font-size: 12px; }
+.lalia-reference .meeting-art-caption > .meeting-art-understood { letter-spacing: 0px; color: var(--muted); margin-top: 11px; font-size: 8px; }
+.lalia-reference .meeting-art-note { color: var(--muted); letter-spacing: 1.1px; font-family: monospace; font-size: 6px; position: absolute; bottom: 15px; right: 21px; }
+.lalia-reference .home-journal .meeting-art { min-height: 430px; }
+.lalia-reference .article-cover .meeting-art { border: 1px solid var(--journal-border); border-radius: 13px; height: 455px; }
+.lalia-reference .article-cover .meeting-portrait { width: 26%; height: 53%; top: 13%; }
+.lalia-reference .article-cover .meeting-portrait-one { left: 21%; }
+.lalia-reference .article-cover .meeting-portrait-two { top: 16%; right: 20%; }
+.lalia-reference .article-cover .meeting-art-bridge { top: 34%; }
+.lalia-reference .article-cover .meeting-art-caption { top: 66%; left: 31%; right: 17%; }
+.lalia-reference .article-cover .meeting-art-orbit { width: 65%; top: -21%; left: 17%; }
+.lalia-reference .article-pullquote { border-left: 2px solid var(--mint); background: var(--journal-soft); color: var(--mint); border-radius: 0px 9px 9px 0px; margin: 30px 0px; padding: 26px 28px; }
+.lalia-reference .article-pullquote > p { color: var(--text); font-family: var(--font-heading); letter-spacing: -0.8px; margin: 12px 0px 0px; font-size: 27px; line-height: 1.45; }
+.lalia-reference .article-steps { margin: 26px 0px; padding-left: 24px; }
+.lalia-reference .article-steps li { margin-bottom: 20px; padding-left: 8px; line-height: 1.85; }
+.lalia-reference .article-steps li::marker { color: var(--mint); font-family: var(--font-heading); font-weight: 600; }
+.lalia-reference .article-steps strong { color: var(--text); font-weight: 500; }
+@media (max-width: 900px) {
+  .lalia-reference .site-header .desktop-nav { gap: 13px; }
+  .lalia-reference .site-header .desktop-nav a { font-size: 9px; }
+  .lalia-reference .journal-intro { padding-top: 55px; }
+  .lalia-reference .journal-intro h1 { letter-spacing: -2.4px; font-size: 48px; }
+  .lalia-reference .journal-intro-row { gap: 22px; }
+  .lalia-reference .journal-intro-row > p { font-size: 11px; }
+  .lalia-reference .blog-feature { grid-template-columns: 1fr 1fr; }
+  .lalia-reference .blog-feature-copy { padding: 30px 25px; }
+  .lalia-reference .blog-feature h2 { letter-spacing: -1px; margin-top: 19px; font-size: 27px; }
+  .lalia-reference .blog-feature-copy > p { font-size: 12px; }
+  .lalia-reference .meeting-art { min-height: 450px; }
+  .lalia-reference .meeting-portrait { width: 34%; height: 35%; top: 22%; }
+  .lalia-reference .meeting-portrait-two { top: 25%; right: 9%; }
+  .lalia-reference .meeting-portrait-one { left: 9%; }
+  .lalia-reference .meeting-art-bridge { width: 42px; height: 42px; top: 34%; left: calc(50% - 21px); }
+  .lalia-reference .meeting-art-caption { left: 8%; right: 8%; }
+  .lalia-reference .meeting-art-label { font-size: 6px; left: 20px; }
+  .lalia-reference .meeting-art-caption > p { font-size: 11px; }
+  .lalia-reference .meeting-art-caption > p[lang] { font-size: 10px; }
+  .lalia-reference .journal-note { grid-template-columns: 0.7fr 1fr; }
+  .lalia-reference .article-layout { max-width: 780px; padding-top: 40px; display: block; }
+  .lalia-reference .article-sidebar { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 45px; padding: 20px; position: static; }
+  .lalia-reference .article-sidebar nav { grid-template-columns: 1fr 1fr; column-gap: 23px; display: grid; }
+  .lalia-reference .article-sidebar nav > .eyebrow { grid-column: 1 / -1; margin-bottom: 6px; }
+  .lalia-reference .article-sidebar nav > a { font-size: 10px; }
+  .lalia-reference .article-sidebar-demo { display: none; }
+  .lalia-reference .article-heading h1 { font-size: 45px; }
+  .lalia-reference .article-deck { font-size: 13px; }
+  .lalia-reference .home-journal-heading h2 { font-size: 34px; }
+}
+@media (max-width: 680px) {
+  .lalia-reference .journal-intro { padding-top: 44px; }
+  .lalia-reference .journal-intro > .eyebrow { letter-spacing: 0.8px; flex-wrap: wrap; gap: 4px; font-size: 7px; }
+  .lalia-reference .journal-intro-row { margin-top: 25px; display: block; }
+  .lalia-reference .journal-intro h1 { letter-spacing: -1.9px; font-size: clamp(37px, 9.4vw, 52px); }
+  .lalia-reference .journal-intro-row > p { margin-top: 23px; padding: 0px; font-size: 12px; }
+  .lalia-reference .journal-section-label { letter-spacing: 0.8px; margin-top: 35px; padding-top: 22px; font-size: 7px; }
+  .lalia-reference .journal-section-label > span:last-child { text-align: right; max-width: 130px; line-height: 1.5; }
+  .lalia-reference .journal-feature-section { padding-bottom: 52px; }
+  .lalia-reference .blog-feature { grid-template-columns: 1fr; }
+  .lalia-reference .blog-feature-art, .lalia-reference .meeting-art { min-height: 375px; }
+  .lalia-reference .meeting-portrait { width: 30%; height: 43%; top: 18%; }
+  .lalia-reference .meeting-portrait-one { left: 15%; }
+  .lalia-reference .meeting-portrait-two { top: 20%; right: 14%; }
+  .lalia-reference .meeting-art-label { top: 24px; left: 24px; }
+  .lalia-reference .meeting-art-caption { padding: 14px 17px; top: 65%; left: 17%; right: 9%; }
+  .lalia-reference .meeting-art-caption > p { font-size: 12px; }
+  .lalia-reference .meeting-art-caption > p[lang] { font-size: 11px; }
+  .lalia-reference .meeting-art-caption > .meeting-art-understood { margin-top: 7px; font-size: 7px; }
+  .lalia-reference .meeting-art-note { font-size: 5px; bottom: 10px; }
+  .lalia-reference .blog-feature-copy { padding: 30px 25px; }
+  .lalia-reference .blog-feature h2 { letter-spacing: -1px; font-size: 30px; }
+  .lalia-reference .blog-feature-copy > p { margin-top: 19px; font-size: 13px; }
+  .lalia-reference .blog-category { font-size: 8px; }
+  .lalia-reference .blog-meta { margin-top: 22px; font-size: 9px; }
+  .lalia-reference .blog-feature-copy > .blog-read-link { margin-top: 22px; }
+  .lalia-reference .journal-note { grid-template-columns: 1fr; gap: 23px; padding-top: 35px; padding-bottom: 55px; }
+  .lalia-reference .journal-note h2 { font-size: 32px; }
+  .lalia-reference .journal-note p { font-size: 12px; }
+  .lalia-reference .journal-note-number { font-size: 8px; }
+  .lalia-reference .home-journal { padding-top: 55px; padding-bottom: 60px; }
+  .lalia-reference .home-journal-heading { margin-bottom: 23px; display: block; }
+  .lalia-reference .home-journal-heading h2 { font-size: 32px; }
+  .lalia-reference .home-journal-heading > .blog-read-link { margin-top: 17px; }
+  .lalia-reference .home-journal .meeting-art { min-height: 375px; }
+  .lalia-reference .home-journal .blog-feature-copy { padding-top: 29px; padding-bottom: 29px; }
+  .lalia-reference .article-heading { text-align: left; padding-top: 29px; }
+  .lalia-reference .article-heading > .blog-category { margin-top: 33px; }
+  .lalia-reference .article-heading h1 { letter-spacing: -1.5px; margin-top: 19px; font-size: clamp(33px, 8.5vw, 45px); line-height: 1.23; }
+  .lalia-reference .article-deck { margin-top: 22px; font-size: 13px; }
+  .lalia-reference .article-byline { justify-content: flex-start; margin-top: 25px; margin-bottom: 30px; }
+  .lalia-reference .article-read-time { margin-left: auto; padding-left: 12px; font-size: 9px; }
+  .lalia-reference .article-cover .meeting-art { height: 375px; }
+  .lalia-reference .article-cover .meeting-portrait { width: 31%; height: 43%; top: 18%; }
+  .lalia-reference .article-cover .meeting-portrait-one { left: 14%; }
+  .lalia-reference .article-cover .meeting-portrait-two { top: 20%; right: 13%; }
+  .lalia-reference .article-cover .meeting-art-caption { top: 65%; left: 14%; right: 9%; }
+  .lalia-reference .article-cover .meeting-art-orbit { width: 90%; top: 6%; left: 5%; }
+  .lalia-reference .article-cover figcaption { font-size: 8px; }
+  .lalia-reference .article-layout { padding-top: 31px; padding-bottom: 40px; }
+  .lalia-reference .article-sidebar { margin-bottom: 34px; padding: 17px; }
+  .lalia-reference .article-sidebar nav { display: block; }
+  .lalia-reference .article-sidebar nav > .eyebrow { margin-bottom: 10px; display: block; }
+  .lalia-reference .article-sidebar nav > a { padding: 10px 0px; font-size: 11px; }
+  .lalia-reference .article-sidebar nav > a:last-child { border-bottom: 0px; padding-bottom: 0px; }
+  .lalia-reference .article-prose { font-size: 15px; }
+  .lalia-reference .article-prose .article-lead { font-size: 20px; line-height: 1.65; }
+  .lalia-reference .article-prose h2 { letter-spacing: -0.8px; font-size: 27px; }
+  .lalia-reference .article-prose h3 { font-size: 19px; }
+  .lalia-reference .article-prose section { margin-top: 35px; }
+  .lalia-reference .article-pullquote { padding: 22px; }
+  .lalia-reference .article-pullquote > p { font-size: 24px; }
+  .lalia-reference .article-end { margin-top: 35px; padding: 26px 23px; }
+  .lalia-reference .article-end h2 { font-size: 28px; }
+  .lalia-reference .article-end p { font-size: 13px; }
+  .lalia-reference .article-secondary-cta { margin: 17px 0px 0px; display: flex; }
+  .lalia-reference .article-source > p { font-size: 9px; }
+  .lalia-reference .article-bottom-nav { padding-bottom: 34px; }
+}
