@@ -1,8 +1,17 @@
 const { WebhookReceiver } = require('livekit-server-sdk');
 const { run, get, all, uuid } = require('../db/v2Database');
+const { COSTS } = require('../lib/costConstants');
 const { reconcileTranslationMinutesForMeeting } = require('../lib/v2TranslationUsage');
 const { checkAndEnforceUsageCap } = require('../lib/v2UsageCapEnforcement');
 const { evaluateAndSendUsageAlerts } = require('../lib/v2UsageAlerts');
+
+/** LiveKit bills WebRTC and agent sessions in 1-second increments with a 10-second minimum. */
+const LIVEKIT_SESSION_MINIMUM_MINUTES = 10 / 60;
+
+function livekitMinuteRateUsd(identity) {
+  if (isAgentIdentity(identity)) return COSTS.livekit_agent_minute.unit_cost_usd;
+  return COSTS.livekit_participant_minute.unit_cost_usd;
+}
 
 function isLiveKitWebhookVerifyRequired() {
   if (process.env.NODE_ENV === 'production') return true;
@@ -167,14 +176,16 @@ function computeParticipantMinutes(joinRows, leaveRows, fallbackEndTs, skipIdent
 
     const leftTs = idx < leaves.length ? leaves[idx] : fallbackEndTs;
     if (idx < leaves.length) leaveCursor[pid] = idx + 1;
+    if (leftTs < join.ts) continue;
 
-    const mins = Math.max(0, (leftTs - join.ts) / 1000 / 60);
+    const rawMins = (leftTs - join.ts) / 1000 / 60;
+    const mins = Math.max(rawMins, LIVEKIT_SESSION_MINIMUM_MINUTES);
     participantMinutes += mins;
     if (!byParticipant[pid]) {
       byParticipant[pid] = { minutes: 0, cost: 0 };
     }
     byParticipant[pid].minutes += mins;
-    byParticipant[pid].cost += mins * 0.004;
+    byParticipant[pid].cost += mins * livekitMinuteRateUsd(pid);
   }
 
   return { participantMinutes, byParticipant };
@@ -258,21 +269,24 @@ async function aggregateRollup(meetingId) {
       [meetingId]
     );
 
-    const PARTICIPANT_RATE = 0.004;
-    const { participantMinutes, byParticipant } = computeParticipantMinutes(
+    // Price humans at WebRTC participant rates and cloud agents at agent-session
+    // rates. Customer participant-minute usage stays human-only (see
+    // recordParticipantSessionUsage); this rollup is our COGS.
+    const { byParticipant } = computeParticipantMinutes(
       joinRows,
       leaveRows,
       endEv.ts,
-      isAgentIdentity
+      () => false
     );
 
+    let participantCost = 0;
     for (const [pid, stats] of Object.entries(byParticipant)) {
       ensureParticipant(pid);
       participantStats[pid].livekit_minutes += stats.minutes;
       participantStats[pid].total_cost_usd += stats.cost;
+      participantCost += stats.cost;
     }
 
-    const participantCost = participantMinutes * PARTICIPANT_RATE;
     if (participantCost > 0) {
       breakdown.livekit = (breakdown.livekit || 0) + participantCost;
       totalCost += participantCost;
