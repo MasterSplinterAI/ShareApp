@@ -155,8 +155,8 @@ export const v2Meetings = {
     apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript/synthesize`, body).then((r) => r.data),
   listEmailInvites: (id) =>
     apiV2.get(`/meetings/${encodeURIComponent(id)}/invites/email`).then((r) => r.data),
-  sendEmailInvites: (id, emails) =>
-    apiV2.post(`/meetings/${encodeURIComponent(id)}/invites/email`, { emails }).then((r) => r.data),
+  sendEmailInvites: (id, emails, opts = {}) =>
+    apiV2.post(`/meetings/${encodeURIComponent(id)}/invites/email`, { emails, ...opts }).then((r) => r.data),
   resendQueuedEmailInvites: (id) =>
     apiV2.post(`/meetings/${encodeURIComponent(id)}/invites/email/resend-queued`).then((r) => r.data),
   updateEmailInviteReminderSettings: (id, body) =>

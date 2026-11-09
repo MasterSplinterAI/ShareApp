@@ -80,7 +80,16 @@ export const translationService = {
 
 /** V2 public join preview + guest LiveKit token (no auth). */
 export const joinPublicService = {
-  joinInfo: (roomName, i) => api.get('/v2/join-info', { params: { roomName, i } }).then((r) => r.data),
+  joinInfo: (roomName, i, lang) =>
+    api
+      .get('/v2/join-info', {
+        params: {
+          roomName,
+          i,
+          ...(lang ? { lang } : {}),
+        },
+      })
+      .then((r) => r.data),
   guestToken: (body) => api.post('/v2/guest-token', body).then((r) => r.data),
 };
 

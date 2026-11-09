@@ -4,6 +4,8 @@ import toast from 'react-hot-toast';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
+import GuestLanguageSelector from './GuestLanguageSelector';
+import { buildJoinUrlWithLanguage } from '../lib/guestLanguage';
 
 /**
  * Copy/Share triggered by direct user gesture (fixes mobile Safari clipboard).
@@ -11,11 +13,13 @@ import { Input } from './ui/input';
 function InviteLinkModal({ inviteLink, onClose }) {
   const inputRef = useRef(null);
   const [copied, setCopied] = useState(false);
+  const [guestLang, setGuestLang] = useState('');
+  const effectiveLink = buildJoinUrlWithLanguage(inviteLink, guestLang);
 
   const handleCopy = async (e) => {
     e.preventDefault();
     try {
-      await navigator.clipboard.writeText(inviteLink);
+      await navigator.clipboard.writeText(effectiveLink);
       setCopied(true);
       toast.success('Link copied to clipboard!');
       setTimeout(() => setCopied(false), 2000);
@@ -35,7 +39,7 @@ function InviteLinkModal({ inviteLink, onClose }) {
       await navigator.share({
         title: 'Join Lalia meeting',
         text: 'Join my Lalia meeting – video with real-time translation and captions',
-        url: inviteLink,
+        url: effectiveLink,
       });
       toast.success('Shared!');
     } catch (err) {
@@ -52,7 +56,8 @@ function InviteLinkModal({ inviteLink, onClose }) {
           <DialogTitle>Invite link created</DialogTitle>
           <DialogDescription>Share this link with others to invite them to your meeting.</DialogDescription>
         </DialogHeader>
-        <Input ref={inputRef} type="text" value={inviteLink} readOnly aria-label="Invite link" className="select-all font-mono text-sm" />
+        <GuestLanguageSelector value={guestLang} onChange={setGuestLang} />
+        <Input ref={inputRef} type="text" value={effectiveLink} readOnly aria-label="Invite link" className="select-all font-mono text-sm" />
         <DialogFooter className="flex-col gap-2 sm:flex-row">
           {typeof navigator !== 'undefined' && navigator.share && (
             <Button type="button" className="gap-2" onClick={handleShare}>

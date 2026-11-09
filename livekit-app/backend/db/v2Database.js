@@ -253,6 +253,9 @@ async function migrate() {
   if (!inviteColNames.has('expiry_mode')) {
     await run(`ALTER TABLE v2_meeting_invite_links ADD COLUMN expiry_mode TEXT NOT NULL DEFAULT 'days_after_start'`);
   }
+  if (!inviteColNames.has('default_language')) {
+    await run(`ALTER TABLE v2_meeting_invite_links ADD COLUMN default_language TEXT`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_meeting_guest_invites (
@@ -279,6 +282,9 @@ async function migrate() {
   }
   if (!guestInviteColNames.has('rsvp_updated_at')) {
     await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN rsvp_updated_at TEXT`);
+  }
+  if (!guestInviteColNames.has('default_language')) {
+    await run(`ALTER TABLE v2_meeting_guest_invites ADD COLUMN default_language TEXT`);
   }
 
   const polCols = await all(`PRAGMA table_info(v2_meeting_policies)`);

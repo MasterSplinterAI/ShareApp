@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { QrCodeShareCard } from './MeetingQrCode';
+import GuestLanguageSelector from './GuestLanguageSelector';
+import { buildJoinUrlWithLanguage } from '../lib/guestLanguage';
 import { v2Calls, v2Contacts } from '../services/apiV2';
 
 function ShareModal({
@@ -21,6 +23,9 @@ function ShareModal({
   const [rungIds, setRungIds] = useState(() => new Set());
   const [quickEmail, setQuickEmail] = useState('');
   const [quickName, setQuickName] = useState('');
+  const [guestLang, setGuestLang] = useState('');
+
+  const effectiveShareLink = buildJoinUrlWithLanguage(shareableLink, guestLang);
 
   const hasAuthToken =
     typeof localStorage !== 'undefined' && Boolean(localStorage.getItem('v2_token'));
@@ -53,14 +58,14 @@ function ShareModal({
 
   const handleNativeShare = async () => {
     if (!canNativeShare) {
-      copyToClipboard(shareableLink, 'direct');
+      copyToClipboard(effectiveShareLink, 'direct');
       return;
     }
     try {
       await navigator.share({
         title: 'Join my Lalia call (live translation)',
         text: 'Tap to join my call with live translation and captions:',
-        url: shareableLink,
+        url: effectiveShareLink,
       });
     } catch {
       /* user canceled share sheet */
@@ -73,6 +78,7 @@ function ShareModal({
     try {
       await v2Calls.start({
         contactId: contact.id,
+        preferredLanguage: contact.preferredLanguage || guestLang || undefined,
         meetingId: meetingId || undefined,
         roomName: roomName || undefined,
       });
@@ -97,6 +103,7 @@ function ShareModal({
       const res = await v2Calls.start({
         email,
         name: quickName.trim() || undefined,
+        preferredLanguage: guestLang || undefined,
         meetingId: meetingId || undefined,
         roomName: roomName || undefined,
       });
@@ -210,19 +217,24 @@ function ShareModal({
             </Button>
           )}
 
-          <div>
+          <div className="space-y-2.5">
             <div className="mb-1 flex items-center gap-2">
               <Globe className="h-4 w-4 text-muted-foreground" />
               <span className="text-sm text-muted-foreground">Guest join link (works in any browser or app)</span>
             </div>
+            <GuestLanguageSelector
+              value={guestLang}
+              onChange={setGuestLang}
+              label="Guest's language"
+            />
             <div className="flex items-center gap-2">
-              <Input type="text" value={shareableLink} readOnly aria-label="Direct link" className="font-mono text-xs" />
+              <Input type="text" value={effectiveShareLink} readOnly aria-label="Direct link" className="font-mono text-xs" />
               <Button
                 type="button"
                 variant="secondary"
                 size="icon"
                 className="shrink-0"
-                onClick={() => copyToClipboard(shareableLink, 'direct')}
+                onClick={() => copyToClipboard(effectiveShareLink, 'direct')}
                 aria-label={copiedLink === 'direct' ? 'Direct link copied' : 'Copy direct link'}
                 title="Copy direct link"
               >
@@ -233,7 +245,7 @@ function ShareModal({
         </div>
 
         <QrCodeShareCard
-          url={shareableLink}
+          url={effectiveShareLink}
           title="Scan QR code to join room"
           subtitle="Anyone can scan with their phone camera to join via browser or Lalia app"
           compact

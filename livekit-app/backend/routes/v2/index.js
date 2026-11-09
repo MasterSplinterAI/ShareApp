@@ -6,6 +6,7 @@ router.get('/health', (req, res) => {
 });
 
 router.use('/', require('./joinPublic'));
+router.use('/public/meetings', require('./joinPublic'));
 router.use('/auth', require('./auth'));
 router.use('/orgs', require('./orgs'));
 router.use('/meetings', require('./meetings'));

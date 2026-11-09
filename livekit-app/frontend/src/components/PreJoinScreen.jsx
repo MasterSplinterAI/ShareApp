@@ -1,9 +1,18 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Track } from 'livekit-client';
 import {
-  Mic, MicOff, Video, VideoOff, Globe, AlertCircle, Users,
+  Mic, MicOff, Video, VideoOff, Globe, AlertCircle, Users, Check,
 } from 'lucide-react';
-import { normalizeMeetingLanguageCode, readStoredMeetingLanguage } from '../lib/languages';
+import {
+  normalizeMeetingLanguageCode,
+  readStoredMeetingLanguage,
+  writeStoredMeetingLanguage,
+} from '../lib/languages';
+import {
+  parseGuestLanguageFromSearch,
+  resolvePreselectedLanguage,
+  formatPreselectedLanguageNotice,
+} from '../lib/guestLanguage';
 import { MeetingLanguagePicker } from './MeetingLanguagePicker';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -107,6 +116,7 @@ function PreJoinScreen({
   roomName,
   defaultName = '',
   defaultLanguage = 'en',
+  preselectedLanguage = null,
   participantCount = null,
   meetingTitle = null,
   branding = null,
@@ -121,9 +131,27 @@ function PreJoinScreen({
 }) {
   const { t, setLocale } = useTranslation();
   const [name, setName] = useState(defaultName);
-  const [selectedLanguage, setSelectedLanguage] = useState(() =>
-    normalizeMeetingLanguageCode(defaultLanguage || readStoredMeetingLanguage())
+  const urlPreselected = useMemo(
+    () =>
+      typeof window !== 'undefined'
+        ? parseGuestLanguageFromSearch(window.location.search)
+        : null,
+    []
   );
+  const initialPreselected = useMemo(
+    () => resolvePreselectedLanguage(preselectedLanguage) || urlPreselected || null,
+    [preselectedLanguage, urlPreselected]
+  );
+
+  const [selectedLanguage, setSelectedLanguage] = useState(() => {
+    const chosen = normalizeMeetingLanguageCode(
+      initialPreselected || defaultLanguage || readStoredMeetingLanguage()
+    );
+    if (initialPreselected) {
+      writeStoredMeetingLanguage(chosen);
+    }
+    return chosen;
+  });
 
   // If defaultName resolves asynchronously (e.g. from signed-in user profile), fill the field if still empty.
   useEffect(() => {
@@ -140,12 +168,22 @@ function PreJoinScreen({
   }, [setLocale]);
 
   useEffect(() => {
+    if (initialPreselected) {
+      const normalized = normalizeMeetingLanguageCode(initialPreselected);
+      setSelectedLanguage(normalized);
+      writeStoredMeetingLanguage(normalized);
+      syncUiLocaleToMeetingLanguage(normalized);
+    }
+  }, [initialPreselected, syncUiLocaleToMeetingLanguage]);
+
+  useEffect(() => {
     syncUiLocaleToMeetingLanguage(selectedLanguage);
   }, [selectedLanguage, syncUiLocaleToMeetingLanguage]);
 
   const handleLanguageChange = useCallback((code) => {
     const next = normalizeMeetingLanguageCode(code);
     setSelectedLanguage(next);
+    writeStoredMeetingLanguage(next);
     syncUiLocaleToMeetingLanguage(next);
   }, [syncUiLocaleToMeetingLanguage]);
   const { audioEnabled, videoEnabled, audioDeviceId, videoDeviceId } = media;
@@ -253,9 +291,11 @@ function PreJoinScreen({
     e.preventDefault();
     const trimmed = (showNameField ? name : defaultName || name).trim();
     if (!trimmed) return;
+    const finalLang = normalizeMeetingLanguageCode(selectedLanguage);
+    writeStoredMeetingLanguage(finalLang);
     onJoin({
       name: trimmed,
-      language: selectedLanguage,
+      language: finalLang,
       audioEnabled,
       videoEnabled,
       audioDeviceId,
@@ -263,6 +303,10 @@ function PreJoinScreen({
       videoEffectId: effectsAvailable ? effectId : 'none',
     });
   };
+
+  const preselectedNotice = initialPreselected
+    ? formatPreselectedLanguageNotice(selectedLanguage)
+    : null;
 
   return (
     <div
@@ -415,6 +459,16 @@ function PreJoinScreen({
                   <Globe className="h-3.5 w-3.5" />
                   {t('prejoin.myLanguage')}
                 </Label>
+                {preselectedNotice && (
+                  <div
+                    data-testid="preselected-language-pill"
+                    data-no-translate="true"
+                    className="flex items-start gap-2 rounded-lg border border-emerald-500/35 bg-emerald-500/10 px-3 py-2 text-xs font-medium text-emerald-800 dark:text-emerald-300"
+                  >
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                    <span>{preselectedNotice.noticeText}</span>
+                  </div>
+                )}
                 <MeetingLanguagePicker
                   value={selectedLanguage}
                   onChange={handleLanguageChange}

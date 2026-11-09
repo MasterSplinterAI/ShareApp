@@ -20,10 +20,26 @@ const {
   parseCreateInviteBody,
 } = require('../../lib/inviteExpiry');
 
+function sanitizeDefaultLanguage(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim().replace(/_/g, '-');
+  if (!trimmed || trimmed.toLowerCase() === 'auto') return null;
+  if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(trimmed)) return null;
+  return trimmed.slice(0, 16);
+}
+
+function appendLangParam(urlStr, lang) {
+  const cleanLang = sanitizeDefaultLanguage(lang);
+  if (!urlStr || !cleanLang) return urlStr;
+  const sep = urlStr.includes('?') ? '&' : '?';
+  return `${urlStr}${sep}lang=${encodeURIComponent(cleanLang)}`;
+}
+
 function enrichInvitesWithJoinUrls(invites, guestJoinBase, meeting) {
   return invites.map((inv) => {
     const usable = inviteIsUsable(inv, meeting);
-    const joinUrl = usable ? `${guestJoinBase}?i=${encodeURIComponent(inv.token)}` : null;
+    const baseJoinUrl = usable ? `${guestJoinBase}?i=${encodeURIComponent(inv.token)}` : null;
+    const joinUrl = baseJoinUrl ? appendLangParam(baseJoinUrl, inv.default_language) : null;
     const expiry = describeInviteExpiry(inv, meeting);
     return {
       ...inv,
@@ -104,23 +120,32 @@ async function ensureEmailInviteLink(row, meetingId) {
   return { id: linkId, token };
 }
 
-async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, resendAlreadySent = false }) {
+async function deliverGuestEmailInvites({
+  row,
+  meetingId,
+  emails,
+  userId,
+  req,
+  resendAlreadySent = false,
+  defaultLanguage = null,
+}) {
   const link = await ensureEmailInviteLink(row, meetingId);
   const { sendGuestInvite } = require('../../lib/guestInvites');
   const { getGuestInvitePrefs } = require('../../lib/guestInviteReminderPrefs');
   const base = publicFrontendBaseUrl(req);
-  const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
+  const baseJoinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(link.token)}`;
   const host = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [row.host_user_id]);
   const inviter = await db.get(`SELECT display_name, email FROM v2_users WHERE id = ?`, [userId]);
   const invitePrefs = await getGuestInvitePrefs(userId);
   const cc = invitePrefs.ccHost && inviter?.email ? inviter.email : undefined;
   const hostName = host?.display_name || host?.email;
   const icsSequence = row.ics_sequence || 0;
+  const explicitLang = sanitizeDefaultLanguage(defaultLanguage);
 
   const results = [];
   for (const email of emails) {
     const existing = await db.get(
-      `SELECT id, sent_at FROM v2_meeting_guest_invites
+      `SELECT id, sent_at, default_language FROM v2_meeting_guest_invites
        WHERE meeting_id = ? AND email = ?
        ORDER BY CASE WHEN sent_at IS NULL THEN 0 ELSE 1 END, datetime(created_at) DESC
        LIMIT 1`,
@@ -132,12 +157,33 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
       continue;
     }
 
+    let guestLang = explicitLang || existing?.default_language || null;
+    if (!guestLang) {
+      try {
+        const contactMatch = await db.get(
+          `SELECT preferred_language FROM v2_contacts
+           WHERE (owner_user_id = ? OR owner_user_id = ?)
+             AND LOWER(contact_email) = LOWER(?)
+             AND preferred_language IS NOT NULL
+           LIMIT 1`,
+          [userId || '', row.host_user_id || '', email]
+        );
+        if (contactMatch?.preferred_language) {
+          guestLang = sanitizeDefaultLanguage(contactMatch.preferred_language);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const guestJoinUrl = appendLangParam(baseJoinUrl, guestLang);
+
     const sendResult = await sendGuestInvite({
       email,
       meetingTitle: row.title || 'Meeting',
       scheduledStart: row.scheduled_start,
       scheduledEnd: row.scheduled_end,
-      joinUrl,
+      joinUrl: guestJoinUrl,
       inviterName: hostName || inviter?.display_name || inviter?.email,
       meetingId,
       timeZone: invitePrefs.timezone,
@@ -150,21 +196,26 @@ async function deliverGuestEmailInvites({ row, meetingId, emails, userId, req, r
 
     if (existing) {
       await db.run(
-        `UPDATE v2_meeting_guest_invites SET invite_link_id = ?, invited_by = ?, sent_at = ? WHERE id = ?`,
-        [link.id, userId, sentAt, existing.id]
+        `UPDATE v2_meeting_guest_invites SET invite_link_id = ?, invited_by = ?, sent_at = ?, default_language = COALESCE(?, default_language) WHERE id = ?`,
+        [link.id, userId, sentAt, guestLang, existing.id]
       );
     } else {
       await db.run(
-        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at)
-         VALUES (?,?,?,?,?,?)`,
-        [db.uuid(), meetingId, link.id, email, userId, sentAt]
+        `INSERT INTO v2_meeting_guest_invites (id, meeting_id, invite_link_id, email, invited_by, sent_at, default_language)
+         VALUES (?,?,?,?,?,?,?)`,
+        [db.uuid(), meetingId, link.id, email, userId, sentAt, guestLang]
       );
     }
 
-    results.push({ email, sent: Boolean(sendResult?.sent), error: sendResult?.error || undefined });
+    results.push({
+      email,
+      sent: Boolean(sendResult?.sent),
+      defaultLanguage: guestLang || undefined,
+      error: sendResult?.error || undefined,
+    });
   }
 
-  return { results, joinUrl };
+  return { results, joinUrl: appendLangParam(baseJoinUrl, explicitLang) };
 }
 
 async function sendHostCalendarSyncEmail({ row, meetingId, userId, req }) {
@@ -450,7 +501,7 @@ router.get('/:id/invites', requireV2Auth, async (req, res) => {
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const links = await db.all(
-      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, created_at FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
+      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, default_language, created_at FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
       [req.params.id]
     );
     res.json({ invites: links });
@@ -466,12 +517,15 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const { reusable, expiryMode, opts } = parseCreateInviteBody(req.body);
     const { label, maxUses } = req.body || {};
+    const defaultLanguage = sanitizeDefaultLanguage(
+      req.body?.defaultLanguage || req.body?.default_language || req.body?.language
+    );
     const token = crypto.randomBytes(18).toString('base64url');
     const linkId = db.uuid();
     const expiresAt = computeInviteExpiresAt(row, opts);
     await db.run(
-      `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode)
-       VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO v2_meeting_invite_links (id, meeting_id, token, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, default_language)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [
         linkId,
         req.params.id,
@@ -483,10 +537,12 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
         0,
         maxUses != null && Number.isFinite(Number(maxUses)) ? Number(maxUses) : null,
         expiryMode,
+        defaultLanguage,
       ]
     );
     const base = publicFrontendBaseUrl(req);
-    const joinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(token)}`;
+    const baseJoinUrl = `${base}/join/${encodeURIComponent(row.livekit_room_name)}?i=${encodeURIComponent(token)}`;
+    const joinUrl = appendLangParam(baseJoinUrl, defaultLanguage);
     const invRow = {
       id: linkId,
       expires_at: expiresAt,
@@ -494,6 +550,7 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
       reusable: reusable ? 1 : 0,
       use_count: 0,
       revoked_at: null,
+      default_language: defaultLanguage,
     };
     const expiry = describeInviteExpiry(invRow, row);
     res.status(201).json({
@@ -505,6 +562,8 @@ router.post('/:id/invites', requireV2Auth, async (req, res) => {
       expiryDetail: expiry.detail,
       linkType: 'shared',
       joinUrl,
+      defaultLanguage,
+      default_language: defaultLanguage,
       reusable: Boolean(reusable),
       inviteMaxTtlDays: Math.floor(maxInviteTtlMs() / 86400000),
     });
@@ -593,7 +652,7 @@ router.get('/:id/invites/email', requireV2Auth, async (req, res) => {
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
     const [guests, directCalls, hostRow] = await Promise.all([
       db.all(
-        `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, rsvp_status, rsvp_updated_at, created_at
+        `SELECT id, email, sent_at, reminder_sent_at, reminders_sent_json, rsvp_status, rsvp_updated_at, default_language, created_at
          FROM v2_meeting_guest_invites WHERE meeting_id = ? ORDER BY datetime(created_at) DESC LIMIT 100`,
         [req.params.id]
       ),
@@ -692,6 +751,9 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
     const valid = emails.filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
     if (!valid.length) return res.status(400).json({ error: 'At least one valid email is required' });
 
+    const defaultLanguage = sanitizeDefaultLanguage(
+      req.body?.defaultLanguage || req.body?.default_language || req.body?.language
+    );
     const { results, joinUrl } = await deliverGuestEmailInvites({
       row,
       meetingId: req.params.id,
@@ -699,6 +761,7 @@ router.post('/:id/invites/email', requireV2Auth, async (req, res) => {
       userId: req.v2Auth.userId,
       req,
       resendAlreadySent: Boolean(req.body?.resend),
+      defaultLanguage,
     });
     const payload = await buildGuestInviteSendResponse(results, joinUrl);
     res.status(201).json(payload);
@@ -795,7 +858,7 @@ router.get('/:id', requireV2Auth, async (req, res) => {
     await ensureSecureInviteForMeeting(row);
     const base = publicFrontendBaseUrl(req);
     const invites = await db.all(
-      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, created_at, token FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
+      `SELECT id, label, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode, default_language, created_at, token FROM v2_meeting_invite_links WHERE meeting_id = ? ORDER BY datetime(created_at) DESC`,
       [req.params.id]
     );
     const policy = {

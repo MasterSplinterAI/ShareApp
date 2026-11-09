@@ -1,8 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { QRCodeCanvas, QRCodeSVG } from 'qrcode.react';
 import { Check, Copy, Download, Maximize2, QrCode, Share2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { Button } from './ui/button';
+import GuestLanguageSelector from './GuestLanguageSelector';
+import { buildJoinUrlWithLanguage, parseGuestLanguageFromSearch } from '../lib/guestLanguage';
 import {
   Dialog,
   DialogContent,
@@ -160,16 +162,24 @@ export function QrCodeDialogButton({
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [guestLang, setGuestLang] = useState(() => parseGuestLanguageFromSearch(url) || '');
   const canvasWrapRef = useRef(null);
 
+  useEffect(() => {
+    const fromProp = parseGuestLanguageFromSearch(url) || '';
+    setGuestLang(fromProp);
+  }, [url]);
+
   if (!url) return null;
+
+  const effectiveUrl = buildJoinUrlWithLanguage(url, guestLang);
 
   const canNativeShare =
     typeof navigator !== 'undefined' && typeof navigator.share === 'function';
 
   const handleCopy = async () => {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(effectiveUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success('Copied guest link!');
@@ -204,7 +214,7 @@ export function QrCodeDialogButton({
       await navigator.share({
         title: meetingTitle ? `Join "${meetingTitle}" on Lalia` : 'Join my Lalia meeting',
         text: 'Scan or tap to join with live multilingual translation:',
-        url,
+        url: effectiveUrl,
       });
     } catch {
       /* user canceled */
@@ -235,16 +245,25 @@ export function QrCodeDialogButton({
             </DialogDescription>
           </DialogHeader>
 
+          <div className="text-left">
+            <GuestLanguageSelector
+              value={guestLang}
+              onChange={setGuestLang}
+              label="Guest's language"
+              compact
+            />
+          </div>
+
           <div className="mx-auto flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-5 shadow-md">
-            <QRCodeSVG value={url} size={232} level="M" includeMargin={false} />
+            <QRCodeSVG value={effectiveUrl} size={232} level="M" includeMargin={false} />
           </div>
 
           <div ref={canvasWrapRef} className="hidden" aria-hidden="true">
-            <QRCodeCanvas value={url} size={512} level="H" includeMargin />
+            <QRCodeCanvas value={effectiveUrl} size={512} level="H" includeMargin />
           </div>
 
           <p className="truncate rounded-md border border-border/60 bg-muted/40 px-2.5 py-1.5 font-mono text-xs text-muted-foreground">
-            {url}
+            {effectiveUrl}
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-2 pt-1">

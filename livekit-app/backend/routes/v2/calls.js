@@ -594,7 +594,10 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
         return res.status(404).json({ error: 'Active meeting not found' });
       }
       const inviteToken = await ensureReusableInviteToken(existingMeeting);
-      const joinUrl = `${base}/join/${encodeURIComponent(existingMeeting.livekit_room_name)}?i=${encodeURIComponent(inviteToken)}`;
+      const langSuffix = targetContact.preferredLanguage
+        ? `&lang=${encodeURIComponent(targetContact.preferredLanguage)}`
+        : '';
+      const joinUrl = `${base}/join/${encodeURIComponent(existingMeeting.livekit_room_name)}?i=${encodeURIComponent(inviteToken)}${langSuffix}`;
       meetingInfo = {
         id: existingMeeting.id,
         livekitRoomName: existingMeeting.livekit_room_name,
@@ -650,7 +653,10 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
         [linkId, newMeetingId, inviteToken, 'Default guest link', expiresAt, null, 1, 0, null, expiryMode]
       );
 
-      const joinUrl = `${base}/join/${encodeURIComponent(newRoomName)}?i=${encodeURIComponent(inviteToken)}`;
+      const langSuffix = targetContact.preferredLanguage
+        ? `&lang=${encodeURIComponent(targetContact.preferredLanguage)}`
+        : '';
+      const joinUrl = `${base}/join/${encodeURIComponent(newRoomName)}?i=${encodeURIComponent(inviteToken)}${langSuffix}`;
       meetingInfo = {
         id: newMeetingId,
         livekitRoomName: newRoomName,

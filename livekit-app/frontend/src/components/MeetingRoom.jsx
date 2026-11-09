@@ -22,7 +22,15 @@ import VideoGrid from './VideoGrid';
 import PreJoinScreen from './PreJoinScreen';
 import PublishPreviewTracks from './PublishPreviewTracks';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
-import { normalizeMeetingLanguageCode, readStoredMeetingLanguage } from '../lib/languages';
+import {
+  normalizeMeetingLanguageCode,
+  readStoredMeetingLanguage,
+  writeStoredMeetingLanguage,
+} from '../lib/languages';
+import {
+  parseGuestLanguageFromSearch,
+  resolvePreselectedLanguage,
+} from '../lib/guestLanguage';
 import { autopilotTranslator } from '../lib/autopilot-translator';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
 import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
@@ -211,11 +219,27 @@ function MeetingRoom() {
     const inviteToken = stateInfo.inviteToken || sessionInfo.inviteToken;
     const brandingFromSession = stateInfo.branding || sessionInfo.branding || null;
     const titleFromSession = stateInfo.meetingTitle || sessionInfo.meetingTitle || null;
+    const preselectedLanguage =
+      parseGuestLanguageFromSearch(location.search) ||
+      resolvePreselectedLanguage(stateInfo.preselectedLanguage || sessionInfo.preselectedLanguage) ||
+      null;
+
+    if (preselectedLanguage) {
+      writeStoredMeetingLanguage(preselectedLanguage);
+    }
+
     const selectedLanguage = normalizeMeetingLanguageCode(
-      stateInfo.selectedLanguage || sessionInfo.selectedLanguage || readStoredMeetingLanguage() || 'en'
+      preselectedLanguage ||
+        stateInfo.selectedLanguage ||
+        sessionInfo.selectedLanguage ||
+        readStoredMeetingLanguage() ||
+        'en'
     );
     const spokenLanguage = normalizeMeetingLanguageCode(
-      stateInfo.spokenLanguage || sessionInfo.spokenLanguage || selectedLanguage
+      preselectedLanguage ||
+        stateInfo.spokenLanguage ||
+        sessionInfo.spokenLanguage ||
+        selectedLanguage
     );
 
     // Bounce to /join only when there's no join context at all (cold hit on /room URL).
@@ -227,7 +251,7 @@ function MeetingRoom() {
       sessionInfo.roomName === roomName ||
       Boolean(stateInfo.meetingId || sessionInfo.meetingId);
     if (!hasJoinContext) {
-      navigate(`/join/${roomName}`, { replace: true });
+      navigate(`/join/${roomName}${location.search || ''}`, { replace: true });
       return;
     }
 
@@ -241,6 +265,7 @@ function MeetingRoom() {
       inviteToken,
       selectedLanguage,
       spokenLanguage,
+      preselectedLanguage,
     });
     setMeetingBranding(normalizeMeetingBranding(brandingFromSession));
     setMeetingTitle(titleFromSession);
@@ -302,11 +327,13 @@ function MeetingRoom() {
           : false,
       });
       setParticipantInfo((prev) => {
+        const normalizedLang = normalizeMeetingLanguageCode(language);
+        writeStoredMeetingLanguage(normalizedLang);
         const next = {
           ...prev,
           participantName: name,
-          selectedLanguage: language,
-          spokenLanguage: language,
+          selectedLanguage: normalizedLang,
+          spokenLanguage: normalizedLang,
         };
         try {
           sessionStorage.setItem('participantInfo', JSON.stringify({ ...next, roomName }));
@@ -473,6 +500,7 @@ function MeetingRoom() {
         roomName={roomName}
         defaultName={participantInfo.participantName}
         defaultLanguage={participantInfo.selectedLanguage}
+        preselectedLanguage={participantInfo.preselectedLanguage}
         participantCount={participantInfo.numParticipants}
         meetingTitle={meetingTitle}
         branding={meetingBranding}
