@@ -39,10 +39,14 @@ export function resolveUiLocale(code) {
   return DEFAULT_LOCALE;
 }
 
-/** Which JSON bundle to load — extended UI locales fall back to English copy + DOM translation. */
+/** Which JSON bundle to load — regional variants map to their core bundle; extended UI locales fall back to English copy + DOM translation. */
 export function resolveLocaleForMessages(uiLocale) {
   const resolved = resolveUiLocale(uiLocale);
-  return isCoreUiLocale(resolved) ? resolved : DEFAULT_LOCALE;
+  if (isCoreUiLocale(resolved)) return resolved;
+  const base = resolved.split('-')[0];
+  if (base === 'zh') return 'zh-CN';
+  if (isCoreUiLocale(base)) return base;
+  return DEFAULT_LOCALE;
 }
 
 export function getUiLanguages() {

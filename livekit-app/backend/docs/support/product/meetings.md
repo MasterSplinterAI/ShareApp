@@ -4,7 +4,9 @@ Lalia provides hosted video meetings with optional translation, captions, and vi
 
 ## Creating a meeting (New meeting dialog)
 
-From **Meetings** in the left sidebar, click **New meeting** or **Start instant meeting**.
+From **Home** or **Meetings** in the left sidebar, click **New instant meeting** or **New meeting**.
+
+When you create an instant meeting, Lalia opens the meeting's share & details page first (`?created=instant`) so you can copy the guest link, show or download the QR code, or email invites before clicking **Enter meeting room** (or **Join as host**) to join the live room.
 
 The **New meeting** dialog lets you set:
 

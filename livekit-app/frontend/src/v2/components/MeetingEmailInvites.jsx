@@ -8,6 +8,8 @@ import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import GuestLanguageSelector from '../../components/GuestLanguageSelector';
+import { getMeetingLanguageDisplay } from '../../components/MeetingLanguageList';
 import {
   offsetsFromToggles,
   reminderOffsetLabel,
@@ -50,6 +52,7 @@ function formatInviteExact(value) {
  */
 export default function MeetingEmailInvites({ meetingId }) {
   const [value, setValue] = useState('');
+  const [inviteLanguage, setInviteLanguage] = useState('');
   const [sending, setSending] = useState(false);
   const [resendingQueued, setResendingQueued] = useState(false);
   const [guests, setGuests] = useState([]);
@@ -111,7 +114,9 @@ export default function MeetingEmailInvites({ meetingId }) {
     }
     setSending(true);
     try {
-      const res = await v2Meetings.sendEmailInvites(meetingId, emails);
+      const res = await v2Meetings.sendEmailInvites(meetingId, emails, {
+        ...(inviteLanguage ? { defaultLanguage: inviteLanguage } : {}),
+      });
       if (res.message) {
         const failed = (res.results || []).filter((r) => !r.sent);
         toast(res.message, {
@@ -178,7 +183,7 @@ export default function MeetingEmailInvites({ meetingId }) {
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
+      <div className="space-y-2.5">
         <div className="flex flex-wrap items-center gap-2">
           <Input
             id={`guest-emails-${meetingId}`}
@@ -195,6 +200,12 @@ export default function MeetingEmailInvites({ meetingId }) {
             Send invites
           </Button>
         </div>
+        <GuestLanguageSelector
+          value={inviteLanguage}
+          onChange={setInviteLanguage}
+          label="Invitee language (pre-selects their join screen)"
+          compact
+        />
         <p className="text-xs text-muted-foreground">
           Guests get the join link by email
           {settings?.timezone ? ` (times in ${settings.timezone})` : ''}. No account needed.{' '}
@@ -327,10 +338,18 @@ export default function MeetingEmailInvites({ meetingId }) {
               const rsvpWhen = formatInviteWhen(g.rsvp_updated_at);
               const rsvpExact = formatInviteExact(g.rsvp_updated_at);
               const sentReminders = g.reminders_sent ? Object.keys(g.reminders_sent) : [];
+              const guestLangMeta = g.default_language ? getMeetingLanguageDisplay(g.default_language) : null;
               return (
                 <li key={g.id} className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                   <div className="min-w-0 space-y-1">
-                    <p className="truncate text-sm font-medium text-foreground">{g.email}</p>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <p className="truncate text-sm font-medium text-foreground">{g.email}</p>
+                      {guestLangMeta && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
+                          {guestLangMeta.flag ? `${guestLangMeta.flag} ` : ''}{guestLangMeta.name}
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground" title={invitedExact || undefined}>
                       {g.sent_at ? 'Invited' : 'Queued'}
                       {invitedWhen ? ` ${invitedWhen}` : ''}

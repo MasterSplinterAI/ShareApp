@@ -1,9 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { Users, Loader2, AlertCircle, Video, Clock } from 'lucide-react';
+import { Users, Loader2, AlertCircle, Video, Clock, Globe } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { roomService, joinPublicService } from '../services/api';
-import { normalizeMeetingBranding, brandingStyleVars, brandButtonClassName } from '../lib/meetingBranding';
+import { normalizeMeetingBranding, brandingStyleVars } from '../lib/meetingBranding';
+import {
+  normalizeMeetingLanguageCode,
+  readStoredMeetingLanguage,
+  writeStoredMeetingLanguage,
+} from '../lib/languages';
+import {
+  parseGuestLanguageFromSearch,
+  resolvePreselectedLanguage,
+  formatPreselectedLanguageNotice,
+} from '../lib/guestLanguage';
+import { useTranslation } from '../lib/i18n/I18nProvider';
+import { isUiLocale, resolveUiLocale } from '../lib/i18n/uiLanguages';
 import MeetingBrandHeader from './MeetingBrandHeader';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from './ui/card';
@@ -17,7 +29,9 @@ function JoinMeeting() {
   const { roomName } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const { setLocale } = useTranslation();
   const inviteFromUrl = searchParams.get('i') || '';
+  const langFromUrl = parseGuestLanguageFromSearch(searchParams);
   const pollRef = useRef(null);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -27,6 +41,29 @@ function JoinMeeting() {
   const [waitingHost, setWaitingHost] = useState(false);
   const [joinBranding, setJoinBranding] = useState(null);
   const [meetingTitle, setMeetingTitle] = useState('');
+  const [preselectedLanguage, setPreselectedLanguage] = useState(() => langFromUrl || null);
+
+  const applyPreselectedLanguage = useCallback(
+    (code) => {
+      const resolved = resolvePreselectedLanguage(code);
+      if (!resolved) return null;
+      setPreselectedLanguage(resolved);
+      writeStoredMeetingLanguage(resolved);
+      const uiLoc = resolveUiLocale(resolved);
+      if (isUiLocale(uiLoc)) {
+        setLocale(uiLoc);
+      }
+      return resolved;
+    },
+    [setLocale]
+  );
+
+  // Immediately apply ?lang= or ?l= from URL on mount
+  useEffect(() => {
+    if (langFromUrl) {
+      applyPreselectedLanguage(langFromUrl);
+    }
+  }, [langFromUrl, applyPreselectedLanguage]);
 
   const goHome = useCallback(() => navigate(homePath()), [navigate]);
 
@@ -44,6 +81,20 @@ function JoinMeeting() {
         /* ignore */
       }
       const initialName = existingName || joinMeta.suggestedParticipantName || '';
+      const resolvedPreselected =
+        langFromUrl ||
+        resolvePreselectedLanguage(joinMeta.defaultLanguage) ||
+        preselectedLanguage ||
+        null;
+
+      if (resolvedPreselected) {
+        applyPreselectedLanguage(resolvedPreselected);
+      }
+
+      const initialLang = normalizeMeetingLanguageCode(
+        resolvedPreselected || readStoredMeetingLanguage() || 'en'
+      );
+
       const participantInfo = {
         participantName: initialName,
         isHost: !!info?.hostCode,
@@ -51,8 +102,9 @@ function JoinMeeting() {
         shareableLink: info?.shareableLink,
         roomName,
         roomMode: info?.roomMode || 'multi-language',
-        selectedLanguage: 'en',
-        spokenLanguage: 'en',
+        selectedLanguage: initialLang,
+        spokenLanguage: initialLang,
+        preselectedLanguage: resolvedPreselected || null,
         numParticipants: info?.numParticipants ?? null,
         meetingId: v2Ctx?.meetingId,
         inviteToken: v2Ctx?.inviteToken || inviteFromUrl,
@@ -60,12 +112,19 @@ function JoinMeeting() {
         branding: joinMeta.branding || null,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      navigate(`/room/${roomName}${window.location.search}`, {
+
+      // Ensure ?lang= is preserved in the search string when navigating to /room/:roomName
+      const nextParams = new URLSearchParams(window.location.search);
+      if (resolvedPreselected && !nextParams.get('lang') && !nextParams.get('l')) {
+        nextParams.set('lang', resolvedPreselected);
+      }
+      const qs = nextParams.toString();
+      navigate(`/room/${roomName}${qs ? `?${qs}` : ''}`, {
         state: participantInfo,
         replace: true,
       });
     },
-    [navigate, roomName, inviteFromUrl]
+    [navigate, roomName, inviteFromUrl, langFromUrl, preselectedLanguage, applyPreselectedLanguage]
   );
 
   useEffect(() => {
@@ -97,16 +156,24 @@ function JoinMeeting() {
     }
 
     try {
-      const joinPreview = await joinPublicService.joinInfo(roomName, inviteFromUrl);
+      const joinPreview = await joinPublicService.joinInfo(roomName, inviteFromUrl, langFromUrl || undefined);
       if (joinPreview.mode === 'v2') {
         const v2Ctx = { meetingId: joinPreview.meetingId, inviteToken: inviteFromUrl };
         const branding = normalizeMeetingBranding(joinPreview.branding);
         setJoinBranding(branding);
         setMeetingTitle(joinPreview.title || '');
+        const serverDefaultLang = resolvePreselectedLanguage(
+          joinPreview.defaultLanguage || joinPreview.default_language
+        );
+        const effectivePreselected = langFromUrl || serverDefaultLang || null;
+        if (effectivePreselected) {
+          applyPreselectedLanguage(effectivePreselected);
+        }
         const joinMeta = {
           branding,
           meetingTitle: joinPreview.title || null,
           suggestedParticipantName: joinPreview.suggestedParticipantName || null,
+          defaultLanguage: effectivePreselected,
         };
         if (!joinPreview.allowed && joinPreview.reason === 'waiting_for_host') {
           setWaitingHost(true);
@@ -114,7 +181,7 @@ function JoinMeeting() {
           if (!pollRef.current) {
             pollRef.current = setInterval(async () => {
               try {
-                const j = await joinPublicService.joinInfo(roomName, inviteFromUrl);
+                const j = await joinPublicService.joinInfo(roomName, inviteFromUrl, langFromUrl || undefined);
                 if (j.allowed) {
                   clearInterval(pollRef.current);
                   pollRef.current = null;
@@ -158,7 +225,7 @@ function JoinMeeting() {
       }
 
       const info = await roomService.getInfo(roomName);
-      goToPrejoin(info, null);
+      goToPrejoin(info, null, { defaultLanguage: langFromUrl });
     } catch (err) {
       console.error('Failed to check room:', err);
       if (err.response?.status === 404) {
@@ -176,7 +243,7 @@ function JoinMeeting() {
     try {
       const response = await roomService.create(roomName);
       setIsInviteLink(false);
-      goToPrejoin(response, null);
+      goToPrejoin(response, null, { defaultLanguage: langFromUrl });
     } catch (error) {
       console.error('Failed to start room:', error);
       toast.error('Failed to start the meeting. Please try again.');
@@ -184,6 +251,8 @@ function JoinMeeting() {
       setIsStartingRoom(false);
     }
   };
+
+  const preselectedNotice = formatPreselectedLanguageNotice(preselectedLanguage);
 
   if (isLoading) {
     return (
@@ -226,6 +295,15 @@ function JoinMeeting() {
                   You&apos;re in the queue. This page checks every few seconds and will let you in as soon as the host
                   opens the room.
                 </CardDescription>
+                {preselectedNotice && (
+                  <div
+                    data-testid="waiting-preselected-language-pill"
+                    className="mx-auto mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/35 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                  >
+                    <Globe className="h-3.5 w-3.5 shrink-0" />
+                    <span>{preselectedNotice.noticeText}</span>
+                  </div>
+                )}
                 <p className="text-xs text-muted-foreground">Stay on this page — no need to refresh.</p>
               </div>
             </div>

@@ -22,6 +22,8 @@ import { unlockIncomingCallAudio } from './IncomingCallOverlay';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
+import GuestLanguageSelector from '../../components/GuestLanguageSelector';
+import { getMeetingLanguageDisplay } from '../../components/MeetingLanguageList';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 
 function parseUtcDate(raw) {
@@ -98,6 +100,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
   const [showAddForm, setShowAddForm] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
+  const [preferredLangInput, setPreferredLangInput] = useState('');
   const [savingContact, setSavingContact] = useState(false);
   const [notifPerm, setNotifPerm] = useState(() => {
     if (typeof window !== 'undefined' && localStorage.getItem('lalia_call_alerts_enabled') === '1') {
@@ -229,7 +232,10 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
     if (callingKey) return;
     setCallingKey(contact.id);
     try {
-      const data = await v2Calls.start({ contactId: contact.id });
+      const data = await v2Calls.start({
+        contactId: contact.id,
+        preferredLanguage: contact.preferredLanguage || undefined,
+      });
       toast.success(`Ringing ${contact.name}…`);
       enterCallRoom(data);
     } catch (e) {
@@ -263,7 +269,11 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
     if (mode === 'save') {
       setSavingContact(true);
       try {
-        const res = await v2Contacts.save({ email, name: name || undefined });
+        const res = await v2Contacts.save({
+          email,
+          name: name || undefined,
+          preferredLanguage: preferredLangInput || undefined,
+        });
         if (res.contact) {
           setContacts((prev) => {
             const filtered = prev.filter(
@@ -281,6 +291,7 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
         }
         setEmailInput('');
         setNameInput('');
+        setPreferredLangInput('');
         setShowAddForm(false);
         setActiveTab('contacts');
         toast.success('Saved to contacts');
@@ -294,7 +305,11 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
 
     setCallingKey('quick');
     try {
-      const data = await v2Calls.start({ email, name: name || undefined });
+      const data = await v2Calls.start({
+        email,
+        name: name || undefined,
+        preferredLanguage: preferredLangInput || undefined,
+      });
       toast.success(`Ringing ${data.contact?.name || email}…`);
       enterCallRoom(data);
     } catch (err) {
@@ -505,6 +520,11 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
               autoCorrect="off"
             />
           </div>
+          <GuestLanguageSelector
+            value={preferredLangInput}
+            onChange={setPreferredLangInput}
+            label="Contact's language (pre-selects when they answer)"
+          />
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
@@ -674,6 +694,14 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
                                 Guest link
                               </Badge>
                             )}
+                            {contact.preferredLanguage && (() => {
+                              const langMeta = getMeetingLanguageDisplay(contact.preferredLanguage);
+                              return langMeta ? (
+                                <Badge variant="outline" className="px-1.5 py-0 text-[10px] font-normal">
+                                  {langMeta.flag ? `${langMeta.flag} ` : ''}{langMeta.name}
+                                </Badge>
+                              ) : null;
+                            })()}
                           </div>
                           <p className="truncate text-xs text-muted-foreground">{contact.email}</p>
                         </div>

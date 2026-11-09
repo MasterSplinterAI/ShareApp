@@ -1,18 +1,16 @@
-import { useEffect } from 'react'
-import { useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 
 /**
- * /preview/* pages are static HTML under public/preview (a 1:1 port of the Lalia Journal
- * WordPress build). nginx serves them before the SPA; this only catches in-app navigation
- * and the Vite dev server. The .html guard stops a redirect loop if a page is missing.
+ * Legacy /preview and /preview/* routes redirect cleanly to the live / and /blog routes.
  */
 export default function PreviewStaticRedirect() {
   const { pathname, search, hash } = useLocation()
+  const clean = pathname.replace(/\/index\.html$/, '').replace(/\/$/, '')
 
-  useEffect(() => {
-    if (pathname.endsWith('.html')) return
-    window.location.replace(`${pathname.replace(/\/$/, '')}/index.html${search}${hash}`)
-  }, [pathname, search, hash])
+  if (clean === '/preview/blog' || clean.startsWith('/preview/blog/')) {
+    const rest = clean.slice('/preview'.length)
+    return <Navigate to={`${rest}${search || ''}${hash || ''}`} replace />
+  }
 
-  return null
+  return <Navigate to={`/${search || ''}${hash || ''}`} replace />
 }

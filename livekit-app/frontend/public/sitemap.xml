@@ -6,6 +6,36 @@
     <priority>1.0</priority>
   </url>
   <url>
+    <loc>https://lalia.cloud/blog</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/blog/why-phrase-level-commits-beat-word-by-word-streaming</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/blog/designing-bilingual-rooms-where-nobody-waits</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/blog/interpreter-or-live-ai-translation</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/blog/meetings-without-translators</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/blog/multilingual-meetings-made-easy-with-lalia</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://lalia.cloud/demo</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>

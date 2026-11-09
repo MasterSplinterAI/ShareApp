@@ -4,6 +4,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
 import { QrCodeDialogButton } from '../../components/MeetingQrCode';
+import GuestLanguageSelector from '../../components/GuestLanguageSelector';
 
 export default function MeetingAccessPanel({
   meeting,
@@ -15,7 +16,11 @@ export default function MeetingAccessPanel({
   guestUrlNeedsToken,
   guestLinkMeta,
   onCopyGuestUrl,
+  effectiveGuestJoinUrl,
+  guestShareLang = '',
+  onGuestShareLangChange,
 }) {
+  const displayJoinUrl = effectiveGuestJoinUrl || meeting.joinUrl || '';
   return (
     <div className="space-y-6">
       {showPolicyToggles && (
@@ -55,11 +60,20 @@ export default function MeetingAccessPanel({
               Advanced invites.
             </p>
           )}
+          {onGuestShareLangChange && (
+            <div className="mt-3">
+              <GuestLanguageSelector
+                value={guestShareLang}
+                onChange={onGuestShareLangChange}
+                compact
+              />
+            </div>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <Input
               readOnly
               aria-label="Guest join link"
-              value={meeting.joinUrl || ''}
+              value={displayJoinUrl}
               onFocus={(e) => e.currentTarget.select()}
               spellCheck={false}
               className="h-9 min-w-0 flex-1 truncate font-mono text-xs"
@@ -68,10 +82,10 @@ export default function MeetingAccessPanel({
               <Copy className="h-4 w-4" />
               Copy
             </Button>
-            {meeting.joinUrl && (
+            {displayJoinUrl && (
               <>
                 <QrCodeDialogButton
-                  url={meeting.joinUrl}
+                  url={displayJoinUrl}
                   meetingTitle={meeting.title}
                   variant="outline"
                   size="sm"
@@ -79,7 +93,7 @@ export default function MeetingAccessPanel({
                   label="QR"
                 />
                 <Button variant="outline" size="sm" className="gap-1" asChild>
-                  <a href={meeting.joinUrl} target="_blank" rel="noreferrer">
+                  <a href={displayJoinUrl} target="_blank" rel="noreferrer">
                     <ExternalLink className="h-4 w-4" />
                     Open
                   </a>

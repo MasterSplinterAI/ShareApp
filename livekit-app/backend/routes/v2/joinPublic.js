@@ -127,7 +127,66 @@ function scrubbedJoinDenial(reason) {
   };
 }
 
-function detailedJoinDenial(req, meeting, v) {
+function sanitizeLangParam(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  const trimmed = raw.trim().replace(/_/g, '-');
+  if (!trimmed || trimmed.toLowerCase() === 'auto') return null;
+  if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(trimmed)) return null;
+  return trimmed.slice(0, 16);
+}
+
+async function resolveDefaultLanguageForJoin(meeting, link, queryLang) {
+  const fromQuery = sanitizeLangParam(queryLang);
+  if (fromQuery) return fromQuery;
+
+  const fromLink = sanitizeLangParam(link?.default_language);
+  if (fromLink) return fromLink;
+
+  try {
+    const guestInvite = await db.get(
+      `SELECT default_language FROM v2_meeting_guest_invites
+       WHERE meeting_id = ? AND default_language IS NOT NULL
+       ORDER BY datetime(created_at) DESC LIMIT 1`,
+      [meeting.id]
+    );
+    const fromGuestInvite = sanitizeLangParam(guestInvite?.default_language);
+    if (fromGuestInvite) return fromGuestInvite;
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    const dc = await db.get(
+      `SELECT caller_user_id, callee_email, join_url FROM v2_direct_calls
+       WHERE meeting_id = ?
+       ORDER BY datetime(created_at) DESC LIMIT 1`,
+      [meeting.id]
+    );
+    if (dc?.join_url) {
+      const m = /[?&](?:lang|l)=([^&#]+)/i.exec(dc.join_url);
+      if (m && m[1]) {
+        const fromDcUrl = sanitizeLangParam(decodeURIComponent(m[1]));
+        if (fromDcUrl) return fromDcUrl;
+      }
+    }
+    if (dc?.caller_user_id && dc?.callee_email) {
+      const cRow = await db.get(
+        `SELECT preferred_language FROM v2_contacts
+         WHERE owner_user_id = ? AND LOWER(contact_email) = LOWER(?) AND preferred_language IS NOT NULL
+         LIMIT 1`,
+        [dc.caller_user_id, dc.callee_email]
+      );
+      const fromContact = sanitizeLangParam(cRow?.preferred_language);
+      if (fromContact) return fromContact;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return null;
+}
+
+function detailedJoinDenial(req, meeting, v, defaultLanguage = null) {
   return {
     mode: 'v2',
     allowed: false,
@@ -136,6 +195,8 @@ function detailedJoinDenial(req, meeting, v) {
     meetingId: meeting.id,
     title: meeting.title,
     branding: meetingBranding(req, meeting),
+    defaultLanguage,
+    default_language: defaultLanguage,
   };
 }
 
@@ -143,19 +204,31 @@ router.get('/join-info', async (req, res) => {
   try {
     const roomName = req.query.roomName;
     const inviteToken = typeof req.query.i === 'string' ? req.query.i : '';
+    const queryLang = typeof req.query.lang === 'string'
+      ? req.query.lang
+      : typeof req.query.l === 'string'
+        ? req.query.l
+        : '';
     if (!roomName || typeof roomName !== 'string') {
       return res.status(400).json({ error: 'roomName required' });
     }
     const meeting = await loadV2MeetingByRoom(roomName);
     if (!meeting) {
-      return res.json({ mode: 'classic', allowed: true });
+      const classicLang = sanitizeLangParam(queryLang);
+      return res.json({
+        mode: 'classic',
+        allowed: true,
+        defaultLanguage: classicLang,
+        default_language: classicLang,
+      });
     }
     const v = await validateGuestAccess(meeting, inviteToken);
     if (!v.ok) {
       if (!v.link) {
         return res.json(scrubbedJoinDenial(v.reason));
       }
-      return res.json(detailedJoinDenial(req, meeting, v));
+      const defaultLanguage = await resolveDefaultLanguageForJoin(meeting, v.link, queryLang);
+      return res.json(detailedJoinDenial(req, meeting, v, defaultLanguage));
     }
     // Guest is allowed — ensure LiveKit room exists before the client calls GET /rooms/:name.
     // Without this, host-not-required meetings fail with 404 even though join-info said allowed.
@@ -176,6 +249,8 @@ router.get('/join-info', async (req, res) => {
       /* ignore */
     }
 
+    const defaultLanguage = await resolveDefaultLanguageForJoin(meeting, v.link, queryLang);
+
     return res.json({
       mode: 'v2',
       allowed: true,
@@ -184,6 +259,8 @@ router.get('/join-info', async (req, res) => {
       inviteRequired: true,
       branding: meetingBranding(req, meeting),
       suggestedParticipantName,
+      defaultLanguage,
+      default_language: defaultLanguage,
     });
   } catch (e) {
     console.error('[v2/join-info]', e);

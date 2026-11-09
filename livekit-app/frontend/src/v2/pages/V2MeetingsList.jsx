@@ -409,9 +409,13 @@ export default function V2MeetingsList() {
         host_required_to_start: hostRequired,
         ...(iso ? { scheduled_start: iso } : {}),
       });
-      toast.success(m.status === 'scheduled' ? 'Meeting scheduled' : 'Meeting created');
+      toast.success(
+        m.status === 'scheduled'
+          ? 'Meeting scheduled — share your link or invite guests'
+          : 'Instant meeting ready — share your link or enter the room'
+      );
       setShowCreate(false);
-      window.location.href = `/v2/app/meetings/${m.id}`;
+      navigate(`/v2/app/meetings/${m.id}${iso ? '' : '?created=instant'}`);
     } catch (e) {
       handleCreateError(e);
     } finally {
@@ -422,33 +426,15 @@ export default function V2MeetingsList() {
   const startInstant = async () => {
     setStartingInstant(true);
     try {
+      const displayName =
+        (me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || '').trim();
+      const firstName = displayName ? displayName.split(' ')[0] : '';
       const m = await v2Meetings.create({
-        title: 'Instant meeting',
+        title: firstName ? `${firstName}’s meeting` : 'Instant meeting',
         host_required_to_start: false,
       });
-      await v2Meetings.hostSessionOpen(m.id).catch(() => {});
-      const hostDisplayName =
-        (me?.user?.display_name || me?.user?.displayName || me?.user?.email?.split('@')[0] || 'Host').trim();
-      const participantInfo = {
-        isHost: true,
-        participantName: hostDisplayName,
-        hostCode: m.hostCode,
-        shareableLink: m.joinUrl,
-        roomName: m.livekitRoomName,
-        meetingId: m.id,
-        inviteToken: '',
-      };
-      try {
-        sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      } catch {
-        /* ignore */
-      }
-      navigate(`/room/${encodeURIComponent(m.livekitRoomName)}`, {
-        state: {
-          ...participantInfo,
-          meetingTitle: m.title,
-        },
-      });
+      toast.success('Instant meeting ready — share your link or enter the room');
+      navigate(`/v2/app/meetings/${m.id}?created=instant`);
     } catch (e) {
       handleCreateError(e);
     } finally {
@@ -548,7 +534,7 @@ export default function V2MeetingsList() {
             className="gap-2"
           >
             <Zap className="h-4 w-4" />
-            {startingInstant ? 'Starting…' : 'Start instant meeting'}
+            {startingInstant ? 'Creating…' : 'New instant meeting'}
           </Button>
           <Button onClick={openCreateModal} className="gap-2">
             <Plus className="h-4 w-4" />

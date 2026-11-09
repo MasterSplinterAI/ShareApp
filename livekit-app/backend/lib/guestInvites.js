@@ -90,7 +90,7 @@ async function sendGuestReminder({
 
 async function runReminderPass(buildJoinUrl) {
   const candidates = await db.all(
-    `SELECT gi.id, gi.email, gi.meeting_id, gi.reminders_sent_json, gi.reminder_sent_at,
+    `SELECT gi.id, gi.email, gi.meeting_id, gi.reminders_sent_json, gi.reminder_sent_at, gi.default_language,
             m.title, m.scheduled_start, m.scheduled_end, m.livekit_room_name, m.host_user_id,
             m.guest_invite_reminder_offsets_json, m.ics_sequence, il.token,
             u.display_name AS host_display_name, u.email AS host_email
@@ -134,7 +134,11 @@ async function runReminderPass(buildJoinUrl) {
       if (nowMs < remindAtMs) continue;
       if (nowMs >= startMs) continue;
 
-      const joinUrl = buildJoinUrl(row.livekit_room_name, row.token);
+      let joinUrl = buildJoinUrl(row.livekit_room_name, row.token);
+      if (row.default_language && typeof row.default_language === 'string' && row.default_language.trim()) {
+        const sep = joinUrl.includes('?') ? '&' : '?';
+        joinUrl = `${joinUrl}${sep}lang=${encodeURIComponent(row.default_language.trim())}`;
+      }
       const result = await sendGuestReminder({
         email: row.email,
         meetingTitle: row.title || 'Meeting',

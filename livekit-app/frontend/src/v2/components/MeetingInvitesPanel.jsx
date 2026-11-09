@@ -1,8 +1,11 @@
 import { ExternalLink, Copy } from 'lucide-react';
+import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { QrCodeDialogButton } from '../../components/MeetingQrCode';
+import GuestLanguageSelector from '../../components/GuestLanguageSelector';
+import { getMeetingLanguageDisplay } from '../../components/MeetingLanguageList';
 import {
   Select,
   SelectContent,
@@ -18,6 +21,8 @@ export default function MeetingInvitesPanel({
   setNewInviteExpiryMode,
   newInviteCustomHours,
   setNewInviteCustomHours,
+  newInviteDefaultLang = '',
+  setNewInviteDefaultLang,
   maxInviteDays,
   onCreateInvite,
   onRevokeInvite,
@@ -68,6 +73,14 @@ export default function MeetingInvitesPanel({
       {selectedExpiry?.hint && (
         <p className="text-xs text-muted-foreground">{selectedExpiry.hint}</p>
       )}
+      {setNewInviteDefaultLang && (
+        <GuestLanguageSelector
+          value={newInviteDefaultLang}
+          onChange={setNewInviteDefaultLang}
+          label="Default guest language for this link"
+          compact
+        />
+      )}
       <div>
         <Button type="button" onClick={onCreateInvite}>
           Create additional invite
@@ -78,11 +91,20 @@ export default function MeetingInvitesPanel({
         (or from now if unscheduled).
       </p>
       <ul className="space-y-3 text-sm">
-        {(meeting.invites || []).map((inv) => (
+        {(meeting.invites || []).map((inv) => {
+          const langMeta = inv.default_language ? getMeetingLanguageDisplay(inv.default_language) : null;
+          return (
           <li key={inv.id} className="space-y-2 rounded-lg border border-border/60 bg-muted/40 p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <div className="font-medium text-foreground">{inv.label || 'Link'}</div>
+                <div className="flex flex-wrap items-center gap-2 font-medium text-foreground">
+                  <span>{inv.label || 'Link'}</span>
+                  {langMeta && (
+                    <Badge variant="secondary" className="text-[10px] font-normal">
+                      {langMeta.flag ? `${langMeta.flag} ` : ''}{langMeta.name}
+                    </Badge>
+                  )}
+                </div>
                 <div className="text-xs text-muted-foreground">{inviteStatusLine(inv)}</div>
                 {inv.expiryDetail && !inv.revoked_at && (
                   <div className="mt-0.5 text-xs text-muted-foreground/90">{inv.expiryDetail}</div>
@@ -135,7 +157,8 @@ export default function MeetingInvitesPanel({
               )
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );
