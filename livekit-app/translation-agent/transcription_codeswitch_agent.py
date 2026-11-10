@@ -21,7 +21,14 @@ from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Set, T
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
-from tts_lane import TtsLane, is_valid_elevenlabs_voice_id, resolve_tts_provider
+from tts_lane import (
+    TtsLane,
+    is_valid_elevenlabs_voice_id,
+    normalize_tts_provider_choice,
+    participant_may_set_tts,
+    resolve_tts_provider,
+    resolve_xai_voice_id,
+)
 from codeswitch_source_language import (
     infer_script_language,
     lane_is_same_language,
@@ -79,23 +86,75 @@ except ImportError:
     gladia = None
 
 try:
+    from livekit.plugins import xai as xai_plugin
+    XAI_PLUGIN_AVAILABLE = True
+except ImportError:
+    XAI_PLUGIN_AVAILABLE = False
+    xai_plugin = None
+
+try:
     from livekit.plugins import noise_cancellation
     NOISE_CANCELLATION_AVAILABLE = True
 except ImportError:
     NOISE_CANCELLATION_AVAILABLE = False
     noise_cancellation = None
 
-VALID_STT_PROVIDERS = ("deepgram", "gladia", "openai")
+VALID_STT_PROVIDERS = ("deepgram", "xai", "gladia", "openai")
+STT_PROVIDER_CHOICES = frozenset({"auto", *VALID_STT_PROVIDERS})
+
+
+def stt_provider_attempt_order(provider: str) -> tuple[str, ...]:
+    """Fallback order. xAI handshake failures continue to Deepgram, then OpenAI."""
+    return {
+        "xai": ("xai", "deepgram", "openai"),
+        "deepgram": ("deepgram", "openai"),
+        "gladia": ("gladia", "deepgram", "openai"),
+        "openai": ("openai", "deepgram"),
+    }.get(provider, ("deepgram", "openai"))
+
+
+def first_available_stt(
+    provider: str,
+    factories: Dict[str, Callable[[], Any]],
+    excluded: Optional[Set[str]] = None,
+) -> tuple[Any, str]:
+    """Run the provider ladder. A factory that raises is skipped, not fatal."""
+    skipped = excluded or set()
+    for name in stt_provider_attempt_order(provider):
+        if name in skipped:
+            continue
+        factory = factories.get(name)
+        if factory is None:
+            continue
+        try:
+            inst = factory()
+        except Exception:
+            logger.warning("STT provider %s failed to start", name, exc_info=True)
+            continue
+        if inst is not None:
+            return inst, name
+    return None, "unknown"
+
+
+def normalize_stt_provider_choice(value: Any) -> str | None:
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if cleaned in STT_PROVIDER_CHOICES:
+        return cleaned
+    return None
 
 
 def _stt_provider() -> str:
     """Configured STT provider, validated.
 
-    Unknown values (production once ran STT_PROVIDER='xai', which no code
-    implements) previously fell through to the Deepgram-first ladder with no
-    signal. Now they log loudly and land on the deepgram default explicitly.
+    Unknown env values log loudly and land on Deepgram. `xai` is a real
+    provider (livekit.plugins.xai.STT); a missing plugin or key is handled
+    by the attempt ladder, not by pretending the name is invalid.
     """
     raw = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
+    if raw == "auto":
+        return "deepgram"
     if raw not in VALID_STT_PROVIDERS:
         logger.error(
             "STT_PROVIDER=%r is not a known provider %s — falling back to 'deepgram'",
@@ -547,6 +606,11 @@ class TranscriptionOnlyAgent:
         self._demo_speak_lang: str = "en"
         self._demo_read_lang: str = "en"
         self.room_tts_voice: str | None = None
+        # In-room admin overrides. None keeps the env / auto resolution.
+        self.room_tts_provider: str | None = None
+        self.room_xai_voice: str | None = None
+        self.room_stt_provider: str | None = None
+        self.active_stt_provider: str | None = None
 
     def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -701,6 +765,89 @@ class TranscriptionOnlyAgent:
             and self.voice_enabled.get(pid, False)
         }
 
+    def _configured_stt_provider(self) -> str:
+        override = (self.room_stt_provider or "").strip().lower()
+        if override and override != "auto" and override in VALID_STT_PROVIDERS:
+            return override
+        return _stt_provider()
+
+    async def _restart_speaker_pipelines(self, ctx: JobContext) -> None:
+        """Drop live STT tasks so the next update rebuilds them on the new provider."""
+        self._stt_skip_providers.clear()
+        for sid in list(self.speaker_pipelines.keys()):
+            await self._cancel_speaker_pipeline(sid)
+        await self.update_assistants(ctx)
+
+    async def _broadcast_provider_status(self, room: Any) -> None:
+        active_tts = resolve_tts_provider("en", preferred_provider=self.room_tts_provider)
+        for lane in self.tts_lanes.values():
+            active_tts = lane.provider
+            break
+        payload = {
+            "type": "provider_status",
+            "sttProvider": self.room_stt_provider or "auto",
+            "activeSttProvider": self.active_stt_provider or self._configured_stt_provider(),
+            "ttsProvider": self.room_tts_provider or "auto",
+            "activeProvider": active_tts,
+            "activeTtsProvider": active_tts,
+            "voiceId": self.room_xai_voice if active_tts == "xai" else self.room_tts_voice,
+        }
+        logger.info(
+            "Provider status stt=%s (active %s) tts=%s (active %s)",
+            payload["sttProvider"],
+            payload["activeSttProvider"],
+            payload["ttsProvider"],
+            payload["activeTtsProvider"],
+        )
+        local = getattr(room, "local_participant", None)
+        if local is None:
+            return
+        try:
+            encoded = json.dumps(payload).encode("utf-8")
+            await local.publish_data(encoded, topic="tts_config", reliable=True)
+        except Exception as exc:
+            logger.warning("Provider status broadcast failed: %s", exc)
+
+    async def _apply_room_stt_provider(self, ctx: JobContext, choice: str, participant_id: str) -> None:
+        """Switch STT for the room and rebuild speaker pipelines immediately."""
+        self.room_stt_provider = None if choice == "auto" else choice
+        logger.info(
+            "STT provider set by %s: requested=%s configured=%s",
+            participant_id,
+            choice,
+            self._configured_stt_provider(),
+        )
+        await self._restart_speaker_pipelines(ctx)
+        await self._broadcast_provider_status(ctx.room)
+
+    async def _apply_room_tts_provider(
+        self,
+        room: Any,
+        choice: str,
+        voice_id: str | None,
+        participant_id: str,
+    ) -> None:
+        """Switch every live lane in place and remember the choice for new lanes."""
+        self.room_tts_provider = choice
+        if choice == "xai" and voice_id:
+            self.room_xai_voice = resolve_xai_voice_id(voice_id)
+        elif choice == "elevenlabs" and voice_id and is_valid_elevenlabs_voice_id(voice_id):
+            self.room_tts_voice = voice_id
+
+        resolved = resolve_tts_provider("en", preferred_provider=choice)
+        for lane in self.tts_lanes.values():
+            resolved = lane.set_provider(choice, voice_id=voice_id or self.room_xai_voice)
+        active_voice = self.room_xai_voice if resolved == "xai" else self.room_tts_voice
+        logger.info(
+            "TTS provider set by %s: requested=%s active=%s voice=%s lanes=%d",
+            participant_id,
+            choice,
+            resolved,
+            active_voice,
+            len(self.tts_lanes),
+        )
+        await self._broadcast_provider_status(room)
+
     async def _emit_tts_cost(
         self,
         chars: int,
@@ -754,10 +901,12 @@ class TranscriptionOnlyAgent:
                 room=ctx.room,
                 language=lang,
                 stale_after_sec=_tts_stale_sec(),
-                provider=resolve_tts_provider(lang),
+                provider=resolve_tts_provider(lang, preferred_provider=self.room_tts_provider),
                 emit_cost_hook=self._emit_tts_cost,
                 voice_id=self.room_tts_voice,
             )
+            if self.room_xai_voice:
+                lane.xai_voice_id = resolve_xai_voice_id(self.room_xai_voice)
             try:
                 await lane.start()
             except Exception as e:
@@ -1023,6 +1172,38 @@ class TranscriptionOnlyAgent:
                     return
                 participant_id = data.participant.identity
                 msg_type = msg.get("type")
+                admin_ok = participant_may_set_tts(getattr(data.participant, "metadata", None))
+                stt_choice = normalize_stt_provider_choice(
+                    msg.get("sttProvider") if msg.get("sttProvider") is not None else msg.get("stt_provider")
+                )
+                tts_choice = normalize_tts_provider_choice(
+                    msg.get("ttsProvider") if msg.get("ttsProvider") is not None else msg.get("tts_provider")
+                )
+                provider_message = msg_type in {"tts_config", "stt_config", "provider_config"}
+                if stt_choice is not None or tts_choice is not None or provider_message:
+                    if not admin_ok and (stt_choice or tts_choice):
+                        logger.warning(
+                            "Ignoring provider change from non-admin participant %s",
+                            participant_id,
+                        )
+                    elif admin_ok:
+                        if stt_choice:
+                            await self._apply_room_stt_provider(ctx, stt_choice, participant_id)
+                        if tts_choice:
+                            voice_raw = (
+                                msg.get("voiceId")
+                                or msg.get("voice_id")
+                                or msg.get("xaiVoiceId")
+                                or ""
+                            )
+                            await self._apply_room_tts_provider(
+                                ctx.room,
+                                tts_choice,
+                                str(voice_raw).strip() or None,
+                                participant_id,
+                            )
+                    if provider_message:
+                        return
 
                 # Display-only cache (never used for auth). Prefer LiveKit name/metadata.
                 self._remember_display_name(
@@ -1388,7 +1569,7 @@ class TranscriptionOnlyAgent:
             return None, "unknown"
         is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
-        stt_provider = _stt_provider()
+        stt_provider = self._configured_stt_provider()
         normalized_lang = self._normalize_language_code(stt_lang)
         stt_instance: Optional[Any] = None
         stt_provider_name = "unknown"
@@ -1485,16 +1666,38 @@ class TranscriptionOnlyAgent:
             stt_provider_name = "openai"
             return inst
 
-        provider_order = {
-            "deepgram": [_try_deepgram, _try_openai],
-            "gladia": [_try_gladia, _try_deepgram, _try_openai],
-            "openai": [_try_openai, _try_deepgram],
-        }.get(stt_provider, [_try_deepgram, _try_openai])
+        def _try_xai():
+            nonlocal stt_provider_name
+            if "xai" in excluded:
+                return None
+            if not (XAI_PLUGIN_AVAILABLE and xai_plugin and (is_cloud or os.getenv("XAI_API_KEY"))):
+                return None
+            lang = normalized_lang or "en"
+            kwargs = dict(
+                language=lang,
+                sample_rate=16000,
+                enable_interim_results=True,
+                endpointing=int(os.getenv("XAI_STT_ENDPOINTING_MS", "800") or "800"),
+            )
+            try:
+                inst = xai_plugin.STT(**kwargs)
+            except TypeError:
+                kwargs.pop("endpointing", None)
+                inst = xai_plugin.STT(**kwargs)
+            logger.info(f"{L} STT: xAI streaming lang={lang!r} sample_rate=16000 (shared)")
+            stt_provider_name = "xai"
+            return inst
 
-        for attempt in provider_order:
-            stt_instance = attempt()
-            if stt_instance is not None:
-                break
+        stt_instance, stt_provider_name = first_available_stt(
+            stt_provider,
+            {
+                "xai": _try_xai,
+                "deepgram": _try_deepgram,
+                "gladia": _try_gladia,
+                "openai": _try_openai,
+            },
+            excluded,
+        )
 
         if stt_instance is None:
             logger.error(f"{L} No STT provider available (STT_PROVIDER={stt_provider})")
@@ -1773,6 +1976,8 @@ class TranscriptionOnlyAgent:
             # attempt retries the full ladder rather than staying dead forever.
             self._stt_skip_providers.pop(speaker_id, None)
             return
+        self.active_stt_provider = stt_provider_name
+        self._spawn_bg(self._broadcast_provider_status(job_ctx.room))
         logger.info(
             f"{L} Caption pipeline STT provider={stt_provider_name!r} "
             f"gladia_native_translation={use_gladia_native_translation[0]} "
@@ -3079,8 +3284,10 @@ def log_resolved_inference_config() -> None:
     has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
     has_openai = bool(os.getenv("OPENAI_API_KEY"))
     has_gladia = bool(os.getenv("GLADIA_API_KEY"))
+    has_xai = bool(os.getenv("XAI_API_KEY"))
 
     stt_primary = {
+        "xai": "xAI streaming STT (wss://api.x.ai/v1/stt, then Deepgram, then OpenAI)",
         "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize)",
         "gladia": (
             "Gladia solaria-1 code-switching "
@@ -3101,7 +3308,7 @@ def log_resolved_inference_config() -> None:
         os.getenv("LIVEKIT_CLOUD", ""),
         lc_cloud,
     )
-    logger.info("  STT_PROVIDER=%r primary_path=%s", stt, stt_primary)
+    logger.info("  STT_PROVIDER=%r primary_path=%s xai_key=%s", stt, stt_primary, bool(has_xai))
     logger.info(
         "  GLADIA_TRANSLATION_ENABLED=%r (Gladia agent only; OpenAI lanes when false or no cross-lang targets)",
         os.getenv("GLADIA_TRANSLATION_ENABLED", "true"),
@@ -3141,7 +3348,8 @@ def log_resolved_inference_config() -> None:
     )
     logger.info(f"  keys_present mask: DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
                 f"GLADIA_API_KEY={'yes' if has_gladia else 'no'}, "
-                f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
+                f"OPENAI_API_KEY={'yes' if has_openai else 'no'}, "
+                f"XAI_API_KEY={'yes' if has_xai else 'no'}")
     logger.info("  (Unset keys may still use LiveKit Cloud-injected Deepgram/STT defaults when LIVEKIT_CLOUD=true.)")
     logger.info("=" * 60)
 

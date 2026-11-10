@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 # Maps STT provider name → backend event_type (per costConstants.js)
 _STT_EVENT_TYPES = {
     "deepgram": "deepgram_stt_minute",
+    "xai": "xai_stt_minute",
     "openai": "openai_stt_minute",
     "gladia": "gladia_stt_minute",
 }
@@ -28,6 +29,7 @@ _TTS_EVENT_TYPES = {
     "deepgram": "deepgram_tts_char",
     "elevenlabs": "elevenlabs_tts_char",
     "openai": "openai_tts_char",
+    "xai": "xai_tts_char",
 }
 
 _warned_once = False

@@ -6,6 +6,7 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { createLiveKitConferenceRoom, ensureRoomAndAgent, getRoomService, looksLikeAgentParticipant } = require('../../lib/livekitService');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
+const { isSuperadminEmail } = require('../../lib/v2Superadmin');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const { listTemplates, instructionsHash, synthesizeTranscript } = require('../../lib/transcriptSynthesis');
 const {
@@ -1133,6 +1134,10 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
       metadata: JSON.stringify({
         displayName: hostDisplayName,
         role: host ? 'host' : 'member',
+        orgRole: req.v2Auth.role,
+        ttsAdmin:
+          ['owner', 'admin'].includes(String(req.v2Auth.role || '').toLowerCase())
+          || isSuperadminEmail(req.v2Auth.email),
         userId: req.v2Auth.userId,
       }),
       ttl: '24h',

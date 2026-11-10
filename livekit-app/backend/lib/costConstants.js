@@ -34,6 +34,8 @@ const COSTS = {
   openai_stt_minute:           { provider: 'openai',    unit_cost_usd: 0.0060  },
   // OpenAI gpt-4o-mini-tts / tts-1 ($0.015/1k chars)
   openai_tts_char:             { provider: 'openai',    unit_cost_usd: 0.000015 },
+  // xAI Grok TTS ($15 per 1M characters)
+  xai_tts_char:                { provider: 'xai',       unit_cost_usd: 0.000015 },
 
   // Deepgram Nova-3 Multilingual streaming ($0.0092) plus Keyterm Prompting ($0.0013).
   // The agent streams nova-3 with language=multi and sends keyterms. $0.0043 is

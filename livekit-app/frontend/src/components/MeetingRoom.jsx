@@ -15,6 +15,7 @@ import RoomControls from './RoomControls';
 import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
 import TtsAudioController from './TtsAudioController';
+import AdminTtsProviderSwitch from './AdminTtsProviderSwitch';
 import RoomConnectionGuard from './RoomConnectionGuard';
 import MeetingUsageBanner from './MeetingUsageBanner';
 import LocalDisplayNameSync from './LocalDisplayNameSync';
@@ -675,6 +676,7 @@ function MeetingRoomInner({
         <div className="meeting-stage-layout flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
           <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <DirectCallRingBanner initialDirectCall={directCall} />
+            <AdminTtsProviderSwitch />
             <VideoGrid />
             {reconnecting && (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/80 backdrop-blur-sm">
