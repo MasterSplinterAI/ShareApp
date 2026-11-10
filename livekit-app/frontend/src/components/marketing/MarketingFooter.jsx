@@ -49,6 +49,11 @@ export function MarketingFooter() {
                 {t('footer.faq')}
               </a>
             </li>
+            <li>
+              <a href="/languages" className={linkClass}>
+                Languages
+              </a>
+            </li>
           </ul>
         </nav>
         <nav className="text-sm" aria-label="Company">
