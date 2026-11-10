@@ -1,6 +1,20 @@
 """xAI streaming query params omit language unless multilingual mode is off."""
 
-from xai_multilingual_stt import xai_stt_multilingual_enabled, xai_websocket_params
+from xai_multilingual_stt import (
+    xai_stt_multilingual_enabled,
+    xai_stt_supports,
+    xai_websocket_params,
+)
+
+
+def test_xai_stt_language_coverage():
+    assert xai_stt_supports("en-US")
+    assert xai_stt_supports("zh-CN")
+    assert xai_stt_supports("es")
+    assert xai_stt_supports("")
+    assert xai_stt_supports("multi")
+    assert not xai_stt_supports("sw")
+    assert not xai_stt_supports("am-ET")
 
 
 def test_multilingual_is_on_by_default(monkeypatch):

@@ -38,7 +38,11 @@ from codeswitch_source_language import (
     text_has_mixed_scripts,
 )
 from residual_guard import is_residual_repeat
-from xai_multilingual_stt import build_xai_streaming_stt, xai_stt_multilingual_enabled
+from xai_multilingual_stt import (
+    build_xai_streaming_stt,
+    xai_stt_multilingual_enabled,
+    xai_stt_supports,
+)
 from demo_orchestrator import DemoRoomOrchestrator
 from translation_helpers import (
     LANG_NAMES,
@@ -153,9 +157,11 @@ def _stt_provider() -> str:
     provider (livekit.plugins.xai.STT); a missing plugin or key is handled
     by the attempt ladder, not by pretending the name is invalid.
     """
-    raw = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
-    if raw == "auto":
-        return "deepgram"
+    raw = os.getenv("STT_PROVIDER", "xai").strip().lower()
+    # Unset, auto, and xai start on xAI. Unsupported languages and handshake
+    # failures fall through to Deepgram inside the per-speaker ladder.
+    if raw in {"", "auto", "xai"}:
+        return "xai"
     if raw not in VALID_STT_PROVIDERS:
         logger.error(
             "STT_PROVIDER=%r is not a known provider %s — falling back to 'deepgram'",
@@ -1678,6 +1684,12 @@ class TranscriptionOnlyAgent:
                 return None
             if not os.getenv("XAI_API_KEY", "").strip():
                 logger.error(f"{L} xAI STT skipped: XAI_API_KEY is not set on the agent")
+                return None
+            if not xai_stt_supports(speaker_lang):
+                logger.info(
+                    f"{L} xAI STT does not cover source language {speaker_lang!r} "
+                    "— falling back to Deepgram"
+                )
                 return None
             multilingual = xai_stt_multilingual_enabled()
             try:

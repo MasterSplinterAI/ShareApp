@@ -188,17 +188,24 @@ def test_lane_serializes_speakers_and_emits_cost() -> None:
 
 
 def test_resolve_tts_provider(monkeypatch) -> None:
-    # No ElevenLabs key: always Deepgram, even for unsupported languages.
     monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("TTS_PROVIDER", raising=False)
+    # No xAI key: Aura languages stay on Deepgram; other languages need another voice.
     assert resolve_tts_provider("es") == "deepgram"
     assert resolve_tts_provider("ko") == "deepgram"
 
-    # Key present + auto: ElevenLabs for its languages and for Aura gaps.
     monkeypatch.setenv("ELEVENLABS_API_KEY", "test-key")
-    assert resolve_tts_provider("es") == "elevenlabs"
-    assert resolve_tts_provider("ko") == "elevenlabs"
-    assert resolve_tts_provider("pt-BR") == "elevenlabs"
+    assert resolve_tts_provider("es") == "deepgram"
+    assert resolve_tts_provider("uk") == "elevenlabs"
+
+    # xAI key: covered languages use xAI, including when the env says auto.
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    monkeypatch.setenv("TTS_PROVIDER", "auto")
+    assert resolve_tts_provider("es") == "xai"
+    assert resolve_tts_provider("pt-BR") == "xai"
+    assert resolve_tts_provider("uk") == "elevenlabs"
 
     # Explicit overrides win.
     monkeypatch.setenv("TTS_PROVIDER", "deepgram")
@@ -385,10 +392,11 @@ def test_xai_provider_resolution_and_runtime_switch(monkeypatch) -> None:
     assert resolve_tts_provider("es") == "xai"
     assert resolve_tts_provider("ko", preferred_provider="xai") == "xai"
 
-    # Missing key falls through to OpenAI, then Deepgram.
+    # Missing key: Aura languages stay on Deepgram; other languages use OpenAI.
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
-    assert resolve_tts_provider("es", preferred_provider="xai") == "openai"
+    assert resolve_tts_provider("es", preferred_provider="xai") == "deepgram"
+    assert resolve_tts_provider("uk", preferred_provider="xai") == "openai"
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     assert resolve_tts_provider("es", preferred_provider="xai") == "deepgram"
 
@@ -404,7 +412,7 @@ def test_xai_provider_resolution_and_runtime_switch(monkeypatch) -> None:
     assert lane._build_provider_ladder() == ["xai", "deepgram"]
 
     monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
-    assert lane._build_provider_ladder()[1] == "openai"
+    assert lane._build_provider_ladder() == ["xai", "deepgram", "openai"]
     assert _TTS_EVENT_TYPES["xai"] == "xai_tts_char"
     assert resolve_xai_voice_id("nope voice") == "eve"
 

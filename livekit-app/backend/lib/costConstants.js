@@ -20,8 +20,8 @@ const COSTS = {
   // Downstream data after the included gigabytes. Scale is $0.10/GB. Unused until we meter bytes.
   livekit_bandwidth_gb:        { provider: 'livekit',   unit_cost_usd: 0.1200  },
 
-  // xAI Grok STT (grok-stt)
-  xai_stt_minute:              { provider: 'xai',       unit_cost_usd: 0.00333 },
+  // xAI grok-voice-transcribe-2.0, $0.20 per audio hour
+  xai_stt_minute:              { provider: 'xai',       unit_cost_usd: 0.003333 },
 
   // xAI Grok 4.20 LLM
   xai_llm_input_mtok:          { provider: 'xai',       unit_cost_usd: 1.25    },

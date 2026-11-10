@@ -14,6 +14,10 @@ def test_xai_is_a_valid_stt_provider(monkeypatch):
     monkeypatch.setenv("STT_PROVIDER", "xai")
     assert _stt_provider() == "xai"
     monkeypatch.setenv("STT_PROVIDER", "auto")
+    assert _stt_provider() == "xai"
+    monkeypatch.delenv("STT_PROVIDER", raising=False)
+    assert _stt_provider() == "xai"
+    monkeypatch.setenv("STT_PROVIDER", "deepgram")
     assert _stt_provider() == "deepgram"
 
 

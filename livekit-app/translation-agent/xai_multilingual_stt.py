@@ -15,6 +15,34 @@ from typing import Any
 import aiohttp
 
 
+# grok-voice-transcribe-2.0 languages. Base codes only; en-US and zh-CN map to en and zh.
+XAI_STT_LANGS = frozenset({
+    "ar", "bn", "bg", "zh", "hr", "cs", "da", "nl", "en", "et", "fi", "fr", "de",
+    "el", "gu", "he", "hi", "hu", "id", "it", "ja", "kn", "ko", "lv", "lt", "ms",
+    "ml", "mr", "no", "fa", "pl", "pt", "ro", "ru", "sr", "sk", "sl", "es", "sv",
+    "tl", "ta", "te", "th", "tr", "uk", "ur", "vi",
+})
+
+
+def xai_stt_base_language(language: str | None) -> str:
+    raw = (language or "").strip().replace("_", "-")
+    if not raw:
+        return ""
+    return raw.split("-")[0].lower()
+
+
+def xai_stt_supports(language: str | None) -> bool:
+    """True when xAI should transcribe this source language.
+
+    Empty, multi, and auto stay on xAI so the stream can detect the language.
+    An explicit code outside the supported set should use Deepgram instead.
+    """
+    base = xai_stt_base_language(language)
+    if not base or base in {"multi", "auto", "und"}:
+        return True
+    return base in XAI_STT_LANGS
+
+
 def xai_stt_multilingual_enabled() -> bool:
     """True unless XAI_STT_MULTILINGUAL is explicitly disabled."""
     raw = os.getenv("XAI_STT_MULTILINGUAL", "true").strip().lower()

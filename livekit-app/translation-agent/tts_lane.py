@@ -41,6 +41,12 @@ _AURA_VOICE_BY_LANG = {
 }
 _AURA_SUPPORTED_LANGS = set(_AURA_VOICE_BY_LANG)
 
+# grok TTS languages. Base codes; pt-BR maps to pt.
+XAI_TTS_LANGS = frozenset({
+    "en", "ar", "zh", "fr", "de", "hi", "id", "it", "ja", "ko",
+    "pt", "ru", "es", "tr", "vi", "bn", "nl", "pl", "sv", "th",
+})
+
 # ElevenLabs Flash v2.5: one multilingual voice covers all 32 supported languages.
 _ELEVENLABS_MODEL = "eleven_flash_v2_5"
 _ELEVENLABS_DEFAULT_VOICE = "EXAVITQu4vr4xnSDxMaL"  # "Sarah" — multilingual Flash v2.5
@@ -225,37 +231,40 @@ def participant_may_set_tts(metadata: str | None, participant: Any = None) -> bo
 def resolve_tts_provider(language: str, preferred_provider: str | None = None) -> str:
     """Pick the TTS provider for a target language.
 
-    Honors TTS_PROVIDER env ("elevenlabs" | "deepgram" | "openai" | "xai" | "auto",
-    default auto) unless `preferred_provider` is set by an in-room admin switch.
-    Auto prefers ElevenLabs (broader coverage, faster) when a key is configured,
-    keeping Deepgram for its 7 natively supported languages if no ElevenLabs key exists.
-    `xai` requires XAI_API_KEY; otherwise the lane falls through to OpenAI
-    `gpt-4o-mini-tts` and then Deepgram Aura-2. Synthesis failures use the same
-    ladder in `_synthesize_with_fallback`.
+    Default (unset, auto, or xai) is xAI when that target language is one of the
+    20 xAI TTS languages and XAI_API_KEY is set. Other languages, a missing key,
+    and synthesis failures use Deepgram Aura-2 where it has a native voice,
+    otherwise OpenAI gpt-4o-mini-tts, then ElevenLabs.
+    An explicit deepgram, openai, or elevenlabs preference still wins.
     """
     base = (language or "en").split("-")[0].lower()
     explicit = normalize_tts_provider_choice(preferred_provider)
-    pref = explicit or os.getenv("TTS_PROVIDER", "auto").strip().lower() or "auto"
+    pref = explicit or os.getenv("TTS_PROVIDER", "xai").strip().lower() or "xai"
     if pref not in TTS_PROVIDER_CHOICES:
-        pref = "auto"
+        pref = "xai"
     has_eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
     has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
     has_xai = bool(os.getenv("XAI_API_KEY", "").strip())
 
-    if pref == "xai":
-        if has_xai:
-            return "xai"
-        if has_openai:
-            return "openai"
-        return "deepgram"
     if pref == "deepgram":
         return "deepgram"
     if pref == "openai":
         return "openai" if has_openai else "deepgram"
     if pref == "elevenlabs":
         return "elevenlabs" if has_eleven else "deepgram"
-    # auto
-    if has_eleven and (base in _ELEVENLABS_LANGS or base not in _AURA_SUPPORTED_LANGS):
+    # unset / auto / xai
+    if has_xai and base in XAI_TTS_LANGS:
+        return "xai"
+    return _tts_fallback_provider(base, has_eleven=has_eleven, has_openai=has_openai)
+
+
+def _tts_fallback_provider(base: str, *, has_eleven: bool, has_openai: bool) -> str:
+    """Provider when xAI does not cover this target language or has no key."""
+    if base in _AURA_SUPPORTED_LANGS:
+        return "deepgram"
+    if has_openai:
+        return "openai"
+    if has_eleven:
         return "elevenlabs"
     return "deepgram"
 
@@ -572,11 +581,23 @@ class TtsLane:
 
         ladder: list[str] = []
         if self.provider == "xai":
-            if has_xai:
+            if has_xai and base_lang in XAI_TTS_LANGS:
                 ladder.append("xai")
+            else:
+                logger.info(
+                    "[TTS:%s] xAI TTS does not cover %s — using Deepgram/OpenAI/ElevenLabs",
+                    self.language,
+                    base_lang,
+                )
+            if aura_ok:
+                ladder.append("deepgram")
             if has_openai:
                 ladder.append("openai")
-            if aura_ok or not has_openai:
+            if has_eleven:
+                ladder.append("elevenlabs")
+            if not aura_ok and not has_openai and not has_eleven:
+                ladder.append("deepgram")
+            if not ladder:
                 ladder.append("deepgram")
         elif self.provider == "elevenlabs":
             ladder.append("elevenlabs")

@@ -38,8 +38,8 @@ export default function AdminTtsProviderSwitch() {
   const local = useLocalParticipant();
   const [allowed, setAllowed] = useState(false);
   const [open, setOpen] = useState(false);
-  const [provider, setProvider] = useState('auto');
-  const [sttProvider, setSttProvider] = useState('auto');
+  const [provider, setProvider] = useState('xai');
+  const [sttProvider, setSttProvider] = useState('xai');
   const [voice, setVoice] = useState('eve');
   const [activeTts, setActiveTts] = useState('');
   const [activeStt, setActiveStt] = useState('');
