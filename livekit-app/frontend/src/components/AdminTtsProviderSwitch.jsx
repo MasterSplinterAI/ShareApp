@@ -141,7 +141,7 @@ export default function AdminTtsProviderSwitch() {
               onChange={(event) => {
                 const next = event.target.value;
                 setSttProvider(next);
-                publish({ stt: next });
+                publish({ stt: next, tts: provider, voice });
               }}
             >
               {STT_PROVIDERS.map((item) => (
@@ -161,7 +161,7 @@ export default function AdminTtsProviderSwitch() {
               onChange={(event) => {
                 const next = event.target.value;
                 setProvider(next);
-                publish({ tts: next, voice });
+                publish({ tts: next, stt: sttProvider, voice });
               }}
             >
               {TTS_PROVIDERS.map((item) => (
@@ -182,7 +182,7 @@ export default function AdminTtsProviderSwitch() {
                 onChange={(event) => {
                   const next = event.target.value;
                   setVoice(next);
-                  publish({ tts: 'xai', voice: next });
+                  publish({ tts: 'xai', stt: sttProvider, voice: next });
                 }}
               >
                 {XAI_VOICES.map((id) => (

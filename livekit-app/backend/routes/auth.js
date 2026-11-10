@@ -2,6 +2,7 @@ const express = require('express');
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('../db/v2Database');
 const { requireV2Auth } = require('../middleware/v2Auth');
+const { participantMetadata } = require('../lib/livekitTokenMetadata');
 const router = express.Router();
 
 // Legacy token endpoint — locked down to authenticated V2 users and non-V2 rooms only.
@@ -39,7 +40,11 @@ router.post('/token', requireV2Auth, async (req, res) => {
       {
         identity: `user-${req.v2Auth.userId}-${uniqueSuffix}`,
         name: safeName,
-        metadata: JSON.stringify({ displayName: safeName, role: 'member' }),
+        metadata: participantMetadata({
+          displayName: safeName,
+          role: 'member',
+          auth: req.v2Auth,
+        }),
         ttl: '24h',
       }
     );
@@ -59,7 +64,7 @@ router.post('/token', requireV2Auth, async (req, res) => {
     // Generate JWT token
     const token = await at.toJwt();
 
-    console.log(`Generated token for ${participantName} in room ${roomName} (host: ${isHost})`);
+    console.log(`Generated token for ${participantName} in room ${roomName}`);
     console.log(`Token type: ${typeof token}, Token length: ${token ? token.length : 0}`);
     
     // Ensure token is a string

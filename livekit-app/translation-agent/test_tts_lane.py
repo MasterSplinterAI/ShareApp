@@ -469,7 +469,9 @@ def test_participant_tts_admin_metadata() -> None:
     assert participant_may_set_tts('{"ttsAdmin": true}')
     assert participant_may_set_tts('{"orgRole": "admin"}')
     assert participant_may_set_tts('{"orgRole": "owner"}')
-    assert not participant_may_set_tts('{"role": "host"}')
+    assert participant_may_set_tts('{"role": "host"}')
+    assert not participant_may_set_tts('{"role": "guest"}')
     assert not participant_may_set_tts('{"ttsAdmin": false, "role": "admin"}')
+    assert participant_may_set_tts('{}', type('P', (), {'permissions': type('Perm', (), {'can_update_metadata': True})()})())
     assert not participant_may_set_tts("not-json")
 

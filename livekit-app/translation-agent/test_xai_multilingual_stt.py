@@ -19,10 +19,10 @@ def test_auto_detect_omits_language_query_param():
         language="en",
         multilingual=True,
     )
-    assert "language" not in params
-    assert params["sample_rate"] == "16000"
-    assert params["interim_results"] == "true"
-    assert params["endpointing"] == "800"
+    assert all(key != "language" for key, _value in params)
+    assert ("sample_rate", "16000") in params
+    assert ("interim_results", "true") in params
+    assert ("endpointing", "800") in params
 
 
 def test_fixed_language_is_sent_when_multilingual_disabled():
@@ -34,4 +34,4 @@ def test_fixed_language_is_sent_when_multilingual_disabled():
         language="es",
         multilingual=False,
     )
-    assert params["language"] == "es"
+    assert ("language", "es") in params

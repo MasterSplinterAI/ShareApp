@@ -183,13 +183,28 @@ def xai_language_code(language: str | None) -> str:
     return base
 
 
-def participant_may_set_tts(metadata: str | None) -> bool:
-    """True when the LiveKit token metadata marks this participant as a TTS admin.
+def _participant_is_room_admin(participant: Any) -> bool:
+    """LiveKit `roomAdmin` on the join token shows up as permission to update metadata."""
+    if participant is None:
+        return False
+    if getattr(participant, "room_admin", False):
+        return True
+    perms = getattr(participant, "permissions", None)
+    if perms is None:
+        return False
+    return bool(getattr(perms, "can_update_metadata", False) or getattr(perms, "room_admin", False))
 
-    Org owners/admins and platform superadmins get `ttsAdmin: true` on the room
-    token. A client cannot grant itself the switch by putting a role in the
-    data-channel payload.
+
+def participant_may_set_tts(metadata: str | None, participant: Any = None) -> bool:
+    """True when this LiveKit participant may switch STT/TTS for the room.
+
+    Granted by token metadata (`ttsAdmin`, org owner/admin, or meeting host)
+    or by the LiveKit room-admin permission already on the joined participant.
+    A client cannot grant itself the switch by putting a role in the data packet.
+    Hosts who joined before `ttsAdmin` was minted can still switch without rejoining.
     """
+    if _participant_is_room_admin(participant):
+        return True
     if not metadata or not isinstance(metadata, str):
         return False
     try:
@@ -200,8 +215,11 @@ def participant_may_set_tts(metadata: str | None) -> bool:
         return False
     if meta.get("ttsAdmin") is True or meta.get("isSuperadmin") is True:
         return True
-    role = str(meta.get("orgRole") or "").strip().lower()
-    return role in {"admin", "owner", "superadmin"}
+    org_role = str(meta.get("orgRole") or "").strip().lower()
+    if org_role in {"admin", "owner", "superadmin"}:
+        return True
+    # Meeting hosts are minted with role "host" (roomAdmin). Guests stay "guest".
+    return str(meta.get("role") or "").strip().lower() == "host"
 
 
 def resolve_tts_provider(language: str, preferred_provider: str | None = None) -> str:

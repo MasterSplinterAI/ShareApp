@@ -11,8 +11,37 @@ const { inviteIsUsable, inviteEffectiveFromMs } = require('../../lib/inviteExpir
 const { orgIsSuspended } = require('../../lib/v2OrgLifecycle');
 const { assertGuestJoinAllowed } = require('../../lib/v2Entitlements');
 const { mintMeetingQualityToken } = require('../../lib/meetingQualityToken');
+const { verifyToken } = require('../../lib/authAdapter');
+const { participantMetadata } = require('../../lib/livekitTokenMetadata');
 
 const router = express.Router();
+
+/**
+ * Logged-in admins often open /join/:code in the same browser. The guest token
+ * stays a guest, but their org role is copied onto LiveKit metadata so the
+ * in-room STT/TTS switcher is accepted.
+ */
+async function optionalJoinAuth(req) {
+  const header = req.headers.authorization || '';
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  if (!match) return null;
+  const payload = verifyToken(match[1]);
+  if (!payload?.sub) return null;
+  let role = payload.role || 'member';
+  if (payload.orgId) {
+    const membership = await db.get(
+      `SELECT role FROM v2_org_members WHERE user_id = ? AND org_id = ?`,
+      [payload.sub, payload.orgId]
+    );
+    if (membership?.role) role = membership.role;
+  }
+  return {
+    userId: payload.sub,
+    email: payload.email,
+    orgId: payload.orgId,
+    role,
+  };
+}
 
 const INVITE_GATE_REASONS = new Set([
   'invite_required',
@@ -301,10 +330,15 @@ router.post('/guest-token', async (req, res) => {
     await ensureRoomAndAgent(meeting.livekit_room_name, 'multi-language');
     const displayName = String(participantName).trim().slice(0, 128) || 'Guest';
     const identity = `guest-${crypto.randomUUID()}`;
+    const auth = await optionalJoinAuth(req);
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity,
       name: displayName,
-      metadata: JSON.stringify({ displayName, role: 'guest' }),
+      metadata: participantMetadata({
+        displayName,
+        role: 'guest',
+        auth,
+      }),
       ttl: '12h',
     });
     // Ensure JWT `name` claim is set even if constructor options are ignored by SDK version.

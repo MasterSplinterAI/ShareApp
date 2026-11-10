@@ -6,7 +6,7 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { createLiveKitConferenceRoom, ensureRoomAndAgent, getRoomService, looksLikeAgentParticipant } = require('../../lib/livekitService');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
-const { isSuperadminEmail } = require('../../lib/v2Superadmin');
+const { participantMetadata } = require('../../lib/livekitTokenMetadata');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const { listTemplates, instructionsHash, synthesizeTranscript } = require('../../lib/transcriptSynthesis');
 const {
@@ -1131,14 +1131,10 @@ router.post('/:id/token', requireV2Auth, async (req, res) => {
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity: safeIdentity,
       name: hostDisplayName,
-      metadata: JSON.stringify({
+      metadata: participantMetadata({
         displayName: hostDisplayName,
         role: host ? 'host' : 'member',
-        orgRole: req.v2Auth.role,
-        ttsAdmin:
-          ['owner', 'admin'].includes(String(req.v2Auth.role || '').toLowerCase())
-          || isSuperadminEmail(req.v2Auth.email),
-        userId: req.v2Auth.userId,
+        auth: req.v2Auth,
       }),
       ttl: '24h',
     });

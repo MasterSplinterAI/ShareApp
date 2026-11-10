@@ -16,7 +16,7 @@ import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Set, Tuple
+from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Sequence, Set, Tuple
 
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
@@ -1173,7 +1173,10 @@ class TranscriptionOnlyAgent:
                     return
                 participant_id = data.participant.identity
                 msg_type = msg.get("type")
-                admin_ok = participant_may_set_tts(getattr(data.participant, "metadata", None))
+                admin_ok = participant_may_set_tts(
+                    getattr(data.participant, "metadata", None),
+                    data.participant,
+                )
                 stt_choice = normalize_stt_provider_choice(
                     msg.get("sttProvider") if msg.get("sttProvider") is not None else msg.get("stt_provider")
                 )
@@ -1671,7 +1674,10 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "xai" in excluded:
                 return None
-            if not (XAI_PLUGIN_AVAILABLE and xai_plugin and (is_cloud or os.getenv("XAI_API_KEY"))):
+            if not (XAI_PLUGIN_AVAILABLE and xai_plugin):
+                return None
+            if not os.getenv("XAI_API_KEY", "").strip():
+                logger.error(f"{L} xAI STT skipped: XAI_API_KEY is not set on the agent")
                 return None
             multilingual = xai_stt_multilingual_enabled()
             try:

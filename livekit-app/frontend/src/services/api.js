@@ -90,7 +90,14 @@ export const joinPublicService = {
         },
       })
       .then((r) => r.data),
-  guestToken: (body) => api.post('/v2/guest-token', body).then((r) => r.data),
+  guestToken: (body) => {
+    const token = typeof localStorage !== 'undefined' ? localStorage.getItem('v2_token') : null;
+    return api
+      .post('/v2/guest-token', body, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      .then((r) => r.data);
+  },
 };
 
 /** Ephemeral in-meeting chat — bypasses SQLite cache (no_cache: true) */
