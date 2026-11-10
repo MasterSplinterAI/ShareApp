@@ -78,6 +78,9 @@ const AdminStoragePage = lazy(() =>
 const AdminSupportPage = lazy(() =>
   import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminSupportPage }))
 )
+const AdminMarketingPage = lazy(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminMarketingPage }))
+)
 const SuperAdminRedirect = lazy(() =>
   import('./v2/pages/AdminDashboard').then((m) => ({ default: m.SuperAdminRedirect }))
 )
@@ -158,6 +161,7 @@ function App() {
                 <Route path="comms" element={<AdminCommsPage />} />
                 <Route path="storage" element={<AdminStoragePage />} />
                 <Route path="support" element={<AdminSupportPage />} />
+                <Route path="marketing" element={<AdminMarketingPage />} />
                 <Route path="guests" element={<GuestsTab />} />
                 <Route path="audit" element={<AuditTab />} />
               </Route>

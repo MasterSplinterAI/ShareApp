@@ -1,0 +1,27 @@
+{
+  "name": "@rhule/marketing-core",
+  "version": "0.1.0",
+  "description": "Codebase-aware AI Marketing, SEO Blog, Artwork, and Resend Email engine",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --external @rhule/marketing-shared",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/router.test.ts"
+  },
+  "dependencies": {
+    "@rhule/marketing-shared": "file:../shared"
+  }
+}

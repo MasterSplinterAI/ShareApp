@@ -34,6 +34,8 @@
     "@radix-ui/react-slot": "^1.1.1",
     "@radix-ui/react-switch": "^1.1.2",
     "@radix-ui/react-tabs": "^1.1.2",
+    "@rhule/marketing-react": "file:../vendor/marketing-kit/packages/react",
+    "@rhule/marketing-shared": "file:../vendor/marketing-kit/packages/shared",
     "@rhule/support-react": "file:../vendor/support-kit/packages/react",
     "@rhule/support-shared": "file:../vendor/support-kit/packages/shared",
     "axios": "^1.6.2",

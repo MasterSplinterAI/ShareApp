@@ -248,6 +248,9 @@ export const v2Admin = {
   patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),
   emailConfig: () => apiV2.get('/admin/email/config').then((r) => r.data),
   patchEmailConfig: (body) => apiV2.patch('/admin/email/config', body).then((r) => r.data),
+  marketingEmailConfig: () => apiV2.get('/admin/marketing/email').then((r) => r.data),
+  patchMarketingEmailConfig: (body) =>
+    apiV2.patch('/admin/marketing/email', body).then((r) => r.data),
   storageConfig: () => apiV2.get('/admin/storage/config').then((r) => r.data),
   patchStorageConfig: (body) => apiV2.patch('/admin/storage/config', body).then((r) => r.data),
   testStorage: (body) => apiV2.post('/admin/storage/test', body || {}).then((r) => r.data),

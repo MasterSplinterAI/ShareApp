@@ -414,6 +414,12 @@ async function migrate() {
   if (!emailSettingsColNames.has('ics_organizer_domain')) {
     await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN ics_organizer_domain TEXT`);
   }
+  if (!emailSettingsColNames.has('marketing_resend_webhook_secret')) {
+    await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN marketing_resend_webhook_secret TEXT`);
+  }
+  if (!emailSettingsColNames.has('marketing_email_from')) {
+    await run(`ALTER TABLE v2_platform_email_settings ADD COLUMN marketing_email_from TEXT`);
+  }
 
   await run(`
     CREATE TABLE IF NOT EXISTS v2_resend_inbound_events (
