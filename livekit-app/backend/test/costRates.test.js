@@ -24,6 +24,13 @@ describe('invoice unit rates', () => {
     const cost = computeCost('deepgram_tts_char', 1000);
     assert.ok(Math.abs(cost.total_cost_usd - 0.03) < 1e-9);
   });
+
+  it('prices xAI Grok TTS at $15 per 1M characters', () => {
+    assert.equal(COSTS.xai_tts_char.provider, 'xai');
+    assert.equal(COSTS.xai_tts_char.unit_cost_usd, 0.000015);
+    const cost = computeCost('xai_tts_char', 1_000_000);
+    assert.ok(Math.abs(cost.total_cost_usd - 15) < 1e-9);
+  });
 });
 
 describe('computeParticipantMinutes invoice pricing', () => {

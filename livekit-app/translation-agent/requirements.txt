@@ -17,6 +17,9 @@ livekit-plugins-deepgram>=0.6.0
 # Gladia plugin (STT_PROVIDER=gladia + GLADIA_API_KEY)
 livekit-plugins-gladia>=1.5.8
 
+# xAI plugin (STT_PROVIDER=xai + XAI_API_KEY; streaming wss://api.x.ai/v1/stt)
+livekit-plugins-xai>=1.2.0
+
 # Contextual Turn Detector plugin (Dec 2025 enhancement - semantic understanding)
 livekit-plugins-turn-detector>=0.1.0
 

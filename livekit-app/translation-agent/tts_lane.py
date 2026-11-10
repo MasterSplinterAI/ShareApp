@@ -56,6 +56,13 @@ _ELEVENLABS_LANGS = {
 _OPENAI_TTS_DEFAULT_MODEL = "gpt-4o-mini-tts"
 _OPENAI_TTS_DEFAULT_VOICE = "alloy"
 
+# xAI Grok TTS. Built-in voices are case-insensitive; eve is the API default.
+_XAI_TTS_URL = "https://api.x.ai/v1/tts"
+_XAI_TTS_DEFAULT_VOICE = "eve"
+_XAI_TTS_VOICES = frozenset({"eve", "ara", "rex", "carina", "orion"})
+_XAI_VOICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{2,64}$")
+TTS_PROVIDER_CHOICES = frozenset({"auto", "xai", "deepgram", "openai", "elevenlabs"})
+
 
 def is_valid_elevenlabs_voice_id(voice_id: str | None) -> bool:
     if not voice_id or not isinstance(voice_id, str):
@@ -104,6 +111,8 @@ def classify_tts_api_error(
         provider_label = "ElevenLabs"
     elif provider == "openai":
         provider_label = "OpenAI TTS"
+    elif provider == "xai":
+        provider_label = "xAI TTS"
     else:
         provider_label = "Deepgram"
 
@@ -136,21 +145,91 @@ def classify_tts_api_error(
     return ("unknown", f"{provider_label} synthesis failed")
 
 
-def resolve_tts_provider(language: str) -> str:
+def normalize_tts_provider_choice(value: Any) -> str | None:
+    """Return a supported room TTS choice, or None when the value is not one."""
+    if value is None:
+        return None
+    cleaned = str(value).strip().lower()
+    if cleaned in TTS_PROVIDER_CHOICES:
+        return cleaned
+    return None
+
+
+def resolve_xai_voice_id(voice_id: str | None = None) -> str:
+    """Resolve an xAI voice id (explicit → XAI_TTS_VOICE → eve)."""
+    for candidate in (
+        (voice_id or "").strip(),
+        os.getenv("XAI_TTS_VOICE", "").strip(),
+        _XAI_TTS_DEFAULT_VOICE,
+    ):
+        lowered = candidate.lower()
+        if lowered in _XAI_TTS_VOICES or _XAI_VOICE_ID_RE.fullmatch(candidate):
+            return lowered if lowered in _XAI_TTS_VOICES else candidate
+    return _XAI_TTS_DEFAULT_VOICE
+
+
+def xai_language_code(language: str | None) -> str:
+    """BCP-47 base or regional code for xAI, or auto when the lane has no language."""
+    raw = (language or "").strip().replace("_", "-")
+    if not raw or raw.lower() in {"multi", "und", "auto"}:
+        return "auto"
+    parts = [part for part in raw.split("-") if part]
+    base = parts[0].lower() if parts else ""
+    if not base.isalpha() or not (2 <= len(base) <= 3):
+        return "auto"
+    if len(parts) >= 2 and parts[1].isalnum() and 2 <= len(parts[1]) <= 8:
+        region = parts[1].upper() if parts[1].isalpha() else parts[1]
+        return f"{base}-{region}"
+    return base
+
+
+def participant_may_set_tts(metadata: str | None) -> bool:
+    """True when the LiveKit token metadata marks this participant as a TTS admin.
+
+    Org owners/admins and platform superadmins get `ttsAdmin: true` on the room
+    token. A client cannot grant itself the switch by putting a role in the
+    data-channel payload.
+    """
+    if not metadata or not isinstance(metadata, str):
+        return False
+    try:
+        meta = json.loads(metadata)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(meta, dict):
+        return False
+    if meta.get("ttsAdmin") is True or meta.get("isSuperadmin") is True:
+        return True
+    role = str(meta.get("orgRole") or "").strip().lower()
+    return role in {"admin", "owner", "superadmin"}
+
+
+def resolve_tts_provider(language: str, preferred_provider: str | None = None) -> str:
     """Pick the TTS provider for a target language.
 
-    Honors TTS_PROVIDER env ("elevenlabs" | "deepgram" | "openai" | "auto", default auto).
+    Honors TTS_PROVIDER env ("elevenlabs" | "deepgram" | "openai" | "xai" | "auto",
+    default auto) unless `preferred_provider` is set by an in-room admin switch.
     Auto prefers ElevenLabs (broader coverage, faster) when a key is configured,
     keeping Deepgram for its 7 natively supported languages if no ElevenLabs key exists.
-    At synthesis time, `_synthesize_with_fallback` automatically falls back to
-    OpenAI multilingual TTS (`gpt-4o-mini-tts`) for any non-Aura language when
-    ElevenLabs is unavailable or rate-limited.
+    `xai` requires XAI_API_KEY; otherwise the lane falls through to OpenAI
+    `gpt-4o-mini-tts` and then Deepgram Aura-2. Synthesis failures use the same
+    ladder in `_synthesize_with_fallback`.
     """
     base = (language or "en").split("-")[0].lower()
-    pref = os.getenv("TTS_PROVIDER", "auto").strip().lower()
+    explicit = normalize_tts_provider_choice(preferred_provider)
+    pref = explicit or os.getenv("TTS_PROVIDER", "auto").strip().lower() or "auto"
+    if pref not in TTS_PROVIDER_CHOICES:
+        pref = "auto"
     has_eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
     has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
+    has_xai = bool(os.getenv("XAI_API_KEY", "").strip())
 
+    if pref == "xai":
+        if has_xai:
+            return "xai"
+        if has_openai:
+            return "openai"
+        return "deepgram"
     if pref == "deepgram":
         return "deepgram"
     if pref == "openai":
@@ -229,6 +308,7 @@ class TtsLane:
         self._last_error_at: float = 0.0
 
         self._deepgram_tts: Any = None
+        self.xai_voice_id = resolve_xai_voice_id(None)
         self._http_session: aiohttp.ClientSession | None = None
         self._audio_source: Any = None
         self._local_track: Any = None
@@ -241,6 +321,26 @@ class TtsLane:
             logger.warning("[TTS:%s] ignoring invalid voice_id=%r", self.language, voice_id)
             return
         self.voice_id = cleaned
+
+    def set_provider(self, provider: str, voice_id: str | None = None) -> str:
+        """Switch the provider used on the next utterance.
+
+        The published `tts-{lang}` track stays up. A missing xAI key resolves
+        to OpenAI, then Deepgram, so the lane keeps speaking.
+        """
+        choice = normalize_tts_provider_choice(provider) or "auto"
+        self.provider = resolve_tts_provider(self.language, preferred_provider=choice)
+        if voice_id and choice == "xai":
+            self.xai_voice_id = resolve_xai_voice_id(voice_id)
+        elif voice_id and choice == "elevenlabs":
+            self.set_voice_id(voice_id)
+        logger.info(
+            "[TTS:%s] provider switch requested=%s active=%s",
+            self.language,
+            choice,
+            self.provider,
+        )
+        return self.provider
 
     def _get_http_session(self) -> aiohttp.ClientSession:
         """Return (or lazily create) the shared aiohttp session for HTTP TTS streaming."""
@@ -450,9 +550,17 @@ class TtsLane:
         aura_ok = base_lang in _AURA_SUPPORTED_LANGS
         has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
         has_eleven = bool(os.getenv("ELEVENLABS_API_KEY", "").strip())
+        has_xai = bool(os.getenv("XAI_API_KEY", "").strip())
 
         ladder: list[str] = []
-        if self.provider == "elevenlabs":
+        if self.provider == "xai":
+            if has_xai:
+                ladder.append("xai")
+            if has_openai:
+                ladder.append("openai")
+            if aura_ok or not has_openai:
+                ladder.append("deepgram")
+        elif self.provider == "elevenlabs":
             ladder.append("elevenlabs")
             if aura_ok:
                 ladder.append("deepgram")
@@ -521,6 +629,8 @@ class TtsLane:
             return self._synthesize_elevenlabs(text, playback_rate)
         if provider == "openai":
             return self._synthesize_openai(text, playback_rate)
+        if provider == "xai":
+            return self._synthesize_xai(text, playback_rate)
         return self._synthesize_deepgram(text, playback_rate)
 
     def _synthesize_deepgram(self, text: str, playback_rate: float) -> Any:
@@ -615,6 +725,55 @@ class TtsLane:
                 code, message = classify_tts_api_error("elevenlabs", resp.status, detail)
                 raise TtsApiError(
                     provider="elevenlabs",
+                    code=code,
+                    message=message,
+                    http_status=resp.status,
+                )
+            async for chunk in resp.content.iter_chunked(4096):
+                buf.extend(chunk)
+                aligned = len(buf) - (len(buf) % frame_bytes)
+                if aligned:
+                    yield bytes(buf[:aligned])
+                    del buf[:aligned]
+        if buf:
+            yield bytes(buf)
+
+    async def _synthesize_xai(self, text: str, playback_rate: float):
+        """Stream raw PCM from xAI Grok TTS (`POST /v1/tts`)."""
+        api_key = os.getenv("XAI_API_KEY", "").strip()
+        if not api_key:
+            raise TtsApiError(
+                provider="xai",
+                code="missing_api_key",
+                message="xAI API key not configured on agent",
+            )
+
+        speed = max(0.7, min(float(playback_rate or 1.0), 1.5))
+        body: dict[str, Any] = {
+            "text": text,
+            "voice_id": resolve_xai_voice_id(self.xai_voice_id),
+            "language": xai_language_code(self.language),
+            "speed": speed,
+            "output_format": {"codec": "pcm", "sample_rate": self.sample_rate},
+            "optimize_streaming_latency": 2,
+        }
+        url = os.getenv("XAI_TTS_URL", _XAI_TTS_URL).strip() or _XAI_TTS_URL
+        frame_bytes = max(1, int(self.sample_rate * 0.02)) * self.num_channels * 2
+        buf = bytearray()
+
+        async with self._get_http_session().post(
+            url,
+            json=body,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        ) as resp:
+            if resp.status != 200:
+                detail = (await resp.text())[:200]
+                code, message = classify_tts_api_error("xai", resp.status, detail)
+                raise TtsApiError(
+                    provider="xai",
                     code=code,
                     message=message,
                     http_status=resp.status,

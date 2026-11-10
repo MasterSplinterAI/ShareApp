@@ -6,11 +6,14 @@ import asyncio
 import json
 import time
 
+from cost_reporter import _TTS_EVENT_TYPES
 from tts_lane import (
     TtsLane,
     _ELEVENLABS_DEFAULT_VOICE,
     classify_tts_api_error,
+    participant_may_set_tts,
     resolve_tts_provider,
+    resolve_xai_voice_id,
 )
 
 
@@ -338,4 +341,135 @@ def test_multilingual_fallback_uses_openai_for_non_aura_language(monkeypatch) ->
         await lane.aclose()
 
     asyncio.run(_run())
+
+
+class _FakeHttpResponse:
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self._body = body
+        self.content = self
+
+    async def text(self) -> str:
+        return self._body.decode("utf-8", errors="replace")
+
+    async def iter_chunked(self, _size: int):
+        yield self._body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args) -> bool:
+        return False
+
+
+class _FakeHttpSession:
+    def __init__(self, status: int = 200, body: bytes = b"\x00\x00" * 480) -> None:
+        self.status = status
+        self.body = body
+        self.closed = False
+        self.posts: list[tuple] = []
+
+    def post(self, url, json=None, headers=None):
+        self.posts.append((url, json, headers))
+        return _FakeHttpResponse(self.status, self.body)
+
+
+def test_xai_provider_resolution_and_runtime_switch(monkeypatch) -> None:
+    monkeypatch.delenv("ELEVENLABS_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.delenv("TTS_PROVIDER", raising=False)
+
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    monkeypatch.setenv("TTS_PROVIDER", "xai")
+    assert resolve_tts_provider("es") == "xai"
+    assert resolve_tts_provider("ko", preferred_provider="xai") == "xai"
+
+    # Missing key falls through to OpenAI, then Deepgram.
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+    assert resolve_tts_provider("es", preferred_provider="xai") == "openai"
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    assert resolve_tts_provider("es", preferred_provider="xai") == "deepgram"
+
+    room = _FakeRoom()
+    lane = TtsLane(room=room, language="es", publish_track=False, provider="deepgram")
+    track = object()
+    lane._publication = track
+    monkeypatch.setenv("XAI_API_KEY", "xai-test")
+    assert lane.set_provider("xai", voice_id="Ara") == "xai"
+    assert lane.provider == "xai"
+    assert lane.xai_voice_id == "ara"
+    assert lane._publication is track
+    assert lane._build_provider_ladder() == ["xai", "deepgram"]
+
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+    assert lane._build_provider_ladder()[1] == "openai"
+    assert _TTS_EVENT_TYPES["xai"] == "xai_tts_char"
+    assert resolve_xai_voice_id("nope voice") == "eve"
+
+
+def test_xai_synthesis_posts_pcm_request(monkeypatch) -> None:
+    async def _run() -> None:
+        monkeypatch.setenv("XAI_API_KEY", "xai-test")
+        room = _FakeRoom()
+        lane = TtsLane(room=room, language="pt-BR", provider="xai", publish_track=False)
+        lane.xai_voice_id = "rex"
+        session = _FakeHttpSession()
+        lane._http_session = session
+
+        frames = []
+        async for frame in lane._synthesize_xai("olá", 1.8):
+            frames.append(frame)
+
+        assert frames
+        url, body, headers = session.posts[0]
+        assert url == "https://api.x.ai/v1/tts"
+        assert headers["Authorization"] == "Bearer xai-test"
+        assert body["voice_id"] == "rex"
+        assert body["language"] == "pt-BR"
+        assert body["speed"] == 1.5
+        assert body["output_format"] == {"codec": "pcm", "sample_rate": 24000}
+        assert body["optimize_streaming_latency"] == 2
+        lane._http_session = None
+        await lane.aclose()
+
+    asyncio.run(_run())
+
+
+def test_xai_synthesis_falls_back_to_openai(monkeypatch) -> None:
+    async def _run() -> None:
+        monkeypatch.setenv("XAI_API_KEY", "xai-test")
+        monkeypatch.setenv("OPENAI_API_KEY", "openai-test")
+        room = _FakeRoom()
+        lane = TtsLane(room=room, language="es", provider="xai", publish_track=False)
+        called: list[str] = []
+
+        async def fail_xai(text: str, rate: float):
+            called.append("xai")
+            raise RuntimeError("xai down")
+            yield b""  # pragma: no cover
+
+        async def ok_openai(text: str, rate: float):
+            called.append("openai")
+            yield b"\x00\x00" * 480
+
+        monkeypatch.setattr(lane, "_synthesize_xai", fail_xai)
+        monkeypatch.setattr(lane, "_synthesize_openai", ok_openai)
+
+        async for _frame in lane._synthesize_with_fallback("hola", 1.0):
+            pass
+        assert called == ["xai", "openai"]
+        await lane.aclose()
+
+    asyncio.run(_run())
+
+
+def test_participant_tts_admin_metadata() -> None:
+    assert participant_may_set_tts('{"ttsAdmin": true}')
+    assert participant_may_set_tts('{"orgRole": "admin"}')
+    assert participant_may_set_tts('{"orgRole": "owner"}')
+    assert not participant_may_set_tts('{"role": "host"}')
+    assert not participant_may_set_tts('{"ttsAdmin": false, "role": "admin"}')
+    assert not participant_may_set_tts("not-json")
 
