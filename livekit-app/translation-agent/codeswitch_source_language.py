@@ -33,24 +33,42 @@ def normalize_language_code(lang: str | None) -> str:
     return str(lang).split("-")[0].lower()
 
 
-def speech_data_detected_language(speech_data: Any) -> str:
-    """Extract Deepgram/LiveKit detected language code from SpeechData.
-
-    When Deepgram runs with `language="multi"`, `livekit-plugins-deepgram`
-    initializes `SpeechData.language = "multi"` and only overwrites it when
-    `alt["languages"]` is populated. Filter out `"multi"` and similar sentinel
-    values so only real ISO language codes count as detections.
-    """
-    lang = getattr(speech_data, "language", None)
+def _language_code_value(lang: Any) -> str:
     if lang is None:
         return ""
     if hasattr(lang, "language"):
         code = normalize_language_code(str(lang.language))
+    elif isinstance(lang, dict):
+        code = normalize_language_code(str(lang.get("language") or ""))
     else:
         code = normalize_language_code(str(lang))
     if code in _NON_LANGUAGE_CODES:
         return ""
     return code
+
+
+def speech_data_detected_language(speech_data: Any) -> str:
+    """Extract the detected language from a LiveKit SpeechData alternative.
+
+    Deepgram `language="multi"` and xAI (with the language query omitted) put
+    the detected BCP-47 code on `SpeechData.language`. Deepgram also leaves
+    the placeholder `"multi"` when it has not tagged the alternative yet.
+    If the utterance language is missing, the last word that carries its own
+    `language` is used so a mid-utterance switch still routes.
+    """
+    code = _language_code_value(getattr(speech_data, "language", None))
+    if code:
+        return code
+    words = getattr(speech_data, "words", None) or []
+    for word in reversed(list(words)):
+        if isinstance(word, dict):
+            word_lang = word.get("language")
+        else:
+            word_lang = getattr(word, "language", None)
+        code = _language_code_value(word_lang)
+        if code:
+            return code
+    return ""
 
 
 def infer_script_language(

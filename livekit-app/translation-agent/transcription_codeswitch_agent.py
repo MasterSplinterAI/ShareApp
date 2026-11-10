@@ -38,6 +38,7 @@ from codeswitch_source_language import (
     text_has_mixed_scripts,
 )
 from residual_guard import is_residual_repeat
+from xai_multilingual_stt import build_xai_streaming_stt, xai_stt_multilingual_enabled
 from demo_orchestrator import DemoRoomOrchestrator
 from translation_helpers import (
     LANG_NAMES,
@@ -1672,19 +1673,21 @@ class TranscriptionOnlyAgent:
                 return None
             if not (XAI_PLUGIN_AVAILABLE and xai_plugin and (is_cloud or os.getenv("XAI_API_KEY"))):
                 return None
-            lang = normalized_lang or "en"
-            kwargs = dict(
-                language=lang,
-                sample_rate=16000,
-                enable_interim_results=True,
-                endpointing=int(os.getenv("XAI_STT_ENDPOINTING_MS", "800") or "800"),
-            )
+            multilingual = xai_stt_multilingual_enabled()
             try:
-                inst = xai_plugin.STT(**kwargs)
-            except TypeError:
-                kwargs.pop("endpointing", None)
-                inst = xai_plugin.STT(**kwargs)
-            logger.info(f"{L} STT: xAI streaming lang={lang!r} sample_rate=16000 (shared)")
+                endpointing = int(os.getenv("XAI_STT_ENDPOINTING_MS", "800") or "800")
+            except ValueError:
+                endpointing = 800
+            inst = build_xai_streaming_stt(
+                endpointing=endpointing,
+                multilingual=multilingual,
+                language=None if multilingual else (normalized_lang or "en"),
+            )
+            logger.info(
+                f"{L} STT: xAI streaming multilingual={multilingual} "
+                f"language={'omitted' if multilingual else (normalized_lang or 'en')!r} "
+                f"sample_rate=16000 (shared)"
+            )
             stt_provider_name = "xai"
             return inst
 
@@ -2908,7 +2911,9 @@ class TranscriptionOnlyAgent:
         async def note_detected_language(
             speech_data: Any, *, is_final: bool, text: str = ""
         ) -> None:
-            if stt_provider_name != "deepgram":
+            # Deepgram `multi` and xAI (language omitted) both tag SpeechData
+            # with the detected language. Gladia keeps its own translation path.
+            if stt_provider_name not in {"deepgram", "xai"}:
                 return
             room_langs = list(self.participant_languages.values())
             detected = resolve_detected_language(

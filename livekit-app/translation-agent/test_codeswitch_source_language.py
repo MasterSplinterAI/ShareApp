@@ -42,6 +42,20 @@ class TestSpeechDataDetectedLanguage:
         assert speech_data_detected_language(type("SD", (), {"language": "auto"})()) == ""
         assert speech_data_detected_language(type("SD", (), {"language": "und"})()) == ""
 
+    def test_uses_last_word_language_when_utterance_language_is_missing(self):
+        speech = type(
+            "SD",
+            (),
+            {
+                "language": "",
+                "words": (
+                    {"text": "hola", "language": "es"},
+                    {"text": "hello", "language": "en"},
+                ),
+            },
+        )()
+        assert speech_data_detected_language(speech) == "en"
+
 
 class TestEffectiveSourceLanguage:
     def test_defaults_to_configured(self):
