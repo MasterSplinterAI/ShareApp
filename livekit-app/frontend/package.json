@@ -6,7 +6,8 @@
   "scripts": {
     "postinstall": "patch-package",
     "dev": "vite --host 0.0.0.0 --port 5174",
-    "build": "vite build && node scripts/prerender.mjs",
+    "build": "node scripts/locale-marketing/generate.mjs && vite build && node scripts/prerender.mjs",
+    "build:locales": "node scripts/locale-marketing/generate.mjs",
     "build:app": "vite build",
     "cap:sync": "vite build && npx cap sync",
     "cap:ios": "vite build && npx cap sync ios && npx cap open ios",

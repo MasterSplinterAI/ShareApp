@@ -1,0 +1,278 @@
+/**
+ * Short marketing chrome + hero overlays for locale path pages.
+ * Blog article bodies stay English until real translations exist (Master Content Creator).
+ */
+
+const shared = {
+  en: {
+    titleHome: 'Lalia — The world is one conversation | Live Voice Translation',
+    descHome:
+      'Your voice. Their language. A real connection. Talk naturally with anyone, anywhere, with live voice translation that brings you closer.',
+    titleLanguages: 'Supported languages — Lalia',
+    descLanguages:
+      'Lalia supports real-time speech, captions, and voice translation across 61 languages and regional dialects.',
+    titleBlog: 'Lalia Journal',
+    navExperience: 'Experience Lalia',
+    navWhy: 'Why Lalia',
+    navHow: 'How it works',
+    navPricing: 'Pricing',
+    navBlog: 'Blog',
+    navLanguages: 'Languages',
+    navSignIn: 'Sign in',
+    navDemo: 'Try the live demo',
+    navGetStarted: 'Get started',
+    navStartFree: 'Start free',
+    heroEyebrow: 'A SMALLER WORLD. A BIGGER CONVERSATION.',
+    heroTitleLead: 'The world is',
+    heroTitleMint: 'conversation.',
+    heroOne: 'one',
+    heroDesc:
+      'Your voice. Their language. A real connection. Talk naturally with anyone, anywhere, with live voice translation that brings you closer.',
+    ctaStart: 'Start talking for free',
+    ctaSee: 'See how it feels',
+    footerTag: 'A world of languages. One human connection.',
+    explore: 'EXPLORE',
+    connect: 'LET’S CONNECT',
+    languagesH1Lead: 'Every language',
+    languagesH1Mint: 'Lalia speaks.',
+    languagesLead:
+      'Talk, read, and listen across 61 languages and regional dialects. Pick yours in the meeting. Everyone else can pick theirs.',
+    languagesSearch: 'Search languages',
+    backHome: '← Home',
+    untranslatedNote: 'This article is available in English while we finish the translation.',
+  },
+};
+
+shared.es = {
+  ...shared.en,
+  titleHome: 'Lalia — El mundo es una conversación | Traducción de voz en vivo',
+  descHome:
+    'Tu voz. Su idioma. Una conexión real. Habla con naturalidad con cualquiera, en cualquier lugar, con traducción de voz en vivo.',
+  titleLanguages: 'Idiomas compatibles — Lalia',
+  descLanguages:
+    'Lalia admite voz, subtítulos y traducción en tiempo real en más de 61 idiomas y dialectos regionales.',
+  titleBlog: 'Lalia Journal',
+  navExperience: 'Experiencia Lalia',
+  navWhy: 'Por qué Lalia',
+  navHow: 'Cómo funciona',
+  navPricing: 'Precios',
+  navBlog: 'Blog',
+  navLanguages: 'Idiomas',
+  navSignIn: 'Iniciar sesión',
+  navDemo: 'Probar la demo en vivo',
+  navGetStarted: 'Empezar',
+  navStartFree: 'Empezar gratis',
+  heroEyebrow: 'UN MUNDO MÁS PEQUEÑO. UNA CONVERSACIÓN MÁS GRANDE.',
+  heroTitleLead: 'El mundo es',
+  heroTitleMint: 'conversación.',
+  heroOne: 'una',
+  heroDesc:
+    'Tu voz. Su idioma. Una conexión real. Habla con naturalidad con cualquiera, en cualquier lugar, con traducción de voz en vivo que os acerca.',
+  ctaStart: 'Empieza a hablar gratis',
+  ctaSee: 'Mira cómo se siente',
+  footerTag: 'Un mundo de idiomas. Una conexión humana.',
+  explore: 'EXPLORAR',
+  connect: 'CONECTEMOS',
+  languagesH1Lead: 'Cada idioma',
+  languagesH1Mint: 'que habla Lalia.',
+  languagesLead:
+    'Habla, lee y escucha en más de 61 idiomas y dialectos. Elige el tuyo en la reunión. Los demás eligen el suyo.',
+  languagesSearch: 'Buscar idiomas',
+  backHome: '← Inicio',
+  untranslatedNote: 'Este artículo está en inglés mientras terminamos la traducción.',
+};
+
+shared.fr = {
+  ...shared.en,
+  titleHome: 'Lalia — Le monde est une conversation | Traduction vocale en direct',
+  descHome:
+    'Votre voix. Leur langue. Une vraie connexion. Parlez naturellement avec n’importe qui, où que vous soyez, grâce à la traduction vocale en direct.',
+  titleLanguages: 'Langues prises en charge — Lalia',
+  descLanguages:
+    'Lalia prend en charge la parole, les sous-titres et la traduction en temps réel dans plus de 61 langues et dialectes.',
+  titleBlog: 'Lalia Journal',
+  navExperience: 'Découvrir Lalia',
+  navWhy: 'Pourquoi Lalia',
+  navHow: 'Comment ça marche',
+  navPricing: 'Tarifs',
+  navBlog: 'Blog',
+  navLanguages: 'Langues',
+  navSignIn: 'Se connecter',
+  navDemo: 'Essayer la démo en direct',
+  navGetStarted: 'Commencer',
+  navStartFree: 'Commencer gratuitement',
+  heroEyebrow: 'UN MONDE PLUS PETIT. UNE PLUS GRANDE CONVERSATION.',
+  heroTitleLead: 'Le monde est',
+  heroTitleMint: 'conversation.',
+  heroOne: 'une',
+  heroDesc:
+    'Votre voix. Leur langue. Une vraie connexion. Parlez naturellement avec n’importe qui, où que vous soyez, grâce à la traduction vocale en direct.',
+  ctaStart: 'Commencer à parler gratuitement',
+  ctaSee: 'Voir ce que ça donne',
+  footerTag: 'Un monde de langues. Une connexion humaine.',
+  explore: 'EXPLORER',
+  connect: 'RESTONS CONNECTÉS',
+  languagesH1Lead: 'Chaque langue',
+  languagesH1Mint: 'que parle Lalia.',
+  languagesLead:
+    'Parlez, lisez et écoutez dans plus de 61 langues et dialectes. Choisissez la vôtre en réunion. Les autres choisissent la leur.',
+  languagesSearch: 'Rechercher des langues',
+  backHome: '← Accueil',
+  untranslatedNote: 'Cet article est disponible en anglais le temps de finaliser la traduction.',
+};
+
+shared.de = {
+  ...shared.en,
+  titleHome: 'Lalia — Die Welt ist ein Gespräch | Live-Sprachübersetzung',
+  descHome:
+    'Ihre Stimme. Ihre Sprache. Eine echte Verbindung. Sprechen Sie natürlich mit jedem, überall, mit Live-Sprachübersetzung.',
+  titleLanguages: 'Unterstützte Sprachen — Lalia',
+  descLanguages:
+    'Lalia unterstützt Echtzeit-Sprache, Untertitel und Übersetzung in über 61 Sprachen und Regionalvarianten.',
+  titleBlog: 'Lalia Journal',
+  navExperience: 'Lalia erleben',
+  navWhy: 'Warum Lalia',
+  navHow: 'So funktioniert’s',
+  navPricing: 'Preise',
+  navBlog: 'Blog',
+  navLanguages: 'Sprachen',
+  navSignIn: 'Anmelden',
+  navDemo: 'Live-Demo ausprobieren',
+  navGetStarted: 'Loslegen',
+  navStartFree: 'Kostenlos starten',
+  heroEyebrow: 'EINE KLEINERE WELT. EIN GRÖSSERES GESPRÄCH.',
+  heroTitleLead: 'Die Welt ist',
+  heroTitleMint: 'Gespräch.',
+  heroOne: 'ein',
+  heroDesc:
+    'Ihre Stimme. Ihre Sprache. Eine echte Verbindung. Sprechen Sie natürlich mit jedem, überall — mit Live-Sprachübersetzung, die euch näher bringt.',
+  ctaStart: 'Kostenlos sprechen starten',
+  ctaSee: 'So fühlt es sich an',
+  footerTag: 'Eine Welt voller Sprachen. Eine menschliche Verbindung.',
+  explore: 'ENTDECKEN',
+  connect: 'VERBINDEN',
+  languagesH1Lead: 'Jede Sprache',
+  languagesH1Mint: 'die Lalia spricht.',
+  languagesLead:
+    'Sprechen, lesen und hören Sie in über 61 Sprachen und Dialekten. Wählen Sie Ihre in der Besprechung. Alle anderen wählen die ihre.',
+  languagesSearch: 'Sprachen suchen',
+  backHome: '← Start',
+  untranslatedNote: 'Dieser Artikel ist auf Englisch verfügbar, während wir die Übersetzung fertigstellen.',
+};
+
+shared.pt = {
+  ...shared.en,
+  titleHome: 'Lalia — O mundo é uma conversa | Tradução de voz ao vivo',
+  descHome:
+    'A sua voz. O idioma deles. Uma ligação real. Fale naturalmente com qualquer pessoa, em qualquer lugar, com tradução de voz ao vivo.',
+  titleLanguages: 'Idiomas suportados — Lalia',
+  descLanguages:
+    'A Lalia oferece voz, legendas e tradução em tempo real em mais de 61 idiomas e dialetos regionais.',
+  titleBlog: 'Lalia Journal',
+  navExperience: 'Experiência Lalia',
+  navWhy: 'Porquê a Lalia',
+  navHow: 'Como funciona',
+  navPricing: 'Preços',
+  navBlog: 'Blog',
+  navLanguages: 'Idiomas',
+  navSignIn: 'Entrar',
+  navDemo: 'Experimentar a demo ao vivo',
+  navGetStarted: 'Começar',
+  navStartFree: 'Começar grátis',
+  heroEyebrow: 'UM MUNDO MAIS PEQUENO. UMA CONVERSA MAIOR.',
+  heroTitleLead: 'O mundo é',
+  heroTitleMint: 'conversa.',
+  heroOne: 'uma',
+  heroDesc:
+    'A sua voz. O idioma deles. Uma ligação real. Fale naturalmente com qualquer pessoa, em qualquer lugar, com tradução de voz ao vivo.',
+  ctaStart: 'Comece a falar grátis',
+  ctaSee: 'Veja como se sente',
+  footerTag: 'Um mundo de idiomas. Uma ligação humana.',
+  explore: 'EXPLORAR',
+  connect: 'VAMOS LIGAR',
+  languagesH1Lead: 'Cada idioma',
+  languagesH1Mint: 'que a Lalia fala.',
+  languagesLead:
+    'Fale, leia e ouça em mais de 61 idiomas e dialetos. Escolha o seu na reunião. Os outros escolhem o deles.',
+  languagesSearch: 'Pesquisar idiomas',
+  backHome: '← Início',
+  untranslatedNote: 'Este artigo está em inglês enquanto terminamos a tradução.',
+};
+
+shared.ja = {
+  ...shared.en,
+  titleHome: 'Lalia — 世界はひとつの会話 | ライブ音声翻訳',
+  descHome:
+    'あなたの声。相手の言語。本当のつながり。ライブ音声翻訳で、どこにいても自然に話せます。',
+  titleLanguages: '対応言語 — Lalia',
+  descLanguages:
+    'Laliaは61以上の言語と地域方言でリアルタイムの音声・字幕・翻訳に対応します。',
+  titleBlog: 'Lalia Journal',
+  navExperience: 'Laliaを体験',
+  navWhy: 'Laliaの特長',
+  navHow: '使い方',
+  navPricing: '料金',
+  navBlog: 'ブログ',
+  navLanguages: '言語',
+  navSignIn: 'ログイン',
+  navDemo: 'ライブデモを試す',
+  navGetStarted: 'はじめる',
+  navStartFree: '無料ではじめる',
+  heroEyebrow: '小さな世界。大きな会話。',
+  heroTitleLead: '世界は',
+  heroTitleMint: '会話。',
+  heroOne: 'ひとつの',
+  heroDesc:
+    'あなたの声。相手の言語。本当のつながり。ライブ音声翻訳で、どこにいても自然に話せます。',
+  ctaStart: '無料で話しはじめる',
+  ctaSee: '使い心地を見る',
+  footerTag: '言語の世界。ひとつの人間的なつながり。',
+  explore: '探す',
+  connect: 'つながる',
+  languagesH1Lead: 'すべての言語を',
+  languagesH1Mint: 'Laliaは話します。',
+  languagesLead:
+    '61以上の言語と方言で話し、読み、聞けます。会議で自分の言語を選び、他の人もそれぞれ選べます。',
+  languagesSearch: '言語を検索',
+  backHome: '← ホーム',
+  untranslatedNote: '翻訳の準備中のため、この記事は英語で表示しています。',
+};
+
+shared['zh-CN'] = {
+  ...shared.en,
+  titleHome: 'Lalia — 世界就是一场对话 | 实时语音翻译',
+  descHome: '你的声音。他们的语言。真实的连接。用实时语音翻译，随时随地自然交流。',
+  titleLanguages: '支持的语言 — Lalia',
+  descLanguages: 'Lalia 支持 61 种以上语言与地区方言的实时语音、字幕与翻译。',
+  titleBlog: 'Lalia Journal',
+  navExperience: '体验 Lalia',
+  navWhy: '为什么选 Lalia',
+  navHow: '如何运作',
+  navPricing: '定价',
+  navBlog: '博客',
+  navLanguages: '语言',
+  navSignIn: '登录',
+  navDemo: '试用实时演示',
+  navGetStarted: '开始使用',
+  navStartFree: '免费开始',
+  heroEyebrow: '更小的世界。更大的对话。',
+  heroTitleLead: '世界就是',
+  heroTitleMint: '对话。',
+  heroOne: '一场',
+  heroDesc: '你的声音。他们的语言。真实的连接。用实时语音翻译，随时随地自然交流，拉近彼此。',
+  ctaStart: '免费开始交谈',
+  ctaSee: '看看实际效果',
+  footerTag: '语言的世界。一次人与人的连接。',
+  explore: '探索',
+  connect: '保持联系',
+  languagesH1Lead: '每一种语言',
+  languagesH1Mint: 'Lalia 都会说。',
+  languagesLead: '在 61 种以上语言与方言中说话、阅读、聆听。在会议里选你的语言，其他人选他们的。',
+  languagesSearch: '搜索语言',
+  backHome: '← 首页',
+  untranslatedNote: '文章正文仍为英文，翻译完成后会更新。',
+};
+
+export function stringsFor(locale) {
+  return shared[locale] || shared.en;
+}
