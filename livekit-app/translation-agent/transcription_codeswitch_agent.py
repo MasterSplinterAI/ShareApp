@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Sequence, Set, Tuple
 
 from agent_lifecycle import register_shutdown
+from stt_audio_meter import MeteredSttInput
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
@@ -2043,6 +2044,7 @@ class TranscriptionOnlyAgent:
             logger.info(f"{L} BVC noise cancellation enabled on inbound audio")
         audio_stream = rtc.AudioStream.from_participant(**audio_stream_kwargs)
         stt_stream = stt_instance.stream()
+        metered_stt = MeteredSttInput(stt_stream)
         vad_stream = vad_instance.stream()
 
         turn_id: List[Optional[str]] = [None]
@@ -2878,7 +2880,7 @@ class TranscriptionOnlyAgent:
             # missed interim partials after brief pauses — only utterance finals arrived.
             async for ev in audio_stream:
                 vad_stream.push_frame(ev.frame)
-                stt_stream.push_frame(ev.frame)
+                metered_stt.push_frame(ev.frame)
 
         async def finalize_now() -> None:
             await cancel_finalization()
@@ -3240,10 +3242,16 @@ class TranscriptionOnlyAgent:
         except Exception as e:
             logger.error(f"{L} Pipeline error: {e}", exc_info=True)
         finally:
-            # Deepgram bills every second of audio pushed on the stream, including
-            # silence. VAD speech time under-counts an open mic. One event per
-            # pipeline covers the websocket; a restart emits its own interval.
-            streamed_seconds = max(0.0, time.time() - pipeline_started_at)
+            # Stop input before taking the final accepted-PCM snapshot. Keep
+            # STT/VAD output processing alive through the existing reporting
+            # interval, then perform the normal final-turn cleanup below.
+            feed_task = legs[0]
+            if not feed_task.done():
+                feed_task.cancel()
+            await asyncio.gather(feed_task, return_exceptions=True)
+            # Includes silent frames, excludes no-frame/muted gaps. Each stream
+            # (including provider fallback) reports its own accepted input.
+            streamed_seconds = metered_stt.duration_seconds
             if self.cost_reporter and streamed_seconds > 0:
                 await self.cost_reporter.emit_stt(
                     duration_seconds=streamed_seconds,
