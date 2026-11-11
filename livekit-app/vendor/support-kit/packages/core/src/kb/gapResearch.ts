@@ -1,4 +1,4 @@
-import type { BrandConfig, KnowledgeGap, KbArticle } from "@rhule/support-shared";
+import type { BrandConfig, KnowledgeGap, KbArticle } from "@quill/support-shared";
 import type { CodebaseAdapter, DbAdapter, LlmAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { KnowledgeGapService } from "../gaps/service.js";

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { KbArticle } from "@rhule/support-shared";
+import type { KbArticle } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 

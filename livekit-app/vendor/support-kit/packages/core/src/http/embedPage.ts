@@ -1,4 +1,4 @@
-import type { BrandConfig } from "@rhule/support-shared";
+import type { BrandConfig } from "@quill/support-shared";
 
 /**
  * Self-contained drop-in embed page for the multi-tenant hosted platform.
@@ -104,7 +104,7 @@ export function buildEmbedPage(brand: BrandConfig): string {
       body: JSON.stringify(body),
     }).then(function (r) {
       return r.json().then(function (j) {
-        if (!r.ok) throw new Error((j && j.error) || ("HTTP " + r.status);
+        if (!r.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
         return j;
       });
     });
@@ -134,10 +134,10 @@ export function buildEmbedPage(brand: BrandConfig): string {
     var wrap = document.createElement("div");
     wrap.className = "contact";
     wrap.innerHTML =
-      "<h4>Quick contact</h4>" +
-      "<input id=\"c-name\" type=\"text\" placeholder=\"Your name\"><br>" +
-      "<input id=\"c-email\" type=\"email\" placeholder=\"Your email\"><br>" +
-      "<label><input id=\"c-optin\" type=\"checkbox\" style=\"width:auto\"> Email me about updates</label>";
+      '<h4>Quick contact</h4>' +
+      '<input id="c-name" type="text" placeholder="Your name"><br>' +
+      '<input id="c-email" type="email" placeholder="Your email"><br>' +
+      '<label><input id="c-optin" type="checkbox" style="width:auto"> Email me about updates</label>';
     chatPanel.prepend(wrap);
     var btn = document.createElement("button");
     btn.textContent = "Continue";

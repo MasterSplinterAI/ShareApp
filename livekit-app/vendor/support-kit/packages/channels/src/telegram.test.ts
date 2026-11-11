@@ -77,7 +77,7 @@ describe("createTelegramOpsNotifier", () => {
   it("calls Telegram sendMessage with mocked fetch", async () => {
     const calls: {
       url: string;
-      init?: { method?: string; headers?: Record<string, string>; body?: string };
+      init: { method?: string; headers?: Record<string, string>; body?: string } | undefined;
     }[] = [];
     const fetchImpl: import("./telegram.js").TelegramFetch = async (url, init) => {
       calls.push({ url, init });

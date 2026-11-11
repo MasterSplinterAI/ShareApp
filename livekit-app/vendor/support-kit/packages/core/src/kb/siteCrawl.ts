@@ -1,4 +1,4 @@
-import type { KbArticle } from "@rhule/support-shared";
+import type { KbArticle } from "@quill/support-shared";
 import type { DbAdapter, LlmAdapter } from "../adapters/types.js";
 import { ingestCodegenArticle } from "./codegen.js";
 import type { IngestCodegenArticleInput } from "./codegen.js";

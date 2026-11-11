@@ -2,9 +2,21 @@ import {
   useCallback,
   useEffect,
   useState,
+  useRef,
   type CSSProperties,
   type FormEvent,
 } from "react";
+
+export interface SupportTenantOption {
+  id: string;
+  label: string;
+}
+
+export interface SupportConsoleFilters {
+  kind: string;
+  knowledgeStatus: string;
+  marketingLeadsOnly: boolean;
+}
 
 export interface SupportOpsConsoleProps {
   apiBase: string;
@@ -12,10 +24,25 @@ export interface SupportOpsConsoleProps {
   pollMs?: number;
   /** Bearer JWT for hosts without cookie sessions (e.g. ShareApp). */
   getAccessToken?: () => string | null | undefined;
+  /** Connected app tenants for unified portfolio filtering */
+  tenants?: SupportTenantOption[];
+  /** Controlled business selection; portfolio aggregation is authorized by the host. */
+  selectedTenantId?: string;
+  hideTenantSelector?: boolean;
+  onSelectTenant?: (tenantId: string) => void;
+  selectedTab?: "inbox" | "kb" | "leads";
+  onTabChange?: (tab: "inbox" | "kb" | "leads") => void;
+  filters?: Partial<SupportConsoleFilters>;
+  onFilterChange?: (patch: Partial<SupportConsoleFilters>) => void;
+  selectedRecordId?: string | null;
+  onRecordChange?: (id: string | null, tenantId?: string) => void;
+  requestSignal?: AbortSignal;
+  onUnauthorized?: () => void;
 }
 
 type TicketSummary = {
   id: string;
+  tenantId?: string;
   publicNumber: number;
   status: string;
   kind?: string;
@@ -30,6 +57,7 @@ type TicketSummary = {
 
 type TicketMessage = {
   id: string;
+  tenantId?: string;
   authorType: string;
   body: string;
   citationJson?: string | null;
@@ -38,6 +66,7 @@ type TicketMessage = {
 
 type Proposal = {
   id: string;
+  tenantId?: string;
   proposalType: string;
   status: string;
   summary: string;
@@ -47,6 +76,7 @@ type Proposal = {
 
 type KbArticle = {
   id: string;
+  tenantId?: string;
   title: string;
   body: string;
   status: string;
@@ -58,6 +88,7 @@ type KbArticle = {
 
 type Gap = {
   id: string;
+  tenantId?: string;
   userQuestion: string;
   summary?: string | null;
   status: string;
@@ -66,6 +97,7 @@ type Gap = {
 
 type Lead = {
   id: string;
+  tenantId?: string;
   email: string;
   name: string;
   phone?: string | null;
@@ -77,6 +109,10 @@ type Lead = {
   createdAt: string;
   updatedAt: string;
 };
+
+function tenantBadgeColors(_tenantId?: string): { bg: string; fg: string; border: string } {
+  return { bg: "#f1f5f9", fg: "#334155", border: "#cbd5e1" };
+}
 
 type TicketCounts = Record<string, number>;
 
@@ -107,12 +143,13 @@ async function opsFetch<T>(
   });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
-    throw new Error(
+    throw Object.assign(new Error(
       typeof data === "object" && data && "error" in data && data.error
         ? String(data.error)
         : `Request failed (${res.status})`,
-    );
+    ), {status:res.status});
   }
+  init?.signal?.throwIfAborted();
   return data;
 }
 
@@ -154,34 +191,75 @@ function actionGuide(p?: Proposal, kind?: string): string {
 }
 
 export function SupportOpsConsole(props: SupportOpsConsoleProps) {
-  const { apiBase, className, pollMs = 8000, getAccessToken } = props;
+  const {
+    apiBase,
+    className,
+    pollMs = 8000,
+    getAccessToken,
+    tenants = [],
+    selectedTenantId,
+    onSelectTenant,
+  } = props;
+
+  const [internalTenant, setInternalTenant] = useState<string | undefined>(selectedTenantId ?? tenants[0]?.id);
+  const activeTenant = selectedTenantId ?? internalTenant;
+  const displayTenant=(id?:string)=>tenants.find(t=>t.id===id)?.label||id||"";
+
+  const handleSelectTenant = (tenantId: string) => {
+    setInternalTenant(tenantId);
+    onSelectTenant?.(tenantId);
+    setSelectedId(null);
+    setDetail(null);
+    setSelectedArticle(null);
+    setSelectedLead(null);
+  };
 
   const fetchApi = useCallback(
-    <T,>(path: string, init?: RequestInit) =>
-      opsFetch<T>(apiBase, path, init, getAccessToken),
-    [apiBase, getAccessToken],
+    <T,>(path: string, init?: RequestInit) => {
+      const mergedInit: RequestInit = {
+        ...init,
+        headers: {
+          ...(activeTenant ? { "x-tenant-id": activeTenant } : {}),
+          ...((init?.headers as Record<string, string>) ?? {}),
+        },
+      };
+      mergedInit.signal = props.requestSignal && init?.signal ? AbortSignal.any([props.requestSignal, init.signal]) : props.requestSignal ?? init?.signal ?? null;
+      return opsFetch<T>(apiBase, path, mergedInit, getAccessToken).catch(error=>{if(error.status===401)props.onUnauthorized?.();throw error;});
+    },
+    [apiBase, getAccessToken, activeTenant, props.requestSignal, props.onUnauthorized],
   );
-  const [tab, setTab] = useState<"inbox" | "kb" | "leads">("inbox");
-  const [kindFilter, setKindFilter] = useState<string>("attention");
+  const [internalTab, setInternalTab] = useState<"inbox" | "kb" | "leads">("inbox");
+  const tab=props.selectedTab??internalTab;
+  const setTab=(value:typeof tab)=>{setInternalTab(value);props.onTabChange?.(value);};
+  const [internalKind, setInternalKind] = useState<string>("attention");
+  const kindFilter = props.filters?.kind ?? internalKind;
+  const setKindFilter = (kind: string) => { setInternalKind(kind); props.onFilterChange?.({kind}); };
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
   const [counts, setCounts] = useState<TicketCounts>({});
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<{
+  const [loadedDetail, setDetail] = useState<{
     ticket: TicketSummary;
     messages: TicketMessage[];
     proposals: Proposal[];
   } | null>(null);
+  const detail = props.selectedRecordId !== undefined && (!props.selectedRecordId || (loadedDetail?.ticket.id !== props.selectedRecordId && String(loadedDetail?.ticket.publicNumber) !== props.selectedRecordId)) ? null : loadedDetail;
+  const detailRequest = useRef(0);
   const [draft, setDraft] = useState("");
   const [editDraft, setEditDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const [kbFilter, setKbFilter] = useState("draft");
+  const [internalKnowledgeStatus, setInternalKnowledgeStatus] = useState("draft");
+  const kbFilter = props.filters?.knowledgeStatus ?? internalKnowledgeStatus;
+  const setKbFilter = (knowledgeStatus: string) => { setInternalKnowledgeStatus(knowledgeStatus); props.onFilterChange?.({knowledgeStatus}); };
   const [articles, setArticles] = useState<KbArticle[]>([]);
   const [gaps, setGaps] = useState<Gap[]>([]);
-  const [selectedArticle, setSelectedArticle] = useState<KbArticle | null>(null);
+  const [loadedArticle, setSelectedArticle] = useState<KbArticle | null>(null);
+  const selectedArticle = props.selectedRecordId !== undefined && loadedArticle?.id !== props.selectedRecordId ? null : loadedArticle;
   const [leads, setLeads] = useState<Lead[]>([]);
-  const [leadsMarketingOnly, setLeadsMarketingOnly] = useState(false);
+  const [internalMarketingLeadsOnly, setInternalMarketingLeadsOnly] = useState(false);
+  const leadsMarketingOnly = props.filters?.marketingLeadsOnly ?? internalMarketingLeadsOnly;
+  const setLeadsMarketingOnly = (marketingLeadsOnly: boolean) => { setInternalMarketingLeadsOnly(marketingLeadsOnly); props.onFilterChange?.({marketingLeadsOnly}); };
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
 
   const loadInbox = useCallback(async () => {
@@ -201,13 +279,15 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
   }, [fetchApi, kindFilter]);
 
   const loadDetail = useCallback(
-    async (id: string) => {
+    async (id: string, signal?: AbortSignal) => {
+      const request = ++detailRequest.current;
       const data = await fetchApi<{
         ok: boolean;
         ticket: TicketSummary;
         messages: TicketMessage[];
         proposals: Proposal[];
-      }>(`/admin/tickets/${id}`);
+      }>(`/admin/tickets/${encodeURIComponent(id)}`, {signal: signal ?? null});
+      if(request !== detailRequest.current) return;
       setDetail({
         ticket: data.ticket,
         messages: data.messages ?? [],
@@ -220,6 +300,27 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
     [fetchApi],
   );
 
+  useEffect(() => {
+    if (props.selectedRecordId === undefined) return;
+    const controller = new AbortController();
+    if (tab === 'inbox' && props.selectedRecordId) {
+      void loadDetail(props.selectedRecordId, controller.signal).catch(error => { if (!controller.signal.aborted) setError(error.message); });
+    } else { setDetail(null); setSelectedId(null); }
+    return () => { controller.abort(); detailRequest.current++; };
+  }, [props.selectedRecordId, tab, loadDetail]);
+  useEffect(() => {
+    if (props.selectedRecordId === undefined || tab !== 'kb') return;
+    const controller = new AbortController();
+    setSelectedArticle(null);
+    if (props.selectedRecordId) {
+      void fetchApi<{article: KbArticle}>(`/admin/kb/${encodeURIComponent(props.selectedRecordId)}`, {signal: controller.signal})
+        .then(result => setSelectedArticle(result.article))
+        .catch(error => { if (!controller.signal.aborted) setError(error.message); });
+    }
+    return () => controller.abort();
+  }, [props.selectedRecordId, tab, fetchApi]);
+  useEffect(() => { if (props.selectedRecordId !== undefined && tab === 'leads') setSelectedLead(leads.find(l => l.id === props.selectedRecordId) ?? null); }, [props.selectedRecordId, tab, leads]);
+
   const loadKb = useCallback(async () => {
     if (kbFilter === "gaps") {
       const data = await fetchApi<{ ok: boolean; gaps: Gap[] }>("/admin/gaps");
@@ -227,17 +328,17 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
       setArticles([]);
       return;
     }
-    const data = await fetchApi<{ ok: boolean; articles: KbArticle[] }>(`/admin/kb?status=${encodeURIComponent(kbFilter)}`,
+    const data = await fetchApi<{ ok: boolean; articles: KbArticle[] }>(
+      `/admin/kb?status=${encodeURIComponent(kbFilter)}`,
     );
     setArticles(data.articles ?? []);
   }, [fetchApi, kbFilter]);
 
   const loadLeads = useCallback(async () => {
     const q = leadsMarketingOnly ? "?marketing=1" : "";
-    const data = await fetchApi<{ ok: boolean; leads: Lead[] }>(`/admin/leads${q}`,
-    );
+    const data = await fetchApi<{ ok: boolean; leads: Lead[] }>(`/admin/leads${q}`);
     setLeads(data.leads ?? []);
-  }, [apiBase, leadsMarketingOnly]);
+  }, [fetchApi, leadsMarketingOnly]);
 
   useEffect(() => {
     if (tab === "inbox") {
@@ -256,10 +357,11 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
   useEffect(() => {
     const t = setInterval(() => {
       if (tab === "inbox") void loadInbox().catch(() => {});
-      if (selectedId) void loadDetail(selectedId).catch(() => {});
+      const activeRecord = props.selectedRecordId === undefined ? selectedId : props.selectedRecordId;
+      if (activeRecord && tab === "inbox") void loadDetail(activeRecord).catch(() => {});
     }, pollMs);
     return () => clearInterval(t);
-  }, [tab, pollMs, loadInbox, loadDetail, selectedId]);
+  }, [tab, pollMs, loadInbox, loadDetail, selectedId, props.selectedRecordId]);
 
   const runProposal = async (action: string, message?: string) => {
     if (!detail) return;
@@ -342,7 +444,60 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
   const ctx = detail ? parseContextSummary(detail.ticket.contextJson) : null;
 
   return (
-    <div className={className} data-support-kit="ops-console" style={{ ...shell }}>
+    <div className={className} data-support-kit="ops-console">
+      {tenants.length > 0 && !props.hideTenantSelector ? (
+        <div
+          data-testid="support-tenant-switcher"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
+            marginBottom: 12,
+            padding: "10px 14px",
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginRight: 4 }}>
+              Connected App Filter:
+            </span>
+            {tenants.map((t) => {
+              const countKey = `tenant_${t.id}`;
+              const countVal = counts[countKey];
+              const isSelected = activeTenant === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  data-testid={`support-tenant-pill-${t.id}`}
+                  onClick={() => handleSelectTenant(t.id)}
+                  style={{
+                    border: `1px solid ${isSelected ? ACCENT : "#cbd5e1"}`,
+                    background: isSelected ? ACCENT : "#fff",
+                    color: isSelected ? "#fff" : "#334155",
+                    borderRadius: 999,
+                    padding: "5px 12px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  {t.label}
+                  {typeof countVal === "number" ? ` (${countVal})` : ""}
+                </button>
+              );
+            })}
+          </div>
+          <span style={{ fontSize: 12, color: "#64748b" }}>
+            Support inbox
+          </span>
+        </div>
+      ) : null}
+      <div style={{ ...shell }}>
       <aside
         style={{
           border: "1px solid #e2e8f0",
@@ -411,7 +566,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => void loadDetail(t.id)}
+                  onClick={() => props.onRecordChange ? props.onRecordChange(String(t.publicNumber), t.tenantId) : void loadDetail(t.id)}
                   style={{
                     display: "block",
                     width: "100%",
@@ -423,9 +578,26 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                     cursor: "pointer",
                   }}
                 >
-                  <div style={{ fontWeight: 700 }}>
-                    #{t.publicNumber} · {t.kind ?? "?"}
-                    {t.hasPendingProposal ? " · AI" : ""}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                    <span style={{ fontWeight: 700 }}>
+                      #{t.publicNumber} · {t.kind ?? "?"}
+                      {t.hasPendingProposal ? " · AI" : ""}
+                    </span>
+                    {t.tenantId ? (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: "2px 6px",
+                          borderRadius: 999,
+                          background: tenantBadgeColors(t.tenantId).bg,
+                          color: tenantBadgeColors(t.tenantId).fg,
+                          border: `1px solid ${tenantBadgeColors(t.tenantId).border}`,
+                        }}
+                      >
+                        {displayTenant(t.tenantId)}
+                      </span>
+                    ) : null}
                   </div>
                   <div style={{ fontSize: 12, color: "#64748b" }}>
                     {t.status}
@@ -496,7 +668,8 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                               .then((res) => {
                                 if (res.article) {
                                   setKbFilter("draft");
-                                  setSelectedArticle(res.article);
+                                  if (props.onRecordChange) props.onRecordChange(res.article.id, res.article.tenantId);
+                                  else setSelectedArticle(res.article);
                                   return loadKb();
                                 }
                                 throw new Error(res.error || "Research failed");
@@ -530,7 +703,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                     <button
                       key={a.id}
                       type="button"
-                      onClick={() => setSelectedArticle(a)}
+                      onClick={() => props.onRecordChange ? props.onRecordChange(a.id, a.tenantId) : setSelectedArticle(a)}
                       style={{
                         display: "block",
                         width: "100%",
@@ -592,7 +765,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                 <button
                   key={l.id}
                   type="button"
-                  onClick={() => setSelectedLead(l)}
+                  onClick={() => props.onRecordChange ? props.onRecordChange(l.id, l.tenantId) : setSelectedLead(l)}
                   style={{
                     display: "block",
                     width: "100%",
@@ -709,6 +882,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                     }).then(async () => {
                       await loadKb();
                       setSelectedArticle(null);
+                      props.onRecordChange?.(null);
                     })
                   }
                   style={{
@@ -733,6 +907,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
                   }).then(async () => {
                     await loadKb();
                     setSelectedArticle(null);
+                    props.onRecordChange?.(null);
                   })
                 }
                 style={{
@@ -756,7 +931,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
           <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 16 }}>
             <div>
               <h3 style={{ marginTop: 0 }}>
-                #{detail.ticket.publicNumber} · {detail.ticket.kind} · {detail.ticket.status}
+                #{detail.ticket.publicNumber} · {detail.ticket.subject || detail.ticket.kind} · {detail.ticket.status}
               </h3>
               <div
                 style={{
@@ -956,6 +1131,7 @@ export function SupportOpsConsole(props: SupportOpsConsoleProps) {
           <p style={{ color: "#64748b" }}>Select a KB article to review and promote.</p>
         ) : null}
       </section>
+      </div>
     </div>
   );
 }

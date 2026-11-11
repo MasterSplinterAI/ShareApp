@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { TenantIdSchema } from "@rhule/support-shared";
+import { TenantIdSchema } from "@quill/support-shared";
 import { createMemorySqliteAdapter } from "../db/memorySqlite.js";
 import { ensureSchema } from "../db/migrate.js";
 import { searchActiveArticles } from "./search.js";

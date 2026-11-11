@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, beforeEach } from "node:test";
 import { randomUUID } from "node:crypto";
-import { TenantIdSchema } from "@rhule/support-shared";
+import { TenantIdSchema } from "@quill/support-shared";
 import { createMemorySqliteAdapter } from "../db/memorySqlite.js";
 import { ensureSchema } from "../db/migrate.js";
 import {

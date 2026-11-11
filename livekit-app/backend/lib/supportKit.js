@@ -1,5 +1,5 @@
 /**
- * ShareApp host wiring for @rhule/support-kit.
+ * ShareApp host wiring for @quill/support-kit.
  * Thin adapters only — tickets/KB/agent live in the kit.
  */
 const path = require('path');
@@ -14,8 +14,8 @@ const { githubConfigured } = require('./githubIssues');
 const {
   createSupportRouter,
   createFilesystemCodebaseAdapter,
-} = require('@rhule/support-core');
-const { createTelegramOpsNotifier } = require('@rhule/support-channels');
+} = require('@quill/support-core');
+const { createTelegramOpsNotifier } = require('@quill/support-channels');
 const {
   createOpsSupportProxyMiddleware,
   syncContact,
@@ -337,7 +337,7 @@ function createShareAppSupportRouter() {
 }
 
 function supportKitEnabled() {
-  // Default on — FE uses @rhule/support-react against /api/v2/support.
+  // Default on — FE uses @quill/support-react against /api/v2/support.
   // Set SUPPORT_KIT_ENABLED=false only with a matching FE rollback to legacy HelpPanel.
   const v = String(process.env.SUPPORT_KIT_ENABLED ?? 'true').toLowerCase();
   return v !== '0' && v !== 'false' && v !== 'no';
@@ -352,7 +352,7 @@ module.exports = {
 };
 
 async function ensureSupportSchema() {
-  const { ensureSchema, seedCuratedDocs } = require('@rhule/support-core');
+  const { ensureSchema, seedCuratedDocs } = require('@quill/support-core');
   const supportDb = createSqliteSupportDb();
   const result = await ensureSchema(supportDb);
   console.log(

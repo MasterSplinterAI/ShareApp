@@ -1,4 +1,4 @@
-import type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-shared";
+import type { BrandConfig, SupportUser, TenantId, Lead } from "@quill/support-shared";
 
 /**
  * Host-owned auth → kit user shape.
@@ -61,7 +61,7 @@ export interface CodebaseAdapter {
   ): Promise<string | null>;
 }
 
-/** Thin duplicate of @rhule/support-channels OpsNotifier — keeps core independent. */
+/** Thin duplicate of @quill/support-channels OpsNotifier — keeps core independent. */
 export type OpsNotificationKind =
   | "ticket_created"
   | "escalation"
@@ -172,7 +172,7 @@ export interface CreateSupportRouterOptions {
    */
   telegram?: {
     resolveConfig: ResolveTelegramConfig;
-    /** Factory that wraps @rhule/support-channels createTelegramOpsNotifier. */
+    /** Factory that wraps @quill/support-channels createTelegramOpsNotifier. */
     createClient: (cfg: TelegramOpsRuntimeConfig) => {
       answerCallback(callbackQueryId: string, text: string): Promise<void>;
       sendForceReply(text: string, placeholder?: string): Promise<unknown>;

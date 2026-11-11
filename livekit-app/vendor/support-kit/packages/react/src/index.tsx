@@ -1689,4 +1689,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
 }
 
 export { SupportOpsConsole } from "./SupportOpsConsole.js";
-export type { SupportOpsConsoleProps } from "./SupportOpsConsole.js";
+export type { SupportOpsConsoleProps, SupportTenantOption, SupportConsoleFilters } from "./SupportOpsConsole.js";
+export { EmbedSnippet, buildEmbedIframeSnippet } from "./EmbedSnippet.js";
+export type { EmbedSnippetProps } from "./EmbedSnippet.js";

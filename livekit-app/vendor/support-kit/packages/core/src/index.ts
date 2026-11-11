@@ -1,4 +1,4 @@
-import { KIT_VERSION, PACKAGE_NAME as SHARED } from "@rhule/support-shared";
+import { KIT_VERSION, PACKAGE_NAME as SHARED } from "@quill/support-shared";
 import type { CreateSupportRouterOptions, SupportRouter } from "./adapters/types.js";
 import { createRouter } from "./http/createRouter.js";
 
@@ -17,6 +17,10 @@ export type {
   ResolveUser,
   SupportRouter,
 } from "./adapters/types.js";
+export {
+  createOpenAiCompatibleLlm,
+} from "./adapters/openaiCompatibleLlm.js";
+export type { OpenAiCompatibleLlmOptions } from "./adapters/openaiCompatibleLlm.js";
 export { ensureSchema, DEFAULT_TABLE_PREFIX } from "./db/migrate.js";
 // createMemorySqliteAdapter lives in ./db/memorySqlite.js (dev/test only —
 // not re-exported here so production bundles don't require better-sqlite3).
@@ -98,7 +102,8 @@ export type { LlmTriageParse, RoutingDecision } from "./agent/routing.js";
 export { createHttpRouter, createRouter } from "./http/createRouter.js";
 export { buildEmbedPage } from "./http/embedPage.js";
 export { TenantStore } from "./tenants/store.js";
-export type { Tenant, CreateTenantInput } from "./tenants/store.js";
+export type { Tenant, CreateTenantInput, TenantBrand } from "./tenants/store.js";
+export { resolveTenantFromStore } from "./tenants/resolveFromStore.js";
 export { executeProposalAction } from "./proposals/executor.js";
 export {
   crawlSite,
@@ -124,8 +129,8 @@ export type {
 export { TelegramDraftSessionStore } from "./telegram/draftSessions.js";
 export type { TelegramDraftSession } from "./telegram/draftSessions.js";
 
-export type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-shared";
-export { KIT_VERSION, DEFAULT_MARKETING_CONSENT_LABEL } from "@rhule/support-shared";
+export type { BrandConfig, SupportUser, TenantId, Lead } from "@quill/support-shared";
+export { KIT_VERSION, DEFAULT_MARKETING_CONSENT_LABEL } from "@quill/support-shared";
 
 
 /**

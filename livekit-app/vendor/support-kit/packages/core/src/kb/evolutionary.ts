@@ -1,4 +1,4 @@
-import type { KbArticle } from "@rhule/support-shared";
+import type { KbArticle } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { TicketService } from "../tickets/service.js";

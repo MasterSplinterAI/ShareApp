@@ -5,12 +5,12 @@ import {
   KIT_VERSION,
   TicketKindSchema,
   TicketStatusSchema,
-} from "@rhule/support-shared";
+} from "@quill/support-shared";
 import type {
   BrandConfig,
   CreateTicketInput,
   SupportUser,
-} from "@rhule/support-shared";
+} from "@quill/support-shared";
 import type {
   CodebaseAdapter,
   CreateSupportRouterOptions,
@@ -26,7 +26,7 @@ import type {
 } from "../adapters/types.js";
 import { ensureSchema, DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { TicketService } from "../tickets/service.js";
-import { TenantStore, CreateTenantInput } from "../tenants/store.js";
+import { TenantStore, CreateTenantInput, type TenantBrand } from "../tenants/store.js";
 import { ProposalService } from "../proposals/service.js";
 import { KnowledgeGapService } from "../gaps/service.js";
 import { LeadService } from "../leads/service.js";
@@ -81,6 +81,10 @@ function requireAdmin(user: SupportUser): boolean {
   return user.role === "admin" || user.role === "ops";
 }
 
+function requirePlatformAdmin(user: SupportUser): boolean {
+  return user.platformAdmin === true;
+}
+
 function header(
   req: MockRequest & IncomingMessage,
   name: string,
@@ -89,6 +93,22 @@ function header(
   const v = headers[name] ?? headers[name.toLowerCase()];
   if (Array.isArray(v)) return v[0];
   return v;
+}
+
+async function isKbIngestAuthed(opts: {
+  secret: string | undefined;
+  token: string | undefined;
+  user: SupportUser | null;
+  tenantId: string;
+  tenantStore: TenantStore;
+}): Promise<boolean> {
+  const { secret, token, user, tenantId, tenantStore } = opts;
+  if (secret && token && token === secret) return true;
+  if (user && requireAdmin(user)) return true;
+  if (token?.trim()) {
+    return tenantStore.verifyIngestToken(tenantId, token);
+  }
+  return false;
 }
 
 function matchRoute(
@@ -436,6 +456,14 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
       }
+      const mutating =
+        route.name === "createTenant" ||
+        route.name === "patchTenant" ||
+        route.name === "deleteTenant";
+      if (mutating && !requirePlatformAdmin(user)) {
+        finish(403, { ok: false, error: "Forbidden" });
+        return;
+      }
       if (route.name === "createTenant") {
         const body = (r.body !== undefined
           ? r.body
@@ -443,6 +471,13 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           name?: string;
           domain?: string;
           ingestToken?: string;
+          brand?: {
+            name?: string;
+            accent?: string;
+            supportAgentName?: string;
+            signupUrl?: string;
+            contactEmail?: string;
+          };
         };
         if (!body?.name?.trim()) {
           finish(400, { ok: false, error: "name is required" });
@@ -451,6 +486,19 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         const createInput: CreateTenantInput = { name: body.name };
         if (body.domain !== undefined) createInput.domain = body.domain;
         if (body.ingestToken !== undefined) createInput.ingestToken = body.ingestToken;
+        if (body.brand !== undefined) {
+          createInput.brand = {
+            name: body.brand.name?.trim() || body.name.trim(),
+            ...(body.brand.accent !== undefined ? { accent: body.brand.accent } : {}),
+            ...(body.brand.supportAgentName !== undefined
+              ? { supportAgentName: body.brand.supportAgentName }
+              : {}),
+            ...(body.brand.signupUrl !== undefined ? { signupUrl: body.brand.signupUrl } : {}),
+            ...(body.brand.contactEmail !== undefined
+              ? { contactEmail: body.brand.contactEmail }
+              : {}),
+          };
+        }
         const { tenant, ingestToken } = await tenantStore.create(createInput);
         finish(201, { ok: true, tenant, ingestToken });
         return;
@@ -475,10 +523,39 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           : await readJsonBody(r as IncomingMessage)) as {
           name?: string;
           domain?: string | null;
+          brand?: {
+            name?: string;
+            accent?: string;
+            supportAgentName?: string;
+            signupUrl?: string;
+            contactEmail?: string;
+          } | null;
         };
-        const patch: { name?: string; domain?: string | null } = {};
+        const patch: {
+          name?: string;
+          domain?: string | null;
+          brand?: TenantBrand | null;
+        } = {};
         if (body?.name !== undefined) patch.name = body.name;
         if (body?.domain !== undefined) patch.domain = body.domain;
+        if (body?.brand !== undefined) {
+          if (body.brand === null) {
+            patch.brand = null;
+          } else {
+            const brandPatch: TenantBrand = {
+              name: body.brand.name?.trim() || "",
+            };
+            if (body.brand.accent !== undefined) brandPatch.accent = body.brand.accent;
+            if (body.brand.supportAgentName !== undefined) {
+              brandPatch.supportAgentName = body.brand.supportAgentName;
+            }
+            if (body.brand.signupUrl !== undefined) brandPatch.signupUrl = body.brand.signupUrl;
+            if (body.brand.contactEmail !== undefined) {
+              brandPatch.contactEmail = body.brand.contactEmail;
+            }
+            patch.brand = brandPatch;
+          }
+        }
         try {
           const updated = await tenantStore.update(route.params.id!, patch);
           finish(200, { ok: true, tenant: updated });
@@ -545,8 +622,13 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
       const secret = ctx.kbIngest?.webhookSecret;
       const token = header(r, "x-support-ingest-token");
       const user = await ctx.resolveUser(req);
-      const authed =
-        (secret && token && token === secret) || (user && requireAdmin(user));
+      const authed = await isKbIngestAuthed({
+        secret,
+        token,
+        user,
+        tenantId: ctx.tenantId,
+        tenantStore,
+      });
       if (!authed) {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
@@ -595,8 +677,13 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
       const secret = ctx.kbIngest?.webhookSecret;
       const token = header(r, "x-support-ingest-token");
       const user = await ctx.resolveUser(req);
-      const authed =
-        (secret && token && token === secret) || (user && requireAdmin(user));
+      const authed = await isKbIngestAuthed({
+        secret,
+        token,
+        user,
+        tenantId: ctx.tenantId,
+        tenantStore,
+      });
       if (!authed) {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
@@ -646,8 +733,13 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
       const secret = ctx.kbIngest?.webhookSecret;
       const token = header(r, "x-support-ingest-token");
       const user = await ctx.resolveUser(req);
-      const authed =
-        (secret && token && token === secret) || (user && requireAdmin(user));
+      const authed = await isKbIngestAuthed({
+        secret,
+        token,
+        user,
+        tenantId: ctx.tenantId,
+        tenantStore,
+      });
       if (!authed) {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
@@ -979,7 +1071,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
       }
 
       if (route.name === "listTickets") {
-        const list = await tickets.listTickets(ctx.tenantId, { limit: 100 });
+        const list = await tickets.listTickets(ctx.tenantId, { limit: 100, ...(requireAdmin(user) ? {} : { userId: user.id }) });
         const scoped =
           user.role === "admin" || user.role === "ops"
             ? list
@@ -1055,35 +1147,38 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           finish(400, { ok: false, error: "body is required" });
           return;
         }
-        const message = await tickets.addMessage(ctx.tenantId, ticket.id, replyBody, {
-          authorType: "user",
-          authorId: user.id,
+        // Run AI triage on follow-up user messages so the user always gets an
+        // assistant reply in the thread (auto-reply from KB/context or escalation acknowledgment)
+        const triageDeps: TriageDeps = {
+          db: ctx.db,
+          brand: ctx.brand,
+          tablePrefix,
+          topics,
+        };
+        if (ctx.llm) triageDeps.llm = ctx.llm;
+        if (ctx.docsRoot) triageDeps.docsRoot = ctx.docsRoot;
+        if (ctx.opsNotifier) triageDeps.opsNotifier = ctx.opsNotifier;
+        if (ctx.adminBaseUrl) triageDeps.adminBaseUrl = ctx.adminBaseUrl;
+        if (ctx.sensitiveTopics) triageDeps.sensitiveTopics = ctx.sensitiveTopics;
+        if (ctx.autoReplyMinConfidence !== undefined) {
+          triageDeps.autoReplyMinConfidence = ctx.autoReplyMinConfidence;
+        }
+
+        const result = await triageMessage(triageDeps, {
+          tenantId: ctx.tenantId,
+          user,
+          message: replyBody,
+          existingTicketId: ticket.id,
         });
-        let updated = ticket;
-        if (
-          ticket.status === "waiting_user" ||
-          ticket.status === "pending_user" ||
-          ticket.status === "resolved"
-        ) {
-          const next = await tickets.setStatus(ctx.tenantId, ticket.id, "pending_ops");
-          if (next) updated = next;
-        }
 
-        if (
-          (updated.status === "escalated" || updated.status === "pending_ops") &&
-          ctx.opsNotifier
-        ) {
-          ctx.opsNotifier
-            .sendToOps({
-              kind: "user_reply",
-              title: `User reply — ticket #${ticket.publicNumber}`,
-              body: replyBody.slice(0, 500),
-              ticketPublicNumber: ticket.publicNumber,
-            })
-            .catch(() => {});
-        }
-
-        finish(200, { ok: true, ticket: updated, message });
+        finish(200, {
+          ok: true,
+          ticket: result.ticket,
+          message: result.message,
+          agentMessage: result.agentMessage,
+          reply: result.reply,
+          autoReplied: result.autoReplied,
+        });
         return;
       }
 
@@ -1589,7 +1684,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
     meta: {
       kitVersion: KIT_VERSION,
       tenantId: String(baseCtx.tenantId),
-      shared: "@rhule/support-shared",
+      shared: "@quill/support-shared",
     },
   };
 }

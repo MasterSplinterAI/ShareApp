@@ -146,6 +146,7 @@ export function buildSchemaStatements(tablePrefix: string): string[] {
       name TEXT NOT NULL,
       domain TEXT,
       ingest_token_hash TEXT,
+      brand_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -196,6 +197,11 @@ export function buildAlterStatements(tablePrefix: string): Array<{
       table: `${p}proposals`,
       column: "claimed_at",
       ddl: `ALTER TABLE ${p}proposals ADD COLUMN claimed_at TEXT`,
+    },
+    {
+      table: `${p}tenants`,
+      column: "brand_json",
+      ddl: `ALTER TABLE ${p}tenants ADD COLUMN brand_json TEXT`,
     },
   ];
 }

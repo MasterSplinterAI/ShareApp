@@ -17,7 +17,7 @@ import { PlansTab } from './admin/PlansTab';
 import { BillingTab } from './admin/BillingTab';
 import { CommsTab } from './admin/CommsTab';
 import { StorageTab } from './admin/StorageTab';
-import { SupportOpsConsole } from '@rhule/support-react';
+import { SupportOpsConsole } from '@quill/support-react';
 import { MarketingOpsConsole } from '@rhule/marketing-react';
 import { getSupportAccessToken, SUPPORT_API_BASE } from '../components/LaliaSupportLauncher';
 import MarketingEmailSettings from './admin/MarketingEmailSettings';

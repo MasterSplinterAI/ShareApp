@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { KbArticle, KbArticleStatus, KbVisibility } from "@rhule/support-shared";
+import type { KbArticle, KbArticleStatus, KbVisibility } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 

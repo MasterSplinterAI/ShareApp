@@ -5,6 +5,8 @@ export const SupportUserSchema = z.object({
   email: z.string().email().optional(),
   name: z.string().optional(),
   role: z.enum(["user", "admin", "ops"]).default("user"),
+  /** Platform super-admin: required for tenant registry mutations (POST/PATCH/DELETE /tenants). */
+  platformAdmin: z.boolean().optional(),
   orgId: z.string().optional(),
   /** Short plan/access label for UI (e.g. "Pro · trial"). */
   planLabel: z.string().optional(),

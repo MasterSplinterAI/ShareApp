@@ -53,3 +53,6 @@ backup/
 # V2 SaaS local data (server may keep these outside git)
 livekit-app/backend/v2-platform.db
 livekit-app/backend/uploads/
+
+# Canonical support snapshots build both formats during staged deployment
+livekit-app/vendor/support-kit/packages/*/dist/

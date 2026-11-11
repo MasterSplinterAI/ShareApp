@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { SupportLauncher } from '@rhule/support-react';
+import { SupportLauncher } from '@quill/support-react';
 import { resolveApiBaseUrl } from '../../lib/nativePlatform';
 
 const SUPPORT_API_BASE = `${resolveApiBaseUrl().replace(/\/$/, '')}/v2/support`;

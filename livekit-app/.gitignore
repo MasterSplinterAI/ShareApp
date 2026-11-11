@@ -104,3 +104,6 @@ venv.bak/
 # Lock files (keep package-lock.json)
 yarn.lock
 pnpm-lock.yaml
+
+# Canonical support pins are source-only; build before deployment
+vendor/support-kit/packages/*/dist/

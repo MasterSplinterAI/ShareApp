@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CreateLeadInput, Lead } from "@rhule/support-shared";
+import type { CreateLeadInput, Lead } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 

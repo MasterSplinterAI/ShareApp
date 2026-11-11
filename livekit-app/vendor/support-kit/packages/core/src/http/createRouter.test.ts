@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, beforeEach } from "node:test";
-import { TenantIdSchema } from "@rhule/support-shared";
+import { TenantIdSchema } from "@quill/support-shared";
 import type { LlmAdapter } from "../adapters/types.js";
 import { createMemorySqliteAdapter } from "../db/memorySqlite.js";
 import { ensureSchema } from "../db/migrate.js";
@@ -368,6 +368,9 @@ it("POST /chat auto-replies from published SQLite KB without docsRoot", async ()
     assert.ok(html.includes("<!doctype html>"));
     assert.ok(html.includes("TestApp")); // brand name in the embed header
     assert.ok(html.includes("Support")); // agent name
+    const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+    assert.ok(script, "embed page includes its client script");
+    assert.doesNotThrow(() => new Function(script), "embed client script is valid JavaScript");
   });
 
   it("GET /embed uses the per-request tenant brand when resolveTenant resolves", async () => {
@@ -393,13 +396,42 @@ it("POST /chat auto-replies from published SQLite KB without docsRoot", async ()
     assert.ok(html.includes("Acme Assist"));
   });
 
+  it("GET /embed resolves stored tenant brand via resolveTenantFromStore", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const { TenantStore } = await import("../tenants/store.js");
+    const { resolveTenantFromStore } = await import("../tenants/resolveFromStore.js");
+    const tenantStore = new TenantStore(db);
+    const { tenant } = await tenantStore.create({
+      name: "Stored Brand Co",
+      brand: { name: "Stored Brand", supportAgentName: "Stored Agent" },
+    });
+
+    const router = createSupportRouter({
+      tenantId,
+      db,
+      brand,
+      resolveUser: () => null,
+      resolveTenant: resolveTenantFromStore(tenantStore),
+    });
+
+    const { res, done } = createMockResponse();
+    await router.handler({ method: "GET", url: `/embed?tenant=${tenant.id}` }, res);
+    const out = await done;
+
+    assert.equal(out.statusCode, 200);
+    const html = String(out.body);
+    assert.ok(html.includes("Stored Brand"));
+    assert.ok(html.includes("Stored Agent"));
+  });
+
   it("tenant registry: admin CRUD via /tenants", async () => {
     const db = createMemorySqliteAdapter();
     const router = createSupportRouter({
       tenantId,
       db,
       brand,
-      resolveUser: () => ({ id: "admin1", role: "admin" }),
+      resolveUser: () => ({ id: "admin1", role: "admin", platformAdmin: true }),
     });
 
     // create
@@ -470,6 +502,114 @@ it("POST /chat auto-replies from published SQLite KB without docsRoot", async ()
     assert.equal(out.statusCode, 401);
   });
 
+  it("POST /admin/kb/ingest/uploads accepts the resolved tenant's ingest token", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const { TenantStore } = await import("../tenants/store.js");
+    const { resolveTenantFromStore } = await import("../tenants/resolveFromStore.js");
+    const tenantStore = new TenantStore(db);
+    const { tenant, ingestToken } = await tenantStore.create({ name: "Ingest Co" });
+
+    const router = createSupportRouter({
+      tenantId,
+      db,
+      brand,
+      resolveUser: () => null,
+      resolveTenant: resolveTenantFromStore(tenantStore),
+      llm: mockLlm({
+        title: "Tenant ingest FAQ",
+        body: "Answer from tenant token ingest.",
+      }),
+    });
+
+    const { res, done } = createMockResponse();
+    await router.handler(
+      {
+        method: "POST",
+        url: "/admin/kb/ingest/uploads",
+        body: { docs: [{ name: "faq.txt", content: "Billing FAQ content." }] },
+        headers: {
+          "x-tenant-id": tenant.id,
+          "x-support-ingest-token": ingestToken,
+        },
+      },
+      res,
+    );
+    const out = await done;
+
+    assert.equal(out.statusCode, 200);
+    const body = out.body as { ok: boolean; count: number; articles: unknown[] };
+    assert.equal(body.ok, true);
+    assert.equal(body.count, 1);
+    assert.equal(body.articles.length, 1);
+  });
+
+  it("POST /admin/kb/ingest/uploads rejects another tenant's ingest token (cross-tenant)", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const { TenantStore } = await import("../tenants/store.js");
+    const { resolveTenantFromStore } = await import("../tenants/resolveFromStore.js");
+    const tenantStore = new TenantStore(db);
+    const { tenant: tenantA, ingestToken: tokenA } = await tenantStore.create({ name: "Tenant A" });
+    const { tenant: tenantB } = await tenantStore.create({ name: "Tenant B" });
+
+    const router = createSupportRouter({
+      tenantId,
+      db,
+      brand,
+      resolveUser: () => null,
+      resolveTenant: resolveTenantFromStore(tenantStore),
+      llm: mockLlm({ title: "X", body: "Y" }),
+    });
+
+    const { res, done } = createMockResponse();
+    await router.handler(
+      {
+        method: "POST",
+        url: "/admin/kb/ingest/uploads",
+        body: { docs: [{ name: "faq.txt", content: "Content." }] },
+        headers: {
+          "x-tenant-id": tenantB.id,
+          "x-support-ingest-token": tokenA,
+        },
+      },
+      res,
+    );
+    const out = await done;
+    assert.equal(out.statusCode, 401);
+  });
+
+  it("POST /admin/kb/ingest/uploads rejects unauthenticated requests without webhook secret", async () => {
+    const db = createMemorySqliteAdapter();
+    await ensureSchema(db);
+    const { TenantStore } = await import("../tenants/store.js");
+    const { resolveTenantFromStore } = await import("../tenants/resolveFromStore.js");
+    const tenantStore = new TenantStore(db);
+    const { tenant } = await tenantStore.create({ name: "No Auth Co" });
+
+    const router = createSupportRouter({
+      tenantId,
+      db,
+      brand,
+      resolveUser: () => null,
+      resolveTenant: resolveTenantFromStore(tenantStore),
+      llm: mockLlm({ title: "X", body: "Y" }),
+    });
+
+    const { res, done } = createMockResponse();
+    await router.handler(
+      {
+        method: "POST",
+        url: "/admin/kb/ingest/uploads",
+        body: { docs: [{ name: "faq.txt", content: "Content." }] },
+        headers: { "x-tenant-id": tenant.id },
+      },
+      res,
+    );
+    const out = await done;
+    assert.equal(out.statusCode, 401);
+  });
+
   it("POST /chat resolves the per-request tenant (brand + data isolation)", async () => {
     const db = createMemorySqliteAdapter();
     await ensureSchema(db);
@@ -526,4 +666,150 @@ it("POST /chat auto-replies from published SQLite KB without docsRoot", async ()
     const acmeTicket = rows.find((r) => r.tenant_id === "acme");
     assert.ok(acmeTicket, "expected a ticket under tenant 'acme'");
   });
+
+  describe("platform vs tenant admin roles", () => {
+    const tenantAdmin = () => ({ id: "tenant-admin", role: "admin" as const });
+    const platformAdmin = () => ({
+      id: "platform-admin",
+      role: "admin" as const,
+      platformAdmin: true,
+    });
+
+    it("tenant admin cannot DELETE /tenants", async () => {
+      const db = createMemorySqliteAdapter();
+      await ensureSchema(db);
+      const { TenantStore } = await import("../tenants/store.js");
+      const tenantStore = new TenantStore(db);
+      const { tenant } = await tenantStore.create({ name: "To Delete" });
+
+      const router = createSupportRouter({
+        tenantId,
+        db,
+        brand,
+        resolveUser: tenantAdmin,
+      });
+
+      const { res, done } = createMockResponse();
+      await router.handler({ method: "DELETE", url: `/tenants/${tenant.id}` }, res);
+      const out = await done;
+      assert.equal(out.statusCode, 403);
+    });
+
+    it("tenant admin cannot POST /tenants", async () => {
+      const db = createMemorySqliteAdapter();
+      const router = createSupportRouter({
+        tenantId,
+        db,
+        brand,
+        resolveUser: tenantAdmin,
+      });
+
+      const { res, done } = createMockResponse();
+      await router.handler(
+        { method: "POST", url: "/tenants", body: { name: "New Co" } },
+        res,
+      );
+      const out = await done;
+      assert.equal(out.statusCode, 403);
+    });
+
+    it("non-admin gets 401 on GET /tenants", async () => {
+      const db = createMemorySqliteAdapter();
+      const router = createSupportRouter({
+        tenantId,
+        db,
+        brand,
+        resolveUser: () => ({ id: "u1", role: "user" }),
+      });
+
+      const { res, done } = createMockResponse();
+      await router.handler({ method: "GET", url: "/tenants" }, res);
+      const out = await done;
+      assert.equal(out.statusCode, 401);
+    });
+
+    it("tenant admin can promote KB under resolved tenant", async () => {
+      const db = createMemorySqliteAdapter();
+      await ensureSchema(db);
+      const { TenantStore } = await import("../tenants/store.js");
+      const { resolveTenantFromStore } = await import("../tenants/resolveFromStore.js");
+      const tenantStore = new TenantStore(db);
+      const { tenant } = await tenantStore.create({ name: "Promote Co" });
+
+      const router = createSupportRouter({
+        tenantId,
+        db,
+        brand,
+        resolveUser: tenantAdmin,
+        resolveTenant: resolveTenantFromStore(tenantStore),
+        llm: mockLlm({ title: "Draft FAQ", body: "Promoted answer." }),
+        kbIngest: { webhookSecret: "ingest-secret" },
+      });
+
+      const ingestRes = createMockResponse();
+      await router.handler(
+        {
+          method: "POST",
+          url: "/admin/kb/ingest/uploads",
+          body: { docs: [{ name: "faq.txt", content: "Billing help." }] },
+          headers: {
+            "x-tenant-id": tenant.id,
+            "x-support-ingest-token": "ingest-secret",
+          },
+        },
+        ingestRes.res,
+      );
+      const ingestOut = await ingestRes.done;
+      assert.equal(ingestOut.statusCode, 200);
+      const articleId = (ingestOut.body as { articles: Array<{ id: string }> }).articles[0]!.id;
+
+      const { res, done } = createMockResponse();
+      await router.handler(
+        {
+          method: "POST",
+          url: `/admin/kb/${articleId}/promote`,
+          headers: { "x-tenant-id": tenant.id },
+        },
+        res,
+      );
+      const out = await done;
+      assert.equal(out.statusCode, 200);
+      assert.equal((out.body as { article: { status: string } }).article.status, "active");
+    });
+
+    it("platform admin can DELETE /tenants", async () => {
+      const db = createMemorySqliteAdapter();
+      await ensureSchema(db);
+      const { TenantStore } = await import("../tenants/store.js");
+      const tenantStore = new TenantStore(db);
+      const { tenant } = await tenantStore.create({ name: "Platform Delete" });
+
+      const router = createSupportRouter({
+        tenantId,
+        db,
+        brand,
+        resolveUser: platformAdmin,
+      });
+
+      const { res, done } = createMockResponse();
+      await router.handler({ method: "DELETE", url: `/tenants/${tenant.id}` }, res);
+      const out = await done;
+      assert.equal(out.statusCode, 200);
+      assert.equal((out.body as { ok: boolean }).ok, true);
+    });
+  });
+});
+
+it("HTTP follow-up appends an AI reply to the owned ticket and refuses other users", async () => {
+  const db=createMemorySqliteAdapter();
+  let userId="u1";
+  const router=createSupportRouter({tenantId,db,brand,resolveUser:()=>({id:userId,role:"user"}),docsRoot:fixturesDir});
+  async function request(url:string,body:object) {const {res,done}=createMockResponse();await router.handler({method:"POST",url,body},res);return done;}
+  const initial=await request("/chat",{message:"How do I upload documents?"});
+  const ticket=(initial.body as any).ticket;
+  const reply=await request(`/tickets/${ticket.id}/messages`,{body:"Can you explain that again?"});
+  assert.equal(reply.statusCode,200);assert.equal((reply.body as any).ticket.id,ticket.id);assert.ok((reply.body as any).agentMessage);assert.ok((reply.body as any).reply);
+  userId="stranger";
+  const forbidden=await request(`/tickets/${ticket.id}/messages`,{body:"unauthorized"});
+  assert.ok([403,404].includes(forbidden.statusCode));
 });
