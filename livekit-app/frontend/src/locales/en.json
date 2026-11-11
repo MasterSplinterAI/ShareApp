@@ -258,7 +258,7 @@
       },
       "transcripts": {
         "q": "Is transcript storage required?",
-        "a": "No. Each meeting can opt in to saving finalized caption lines on the server. Hosts and org admins can download later when lines exist."
+        "a": "Transcript saving is on by default for new calls and meetings. The host can turn it off in meeting settings. Hosts and authorized workspace members can review saved text and generate optional AI reports."
       },
       "trial": {
         "q": "Can I try it before paying?",
@@ -266,7 +266,7 @@
       },
       "storage": {
         "q": "Where is data stored?",
-        "a": "Meetings are processed in real time. Transcripts are stored only when the host enables storage for a meeting, and can be deleted at any time. All data is encrypted in transit."
+        "a": "Meetings are processed in real time. New calls and meetings save transcripts by default. The host can turn saving off, and saved transcripts can be deleted through the Service. Data is encrypted in transit."
       },
       "accuracy": {
         "q": "How accurate is the live translation?",
@@ -286,7 +286,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -294,7 +294,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -429,7 +429,14 @@
     "namePlaceholder": "Your name",
     "myLanguage": "My language (speak & hear)",
     "languageHint": "Captions and translations will appear in this language.",
-    "joinMeeting": "Join meeting"
+    "joinMeeting": "Join meeting",
+    "transcriptTitle": "Transcript saving",
+    "transcriptOffTitle": "Transcript saving is off",
+    "transcriptOn": "This meeting saves captions and translations for later review and optional AI reports. Ask the host to turn saving off before you speak if you do not want your words saved.",
+    "transcriptDefault": "New calls and meetings save transcripts by default. The host can turn saving off in meeting settings. Ask the host about this meeting’s setting before you speak.",
+    "transcriptOff": "This meeting is not saving new transcript lines. Live captions and translations still work. Previously saved text is not deleted by turning saving off.",
+    "privacyPolicy": "Privacy policy",
+    "transcriptSettings": "Manage transcript saving"
   },
   "calls": {
     "pageTitle": "Calls & Contacts",

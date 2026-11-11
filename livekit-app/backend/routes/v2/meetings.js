@@ -320,7 +320,7 @@ router.post('/', requireV2Auth, async (req, res) => {
     }
     const hostRequired = Boolean(host_required_to_start);
     const requireInvite = true;
-    const storeTr = store_transcripts === true ? 1 : 0;
+    const storeTr = store_transcripts === false ? 0 : 1;
     const roomName = `v2-${db.uuid().replace(/-/g, '').slice(0, 12)}-${Date.now().toString(36)}`;
     await createLiveKitConferenceRoom(roomName, 'multi-language', req.v2Auth.orgId);
     const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();

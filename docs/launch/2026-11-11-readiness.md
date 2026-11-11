@@ -4,7 +4,7 @@ Production is **https://lalia.cloud**. The `staging.jarmetals.com` hostname and 
 
 ## Release decision
 
-**Paid public launch is not yet cleared.** Web fixes are deployed at `d7a8b916ae22171629946efbf90b6cd5226c2747`. The connected Stripe configuration is test mode, and account capability checks reported charges/payouts disabled and onboarding details incomplete. The cloud-agent candidate must pass its isolated deployment and real RTC checks before promotion.
+**Paid public launch is not yet cleared.** Initial web fixes were deployed at `d7a8b916ae22171629946efbf90b6cd5226c2747`; the follow-up on this branch implements the owner-approved default-on transcript policy with disclosure. The connected Stripe configuration is test mode, and account capability checks reported charges/payouts disabled and onboarding details incomplete. The cloud-agent candidate must pass its isolated deployment and real RTC checks before promotion.
 
 ## What changed
 
@@ -13,16 +13,16 @@ Production is **https://lalia.cloud**. The `staging.jarmetals.com` hostname and 
 - Automatic overage charging is disabled in the platform settings. Known cycle overlap, rate snapshot, ledger finalization, and collection/retry issues need a separate accounting repair before enabling it.
 - Guest controls require current membership in the meeting's organization. A role from another organization or stale/disabled account cannot grant provider administration.
 - Password-reset links use trusted canonical configuration. Incorrect current-password validation no longer logs the user out, while expired authentication still redirects to sign-in.
-- Prejoin microphone/camera errors are visible. New meetings and direct calls store transcripts only with explicit boolean opt-in; existing policy values and stored records are preserved.
+- Prejoin microphone/camera errors are visible. Per the owner’s confirmed preference, new meetings and direct calls save transcripts by default. Hosts can opt out; existing policy values and stored records are preserved. Prejoin notices disclose on/off status (or explain the default if unavailable), link to privacy information, and provide hosts a settings link. Notices are translated in all seven supported UI locales; privacy and FAQ wording match the default.
 - Agent candidate: admin-only legacy global voice changes, explicit provider credential requirements, pinned verified SDK versions, direct signal forwarding, bounded shutdown that drains final cost reports, and credential-free Docker runtime checks.
 
 ## Verified evidence
 
 | Check | Result |
 |---|---|
-| Backend regression suite | 137 passed |
-| PostgreSQL billing and transcript checks | 24 passed against isolated PostgreSQL 16 |
-| Desktop/mobile Chromium launch and missed-call cases | 22 cases passed; responsive navigation test selector corrected and rerun |
+| Backend regression suite | 139 passed after default-on disclosure update |
+| PostgreSQL billing and transcript checks | 24 passed against isolated PostgreSQL 16 during initial launch verification |
+| Desktop/mobile Chromium launch, missed-call, and disclosure cases | 32 distinct cases passed (30-case run plus focused refresh/disclosure rerun) |
 | Frontend full production build and prerender | Passed; existing large-chunk warning |
 | Agent Python regression suite | 200 passed; these use SDK stubs where applicable |
 | Real Python 3.11 / Agents 1.8.11 imports, CLI startup, Silero | Passed locally and during the actual Linux cloud image build |
@@ -47,7 +47,7 @@ The unchanged production agent passed the same isolated synthetic English/Spanis
 
 ## Remaining launch gates
 
-1. Owner completes Stripe onboarding and supplies live-mode keys, live recurring prices, and a live webhook signing secret through secure admin configuration. Never paste secrets into chat. Verify live account capabilities and approved real-payment/refund flow before accepting paying customers.
+1. Owner confirmed live activation will happen when ready; keep test mode until then. Owner completes Stripe onboarding and supplies live-mode keys, live recurring prices, and a live webhook signing secret through secure admin configuration. Never paste secrets into chat. Verify live account capabilities and approved real-payment/refund flow before accepting paying customers.
 2. Obtain runtime termination details from LiveKit Cloud dashboard/support, resolve the named-agent runtime failure, pass real two-way captions/audio on the candidate, then promote the tested image and verify production. No support message was sent. Preserve the previous production version for rollback.
 3. Complete hosted Checkout/portal/3DS browser flows, password recovery to an owner-approved mailbox, and physical iOS/Safari/Android microphone/reconnect checks. The Resend sender domain `lalia.cloud` was verified; actual recipient delivery was not tested.
 4. Run a representative multilingual concurrency/long-call soak and verify usage accuracy. No capacity or language-quality certification is implied by unit tests or a short synthetic smoke.

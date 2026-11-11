@@ -21,7 +21,7 @@ push.sendContactAddedPush = async () => {};
 const meetings = require('../routes/v2/meetings');
 const calls = require('../routes/v2/calls');
 
-describe('explicit transcript storage consent', () => {
+describe('default-on transcript storage with host opt-out', () => {
   let server;
   let token;
 
@@ -55,12 +55,12 @@ describe('explicit transcript storage consent', () => {
 
   after(async () => { if (server) await new Promise((resolve) => server.close(resolve)); });
 
-  it('does not save a new meeting transcript without explicit opt-in', async () => {
-    const res = await request('POST', '/meetings', { title: 'Private meeting' });
+  it('saves new meeting transcripts by default', async () => {
+    const res = await request('POST', '/meetings', { title: 'Default meeting' });
     assert.equal(res.status, 201);
-    assert.equal(res.body.policy.store_transcripts, false);
+    assert.equal(res.body.policy.store_transcripts, true);
     const policy = await db.get(`SELECT store_transcripts FROM v2_meeting_policies WHERE meeting_id=?`, [res.body.id]);
-    assert.equal(policy.store_transcripts, 0);
+    assert.equal(policy.store_transcripts, 1);
   });
 
   it('retains explicit opt-in and allows the host to turn saving off', async () => {
@@ -79,24 +79,32 @@ describe('explicit transcript storage consent', () => {
     assert.equal(ingestion.body.code, 'transcripts_disabled');
   });
 
-  it('does not treat nonboolean values as consent', async () => {
+  it('rejects nonboolean transcript settings', async () => {
     for (const value of ['false', 'true', 1, null]) {
       assert.equal((await request('POST', '/meetings', { store_transcripts: value })).status, 400);
       assert.equal((await request('POST', '/calls/start', { email: 'guest@example.com', store_transcripts: value })).status, 400);
     }
   });
 
-  it('does not save new direct calls by default', async () => {
+  it('preserves explicit opt-out on creation and unrelated updates', async () => {
+    const res = await request('POST', '/meetings', { store_transcripts: false });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.policy.store_transcripts, false);
+    await request('PATCH', `/meetings/${res.body.id}`, { title: 'Still private' });
+    assert.equal((await db.get('SELECT store_transcripts FROM v2_meeting_policies WHERE meeting_id=?', [res.body.id])).store_transcripts, 0);
+  });
+
+  it('saves new direct call transcripts by default', async () => {
     const res = await request('POST', '/calls/start', { email: 'guest@example.com', name: 'Guest' });
     assert.equal(res.status, 201);
     const policy = await db.get(`SELECT store_transcripts FROM v2_meeting_policies WHERE meeting_id=?`, [res.body.meeting.id]);
-    assert.equal(policy.store_transcripts, 0);
+    assert.equal(policy.store_transcripts, 1);
   });
 
-  it('allows explicit host opt-in for a new direct call', async () => {
-    const res = await request('POST', '/calls/start', { email: 'guest@example.com', store_transcripts: true });
+  it('honors explicit host opt-out for a new direct call', async () => {
+    const res = await request('POST', '/calls/start', { email: 'guest@example.com', store_transcripts: false });
     assert.equal(res.status, 201);
     const policy = await db.get(`SELECT store_transcripts FROM v2_meeting_policies WHERE meeting_id=?`, [res.body.meeting.id]);
-    assert.equal(policy.store_transcripts, 1);
+    assert.equal(policy.store_transcripts, 0);
   });
 });

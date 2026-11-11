@@ -643,7 +643,7 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       await db.run(
         `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts)
          VALUES (?,?,?,?)`,
-        [newMeetingId, 0, 1, store_transcripts === true ? 1 : 0]
+        [newMeetingId, 0, 1, store_transcripts === false ? 0 : 1]
       );
 
       const linkId = db.uuid();

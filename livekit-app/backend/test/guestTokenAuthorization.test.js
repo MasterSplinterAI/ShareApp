@@ -15,6 +15,7 @@ const { signSession } = require('../lib/authAdapter');
 mock.method(require('../lib/livekitService'), 'ensureRoomAndAgent', async () => {});
 const router = require('../routes/v2/joinPublic');
 const guestToken = router.stack.find((layer) => layer.route?.path === '/guest-token').route.stack[0].handle;
+const joinInfo = router.stack.find((layer) => layer.route?.path === '/join-info').route.stack[0].handle;
 
 before(async () => {
   await db.initDatabase();
@@ -51,6 +52,22 @@ function assertGuest(metadata) {
   assert.notEqual(metadata.isSuperadmin, true);
   assert.ok(!['owner', 'admin', 'superadmin'].includes(metadata.orgRole));
 }
+
+test('valid invite preview discloses current transcript storage without exposing it to invalid invites', async () => {
+  await db.run('INSERT INTO v2_meeting_policies (meeting_id,host_required_to_start,require_invite_token,store_transcripts) VALUES (?,0,1,1)', ['meeting']);
+  for (const enabled of [1, 0]) {
+    await db.run('UPDATE v2_meeting_policies SET store_transcripts=? WHERE meeting_id=?', [enabled, 'meeting']);
+    const req = { query: { roomName: 'room', i: 'valid-invite' }, headers: {}, get: () => undefined, protocol: 'https' };
+    const res = { status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; } };
+    await joinInfo(req, res);
+    assert.equal(res.body.allowed, true);
+    assert.equal(res.body.policy.store_transcripts, enabled === 1);
+    req.query.i = 'invalid';
+    await joinInfo(req, res);
+    assert.equal(res.body.allowed, false);
+    assert.equal(res.body.policy, undefined);
+  }
+});
 
 test('an outside workspace owner joins only as a guest', async () => {
   await db.run('INSERT INTO v2_org_members (org_id, user_id, role) VALUES (?,?,?)', ['outside-org', 'caller', 'owner']);

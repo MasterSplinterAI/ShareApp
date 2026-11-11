@@ -153,6 +153,7 @@ function MeetingRoom() {
   const [meetingBranding, setMeetingBranding] = useState(null);
   const [meetingTitle, setMeetingTitle] = useState(null);
   const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
+  const [transcriptStorageEnabled, setTranscriptStorageEnabled] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
   const intentionalLeaveRef = useRef(false);
   const reconnectingRef = useRef(false);
@@ -314,6 +315,29 @@ function MeetingRoom() {
       })
       .catch(() => {});
   }, [isInitialized, meetingBranding]);
+
+  // Disclose the current storage policy before any room connection or publishing.
+  useEffect(() => {
+    if (!participantInfo?.meetingId || prejoinChoices) return;
+    let active = true;
+    let latestRequest = 0;
+    const refreshPolicy = () => {
+      const requestId = ++latestRequest;
+      setTranscriptStorageEnabled(null);
+      const request = participantInfo.isHost
+        ? v2Meetings.get(participantInfo.meetingId)
+        : joinPublicService.joinInfo(roomName, participantInfo.inviteToken || '');
+      request.then((data) => {
+        if (active && requestId === latestRequest && typeof data.policy?.store_transcripts === 'boolean') {
+          setTranscriptStorageEnabled(data.policy.store_transcripts);
+        }
+      }).catch(() => { /* Keep the default-storage disclosure if policy is unavailable. */ });
+    };
+    refreshPolicy();
+    // Hosts can change this setting in the linked tab before returning to join.
+    window.addEventListener('focus', refreshPolicy);
+    return () => { active = false; window.removeEventListener('focus', refreshPolicy); };
+  }, [participantInfo?.meetingId, participantInfo?.isHost, participantInfo?.inviteToken, roomName, prejoinChoices]);
 
   // Connect to room only after the prejoin lobby confirms name/language/devices.
   useEffect(() => {
@@ -512,6 +536,8 @@ function MeetingRoom() {
         branding={meetingBranding}
         previewTracks={previewTracks}
         mediaError={previewMediaError}
+        transcriptStorageEnabled={transcriptStorageEnabled}
+        transcriptSettingsUrl={participantInfo.isHost && participantInfo.meetingId ? `/v2/app/meetings/${participantInfo.meetingId}` : null}
         media={previewMedia}
         onMediaChange={handlePreviewMediaChange}
         onJoin={handlePrejoinJoin}

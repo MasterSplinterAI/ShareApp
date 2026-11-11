@@ -64,7 +64,7 @@
       },
       "transcripts": {
         "title": "Transcriptions sous votre contrôle",
-        "description": "Politique par réunion pour enregistrer les lignes finalisées sur le serveur, avec téléchargement JSON et texte brut lorsque vous avez besoin d'archives."
+        "description": "Les nouveaux appels et réunions enregistrent les transcriptions par défaut. L’hôte peut désactiver l’enregistrement dans les paramètres. Le texte enregistré peut être consulté plus tard et utilisé pour des rapports IA facultatifs."
       },
       "accounts": {
         "title": "Comptes personnels ou d'équipe",
@@ -194,7 +194,7 @@
       },
       "transcripts": {
         "q": "Le stockage des transcriptions est-il obligatoire ?",
-        "a": "Non. Chaque réunion peut choisir d'enregistrer les lignes de sous-titres finalisées sur le serveur. Les hôtes et administrateurs de l'organisation peuvent les télécharger ultérieurement lorsqu'elles existent."
+        "a": "Les nouveaux appels et réunions enregistrent les transcriptions par défaut. L’hôte peut désactiver l’enregistrement dans les paramètres. Le texte enregistré peut être consulté plus tard et utilisé pour des rapports IA facultatifs."
       },
       "trial": {
         "q": "Puis-je essayer avant de payer ?",
@@ -202,7 +202,7 @@
       },
       "storage": {
         "q": "Où sont stockées les données ?",
-        "a": "Les réunions sont traitées en temps réel. Les transcriptions ne sont stockées que lorsque l'hôte active le stockage pour une réunion, et peuvent être supprimées à tout moment. Toutes les données sont chiffrées en transit."
+        "a": "Les réunions sont traitées en temps réel. Les nouveaux appels et réunions enregistrent les transcriptions par défaut ; l’hôte peut désactiver cette option. Le texte enregistré est conservé jusqu’à sa suppression. Les données sont chiffrées en transit."
       },
       "accuracy": {
         "q": "Quelle est la précision de la traduction en direct ?",
@@ -222,7 +222,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -230,7 +230,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -365,14 +365,21 @@
     "namePlaceholder": "Votre nom",
     "myLanguage": "Ma langue (parler et écouter)",
     "languageHint": "Les sous-titres et traductions s'afficheront dans cette langue.",
-    "joinMeeting": "Rejoindre la réunion"
+    "joinMeeting": "Rejoindre la réunion",
+    "transcriptTitle": "Enregistrement des transcriptions",
+    "transcriptOffTitle": "Enregistrement des transcriptions désactivé",
+    "transcriptOn": "Cette réunion enregistre les sous-titres et les traductions pour une consultation ultérieure et des rapports IA facultatifs. Si vous ne souhaitez pas que vos paroles soient enregistrées, demandez à l’hôte de désactiver cette option avant de parler.",
+    "transcriptDefault": "Les nouveaux appels et réunions enregistrent les transcriptions par défaut. L’hôte peut désactiver cette option dans les paramètres. Demandez-lui le réglage de cette réunion avant de parler.",
+    "transcriptOff": "Cette réunion n’enregistre pas de nouvelles lignes de transcription. Les sous-titres et traductions en direct restent disponibles. La désactivation ne supprime pas le texte déjà enregistré.",
+    "privacyPolicy": "Politique de confidentialité",
+    "transcriptSettings": "Gérer l’enregistrement"
   },
   "trust": {
     "poweredBy": "Vidéo en temps réel dans le navigateur",
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
+      "transcripts": "Transcriptions activées par défaut",
       "retention": "You control retention"
     }
   },
@@ -393,7 +400,7 @@
       },
       "after": {
         "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "description": "Les nouveaux appels et réunions enregistrent les transcriptions par défaut. L’hôte peut désactiver l’enregistrement dans les paramètres. Le texte enregistré peut être consulté plus tard et utilisé pour des rapports IA facultatifs."
       },
       "insights": {
         "title": "Without the busywork",

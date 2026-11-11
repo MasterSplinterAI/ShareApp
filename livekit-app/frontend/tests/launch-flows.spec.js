@@ -96,3 +96,47 @@ test('denied media permissions show an actionable prejoin alert', async ({ page 
   await page.getByRole('button', { name: 'Turn off camera', exact: true }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
 });
+
+for (const saving of [true, false, null]) {
+  test(`prejoin discloses transcript storage before joining (${saving})`, async ({ page }) => {
+    await page.addInitScript(() => {
+      sessionStorage.setItem('participantInfo', JSON.stringify({ roomName: 'disclosure-test', meetingId: 'meeting-disclosure', participantName: 'Guest', isHost: false, inviteToken: 'invite', selectedLanguage: 'en' }));
+      navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Permission denied', 'NotAllowedError'); };
+    });
+    await page.route('**/api/**', (route) => {
+      if (route.request().url().includes('/v2/join-info')) {
+        return route.fulfill({ status: saving === null ? 503 : 200, json: saving === null ? {} : { mode: 'v2', allowed: true, policy: { store_transcripts: saving } } });
+      }
+      return route.fulfill({ status: 200, json: {} });
+    });
+    await page.goto('/room/disclosure-test');
+    const notice = page.getByTestId('transcript-disclosure');
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText(saving === false ? 'not saving new transcript lines' : saving === true ? 'This meeting saves captions and translations' : 'save transcripts by default');
+    await expect(notice.getByRole('link', { name: 'Privacy policy' })).toHaveAttribute('href', '/privacy');
+    await expect(page.getByRole('button', { name: 'Join meeting', exact: true })).toBeEnabled();
+  });
+}
+
+test('privacy page explains default saving and host opt-out', async ({ page }) => {
+  await page.goto('/privacy');
+  await expect(page.getByText('Transcript saving is on by default for new calls and meetings.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Turning saving off does not delete text already saved.', { exact: false })).toBeVisible();
+});
+
+test('host prejoin refreshes the notice after changing settings in another tab', async ({ page }) => {
+  let saving = true;
+  await page.addInitScript(() => {
+    localStorage.setItem('v2_token', 'test-only-token');
+    sessionStorage.setItem('participantInfo', JSON.stringify({ roomName: 'host-disclosure', meetingId: 'host-meeting', participantName: 'Host', isHost: true, selectedLanguage: 'en' }));
+    navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Permission denied', 'NotAllowedError'); };
+  });
+  await page.route('**/api/**', (route) => route.fulfill({ status: 200, json: route.request().url().includes('/meetings/host-meeting') ? { policy: { store_transcripts: saving } } : {} }));
+  await page.goto('/room/host-disclosure');
+  const notice = page.getByTestId('transcript-disclosure');
+  await expect(notice).toContainText('This meeting saves captions');
+  await expect(notice.getByRole('link', { name: 'Manage transcript saving' })).toHaveAttribute('href', '/v2/app/meetings/host-meeting');
+  saving = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(notice).toContainText('not saving new transcript lines');
+});

@@ -35,10 +35,10 @@ export default function MeetingAccessPanel({
           {canManageTranscriptPolicy && (
             <div className="flex items-center justify-between gap-4 rounded-lg border border-border/60 bg-muted/40 px-3 py-3">
               <div>
-                <Label className="text-sm">Save transcript on server</Label>
-                <p className="text-xs text-muted-foreground">Host session uploads finalized captions when enabled.</p>
+                <Label htmlFor="save-meeting-transcript" className="text-sm">Save meeting transcript</Label>
+                <p className="text-xs text-muted-foreground">On by default for new calls and meetings. Saves captions and translations for later review and optional AI reports. Tell participants before they speak. Turning this off stops new saves; existing transcripts remain until deleted.</p>
               </div>
-              <Switch checked={!!policy.store_transcripts} onCheckedChange={(v) => onPatchPolicy({ store_transcripts: v })} />
+              <Switch id="save-meeting-transcript" checked={!!policy.store_transcripts} onCheckedChange={(v) => onPatchPolicy({ store_transcripts: v })} />
             </div>
           )}
         </div>

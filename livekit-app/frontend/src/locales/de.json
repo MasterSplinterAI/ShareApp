@@ -64,7 +64,7 @@
       },
       "transcripts": {
         "title": "Transkripte unter Ihrer Kontrolle",
-        "description": "Richtlinie pro Meeting zum Speichern finalisierter Zeilen auf dem Server, mit JSON- und Klartext-Download, wenn Sie Aufzeichnungen benötigen."
+        "description": "Neue Anrufe und Meetings speichern Transkripte standardmäßig. Der Gastgeber kann die Speicherung in den Einstellungen ausschalten. Gespeicherter Text lässt sich später nachlesen und für optionale KI-Berichte verwenden."
       },
       "accounts": {
         "title": "Persönliche oder Team-Konten",
@@ -194,7 +194,7 @@
       },
       "transcripts": {
         "q": "Ist die Transkriptspeicherung erforderlich?",
-        "a": "Nein. Jedes Meeting kann optional finalisierte Untertitelzeilen auf dem Server speichern. Hosts und Org-Admins können sie später herunterladen, wenn Zeilen vorhanden sind."
+        "a": "Neue Anrufe und Meetings speichern Transkripte standardmäßig. Der Gastgeber kann die Speicherung in den Einstellungen ausschalten. Gespeicherter Text lässt sich später nachlesen und für optionale KI-Berichte verwenden."
       },
       "trial": {
         "q": "Kann ich es vor dem Bezahlen testen?",
@@ -202,7 +202,7 @@
       },
       "storage": {
         "q": "Wo werden Daten gespeichert?",
-        "a": "Meetings werden in Echtzeit verarbeitet. Transkripte werden nur gespeichert, wenn der Host die Speicherung für ein Meeting aktiviert, und können jederzeit gelöscht werden. Alle Daten werden bei der Übertragung verschlüsselt."
+        "a": "Meetings werden in Echtzeit verarbeitet. Neue Anrufe und Meetings speichern Transkripte standardmäßig; der Gastgeber kann dies ausschalten. Gespeicherter Text bleibt bis zur Löschung erhalten. Daten werden bei der Übertragung verschlüsselt."
       },
       "accuracy": {
         "q": "Wie genau ist die Live-Übersetzung?",
@@ -222,7 +222,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -230,7 +230,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -365,14 +365,21 @@
     "namePlaceholder": "Ihr Name",
     "myLanguage": "Meine Sprache (sprechen & hören)",
     "languageHint": "Untertitel und Übersetzungen erscheinen in dieser Sprache.",
-    "joinMeeting": "Meeting beitreten"
+    "joinMeeting": "Meeting beitreten",
+    "transcriptTitle": "Transkripte speichern",
+    "transcriptOffTitle": "Transkriptspeicherung ist aus",
+    "transcriptOn": "In diesem Meeting werden Untertitel und Übersetzungen zum späteren Nachlesen und für optionale KI-Berichte gespeichert. Wenn Ihre Worte nicht gespeichert werden sollen, bitten Sie den Gastgeber vor dem Sprechen, die Speicherung auszuschalten.",
+    "transcriptDefault": "Neue Anrufe und Meetings speichern Transkripte standardmäßig. Der Gastgeber kann dies in den Einstellungen ausschalten. Fragen Sie vor dem Sprechen nach der Einstellung für dieses Meeting.",
+    "transcriptOff": "Dieses Meeting speichert keine neuen Transkriptzeilen. Live-Untertitel und Übersetzungen funktionieren weiterhin. Bereits gespeicherter Text wird durch das Ausschalten nicht gelöscht.",
+    "privacyPolicy": "Datenschutzerklärung",
+    "transcriptSettings": "Speicherung verwalten"
   },
   "trust": {
     "poweredBy": "Echtzeit-Video im Browser",
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
+      "transcripts": "Transkripte standardmäßig an",
       "retention": "You control retention"
     }
   },
@@ -393,7 +400,7 @@
       },
       "after": {
         "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "description": "Neue Anrufe und Meetings speichern Transkripte standardmäßig. Der Gastgeber kann die Speicherung in den Einstellungen ausschalten. Gespeicherter Text lässt sich später nachlesen und für optionale KI-Berichte verwenden."
       },
       "insights": {
         "title": "Without the busywork",

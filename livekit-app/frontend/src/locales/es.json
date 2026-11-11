@@ -64,7 +64,7 @@
       },
       "transcripts": {
         "title": "Transcripciones bajo tu control",
-        "description": "Política por reunión para guardar líneas finalizadas en el servidor, con descarga en JSON y texto plano cuando necesites registros."
+        "description": "Las llamadas y reuniones nuevas guardan transcripciones de forma predeterminada. El anfitrión puede desactivar el guardado en la configuración. El texto guardado permite revisar la conversación y generar informes de IA opcionales."
       },
       "accounts": {
         "title": "Cuentas personales o de equipo",
@@ -194,7 +194,7 @@
       },
       "transcripts": {
         "q": "¿Es obligatorio almacenar transcripciones?",
-        "a": "No. Cada reunión puede optar por guardar líneas de subtítulos finalizadas en el servidor. Los anfitriones y administradores de la organización pueden descargarlas más tarde cuando existan."
+        "a": "Las llamadas y reuniones nuevas guardan transcripciones de forma predeterminada. El anfitrión puede desactivar el guardado en la configuración. El texto guardado permite revisar la conversación y generar informes de IA opcionales."
       },
       "trial": {
         "q": "¿Puedo probarlo antes de pagar?",
@@ -202,7 +202,7 @@
       },
       "storage": {
         "q": "¿Dónde se almacenan los datos?",
-        "a": "Las reuniones se procesan en tiempo real. Las transcripciones se almacenan solo cuando el anfitrión activa el almacenamiento para una reunión, y pueden eliminarse en cualquier momento. Todos los datos se cifran en tránsito."
+        "a": "Las reuniones se procesan en tiempo real. Las nuevas llamadas y reuniones guardan transcripciones de forma predeterminada; el anfitrión puede desactivar el guardado. El texto guardado permanece hasta que se elimine. Los datos se cifran en tránsito."
       },
       "accuracy": {
         "q": "¿Qué precisión tiene la traducción en vivo?",
@@ -222,7 +222,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -230,7 +230,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -365,14 +365,21 @@
     "namePlaceholder": "Tu nombre",
     "myLanguage": "Mi idioma (hablar y escuchar)",
     "languageHint": "Los subtítulos y traducciones aparecerán en este idioma.",
-    "joinMeeting": "Unirse a la reunión"
+    "joinMeeting": "Unirse a la reunión",
+    "transcriptTitle": "Guardado de transcripciones",
+    "transcriptOffTitle": "El guardado de transcripciones está desactivado",
+    "transcriptOn": "Esta reunión guarda subtítulos y traducciones para revisarlos después y generar informes de IA opcionales. Si no quieres que se guarden tus palabras, pide al anfitrión que desactive el guardado antes de hablar.",
+    "transcriptDefault": "Las llamadas y reuniones nuevas guardan transcripciones de forma predeterminada. El anfitrión puede desactivarlo en la configuración. Pregúntale por la configuración de esta reunión antes de hablar.",
+    "transcriptOff": "Esta reunión no guarda nuevas líneas de transcripción. Los subtítulos y las traducciones en directo siguen funcionando. Desactivar el guardado no elimina el texto guardado anteriormente.",
+    "privacyPolicy": "Política de privacidad",
+    "transcriptSettings": "Gestionar el guardado"
   },
   "trust": {
     "poweredBy": "Vídeo en tiempo real en el navegador",
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
+      "transcripts": "Transcripciones activadas por defecto",
       "retention": "You control retention"
     }
   },
@@ -393,7 +400,7 @@
       },
       "after": {
         "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "description": "Las llamadas y reuniones nuevas guardan transcripciones de forma predeterminada. El anfitrión puede desactivar el guardado en la configuración. El texto guardado permite revisar la conversación y generar informes de IA opcionales."
       },
       "insights": {
         "title": "Without the busywork",

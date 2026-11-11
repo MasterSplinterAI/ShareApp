@@ -31,14 +31,16 @@
 - [ ] Full helper tests, real room smoke, safe rollout and rollback reference.
 
 ## 5. Transcript policy (root)
-- [x] Resolve current opt-in privacy promise versus default-on storage; requested preference from user.
+- [x] Owner selected default-on transcripts with clear disclosure; align backend defaults, prejoin notices, privacy, and FAQs.
 - [x] Test meeting/direct-call defaults and explicit host choice; preserve existing stored records/settings.
 
 ## 6. Release evidence
 - [x] Full backend/Python regression tests, focused desktop/mobile browser flows, production build.
 - [x] Review integrated changes and deploy only tested candidate.
 - [x] Verify production health, migrations, source identity, and sandbox webhook delivery.
-- [ ] Publish launch readiness with remaining owner actions and unverified manual/load gates clearly separated.
+- [x] Publish launch readiness with remaining owner actions and unverified manual/load gates clearly separated.
 
 ## Release status
 Web commit `d7a8b91` deployed and verified. Current production agent passed synthetic English/Spanish captions and audible TTS in both directions. Candidate image passes Linux startup/import/Silero build checks but named deployment runtime remains under investigation; do not promote. Stripe remains test mode; live owner activation, hosted payment UI, real-device/load, and backup restore gates remain open. See `docs/launch/2026-11-11-readiness.md`.
+
+Owner decision follow-up: leave Stripe in test mode until owner activates live billing. New meetings/direct calls save transcripts by default with prejoin disclosure and host opt-out. Preserve all existing meeting policy values. Validate backend defaults and protected preview plus desktop/mobile notices, rebuild static privacy/FAQ content, then deploy the web update only.
