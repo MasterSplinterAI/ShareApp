@@ -834,18 +834,19 @@ router.get('/calls/history', requireV2Auth, async (req, res) => {
       `SELECT dc.id, dc.caller_user_id, dc.caller_name, dc.caller_email,
               dc.callee_user_id, dc.callee_name, dc.callee_email,
               dc.meeting_id, dc.room_name, dc.join_url, dc.status,
-              dc.created_at, dc.updated_at, dc.expires_at,
+              dc.created_at, dc.updated_at, dc.expires_at, cr.read_at,
               m.title AS meeting_title,
               (SELECT COUNT(*) FROM v2_meeting_transcript_lines t WHERE t.meeting_id = dc.meeting_id) AS transcript_line_count,
               (SELECT COUNT(*) FROM v2_meeting_transcript_reports r WHERE r.meeting_id = dc.meeting_id) AS report_count
        FROM v2_direct_calls dc
        LEFT JOIN v2_meetings m ON m.id = dc.meeting_id
+       LEFT JOIN v2_call_history_reads cr ON cr.call_id = dc.id AND cr.user_id = ?
        WHERE dc.caller_user_id = ?
           OR dc.callee_user_id = ?
           OR LOWER(dc.callee_email) = LOWER(?)
        ORDER BY dc.created_at DESC
        LIMIT 30`,
-      [user.id, user.id, user.email]
+      [user.id, user.id, user.id, user.email]
     );
 
     const calls = rows.map((r) => {
@@ -867,6 +868,7 @@ router.get('/calls/history', requireV2Auth, async (req, res) => {
         reportCount: Number(r.report_count || 0),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
+        readAt: r.read_at || null,
       };
     });
 
@@ -874,6 +876,37 @@ router.get('/calls/history', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/calls/history GET]', e);
     res.status(500).json({ error: 'Failed to load call history' });
+  }
+});
+
+router.post('/calls/history/read', requireV2Auth, async (req, res) => {
+  const { callIds } = req.body || {};
+  if (!Array.isArray(callIds) || callIds.length > 30 ||
+      callIds.some((id) => typeof id !== 'string' || !id.trim() || id.length > 128)) {
+    return res.status(400).json({ error: 'Provide up to 30 call IDs' });
+  }
+  if (!callIds.length) return res.json({ ok: true });
+
+  try {
+    const user = await db.get(`SELECT id, email FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    const ids = [...new Set(callIds)];
+    // Only acknowledge the missed incoming calls actually displayed by the client.
+    // New arrivals and still-ringing calls must remain eligible for a later alert.
+    await db.run(
+      `INSERT INTO v2_call_history_reads (user_id, call_id, read_at)
+       SELECT ?, dc.id, ? FROM v2_direct_calls dc
+       WHERE dc.id IN (${ids.map(() => '?').join(',')})
+         AND dc.caller_user_id <> ?
+         AND (dc.callee_user_id = ? OR LOWER(dc.callee_email) = LOWER(?))
+         AND dc.status IN ('missed', 'canceled')
+       ON CONFLICT (user_id, call_id) DO NOTHING`,
+      [user.id, new Date().toISOString(), ...ids, user.id, user.id, user.email]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[v2/calls/history/read POST]', e);
+    res.status(500).json({ error: 'Failed to mark call history as read' });
   }
 });
 

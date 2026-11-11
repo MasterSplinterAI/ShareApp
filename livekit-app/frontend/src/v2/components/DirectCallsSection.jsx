@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { format, isToday, isYesterday } from 'date-fns';
 import {
   Bell,
@@ -90,10 +90,13 @@ function callStatusMeta(call) {
 export default function DirectCallsSection({ hostDisplayName, fullPage = false }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [contacts, setContacts] = useState([]);
   const [addedYou, setAddedYou] = useState([]);
   const [callHistory, setCallHistory] = useState([]);
-  const [activeTab, setActiveTab] = useState('contacts'); // 'contacts' | 'history' | 'missed'
+  const [activeTab, setActiveTab] = useState(() =>
+    ['history', 'missed'].includes(searchParams.get('tab')) ? searchParams.get('tab') : 'contacts'
+  );
   const [loading, setLoading] = useState(true);
   const [callingKey, setCallingKey] = useState(null);
   const [busyRequestKey, setBusyRequestKey] = useState(null);
@@ -198,8 +201,31 @@ export default function DirectCallsSection({ hostDisplayName, fullPage = false }
     loadAll();
   }, []);
 
+  useEffect(() => {
+    if (loading || !['history', 'missed'].includes(activeTab)) return;
+    const callIds = callHistory
+      .filter((c) => !c.readAt && c.direction === 'incoming' && ['missed', 'canceled'].includes(c.status))
+      .map((c) => c.id);
+    if (!callIds.length) return;
+
+    let canceled = false;
+    v2Calls.markHistoryRead(callIds)
+      .then(() => {
+        if (canceled) return;
+        const viewed = new Set(callIds);
+        const readAt = new Date().toISOString();
+        setCallHistory((calls) => calls.map((call) =>
+          viewed.has(call.id) ? { ...call, readAt } : call
+        ));
+      })
+      .catch(() => {
+        if (!canceled) toast.error('Could not mark missed calls as read. Reopen call history to retry.');
+      });
+    return () => { canceled = true; };
+  }, [activeTab, callHistory, loading]);
+
   const missedIncomingCount = callHistory.filter(
-    (c) => c.direction === 'incoming' && (c.status === 'missed' || c.status === 'canceled')
+    (c) => !c.readAt && c.direction === 'incoming' && (c.status === 'missed' || c.status === 'canceled')
   ).length;
 
   const enterCallRoom = (data) => {

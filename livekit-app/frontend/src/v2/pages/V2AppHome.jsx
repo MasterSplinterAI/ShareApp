@@ -121,7 +121,7 @@ export default function V2AppHome() {
   const missedCalls = useMemo(
     () =>
       callHistory.filter(
-        (c) => c.direction === 'incoming' && (c.status === 'missed' || c.status === 'canceled')
+        (c) => !c.readAt && c.direction === 'incoming' && (c.status === 'missed' || c.status === 'canceled')
       ),
     [callHistory]
   );
@@ -251,7 +251,7 @@ export default function V2AppHome() {
             </div>
           </div>
           <Button asChild size="sm" variant="outline" className="gap-1.5">
-            <Link to="/v2/app/calls">
+            <Link to="/v2/app/calls?tab=history">
               View call log
               <ArrowRight className="h-3.5 w-3.5" />
             </Link>

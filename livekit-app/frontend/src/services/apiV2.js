@@ -279,10 +279,24 @@ export const v2Contacts = {
     apiV2.post(`/contacts/requests/${encodeURIComponent(id)}/dismiss`, body).then((r) => r.data),
 };
 
+// A log acknowledgement can outlive its page. Wait for it before loading history
+// on Home so a fast navigation cannot leave an already-read call in the banner.
+const pendingCallHistoryReads = new Set();
+
 export const v2Calls = {
   start: (body) => apiV2.post('/calls/start', body).then((r) => r.data),
   incoming: () => apiV2.get('/calls/incoming').then((r) => r.data),
-  history: () => apiV2.get('/calls/history').then((r) => r.data),
+  history: async () => {
+    await Promise.all([...pendingCallHistoryReads]);
+    return apiV2.get('/calls/history').then((r) => r.data);
+  },
+  markHistoryRead: (callIds) => {
+    const request = apiV2.post('/calls/history/read', { callIds }, { timeout: 10000 }).then((r) => r.data);
+    const settled = request.catch(() => {});
+    pendingCallHistoryReads.add(settled);
+    settled.then(() => pendingCallHistoryReads.delete(settled));
+    return request;
+  },
   status: (id) => apiV2.get(`/calls/${encodeURIComponent(id)}/status`).then((r) => r.data),
   respond: (id, action) =>
     apiV2.post(`/calls/${encodeURIComponent(id)}/respond`, { action }).then((r) => r.data),
