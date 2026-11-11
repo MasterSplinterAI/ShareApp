@@ -18,6 +18,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Sequence, Set, Tuple
 
+from agent_lifecycle import register_shutdown
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
@@ -493,6 +494,9 @@ class TranscriptionOnlyAgent:
         # Fire-and-forget tasks (cost emits, data handlers) tracked so shutdown can
         # drain them and a flood can't leak unbounded orphans.
         self._bg_tasks: Set[asyncio.Task] = set()
+        self._cost_tasks: Set[asyncio.Task] = set()
+        self._shutting_down = False
+        self._shutdown_complete = False
         # Providers that failed fast for a speaker (e.g. Gladia 429 concurrency limit
         # — free tier allows ONE concurrent live session). The next pipeline attempt
         # skips them and falls through the provider ladder; cleared after a healthy run.
@@ -500,10 +504,16 @@ class TranscriptionOnlyAgent:
         # Repeated utterances (greetings, confirmations) skip the LLM round trip.
         self._translation_cache = TranslationCache(max_size=_translation_cache_size())
 
-    def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
+    def _spawn_bg(self, coro: Awaitable[Any], *, during_shutdown: bool = False) -> asyncio.Task:
         task = asyncio.create_task(coro)
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
+        if during_shutdown:
+            # Only cost reports may outlive room-event handling and pipeline teardown.
+            self._cost_tasks.add(task)
+            task.add_done_callback(self._cost_tasks.discard)
+        if self._shutdown_complete or (self._shutting_down and not during_shutdown):
+            task.cancel()
         return task
 
     def _remember_display_name(self, identity: str, name: str) -> None:
@@ -762,10 +772,12 @@ class TranscriptionOnlyAgent:
             except Exception as e:
                 logger.warning(f"agent_ready broadcast failed: {e}")
 
-        asyncio.create_task(_broadcast_agent_ready())
+        self._spawn_bg(_broadcast_agent_ready())
 
         def _schedule_update():
             """Debounce update_assistants for language switches to avoid rapid teardown/create."""
+            if self._shutting_down:
+                return
             if self._update_debounce_task and not self._update_debounce_task.done():
                 self._update_debounce_task.cancel()
             async def _run_later():
@@ -864,6 +876,8 @@ class TranscriptionOnlyAgent:
             self._spawn_bg(handle_data(data))
 
         def on_room_metadata_changed(old_metadata: str, new_metadata: str):
+            if self._shutting_down:
+                return
             # Authenticated caption_config path: host POSTs to the backend, the backend
             # updates room metadata, LiveKit fans the change out to the agent here.
             try:
@@ -921,29 +935,15 @@ class TranscriptionOnlyAgent:
         ctx.room.on("track_published", lambda pub, p: self._spawn_bg(on_track_published(pub, p)))
         ctx.room.on("participant_disconnected", lambda p: self._spawn_bg(on_disconnected(p)))
 
-        try:
-            await asyncio.Event().wait()
-        finally:
-            t = self._agent_ready_ping_task
-            if t is not None and not t.done():
-                t.cancel()
-                await asyncio.gather(t, return_exceptions=True)
-            await self._shutdown_all_assistants(ctx)
-            # Drain in-flight background work (cost emits, data handlers) briefly so
-            # the last turn's telemetry isn't lost on SIGTERM.
-            pending_bg = [t for t in self._bg_tasks if not t.done()]
-            if pending_bg:
-                _, still_pending = await asyncio.wait(pending_bg, timeout=3.0)
-                for t in still_pending:
-                    t.cancel()
-            if self.cost_reporter:
-                await self.cost_reporter.aclose()
+        register_shutdown(ctx, self)
 
     async def update_assistants(self, ctx: JobContext):
         # Serialized: the body awaits while mutating speaker_pipelines, and it is
         # reachable concurrently from the debounce task, disconnects, metadata
         # changes, and the translation-off fast path.
         async with self._reconcile_lock:
+            if self._shutting_down:
+                return
             await self._update_assistants_locked(ctx)
 
     async def _update_assistants_locked(self, ctx: JobContext):
@@ -1088,7 +1088,6 @@ class TranscriptionOnlyAgent:
         if not speaker_lang:
             logger.error(f"{L} _create_stt_instance: missing speaker_lang")
             return None, "unknown"
-        is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
         stt_provider = _stt_provider()
         normalized_lang = self._normalize_language_code(stt_lang)
@@ -1100,7 +1099,7 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "deepgram" in excluded:
                 return None
-            if not (PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv("DEEPGRAM_API_KEY"))):
+            if not (PLUGINS_AVAILABLE and deepgram and os.getenv("DEEPGRAM_API_KEY", "").strip()):
                 return None
             endpointing_ms = _deepgram_endpointing_ms()
             stt_kwargs = dict(
@@ -1140,7 +1139,7 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "gladia" in excluded:
                 return None
-            if not (GLADIA_AVAILABLE and gladia and (is_cloud or os.getenv("GLADIA_API_KEY"))):
+            if not (GLADIA_AVAILABLE and gladia and os.getenv("GLADIA_API_KEY", "").strip()):
                 return None
             endpointing_sec = _gladia_endpointing_sec()
             trans_targets = gladia_translation_targets or []
@@ -1176,7 +1175,7 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "openai" in excluded:
                 return None
-            if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
+            if not (PLUGINS_AVAILABLE and openai and os.getenv("OPENAI_API_KEY", "").strip()):
                 return None
             # language must never be None: plugin >=1.5 does LanguageCode(language)
             # which crashes on None (AttributeError on .strip).
@@ -1203,8 +1202,7 @@ class TranscriptionOnlyAgent:
         return stt_instance, stt_provider_name
 
     def _create_openai_llm_instance(self, model: str, label: str) -> Optional[Any]:
-        is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
-        if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
+        if not (PLUGINS_AVAILABLE and openai and os.getenv("OPENAI_API_KEY", "").strip()):
             return None
         llm_kwargs = dict(
             model=model,
@@ -1607,7 +1605,7 @@ class TranscriptionOnlyAgent:
                 provider=lane.llm_provider,
                 participant=speaker_id,
                 model=_llm_model(),
-            ))
+            ), during_shutdown=True)
 
         def maybe_freeze_lane(
             lane: TargetLaneState, tail_src: str, committed_snapshot: str, translation: str
@@ -2471,7 +2469,6 @@ class TranscriptionOnlyAgent:
 
 def log_resolved_inference_config() -> None:
     """Log effective inference env once per worker (never print API key values)."""
-    lc_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
     stt = _stt_provider()
     llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
 
@@ -2482,9 +2479,9 @@ def log_resolved_inference_config() -> None:
         or os.getenv("VERCEL_GIT_COMMIT_SHA")
         or "unset"
     )
-    has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
-    has_openai = bool(os.getenv("OPENAI_API_KEY"))
-    has_gladia = bool(os.getenv("GLADIA_API_KEY"))
+    has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY", "").strip())
+    has_openai = bool(os.getenv("OPENAI_API_KEY", "").strip())
+    has_gladia = bool(os.getenv("GLADIA_API_KEY", "").strip())
 
     stt_primary = {
         "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize)",
@@ -2503,9 +2500,8 @@ def log_resolved_inference_config() -> None:
     logger.info("RESOLVED INFERENCE CONFIG (transcription_only_agent)")
     logger.info(f"  build_ref={build_ref}")
     logger.info(
-        "  LIVEKIT_CLOUD raw=%r interpreted_as_livekit_cloud_inference_defaults=%s",
+        "  LIVEKIT_CLOUD=%r; direct provider plugins require their own API keys",
         os.getenv("LIVEKIT_CLOUD", ""),
-        lc_cloud,
     )
     logger.info("  STT_PROVIDER=%r primary_path=%s", stt, stt_primary)
     logger.info(
@@ -2542,7 +2538,7 @@ def log_resolved_inference_config() -> None:
     logger.info(f"  keys_present mask: DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
                 f"GLADIA_API_KEY={'yes' if has_gladia else 'no'}, "
                 f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
-    logger.info("  (Unset keys may still use LiveKit Cloud-injected Deepgram/STT defaults when LIVEKIT_CLOUD=true.)")
+    logger.info("  LiveKit hosting credentials do not authenticate direct STT/LLM/TTS provider plugins.")
     logger.info("=" * 60)
 
 

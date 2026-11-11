@@ -10,32 +10,35 @@
 - [x] Inspect live agent status/module/dispatch name and SDK versions.
 - [x] Compare official current LiveKit docs and release notes.
 - [x] Read effective Stripe/email settings without exposing credentials.
-- [ ] Verify sandbox payment scenarios and canonical webhook configuration.
+- [x] Verify sandbox payment scenarios and canonical webhook configuration.
 - [ ] Verify live-mode setup separately; never treat sandbox success as live-payment readiness.
 
 ## 2. Billing (billing agent)
-- [ ] Regression tests for unpaid checkout, stale events, price-to-plan changes, duplicate checkout, and usable Free after cancellation.
-- [ ] Implement authoritative Stripe-state reconciliation and duplicate-checkout safeguards.
-- [ ] Disable automatic overage collection for launch; keep overlapping-cycle/open-ledger accounting outside paid collection until separately repaired/tested.
-- [ ] Run complete backend suite and sandbox API lifecycle checks.
+- [x] Regression tests for unpaid checkout, stale events, price-to-plan changes, duplicate checkout, and usable Free after cancellation.
+- [x] Implement authoritative Stripe-state reconciliation and duplicate-checkout safeguards.
+- [x] Disable automatic overage collection for launch; keep overlapping-cycle/open-ledger accounting outside paid collection until separately repaired/tested.
+- [x] Run complete backend suite and sandbox API lifecycle checks.
 
 ## 3. Access and recovery (flow agent)
-- [ ] Regression tests and fix for guest provider-admin elevation across organizations/stale JWTs.
-- [ ] Canonical password-reset links independent of untrusted request headers.
-- [ ] Fix paid upgrade routing, password-validation logout, and invisible prejoin media errors with UI coverage.
+- [x] Regression tests and fix for guest provider-admin elevation across organizations/stale JWTs.
+- [x] Canonical password-reset links independent of untrusted request headers.
+- [x] Fix paid upgrade routing, password-validation logout, and invisible prejoin media errors with UI coverage.
 
 ## 4. Cloud agent (LiveKit agent)
-- [ ] Restrict legacy room-global voice updates to authorized admins.
-- [ ] Require actual credentials for direct provider plugins; correct Cloud-hosting assumptions.
-- [ ] Preserve verified SDK versions; harden signal handling and bounded shutdown.
+- [x] Restrict legacy room-global voice updates to authorized admins.
+- [x] Require actual credentials for direct provider plugins; correct Cloud-hosting assumptions.
+- [x] Preserve verified SDK versions; harden signal handling and bounded shutdown.
 - [ ] Full helper tests, real room smoke, safe rollout and rollback reference.
 
 ## 5. Transcript policy (root)
-- [ ] Resolve current opt-in privacy promise versus default-on storage; requested preference from user.
-- [ ] Test meeting/direct-call defaults and explicit host choice; preserve existing stored records/settings.
+- [x] Resolve current opt-in privacy promise versus default-on storage; requested preference from user.
+- [x] Test meeting/direct-call defaults and explicit host choice; preserve existing stored records/settings.
 
 ## 6. Release evidence
-- [ ] Full backend/Python regression tests, focused desktop/mobile browser flows, production build.
-- [ ] Review integrated changes and deploy only tested candidate.
-- [ ] Verify production health, migrations, source identity, and sandbox webhook delivery.
+- [x] Full backend/Python regression tests, focused desktop/mobile browser flows, production build.
+- [x] Review integrated changes and deploy only tested candidate.
+- [x] Verify production health, migrations, source identity, and sandbox webhook delivery.
 - [ ] Publish launch readiness with remaining owner actions and unverified manual/load gates clearly separated.
+
+## Release status
+Web commit `d7a8b91` deployed and verified. Current production agent passed synthetic English/Spanish captions and audible TTS in both directions. Candidate image passes Linux startup/import/Silero build checks but named deployment runtime remains under investigation; do not promote. Stripe remains test mode; live owner activation, hosted payment UI, real-device/load, and backup restore gates remain open. See `docs/launch/2026-11-11-readiness.md`.
