@@ -4,9 +4,8 @@ import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 import LaliaSupportLauncher from '../../v2/components/LaliaSupportLauncher';
 
-// TODO: replace with the final legal entity name once incorporated.
-const COMPANY_LEGAL_NAME = 'Lalia';
-const LAST_UPDATED = 'June 13, 2026';
+const COMPANY_LEGAL_NAME = 'Oracle Orchestration LLC';
+const LAST_UPDATED = 'November 11, 2026';
 const CONTACT_EMAIL = 'hello@lalia.cloud';
 
 function Section({ title, children }) {
@@ -36,7 +35,7 @@ export default function TermsPage() {
         <p className="mt-8 text-base leading-relaxed text-muted-foreground">
           These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Lalia, a video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;), operated by{' '}
-          {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). Please read these Terms
+          {COMPANY_LEGAL_NAME}, a Wyoming limited liability company (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). Please read these Terms
           carefully before using the Service.
         </p>
 
