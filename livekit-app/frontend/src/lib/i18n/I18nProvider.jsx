@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   readStoredLocale,
   writeStoredLocale,
@@ -7,14 +7,22 @@ import { detectBrowserUiLocale, resolveUiLocale } from './uiLanguages';
 import { loadLocalePair } from './loadLocale';
 import { createTranslator } from './translate';
 import defaultMessages from '../../locales/en.json';
+import { writeStoredMeetingLanguage } from '../languages';
+import {
+  fetchPreferredLanguageFromServer,
+  syncPreferredLanguageToServer,
+} from '../preferredLanguageSync';
 
 const I18nContext = createContext(null);
 
 export function I18nProvider({ children }) {
-  const [locale, setLocaleState] = useState(() => resolveUiLocale(readStoredLocale() || detectBrowserUiLocale()));
+  const [locale, setLocaleState] = useState(() =>
+    resolveUiLocale(readStoredLocale() || detectBrowserUiLocale())
+  );
   const [messages, setMessages] = useState(defaultMessages);
   const [fallbackMessages, setFallbackMessages] = useState(defaultMessages);
   const [ready, setReady] = useState(false);
+  const hydratedRemote = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -35,16 +43,49 @@ export function I18nProvider({ children }) {
     document.documentElement.lang = lang;
   }, [locale]);
 
-  const setLocale = useCallback((next) => {
+  const applyLocale = useCallback((next, { persistRemote = true } = {}) => {
     const resolved = resolveUiLocale(next);
     writeStoredLocale(resolved);
+    writeStoredMeetingLanguage(resolved);
     try {
       localStorage.setItem('app_language', resolved);
     } catch {
       /* ignore */
     }
     setLocaleState(resolved);
+    if (persistRemote) {
+      syncPreferredLanguageToServer(resolved);
+    }
   }, []);
+
+  const setLocale = useCallback(
+    (next) => {
+      applyLocale(next, { persistRemote: true });
+    },
+    [applyLocale]
+  );
+
+  // When logged in: prefer server profile, else push local choice up.
+  useEffect(() => {
+    if (hydratedRemote.current) return;
+    hydratedRemote.current = true;
+    let cancelled = false;
+    (async () => {
+      const remote = await fetchPreferredLanguageFromServer();
+      if (cancelled) return;
+      if (remote) {
+        applyLocale(remote, { persistRemote: false });
+        return;
+      }
+      const local = readStoredLocale();
+      if (local) {
+        syncPreferredLanguageToServer(resolveUiLocale(local));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyLocale]);
 
   const t = useMemo(() => {
     return createTranslator(messages, fallbackMessages);

@@ -21,6 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { v2Auth, v2Meetings } from '../../services/apiV2';
+import { resolvePreferredMeetingLanguage } from '../../lib/languages';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeQuotaActions } from '../components/UpgradePrompt';
@@ -448,6 +449,9 @@ export default function V2MeetingsList() {
     try {
       await v2Meetings.hostSessionOpen(m.id).catch(() => {});
       const share = m.joinUrl || `${getPublicAppOrigin()}/join/${encodeURIComponent(m.livekit_room_name)}`;
+      const preferredLang = resolvePreferredMeetingLanguage(
+        me?.user?.preferredLanguage || me?.user?.preferred_language
+      );
       const participantInfo = {
         isHost: true,
         participantName: hostDisplayName,
@@ -456,9 +460,11 @@ export default function V2MeetingsList() {
         roomName: m.livekit_room_name,
         meetingId: m.id,
         inviteToken: '',
+        selectedLanguage: preferredLang,
+        spokenLanguage: preferredLang,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      navigate(`/room/${encodeURIComponent(m.livekit_room_name)}`, {
+      navigate(`/room/${encodeURIComponent(m.livekit_room_name)}?lang=${encodeURIComponent(preferredLang)}`, {
         state: {
           ...participantInfo,
           meetingTitle: m.title,

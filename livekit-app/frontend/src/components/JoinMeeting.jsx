@@ -6,7 +6,7 @@ import { roomService, joinPublicService } from '../services/api';
 import { normalizeMeetingBranding, brandingStyleVars } from '../lib/meetingBranding';
 import {
   normalizeMeetingLanguageCode,
-  readStoredMeetingLanguage,
+  resolvePreferredMeetingLanguage,
   writeStoredMeetingLanguage,
 } from '../lib/languages';
 import {
@@ -91,9 +91,7 @@ function JoinMeeting() {
         applyPreselectedLanguage(resolvedPreselected);
       }
 
-      const initialLang = normalizeMeetingLanguageCode(
-        resolvedPreselected || readStoredMeetingLanguage() || 'en'
-      );
+      const initialLang = resolvePreferredMeetingLanguage(resolvedPreselected);
 
       const participantInfo = {
         participantName: initialName,

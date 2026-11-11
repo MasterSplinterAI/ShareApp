@@ -25,7 +25,7 @@ import PublishPreviewTracks from './PublishPreviewTracks';
 import { MeetingProvider, useMeeting } from '../context/MeetingContext';
 import {
   normalizeMeetingLanguageCode,
-  readStoredMeetingLanguage,
+  resolvePreferredMeetingLanguage,
   writeStoredMeetingLanguage,
 } from '../lib/languages';
 import {
@@ -229,12 +229,10 @@ function MeetingRoom() {
       writeStoredMeetingLanguage(preselectedLanguage);
     }
 
-    const selectedLanguage = normalizeMeetingLanguageCode(
+    const selectedLanguage = resolvePreferredMeetingLanguage(
       preselectedLanguage ||
         stateInfo.selectedLanguage ||
-        sessionInfo.selectedLanguage ||
-        readStoredMeetingLanguage() ||
-        'en'
+        sessionInfo.selectedLanguage
     );
     const spokenLanguage = normalizeMeetingLanguageCode(
       preselectedLanguage ||

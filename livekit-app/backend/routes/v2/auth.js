@@ -321,9 +321,34 @@ router.patch('/communication-prefs', requireV2Auth, async (req, res) => {
   }
 });
 
+function sanitizePreferredLanguage(raw) {
+  if (raw === null) return null;
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'string') return undefined;
+  const trimmed = raw.trim().replace(/_/g, '-');
+  if (!trimmed) return null;
+  if (trimmed.toLowerCase() === 'auto') return null;
+  if (!/^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})?$/.test(trimmed)) return undefined;
+  return trimmed.slice(0, 16);
+}
+
+function serializeUser(row) {
+  if (!row) return row;
+  return {
+    id: row.id,
+    email: row.email,
+    display_name: row.display_name,
+    preferred_language: row.preferred_language || null,
+    preferredLanguage: row.preferred_language || null,
+  };
+}
+
 router.get('/me', requireV2Auth, async (req, res) => {
   try {
-    const user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+    const user = await db.get(
+      `SELECT id, email, display_name, preferred_language FROM v2_users WHERE id = ?`,
+      [req.v2Auth.userId]
+    );
     const org = await db.get(
       `SELECT id, name, billing_status, account_type FROM v2_organizations WHERE id = ?`,
       [req.v2Auth.orgId]
@@ -337,7 +362,7 @@ router.get('/me', requireV2Auth, async (req, res) => {
       [req.v2Auth.userId]
     );
     res.json({
-      user,
+      user: serializeUser(user),
       org,
       role: req.v2Auth.role,
       workspaces,
@@ -394,28 +419,51 @@ const DISPLAY_NAME_MAX = 128;
 
 router.patch('/me', requireV2Auth, async (req, res) => {
   try {
-    const { displayName } = req.body || {};
-    if (displayName === undefined) {
-      return res.status(400).json({ error: 'displayName is required' });
+    const { displayName, preferredLanguage, preferred_language: preferredLanguageSnake } = req.body || {};
+    const hasDisplayName = displayName !== undefined;
+    const preferredRaw =
+      preferredLanguage !== undefined ? preferredLanguage : preferredLanguageSnake;
+    const hasPreferredLanguage = preferredRaw !== undefined;
+
+    if (!hasDisplayName && !hasPreferredLanguage) {
+      return res.status(400).json({ error: 'displayName or preferredLanguage is required' });
     }
-    const trimmed = String(displayName).trim();
-    if (trimmed.length < DISPLAY_NAME_MIN || trimmed.length > DISPLAY_NAME_MAX) {
-      return res.status(400).json({
-        error: `Name must be between ${DISPLAY_NAME_MIN} and ${DISPLAY_NAME_MAX} characters`,
-      });
+
+    if (hasDisplayName) {
+      const trimmed = String(displayName).trim();
+      if (trimmed.length < DISPLAY_NAME_MIN || trimmed.length > DISPLAY_NAME_MAX) {
+        return res.status(400).json({
+          error: `Name must be between ${DISPLAY_NAME_MIN} and ${DISPLAY_NAME_MAX} characters`,
+        });
+      }
+      await db.run(`UPDATE v2_users SET display_name = ? WHERE id = ?`, [trimmed, req.v2Auth.userId]);
+      const org = await db.get(`SELECT account_type FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
+      if (org?.account_type === PERSONAL) {
+        await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
+      }
     }
-    await db.run(`UPDATE v2_users SET display_name = ? WHERE id = ?`, [trimmed, req.v2Auth.userId]);
-    const org = await db.get(`SELECT account_type FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
-    if (org?.account_type === PERSONAL) {
-      await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
+
+    if (hasPreferredLanguage) {
+      const cleaned = sanitizePreferredLanguage(preferredRaw);
+      if (cleaned === undefined) {
+        return res.status(400).json({ error: 'Invalid preferredLanguage' });
+      }
+      await db.run(`UPDATE v2_users SET preferred_language = ? WHERE id = ?`, [
+        cleaned,
+        req.v2Auth.userId,
+      ]);
     }
-    const user = await db.get(`SELECT id, email, display_name FROM v2_users WHERE id = ?`, [req.v2Auth.userId]);
+
+    const user = await db.get(
+      `SELECT id, email, display_name, preferred_language FROM v2_users WHERE id = ?`,
+      [req.v2Auth.userId]
+    );
     const orgRow = await db.get(
       `SELECT id, name, billing_status, account_type FROM v2_organizations WHERE id = ?`,
       [req.v2Auth.orgId]
     );
     res.json({
-      user,
+      user: serializeUser(user),
       org: orgRow,
       role: req.v2Auth.role,
       isSuperadmin: isSuperadminEmail(req.v2Auth.email),

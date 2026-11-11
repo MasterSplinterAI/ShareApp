@@ -43,7 +43,21 @@ export function resolveLocale(code) {
 }
 
 export function detectBrowserLocale() {
-  // Re-exported via uiLanguages.detectBrowserUiLocale in I18nProvider
+  // Prefer uiLanguages.detectBrowserUiLocale in app code; this keeps a safe default for legacy imports.
+  if (typeof navigator === 'undefined') return DEFAULT_LOCALE;
+  try {
+    const tags = navigator.languages?.length ? navigator.languages : [navigator.language];
+    for (const lang of tags) {
+      if (!lang) continue;
+      const normalized = String(lang).replace('_', '-');
+      if (isSupportedLocale(normalized)) return normalized;
+      const base = normalized.split('-')[0];
+      if (base === 'zh') return 'zh-CN';
+      if (isSupportedLocale(base)) return base;
+    }
+  } catch {
+    /* ignore */
+  }
   return DEFAULT_LOCALE;
 }
 

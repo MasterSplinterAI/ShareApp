@@ -1,58 +1,391 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://lalia.cloud/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://lalia.cloud/blog</loc>
+    <loc>https://lalia.cloud/es/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
   <url>
+    <loc>https://lalia.cloud/fr/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/de/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/pt/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/ja/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/zh-CN/</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/" />
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/es/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/fr/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/de/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/pt/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/ja/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/zh-CN/languages</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/languages" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/languages" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/languages" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/languages" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/languages" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/languages" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/languages" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/languages" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/es/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/fr/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/de/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/pt/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/ja/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/zh-CN/blog</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog" />
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
     <loc>https://lalia.cloud/blog/why-phrase-level-commits-beat-word-by-word-streaming</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog/why-phrase-level-commits-beat-word-by-word-streaming" />
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://lalia.cloud/blog/designing-bilingual-rooms-where-nobody-waits</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog/designing-bilingual-rooms-where-nobody-waits" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog/designing-bilingual-rooms-where-nobody-waits" />
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://lalia.cloud/blog/interpreter-or-live-ai-translation</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog/interpreter-or-live-ai-translation" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog/interpreter-or-live-ai-translation" />
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
     <loc>https://lalia.cloud/blog/meetings-without-translators</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog/meetings-without-translators" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog/meetings-without-translators" />
     <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://lalia.cloud/blog/multilingual-meetings-made-easy-with-lalia</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.7</priority>
-  </url>
-  <url>
-    <loc>https://lalia.cloud/demo</loc>
-    <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
   <url>
-    <loc>https://lalia.cloud/v2/signup</loc>
+    <loc>https://lalia.cloud/blog/multilingual-meetings-made-easy-with-lalia</loc>
+    <lastmod>2026-11-11</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://lalia.cloud/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="es" href="https://lalia.cloud/es/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="fr" href="https://lalia.cloud/fr/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="de" href="https://lalia.cloud/de/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="pt" href="https://lalia.cloud/pt/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="ja" href="https://lalia.cloud/ja/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="zh-CN" href="https://lalia.cloud/zh-CN/blog/multilingual-meetings-made-easy-with-lalia" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://lalia.cloud/blog/multilingual-meetings-made-easy-with-lalia" />
     <changefreq>monthly</changefreq>
-    <priority>0.6</priority>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/demo</loc>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://lalia.cloud/v2/signup</loc>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
   </url>
   <url>
     <loc>https://lalia.cloud/terms</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
   </url>
   <url>
     <loc>https://lalia.cloud/privacy</loc>
-    <changefreq>yearly</changefreq>
-    <priority>0.3</priority>
+    <lastmod>2026-11-11</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
   </url>
 </urlset>

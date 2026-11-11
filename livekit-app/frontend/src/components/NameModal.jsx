@@ -1,16 +1,16 @@
 import { useState } from 'react';
 import { Globe } from 'lucide-react';
-import { normalizeMeetingLanguageCode, readStoredMeetingLanguage } from '../lib/languages';
+import { resolvePreferredMeetingLanguage } from '../lib/languages';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { MeetingLanguagePicker } from './MeetingLanguagePicker';
 
-function NameModal({ onClose, onSubmit, title = 'Enter your name', subtitle = '', showLanguageSelector = false, defaultLanguage = 'en' }) {
+function NameModal({ onClose, onSubmit, title = 'Enter your name', subtitle = '', showLanguageSelector = false, defaultLanguage = null }) {
   const [name, setName] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState(() =>
-    normalizeMeetingLanguageCode(defaultLanguage || readStoredMeetingLanguage())
+    resolvePreferredMeetingLanguage(defaultLanguage)
   );
 
   const handleSubmit = (e) => {

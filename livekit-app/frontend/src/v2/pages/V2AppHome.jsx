@@ -26,6 +26,7 @@ import { dateFnsLocale } from '../../lib/i18n/dateLocale';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeUsageCard } from '../components/UpgradePrompt';
 import { getPublicAppOrigin, parseJoinTarget } from '../../lib/nativePlatform';
+import { resolvePreferredMeetingLanguage } from '../../lib/languages';
 
 export default function V2AppHome() {
   const navigate = useNavigate();
@@ -151,6 +152,9 @@ export default function V2AppHome() {
       await v2Meetings.hostSessionOpen(m.id).catch(() => {});
       const share =
         m.joinUrl || `${getPublicAppOrigin()}/join/${encodeURIComponent(m.livekit_room_name)}`;
+      const preferredLang = resolvePreferredMeetingLanguage(
+        me?.user?.preferredLanguage || me?.user?.preferred_language
+      );
       const participantInfo = {
         isHost: true,
         participantName: displayName,
@@ -159,9 +163,11 @@ export default function V2AppHome() {
         roomName: m.livekit_room_name,
         meetingId: m.id,
         inviteToken: '',
+        selectedLanguage: preferredLang,
+        spokenLanguage: preferredLang,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
-      navigate(`/room/${encodeURIComponent(m.livekit_room_name)}`, {
+      navigate(`/room/${encodeURIComponent(m.livekit_room_name)}?lang=${encodeURIComponent(preferredLang)}`, {
         state: {
           ...participantInfo,
           meetingTitle: m.title,

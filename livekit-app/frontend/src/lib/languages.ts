@@ -63,12 +63,15 @@ export function getMeetingLanguages(): Language[] {
   return sortMeetingLanguages(DEEPGRAM_LANGUAGES);
 }
 
-export function readStoredMeetingLanguage(): string {
-  if (typeof localStorage === 'undefined') return 'en';
+/** Returns the stored meeting/UI language, or null when the user has never chosen one. */
+export function readStoredMeetingLanguage(): string | null {
+  if (typeof localStorage === 'undefined') return null;
   try {
-    return normalizeMeetingLanguageCode(localStorage.getItem(MEETING_LANGUAGE_STORAGE_KEY) || 'en');
+    const raw = localStorage.getItem(MEETING_LANGUAGE_STORAGE_KEY);
+    if (!raw || !String(raw).trim()) return null;
+    return normalizeMeetingLanguageCode(raw);
   } catch {
-    return 'en';
+    return null;
   }
 }
 
@@ -79,6 +82,47 @@ export function writeStoredMeetingLanguage(code: string): void {
   } catch {
     /* ignore */
   }
+}
+
+/** Map navigator / Accept-Language style tags onto Deepgram meeting languages. */
+export function detectBrowserMeetingLanguage(
+  languageTags?: readonly string[] | null
+): string {
+  const tags =
+    languageTags?.length
+      ? languageTags
+      : typeof navigator !== 'undefined'
+        ? navigator.languages?.length
+          ? navigator.languages
+          : [navigator.language]
+        : [];
+
+  for (const lang of tags) {
+    if (!lang) continue;
+    const raw = String(lang).trim().replace('_', '-');
+    if (!raw) continue;
+    if (LEGACY_CODE_MAP[raw]) return LEGACY_CODE_MAP[raw];
+    if (getDeepgramLanguage(raw)) return raw;
+    const base = raw.split('-')[0];
+    if (LEGACY_CODE_MAP[base]) return LEGACY_CODE_MAP[base];
+    if (getDeepgramLanguage(base)) return base;
+  }
+  return 'en';
+}
+
+/**
+ * Resolve meeting language for join/create:
+ * explicit → stored preference → browser/locale → English.
+ */
+export function resolvePreferredMeetingLanguage(
+  explicit?: string | null | undefined
+): string {
+  if (explicit && typeof explicit === 'string' && explicit.trim()) {
+    return normalizeMeetingLanguageCode(explicit);
+  }
+  const stored = readStoredMeetingLanguage();
+  if (stored) return stored;
+  return detectBrowserMeetingLanguage();
 }
 
 /** Map legacy stored codes to current meeting codes. */
