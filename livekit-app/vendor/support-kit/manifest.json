@@ -1,9 +1,9 @@
 {
   "contractVersion": "1.0.0",
-  "sourceCommit": "901e832b1d898e8502deac55b56b9c99f6dee6d3",
+  "sourceCommit": "f76932ca1b849bfe62b560750137ac81b451793d",
   "developmentOnly": false,
   "namespace": "@quill/support-*",
-  "contentHash": "d736e4801fd5bdfef727b91c1b66133dc18ebed449397395cd2038671fec6662",
+  "contentHash": "53817c48265b78f30e9ac8f85fbed36300dbff5ef72f1ed13ac26979960c7670",
   "files": {
     "packages/channels/package.json": "8b118bf455d40134b1e417654d77da0befd70bf66caede66f5410b62b50893aa",
     "packages/channels/src/index.ts": "1fb4a6f50f9c37fd9f66ddc35022ac288436de47c237375d5a1eb54af29efedb",
@@ -89,7 +89,7 @@
     "packages/shared/src/ticket.ts": "af9f031370485ff2d65e9071df1176a5b6be6df1cbf27fba06a499fdcc3ad0aa",
     "packages/shared/src/user.ts": "1731e23e55e08c57b3256228b2cf00f1e38fcb006e4fbcf6713bf397649b68d0",
     "packages/shared/tsconfig.json": "1a9f0873fec04475a675b9b11b9402a9eca94c930c65a199019538b9f521b861",
-    "scripts/build-consumer-snapshot.mjs": "04dcad663cc9a5e83e68d500fc82b3e1c96666a9139714a29081d149a495c505",
+    "scripts/build-consumer-snapshot.mjs": "ae07ffc5ee6a9d563013d994dc6be65e4ba4b8d124e1b2407e323d693bb3ae5d",
     "tsconfig.base.json": "6a7770dabc9058f9d3ef4ee8238eadce037a830d6312695538285ee13398541d"
   }
 }
