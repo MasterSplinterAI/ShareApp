@@ -8,7 +8,6 @@
     "dev": "nodemon server.js",
     "test": "node --test test/*.test.js",
     "build:support-kit": "node ../vendor/support-kit/scripts/build-consumer-snapshot.mjs",
-    "prestart": "npm run build:support-kit",
     "predev": "npm run build:support-kit"
   },
   "dependencies": {
