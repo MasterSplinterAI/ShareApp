@@ -1,0 +1,1247 @@
+{
+  "project": "production-uiycx4ku",
+  "agentId": "CA_do6qoLXhxqA7",
+  "dispatchName": "translation-cloud-deepgram-codeswitch",
+  "originalProductionVersion": "sUuVnNMCMHJP",
+  "candidateVersion": "jN9YKCyo7vv9",
+  "candidateSourceCommit": "5625b1e",
+  "startupComparison": [
+    {
+      "version": "Vk7xoVU4Ukoc",
+      "command": "diagnostic Python subprocess launcher",
+      "registered": true,
+      "bidirectionalCaptionsAndAudio": true
+    },
+    {
+      "version": "d54rhviRfJng",
+      "command": "direct Python codeswitch command",
+      "registered": true,
+      "bidirectionalCaptionsAndAudio": true
+    },
+    {
+      "version": "VeNsJ5Hcmte2",
+      "command": "original shell exec command",
+      "status": "CrashLoop",
+      "workerStartupLogs": false
+    },
+    {
+      "version": "ojt5NhccXmX7",
+      "command": "permanent direct Python launcher",
+      "registered": true,
+      "bidirectionalCaptionsAndAudio": true
+    },
+    {
+      "version": "jN9YKCyo7vv9",
+      "command": "permanent launcher plus accepted-PCM metering",
+      "registered": true,
+      "bidirectionalCaptionsAndAudio": true
+    }
+  ],
+  "diagnosis": "Cloud shell launch path reproducibly failed while direct Python startup worked with the same source/dependencies. Internal Cloud execution cause is not exposed.",
+  "candidateSmoke": [
+    {
+      "durations_seconds": {
+        "en": 9.55,
+        "es": 12.63
+      },
+      "event": "synthetic_ready"
+    },
+    {
+      "event": "connected",
+      "participants": 2,
+      "room": "lalia-canary-pcm-final-1794427612033178000"
+    },
+    {
+      "event": "direction_pass",
+      "source": "en",
+      "target": "es",
+      "translated_final": true,
+      "tts_audio_ms": 4320
+    },
+    {
+      "event": "direction_pass",
+      "source": "es",
+      "target": "en",
+      "translated_final": true,
+      "tts_audio_ms": 5710
+    },
+    {
+      "event": "PASS",
+      "room": "lalia-canary-pcm-final-1794427612033178000",
+      "tts_required": true
+    }
+  ],
+  "sharedProcessThreeRoomProbe": {
+    "result": "failed and aborted",
+    "exitCode": 130,
+    "successfulDirectionChecks": [
+      {
+        "cycle": 1,
+        "elapsed_seconds": 15.55,
+        "event": "soak_direction_pass",
+        "new_tts_audio_ms": 3530,
+        "room": "lalia-launch-canary-soak-20261111-2011-2",
+        "source": "en",
+        "target": "es"
+      },
+      {
+        "cycle": 1,
+        "elapsed_seconds": 18.44,
+        "event": "soak_direction_pass",
+        "new_tts_audio_ms": 5060,
+        "room": "lalia-launch-canary-soak-20261111-2011-2",
+        "source": "es",
+        "target": "en"
+      },
+      {
+        "cycle": 2,
+        "elapsed_seconds": 15.25,
+        "event": "soak_direction_pass",
+        "new_tts_audio_ms": 5240,
+        "room": "lalia-launch-canary-soak-20261111-2011-2",
+        "source": "en",
+        "target": "es"
+      },
+      {
+        "cycle": 2,
+        "elapsed_seconds": 18.47,
+        "event": "soak_direction_pass",
+        "new_tts_audio_ms": 6010,
+        "room": "lalia-launch-canary-soak-20261111-2011-2",
+        "source": "es",
+        "target": "en"
+      },
+      {
+        "cycle": 3,
+        "elapsed_seconds": 15.07,
+        "event": "soak_direction_pass",
+        "new_tts_audio_ms": 4950,
+        "room": "lalia-launch-canary-soak-20261111-2011-2",
+        "source": "en",
+        "target": "es"
+      },
+      {
+        "cycle": 3,
+        "elapsed_seconds": 18.4,
+        "event": "soak_direction_pass",
+        "new_tts_audio_ms": 6170,
+        "room": "lalia-launch-canary-soak-20261111-2011-2",
+        "source": "es",
+        "target": "en"
+      }
+    ],
+    "limitation": "Two rooms lost final translation/audio progress. Logs implicate awaited data publication, but do not prove provider timeout or identify a native transport root cause."
+  },
+  "isolatedProcessThreeRoomRetry": {
+    "cycles": 2,
+    "startStaggerSeconds": 15,
+    "rooms": [
+      {
+        "number": 1,
+        "events": [
+          {
+            "event": "soak_connected",
+            "participants": 2,
+            "room": "lalia-canary-isolated-20261111-2020-r1-1"
+          },
+          {
+            "event": "soak_ready",
+            "room": "lalia-canary-isolated-20261111-2020-r1-1"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 15.08,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 2210,
+            "room": "lalia-canary-isolated-20261111-2020-r1-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5770,
+            "room": "lalia-canary-isolated-20261111-2020-r1-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "event": "soak_rejoined",
+            "room": "lalia-canary-isolated-20261111-2020-r1-1"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 3050,
+            "room": "lalia-canary-isolated-20261111-2020-r1-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 18.44,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6350,
+            "room": "lalia-canary-isolated-20261111-2020-r1-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "directions": 4,
+            "elapsed_seconds": 120.0,
+            "event": "soak_media_complete",
+            "reconnects": 1,
+            "room": "lalia-canary-isolated-20261111-2020-r1-1"
+          },
+          {
+            "directions": 4,
+            "event": "SOAK_ROOM_PASS",
+            "room": "lalia-canary-isolated-20261111-2020-r1-1"
+          },
+          {
+            "event": "SOAK_RESULT",
+            "failed": [],
+            "rooms": 1
+          }
+        ]
+      },
+      {
+        "number": 2,
+        "events": [
+          {
+            "event": "soak_connected",
+            "participants": 2,
+            "room": "lalia-canary-isolated-20261111-2020-r2-1"
+          },
+          {
+            "event": "soak_ready",
+            "room": "lalia-canary-isolated-20261111-2020-r2-1"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 15.32,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 2870,
+            "room": "lalia-canary-isolated-20261111-2020-r2-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 18.41,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5420,
+            "room": "lalia-canary-isolated-20261111-2020-r2-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "event": "soak_rejoined",
+            "room": "lalia-canary-isolated-20261111-2020-r2-1"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 15.11,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 4470,
+            "room": "lalia-canary-isolated-20261111-2020-r2-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6250,
+            "room": "lalia-canary-isolated-20261111-2020-r2-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "directions": 4,
+            "elapsed_seconds": 120.0,
+            "event": "soak_media_complete",
+            "reconnects": 1,
+            "room": "lalia-canary-isolated-20261111-2020-r2-1"
+          },
+          {
+            "directions": 4,
+            "event": "SOAK_ROOM_PASS",
+            "room": "lalia-canary-isolated-20261111-2020-r2-1"
+          },
+          {
+            "event": "SOAK_RESULT",
+            "failed": [],
+            "rooms": 1
+          }
+        ]
+      },
+      {
+        "number": 3,
+        "events": [
+          {
+            "event": "soak_connected",
+            "participants": 2,
+            "room": "lalia-canary-isolated-20261111-2020-r3-1"
+          },
+          {
+            "directions": 0,
+            "event": "SOAK_ROOM_FAIL",
+            "reason": "TimeoutError",
+            "room": "lalia-canary-isolated-20261111-2020-r3-1"
+          },
+          {
+            "event": "SOAK_RESULT",
+            "failed": [
+              "TimeoutError"
+            ],
+            "rooms": 1
+          }
+        ]
+      }
+    ],
+    "result": "failed",
+    "limitation": "Third room received no worker assignment while canary load exceeded default0.7 threshold. Two accepted rooms passed all media and rejoin checks. This is not three-room capacity proof."
+  },
+  "resourceObservation": {
+    "production": {
+      "cpuRequest": "2",
+      "cpuLimit": "4",
+      "memoryRequest": "4Gi",
+      "memoryLimit": "8Gi"
+    },
+    "canary": {
+      "cpuRequest": "1",
+      "cpuLimit": "2",
+      "memoryRequest": "1Gi",
+      "memoryLimit": "4Gi"
+    },
+    "note": "Named canary has smaller resources; no supported deployment-scoped resource update exists in the available CLI/public API."
+  },
+  "longSoak": {
+    "result": "passed",
+    "rooms": 2,
+    "durationSecondsPerRoom": 600,
+    "directionsPerRoom": 20,
+    "rejoinsPerRoom": 1,
+    "clientProcesses": "independent",
+    "roomEvents": [
+      [
+        {
+          "event": "soak_connected",
+          "participants": 2,
+          "room": "lalia-canary-long-20261111-201830-r1-1"
+        },
+        {
+          "event": "soak_ready",
+          "room": "lalia-canary-long-20261111-201830-r1-1"
+        },
+        {
+          "cycle": 1,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 2280,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 1,
+          "elapsed_seconds": 18.4,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5290,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 2,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3400,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 2,
+          "elapsed_seconds": 18.42,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6120,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 3,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 4130,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 3,
+          "elapsed_seconds": 18.14,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6060,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 4,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5360,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 4,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5920,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 5,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3150,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 5,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5890,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "event": "soak_rejoined",
+          "room": "lalia-canary-long-20261111-201830-r1-1"
+        },
+        {
+          "cycle": 6,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3220,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 6,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5740,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 7,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3220,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 7,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6060,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 8,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5010,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 8,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6190,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 9,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3240,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 9,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6150,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 10,
+          "elapsed_seconds": 15.08,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3300,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 10,
+          "elapsed_seconds": 18.16,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6080,
+          "room": "lalia-canary-long-20261111-201830-r1-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "directions": 20,
+          "elapsed_seconds": 600.0,
+          "event": "soak_media_complete",
+          "reconnects": 1,
+          "room": "lalia-canary-long-20261111-201830-r1-1"
+        },
+        {
+          "directions": 20,
+          "event": "SOAK_ROOM_PASS",
+          "room": "lalia-canary-long-20261111-201830-r1-1"
+        },
+        {
+          "event": "SOAK_RESULT",
+          "failed": [],
+          "rooms": 1
+        }
+      ],
+      [
+        {
+          "event": "soak_connected",
+          "participants": 2,
+          "room": "lalia-canary-long-20261111-201830-r2-1"
+        },
+        {
+          "event": "soak_ready",
+          "room": "lalia-canary-long-20261111-201830-r2-1"
+        },
+        {
+          "cycle": 1,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 2740,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 1,
+          "elapsed_seconds": 18.4,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5420,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 2,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 4500,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 2,
+          "elapsed_seconds": 18.4,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6240,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 3,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5000,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 3,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6130,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 4,
+          "elapsed_seconds": 15.09,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5050,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 4,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6080,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 5,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5030,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 5,
+          "elapsed_seconds": 18.42,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6230,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "event": "soak_rejoined",
+          "room": "lalia-canary-long-20261111-201830-r2-1"
+        },
+        {
+          "cycle": 6,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 3170,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 6,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5830,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 7,
+          "elapsed_seconds": 15.32,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5490,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 7,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5980,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 8,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 4960,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 8,
+          "elapsed_seconds": 18.16,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6210,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 9,
+          "elapsed_seconds": 15.07,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5020,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 9,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6080,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "cycle": 10,
+          "elapsed_seconds": 15.33,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 5250,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "en",
+          "target": "es"
+        },
+        {
+          "cycle": 10,
+          "elapsed_seconds": 18.15,
+          "event": "soak_direction_pass",
+          "new_tts_audio_ms": 6120,
+          "room": "lalia-canary-long-20261111-201830-r2-1",
+          "source": "es",
+          "target": "en"
+        },
+        {
+          "directions": 20,
+          "elapsed_seconds": 600.0,
+          "event": "soak_media_complete",
+          "reconnects": 1,
+          "room": "lalia-canary-long-20261111-201830-r2-1"
+        },
+        {
+          "directions": 20,
+          "event": "SOAK_ROOM_PASS",
+          "room": "lalia-canary-long-20261111-201830-r2-1"
+        },
+        {
+          "event": "SOAK_RESULT",
+          "failed": [],
+          "rooms": 1
+        }
+      ]
+    ],
+    "controllerEvents": [
+      {
+        "event": "verified_candidate",
+        "version": "jN9YKCyo7vv9"
+      },
+      {
+        "event": "started",
+        "room": "lalia-canary-long-20261111-201830-r1-1",
+        "dispatch": "AD_TixhdA2UEb4f",
+        "pid": 74381,
+        "log": "/tmp/lalia-long-soak-r1.log"
+      },
+      {
+        "event": "started",
+        "room": "lalia-canary-long-20261111-201830-r2-1",
+        "dispatch": "AD_tGqnGSnLkjDV",
+        "pid": 75970,
+        "log": "/tmp/lalia-long-soak-r2.log"
+      },
+      {
+        "event": "finished",
+        "room": "lalia-canary-long-20261111-201830-r1-1",
+        "exit": 0,
+        "log": "/tmp/lalia-long-soak-r1.log"
+      },
+      {
+        "event": "finished",
+        "room": "lalia-canary-long-20261111-201830-r2-1",
+        "exit": 0,
+        "log": "/tmp/lalia-long-soak-r2.log"
+      },
+      {
+        "event": "cleanup",
+        "room": "lalia-canary-long-20261111-201830-r1-1",
+        "result": "deleted"
+      },
+      {
+        "event": "cleanup",
+        "room": "lalia-canary-long-20261111-201830-r2-1",
+        "result": "deleted"
+      }
+    ],
+    "serverCleanup": {
+      "jobIds": [
+        "AJ_8LB6FDNZHo84",
+        "AJ_JL49onznxg7L"
+      ],
+      "callbackCompletedAt": [
+        "2026-11-11T20:28:56.922023+00:00",
+        "2026-11-11T20:28:57.148400+00:00"
+      ],
+      "forcedKillObserved": false,
+      "followupObservationSeconds": 46
+    }
+  },
+  "productionPromotion": {
+    "result": "promoted",
+    "imageVersion": "jN9YKCyo7vv9",
+    "rebuilt": false,
+    "workerId": "CAW_T4SjYG6Y6tiG",
+    "registeredAt": "2026-11-11T20:30:39.420277+00:00",
+    "resourcesPreserved": true,
+    "rollbackVersion": "sUuVnNMCMHJP",
+    "verification": {
+      "result": "passed",
+      "controllerExitCode": 0,
+      "rooms": 3,
+      "durationSecondsPerRoom": 240,
+      "directionsPerRoom": 8,
+      "rejoinsPerRoom": 1,
+      "roomEvents": [
+        [
+          {
+            "event": "soak_connected",
+            "participants": 2,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1"
+          },
+          {
+            "event": "soak_ready",
+            "room": "lalia-production-canary-check-20261111-203126-r1-1"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 4330,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 18.42,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5810,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5250,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 18.41,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6230,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "event": "soak_rejoined",
+            "room": "lalia-production-canary-check-20261111-203126-r1-1"
+          },
+          {
+            "cycle": 3,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5180,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 3,
+            "elapsed_seconds": 17.91,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6120,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "cycle": 4,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5140,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 4,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 1890,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "directions": 8,
+            "elapsed_seconds": 240.0,
+            "event": "soak_media_complete",
+            "reconnects": 1,
+            "room": "lalia-production-canary-check-20261111-203126-r1-1"
+          },
+          {
+            "directions": 8,
+            "event": "SOAK_ROOM_PASS",
+            "room": "lalia-production-canary-check-20261111-203126-r1-1"
+          },
+          {
+            "event": "SOAK_RESULT",
+            "failed": [],
+            "rooms": 1
+          }
+        ],
+        [
+          {
+            "event": "soak_connected",
+            "participants": 2,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1"
+          },
+          {
+            "event": "soak_ready",
+            "room": "lalia-production-canary-check-20261111-203126-r2-1"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 15.08,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 2640,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 18.15,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5270,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 3340,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 18.41,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6220,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "event": "soak_rejoined",
+            "room": "lalia-production-canary-check-20261111-203126-r2-1"
+          },
+          {
+            "cycle": 3,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 4540,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 3,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6260,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "cycle": 4,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5410,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 4,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6270,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "directions": 8,
+            "elapsed_seconds": 240.0,
+            "event": "soak_media_complete",
+            "reconnects": 1,
+            "room": "lalia-production-canary-check-20261111-203126-r2-1"
+          },
+          {
+            "directions": 8,
+            "event": "SOAK_ROOM_PASS",
+            "room": "lalia-production-canary-check-20261111-203126-r2-1"
+          },
+          {
+            "event": "SOAK_RESULT",
+            "failed": [],
+            "rooms": 1
+          }
+        ],
+        [
+          {
+            "event": "soak_connected",
+            "participants": 2,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1"
+          },
+          {
+            "event": "soak_ready",
+            "room": "lalia-production-canary-check-20261111-203126-r3-1"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 15.32,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 4650,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 1,
+            "elapsed_seconds": 18.15,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5290,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 2900,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 2,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6210,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "event": "soak_rejoined",
+            "room": "lalia-production-canary-check-20261111-203126-r3-1"
+          },
+          {
+            "cycle": 3,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 3290,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 3,
+            "elapsed_seconds": 18.15,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6260,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "cycle": 4,
+            "elapsed_seconds": 15.07,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 5260,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "en",
+            "target": "es"
+          },
+          {
+            "cycle": 4,
+            "elapsed_seconds": 18.4,
+            "event": "soak_direction_pass",
+            "new_tts_audio_ms": 6150,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1",
+            "source": "es",
+            "target": "en"
+          },
+          {
+            "directions": 8,
+            "elapsed_seconds": 240.0,
+            "event": "soak_media_complete",
+            "reconnects": 1,
+            "room": "lalia-production-canary-check-20261111-203126-r3-1"
+          },
+          {
+            "directions": 8,
+            "event": "SOAK_ROOM_PASS",
+            "room": "lalia-production-canary-check-20261111-203126-r3-1"
+          },
+          {
+            "event": "SOAK_RESULT",
+            "failed": [],
+            "rooms": 1
+          }
+        ]
+      ],
+      "controllerEvents": [
+        {
+          "event": "verified_production",
+          "version": "jN9YKCyo7vv9",
+          "resources": {
+            "cpuReq": "2000m",
+            "cpuLimit": "4000m",
+            "memReq": "4294967296",
+            "memLimit": "8589934592",
+            "replicas": 1
+          }
+        },
+        {
+          "event": "started",
+          "room": "lalia-production-canary-check-20261111-203126-r1-1",
+          "dispatch": "AD_VwwwErunA6AD",
+          "pid": 39495,
+          "log": "/tmp/lalia-production-check-r1.log"
+        },
+        {
+          "event": "started",
+          "room": "lalia-production-canary-check-20261111-203126-r2-1",
+          "dispatch": "AD_bZpc89ar5RxF",
+          "pid": 39532,
+          "log": "/tmp/lalia-production-check-r2.log"
+        },
+        {
+          "event": "started",
+          "room": "lalia-production-canary-check-20261111-203126-r3-1",
+          "dispatch": "AD_sE8x4BcYgnMF",
+          "pid": 41081,
+          "log": "/tmp/lalia-production-check-r3.log"
+        },
+        {
+          "event": "finished",
+          "room": "lalia-production-canary-check-20261111-203126-r1-1",
+          "exit": 0,
+          "log": "/tmp/lalia-production-check-r1.log"
+        },
+        {
+          "event": "finished",
+          "room": "lalia-production-canary-check-20261111-203126-r2-1",
+          "exit": 0,
+          "log": "/tmp/lalia-production-check-r2.log"
+        },
+        {
+          "event": "finished",
+          "room": "lalia-production-canary-check-20261111-203126-r3-1",
+          "exit": 0,
+          "log": "/tmp/lalia-production-check-r3.log"
+        },
+        {
+          "event": "cleanup",
+          "room": "lalia-production-canary-check-20261111-203126-r1-1",
+          "result": "deleted"
+        },
+        {
+          "event": "cleanup",
+          "room": "lalia-production-canary-check-20261111-203126-r2-1",
+          "result": "deleted"
+        },
+        {
+          "event": "cleanup",
+          "room": "lalia-production-canary-check-20261111-203126-r3-1",
+          "result": "deleted"
+        },
+        {
+          "event": "PRODUCTION_CHECK_RESULT",
+          "passed": true,
+          "rooms": 3,
+          "cycles": 4
+        }
+      ],
+      "workerAssignments": {
+        "workerId": "CAW_T4SjYG6Y6tiG",
+        "jobIds": [
+          "AJ_VNruDdqBpV2E",
+          "AJ_fGW9TJLeRm7Y",
+          "AJ_tRyGsxTdAL8b"
+        ]
+      },
+      "autoscaledReplicas": 3,
+      "serverCleanupLogLimitation": "Autoscaling switched CLI logging to newest server. Original production test-job shutdown callbacks/forced-kill absence not verified; client cleanup, exact room deletion and deployment health verified.",
+      "unresolvedDiagnostic": "Earlier shared-process three-room publication stall was not conclusively attributed to the harness."
+    }
+  },
+  "candidateCloudAttributes": {
+    "git_commit": "3bdb6c6",
+    "git_tree": "a10defa",
+    "git_branch": "codex/launch-readiness"
+  },
+  "provenanceNote": "Candidate uploaded the reviewed dirty agent source, subsequently committed unchanged as5625b1e. Cloud image version is authoritative; shared runtime AGENT_BUILD_REF remains an older label4f72e28.",
+  "canaryCleanup": {
+    "deleteRequestSucceeded": true,
+    "finalAbsenceVerified": true
+  },
+  "finalProductionState": {
+    "version": "jN9YKCyo7vv9",
+    "status": "Running",
+    "replicas": 3,
+    "minReplicas": 1,
+    "maxReplicas": 8,
+    "cpuReq": "2000m",
+    "cpuLimit": "4000m",
+    "memReq": "4294967296",
+    "memLimit": "8589934592"
+  }
+}

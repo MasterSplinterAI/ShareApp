@@ -1,0 +1,46 @@
+{
+  "backend": {
+    "sourceCommit": "4fa02a1cafecf246043d5b381c1a8fd2ac67e36b",
+    "regressionTests": 154,
+    "passed": 154,
+    "failed": 0,
+    "postgres16MeteringTests": 15,
+    "postgres16MeteringPassed": 15,
+    "postgresScope": "Fresh isolated local PostgreSQL16 cluster with production migrations001-010; synthetic data only; cluster removed."
+  },
+  "agent": {
+    "sourceCommit": "5625b1e",
+    "regressionTests": 213,
+    "passed": 213,
+    "failed": 0,
+    "regressionSdkStubs": true,
+    "realRuntimeSmoke": "Python3.11, livekit-agents1.8.11, livekit RTC1.2.0: both launchers start--help, provider imports, Silero; actual Linux cloud build passed."
+  },
+  "backup": {
+    "nodeUnitTestsPassed": 6,
+    "postgres16RoundtripTestsPassed": 1,
+    "archiveSafetyTestPassed": true,
+    "productionProvisioned": false,
+    "realProductionRestoreTested": false,
+    "pending": "Explicit owner approval for private S3 bucket and upload-only instance role."
+  },
+  "deployedBackend": {
+    "healthStatus": 200,
+    "stripeMode": "test",
+    "overageAutochargeEnabled": false,
+    "pm2Workers": 1,
+    "pm2Mode": "fork_mode",
+    "sourceSha256Matches": {
+      "lib/v2ParticipantUsage.js": "e635e96b062f08ffe366f33955a9af2dbfc0da47d88f5988a834fc8d88b01487",
+      "lib/v2TranslationUsage.js": "ce70ea447641fa0637eee51696519c5bf86f589151c48749c95a1876fca4a198",
+      "routes/webhooks.js": "0ce20e645d7d1c40bd543ccd9993ffb03f1ec98726d93c5d3833c649952759b5",
+      "routes/costEvents.js": "78ff2ee979e77b0015784efdda8c5aa8e690fc1ac85d0d8ded6ab5f5cf914409"
+    },
+    "publicEndpointChecks": {
+      "/": 200,
+      "/v2/login": 200,
+      "/api/health": 200,
+      "/api/v2/support/health": 200
+    }
+  }
+}
