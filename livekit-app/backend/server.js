@@ -122,7 +122,15 @@ const { handleResendInboundWebhook } = require('./routes/v2/resendInboundWebhook
 app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
 app.post('/api/webhooks/livekit', express.raw({ type: '*/*' }), handleLiveKitWebhook);
 app.post('/api/v2/webhooks/resend/inbound', express.raw({ type: 'application/json' }), handleResendInboundWebhook);
-app.use(express.json());
+// Preserve raw bytes for Svix verification on Resend marketing webhooks (@rhule/marketing-kit).
+app.use(
+  express.json({
+    limit: '2mb',
+    verify: (req, _res, buf) => {
+      req.rawBody = buf;
+    },
+  })
+);
 
 // Routes
 const authRoutes = require('./routes/auth');
@@ -159,6 +167,21 @@ app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateLimiter, translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
+
+// @rhule/marketing-kit — Admin console API + public SEO + Resend webhooks
+try {
+  const { marketingKitEnabled, getLaliaMarketingKit } = require('./lib/marketingKit');
+  if (marketingKitEnabled()) {
+    const marketing = getLaliaMarketingKit();
+    app.use('/marketing', (req, res, next) => void marketing.handler(req, res, next));
+    app.get('/blog', (req, res, next) => void marketing.publicHandlers.blogIndex(req, res, next));
+    app.get('/blog/:slug', (req, res, next) => void marketing.publicHandlers.blogPost(req, res, next));
+    app.get('/sitemap.xml', (req, res, next) => void marketing.publicHandlers.sitemap(req, res, next));
+    console.log('[marketing] kit mounted (/marketing, /blog, /sitemap.xml)');
+  }
+} catch (e) {
+  console.error('[marketing] mount failed:', e.message);
+}
 const qualityEventsLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
@@ -195,6 +218,14 @@ app.use((err, req, res, next) => {
     }
   } catch (e) {
     console.error('[support] schema ensure failed:', e.message);
+  }
+  try {
+    const { marketingKitEnabled, initLaliaMarketing } = require('./lib/marketingKit');
+    if (marketingKitEnabled()) {
+      await initLaliaMarketing();
+    }
+  } catch (e) {
+    console.error('[marketing] init failed:', e.message);
   }
   try {
     const { startGuestInviteReminders } = require('./lib/guestInvites');

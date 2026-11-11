@@ -124,6 +124,13 @@ if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
       (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
     fi
   done
+  for pkg in shared core react; do
+    PKG_DIR="$VENDOR_DIR/marketing-kit/packages/$pkg"
+    if [ -f "$PKG_DIR/package.json" ]; then
+      echo "npm install vendor/marketing-kit/packages/$pkg..."
+      (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
+    fi
+  done
 fi
 
 # ---------- Backend ----------
@@ -168,7 +175,7 @@ if [ -n "$ENV_BACKUP" ]; then
   echo "Restored staging backend/.env"
 fi
 
-# Ensure SUPPORT_KIT_ENABLED is on for staging (kit FE is live; legacy HelpPanel retired)
+# Ensure SUPPORT_KIT_ENABLED / MARKETING_KIT_ENABLED are on (kit FE is live)
 if [ -f "$BACKEND_DIR/.env" ]; then
   if grep -q '^SUPPORT_KIT_ENABLED=' "$BACKEND_DIR/.env"; then
     sudo sed -i 's/^SUPPORT_KIT_ENABLED=.*/SUPPORT_KIT_ENABLED=true/' "$BACKEND_DIR/.env"
@@ -176,6 +183,12 @@ if [ -f "$BACKEND_DIR/.env" ]; then
     echo 'SUPPORT_KIT_ENABLED=true' | sudo tee -a "$BACKEND_DIR/.env" >/dev/null
   fi
   echo "Ensured SUPPORT_KIT_ENABLED=true in staging .env"
+  if grep -q '^MARKETING_KIT_ENABLED=' "$BACKEND_DIR/.env"; then
+    sudo sed -i 's/^MARKETING_KIT_ENABLED=.*/MARKETING_KIT_ENABLED=true/' "$BACKEND_DIR/.env"
+  else
+    echo 'MARKETING_KIT_ENABLED=true' | sudo tee -a "$BACKEND_DIR/.env" >/dev/null
+  fi
+  echo "Ensured MARKETING_KIT_ENABLED=true in staging .env"
 fi
 
 # ---------- Frontend ----------

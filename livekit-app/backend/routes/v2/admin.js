@@ -21,6 +21,10 @@ const {
   toAdminView: toEmailAdminView,
 } = require('../../lib/v2EmailSettings');
 const {
+  getMarketingEmailAdminView,
+  saveMarketingEmailSettings,
+} = require('../../lib/v2MarketingEmailSettings');
+const {
   getStorageSettings,
   saveStorageSettings,
   toAdminView: toStorageAdminView,
@@ -1104,6 +1108,35 @@ router.get('/email/config', requireV2Auth, requireSuperadmin, async (req, res) =
   } catch (e) {
     console.error('[admin/email/config]', e);
     res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.get('/marketing/email', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const settings = await getMarketingEmailAdminView();
+    res.json({ settings });
+  } catch (e) {
+    console.error('[admin/marketing/email]', e);
+    res.status(500).json({ error: 'Failed' });
+  }
+});
+
+router.patch('/marketing/email', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveMarketingEmailSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_marketing_email', {
+      marketingEmailFrom: result.settings.marketingEmailFrom,
+      webhookSecretConfigured: result.settings.marketingResendWebhookSecretConfigured,
+      webhookSecretSource: result.settings.marketingResendWebhookSecretSource,
+      cleared: Boolean(req.body?.clearMarketingResendWebhookSecret),
+    });
+    res.json({ ok: true, settings: result.settings });
+  } catch (e) {
+    console.error('[admin/marketing/email patch]', e);
+    res.status(500).json({ error: 'Failed to save marketing email settings' });
   }
 });
 

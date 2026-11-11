@@ -9,6 +9,7 @@ import {
   LifeBuoy,
   LogOut,
   Mail,
+  Megaphone,
   Menu,
   HardDrive,
   ScrollText,
@@ -65,6 +66,7 @@ const NAV_SECTIONS = [
     label: 'Operations',
     items: [
       { to: '/v2/app/admin/support', label: 'Support', icon: Ticket },
+      { to: '/v2/app/admin/marketing', label: 'Marketing', icon: Megaphone },
       { to: '/v2/app/admin/comms', label: 'Comms', icon: Mail },
       { to: '/v2/app/admin/storage', label: 'Storage', icon: HardDrive },
       { to: '/v2/app/admin/audit', label: 'Audit log', icon: ScrollText },

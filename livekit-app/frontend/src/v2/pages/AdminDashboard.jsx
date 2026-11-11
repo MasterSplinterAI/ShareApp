@@ -18,7 +18,11 @@ import { BillingTab } from './admin/BillingTab';
 import { CommsTab } from './admin/CommsTab';
 import { StorageTab } from './admin/StorageTab';
 import { SupportOpsConsole } from '@rhule/support-react';
+import { MarketingOpsConsole } from '@rhule/marketing-react';
 import { getSupportAccessToken, SUPPORT_API_BASE } from '../components/LaliaSupportLauncher';
+import MarketingEmailSettings from './admin/MarketingEmailSettings';
+
+const MARKETING_API_BASE = '/marketing';
 
 /** Auth gate — renders child admin routes when platform admin access is allowed. */
 export function AdminGate() {
@@ -152,6 +156,15 @@ export function AdminSupportPage() {
   );
 }
 
+export function AdminMarketingPage() {
+  return (
+    <div className="min-h-[70vh] space-y-4">
+      <MarketingEmailSettings />
+      <MarketingOpsConsole apiBase={MARKETING_API_BASE} getAccessToken={getSupportAccessToken} />
+    </div>
+  );
+}
+
 export { AdminOverview };
 
 /** Redirect legacy /superadmin URLs (with optional tab & ticket query params). */
@@ -170,6 +183,7 @@ export function SuperAdminRedirect() {
     comms: 'comms',
     storage: 'storage',
     support: 'support',
+    marketing: 'marketing',
     guests: 'guests',
     audit: 'audit',
   };
