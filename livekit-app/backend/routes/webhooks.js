@@ -4,6 +4,7 @@ const { COSTS } = require('../lib/costConstants');
 const { reconcileTranslationMinutesForMeeting } = require('../lib/v2TranslationUsage');
 const { checkAndEnforceUsageCap } = require('../lib/v2UsageCapEnforcement');
 const { evaluateAndSendUsageAlerts } = require('../lib/v2UsageAlerts');
+const { webhookTimestamp, reconcileParticipantUsage } = require('../lib/v2ParticipantUsage');
 
 /** LiveKit bills WebRTC and agent sessions in 1-second increments with a 10-second minimum. */
 const LIVEKIT_SESSION_MINIMUM_MINUTES = 10 / 60;
@@ -82,61 +83,6 @@ async function resolveMeetingContext(roomName) {
   );
   if (!row) return { orgId: null, meetingUuid: null };
   return { orgId: row.org_id, meetingUuid: row.id };
-}
-
-async function recordParticipantSessionUsage(roomName, participantIdentity, leaveTs, orgId, meetingUuid) {
-  if (!orgId || !participantIdentity || isAgentIdentity(participantIdentity)) return;
-
-  const joinEv = await get(
-    `SELECT ts FROM meeting_events
-     WHERE meeting_id = ? AND event_type = 'participant_joined'
-       AND participant_identity = ?
-       AND ts <= ?
-     ORDER BY ts DESC LIMIT 1`,
-    [roomName, participantIdentity, leaveTs]
-  );
-  if (!joinEv) return;
-
-  const idempotencyKey = `${roomName}:${participantIdentity}:${joinEv.ts}`;
-  const existing = await get(
-    `SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`,
-    [orgId, idempotencyKey]
-  );
-  if (existing) return;
-
-  const minutes = Math.max(0.01, (leaveTs - joinEv.ts) / 1000 / 60);
-  await run(
-    `INSERT INTO v2_usage_events (id, org_id, meeting_id, event_type, quantity, unit, idempotency_key)
-     VALUES (?,?,?,?,?,?,?)`,
-    [uuid(), orgId, meetingUuid, 'meeting_participant_minute', minutes, 'minute', idempotencyKey]
-  );
-}
-
-async function flushOpenParticipants(roomName, endTs, orgId, meetingUuid) {
-  if (!orgId) return;
-  const joinRows = await all(
-    `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_joined'`,
-    [roomName]
-  );
-  for (const join of joinRows) {
-    if (isAgentIdentity(join.participant_identity)) continue;
-    const idempotencyKey = `${roomName}:${join.participant_identity}:${join.ts}`;
-    const billed = await get(
-      `SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`,
-      [orgId, idempotencyKey]
-    );
-    if (billed) continue;
-
-    const leftAfter = await get(
-      `SELECT ts FROM meeting_events
-       WHERE meeting_id = ? AND event_type = 'participant_left'
-         AND participant_identity = ? AND ts >= ?
-       ORDER BY ts ASC LIMIT 1`,
-      [roomName, join.participant_identity, join.ts]
-    );
-    const leaveTs = leftAfter ? leftAfter.ts : endTs;
-    await recordParticipantSessionUsage(roomName, join.participant_identity, leaveTs, orgId, meetingUuid);
-  }
 }
 
 function computeRoomDurationSeconds(startRows, finishRows) {
@@ -271,7 +217,7 @@ async function aggregateRollup(meetingId) {
 
     // Price humans at WebRTC participant rates and cloud agents at agent-session
     // rates. Customer participant-minute usage stays human-only (see
-    // recordParticipantSessionUsage); this rollup is our COGS.
+    // reconcileParticipantUsage); this rollup is our COGS.
     const { byParticipant } = computeParticipantMinutes(
       joinRows,
       leaveRows,
@@ -335,7 +281,7 @@ async function handleLiveKitWebhook(req, res) {
 
     const eventType = event.event || 'unknown';
     const roomName = event.room?.name || 'unknown';
-    const ts = Date.now();
+    const ts = webhookTimestamp(event);
     const participantIdentity = event.participant?.identity || null;
 
     const ctx = await resolveMeetingContext(roomName);
@@ -356,6 +302,10 @@ async function handleLiveKitWebhook(req, res) {
       ]
     );
 
+    if (orgId && ['participant_joined', 'participant_left', 'room_finished'].includes(eventType)) {
+      await reconcileParticipantUsage(roomName, orgId, meetingUuid, isAgentIdentity);
+    }
+
     if (eventType === 'participant_joined' && participantIdentity && orgId && !isAgentIdentity(participantIdentity)) {
       checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
         console.error('[webhook/livekit] usage cap check:', err.message)
@@ -363,7 +313,6 @@ async function handleLiveKitWebhook(req, res) {
     }
 
     if (eventType === 'participant_left' && participantIdentity && orgId) {
-      await recordParticipantSessionUsage(roomName, participantIdentity, ts, orgId, meetingUuid);
       if (!isAgentIdentity(participantIdentity)) {
         checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
           console.error('[webhook/livekit] usage cap check:', err.message)
@@ -376,7 +325,6 @@ async function handleLiveKitWebhook(req, res) {
 
     if (eventType === 'room_finished') {
       if (orgId) {
-        await flushOpenParticipants(roomName, ts, orgId, meetingUuid);
         try {
           await reconcileTranslationMinutesForMeeting(roomName, orgId, meetingUuid);
         } catch (err) {
