@@ -96,7 +96,7 @@ export default function V2OrgSettings() {
     }
     setCheckoutLoading(planId);
     try {
-      const { url } = await v2Billing.checkout(planId);
+      const { url } = await v2Billing.changePlan(planId, billingSnap?.subscription);
       if (url) window.location.href = url;
     } catch (e) {
       toast.error(e.response?.data?.error || 'Checkout unavailable');

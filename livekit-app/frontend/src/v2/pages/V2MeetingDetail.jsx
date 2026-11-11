@@ -560,7 +560,7 @@ export default function V2MeetingDetail() {
     );
   }
 
-  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: true };
+  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: false };
   const guestUrlNeedsToken = meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteDays = meeting.inviteMaxTtlDays ?? 90;
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };

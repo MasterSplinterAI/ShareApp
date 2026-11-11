@@ -45,7 +45,7 @@ export function useUpgradeOffer(me) {
     if (!id) return false;
     setCheckoutLoading(id);
     try {
-      const { url } = await v2Billing.checkout(id);
+      const { url } = await v2Billing.changePlan(id, subscription?.subscription);
       if (url) {
         window.location.href = url;
         return true;
@@ -58,7 +58,7 @@ export function useUpgradeOffer(me) {
     } finally {
       setCheckoutLoading(null);
     }
-  }, [offer.primaryPlan?.id]);
+  }, [offer.primaryPlan?.id, subscription?.subscription]);
 
   return { offer, loading, checkoutLoading, startCheckout, subscription, plans, usage };
 }

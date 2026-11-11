@@ -27,6 +27,8 @@ async function settlePendingOverageForOrgCycle(orgId, cycleId) {
   if (sub.is_comp === 1) return { ok: false, skipped: 'comp_account' };
 
   const autoCharge = await getOverageAutoChargeState(orgId);
+  // Launch gate: disabled settlement must not freeze usage into a permanent ledger.
+  if (!autoCharge.platformEnabled) return { ok: false, skipped: 'platform_auto_charge_off' };
   if (!autoCharge.effective) {
     // Still write ledger for visibility, but do not charge.
     await writeOverageLedgerForCycle(orgId, cycleId);

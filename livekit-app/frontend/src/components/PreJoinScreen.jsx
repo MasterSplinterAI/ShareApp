@@ -121,6 +121,7 @@ function PreJoinScreen({
   meetingTitle = null,
   branding = null,
   previewTracks,
+  mediaError = null,
   media,
   onMediaChange,
   onJoin,
@@ -208,7 +209,6 @@ function PreJoinScreen({
     [onMediaChange]
   );
   const [devices, setDevices] = useState({ audioinput: [], videoinput: [] });
-  const [mediaError, setMediaError] = useState(null);
   const effectsAvailable = useVideoEffectsAvailable();
   const [effectId, setEffectId] = useState(() =>
     isMobileViewport() ? 'none' : loadSavedEffectId()
@@ -224,11 +224,6 @@ function PreJoinScreen({
     () => tracks?.find((t) => t.kind === Track.Kind.Audio),
     [tracks]
   );
-
-  // Clear stale permission errors once a track is live
-  useEffect(() => {
-    if (tracks?.length) setMediaError(null);
-  }, [tracks]);
 
   const videoElRef = useRef(null);
   useEffect(() => {

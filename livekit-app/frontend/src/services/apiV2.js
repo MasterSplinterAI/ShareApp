@@ -51,8 +51,10 @@ apiV2.interceptors.response.use(
     const status = error.response?.status;
     const requestUrl = String(error.config?.url || '');
     const isAuthAttempt = /\/auth\/(login|signup|reset-password)/.test(requestUrl);
+    const isPasswordValidation = /\/auth\/change-password$/.test(requestUrl) &&
+      error.response?.data?.error === 'Current password is incorrect' && !error.response?.data?.code;
 
-    if (status === 401 && !isAuthAttempt && !handling401) {
+    if (status === 401 && !isAuthAttempt && !isPasswordValidation && !handling401) {
       handling401 = true;
       localStorage.removeItem('v2_token');
       const path = window.location.pathname;
@@ -205,6 +207,19 @@ export const v2Billing = {
       })
       .then((r) => r.data),
   checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
+  changePlan: async (planId, subscription) => {
+    const terminal = ['canceled', 'cancelled', 'incomplete_expired'].includes(String(subscription?.status || '').toLowerCase());
+    if (subscription?.stripe_subscription_id && !terminal) return v2Billing.portal();
+    try {
+      return await v2Billing.checkout(planId);
+    } catch (error) {
+      // Another checkout may have completed since this page loaded.
+      if (error.response?.status === 409 && error.response?.data?.code === 'subscription_exists') {
+        return v2Billing.portal();
+      }
+      throw error;
+    }
+  },
   portal: (body) => apiV2.post('/billing/portal', body || {}).then((r) => r.data),
   resume: () => apiV2.post('/billing/resume', {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),

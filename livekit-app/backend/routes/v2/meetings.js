@@ -288,7 +288,7 @@ async function ensureSecureInviteForMeeting(meetingRow) {
     } else {
       await db.run(
         `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts) VALUES (?,?,?,?)`,
-        [meetingId, meetingRow.host_required_to_start ? 1 : 0, 1, meetingRow.store_transcripts === false || meetingRow.store_transcripts === 0 ? 0 : 1]
+        [meetingId, meetingRow.host_required_to_start ? 1 : 0, 1, meetingRow.store_transcripts === true || meetingRow.store_transcripts === 1 ? 1 : 0]
       );
     }
   }
@@ -315,9 +315,12 @@ router.post('/', requireV2Auth, async (req, res) => {
       return res.status(402).json({ error: gate.message, code: gate.code });
     }
     const { title, scheduled_start, scheduled_end, host_required_to_start, store_transcripts } = req.body || {};
+    if (store_transcripts !== undefined && typeof store_transcripts !== 'boolean') {
+      return res.status(400).json({ error: 'store_transcripts must be a boolean' });
+    }
     const hostRequired = Boolean(host_required_to_start);
     const requireInvite = true;
-    const storeTr = store_transcripts === false ? 0 : 1;
+    const storeTr = store_transcripts === true ? 1 : 0;
     const roomName = `v2-${db.uuid().replace(/-/g, '').slice(0, 12)}-${Date.now().toString(36)}`;
     await createLiveKitConferenceRoom(roomName, 'multi-language', req.v2Auth.orgId);
     const hostCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -939,6 +942,9 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
       scheduled_end,
       notify_guests,
     } = req.body || {};
+    if (store_transcripts !== undefined && typeof store_transcripts !== 'boolean') {
+      return res.status(400).json({ error: 'store_transcripts must be a boolean' });
+    }
     if (title != null) await db.run(`UPDATE v2_meetings SET title = ? WHERE id = ?`, [String(title).slice(0, 200), req.params.id]);
 
     let scheduleChanged = false;

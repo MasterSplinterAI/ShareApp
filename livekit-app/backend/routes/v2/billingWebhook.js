@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const db = require('../../db/v2Database');
 const { getStripeSettings } = require('../../lib/v2StripeSettings');
-const { applyStripeSubscriptionToOrg, applyCheckoutSessionToOrg } = require('../../lib/v2StripeSubscriptionSync');
+const { reconcileStripeSubscriptionEvent, applyCheckoutSessionToOrg } = require('../../lib/v2StripeSubscriptionSync');
 const { applyStripeDisputeEvent } = require('../../lib/v2StripeDispute');
 const { markOverageLedgerForInvoice } = require('../../lib/v2OverageSettlement');
 const { forwardStripeWebhookToOpsHub } = require('../../lib/opsHubClient');
@@ -47,18 +47,18 @@ async function processStripeEvent(event) {
   const obj = event.data && event.data.object;
   if (!obj) return;
 
-  if (type === 'checkout.session.completed') {
+  if (['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed'].includes(type)) {
     await applyCheckoutSessionToOrg(obj);
     return;
   }
 
   if (type === 'customer.subscription.deleted') {
-    await applyStripeSubscriptionToOrg({ ...obj, status: 'canceled' });
+    await reconcileStripeSubscriptionEvent(obj);
     return;
   }
 
   if (type.startsWith('customer.subscription.')) {
-    await applyStripeSubscriptionToOrg(obj);
+    await reconcileStripeSubscriptionEvent(obj);
     return;
   }
 
@@ -150,4 +150,4 @@ async function handleV2BillingWebhook(req, res) {
   }
 }
 
-module.exports = { handleV2BillingWebhook };
+module.exports = { handleV2BillingWebhook, processStripeEvent };

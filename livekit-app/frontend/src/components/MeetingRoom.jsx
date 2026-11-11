@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks, useParticipants } from '@livekit/components-react';
-import { ConnectionState, RoomEvent } from 'livekit-client';
+import { ConnectionState, RoomEvent, Track } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { Loader2, Phone } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
@@ -165,6 +165,7 @@ function MeetingRoom() {
   // Freeze preview track options at join so usePreviewTracks keeps the same instances
   // (with any attached background processor) through the prejoin → room transition.
   const [frozenPreviewTrackOptions, setFrozenPreviewTrackOptions] = useState(null);
+  const [previewMediaError, setPreviewMediaError] = useState(null);
 
   const previewTrackOptions = useMemo(() => {
     if (!isInitialized) return { audio: false, video: false };
@@ -183,10 +184,16 @@ function MeetingRoom() {
   }, [isInitialized, frozenPreviewTrackOptions, previewMedia]);
 
   const onPreviewMediaError = useCallback((err) => {
+    setPreviewMediaError(err);
     console.warn('PreJoin media error:', err);
   }, []);
 
   const previewTracks = usePreviewTracks(previewTrackOptions, onPreviewMediaError);
+  useEffect(() => {
+    const audioReady = !previewMedia.audioEnabled || previewTracks?.some((track) => track.kind === Track.Kind.Audio);
+    const videoReady = !previewMedia.videoEnabled || previewTracks?.some((track) => track.kind === Track.Kind.Video);
+    if (audioReady && videoReady) setPreviewMediaError(null);
+  }, [previewTracks, previewMedia.audioEnabled, previewMedia.videoEnabled]);
 
   const handlePreviewMediaChange = useCallback((partial) => {
     setPreviewMedia((prev) => ({ ...prev, ...partial }));
@@ -504,6 +511,7 @@ function MeetingRoom() {
         meetingTitle={meetingTitle}
         branding={meetingBranding}
         previewTracks={previewTracks}
+        mediaError={previewMediaError}
         media={previewMedia}
         onMediaChange={handlePreviewMediaChange}
         onJoin={handlePrejoinJoin}

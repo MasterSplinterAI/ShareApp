@@ -1,3 +1,5 @@
+// Exercise org opt-out separately from the platform-wide settlement gate.
+process.env.V2_AUTO_CHARGE_ENABLED = 'true';
 process.env.V2_DB_PATH = process.env.V2_DB_PATH || ':memory:';
 process.env.JWT_SECRET_V2 =
   process.env.JWT_SECRET_V2 || 'test-overage-settlement-secret-32chars-min';
