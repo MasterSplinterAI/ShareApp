@@ -28,6 +28,24 @@ const APP_ORIGIN = (
   .trim()
   .replace(/\/$/, '');
 
+/** Master Content Creator brief adapted for Lalia Blog Studio / Copilot. */
+function loadMarketingContentBrief() {
+  const briefPath = path.join(__dirname, 'marketing', 'CONTENT_BRIEF.md');
+  try {
+    if (!fs.existsSync(briefPath)) {
+      console.warn('[marketing] CONTENT_BRIEF.md missing at', briefPath);
+      return null;
+    }
+    const text = fs.readFileSync(briefPath, 'utf8').trim();
+    return text || null;
+  } catch (e) {
+    console.warn('[marketing] CONTENT_BRIEF.md load failed:', e.message);
+    return null;
+  }
+}
+
+const LALIA_CONTENT_BRIEF = loadMarketingContentBrief();
+
 const LALIA_MARKETING_BRAND = {
   tenantId: TENANT_ID,
   name: 'Lalia',
@@ -35,7 +53,7 @@ const LALIA_MARKETING_BRAND = {
   tagline:
     'The world is one conversation — real-time voice translation, bilingual captions, and video calls.',
   brandVoice:
-    'Warm, human, and globally minded. Short sentences, concrete moments (a family call, a client meeting, a classroom). Never overpromise accuracy; say what Lalia does and let people try it free.',
+    'Warm, human, and globally minded — slate-and-blue Lalia voice. Short sentences, concrete moments (a family call, a client meeting, a classroom). Never overpromise accuracy; say what Lalia does and let people try it free. Follow CONTENT_BRIEF.md rules injected into generation prompts.',
   primaryColor: '#1e304b',
   accentColor: '#5b8def',
   logoText: 'Lalia',
@@ -363,6 +381,7 @@ function getLaliaMarketingKit() {
     mountPath: '/marketing',
     assetBaseUrl: APP_ORIGIN,
     llmTimeoutMs: 360_000,
+    contentBrief: LALIA_CONTENT_BRIEF,
     llm: {
       complete: async ({ system, user, temperature }) => {
         if (!aiEnabled()) {
@@ -423,6 +442,13 @@ function loadSeedPosts() {
 async function initLaliaMarketing() {
   const kit = getLaliaMarketingKit();
   await kit.ensureSchema();
+  if (LALIA_CONTENT_BRIEF) {
+    console.log(
+      `[marketing] content brief loaded (${LALIA_CONTENT_BRIEF.length} chars) for Blog Studio / Copilot`
+    );
+  } else {
+    console.warn('[marketing] content brief not loaded — generation uses default writing rules only');
+  }
   const seeds = loadSeedPosts();
   if (seeds.length) {
     const seeded = await kit.seedPosts(TENANT_ID, seeds);
@@ -439,6 +465,8 @@ function marketingKitEnabled() {
 
 module.exports = {
   LALIA_MARKETING_BRAND,
+  LALIA_CONTENT_BRIEF,
+  loadMarketingContentBrief,
   getLaliaMarketingKit,
   initLaliaMarketing,
   marketingKitEnabled,

@@ -110,6 +110,11 @@ export interface CreateMarketingRouterOptions {
   llmTimeoutMs?: number;
   /** Max concurrent post generations per batch. Default 3. */
   generationConcurrency?: number;
+  /**
+   * Optional host writing brief (e.g. CONTENT_BRIEF.md) appended to Copilot, Blog Studio,
+   * and email generation system prompts. Same pattern as Support Kit host hints.
+   */
+  contentBrief?: string | null;
   logger?: Pick<Console, "info" | "warn" | "error">;
 }
 

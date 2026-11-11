@@ -1,4 +1,4 @@
-import { MarketingProductContextSnapshot, AudienceSegmentInfo, MarketingContact, StudioCardSpec, MarketingPost, EmailLayout, EmailCampaign, MarketingPostRevision, ArtworkMode, MarketingArtworkAsset, CopilotIdeaAction, CopilotMessage, MarketingOverview, BlogFaqItem } from '@rhule/marketing-shared';
+import { MarketingProductContextSnapshot, AudienceSegmentInfo, MarketingContact, StudioCardSpec, MarketingPost, EmailLayout, MarketingPostRevision, ArtworkMode, MarketingArtworkAsset, EmailCampaign, CopilotIdeaAction, CopilotMessage, MarketingOverview, BlogFaqItem } from '@rhule/marketing-shared';
 
 interface MarketingDbAdapter {
     run(sql: string, params?: unknown[]): Promise<{
@@ -122,6 +122,11 @@ interface CreateMarketingRouterOptions {
     llmTimeoutMs?: number;
     /** Max concurrent post generations per batch. Default 3. */
     generationConcurrency?: number;
+    /**
+     * Optional host writing brief (e.g. CONTENT_BRIEF.md) appended to Copilot, Blog Studio,
+     * and email generation system prompts. Same pattern as Support Kit host hints.
+     */
+    contentBrief?: string | null;
     logger?: Pick<Console, "info" | "warn" | "error">;
 }
 interface MarketingCustomSegmentFilter {
@@ -307,6 +312,11 @@ declare class MarketingStore {
 /** Extracts the first JSON object/array from an LLM response (tolerates code fences and prose). */
 declare function parseJsonLoose<T = any>(raw: string): T | null;
 declare function contextBlock(ctx: MarketingProductContextSnapshot, hits?: CodebaseSearchHit[]): string;
+/**
+ * Builds the writing-rules block for system prompts.
+ * Hosts (e.g. Lalia) may pass a full CONTENT_BRIEF.md via `contentBrief`.
+ */
+declare function writingRulesBlock(contentBrief?: string | null): string;
 declare function runCopilotTurn(input: {
     llm: MarketingLlmAdapter;
     ctx: MarketingProductContextSnapshot;
@@ -317,6 +327,7 @@ declare function runCopilotTurn(input: {
     }>;
     message: string;
     segmentIds: string[];
+    contentBrief?: string | null;
 }): Promise<{
     reply: string;
     actions: CopilotIdeaAction[];
@@ -336,6 +347,7 @@ declare function generateBlogIdeas(input: {
     audience?: string;
     theme?: string;
     existingTitles: string[];
+    contentBrief?: string | null;
 }): Promise<BlogIdea[]>;
 interface GeneratedPostDraft {
     title: string;
@@ -361,6 +373,7 @@ declare function generatePostDraft(input: {
     topic: string;
     audience: MarketingPost["audience"];
     instruction?: string;
+    contentBrief?: string | null;
 }): Promise<{
     draft: GeneratedPostDraft;
     usedFallback: boolean;
@@ -373,6 +386,7 @@ declare function rewritePost(input: {
     post: MarketingPost;
     instruction: string;
     sectionHeading?: string;
+    contentBrief?: string | null;
 }): Promise<Partial<GeneratedPostDraft> | null>;
 declare function splitSections(markdown: string): Array<{
     heading: string;
@@ -402,6 +416,7 @@ declare function generateEmailIdeas(input: {
     segmentId: string;
     segmentLabel: string;
     goal?: string;
+    contentBrief?: string | null;
 }): Promise<EmailIdea[]>;
 declare function templateEmailDraft(input: {
     ctx: MarketingProductContextSnapshot;
@@ -416,6 +431,7 @@ declare function generateEmailDraft(input: {
     segmentLabel: string;
     goal: string;
     instruction?: string;
+    contentBrief?: string | null;
 }): Promise<{
     draft: GeneratedEmailDraft;
     usedFallback: boolean;
@@ -426,6 +442,7 @@ declare function refineEmailCopy(input: {
     current: GeneratedEmailDraft;
     segmentId: string;
     instruction: string;
+    contentBrief?: string | null;
 }): Promise<GeneratedEmailDraft | null>;
 /** Picks a layout from free-text instructions such as "make it minimal" or "more visual". */
 declare function layoutFromInstruction(instruction: string, current: EmailLayout): EmailLayout;
@@ -469,4 +486,4 @@ declare function createMarketingKit(opts: CreateMarketingRouterOptions): Marketi
 /** Convenience wrapper returning only the request handler. */
 declare function createMarketingRouter(opts: CreateMarketingRouterOptions): (req: Req, res: Res, next?: Next) => Promise<void>;
 
-export { type BlogIdea, type CodebaseSearchHit, type CreateMarketingRouterOptions, DEFAULT_MARKETING_TABLE_PREFIX, type EmailIdea, type GeneratedEmailDraft, type GeneratedPostDraft, KIT_SEGMENTS, type MarketingAuthUser, type MarketingBrandConfig, type MarketingCodebaseAdapter, type MarketingCustomSegmentFilter, type MarketingDbAdapter, type MarketingEmailAdapter, type MarketingImageAdapter, type MarketingKit, type MarketingLlmAdapter, MarketingStore, buildDefaultStudioCardSpec, buildMarketingSchemaStatements, buildResponsiveEmailHtml, contextBlock, createMarketingCodebaseAdapter, createMarketingKit, createMarketingRouter, ensureMarketingSchema, estimateReadingTime, generateBlogIdeas, generateEmailDraft, generateEmailIdeas, generatePostDraft, interpolateEmailVariables, layoutFromInstruction, newId, newToken, nowIso, parseJsonLoose, refineEmailCopy, renderEditorialSvgArtwork, renderMarkdownToHtmlAndToc, renderPublicBlogIndexHtml, renderPublicBlogPostHtml, renderSitemapXml, renderTableBannerHtml, rewritePost, rowToCampaign, rowToPost, runCopilotTurn, slugify, splitSections, templateEmailDraft, templatePostDraft, verifySvixSignature };
+export { type BlogIdea, type CodebaseSearchHit, type CreateMarketingRouterOptions, DEFAULT_MARKETING_TABLE_PREFIX, type EmailIdea, type GeneratedEmailDraft, type GeneratedPostDraft, KIT_SEGMENTS, type MarketingAuthUser, type MarketingBrandConfig, type MarketingCodebaseAdapter, type MarketingCustomSegmentFilter, type MarketingDbAdapter, type MarketingEmailAdapter, type MarketingImageAdapter, type MarketingKit, type MarketingLlmAdapter, MarketingStore, buildDefaultStudioCardSpec, buildMarketingSchemaStatements, buildResponsiveEmailHtml, contextBlock, createMarketingCodebaseAdapter, createMarketingKit, createMarketingRouter, ensureMarketingSchema, estimateReadingTime, generateBlogIdeas, generateEmailDraft, generateEmailIdeas, generatePostDraft, interpolateEmailVariables, layoutFromInstruction, newId, newToken, nowIso, parseJsonLoose, refineEmailCopy, renderEditorialSvgArtwork, renderMarkdownToHtmlAndToc, renderPublicBlogIndexHtml, renderPublicBlogPostHtml, renderSitemapXml, renderTableBannerHtml, rewritePost, rowToCampaign, rowToPost, runCopilotTurn, slugify, splitSections, templateEmailDraft, templatePostDraft, verifySvixSignature, writingRulesBlock };

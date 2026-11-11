@@ -5,7 +5,13 @@ import { DatabaseSync } from "node:sqlite";
 import { after, before, describe, it } from "node:test";
 import type { MarketingContact } from "@rhule/marketing-shared";
 import type { MarketingBrandConfig, MarketingDbAdapter } from "./index.js";
-import { buildResponsiveEmailHtml, createMarketingKit, renderMarkdownToHtmlAndToc, verifySvixSignature } from "./index.js";
+import {
+  buildResponsiveEmailHtml,
+  createMarketingKit,
+  renderMarkdownToHtmlAndToc,
+  verifySvixSignature,
+  writingRulesBlock,
+} from "./index.js";
 
 function sqliteDb(): MarketingDbAdapter {
   const db = new DatabaseSync(":memory:");
@@ -399,6 +405,67 @@ describe("generation resilience", () => {
     assert.equal(recovered!.status, "draft");
     assert.match(recovered!.generationError || "", /interrupted/);
     assert.equal((await k.store.getPost("legalai", fresh.id))!.status, "generating");
+  });
+});
+
+describe("content brief", () => {
+  it("writingRulesBlock appends host brief and falls back to defaults", () => {
+    assert.match(writingRulesBlock(null), /Only describe product features/);
+    assert.match(writingRulesBlock("Lalia slate voice. No AI fluff."), /CONTENT BRIEF/);
+    assert.match(writingRulesBlock("Lalia slate voice. No AI fluff."), /Lalia slate voice/);
+    assert.doesNotMatch(writingRulesBlock("hello"), /legal-information and document-preparation/);
+  });
+
+  it("injects contentBrief into Blog Studio generation system prompts", async () => {
+    const { generatePostDraft } = await import("./generation.js");
+    const systems: string[] = [];
+    const capturingLlm = {
+      async complete({ system }: { system: string; user: string }) {
+        systems.push(system);
+        return JSON.stringify({
+          title: "Talk across languages",
+          slug: "talk-across-languages",
+          kicker: "Journal",
+          excerpt: "A short guide.",
+          seoTitle: "Talk across languages",
+          seoDescription: "Plain guide to bilingual meetings.",
+          targetKeywords: ["translation"],
+          audience: "general",
+          bodyMarkdown: longBody,
+          faqItems: [{ question: "Can guests join free?", answer: "Yes, via a browser link." }],
+          ctaLabel: "Start talking for free",
+          ctaUrl: "/v2/signup",
+          artworkPrompt: "slate blue call",
+        });
+      },
+    };
+    const ctx = {
+      tenantId: "lalia",
+      productName: "Lalia",
+      domain: "lalia.cloud",
+      tagline: "Real-time voice translation",
+      brandVoice: "Warm and human",
+      primaryColor: "#1e304b",
+      accentColor: "#5b8def",
+      pricingSummary: "Start free",
+      coreFeatures: ["Real-time voice translation"],
+      targetAudiences: ["Families"],
+    };
+    const { draft, usedFallback } = await generatePostDraft({
+      llm: capturingLlm,
+      ctx,
+      hits: [],
+      topic: "Talk across languages",
+      audience: "general",
+      contentBrief: "# Lalia Content Brief\nHuman voice. SEO meta, slug, FAQ. No AI fluff.",
+    });
+    assert.equal(usedFallback, false);
+    assert.equal(draft.ctaUrl, "/v2/signup");
+    assert.equal(systems.length, 1);
+    assert.match(systems[0], /CONTENT BRIEF/);
+    assert.match(systems[0], /No AI fluff/);
+    assert.doesNotMatch(systems[0], /legal-information and document-preparation/);
+    assert.doesNotMatch(systems[0], /senior legal-tech/);
   });
 });
 
