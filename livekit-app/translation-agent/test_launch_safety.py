@@ -115,33 +115,72 @@ def test_config_logs_do_not_claim_cloud_supplies_provider_keys(monkeypatch, capl
     assert "Cloud-injected Deepgram" not in caplog.text
 
 
-def test_docker_command_executes_worker_as_main_process(tmp_path, monkeypatch):
-    """Exercise the real CMD, without launching LiveKit or contacting providers."""
+@pytest.mark.parametrize("selected", [None, "transcription_only_agent", "transcription_codeswitch_agent"])
+def test_docker_command_executes_selected_worker_as_main_process(tmp_path, monkeypatch, selected):
+    """Run the real CMD with fixture agents; check argv, PID, and SIGTERM."""
     import os
     from pathlib import Path
+    import shutil
     import subprocess
     import sys
 
-    dockerfile = Path(__file__).with_name("Dockerfile").read_text()
-    command = json.loads(next(line[4:] for line in dockerfile.splitlines() if line.startswith("CMD ")))
+    root = Path(__file__).parent
+    command = json.loads(next(line[4:] for line in (root / "Dockerfile").read_text().splitlines() if line.startswith("CMD ")))
+    shutil.copy(root / "agent_launcher.py", tmp_path)
     (tmp_path / "python").symlink_to(sys.executable)
-    (tmp_path / "probe.py").write_text(
-        "import os, signal, sys, time\n"
-        "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))\n"
-        "print(os.getpid(), flush=True)\n"
-        "while True: time.sleep(1)\n"
-    )
-    monkeypatch.setenv("AGENT_MODULE", "probe")
+    for name in ("transcription_only_agent", "transcription_codeswitch_agent"):
+        (tmp_path / f"{name}.py").write_text(
+            "import json, os, signal, sys, time\n"
+            "from pathlib import Path\n"
+            "signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))\n"
+            "print(json.dumps({'pid':os.getpid(), 'module':Path(__file__).stem, 'args':sys.argv[1:]}), flush=True)\n"
+            "while True: time.sleep(1)\n"
+        )
+    monkeypatch.delenv("AGENT_MODULE", raising=False)
+    if selected is not None:
+        monkeypatch.setenv("AGENT_MODULE", selected)
+    monkeypatch.setenv("OPENAI_API_KEY", "never-log-provider-key")
+    monkeypatch.setenv("AGENT_BUILD_REF", "abc1234")
     monkeypatch.setenv("PATH", str(tmp_path) + os.pathsep + os.environ["PATH"])
-    process = subprocess.Popen(command, cwd=tmp_path, stdout=subprocess.PIPE, text=True)
+    process = subprocess.Popen(command + ["--log-level", "debug"], cwd=tmp_path,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    output = []
     try:
-        assert int(process.stdout.readline()) == process.pid
+        while True:
+            line = process.stdout.readline()
+            assert line, "Worker did not start"
+            output.append(line)
+            if line.startswith("{"):
+                result = json.loads(line)
+                break
+        assert result == {"pid": process.pid, "module": selected or "transcription_only_agent",
+                          "args": ["start", "--log-level", "debug"]}
+        assert "abc1234" in "".join(output)
+        assert "never-log-provider-key" not in "".join(output)
         process.terminate()
         assert process.wait(timeout=3) == 0
     finally:
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+@pytest.mark.parametrize("selected", ["", " ", "evil", "../evil", "transcription_codeswitch_agent.py", "transcription_codeswitch_agent;echo bad"])
+def test_launcher_rejects_unknown_module_without_executing_it(tmp_path, monkeypatch, selected):
+    from pathlib import Path
+    import shutil
+    import subprocess
+    import sys
+
+    shutil.copy(Path(__file__).with_name("agent_launcher.py"), tmp_path)
+    for name in ("evil", "transcription_only_agent", "transcription_codeswitch_agent"):
+        (tmp_path / f"{name}.py").write_text("raise RuntimeError('MUST_NOT_EXECUTE')\n")
+    monkeypatch.setenv("AGENT_MODULE", selected)
+    result = subprocess.run([sys.executable, str(tmp_path / "agent_launcher.py"), "start"],
+                            cwd=tmp_path, capture_output=True, text=True, timeout=3)
+    assert result.returncode == 2
+    assert "Invalid AGENT_MODULE" in result.stderr
+    assert "MUST_NOT_EXECUTE" not in result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("module", [stable, codeswitch])

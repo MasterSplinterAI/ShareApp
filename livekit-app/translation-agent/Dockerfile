@@ -33,4 +33,4 @@ ENV PYTHONUNBUFFERED=1
 # Use python -u for unbuffered output and pass 'start' command for cli.run_app()
 # AGENT_MODULE selects stable vs experimental worker (see livekit-codeswitch.toml).
 ENV AGENT_MODULE=transcription_only_agent
-CMD ["sh", "-c", "exec python -u ${AGENT_MODULE}.py start"]
+CMD ["python", "-u", "agent_launcher.py", "start"]

@@ -16,6 +16,7 @@ def main() -> None:
         print(f"Runtime import OK: {provider}", flush=True)
 
     py_compile.compile(str(root / "agent_lifecycle.py"), doraise=True)
+    py_compile.compile(str(root / "agent_launcher.py"), doraise=True)
     for name in ("transcription_only_agent", "transcription_codeswitch_agent"):
         script = root / f"{name}.py"
         py_compile.compile(str(script), doraise=True)
@@ -24,9 +25,9 @@ def main() -> None:
         # catches errors, whereas an image with a broken VAD must fail this check.
         module.TranscriptionOnlyAgent()._load_shared_vad()
         subprocess.run(
-            [sys.executable, str(script), "start", "--help"],
+            [sys.executable, "-u", str(root / "agent_launcher.py"), "start", "--help"],
             cwd=root,
-            env={"PATH": os.defpath, "PYTHONUNBUFFERED": "1"},
+            env={"PATH": os.defpath, "PYTHONUNBUFFERED": "1", "AGENT_MODULE": name},
             check=True,
             timeout=30,
         )
