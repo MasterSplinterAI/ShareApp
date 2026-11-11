@@ -57,7 +57,8 @@ __export(index_exports, {
   splitSections: () => splitSections,
   templateEmailDraft: () => templateEmailDraft,
   templatePostDraft: () => templatePostDraft,
-  verifySvixSignature: () => verifySvixSignature
+  verifySvixSignature: () => verifySvixSignature,
+  writingRulesBlock: () => writingRulesBlock
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -1374,8 +1375,6 @@ var MarketingStore = class {
     this.db = db;
     this.p = p;
   }
-  db;
-  p;
   tenantClause(tenantId, col = "tenant_id") {
     return tenantId === "all" ? { sql: "1=1", params: [] } : { sql: `${col} = ?`, params: [tenantId] };
   }
@@ -1904,13 +1903,28 @@ ${hits.map((h) => `[${h.path}] ${h.snippet}`).join("\n")}`);
   }
   return lines.join("\n\n");
 }
-var LEGAL_GUARDRAILS = `Rules: You write marketing for a legal-information and document-preparation product. Never promise legal outcomes,
-never claim to be a law firm, never give jurisdiction-specific legal advice as fact, and never invent statistics, case names, or citations.
-Only describe product features listed in the context. Write in plain, confident, specific English.`;
+var DEFAULT_WRITING_RULES = `Rules: Only describe product features listed in the context. Never invent statistics, testimonials, partnerships, awards, or capabilities.
+Never overpromise accuracy or outcomes. Write in plain, confident, specific English with short sentences.
+Avoid AI fluff ("cutting-edge", "game-changer", "unlock", "in today's fast-paced world", "elevate your experience").
+For high-stakes legal/medical/finance topics, use careful wording and say when a qualified human professional is still required.`;
+function writingRulesBlock(contentBrief) {
+  const brief = typeof contentBrief === "string" ? contentBrief.trim() : "";
+  if (!brief) return DEFAULT_WRITING_RULES;
+  const max = 12e3;
+  const clipped = brief.length <= max ? brief : `${brief.slice(0, 8e3)}
+
+\u2026
+
+${brief.slice(-3500)}`;
+  return `${DEFAULT_WRITING_RULES}
+
+CONTENT BRIEF (follow closely):
+${clipped}`;
+}
 async function runCopilotTurn(input) {
   const system = `You are the Marketing Copilot for ${input.ctx.productName}. You know the product from its codebase, pricing, support gaps, and metrics.
 Help the operator plan growth: SEO blog topics, email campaigns, positioning, and launch messaging grounded in real features.
-${LEGAL_GUARDRAILS}
+${writingRulesBlock(input.contentBrief)}
 
 Respond with JSON only:
 {"reply": "markdown answer, concise, cite product surfaces when relevant",
@@ -1996,7 +2010,7 @@ async function generateBlogIdeas(input) {
   const count = Math.min(Math.max(input.count || 6, 1), 12);
   try {
     const raw = await input.llm.complete({
-      system: `You are an SEO content strategist for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are an SEO content strategist for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 Return JSON only: {"ideas":[{"title":"...","kicker":"2-3 word category","angle":"one sentence","targetKeywords":["..."],"audience":"individual|attorney|general"}]}
 
 ${contextBlock(input.ctx, input.hits)}`,
@@ -2007,7 +2021,7 @@ Target real search intent (questions people type into Google). Avoid these exist
     const parsed = parseJsonLoose(raw);
     const ideas = (parsed?.ideas || []).map((i) => ({
       title: str(i?.title, 140),
-      kicker: str(i?.kicker, 40) || "Practice Note",
+      kicker: str(i?.kicker, 40) || "Journal",
       angle: str(i?.angle, 300),
       targetKeywords: strArr(i?.targetKeywords, 8),
       audience: ["individual", "attorney", "general"].includes(i?.audience) ? i.audience : "general"
@@ -2018,7 +2032,7 @@ Target real search intent (questions people type into Google). Avoid these exist
   const base = input.theme || input.ctx.coreFeatures[0] || input.ctx.productName;
   return Array.from({ length: count }, (_v, i) => ({
     title: [`What to know before ${base.toLowerCase()}`, `A practical checklist for ${base.toLowerCase()}`, `${base}: questions to ask first`][i % 3] + (i >= 3 ? ` (${i + 1})` : ""),
-    kicker: "Practice Note",
+    kicker: "Journal",
     angle: `Explains ${base} in plain language and shows where ${input.ctx.productName} helps.`,
     targetKeywords: [base.toLowerCase()],
     audience: input.audience || "general"
@@ -2026,8 +2040,8 @@ Target real search intent (questions people type into Google). Avoid these exist
 }
 var POST_JSON_SHAPE = `{"title":"H1 title","slug":"kebab-case-slug","kicker":"2-3 word category","excerpt":"1-2 sentence summary",
 "seoTitle":"<= 60 chars, includes primary keyword","seoDescription":"<= 155 chars","targetKeywords":["primary","secondary",...],
-"audience":"individual|attorney|general","bodyMarkdown":"900-1400 words of markdown using ## and ### headings, short paragraphs, bullet lists, one > callout, and 2-3 internal links such as [start free](/auth?mode=register) or [pricing](/pricing)",
-"faqItems":[{"question":"...","answer":"..."}],"ctaLabel":"...","ctaUrl":"/auth?mode=register","artworkPrompt":"editorial illustration brief, no text in image"}`;
+"audience":"individual|attorney|general","bodyMarkdown":"500-900 words of markdown using ## and ### headings, short paragraphs, bullet lists, one > callout, 3-5 FAQ-worthy questions answered in body or faqItems, and 2-3 internal links such as [start free](/v2/signup), [live demo](/demo), or [pricing](/pricing)",
+"faqItems":[{"question":"...","answer":"..."}],"ctaLabel":"...","ctaUrl":"/v2/signup","artworkPrompt":"editorial illustration brief, no text in image"}`;
 function normalizePostDraft(parsed, fallbackTitle, audience) {
   if (!parsed || typeof parsed !== "object") return null;
   const title = str(parsed.title, 160);
@@ -2038,7 +2052,7 @@ function normalizePostDraft(parsed, fallbackTitle, audience) {
   return {
     title,
     slug: slugify(str(parsed.slug, 90) || title),
-    kicker: str(parsed.kicker, 40) || "Practice Note",
+    kicker: str(parsed.kicker, 40) || "Journal",
     excerpt: str(parsed.excerpt, 400) || body.replace(/[#>*_\-[\]()]/g, "").slice(0, 200),
     seoTitle: (str(parsed.seoTitle, 120) || title).slice(0, 70),
     seoDescription: (str(parsed.seoDescription, 300) || str(parsed.excerpt, 300)).slice(0, 160),
@@ -2046,8 +2060,8 @@ function normalizePostDraft(parsed, fallbackTitle, audience) {
     audience: ["individual", "attorney", "general"].includes(parsed.audience) ? parsed.audience : audience,
     bodyMarkdown: body,
     faqItems: faq,
-    ctaLabel: str(parsed.ctaLabel, 60) || "Start your first matter free",
-    ctaUrl: /^(\/|https?:\/\/)/.test(ctaUrl) ? ctaUrl : "/auth?mode=register",
+    ctaLabel: str(parsed.ctaLabel, 60) || "Start talking for free",
+    ctaUrl: /^(\/|https?:\/\/)/.test(ctaUrl) ? ctaUrl : "/v2/signup",
     artworkPrompt: str(parsed.artworkPrompt, 800) || `Editorial illustration about ${fallbackTitle}`,
     readingTimeMinutes: estimateReadingTime(body)
   };
@@ -2057,57 +2071,58 @@ function templatePostDraft(topic, ctx, audience) {
   const features = ctx.coreFeatures.slice(0, 4);
   const body = `## Why this matters
 
-Most people meet this problem for the first time under a deadline. The rules are knowable, but they are scattered, and the cost of a missed step is high. This guide walks through the parts you can control.
+Your supplier has a delay to explain. A new colleague has questions. A client wants a walkthrough. When the room speaks more than one language, clarity is the product.
 
-## Start with the facts you already have
+## Start with one conversation
 
-Write down the dates, the parties, and the documents in front of you before you do anything else. A clean timeline is the single most useful thing you can bring to a lawyer, a court clerk, or a negotiation.
+Pick a real call you already need to have. Invite the other person with a browser link. Speak in your language and let them hear theirs.
 
-- Every date you were served, notified, or contacted
-- Every document you received or signed
-- What outcome you actually want
+- Who needs to understand whom
+- Which language each person prefers
+- Whether you need captions, a summary, or both
 
 ## Where most people get stuck
 
-The common failure is not a lack of effort; it is working from the wrong template or the wrong assumption about deadlines. Check the rules for your jurisdiction, and keep a record of where each rule came from.
+Waiting for the "perfect" bilingual meeting often means the meeting never happens. A short live trial beats another week of email ping-pong.
 
-> Legal information is not legal advice. When the stakes are high, talk to a licensed attorney in your jurisdiction.
+> Live translation helps people talk today. Legal proceedings, medical discussions, and similar settings may still call for a qualified human interpreter.
 
 ## How ${ctx.productName} helps
 
 ${features.map((f) => `- ${f}`).join("\n")}
 
-You can [start your first matter free](/auth?mode=register) and see how it organizes your facts, or review [pricing](/pricing) first.
+You can [start talking for free](/v2/signup), [see how it feels](/demo), or review [pricing](/pricing) first.
 
 ## Next steps
 
-Pick one action today: build the timeline, collect the documents, or book a consultation. Momentum matters more than perfection.`;
+Book one call this week. Keep it short. Notice where the conversation gets easier \u2014 and where a human interpreter is still the right call.`;
   return {
     title,
     slug: slugify(title),
-    kicker: "Practice Note",
-    excerpt: `A plain-language guide to ${topic.toLowerCase()}, with a checklist you can use today.`,
+    kicker: "Journal",
+    excerpt: `A plain-language guide to ${topic.toLowerCase()}, with a checklist you can use on your next call.`,
     seoTitle: title.slice(0, 60),
-    seoDescription: `Plain-language guide to ${topic.toLowerCase()}: key facts to gather, common mistakes, and next steps.`.slice(0, 155),
+    seoDescription: `Plain-language guide to ${topic.toLowerCase()}: what to try first, common pitfalls, and how ${ctx.productName} helps.`.slice(0, 155),
     targetKeywords: [topic.toLowerCase()],
     audience,
     bodyMarkdown: body,
     faqItems: [
-      { question: `Do I need a lawyer for ${topic.toLowerCase()}?`, answer: "It depends on the stakes and your jurisdiction. Legal information tools help you prepare, but a licensed attorney can advise on your specific situation." },
-      { question: `Is ${ctx.productName} a law firm?`, answer: `No. ${ctx.productName} provides legal information and document preparation tools, not legal advice.` }
+      { question: `Do I need a human interpreter for ${topic.toLowerCase()}?`, answer: "It depends on the stakes. Live translation is strong for everyday meetings and family calls; legal and medical settings may still need a qualified interpreter." },
+      { question: `Can guests join without an account?`, answer: `Yes. Guests can join ${ctx.productName} meetings from a browser link without creating an account.` }
     ],
-    ctaLabel: "Start your first matter free",
-    ctaUrl: "/auth?mode=register",
-    artworkPrompt: `Calm editorial illustration representing ${topic}, desk with documents, navy and warm amber palette, no text`,
+    ctaLabel: "Start talking for free",
+    ctaUrl: "/v2/signup",
+    artworkPrompt: `Calm editorial illustration representing ${topic}, people on a video call with subtle language cues, slate and blue palette, no text`,
     readingTimeMinutes: estimateReadingTime(body)
   };
 }
 async function generatePostDraft(input) {
   try {
     const raw = await input.llm.complete({
-      system: `You are a senior legal-tech content writer and SEO editor for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are a senior content writer and SEO editor for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 Write one complete, publish-ready article. Structure: hook intro, 4-6 ## sections with ### subsections where useful, a practical checklist,
-a "How ${input.ctx.productName} helps" section grounded only in listed features, and a closing next step.
+a "How ${input.ctx.productName} helps" section grounded only in listed features, FAQ-ready answers, and a closing next step.
+Always include seoTitle, seoDescription, slug, faqItems, and natural internal links.
 Return JSON only in this shape:
 ${POST_JSON_SHAPE}
 
@@ -2131,7 +2146,7 @@ async function rewritePost(input) {
     const idx = sections.findIndex((s) => s.heading.toLowerCase() === input.sectionHeading.toLowerCase());
     if (idx < 0) return null;
     const raw2 = await input.llm.complete({
-      system: `You edit one section of a published-quality article for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You edit one section of a published-quality article for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 Return JSON only: {"sectionMarkdown":"the full replacement section starting with its ## heading"}`,
       user: `Article title: ${post.title}
 
@@ -2152,7 +2167,7 @@ ${replacement}`;
     return { bodyMarkdown: body, readingTimeMinutes: estimateReadingTime(body) };
   }
   const raw = await input.llm.complete({
-    system: `You revise articles for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+    system: `You revise articles for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 Apply the editor instruction to the article and return the full revised article as JSON only:
 ${POST_JSON_SHAPE}
 
@@ -2202,7 +2217,7 @@ Only use {{matterTitle}}, {{proposedDocsList}} and {{unlockUrl}} for the free_ma
 async function generateEmailIdeas(input) {
   try {
     const raw = await input.llm.complete({
-      system: `You are a lifecycle email strategist for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are a lifecycle email strategist for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 Return JSON only: {"ideas":[{"name":"internal campaign name","subject":"subject line <= 60 chars","angle":"one sentence"}]}
 
 ${contextBlock(input.ctx)}`,
@@ -2215,8 +2230,8 @@ ${contextBlock(input.ctx)}`,
   } catch {
   }
   return [
-    { name: `${input.segmentLabel}: feature spotlight`, subject: `A faster way to get your next step done`, angle: "Spotlight one core feature with a single clear CTA.", segmentId: input.segmentId },
-    { name: `${input.segmentLabel}: how-to`, subject: `3 things to prepare before you file anything`, angle: "Useful checklist that builds trust before asking for action.", segmentId: input.segmentId }
+    { name: `${input.segmentLabel}: feature spotlight`, subject: `A clearer way to talk across languages`, angle: "Spotlight one core feature with a single clear CTA.", segmentId: input.segmentId },
+    { name: `${input.segmentLabel}: how-to`, subject: `3 tips before your next bilingual call`, angle: "Useful checklist that builds trust before asking for action.", segmentId: input.segmentId }
   ];
 }
 function templateEmailDraft(input) {
@@ -2253,9 +2268,9 @@ ${input.ctx.tagline}
 ${input.ctx.coreFeatures.slice(0, 3).map((f) => `- ${f}`).join("\n")}
 
 Reply to this email if you have questions \u2014 a real person reads every reply.`,
-    ctaLabel: "Open my workspace",
-    ctaUrl: input.ctx.domain ? `https://${input.ctx.domain}/` : "/",
-    artworkPrompt: `Editorial illustration for ${input.goal || input.ctx.productName}, navy palette, no text`,
+    ctaLabel: "Start a free meeting",
+    ctaUrl: input.ctx.domain ? `https://${input.ctx.domain}/v2/signup` : "/v2/signup",
+    artworkPrompt: `Editorial illustration for ${input.goal || input.ctx.productName}, slate and blue palette, no text`,
     bannerKicker: input.ctx.productName
   };
 }
@@ -2283,7 +2298,7 @@ function normalizeEmailDraft(parsed) {
 async function generateEmailDraft(input) {
   try {
     const raw = await input.llm.complete({
-      system: `You are a lifecycle email copywriter for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are a lifecycle email copywriter for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 ${EMAIL_VARS_HELP}
 Return JSON only: ${EMAIL_JSON_SHAPE}
 
@@ -2301,7 +2316,7 @@ Instructions: ${input.instruction}` : ""}`,
 }
 async function refineEmailCopy(input) {
   const raw = await input.llm.complete({
-    system: `You revise marketing emails for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+    system: `You revise marketing emails for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief)}
 ${EMAIL_VARS_HELP}
 Apply the instruction and return the full revised email as JSON only: ${EMAIL_JSON_SHAPE}`,
     user: `Segment: ${input.segmentId}
@@ -2329,7 +2344,6 @@ var HttpError = class extends Error {
     super(message);
     this.status = status;
   }
-  status;
 };
 var KIT_SEGMENTS = [
   { id: "blog_subscribers", label: "Blog subscribers", description: "People who subscribed from the public journal.", count: 0 },
@@ -2432,6 +2446,7 @@ function createMarketingKit(opts) {
   const store = new MarketingStore(opts.db);
   const log = opts.logger || console;
   const mountPath = (opts.mountPath ?? "/marketing").replace(/\/$/, "");
+  const contentBrief = typeof opts.contentBrief === "string" && opts.contentBrief.trim() ? opts.contentBrief.trim() : null;
   const jobs = /* @__PURE__ */ new Map();
   const subscribeHits = /* @__PURE__ */ new Map();
   const contextCache = /* @__PURE__ */ new Map();
@@ -2614,7 +2629,7 @@ Instruction: ${instruction}`,
   async function generateIntoPost(tenantId, postId, topic, audience, instruction, artworkMode) {
     const ctx = await productContext(tenantId);
     const hits = await searchCode(`${topic} ${instruction || ""}`, 5);
-    const { draft, usedFallback, error } = await generatePostDraft({ llm, ctx, hits, topic, audience, instruction });
+    const { draft, usedFallback, error } = await generatePostDraft({ llm, ctx, hits, topic, audience, instruction, contentBrief });
     const slug = await store.uniqueSlug(tenantId, draft.slug, postId);
     let post = await store.updatePost(tenantId, postId, {
       ...draft,
@@ -2846,7 +2861,8 @@ Instruction: ${instruction}`,
       hits,
       history,
       message,
-      segmentIds: segments.filter((s) => s.id !== "custom").map((s) => s.id)
+      segmentIds: segments.filter((s) => s.id !== "custom").map((s) => s.id),
+      contentBrief
     });
     const assistant = await store.addMessage(ctx.tenantId, "assistant", reply, { actions, sources: hits.map((h) => h.path) });
     return { userMessage, message: assistant };
@@ -2862,7 +2878,8 @@ Instruction: ${instruction}`,
       count: Number(ctx.body?.count) || 6,
       audience: ctx.body?.audience,
       theme,
-      existingTitles: existing.map((p) => p.title)
+      existingTitles: existing.map((p) => p.title),
+      contentBrief
     });
     return { ideas };
   });
@@ -2882,7 +2899,8 @@ Instruction: ${instruction}`,
         count: count - topics.length,
         audience,
         theme: String(ctx.body?.theme || instruction || ""),
-        existingTitles: [...existing.map((p) => p.title), ...topics]
+        existingTitles: [...existing.map((p) => p.title), ...topics],
+        contentBrief
       });
       topics = [...topics, ...ideas.map((i) => i.title)];
     }
@@ -2940,7 +2958,7 @@ Instruction: ${instruction}`,
     const product = await productContext(ctx.tenantId);
     let patch = null;
     try {
-      patch = await rewritePost({ llm, ctx: product, post, instruction, sectionHeading });
+      patch = await rewritePost({ llm, ctx: product, post, instruction, sectionHeading, contentBrief });
     } catch (err) {
       throw new HttpError(502, `Rewrite failed: ${String(err?.message || err).slice(0, 200)}`);
     }
@@ -3066,7 +3084,7 @@ Instruction: ${instruction}`,
     const segmentId = String(ctx.body?.segmentId || "all_individuals");
     const segments = await listSegments(ctx.tenantId);
     const seg = segments.find((s) => s.id === segmentId);
-    return { ideas: await generateEmailIdeas({ llm, ctx: await productContext(ctx.tenantId), segmentId, segmentLabel: seg?.label || segmentId, goal: String(ctx.body?.goal || "") }) };
+    return { ideas: await generateEmailIdeas({ llm, ctx: await productContext(ctx.tenantId), segmentId, segmentLabel: seg?.label || segmentId, goal: String(ctx.body?.goal || ""), contentBrief }) };
   });
   add("GET", "/email/campaigns", async (ctx) => ({ campaigns: await store.listCampaigns(ctx.tenantId) }), { allowAllTenant: true });
   add("POST", "/email/campaigns", async (ctx) => {
@@ -3088,7 +3106,8 @@ Instruction: ${instruction}`,
       segmentId,
       segmentLabel: seg.label,
       goal,
-      instruction: String(ctx.body?.instruction || "") || void 0
+      instruction: String(ctx.body?.instruction || "") || void 0,
+      contentBrief
     });
     let campaign = await store.createCampaign(ctx.tenantId, {
       ...draft,
@@ -3155,6 +3174,7 @@ Instruction: ${instruction}`,
         ctx: product,
         segmentId: c.segmentId,
         instruction,
+        contentBrief,
         current: { name: c.name, subject: c.subject, preheader: c.preheader, headline: c.headline, bodyMarkdown: c.bodyMarkdown, ctaLabel: c.ctaLabel, ctaUrl: c.ctaUrl, artworkPrompt: c.artworkPrompt, bannerKicker: "" }
       }).catch(() => null);
       if (!revised && target === "copy") throw new HttpError(502, "The model returned an unusable revision");
@@ -3535,5 +3555,6 @@ function createMarketingRouter(opts) {
   splitSections,
   templateEmailDraft,
   templatePostDraft,
-  verifySvixSignature
+  verifySvixSignature,
+  writingRulesBlock
 });
