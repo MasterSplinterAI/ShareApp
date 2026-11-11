@@ -198,6 +198,136 @@
             }
             catch { } sync(); });
         });
+
+        // Home/marketing language selector — restores the control lost when the
+        // React MarketingNav was replaced by the static studio-home port.
+        const SITE_LANG_OPTIONS = [
+            { code: 'en', label: 'English' },
+            { code: 'es', label: 'Español' },
+            { code: 'fr', label: 'Français' },
+            { code: 'de', label: 'Deutsch' },
+            { code: 'pt', label: 'Português' },
+            { code: 'ja', label: '日本語' },
+            { code: 'zh-CN', label: '中文（简体）' },
+        ];
+        const SITE_LANG_CODES = new Set(SITE_LANG_OPTIONS.map((o) => o.code));
+        const detectSiteLang = () => {
+            try {
+                const stored = localStorage.getItem('app_language') || localStorage.getItem('parley_locale');
+                if (stored) {
+                    const normalized = stored.trim().replace('_', '-');
+                    if (SITE_LANG_CODES.has(normalized)) return normalized;
+                    const base = normalized.split('-')[0];
+                    if (base === 'zh') return 'zh-CN';
+                    if (SITE_LANG_CODES.has(base)) return base;
+                }
+            } catch {}
+            const tags = (navigator.languages && navigator.languages.length)
+                ? navigator.languages
+                : [navigator.language];
+            for (const tag of tags) {
+                if (!tag) continue;
+                const normalized = String(tag).trim().replace('_', '-');
+                if (SITE_LANG_CODES.has(normalized)) return normalized;
+                const base = normalized.split('-')[0];
+                if (base === 'zh') return 'zh-CN';
+                if (SITE_LANG_CODES.has(base)) return base;
+            }
+            return 'en';
+        };
+        const writeSiteLangLocal = (code) => {
+            try {
+                localStorage.setItem('app_language', code);
+                localStorage.setItem('parley_locale', code);
+            } catch {}
+            document.documentElement.lang = code === 'zh-CN' ? 'zh-Hans' : code.split('-')[0];
+        };
+        const pushSiteLangRemote = (code) => {
+            try {
+                const token = localStorage.getItem('v2_token');
+                if (!token) return;
+                fetch('/api/v2/auth/me', {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + token,
+                    },
+                    body: JSON.stringify({ preferredLanguage: code }),
+                }).catch(() => {});
+            } catch {}
+        };
+        const hydrateSiteLangFromProfile = (select) => {
+            try {
+                const token = localStorage.getItem('v2_token');
+                if (!token) return;
+                fetch('/api/v2/auth/me', {
+                    headers: { Authorization: 'Bearer ' + token },
+                })
+                    .then((r) => (r.ok ? r.json() : null))
+                    .then((data) => {
+                        const remote = data?.user?.preferredLanguage || data?.user?.preferred_language;
+                        if (!remote) return;
+                        const normalized = String(remote).trim().replace('_', '-');
+                        let code = SITE_LANG_CODES.has(normalized)
+                            ? normalized
+                            : (normalized.split('-')[0] === 'zh' ? 'zh-CN' : normalized.split('-')[0]);
+                        if (!SITE_LANG_CODES.has(code)) return;
+                        select.value = code;
+                        writeSiteLangLocal(code);
+                    })
+                    .catch(() => {});
+            } catch {}
+        };
+        const ensureSiteLangSelect = (actions) => {
+            if (!actions || initialized.has(actions)) return;
+            initialized.add(actions);
+            let select = actions.querySelector('.site-lang-select');
+            if (!select) {
+                const wrap = document.createElement('label');
+                wrap.className = 'site-lang';
+                wrap.setAttribute('data-no-translate', 'true');
+                const sr = document.createElement('span');
+                sr.className = 'sr-only';
+                sr.textContent = 'Language';
+                select = document.createElement('select');
+                select.className = 'site-lang-select';
+                select.setAttribute('aria-label', 'Choose language');
+                select.setAttribute('data-no-translate', 'true');
+                SITE_LANG_OPTIONS.forEach((opt) => {
+                    const option = document.createElement('option');
+                    option.value = opt.code;
+                    option.textContent = opt.label;
+                    select.appendChild(option);
+                });
+                wrap.append(sr, select);
+                const themeToggle = actions.querySelector('.theme-toggle');
+                if (themeToggle) actions.insertBefore(wrap, themeToggle);
+                else actions.prepend(wrap);
+            }
+            const current = detectSiteLang();
+            select.value = current;
+            // Seed local preference from browser/default so join/create flows see it,
+            // but only PATCH the profile when the user explicitly changes the select.
+            try {
+                if (!localStorage.getItem('app_language') && !localStorage.getItem('parley_locale')) {
+                    writeSiteLangLocal(current);
+                } else {
+                    writeSiteLangLocal(current);
+                }
+            } catch {
+                writeSiteLangLocal(current);
+            }
+            hydrateSiteLangFromProfile(select);
+            if (!initialized.has(select)) {
+                initialized.add(select);
+                select.addEventListener('change', () => {
+                    const next = select.value || 'en';
+                    writeSiteLangLocal(next);
+                    pushSiteLangRemote(next);
+                });
+            }
+        };
+        scope.querySelectorAll('.site-header .nav-actions, .nav-actions').forEach(ensureSiteLangSelect);
         scope.querySelectorAll('.menu-toggle').forEach(button => {
             if (initialized.has(button))
                 return;

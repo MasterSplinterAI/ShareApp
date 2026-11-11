@@ -540,6 +540,9 @@ async function migrate() {
   if (!userColNames.has('last_login_at')) {
     await run(`ALTER TABLE v2_users ADD COLUMN last_login_at TEXT`);
   }
+  if (!userColNames.has('preferred_language')) {
+    await run(`ALTER TABLE v2_users ADD COLUMN preferred_language TEXT`);
+  }
 
   const subCols2 = await all(`PRAGMA table_info(v2_org_subscriptions)`);
   const subColNames2 = new Set((subCols2 || []).map((c) => c.name));

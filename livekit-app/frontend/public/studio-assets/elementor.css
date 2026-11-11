@@ -8,5 +8,29 @@
 .lalia-elementor-root .elementor-widget-empty{background:transparent}
 .lalia-elementor-root select{color:inherit}
 .lalia-elementor-root .site-header{display:block;max-width:none;width:100%;padding:0;margin:0}
+/* Marketing language selector (restored after static studio-home port) */
+.site-lang{display:inline-flex;align-items:center;flex-shrink:0;margin:0}
+.site-lang-select{
+  appearance:none;-webkit-appearance:none;
+  height:44px;min-width:7.5rem;max-width:10rem;
+  padding:0 2rem 0 0.9rem;
+  border:1px solid var(--line, rgba(40,70,120,0.18));
+  border-radius:999px;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%235c6d88' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 0.75rem center / 14px,
+    transparent;
+  color:inherit;font:inherit;font-size:0.875rem;font-weight:600;
+  cursor:pointer;line-height:1;
+  transition:background .2s,border-color .2s;
+}
+.site-lang-select:hover{border-color:var(--mint,#6d94e0);background-color:var(--lp-91b886-a13,rgba(136,173,228,0.125))}
+.site-lang-select:focus-visible{outline:2px solid var(--mint,#6d94e0);outline-offset:2px}
+html[data-theme=dark] .site-lang-select{
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23b8c7e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+/* languages page also uses .site-header outside .lalia-elementor-root */
+.site-header .site-lang{display:inline-flex;align-items:center;flex-shrink:0;margin:0}
+.site-header .nav-actions{display:flex;align-items:center;gap:0.6rem;flex-wrap:wrap}
 .lalia-elementor-root .avatar-stack img{border-radius:50%;border:2px solid var(--bg);height:29px;width:29px}
 .lalia-elementor-root .person-card>img{height:100%;width:100%}

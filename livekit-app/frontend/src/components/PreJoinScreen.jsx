@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import {
   normalizeMeetingLanguageCode,
-  readStoredMeetingLanguage,
+  resolvePreferredMeetingLanguage,
   writeStoredMeetingLanguage,
 } from '../lib/languages';
 import {
@@ -144,8 +144,8 @@ function PreJoinScreen({
   );
 
   const [selectedLanguage, setSelectedLanguage] = useState(() => {
-    const chosen = normalizeMeetingLanguageCode(
-      initialPreselected || defaultLanguage || readStoredMeetingLanguage()
+    const chosen = resolvePreferredMeetingLanguage(
+      initialPreselected || defaultLanguage
     );
     if (initialPreselected) {
       writeStoredMeetingLanguage(chosen);

@@ -67,6 +67,7 @@ import { QrCodeDialogButton, QrCodeShareCard } from '../../components/MeetingQrC
 import GuestLanguageSelector from '../../components/GuestLanguageSelector';
 import { buildJoinUrlWithLanguage } from '../../lib/guestLanguage';
 import { defaultExpiryMode } from '../../lib/inviteExpiry';
+import { resolvePreferredMeetingLanguage } from '../../lib/languages';
 
 /** Click-to-edit meeting title for the header hero. */
 function EditableTitle({ value, onChange, onCommit, onCancel }) {
@@ -463,6 +464,9 @@ export default function V2MeetingDetail() {
     try {
       await v2Meetings.hostSessionOpen(id);
       const share = meeting.joinUrl || `${getPublicAppOrigin()}/join/${encodeURIComponent(meeting.livekit_room_name)}`;
+      const preferredLang = resolvePreferredMeetingLanguage(
+        me?.user?.preferredLanguage || me?.user?.preferred_language
+      );
       const participantInfo = {
         isHost: true,
         participantName: hostDisplayName,
@@ -471,11 +475,16 @@ export default function V2MeetingDetail() {
         roomName: meeting.livekit_room_name,
         meetingId: id,
         inviteToken: '',
+        selectedLanguage: preferredLang,
+        spokenLanguage: preferredLang,
       };
       sessionStorage.setItem('participantInfo', JSON.stringify(participantInfo));
       const next = new URLSearchParams(window.location.search);
       next.delete('join');
       next.delete('created');
+      if (!next.get('lang') && !next.get('l')) {
+        next.set('lang', preferredLang);
+      }
       const qs = next.toString();
       navigate(`/room/${encodeURIComponent(meeting.livekit_room_name)}${qs ? `?${qs}` : ''}`);
     } catch (e) {
