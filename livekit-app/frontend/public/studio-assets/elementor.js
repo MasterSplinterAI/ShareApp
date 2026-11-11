@@ -211,7 +211,30 @@
             { code: 'zh-CN', label: '中文（简体）' },
         ];
         const SITE_LANG_CODES = new Set(SITE_LANG_OPTIONS.map((o) => o.code));
+        const SITE_LANG_PREFIX_RE = /^\/(es|fr|de|pt|ja|zh-CN)(?=\/|$)/;
+        const pathLocale = () => {
+            const m = String(location.pathname || '/').match(SITE_LANG_PREFIX_RE);
+            return m ? m[1] : 'en';
+        };
+        const stripLocalePrefix = (pathname) => {
+            const p = String(pathname || '/');
+            const stripped = p.replace(SITE_LANG_PREFIX_RE, '') || '/';
+            return stripped.startsWith('/') ? stripped : `/${stripped}`;
+        };
+        const localeMarketingPath = (locale, pathname = location.pathname) => {
+            const rest = stripLocalePrefix(pathname);
+            // App / auth / meeting routes are not locale-prefixed.
+            if (/^\/(v2|api|join|room|login|signup|demo|marketing|studio-assets|assets)(\/|$)/.test(rest)) {
+                return rest;
+            }
+            if (!locale || locale === 'en') return rest === '/' ? '/' : rest;
+            if (rest === '/') return `/${locale}/`;
+            return `/${locale}${rest}`;
+        };
         const detectSiteLang = () => {
+            // Prefer the URL prefix on marketing pages so the switcher matches the page.
+            const fromPath = pathLocale();
+            if (fromPath !== 'en' || SITE_LANG_PREFIX_RE.test(location.pathname)) return fromPath;
             try {
                 const stored = localStorage.getItem('app_language') || localStorage.getItem('parley_locale');
                 if (stored) {
@@ -304,26 +327,29 @@
                 if (themeToggle) actions.insertBefore(wrap, themeToggle);
                 else actions.prepend(wrap);
             }
-            const current = detectSiteLang();
+            const fromPath = pathLocale();
+            const current = fromPath !== 'en' ? fromPath : detectSiteLang();
             select.value = current;
             // Seed local preference from browser/default so join/create flows see it,
             // but only PATCH the profile when the user explicitly changes the select.
-            try {
-                if (!localStorage.getItem('app_language') && !localStorage.getItem('parley_locale')) {
-                    writeSiteLangLocal(current);
-                } else {
-                    writeSiteLangLocal(current);
-                }
-            } catch {
-                writeSiteLangLocal(current);
-            }
-            hydrateSiteLangFromProfile(select);
+            writeSiteLangLocal(current);
+            // URL prefix wins on locale marketing pages; only hydrate from profile on English URLs.
+            if (fromPath === 'en') hydrateSiteLangFromProfile(select);
             if (!initialized.has(select)) {
                 initialized.add(select);
                 select.addEventListener('change', () => {
                     const next = select.value || 'en';
                     writeSiteLangLocal(next);
                     pushSiteLangRemote(next);
+                    // Marketing SEO uses path prefixes — navigate to the equivalent locale URL.
+                    const target = localeMarketingPath(next);
+                    const current = `${location.pathname}${location.search}${location.hash}`;
+                    const nextUrl = `${target}${location.search}${location.hash}`;
+                    if (nextUrl !== current && target !== location.pathname) {
+                        location.assign(nextUrl);
+                    } else if (target !== location.pathname) {
+                        location.assign(target);
+                    }
                 });
             }
         };
