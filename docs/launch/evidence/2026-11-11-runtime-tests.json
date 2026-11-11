@@ -20,9 +20,10 @@
     "nodeUnitTestsPassed": 6,
     "postgres16RoundtripTestsPassed": 1,
     "archiveSafetyTestPassed": true,
-    "productionProvisioned": false,
-    "realProductionRestoreTested": false,
-    "pending": "Explicit owner approval for private S3 bucket and upload-only instance role."
+    "productionProvisioned": true,
+    "realProductionRestoreTested": true,
+    "pending": null,
+    "followupEvidence": "2026-11-11-backup-restore.json"
   },
   "deployedBackend": {
     "healthStatus": 200,

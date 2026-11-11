@@ -28,7 +28,7 @@
 - [x] Restrict legacy room-global voice updates to authorized admins.
 - [x] Require actual credentials for direct provider plugins; correct Cloud-hosting assumptions.
 - [x] Preserve verified SDK versions; harden signal handling and bounded shutdown.
-- [ ] Full helper tests, real room smoke, safe rollout and rollback reference.
+- [x] Full helper tests, real room smoke, safe rollout and rollback reference.
 
 ## 5. Transcript policy (root)
 - [x] Owner selected default-on transcripts with clear disclosure; align backend defaults, prejoin notices, privacy, and FAQs.
@@ -41,6 +41,17 @@
 - [x] Publish launch readiness with remaining owner actions and unverified manual/load gates clearly separated.
 
 ## Release status
-Web commit `d7a8b91` deployed and verified. Current production agent passed synthetic English/Spanish captions and audible TTS in both directions. Candidate image passes Linux startup/import/Silero build checks but named deployment runtime remains under investigation; do not promote. Stripe remains test mode; live owner activation, hosted payment UI, real-device/load, and backup restore gates remain open. See `docs/launch/2026-11-11-readiness.md`.
 
-Owner decision follow-up: leave Stripe in test mode until owner activates live billing. New meetings/direct calls save transcripts by default with prejoin disclosure and host opt-out. Preserve all existing meeting policy values. Validate backend defaults and protected preview plus desktop/mobile notices, rebuild static privacy/FAQ content, then deploy the web update only.
+Backend `4fa02a1` is deployed and verified. LiveKit image `jN9YKCyo7vv9` is deployed after 40 canary and 24 production translation/audio checks with reconnects; rollback image `sUuVnNMCMHJP` is retained. Hosted sandbox Checkout/3DS/portal lifecycle checks passed. Stripe remains test mode by owner instruction; automatic overage charging remains off. See `docs/launch/2026-11-11-readiness.md` for evidence and limitations.
+
+Owner decision follow-up: new meetings/direct calls save transcripts by default with clear prejoin disclosure and host opt-out. Existing records/settings are preserved. This is deployed and verified.
+
+## Owner-authorized follow-up
+
+- [x] Provision the approved private encrypted backup bucket and upload-only instance role, install daily backups, and restore an actual off-host recovery point in an isolated database.
+- [x] Send one ordinary delivery test through the production mailer; provider delivery verified.
+- [ ] Complete password recovery with an existing account; the approved test recipient has no account. No account/password was changed.
+- [x] Record mobile testing as owner-verified; this does not imply a documented device/browser matrix.
+- [x] Publish Oracle Orchestration LLC as the confirmed Wyoming operator and disclose backup retention.
+- [ ] Finalize the court-location choice after confirming actual operating location; existing dispute clause preserved.
+- [x] Update final readiness evidence and the existing PR after verification.

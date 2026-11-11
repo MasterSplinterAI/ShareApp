@@ -1,0 +1,58 @@
+{
+  "recipient": "owner-approved recipient",
+  "status": "transactional_delivery_verified_recovery_unverified",
+  "recoveryCheck": {
+    "recipient": "owner-approved recipient",
+    "checkedAt": "2026-11-11T23:14:33.629233+00:00",
+    "status": "blocked_account_missing",
+    "accountExisted": false,
+    "accountLookup": "Read-only production v2_users exact and normalized LOWER(TRIM(email)) match; zero rows.",
+    "postAttempts": 0,
+    "emailsSent": 0,
+    "emailId": null,
+    "providerDeliveryStatus": "not_applicable_no_send",
+    "resetRecordCreated": false,
+    "passwordChanged": false,
+    "accountCreated": false,
+    "limitations": [
+      "The approved recipient has no existing production account.",
+      "No reset email was requested or sent; sender, actual reset URL, token expiry, and recipient delivery remain unverified for this test."
+    ]
+  },
+  "transactionalDelivery": {
+    "recipient": "owner-approved recipient",
+    "requestedAt": "2026-11-11T23:15:56.186Z",
+    "checkedAt": "2026-11-11T23:16:17.295Z",
+    "sendAttempts": 1,
+    "mailerSent": true,
+    "email": {
+      "id": "01a1cce5-84f8-7b00-9875-9554d7752f34",
+      "createdAt": "2026-11-11 23:15:56.432000+00",
+      "sender": "Lalia <notifications@lalia.cloud>",
+      "lastEvent": "delivered",
+      "recipientMatches": true,
+      "subject": "Lalia launch check \u2014 email delivery test"
+    },
+    "productionMailerUsed": true,
+    "settingsSource": "database",
+    "readOnlyDatabaseAccess": true,
+    "accountCreated": false,
+    "passwordChanged": false,
+    "limitations": [
+      "Transactional delivery test only; no password-reset email was generated.",
+      "No production account exists for the approved recipient; end-to-end recovery remains untested.",
+      "Provider status does not establish inbox placement or human receipt."
+    ],
+    "references": [
+      "https://resend.com/docs/api-reference/emails/retrieve-email"
+    ]
+  },
+  "root_readonly_provider_verification": {
+    "checkedAt": "2026-11-11T23:19:45.990Z",
+    "emailId": "01a1cce5-84f8-7b00-9875-9554d7752f34",
+    "lastEvent": "delivered",
+    "sendAttempts": 1,
+    "recipientMatches": true,
+    "additionalEmailSent": false
+  }
+}
