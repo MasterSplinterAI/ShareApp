@@ -50,7 +50,7 @@ Owner decision follow-up: new meetings/direct calls save transcripts by default 
 
 - [x] Provision the approved private encrypted backup bucket and upload-only instance role, install daily backups, and restore an actual off-host recovery point in an isolated database.
 - [x] Send one ordinary delivery test through the production mailer; provider delivery and Proton Primary inbox placement verified.
-- [ ] Complete password recovery with an existing account; the approved test recipient has no account. No account/password was changed.
+- [x] Complete password recovery with the subsequently approved existing Gmail account: real email/form observed, owner reset password on phone, token consumption and successful subsequent login verified.
 - [x] Record mobile testing as owner-verified; this does not imply a documented device/browser matrix.
 - [x] Publish Oracle Orchestration LLC as the confirmed Wyoming operator and disclose backup retention.
 - [x] Publish and verify the Florida/Hillsborough/Tampa dispute clause with explicit owner approval.
