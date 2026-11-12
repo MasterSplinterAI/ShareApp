@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, beforeEach } from "node:test";
 import { randomUUID } from "node:crypto";
-import { TenantIdSchema } from "@rhule/support-shared";
+import { TenantIdSchema } from "@quill/support-shared";
 import { createMemorySqliteAdapter } from "../db/memorySqlite.js";
 import { ensureSchema } from "../db/migrate.js";
 import {
@@ -149,4 +149,20 @@ describe("searchActiveArticleHits", () => {
     assert.ok((hits[0]?.score ?? 0) >= 2);
     assert.match(hits[0]?.excerpt ?? "", /forgot-password/i);
   });
+});
+
+describe('host publication eligibility',()=>{
+ it('excludes shadowed approved articles from both help lists and triage hits while preserving history',async()=>{
+  const db=createMemorySqliteAdapter();await ensureSchema(db);
+  const now=new Date().toISOString();
+  for(const [id,eligible] of [['shadowed',0],['selected',1]] as const)await db.run("INSERT INTO support_kb_articles(id,tenant_id,title,body,status,visibility,source_kind,source_key,retrieval_eligible,created_at,updated_at) VALUES(?,?,'Shared topic','Published claim','active','public','curated',?,?,?,?)",[id,'tenant',id,eligible,now,now]);
+  for(const publicAudience of [true,false]){
+   assert.deepEqual((await searchActiveArticles(db,'tenant',{publicAudience})).map(row=>row.id),['selected']);
+   assert.deepEqual((await searchActiveArticleHits(db,'tenant',{publicAudience,query:'Published claim'})).map(row=>row.source),['selected']);
+  }
+  const {prepareTriage}=await import('../agent/triage.js');
+  const prepared=await prepareTriage({db,brand:{name:'Fixture',supportAgentName:'Fixture Support',agentAuthorId:'fixture-agent'},publicAudience:true},{tenantId:'tenant',user:{id:'customer',role:'user'},message:'Published claim'});
+  assert.deepEqual(prepared.kbHits.map(hit=>hit.source),['selected']);
+  assert.equal((await db.get<{status:string}>("SELECT status FROM support_kb_articles WHERE id='shadowed'"))?.status,'active');
+ });
 });

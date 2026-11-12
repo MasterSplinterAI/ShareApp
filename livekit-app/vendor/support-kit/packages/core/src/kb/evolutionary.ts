@@ -1,4 +1,4 @@
-import type { KbArticle } from "@rhule/support-shared";
+import type { KbArticle } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { TicketService } from "../tickets/service.js";
@@ -12,6 +12,7 @@ export interface PromoteTicketToKbInput {
   /** If true, promote immediately to active (ops already reviewed). Default draft. */
   activate?: boolean;
   tablePrefix?: string;
+  preserveActive?: boolean;
 }
 
 /**
@@ -48,10 +49,11 @@ export async function promoteTicketAnswerToKb(
     sourceKind: "evolutionary",
     path: `ticket/${ticket.publicNumber}`,
     tablePrefix: prefix,
+    ...(input.preserveActive ? {preserveActive:true} : {}),
   });
 
   if (input.activate) {
-    return promoteKbArticle(db, input.tenantId, article.id, prefix);
+    return promoteKbArticle(db, input.tenantId, article.id, prefix,{revisionId:article.ingestedRevisionId,expectedDraftRevisionId:article.revisionId,expectedPublishedRevisionId:article.publishedRevisionId??null});
   }
   return article;
 }

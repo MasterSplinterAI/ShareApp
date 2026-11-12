@@ -1,0 +1,23 @@
+{
+  "namespace": "@rhule/ops-sdk",
+  "contractVersion": "1.0.0",
+  "sourceCommit": "7152856bd6b0631aa768aca39d74dcc23fae5c6b",
+  "developmentOnly": false,
+  "files": {
+    "package.json": "78aa788f9ad87b521780e11b5a4ec5f6968aa87d1ee564bd2969a40f7543b1df",
+    "scripts/build.mjs": "c83c877286589ea9f63804415d270651d00907ec3cb52681fdc1491cf6bad27a",
+    "src/eventOutbox.ts": "cb1dc765a6ea77edc6ba257ec7c8a7e399b0ef734ec06302e95609ee76168895",
+    "src/events.ts": "fb66139cf65208b90149e518fc282bb18a6b094878157cb61d546ef6ce3d65c8",
+    "src/index.ts": "8632767e17f78cf5e148922d143d048f658c199c64c445cc4bee439ceea9f110",
+    "src/marketingDelegation.ts": "4bd4552bf2a9762d3522e6623c1095db162a75fd40d1fcd3065dd4ebab2a3f06",
+    "src/supportAcceptance.ts": "41412073595e12f702390463a1967bf74958a0655cee921c57954f9ff0cee29f",
+    "src/supportAuthority.ts": "d919f11e80eb665196d4602259b062043cd9f1c65b60d759cf02be88fb97ff77",
+    "src/supportGateway.ts": "66840696551838310a39c537c7eb9fff3b5790401864945557a6d7fc7398e39b",
+    "src/supportHistory.ts": "c4bcad960626f94ef8aa68635c7d8c4b53fc03e587c4874f0c3c473955877a29",
+    "src/supportIdentity.ts": "f3ede5923d49fcfb46961b82a268c4e02a00e7f5fbbd5b5b0e0b9ed0082a0562",
+    "src/supportRecoveryGateway.ts": "b17925255ff6815206dbd74cd65caa959e9597619b242237eb156366e03e3f54",
+    "src/supportRestore.ts": "5c8149678c500ef2451796744184802b1a5bac133a9fff35c013129f2f719e70",
+    "tsconfig.json": "ae4a13267ca7ed4650344529e08bc96340c2d67eb31cf6d5a4576a567ec0d226"
+  },
+  "contentHash": "04e948963bd5711e038c30943475d8525d069b606e0b6e56a84ebd29e1aa2af0"
+}

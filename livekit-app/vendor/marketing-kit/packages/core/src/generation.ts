@@ -61,9 +61,37 @@ export function contextBlock(ctx: MarketingProductContextSnapshot, hits: Codebas
   return lines.join("\n\n");
 }
 
+/** Existing product defaults, selected explicitly by each host. No tenant-name inference. */
+export type MarketingGenerationProfile = "lalia" | "lexit";
+
 const LEGAL_GUARDRAILS = `Rules: You write marketing for a legal-information and document-preparation product. Never promise legal outcomes,
 never claim to be a law firm, never give jurisdiction-specific legal advice as fact, and never invent statistics, case names, or citations.
-Only describe product features listed in the context. Write in plain, confident, specific English.`;
+Only describe product features listed in the context. Write in plain, confident, specific English.
+Avoid AI fluff ("cutting-edge", "game-changer", "unlock your potential", "in today's fast-paced world", "elevate your experience").`;
+
+
+/** General writing rules; legal-product restrictions apply only to the LexIt profile. */
+const DEFAULT_WRITING_RULES = `Rules: Only describe product features listed in the context. Never invent statistics, testimonials, partnerships, awards, or capabilities.
+Never overpromise accuracy or outcomes. Write in plain, confident, specific English with short sentences.
+Avoid AI fluff ("cutting-edge", "game-changer", "unlock", "in today's fast-paced world", "elevate your experience").
+For high-stakes legal/medical/finance topics, use careful wording and say when a qualified human professional is still required.`;
+
+/**
+ * Builds the writing-rules block for system prompts.
+ * Hosts (e.g. Lalia) may pass a full CONTENT_BRIEF.md via `contentBrief`.
+ */
+export function writingRulesBlock(contentBrief?: string | null, generationProfile: MarketingGenerationProfile = "lalia"): string {
+  const rules = generationProfile === "lexit" ? LEGAL_GUARDRAILS : DEFAULT_WRITING_RULES;
+  const brief = typeof contentBrief === "string" ? contentBrief.trim() : "";
+  if (!brief) return rules;
+  // Cap so a huge brief cannot blow the prompt; keep head (role/product) + tail (quality bar).
+  const max = 12_000;
+  const clipped =
+    brief.length <= max
+      ? brief
+      : `${brief.slice(0, 8_000)}\n\n…\n\n${brief.slice(-3_500)}`;
+  return `${rules}\n\nCONTENT BRIEF (follow closely):\n${clipped}`;
+}
 
 // ---------------- Copilot ----------------
 
@@ -74,10 +102,12 @@ export async function runCopilotTurn(input: {
   history: Array<{ role: string; content: string }>;
   message: string;
   segmentIds: string[];
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<{ reply: string; actions: CopilotIdeaAction[] }> {
   const system = `You are the Marketing Copilot for ${input.ctx.productName}. You know the product from its codebase, pricing, support gaps, and metrics.
 Help the operator plan growth: SEO blog topics, email campaigns, positioning, and launch messaging grounded in real features.
-${LEGAL_GUARDRAILS}
+${writingRulesBlock(input.contentBrief, input.generationProfile)}
 
 Respond with JSON only:
 {"reply": "markdown answer, concise, cite product surfaces when relevant",
@@ -182,11 +212,13 @@ export async function generateBlogIdeas(input: {
   audience?: string;
   theme?: string;
   existingTitles: string[];
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<BlogIdea[]> {
   const count = Math.min(Math.max(input.count || 6, 1), 12);
   try {
     const raw = await input.llm.complete({
-      system: `You are an SEO content strategist for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are an SEO content strategist for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 Return JSON only: {"ideas":[{"title":"...","kicker":"2-3 word category","angle":"one sentence","targetKeywords":["..."],"audience":"individual|attorney|general"}]}
 
 ${contextBlock(input.ctx, input.hits)}`,
@@ -198,7 +230,7 @@ Target real search intent (questions people type into Google). Avoid these exist
     const ideas = (parsed?.ideas || [])
       .map((i: any) => ({
         title: str(i?.title, 140),
-        kicker: str(i?.kicker, 40) || "Practice Note",
+        kicker: str(i?.kicker, 40) || (input.generationProfile === "lexit" ? "Practice Note" : "Journal"),
         angle: str(i?.angle, 300),
         targetKeywords: strArr(i?.targetKeywords, 8),
         audience: (["individual", "attorney", "general"].includes(i?.audience) ? i.audience : "general") as BlogIdea["audience"],
@@ -211,7 +243,7 @@ Target real search intent (questions people type into Google). Avoid these exist
   const base = input.theme || input.ctx.coreFeatures[0] || input.ctx.productName;
   return Array.from({ length: count }, (_v, i) => ({
     title: [`What to know before ${base.toLowerCase()}`, `A practical checklist for ${base.toLowerCase()}`, `${base}: questions to ask first`][i % 3] + (i >= 3 ? ` (${i + 1})` : ""),
-    kicker: "Practice Note",
+    kicker: input.generationProfile === "lexit" ? "Practice Note" : "Journal",
     angle: `Explains ${base} in plain language and shows where ${input.ctx.productName} helps.`,
     targetKeywords: [base.toLowerCase()],
     audience: (input.audience as BlogIdea["audience"]) || "general",
@@ -237,10 +269,15 @@ export interface GeneratedPostDraft {
 
 const POST_JSON_SHAPE = `{"title":"H1 title","slug":"kebab-case-slug","kicker":"2-3 word category","excerpt":"1-2 sentence summary",
 "seoTitle":"<= 60 chars, includes primary keyword","seoDescription":"<= 155 chars","targetKeywords":["primary","secondary",...],
-"audience":"individual|attorney|general","bodyMarkdown":"900-1400 words of markdown using ## and ### headings, short paragraphs, bullet lists, one > callout, and 2-3 internal links such as [start free](/auth?mode=register) or [pricing](/pricing)",
+"audience":"individual|attorney|general","bodyMarkdown":"500-900 words of markdown using ## and ### headings, short paragraphs, bullet lists, one > callout, 3-5 FAQ-worthy questions answered in body or faqItems, and 2-3 internal links such as [start free](/v2/signup), [live demo](/demo), or [pricing](/pricing)",
+"faqItems":[{"question":"...","answer":"..."}],"ctaLabel":"...","ctaUrl":"/v2/signup","artworkPrompt":"editorial illustration brief, no text in image"}`;
+
+const LEXIT_POST_JSON_SHAPE = `{"title":"H1 title","slug":"kebab-case-slug","kicker":"2-3 word category","excerpt":"1-2 sentence summary",
+"seoTitle":"<= 60 chars, includes primary keyword","seoDescription":"<= 155 chars","targetKeywords":["primary","secondary",...],
+"audience":"individual|attorney|general","bodyMarkdown":"700-1200 words of markdown using ## and ### headings, short paragraphs, bullet lists, one > callout, 3-5 FAQ-worthy questions answered in body or faqItems, and 2-3 internal links such as [start free](/auth?mode=register) or [pricing](/pricing)",
 "faqItems":[{"question":"...","answer":"..."}],"ctaLabel":"...","ctaUrl":"/auth?mode=register","artworkPrompt":"editorial illustration brief, no text in image"}`;
 
-function normalizePostDraft(parsed: any, fallbackTitle: string, audience: MarketingPost["audience"]): GeneratedPostDraft | null {
+function normalizePostDraft(parsed: any, fallbackTitle: string, audience: MarketingPost["audience"], generationProfile?: MarketingGenerationProfile): GeneratedPostDraft | null {
   if (!parsed || typeof parsed !== "object") return null;
   const title = str(parsed.title, 160);
   const body = str(parsed.bodyMarkdown, 30000);
@@ -255,7 +292,7 @@ function normalizePostDraft(parsed: any, fallbackTitle: string, audience: Market
   return {
     title,
     slug: slugify(str(parsed.slug, 90) || title),
-    kicker: str(parsed.kicker, 40) || "Practice Note",
+    kicker: str(parsed.kicker, 40) || (generationProfile === "lexit" ? "Practice Note" : "Journal"),
     excerpt: str(parsed.excerpt, 400) || body.replace(/[#>*_\-[\]()]/g, "").slice(0, 200),
     seoTitle: (str(parsed.seoTitle, 120) || title).slice(0, 70),
     seoDescription: (str(parsed.seoDescription, 300) || str(parsed.excerpt, 300)).slice(0, 160),
@@ -263,14 +300,14 @@ function normalizePostDraft(parsed: any, fallbackTitle: string, audience: Market
     audience: ["individual", "attorney", "general"].includes(parsed.audience) ? parsed.audience : audience,
     bodyMarkdown: body,
     faqItems: faq,
-    ctaLabel: str(parsed.ctaLabel, 60) || "Start your first matter free",
-    ctaUrl: /^(\/|https?:\/\/)/.test(ctaUrl) ? ctaUrl : "/auth?mode=register",
+    ctaLabel: str(parsed.ctaLabel, 60) || (generationProfile === "lexit" ? "Start your first matter free" : "Start talking for free"),
+    ctaUrl: /^(\/|https?:\/\/)/.test(ctaUrl) ? ctaUrl : (generationProfile === "lexit" ? "/auth?mode=register" : "/v2/signup"),
     artworkPrompt: str(parsed.artworkPrompt, 800) || `Editorial illustration about ${fallbackTitle}`,
     readingTimeMinutes: estimateReadingTime(body),
   };
 }
 
-export function templatePostDraft(topic: string, ctx: MarketingProductContextSnapshot, audience: MarketingPost["audience"]): GeneratedPostDraft {
+function lexitTemplatePostDraft(topic: string, ctx: MarketingProductContextSnapshot, audience: MarketingPost["audience"]): GeneratedPostDraft {
   const title = topic.length > 8 ? topic.replace(/\.$/, "") : `${topic}: a practical guide`;
   const features = ctx.coreFeatures.slice(0, 4);
   const body = `## Why this matters
@@ -321,6 +358,58 @@ Pick one action today: build the timeline, collect the documents, or book a cons
   };
 }
 
+export function templatePostDraft(topic: string, ctx: MarketingProductContextSnapshot, audience: MarketingPost["audience"], generationProfile?: MarketingGenerationProfile): GeneratedPostDraft {
+  if (generationProfile === "lexit") return lexitTemplatePostDraft(topic, ctx, audience);
+  const title = topic.length > 8 ? topic.replace(/\.$/, "") : `${topic}: a practical guide`;
+  const features = ctx.coreFeatures.slice(0, 4);
+  const body = `## Why this matters
+
+Your supplier has a delay to explain. A new colleague has questions. A client wants a walkthrough. When the room speaks more than one language, clarity is the product.
+
+## Start with one conversation
+
+Pick a real call you already need to have. Invite the other person with a browser link. Speak in your language and let them hear theirs.
+
+- Who needs to understand whom
+- Which language each person prefers
+- Whether you need captions, a summary, or both
+
+## Where most people get stuck
+
+Waiting for the "perfect" bilingual meeting often means the meeting never happens. A short live trial beats another week of email ping-pong.
+
+> Live translation helps people talk today. Legal proceedings, medical discussions, and similar settings may still call for a qualified human interpreter.
+
+## How ${ctx.productName} helps
+
+${features.map((f) => `- ${f}`).join("\n")}
+
+You can [start talking for free](/v2/signup), [see how it feels](/demo), or review [pricing](/pricing) first.
+
+## Next steps
+
+Book one call this week. Keep it short. Notice where the conversation gets easier — and where a human interpreter is still the right call.`;
+  return {
+    title,
+    slug: slugify(title),
+    kicker: "Journal",
+    excerpt: `A plain-language guide to ${topic.toLowerCase()}, with a checklist you can use on your next call.`,
+    seoTitle: title.slice(0, 60),
+    seoDescription: `Plain-language guide to ${topic.toLowerCase()}: what to try first, common pitfalls, and how ${ctx.productName} helps.`.slice(0, 155),
+    targetKeywords: [topic.toLowerCase()],
+    audience,
+    bodyMarkdown: body,
+    faqItems: [
+      { question: `Do I need a human interpreter for ${topic.toLowerCase()}?`, answer: "It depends on the stakes. Live translation is strong for everyday meetings and family calls; legal and medical settings may still need a qualified interpreter." },
+      { question: `Can guests join without an account?`, answer: `Yes. Guests can join ${ctx.productName} meetings from a browser link without creating an account.` },
+    ],
+    ctaLabel: "Start talking for free",
+    ctaUrl: "/v2/signup",
+    artworkPrompt: `Calm editorial illustration representing ${topic}, people on a video call with subtle language cues, slate and blue palette, no text`,
+    readingTimeMinutes: estimateReadingTime(body),
+  };
+}
+
 export async function generatePostDraft(input: {
   llm: MarketingLlmAdapter;
   ctx: MarketingProductContextSnapshot;
@@ -328,24 +417,27 @@ export async function generatePostDraft(input: {
   topic: string;
   audience: MarketingPost["audience"];
   instruction?: string;
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<{ draft: GeneratedPostDraft; usedFallback: boolean; error?: string }> {
   try {
     const raw = await input.llm.complete({
-      system: `You are a senior legal-tech content writer and SEO editor for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are a senior ${input.generationProfile === "lexit" ? "legal-tech " : ""}content writer and SEO editor for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 Write one complete, publish-ready article. Structure: hook intro, 4-6 ## sections with ### subsections where useful, a practical checklist,
-a "How ${input.ctx.productName} helps" section grounded only in listed features, and a closing next step.
+a "How ${input.ctx.productName} helps" section grounded only in listed features, FAQ-ready answers, and a closing next step.
+Always include seoTitle, seoDescription, slug, faqItems, and natural internal links.
 Return JSON only in this shape:
-${POST_JSON_SHAPE}
+${input.generationProfile === "lexit" ? LEXIT_POST_JSON_SHAPE : POST_JSON_SHAPE}
 
 ${contextBlock(input.ctx, input.hits)}`,
       user: `Topic: ${input.topic}\nAudience: ${input.audience}${input.instruction ? `\nEditor instructions: ${input.instruction}` : ""}`,
       temperature: 0.7,
     });
-    const draft = normalizePostDraft(parseJsonLoose(raw), input.topic, input.audience);
+    const draft = normalizePostDraft(parseJsonLoose(raw), input.topic, input.audience, input.generationProfile);
     if (draft) return { draft, usedFallback: false };
-    return { draft: templatePostDraft(input.topic, input.ctx, input.audience), usedFallback: true, error: "Model returned an unusable draft; used the template." };
+    return { draft: templatePostDraft(input.topic, input.ctx, input.audience, input.generationProfile), usedFallback: true, error: "Model returned an unusable draft; used the template." };
   } catch (err: any) {
-    return { draft: templatePostDraft(input.topic, input.ctx, input.audience), usedFallback: true, error: String(err?.message || err).slice(0, 300) };
+    return { draft: templatePostDraft(input.topic, input.ctx, input.audience, input.generationProfile), usedFallback: true, error: String(err?.message || err).slice(0, 300) };
   }
 }
 
@@ -356,6 +448,8 @@ export async function rewritePost(input: {
   post: MarketingPost;
   instruction: string;
   sectionHeading?: string;
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<Partial<GeneratedPostDraft> | null> {
   const { post } = input;
   if (input.sectionHeading) {
@@ -363,7 +457,7 @@ export async function rewritePost(input: {
     const idx = sections.findIndex((s) => s.heading.toLowerCase() === input.sectionHeading!.toLowerCase());
     if (idx < 0) return null;
     const raw = await input.llm.complete({
-      system: `You edit one section of a published-quality article for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You edit one section of a published-quality article for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 Return JSON only: {"sectionMarkdown":"the full replacement section starting with its ## heading"}`,
       user: `Article title: ${post.title}\n\nSection to rewrite:\n${sections[idx].text}\n\nInstruction: ${input.instruction}`,
       temperature: 0.6,
@@ -377,9 +471,9 @@ Return JSON only: {"sectionMarkdown":"the full replacement section starting with
     return { bodyMarkdown: body, readingTimeMinutes: estimateReadingTime(body) };
   }
   const raw = await input.llm.complete({
-    system: `You revise articles for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+    system: `You revise articles for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 Apply the editor instruction to the article and return the full revised article as JSON only:
-${POST_JSON_SHAPE}
+${input.generationProfile === "lexit" ? LEXIT_POST_JSON_SHAPE : POST_JSON_SHAPE}
 
 ${contextBlock(input.ctx)}`,
     user: `Editor instruction: ${input.instruction}\n\nCurrent article JSON:\n${JSON.stringify({
@@ -398,7 +492,7 @@ ${contextBlock(input.ctx)}`,
     })}`,
     temperature: 0.6,
   });
-  const draft = normalizePostDraft(parseJsonLoose(raw), post.title, post.audience);
+  const draft = normalizePostDraft(parseJsonLoose(raw), post.title, post.audience, input.generationProfile);
   if (!draft) return null;
   const { slug: _slug, ...rest } = draft;
   return rest;
@@ -452,10 +546,12 @@ export async function generateEmailIdeas(input: {
   segmentId: string;
   segmentLabel: string;
   goal?: string;
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<EmailIdea[]> {
   try {
     const raw = await input.llm.complete({
-      system: `You are a lifecycle email strategist for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are a lifecycle email strategist for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 Return JSON only: {"ideas":[{"name":"internal campaign name","subject":"subject line <= 60 chars","angle":"one sentence"}]}
 
 ${contextBlock(input.ctx)}`,
@@ -471,8 +567,8 @@ ${contextBlock(input.ctx)}`,
     // fall through
   }
   return [
-    { name: `${input.segmentLabel}: feature spotlight`, subject: `A faster way to get your next step done`, angle: "Spotlight one core feature with a single clear CTA.", segmentId: input.segmentId },
-    { name: `${input.segmentLabel}: how-to`, subject: `3 things to prepare before you file anything`, angle: "Useful checklist that builds trust before asking for action.", segmentId: input.segmentId },
+    { name: `${input.segmentLabel}: feature spotlight`, subject: input.generationProfile === "lexit" ? "A faster way to get your next step done" : "A clearer way to talk across languages", angle: "Spotlight one core feature with a single clear CTA.", segmentId: input.segmentId },
+    { name: `${input.segmentLabel}: how-to`, subject: input.generationProfile === "lexit" ? "3 things to prepare before you file anything" : "3 tips before your next bilingual call", angle: "Useful checklist that builds trust before asking for action.", segmentId: input.segmentId },
   ];
 }
 
@@ -480,6 +576,7 @@ export function templateEmailDraft(input: {
   ctx: MarketingProductContextSnapshot;
   segmentId: string;
   goal: string;
+  generationProfile?: MarketingGenerationProfile;
 }): GeneratedEmailDraft {
   if (input.segmentId === "free_matter_locked") {
     return {
@@ -514,9 +611,9 @@ ${input.ctx.tagline}
 ${input.ctx.coreFeatures.slice(0, 3).map((f) => `- ${f}`).join("\n")}
 
 Reply to this email if you have questions — a real person reads every reply.`,
-    ctaLabel: "Open my workspace",
-    ctaUrl: input.ctx.domain ? `https://${input.ctx.domain}/` : "/",
-    artworkPrompt: `Editorial illustration for ${input.goal || input.ctx.productName}, navy palette, no text`,
+    ctaLabel: input.generationProfile === "lexit" ? "Open my workspace" : "Start a free meeting",
+    ctaUrl: input.generationProfile === "lexit" ? (input.ctx.domain ? `https://${input.ctx.domain}/` : "/") : (input.ctx.domain ? `https://${input.ctx.domain}/v2/signup` : "/v2/signup"),
+    artworkPrompt: `Editorial illustration for ${input.goal || input.ctx.productName}, ${input.generationProfile === "lexit" ? "navy" : "slate and blue"} palette, no text`,
     bannerKicker: input.ctx.productName,
   };
 }
@@ -552,10 +649,12 @@ export async function generateEmailDraft(input: {
   segmentLabel: string;
   goal: string;
   instruction?: string;
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<{ draft: GeneratedEmailDraft; usedFallback: boolean }> {
   try {
     const raw = await input.llm.complete({
-      system: `You are a lifecycle email copywriter for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+      system: `You are a lifecycle email copywriter for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 ${EMAIL_VARS_HELP}
 Return JSON only: ${EMAIL_JSON_SHAPE}
 
@@ -577,9 +676,11 @@ export async function refineEmailCopy(input: {
   current: GeneratedEmailDraft;
   segmentId: string;
   instruction: string;
+  contentBrief?: string | null;
+  generationProfile?: MarketingGenerationProfile;
 }): Promise<GeneratedEmailDraft | null> {
   const raw = await input.llm.complete({
-    system: `You revise marketing emails for ${input.ctx.productName}. ${LEGAL_GUARDRAILS}
+    system: `You revise marketing emails for ${input.ctx.productName}. ${writingRulesBlock(input.contentBrief, input.generationProfile)}
 ${EMAIL_VARS_HELP}
 Apply the instruction and return the full revised email as JSON only: ${EMAIL_JSON_SHAPE}`,
     user: `Segment: ${input.segmentId}\nInstruction: ${input.instruction}\n\nCurrent email JSON:\n${JSON.stringify(input.current)}`,

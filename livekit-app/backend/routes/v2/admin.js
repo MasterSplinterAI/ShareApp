@@ -1,3 +1,4 @@
+const {queueContact,queueOrgContacts,customerMutation}=require('../../lib/opsOutbox');
 const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
@@ -232,7 +233,7 @@ router.patch('/orgs/:orgId/plan', requireV2Auth, requireSuperadmin, async (req, 
       plan_id,
       reason: reasonTrim,
     });
-    await db.run(`UPDATE v2_org_subscriptions SET plan_id = ? WHERE org_id = ?`, [plan_id, req.params.orgId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_org_subscriptions SET plan_id = ? WHERE org_id = ?`, [plan_id, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.params.orgId]);
     res.json({ subscription: sub });
   } catch (e) {
@@ -575,7 +576,8 @@ router.get('/webhooks', requireV2Auth, requireSuperadmin, async (req, res) => {
     res.json({
       events: rows.map((row) => ({ ...row, processed: Boolean(row.processed_at) })),
       totals: { total: counts?.total || 0, unprocessed: counts?.unprocessed || 0 },
-      notes: 'v2_webhook_events has no failure column — health is approximated as processed_at IS NULL (unprocessed).',
+      eventDelivery: await require('../../lib/opsOutbox').opsEventDiagnostics(),
+      notes: 'Legacy webhook rows retain their original processing evidence. Verified receipts and projection delivery are tracked separately.',
     });
   } catch (e) {
     console.error('[admin/webhooks]', e);
@@ -592,10 +594,10 @@ router.post('/orgs/:orgId/suspend', requireV2Auth, requireSuperadmin, async (req
     const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_suspend_org', { orgId: req.params.orgId, reason });
-    await db.run(
+    await customerMutation(async tx=>{await tx.run(
       `UPDATE v2_organizations SET suspended_at = datetime('now'), suspended_reason = ?, billing_status = 'suspended' WHERE id = ?`,
       [reason, req.params.orgId]
-    );
+    );await queueOrgContacts(tx,req.params.orgId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/suspend org]', e);
@@ -610,10 +612,10 @@ router.post('/orgs/:orgId/reactivate', requireV2Auth, requireSuperadmin, async (
     const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_reactivate_org', { orgId: req.params.orgId, reason });
-    await db.run(
+    await customerMutation(async tx=>{await tx.run(
       `UPDATE v2_organizations SET suspended_at = NULL, suspended_reason = NULL, billing_status = 'active' WHERE id = ?`,
       [req.params.orgId]
-    );
+    );await queueOrgContacts(tx,req.params.orgId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/reactivate org]', e);
@@ -628,7 +630,7 @@ router.post('/users/:userId/disable', requireV2Auth, requireSuperadmin, async (r
     const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_disable_user', { userId: req.params.userId, reason });
-    await db.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);await queueContact(tx,req.params.userId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/disable user]', e);
@@ -643,7 +645,7 @@ router.post('/users/:userId/enable', requireV2Auth, requireSuperadmin, async (re
     const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_enable_user', { userId: req.params.userId, reason });
-    await db.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);await queueContact(tx,req.params.userId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/enable user]', e);
@@ -667,7 +669,7 @@ router.patch('/orgs/:orgId/billing-status', requireV2Auth, requireSuperadmin, as
       billing_status,
       reason: reasonTrim,
     });
-    await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     res.json({ org });
@@ -966,7 +968,9 @@ router.patch('/announcements/:id', requireV2Auth, requireSuperadmin, async (req,
 
 router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
-    const { subject, body, reason } = req.body || {};
+    const { subject, body, reason, purpose } = req.body || {};
+    if (!['account_notice','service_notice'].includes(purpose)) return res.status(409).json({error:'Select an account or service notice purpose; use Marketing for campaigns',marketingUrl:marketingWorkflowUrl()});
+    if(typeof reason!=='string'||reason.trim().length>2000)return res.status(400).json({error:'reason must be 4–2000 characters'});
     const reasonTrim = requireAuditReason(reason);
     if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
     if (!subject?.trim() || !body?.trim()) {
@@ -988,6 +992,7 @@ router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, 
     });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_email_org', {
       orgId: req.params.orgId,
+      purpose,
       to: emails,
       subject: subject.trim(),
       sent: result.sent,
@@ -1347,44 +1352,12 @@ router.get('/consent/marketing', requireV2Auth, requireSuperadmin, async (req, r
   }
 });
 
-router.post('/email/broadcast', requireV2Auth, requireSuperadmin, async (req, res) => {
-  try {
-    const { subject, body, reason, confirm } = req.body || {};
-    if (confirm !== 'SEND_ALL') {
-      return res.status(400).json({ error: 'confirm must be SEND_ALL' });
-    }
-    const reasonTrim = requireAuditReason(reason);
-    if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
-    if (!subject?.trim() || !body?.trim()) {
-      return res.status(400).json({ error: 'subject and body required' });
-    }
-    const owners = await db.all(
-      `SELECT DISTINCT u.email FROM v2_org_members m JOIN v2_users u ON u.id = m.user_id WHERE m.role = 'owner'`
-    );
-    const emails = owners.map((o) => o.email).filter(Boolean);
-    let sentCount = 0;
-    const email = renderAdminMessage({ subject: subject.trim(), body: body.trim() });
-    for (const emailAddress of emails) {
-      const r = await sendEmail({
-        to: emailAddress,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-      });
-      if (r.sent) sentCount += 1;
-    }
-    await writeAdminAudit(db, req.v2Auth.email, 'admin_email_broadcast', {
-      recipientCount: emails.length,
-      sentCount,
-      subject: subject.trim(),
-      reason: reasonTrim,
-    });
-    res.json({ ok: true, recipientCount: emails.length, sentCount });
-  } catch (e) {
-    console.error('[admin/email broadcast]', e);
-    res.status(500).json({ error: 'Failed' });
-  }
-});
+function marketingWorkflowUrl() {
+  return 'https://ops.lalia.cloud/marketing?business='+encodeURIComponent(process.env.OPS_HUB_BUSINESS_ID||'lalia')+'&tab=email';
+}
+router.get('/email/workflow', requireV2Auth, requireSuperadmin, (_req,res)=>res.json({marketingUrl:marketingWorkflowUrl()}));
+// The former broadcast dispatched synchronously; there are no queued jobs behind this route.
+router.post('/email/broadcast', requireV2Auth, requireSuperadmin, (_req,res)=>res.status(409).json({error:'Use the Marketing workflow for campaigns',marketingUrl:marketingWorkflowUrl()}));
 
 router.post('/billing/settle-overages', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {

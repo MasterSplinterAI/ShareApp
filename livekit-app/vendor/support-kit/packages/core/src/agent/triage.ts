@@ -5,9 +5,9 @@ import type {
   TicketMessage,
   Proposal,
   KnowledgeGap,
-} from "@rhule/support-shared";
-import { DEFAULT_TOPICS, SENSITIVE_TOPICS_DEFAULT } from "@rhule/support-shared";
-import type { DbAdapter, LlmAdapter, OpsNotification, OpsNotifier } from "../adapters/types.js";
+} from "@quill/support-shared";
+import { DEFAULT_TOPICS, SENSITIVE_TOPICS_DEFAULT } from "@quill/support-shared";
+import type { DbAdapter, DurableMutationScope, LlmAdapter, OpsNotification, OpsNotifier } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { KnowledgeGapService } from "../gaps/service.js";
 import { ProposalService } from "../proposals/service.js";
@@ -32,6 +32,8 @@ export interface TriageInput {
   tenantId: string;
   user: SupportUser;
   message: string;
+  /** Optional existing ticket id when the user sends a follow-up turn in the same chat. */
+  existingTicketId?: string;
   /** Optional explicit kind from launcher home picker. */
   kind?: "support" | "bug" | "feature";
   topic?: string;
@@ -45,6 +47,7 @@ export interface TriageInput {
 }
 
 export interface TriageDeps {
+  effects?: DurableMutationScope;
   db: DbAdapter;
   brand: BrandConfig;
   llm?: LlmAdapter;
@@ -192,15 +195,22 @@ async function callLlm(
   docHits: KbSearchHit[],
   user: SupportUser,
   topics: string[],
+  priorMessages?: TicketMessage[],
 ): Promise<LlmTriageParse | null> {
   try {
     const parts = [
       "Knowledge base excerpts:",
       formatSourcesForPrompt(docHits),
       "",
-      "User message:",
-      message,
     ];
+    if (priorMessages && priorMessages.length > 0) {
+      parts.push(
+        "Prior conversation in this ticket:",
+        ...priorMessages.slice(-8).map((m) => `${m.authorType === "user" ? "User" : "Assistant"}: ${m.body}`),
+        "",
+      );
+    }
+    parts.push("User message:", message);
     appendUserContext(parts, user);
     const raw = await llm.complete({
       system: buildSystemPrompt(brand, topics),
@@ -219,6 +229,7 @@ async function resolveDecision(
   docHits: KbSearchHit[],
   user: SupportUser,
   forced?: { kind?: TriageInput["kind"]; topic?: string },
+  priorMessages?: TicketMessage[],
 ): Promise<RoutingDecision> {
   const opts = decideOpts(deps, user);
   let decision: RoutingDecision;
@@ -230,6 +241,7 @@ async function resolveDecision(
       docHits,
       user,
       opts.topicAllowlist ?? [...DEFAULT_TOPICS],
+      priorMessages,
     );
     decision = parsed
       ? decideFromLlm(parsed, message, docHits, opts)
@@ -263,31 +275,59 @@ function citationsJson(docHits: KbSearchHit[]): string {
 /**
  * Triage a user chat message. Always creates (or continues) an auditable ticket.
  */
-export async function triageMessage(
+export async function prepareTriage(
   deps: TriageDeps,
   input: TriageInput,
-): Promise<TriageResult> {
+): Promise<{decision: RoutingDecision;kbHits: KbSearchHit[]}> {
   const prefix = deps.tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const docHits = deps.docsRoot
+  const docHits = deps.docsRoot && !deps.publicAudience
     ? searchCuratedDocs(input.message, { docsRoot: deps.docsRoot, limit: 5 })
     : [];
   const articleHits = await searchActiveArticleHits(deps.db, input.tenantId, {
     query: input.message,
+    publicAudience: Boolean(deps.publicAudience),
     limit: 5,
     tablePrefix: prefix,
   });
   const kbHits = mergeHits(docHits, articleHits);
 
-  let decision = await resolveDecision(deps, input.message, kbHits, input.user, {
-    ...(input.kind ? { kind: input.kind } : {}),
-    ...(input.topic ? { topic: input.topic } : {}),
-  });
-  decision = applyPublishedKbAnswer(decision, articleHits, input.message);
-
   const tickets = new TicketService(deps.db, prefix);
   const proposals = new ProposalService(deps.db, prefix);
   const gaps = new KnowledgeGapService(deps.db, prefix);
 
+  const existingTicket = input.existingTicketId
+    ? await tickets.getTicket(input.tenantId, input.existingTicketId)
+    : null;
+  if (input.existingTicketId && !existingTicket) throw new Error("Ticket not found");
+  if (existingTicket && existingTicket.userId !== input.user.id && input.user.role !== "admin" && input.user.role !== "ops") throw new Error("Forbidden");
+  const priorMessages = existingTicket
+    ? await tickets.listMessages(input.tenantId, existingTicket.id)
+    : undefined;
+
+  let decision = await resolveDecision(
+    deps,
+    input.message,
+    kbHits,
+    input.user,
+    {
+      ...(input.kind ? { kind: input.kind } : {}),
+      ...(input.topic ? { topic: input.topic } : {}),
+    },
+    priorMessages,
+  );
+  decision = applyPublishedKbAnswer(decision, articleHits, input.message);
+
+  return {decision,kbHits};
+}
+
+export async function persistPreparedTriage(deps:TriageDeps,input:TriageInput,prepared:Awaited<ReturnType<typeof prepareTriage>>):Promise<TriageResult> {
+  const prefix=deps.tablePrefix??DEFAULT_TABLE_PREFIX;
+  const tickets=new TicketService(deps.db,prefix);
+  const proposals=new ProposalService(deps.db,prefix);
+  const gaps=new KnowledgeGapService(deps.db,prefix);
+  const {decision,kbHits}=prepared;
+  const existingTicket=input.existingTicketId?await tickets.getTicket(input.tenantId,input.existingTicketId):null;
+  if(input.existingTicketId && (!existingTicket || (existingTicket.userId!==input.user.id && input.user.role!=='admin' && input.user.role!=='ops'))) throw new Error('Forbidden');
   const initialStatus =
     decision.action === "auto_reply"
       ? decision.resolveAfterReply
@@ -297,34 +337,46 @@ export async function triageMessage(
         ? "escalated"
         : "pending_ops";
 
-  const createInput: Parameters<TicketService["createTicket"]>[0] = {
-    tenantId: input.tenantId as never,
-    kind: decision.kind,
-    topic: decision.topic,
-    body: input.message,
-    userId: input.user.id,
-    subject: input.message.slice(0, 200),
-    status: "ai_working",
-    contextJson: JSON.stringify({
-      planLabel: input.user.planLabel ?? null,
-      contextSummary: input.user.contextSummary ?? null,
-      email: input.user.email ?? input.guestEmail ?? null,
-      role: input.user.role,
-      publicAudience: Boolean(deps.publicAudience),
-      ...(input.leadContext
-        ? {
-            leadId: input.leadContext.leadId,
-            name: input.leadContext.name,
-            phone: input.leadContext.phone ?? null,
-            marketingOptIn: Boolean(input.leadContext.marketingOptIn),
-          }
-        : {}),
-    }),
-  };
-  if (input.user.orgId) createInput.orgId = input.user.orgId;
-  if (input.guestEmail) createInput.guestEmail = input.guestEmail;
+  let ticket: Ticket;
+  let userMessage: TicketMessage;
+  if (existingTicket) {
+    ticket = existingTicket;
+    userMessage = await tickets.addMessage(input.tenantId, existingTicket.id, input.message, {
+      authorType: "user",
+      authorId: input.user.id,
+    });
+  } else {
+    const createInput: Parameters<TicketService["createTicket"]>[0] = {
+      tenantId: input.tenantId as never,
+      kind: decision.kind,
+      topic: decision.topic,
+      body: input.message,
+      userId: input.user.id,
+      subject: input.message.slice(0, 200),
+      status: "ai_working",
+      contextJson: JSON.stringify({
+        planLabel: input.user.planLabel ?? null,
+        contextSummary: input.user.contextSummary ?? null,
+        email: input.user.email ?? input.guestEmail ?? null,
+        role: input.user.role,
+        publicAudience: Boolean(deps.publicAudience),
+        ...(input.leadContext
+          ? {
+              leadId: input.leadContext.leadId,
+              name: input.leadContext.name,
+              phone: input.leadContext.phone ?? null,
+              marketingOptIn: Boolean(input.leadContext.marketingOptIn),
+            }
+          : {}),
+      }),
+    };
+    if (input.user.orgId) createInput.orgId = input.user.orgId;
+    if (input.guestEmail) createInput.guestEmail = input.guestEmail;
 
-  const { ticket, message: userMessage } = await tickets.createTicket(createInput);
+    const created = await tickets.createTicket(createInput);
+    ticket = created.ticket;
+    userMessage = created.message;
+  }
 
   const autoReplied = decision.action === "auto_reply";
   const citationJson = kbHits.length > 0 ? citationsJson(kbHits) : null;
@@ -388,7 +440,8 @@ export async function triageMessage(
       ticketPublicNumber: ticket.publicNumber,
     };
     if (adminUrl) ticketNotification.adminUrl = adminUrl;
-    notifyOps(deps, ticketNotification);
+    if(deps.effects) await deps.effects.enqueue({type:'support.ops',ticketId:ticket.id,payload:{...ticketNotification}});
+    else notifyOps(deps, ticketNotification);
 
   if (proposal) {
       const proposalNotification: OpsNotification = {
@@ -399,7 +452,8 @@ export async function triageMessage(
       };
       if (adminUrl) proposalNotification.adminUrl = adminUrl;
 
-      if (deps.opsNotifier?.notifyProposalReady) {
+      if(deps.effects) await deps.effects.enqueue({type:'support.ops',ticketId:ticket.id,payload:{...proposalNotification,proposalId:proposal.id}});
+      else if (deps.opsNotifier?.notifyProposalReady) {
         deps.opsNotifier
           .notifyProposalReady({
             ticketPublicNumber: ticket.publicNumber,
@@ -444,4 +498,8 @@ export async function triageMessage(
   if (proposal) result.proposal = proposal;
   if (gap) result.gap = gap;
   return result;
+}
+
+export async function triageMessage(deps:TriageDeps,input:TriageInput):Promise<TriageResult> {
+  return persistPreparedTriage(deps,input,await prepareTriage(deps,input));
 }

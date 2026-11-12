@@ -19,12 +19,19 @@ router.use('/announcements', require('./announcements'));
 if (require('../../lib/supportKit').supportKitEnabled()) {
   const { createShareAppSupportRouter } = require('../../lib/supportKit');
   const kit = createShareAppSupportRouter();
+  router.startSupportReplay=kit.startReplay;router.stopSupportReplay=kit.stopReplay;
   console.log(
     `[support] kit mounted at /api/v2/support (tenant=${kit.meta.tenantId}, ${kit.meta.kitVersion})`
   );
   router.use('/support', (req, res, next) => kit.handler(req, res, next));
 } else {
-  router.use('/support', require('./support'));
+  // The v2 writer is retained only for standalone installs. A configured integration cannot resurrect it.
+  router.use('/support',async(req,res,next)=>{try{
+    const {supportAuthorityHttp}=require('../../lib/supportAuthority');if(await supportAuthorityHttp(req,res))return;
+    const cfg=require('../../lib/opsHubClient').getOpsHubConfig();
+    if(cfg.baseUrl||cfg.secretKey||await require('../../lib/supportAuthority').hostSupportAuthority.read().then(s=>s.state!=='unmanaged').catch(()=>true))return res.status(503).json({error:'Legacy support writer retired. Enable the support-kit gateway.'});
+    return next();
+  }catch{return res.status(503).json({error:'Support authority unavailable',retryable:true});}},require('./support'));
 }
 router.use('/branding', require('./brandingPublic'));
 router.use('/rooms', require('./captionConfig'));

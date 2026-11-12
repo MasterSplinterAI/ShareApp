@@ -5,12 +5,12 @@ import type {
   TicketKind,
   TicketMessage,
   TicketStatus,
-} from "@rhule/support-shared";
+} from "@quill/support-shared";
 import {
   mapKindTopicToCategory,
   normalizeAuthorType,
   normalizeTicketStatus,
-} from "@rhule/support-shared";
+} from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 

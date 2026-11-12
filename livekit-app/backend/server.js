@@ -167,16 +167,20 @@ app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateLimiter, translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
+app.post('/api/consent/eligibility',require('./lib/consent').consentEligibilityHandler);
+app.post('/api/marketing/transfer',require('./lib/marketingAuthority').marketingTransferHandler);
 
 // @rhule/marketing-kit — Admin console API + public SEO + Resend webhooks
 try {
   const { marketingKitEnabled, getLaliaMarketingKit } = require('./lib/marketingKit');
   if (marketingKitEnabled()) {
     const marketing = getLaliaMarketingKit();
+    const pages = require('./lib/marketingPublicPages').publicMarketingHandlers(marketing);
+    app.post('/marketing/subscribe',require('./lib/marketingAuthority').forwardMarketingSubscribe);
     app.use('/marketing', (req, res, next) => void marketing.handler(req, res, next));
-    app.get('/blog', (req, res, next) => void marketing.publicHandlers.blogIndex(req, res, next));
-    app.get('/blog/:slug', (req, res, next) => void marketing.publicHandlers.blogPost(req, res, next));
-    app.get('/sitemap.xml', (req, res, next) => void marketing.publicHandlers.sitemap(req, res, next));
+    app.get(['/blog','/blog/index.html'], (req, res, next) => void pages.blogIndex(req, res, next));
+    app.get(['/blog/:slug','/blog/:slug/index.html'], (req, res, next) => void pages.blogPost(req, res, next));
+    app.get('/sitemap.xml', (req, res, next) => void pages.sitemap(req, res, next));
     console.log('[marketing] kit mounted (/marketing, /blog, /sitemap.xml)');
   }
 } catch (e) {
@@ -206,20 +210,31 @@ app.use((err, req, res, next) => {
 });
 
 (async function start() {
+  let stopOpsEventWorkers = () => {};
+  let stopCustomerReporting = () => {};
   try {
     await v2Database.initDatabase();
+    const { startOpsEventWorkers } = require('./lib/opsOutbox');
+    const { processStripeEvent } = require('./routes/v2/billingWebhook');
+    stopOpsEventWorkers = await startOpsEventWorkers(processStripeEvent);
+    stopCustomerReporting = require('./lib/customerProjection').startCustomerReporting();
   } catch (e) {
     console.error('[v2Database] init failed:', e.message);
   }
   try {
     const { supportKitEnabled, ensureSupportSchema } = require('./lib/supportKit');
     if (supportKitEnabled()) {
+      // Central mode initializes only durable gateway storage; local seeding/senders stay fenced.
       await ensureSupportSchema();
+      v2Routes.startSupportReplay?.();
     }
   } catch (e) {
     console.error('[support] schema ensure failed:', e.message);
   }
   try {
+    const {initializeConsent,consentReporter}=require('./lib/consent');
+    await initializeConsent();
+    if(process.env.NODE_ENV!=='test')consentReporter.start();
     const { marketingKitEnabled, initLaliaMarketing } = require('./lib/marketingKit');
     if (marketingKitEnabled()) {
       await initLaliaMarketing();
@@ -261,11 +276,13 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[overage-settlement] scheduler start failed:', e.message);
   }
-  app.listen(PORT, '0.0.0.0', () => {
+  const server=app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
     console.log(`Network URL: ${process.env.NETWORK_URL}`);
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
+  server.once('close',()=>{stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
+  process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
 })();

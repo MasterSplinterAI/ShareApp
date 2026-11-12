@@ -258,6 +258,7 @@ export const v2Admin = {
   announcements: () => apiV2.get('/admin/announcements').then((r) => r.data),
   createAnnouncement: (body) => apiV2.post('/admin/announcements', body).then((r) => r.data),
   patchAnnouncement: (id, body) => apiV2.patch(`/admin/announcements/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  marketingWorkflow: () => apiV2.get('/admin/email/workflow').then((r) => r.data),
   broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
   billingConfig: () => apiV2.get('/admin/billing/config').then((r) => r.data),
   patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),

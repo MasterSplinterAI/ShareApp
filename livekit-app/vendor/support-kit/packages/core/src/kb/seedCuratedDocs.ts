@@ -47,12 +47,14 @@ export async function seedCuratedDocs(
     return { path: rel, title: titleFromMarkdown(rel, body), body };
   });
 
-  const articles = await ingestDocsSources(db, tenantId, sources);
+  const articles = await ingestDocsSources(db, tenantId, sources,{visibility:"public"});
   let promoted = 0;
   const articleIds: string[] = [];
   for (const article of articles) {
     await promoteKbArticle(db, tenantId, article.id, undefined, {
-      visibility: "public",
+      revisionId:article.ingestedRevisionId,
+      expectedDraftRevisionId:article.revisionId,
+      expectedPublishedRevisionId:article.publishedRevisionId??null,
     });
     promoted += 1;
     articleIds.push(article.id);

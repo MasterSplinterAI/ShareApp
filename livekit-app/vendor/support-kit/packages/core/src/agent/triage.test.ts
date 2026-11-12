@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it, beforeEach } from "node:test";
-import { TenantIdSchema } from "@rhule/support-shared";
+import { TenantIdSchema } from "@quill/support-shared";
 import type { LlmAdapter, OpsNotification, OpsNotifier } from "../adapters/types.js";
 import { createMemorySqliteAdapter } from "../db/memorySqlite.js";
 import { ensureSchema } from "../db/migrate.js";
@@ -435,4 +435,30 @@ describe("triageMessage SQLite KB", () => {
     assert.equal(result.autoReplied, false);
     assert.equal(result.ticket.status, "pending_ops");
   });
+});
+
+it("follow-up keeps the ticket and includes only the last eight prior messages", async () => {
+  const db = createMemorySqliteAdapter();
+  await ensureSchema(db);
+  const { TicketService } = await import("../tickets/service.js");
+  const tickets = new TicketService(db);
+  const created = await tickets.createTicket({tenantId: TenantIdSchema.parse("acme"), userId:"u1", body:"oldest-secret", subject:"Question"});
+  for (let i=0;i<9;i++) await tickets.addMessage("acme", created.ticket.id, `prior-turn-${i}`, {authorType:"user", authorId:"u1"});
+  let prompt = "";
+  const result = await triageMessage({db, brand, llm:{async complete(input) {prompt=input.user;return JSON.stringify({route:"propose_reply", kind:"support", topic:"other", confidence:0.2, summary:"Follow-up", body:{draft_reply:"Help"}});}}}, {tenantId:"acme", user:{id:"u1",role:"user"}, message:"follow-up", existingTicketId:created.ticket.id});
+  assert.equal(result.ticket.id, created.ticket.id);
+  assert.match(prompt, /prior-turn-8/);
+  assert.doesNotMatch(prompt, /oldest-secret|prior-turn-0/);
+  assert.equal((await tickets.listMessages("acme",created.ticket.id)).length,12);
+});
+
+it("follow-up rejects a ticket from another tenant or user before invoking AI", async () => {
+  const db = createMemorySqliteAdapter(); await ensureSchema(db);
+  const { TicketService } = await import("../tickets/service.js");
+  const tickets = new TicketService(db);
+  const {ticket} = await tickets.createTicket({tenantId:TenantIdSchema.parse("acme"),userId:"owner",body:"private",subject:"Private"});
+  for (const [tenantId,userId] of [["other","owner"],["acme","stranger"]]) {
+    await assert.rejects(() => triageMessage({db,brand,llm:{async complete(){assert.fail("must not invoke AI");}}},{tenantId:tenantId!,user:{id:userId!,role:"user"},message:"attack",existingTicketId:ticket.id}), /Ticket not found|Forbidden/);
+  }
+  assert.equal((await tickets.listMessages("acme",ticket.id)).length,1);
 });

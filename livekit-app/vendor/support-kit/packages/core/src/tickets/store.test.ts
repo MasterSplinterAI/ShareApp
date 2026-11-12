@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { TenantIdSchema } from "@rhule/support-shared";
+import { TenantIdSchema } from "@quill/support-shared";
 import { createMemorySqliteAdapter } from "../db/memorySqlite.js";
 import { ensureSchema } from "../db/migrate.js";
 import { TicketService } from "./service.js";
@@ -63,4 +63,16 @@ describe("TicketStore tenant isolation", () => {
     assert.equal(messages.length, 1);
     assert.equal(messages[0]?.body, "First");
   });
+});
+
+it("all is a concrete tenant, never an aggregation bypass, even for colliding public numbers", async () => {
+ const db=createMemorySqliteAdapter();await ensureSchema(db);const service=new TicketService(db);
+ const a=await service.createTicket({tenantId:TenantIdSchema.parse("a"),body:"A"});const b=await service.createTicket({tenantId:TenantIdSchema.parse("b"),body:"B"});
+ assert.equal(a.ticket.publicNumber,b.ticket.publicNumber);
+ assert.deepEqual(await service.listTickets("all"),[]);
+ assert.equal(await service.getTicket("all",a.ticket.id),undefined);
+ assert.equal(await service.getTicket("all",String(a.ticket.publicNumber)),undefined);
+ assert.deepEqual(await service.listMessages("all",a.ticket.id),[]);
+ assert.equal(await service.setStatus("all",a.ticket.id,"closed"),undefined);
+ assert.equal((await service.getTicket("a",a.ticket.id))?.status,a.ticket.status);
 });
