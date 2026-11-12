@@ -4,6 +4,8 @@ Owner approved the setup and `kennyrhule@proton.me` as alert recipient. Stripe
 remains **TEST**, and automatic overage charging remains **OFF**. This work does
 not activate paid public launch or introduce automatic database failover.
 
+Follow-up: [stable usage, complete agent recovery, and free-signup homepage](2026-11-12-fallback-recovery.md) records the later verified rollout and supersedes the pending agent items below.
+
 ## Checkout
 
 Web/backend release `e224afce9d4db7137b4841b62686add42c6bb8c5` preserves the
@@ -51,9 +53,9 @@ symlinks; a regression test and the actual backup/restore passed. Root independe
 verified installed source hashes, active timers and successful backup/freshness
 services. See [restore evidence](../../scripts/operations-recovery/restore-verification.json).
 
-Agent recovery is explicitly partial: provider credential copies on disk cannot
-be proven identical to LiveKit's write-only deployed secrets. They remain
-candidate/unknown, not verified recovery credentials. Newly issued log-writer
+At this initial operations rollout, agent recovery was explicitly partial: provider credential copies on disk cannot
+be proven identical to LiveKit's write-only deployed secrets. They were
+candidate/unknown, not verified recovery credentials. The later [known-value recovery procedure](2026-11-12-fallback-recovery.md) established and tested complete inputs for both agents. Newly issued log-writer
 keys are preserved encrypted before use. No provider or settings keys were
 rotated. Recovery permissions are separate and are not attached to the backup,
 monitor or log-writer identities.
@@ -94,12 +96,7 @@ activation gates and rollback order.
 
 - Owner intentionally deferred live Stripe onboarding/configuration and an
   approved real-payment/refund check. Do not switch modes without that decision.
-- Agent provider-secret recovery remains qualified until authoritative values
-  are retained securely or an explicitly planned rotation establishes them.
-- The stable fallback profile's pre-existing missing `BACKEND_BASE_URL` /
-  `COST_EVENT_SECRET` still disables usage reporting, observed during its canary.
-  Its successful caption/logging tests do not certify billing telemetry. Repair
-  and verify that path before relying on the fallback for metered paid service.
+- Agent recovery and stable fallback metering were completed in the [later verified follow-up](2026-11-12-fallback-recovery.md), including fresh-worker media, actual costs, quota reconciliation, and encrypted snapshot readback.
 - Existing bounded English/Spanish synthetic tests do not establish all-language
   quality, human-device coverage or unrestricted concurrency.
 - Keep one backend worker and automatic overage charging off; the previously
