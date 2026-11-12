@@ -1,3 +1,5 @@
+const { decorateSeoHtmlResponse } = require('@rhule/ops-sdk');
+const { schemaHost, serveSeoHtml } = require('./seoSchema');
 const fs = require('node:fs');
 const path = require('node:path');
 const { createHash } = require('node:crypto');
@@ -24,12 +26,6 @@ async function managesPublishedPages() {
   return current?.mode === 'cache' || Number(current?.generation) > 1;
 }
 
-function serveFile(res,file) {
-  if (!fs.existsSync(file)) return false;
-  res.sendFile(file);
-  return true;
-}
-
 function publicMarketingHandlers(kit) {
   return {
     async blogIndex(req,res,next) {
@@ -40,7 +36,12 @@ function publicMarketingHandlers(kit) {
           const posts = await published();
           useStatic = baseline.size === posts.length && posts.every(post => baseline.get(post.slug) === fingerprint(post));
         }
-        if (useStatic && serveFile(res,path.join(staticRoot(),'blog/index.html'))) return;
+        const file = path.join(staticRoot(),'blog/index.html');
+        if (useStatic && fs.existsSync(file)) {
+          res.set('Cache-Control', 'no-store');
+          return serveSeoHtml(req,res,next,file);
+        }
+        decorateSeoHtmlResponse(res, schemaHost.get(req.path));
         return kit.publicHandlers.blogIndex(req,res,next);
       } catch (error) { return next(error); }
     },
@@ -60,7 +61,12 @@ function publicMarketingHandlers(kit) {
             useStatic = false;
           }
         }
-        if (useStatic && serveFile(res,path.join(staticRoot(),'blog',slug,'index.html'))) return;
+        const file = path.join(staticRoot(),'blog',slug,'index.html');
+        if (useStatic && fs.existsSync(file)) {
+          res.set('Cache-Control', 'no-store');
+          return serveSeoHtml(req,res,next,file);
+        }
+        decorateSeoHtmlResponse(res, schemaHost.get(req.path));
         return kit.publicHandlers.blogPost(req,res,next);
       } catch (error) { return next(error); }
     },

@@ -17,6 +17,6 @@ if(existsSync(manifestPath)) {
  if(createHash('sha256').update(JSON.stringify(manifest.files)).digest('hex')!==manifest.contentHash)throw Error('SDK manifest mismatch');
 }
 const {build}=require('esbuild');
-for(const [format,extension] of [['esm','js'],['cjs','cjs']])await build({entryPoints:[join(root,'src/index.ts')],bundle:true,platform:'neutral',external:['node:crypto'],format,target:'es2022',outfile:join(root,'dist/index.'+extension)});
+for(const [format,extension] of [['esm','js'],['cjs','cjs']])await build({entryPoints:[join(root,'src/index.ts')],bundle:true,platform:'neutral',external:['node:crypto','node:fs/promises','node:path'],format,target:'es2022',outfile:join(root,'dist/index.'+extension)});
 execFileSync(process.execPath,[require.resolve('typescript/bin/tsc'),'-p',join(root,'tsconfig.json'),'--emitDeclarationOnly','--typeRoots',dirname(dirname(require.resolve('@types/node/package.json')))],{stdio:'inherit'});
 console.log('Verified and built @rhule/ops-sdk ESM, CJS and declarations');
