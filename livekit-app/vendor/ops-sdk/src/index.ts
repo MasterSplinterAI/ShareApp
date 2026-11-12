@@ -829,3 +829,10 @@ export function createOpsMarketingFederationProxy(options: OpsMarketingFederatio
     }
   };
 }
+
+export * from './supportHistory.js';
+export * from './supportAuthority.js';
+export * from './supportRestore.js';
+export * from './supportRecoveryGateway.js';
+
+export * from './supportAcceptance.js';

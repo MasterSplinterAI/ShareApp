@@ -813,3 +813,14 @@ it("HTTP follow-up appends an AI reply to the owned ticket and refuses other use
   const forbidden=await request(`/tickets/${ticket.id}/messages`,{body:"unauthorized"});
   assert.ok([403,404].includes(forbidden.statusCode));
 });
+
+it('host can track legacy Telegram work after the HTTP acknowledgement for authority drain',async()=>{
+ const db=createMemorySqliteAdapter();let resume!:()=>void;let calls=0;const gate=new Promise<void>(r=>resume=r);const tracked:Promise<unknown>[]=[];
+ const router=createSupportRouter({tenantId,db,brand,resolveUser:()=>null,
+  trackBackground:(task:Promise<unknown>)=>tracked.push(task),
+  telegram:{resolveConfig:async()=>{if(++calls===2)await gate;return {botToken:'fixture',chatId:'1',webhookSecret:'fixture',allowedUserIds:['1']};},createClient:()=>({} as any)},
+ } as any);
+ const {res,done}=createMockResponse();await router.handler({method:'POST',url:'/telegram/webhook',headers:{'x-telegram-bot-api-secret-token':'fixture'},body:{}},res);
+ assert.equal((await done).statusCode,200);assert.equal(tracked.length,1);
+ let drained=false;void Promise.all(tracked).then(()=>{drained=true;});await Promise.resolve();assert.equal(drained,false);resume();await Promise.all(tracked);assert.equal(drained,true);
+});

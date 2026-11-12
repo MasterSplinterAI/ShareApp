@@ -347,6 +347,7 @@ export interface HttpRouterContext {
   telegram?: CreateSupportRouterOptions["telegram"];
   codebase?: CodebaseAdapter;
   onLeadCaptured?: CreateSupportRouterOptions["onLeadCaptured"];
+  trackBackground?: CreateSupportRouterOptions["trackBackground"];
   resolveTenant?: ResolveTenant;
 }
 
@@ -673,7 +674,9 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         ...(ctx.opsNotifier ? { opsNotifier: ctx.opsNotifier } : {}),
         ...(ctx.adminBaseUrl ? { adminBaseUrl: ctx.adminBaseUrl } : {}),
       };
-      void handleTelegramUpdate(webhookDeps, body as never).catch((err) => {
+      const background = handleTelegramUpdate(webhookDeps, body as never);
+      ctx.trackBackground?.(background);
+      void background.catch((err) => {
         console.error("[support-kit] telegram webhook error:", err);
       });
       return;
@@ -1862,6 +1865,7 @@ export function createRouter(options: CreateSupportRouterOptions): SupportRouter
   if (options.telegram) ctx.telegram = options.telegram;
   if (options.codebase) ctx.codebase = options.codebase;
   if (options.onLeadCaptured) ctx.onLeadCaptured = options.onLeadCaptured;
+  if (options.trackBackground) ctx.trackBackground = options.trackBackground;
   if (options.resolveTenant) ctx.resolveTenant = options.resolveTenant;
   return createHttpRouter(ctx);
 }

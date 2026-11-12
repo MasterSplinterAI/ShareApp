@@ -1,3 +1,6 @@
+const {getSupportRecoveryDatabase,closeSupportRecoveryDatabase}=require('./supportRecoveryDatabase');
+const {createSupportRecoveryGateway}=require('@rhule/ops-sdk');
+const {hostSupportAuthority,legacySupportFence,fenceSupportAdapter,supportAuthorityHttp}=require('./supportAuthority');
 /**
  * ShareApp host wiring for @quill/support-kit.
  * Thin adapters only — tickets/KB/agent live in the kit.
@@ -33,6 +36,7 @@ const DOCS_ROOT = path.join(__dirname, '../docs/support');
 function createSqliteSupportDb() {
   return {
     async run(sql, params = []) {
+      legacySupportFence.assertLease();
       const result = await db.run(sql, params);
       return { changes: result.changes ?? 0 };
     },
@@ -99,7 +103,7 @@ async function buildContextSummary(user, orgId, role) {
 }
 
 function createPending(trusted={}) {
-  return createShareAppPending({db,verifyToken,...trusted,describeUser:async(user,orgId)=>{
+  return createShareAppPending({db:{...db,...require('./supportRecoveryDatabase').getSupportAcceptanceStore().sql},verifyToken,...trusted,describeUser:async(user,orgId)=>{
     let planLabel='member';
     if(orgId){const ent=await getOrgEntitlements(orgId);planLabel=ent?.planName||ent?.planId||planLabel;}
     return {planLabel,contextSummary:await buildContextSummary(user,orgId,'user')};
@@ -200,9 +204,10 @@ function createGithubAdapter() {
 /**
  * @returns {{ handler: Function, meta: object }}
  */
-function createShareAppSupportRouter(trusted={}) {
-  const pending=createPending(trusted);
-  const replay=createSupportReplayPump({...pending,resolveUser,getConfig:()=>{const cfg=getOpsHubConfig();return {...cfg,tenantSlug:'lalia',mode:cfg.supportMode};}});
+function createShareAppSupportRouter(trusted={resolveAuthority:hostSupportAuthority.resolveAuthority}) {
+  const pending={...createPending(trusted),authorizeTransfer:hostSupportAuthority.authorizeTransfer,withAcceptance:hostSupportAuthority.withAcceptance};
+  const recovery=createSupportRecoveryGateway({...pending,businessId:'lalia',db:{transaction:work=>getSupportRecoveryDatabase().transaction(work)},state:()=>hostSupportAuthority.read(),resolveUser});
+  const replay=createSupportReplayPump({...pending,resolveUser,getConfig:hostSupportAuthority.config});
   const frontendBase = (
     process.env.PUBLIC_FRONTEND_BASE_URL ||
     process.env.FRONTEND_URL ||
@@ -224,7 +229,8 @@ function createShareAppSupportRouter(trusted={}) {
     },
     docsRoot: DOCS_ROOT,
     adminBaseUrl: adminBaseUrl(),
-    opsNotifier: createOpsNotifier(),
+    opsNotifier: fenceSupportAdapter(createOpsNotifier()),
+    trackBackground:legacySupportFence.track,
     resolveUser,
     codebase: createFilesystemCodebaseAdapter({
       root: LIVEKIT_ROOT,
@@ -250,7 +256,7 @@ function createShareAppSupportRouter(trusted={}) {
         }),
     },
     onLeadCaptured: async (lead) => {
-      void syncContact({
+      await syncContact({
         externalUserId: `lead:${lead.id}`,
         email: lead.email,
         name: lead.name,
@@ -280,19 +286,22 @@ function createShareAppSupportRouter(trusted={}) {
     };
   }
 
+  for(const key of ['email','llm','github'])if(options[key])options[key]=fenceSupportAdapter(options[key]);
+  if(options.onLeadCaptured){const capture=options.onLeadCaptured;options.onLeadCaptured=lead=>legacySupportFence.effect(async()=>capture(lead));}
+  if(options.telegram){const create=options.telegram.createClient;options.telegram.createClient=cfg=>fenceSupportAdapter(create(cfg));}
   const localRouter = createSupportRouter(options);
   const proxiedHandler = createOpsSupportProxyMiddleware({
     resolveUser,
-    localHandler: (req, res, next) => localRouter.handler(req, res, next),
+    localHandler: (req, res, next) => legacySupportFence.run(()=>localRouter.handler(req,res,next)),
     db,
     central:pending,
   });
   return {
     ...localRouter,
     pending,
-    startReplay:()=>trusted.resolveAuthority?replay.start():()=>{},
-    stopReplay:replay.stop,
-    handler: proxiedHandler,
+    startReplay:()=>{if(!trusted.resolveAuthority)return()=>{};replay.start();recovery.startReplay();return()=>{replay.stop();recovery.stopReplay();};},
+    stopReplay:()=>{replay.stop();recovery.stopReplay();void closeSupportRecoveryDatabase();},
+    handler:async(req,res,next)=>{try{if(await supportAuthorityHttp(req,res))return;const state=await hostSupportAuthority.read();if(state.state==='recovery')return await recovery.handler(req,res);return await proxiedHandler(req,res,next);}catch{if(!res.headersSent)res.status(503).json({error:'Support authority unavailable',retryable:true});}},
   };
 }
 
@@ -312,9 +321,10 @@ module.exports = {
 };
 
 async function ensureSupportSchema() {
-  if(getOpsHubConfig().supportMode==='central'){await createPending().ensureSchema();return {central:true};}
+  if((await hostSupportAuthority.read()).state!=='unmanaged'){await createPending().ensureSchema();return {central:true};}
   const { ensureSchema, seedCuratedDocs } = require('@quill/support-core');
   const supportDb = createSqliteSupportDb();
+  return legacySupportFence.run(async()=>{
   const result = await ensureSchema(supportDb);
   console.log(
     `[support] schema ensured (prefix=${result.tablePrefix}, applied=${result.statements})`
@@ -325,12 +335,11 @@ async function ensureSupportSchema() {
       console.log(
         `[support] curated docs seeded (ingested=${seeded.ingested}, promoted=${seeded.promoted})`
       );
-      void syncCuratedDocsToOpsHub(DOCS_ROOT);
-      void backfillLaliaStateToOpsHub(db);
-      void syncSupportHistoryToOpsHub(db);
+
     } catch (e) {
       console.warn('[support] seedCuratedDocs skipped:', e.message);
     }
   }
   return result;
+  });
 }

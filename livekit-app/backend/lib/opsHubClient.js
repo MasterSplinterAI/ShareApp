@@ -235,6 +235,7 @@ async function syncContact(contactInput) {
  * Sync curated markdown docs from `backend/docs/support` into Ops Hub's central Support KB.
  */
 async function syncCuratedDocsToOpsHub(docsRoot) {
+  if((await require('./supportAuthority').hostSupportAuthority.read()).state!=='unmanaged')return 0;
   if (!isOpsHubConfigured() || !docsRoot) return 0;
   try {
     const files = fs.existsSync(docsRoot) ? fs.readdirSync(docsRoot) : [];
@@ -393,32 +394,8 @@ async function backfillLaliaStateToOpsHub(db) {
  * and support_leads from local DB into Ops Hub's central Unified Support Ops console.
  */
 async function syncSupportHistoryToOpsHub(db) {
-  if (!isOpsHubConfigured() || !db) return null;
-  try {
-    const [tickets, messages, proposals, gaps, leads] = await Promise.all([
-      db.all(`SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 500`).catch(() => []),
-      db.all(`SELECT * FROM support_messages ORDER BY created_at ASC LIMIT 2000`).catch(() => []),
-      db.all(`SELECT * FROM support_proposals ORDER BY created_at DESC LIMIT 500`).catch(() => []),
-      db.all(`SELECT * FROM support_knowledge_gaps ORDER BY created_at DESC LIMIT 500`).catch(() => []),
-      db.all(`SELECT * FROM support_leads ORDER BY updated_at DESC LIMIT 500`).catch(() => []),
-    ]);
-
-    const res = await opsHubRequest('/api/v1/support/import', {
-      method: 'POST',
-      body: {
-        tenantId: TENANT_SLUG,
-        tickets,
-        messages,
-        proposals,
-        gaps,
-        leads,
-      },
-    });
-    return res?.imported ?? null;
-  } catch (err) {
-    console.warn('[opsHubClient] syncSupportHistoryToOpsHub skipped:', err.message);
-    return null;
-  }
+  // Snapshot mirroring is retired; use the complete reviewed cursor exporter.
+  return null;
 }
 
 /**
@@ -427,7 +404,7 @@ async function syncSupportHistoryToOpsHub(db) {
  */
 function createOpsSupportProxyMiddleware({resolveUser,localHandler,db,central}) {
   return createOpsSupportProxy({
-    getConfig:()=>{const cfg=getOpsHubConfig();return {...cfg,tenantSlug:TENANT_SLUG,mode:cfg.supportMode};},
+    getConfig:()=>require('./supportAuthority').hostSupportAuthority.config(),
     resolveUser,localHandler,central,onMirrorSync:()=>syncSupportHistoryToOpsHub(db),
   });
 }

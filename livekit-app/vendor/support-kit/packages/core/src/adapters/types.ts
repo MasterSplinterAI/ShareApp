@@ -169,6 +169,8 @@ export interface DurableMutationAdapter {
 
 export interface CreateSupportRouterOptions {
   mutationMode?: 'legacy' | 'durable';
+  /** Host lifecycle hook tracks legacy work that outlives its HTTP response. */
+  trackBackground?: (task: Promise<unknown>) => void;
   durableMutations?: DurableMutationAdapter;
   listDeliveries?: (businessId:string,ticketId:string,actor:SupportUser)=>Promise<Array<{id:string;type:string;status:string;attempts:number;error_code?:string|null;canRetry?:boolean}>>;
   /** Legacy standalone defaults remain available; central mode requires explicit grants. */

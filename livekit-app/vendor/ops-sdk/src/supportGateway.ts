@@ -2,7 +2,7 @@ import type { SupportForwardedUser } from './index.js';
 
 export type SupportMode = 'local' | 'mirror' | 'proxy' | 'central';
 export interface SupportGatewayConfig {
-  mode?: SupportMode; baseUrl?: string | null; secretKey?: string | null; tenantSlug: string;
+  mode?: SupportMode; baseUrl?: string | null; secretKey?: string | null; tenantSlug: string; businessId?: string;
 }
 /** Supplied by trusted server registry/lease validation. A browser setting is not authority. */
 export interface SupportAuthority { businessId: string; generation: string; expiresAt: number }
@@ -22,6 +22,7 @@ export interface SupportIntentStore {
   put(intent: SupportIntent): Promise<SupportIntent>;
   get(receiptId: string): Promise<SupportIntent | null>;
   find(scope: string): Promise<SupportIntent | null>;
+  findRetry?(candidate: SupportIntent): Promise<SupportIntent | null>;
   pending(businessId:string,limit:number,now?:number):Promise<SupportIntent[]>;
   claimAttempt(receiptId:string,now:number,leaseMs:number):Promise<{token:string;attempt:number}|null>;
   finishAttempt(receiptId:string,token:string,attempt:number,now:number):Promise<void>;
@@ -36,6 +37,10 @@ export interface SupportGatewayOptions {
   /** Must read current account/membership, never cached browser claims. */
   customerActive?: (businessId: string, user: SupportForwardedUser) => Promise<boolean>;
   store: SupportIntentStore;
+  /** Exact frozen receipt transfer, approved centrally; never a blanket generation allowance. */
+  authorizeTransfer?: (intent: SupportIntent, generation: string) => Promise<boolean>;
+  /** Tracked server permit prevents sealing during durable host acceptance. */
+  withAcceptance?: <T>(businessId:string,generation:string,persist:()=>Promise<T>)=>Promise<T>;
   sealSecret?: (secret: string) => string | Promise<string>;
   openSecret?: (secret: string) => string | Promise<string>;
   fetchImpl?: typeof fetch; timeoutMs?: number; now?: () => number;
@@ -91,7 +96,8 @@ export function createSupportGateway(options: SupportGatewayOptions) {
   const fetchFn = options.fetchImpl ?? globalThis.fetch;
   const timeoutMs = Math.max(1, Math.min(options.timeoutMs ?? 8000, 30_000));
   async function authority() {
-    const cfg = await options.getConfig();
+    const configured = await options.getConfig();
+    const cfg={...configured,tenantSlug:configured.businessId??configured.tenantSlug};
     if (cfg.mode !== 'central' || !cfg.baseUrl || !cfg.secretKey) throw Error('Central configuration unavailable');
     const url = new URL(cfg.baseUrl);
     if (!['http:','https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw Error('Invalid hub origin');
@@ -100,11 +106,11 @@ export function createSupportGateway(options: SupportGatewayOptions) {
     return { cfg, lease, origin: url.origin };
   }
   async function remote(auth: Awaited<ReturnType<typeof authority>>, method: string, path: string, payload?: unknown, actor?: SupportForwardedUser | null, key?: string, guestToken?: string, intent?: SupportIntent) {
-    const headers: Record<string,string> = { Accept:'application/json', 'X-Ops-Key':auth.cfg.secretKey!, 'X-Ops-Tenant':auth.cfg.tenantSlug, 'x-tenant-id':auth.cfg.tenantSlug };
+    const headers: Record<string,string> = { Accept:'application/json', 'X-Ops-Key':auth.cfg.secretKey!, 'X-Ops-Tenant':auth.cfg.tenantSlug, 'x-tenant-id':auth.cfg.tenantSlug, 'x-support-authority-generation':auth.lease.generation };
     if (actor) headers['X-Support-User-Json'] = Buffer.from(JSON.stringify(safeActor(actor))).toString('base64url');
     if (key) headers['Idempotency-Key'] = key;
     if (guestToken) headers['x-support-guest-token'] = guestToken;
-    if (intent) headers['x-support-accepted-intent'] = Buffer.from(JSON.stringify({ businessId:intent.businessId,generation:intent.generation,operation:intent.operation,key:intent.key,payloadHash:intent.payloadHash,acceptedAt:intent.acceptedAt,acceptedUntil:intent.acceptedUntil })).toString('base64url');
+    if (intent) headers['x-support-accepted-intent'] = Buffer.from(JSON.stringify(supportIntentEvidence(intent))).toString('base64url');
     if (payload !== undefined) headers['Content-Type'] = 'application/json';
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -118,7 +124,7 @@ export function createSupportGateway(options: SupportGatewayOptions) {
     } finally { clearTimeout(timer); }
   }
   async function mayAccess(intent:SupportIntent,auth:Awaited<ReturnType<typeof authority>>) {
-    return intent.businessId===auth.lease.businessId && intent.generation===auth.lease.generation && intent.acceptedUntil>now() &&
+    return intent.businessId===auth.lease.businessId && (intent.generation===auth.lease.generation || Boolean(await options.authorizeTransfer?.(intent,auth.lease.generation))) && intent.acceptedUntil>now() &&
       (intent.actorType==='guest' || Boolean(await options.customerActive?.(intent.businessId,intent.actor)));
   }
   async function deliver(intent:SupportIntent,auth:Awaited<ReturnType<typeof authority>>,attemptToken?:string) {
@@ -174,7 +180,7 @@ export function createSupportGateway(options: SupportGatewayOptions) {
         const tokenHash=guestToken ? await supportPayloadHash(guestToken) : '';
         if(matched.pending) {
           const intent=await options.store.get(matched.path.slice('/pending/'.length));
-          if(!intent || intent.businessId !== auth.cfg.tenantSlug || intent.generation !== auth.lease.generation || intent.acceptedUntil <= now() ||
+          if(!intent || intent.businessId !== auth.cfg.tenantSlug || !await mayAccess(intent,auth) || intent.acceptedUntil <= now() ||
             (intent.actorType === 'customer' ? !actor || actor.id !== intent.actor.id || actor.orgId !== intent.actor.orgId : actor || !tokenHash || intent.actor.id !== tokenHash))return reply(404,{error:'Receipt not found'});
           if(intent.actorType === 'guest') {
             const check=await remote(auth,'POST','/guest-session/validate',{},null,undefined,guestToken);
@@ -191,17 +197,17 @@ export function createSupportGateway(options: SupportGatewayOptions) {
             if(!guest)return reply(401,{error:'Guest session proof required',code:'guest_session_required'});
           }
           const acceptedAt=now();const identity=actor??{id:tokenHash,role:'user' as const};
-          const scope=JSON.stringify([auth.cfg.tenantSlug,auth.lease.generation,actor?'customer':'guest',identity.id,identity.orgId??'',matched.operation,key]);
+          const scope=JSON.stringify([auth.cfg.tenantSlug,'receipt-v2',actor?'customer':'guest',identity.id,identity.orgId??'',matched.operation,key]);
           const payloadHash=await supportPayloadHash(payload);
           // Existing accepted proof may be replayed after its ordinary guest session expiry.
           const candidate: SupportIntent={receiptId:crypto.randomUUID(),scope,businessId:auth.cfg.tenantSlug,generation:auth.lease.generation,actor:identity,actorType:actor?'customer':'guest',operation:matched.operation,key,payload:payload!,payloadHash,acceptedAt,acceptedUntil:acceptedAt+MAX_AGE,status:'pending',...(guest?{encryptedGuestToken:guest.encryptedToken}:{})};
-          const existing=await options.store.find(scope);
+          const existing=await options.store.find(scope)??await options.store.findRetry?.(candidate)??null;
           if(guest && guest.expiresAt <= now() && !existing) {
             // An expired proof cannot authorize a new submission; the store must not insert it.
             return reply(401,{error:'Guest session expired',code:'guest_session_required'});
           }
           if(guest && (!options.openSecret || await options.openSecret(guest.encryptedToken)!==guestToken))throw Error('Guest proof encryption unavailable');
-          const retained=existing??await options.store.put(candidate);
+          const retained=existing??await (options.withAcceptance?options.withAcceptance(auth.cfg.tenantSlug,auth.lease.generation,()=>options.store.put(candidate)):options.store.put(candidate));
           if(retained.payloadHash !== payloadHash)return reply(409,{error:'Idempotency key payload conflict'});
           if(!await mayAccess(retained,auth))return reply(409,{error:"Accepted intent access expired or revoked",receiptId:retained.receiptId});
           let result:SupportIntent;
@@ -246,6 +252,11 @@ export function createSqlSupportIntentStore(sql:SupportSql):SupportIntentStore {
    return rows.map(decode) as SupportIntent[];
   },
   get:async(id)=>decode(await sql.get(select+' WHERE p.receipt_id=?',[id])),
+  findRetry:async(candidate)=>{
+   // One-time compatibility search for receipts accepted before stable identity scopes. No re-tagging.
+   const rows=await sql.all(select+' WHERE p.business_id=?',[candidate.businessId]);
+   return rows.map(decode).find(i=>i&&i.actorType===candidate.actorType&&i.actor.id===candidate.actor.id&&i.actor.orgId===candidate.actor.orgId&&i.operation===candidate.operation&&i.key===candidate.key)??null;
+  },
   async claimAttempt(id,now,leaseMs) {
    const token=crypto.randomUUID();
    // A missing scheduling row is reconstructed atomically from the accepted intent, including after a crash.
@@ -282,10 +293,10 @@ export function createSupportReplayPump(options:SupportGatewayOptions & {interva
  const gateway=createSupportGateway(options);let timer:ReturnType<typeof setTimeout>|undefined;let stopped=true;let running:Promise<void>|undefined;
  const runOnce=()=>running??(running=(async()=>{
   const cfg=await options.getConfig();if(cfg.mode!=='central')return;
-  const authority=await options.resolveAuthority?.(cfg.tenantSlug);
-  if(!authority||authority.businessId!==cfg.tenantSlug||authority.expiresAt<=(options.now??Date.now)())return;
+  const authority=await options.resolveAuthority?.(cfg.businessId??cfg.tenantSlug);
+  if(!authority||authority.businessId!==(cfg.businessId??cfg.tenantSlug)||authority.expiresAt<=(options.now??Date.now)())return;
   const clock=options.now??Date.now;
-  for(const intent of await options.store.pending(cfg.tenantSlug,Math.max(1,Math.min(options.batchSize??20,50)),clock())) {
+  for(const intent of await options.store.pending(cfg.businessId??cfg.tenantSlug,Math.max(1,Math.min(options.batchSize??20,50)),clock())) {
    const attempt=await options.store.claimAttempt(intent.receiptId,clock(),35000);
    if(!attempt)continue;
    try{await gateway.replay(intent.receiptId,attempt.token);}
@@ -297,4 +308,9 @@ export function createSupportReplayPump(options:SupportGatewayOptions & {interva
   const tick=async()=>{try{await runOnce();}catch{/* Retry only after rechecking authority; no local fallback. */}finally{if(!stopped){timer=setTimeout(tick,Math.max(1000,options.intervalMs??5000));timer.unref?.();}}};
   void tick();return stop;
  }};
+}
+
+/** Exportable proof contains no guest secret, response body or credentials. */
+export function supportIntentEvidence(intent:SupportIntent) {
+ return {receiptId:intent.receiptId,businessId:intent.businessId,generation:intent.generation,actorType:intent.actorType,actorId:intent.actor.id,orgId:intent.actor.orgId??null,operation:intent.operation,key:intent.key,payloadHash:intent.payloadHash,acceptedAt:intent.acceptedAt,acceptedUntil:intent.acceptedUntil};
 }

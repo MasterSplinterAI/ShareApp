@@ -216,6 +216,7 @@ app.use((err, req, res, next) => {
     if (supportKitEnabled()) {
       // Central mode initializes only durable gateway storage; local seeding/senders stay fenced.
       await ensureSupportSchema();
+      v2Routes.startSupportReplay?.();
     }
   } catch (e) {
     console.error('[support] schema ensure failed:', e.message);
@@ -262,11 +263,13 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[overage-settlement] scheduler start failed:', e.message);
   }
-  app.listen(PORT, '0.0.0.0', () => {
+  const server=app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
     console.log(`Network URL: ${process.env.NETWORK_URL}`);
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
+  server.once('close',()=>{v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
+  process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
 })();
