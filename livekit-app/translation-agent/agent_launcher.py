@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 import sys
 
@@ -15,6 +16,8 @@ def main() -> None:
         print("Invalid AGENT_MODULE: expected transcription_only_agent or transcription_codeswitch_agent", file=sys.stderr)
         raise SystemExit(2)
     build_ref = os.getenv("AGENT_BUILD_REF") or os.getenv("GIT_COMMIT") or "unset"
+    build_ref = build_ref if re.fullmatch(r"[a-fA-F0-9]{7,40}", build_ref) else "unset"
+    os.environ["LALIA_PRIVATE_LOG_OUTPUT"] = "1"
     print(f"Lalia agent startup: module={module} build_ref={build_ref!r}", flush=True)
     script = Path(__file__).resolve().with_name(f"{module}.py")
     # Replace the launcher: the real worker keeps PID 1 and receives signals

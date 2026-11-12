@@ -1,6 +1,7 @@
 """Room-job cleanup shared by the caption workers."""
 import asyncio
 import logging
+from private_logging import operational_event
 
 logger = logging.getLogger(__name__)
 # Leave room for cost-reporter closure before LiveKit's 10-second process limit.
@@ -41,8 +42,9 @@ def register_shutdown(ctx, agent):
         try:
             await asyncio.wait_for(close_pipelines(), timeout=SHUTDOWN_TIMEOUT_SEC)
         except asyncio.TimeoutError:
-            logger.warning("Agent shutdown cleanup exceeded %.1fs", SHUTDOWN_TIMEOUT_SEC)
+            logger.warning('agent_shutdown_cleanup_exceeded_s')
         finally:
+            operational_event("session_stopped")
             agent._shutdown_complete = True
             # Also cover a timeout/error during pipeline finalization, before the
             # report drain has started. Nothing may use the reporter after close.

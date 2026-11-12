@@ -49,10 +49,7 @@ class CostReporter:
         if not backend_url or not secret:
             if not _warned_once:
                 _warned_once = True
-                missing = [v for v, val in [("BACKEND_BASE_URL", backend_url), ("COST_EVENT_SECRET", secret)] if not val]
-                logger.warning(
-                    f"CostReporter: {', '.join(missing)} not set — cost events disabled for this session"
-                )
+                logger.warning('costreporter_not_set_cost_events_disabled_for_this_session')
             self._enabled = False
             return
 
@@ -94,12 +91,9 @@ class CostReporter:
                 headers={"X-Cost-Secret": self._secret},
             ) as resp:
                 if resp.status not in (200, 201):
-                    body = await resp.text()
-                    logger.warning(
-                        f"CostReporter: {event_type} → HTTP {resp.status}: {body[:200]}"
-                    )
+                    logger.warning('costreporter_http', extra={'status_code': resp.status})
         except Exception as exc:
-            logger.warning(f"CostReporter: emit {event_type} failed: {exc}")
+            logger.warning('costreporter_emit_failed', extra={"error_type": type(exc).__name__})
 
     async def emit_stt(
         self,
@@ -112,7 +106,7 @@ class CostReporter:
             return
         event_type = _STT_EVENT_TYPES.get(provider)
         if not event_type:
-            logger.debug(f"CostReporter: no STT event type for provider={provider!r} — skipping")
+            logger.debug('costreporter_no_stt_event_type_for_provider_skipping')
             return
         await self._post(
             event_type,
@@ -132,7 +126,7 @@ class CostReporter:
             return
         pair = _LLM_EVENT_TYPES.get(provider)
         if not pair:
-            logger.debug(f"CostReporter: no LLM event type for provider={provider!r} — skipping")
+            logger.debug('costreporter_no_llm_event_type_for_provider_skipping')
             return
         in_event, out_event = pair
         meta = {"participant": participant, "model": model, "provider": provider}
@@ -152,7 +146,7 @@ class CostReporter:
             return
         event_type = _TTS_EVENT_TYPES.get(provider)
         if not event_type:
-            logger.debug(f"CostReporter: no TTS event type for provider={provider!r} — skipping")
+            logger.debug('costreporter_no_tts_event_type_for_provider_skipping')
             return
         await self._post(
             event_type,

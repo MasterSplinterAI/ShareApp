@@ -111,7 +111,7 @@ def test_config_logs_do_not_claim_cloud_supplies_provider_keys(monkeypatch, capl
     with caplog.at_level(logging.INFO):
         module.log_resolved_inference_config()
     assert "must-not-appear-in-logs" not in caplog.text
-    assert "direct provider plugins require their own API keys" in caplog.text
+    assert "inference_config" in caplog.text
     assert "Cloud-injected Deepgram" not in caplog.text
 
 
@@ -249,7 +249,7 @@ def test_shutdown_bounds_stalled_pipeline_cleanup(monkeypatch, caplog):
             await asyncio.wait_for(callbacks[0](), timeout=0.2)
         assert cancelled.is_set()
         reporter.aclose.assert_awaited_once()
-        assert "shutdown cleanup exceeded" in caplog.text
+        assert "agent_shutdown_cleanup_exceeded_s" in caplog.text
     asyncio.run(run())
 
 
@@ -348,5 +348,5 @@ def test_shutdown_cancels_stalled_final_report_before_reporter_close(monkeypatch
             await asyncio.wait_for(callbacks[0](), 0.2)
         assert order == ["report_cancelled", "reporter_closed"]
         assert all(task.done() for task in agent._bg_tasks)
-        assert "shutdown cleanup exceeded" in caplog.text
+        assert "agent_shutdown_cleanup_exceeded_s" in caplog.text
     asyncio.run(run())
