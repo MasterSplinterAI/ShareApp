@@ -1,6 +1,6 @@
 # Return Stripe Checkout customers to Billing
 
-Status: proposed for approval; no implementation or deployment performed.
+Status: approved by owner on November 12, 2026; implementation tracked in the November 12 plan.
 
 ## Observed problem
 

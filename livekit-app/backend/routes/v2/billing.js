@@ -206,8 +206,8 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
       payment_method_types: ['card'],
       customer: customerId,
       line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
-      success_url: `${base}/v2/app/settings?billing=success`,
-      cancel_url: `${base}/v2/app/settings?billing=cancel`,
+      success_url: `${base}/v2/app/settings?section=billing&billing=success`,
+      cancel_url: `${base}/v2/app/settings?section=billing&billing=cancel`,
       metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
       subscription_data: {
         metadata: { org_id: req.v2Auth.orgId, plan_id: planId },

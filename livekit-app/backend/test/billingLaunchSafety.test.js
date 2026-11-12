@@ -34,10 +34,10 @@ function subscription(org, status='active', plan='starter') {
   return {id:`sub_${org}`, customer:`cus_${org}`, status, metadata:{org_id:org,plan_id:'starter'}, items:{data:[{price:{id:`price_${plan}`}}]}};
 }
 async function row(org) { return db.get('SELECT * FROM v2_org_subscriptions WHERE org_id=?',[org]); }
-async function invokeCheckout(org, planId='starter') {
+async function invokeCheckout(org, planId='starter', headers={}) {
   let result;
   const res = { statusCode:200, status(code) { this.statusCode=code; return this; }, json(body) { result={status:this.statusCode,body}; return this; } };
-  await checkout({v2Auth:{orgId:org,role:'owner',email:'test@example.com'},body:{planId}},res);
+  await checkout({v2Auth:{orgId:org,role:'owner',email:'test@example.com'},body:{planId},headers,get(name){return headers[name.toLowerCase()];}},res);
   return result;
 }
 
@@ -124,6 +124,35 @@ test('launch checkout explicitly uses cards to avoid delayed-payment provisionin
  stripe={subscriptions:{list:async()=>({data:[]})},checkout:{sessions:{list:async()=>({data:[]}),create:async(p)=>{params=p;return {id:'cs_card',url:'https://example.com'};}}}};
  await invokeCheckout(org);
  assert.deepEqual(params.payment_method_types,['card']);
+});
+
+test('checkout returns to Billing on the configured frontend for success and cancellation', async (t) => {
+ const previous = process.env.FRONTEND_URL;
+ process.env.FRONTEND_URL = 'https://checkout-return.example.test/';
+ t.after(() => {
+  if (previous === undefined) delete process.env.FRONTEND_URL;
+  else process.env.FRONTEND_URL = previous;
+ });
+ const org = await seed();
+ let params;
+ stripe = { subscriptions: { list: async () => ({ data: [] }) }, checkout: { sessions: {
+  list: async () => ({ data: [] }),
+  create: async (value) => { params = value; return { id: 'cs_return', url: 'https://example.com' }; },
+ } } };
+ const result = await invokeCheckout(org, 'starter', {
+  origin: 'https://untrusted.example.test',
+  host: 'untrusted.example.test',
+  'x-forwarded-host': 'untrusted.example.test',
+ });
+ assert.equal(result.status, 200);
+ for (const marker of ['success', 'cancel']) {
+  const url = new URL(params[`${marker}_url`]);
+  assert.equal(url.origin, 'https://checkout-return.example.test');
+  assert.equal(url.pathname, '/v2/app/settings');
+  assert.equal(url.searchParams.get('section'), 'billing');
+  assert.equal(url.searchParams.get('billing'), marker);
+ }
+ assert.equal((await row(org)).plan_id, 'free');
 });
 
 async function deliver(event, signatureOverride) {

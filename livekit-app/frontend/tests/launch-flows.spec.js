@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-async function setupAccount(page, { subscriptionStatus = 'active', passwordCode, checkoutConflict = false } = {}) {
+async function setupAccount(page, { subscriptionStatus = 'active', passwordCode, checkoutConflict = false, currentPlan = 'starter' } = {}) {
   const billingRequests = [];
   const plans = [
     { id: 'starter', name: 'Starter', monthly_price_cents: 1900, included_meeting_minutes: 2000, included_translation_minutes: 500 },
@@ -15,7 +15,7 @@ async function setupAccount(page, { subscriptionStatus = 'active', passwordCode,
     let body = {};
     if (path.endsWith('/auth/me')) body = { user: { id: 'user', email: 'user@example.test', display_name: 'Test User', preferredLanguage: 'en' }, org: { id: 'org', name: 'Personal', account_type: 'personal' }, role: 'owner' };
     else if (path.endsWith('/auth/change-password')) return route.fulfill({ status: 401, json: passwordCode ? { error: 'Unauthorized', code: passwordCode } : { error: 'Current password is incorrect' } });
-    else if (path.endsWith('/billing/subscription')) body = { stripeEnabled: true, subscription: { plan_id: 'starter', status: subscriptionStatus, stripe_subscription_id: checkoutConflict ? null : 'sub_existing', stripe_customer_id: 'cus_existing' }, plan: plans[0] };
+    else if (path.endsWith('/billing/subscription')) body = { stripeEnabled: true, subscription: { plan_id: currentPlan, status: subscriptionStatus, stripe_subscription_id: checkoutConflict || currentPlan === 'free' ? null : 'sub_existing', stripe_customer_id: 'cus_existing' }, plan: currentPlan === 'free' ? { id: 'free', name: 'Free', monthly_price_cents: 0 } : plans[0] };
     else if (path.endsWith('/billing/plans')) body = { plans };
     else if (path.endsWith('/billing/checkout') || path.endsWith('/billing/portal')) {
       billingRequests.push(path.split('/').pop());
@@ -31,6 +31,47 @@ async function setupAccount(page, { subscriptionStatus = 'active', passwordCode,
   });
   return billingRequests;
 }
+
+for (const query of [
+  'billing=success', 'billing=cancel', 'billing=portal',
+  'section=billing&billing=success', 'section=billing&billing=cancel',
+]) {
+  test(`checkout return opens Billing without granting a plan (${query})`, async ({ page }) => {
+    await setupAccount(page, { currentPlan: 'free' });
+    await page.goto(`/v2/app/settings?${query}`);
+    await expect(page.getByText('Account status', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Current password', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('active · Free', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Account', exact: true }).click();
+    await expect(page.getByLabel('Current password', { exact: true })).toBeVisible();
+    // Cause a normal rerender without changing the return URL.
+    await page.getByLabel('Current password', { exact: true }).fill('manual-selection');
+    await expect(page.getByLabel('Current password', { exact: true })).toHaveValue('manual-selection');
+  });
+}
+
+for (const query of ['', 'billing=unknown', 'section=profile&billing=success']) {
+  test(`Settings keeps the Profile default or explicit section (${query || 'no query'})`, async ({ page }) => {
+    await setupAccount(page);
+    await page.goto(`/v2/app/settings?${query}`);
+    await expect(page.getByLabel('Current password', { exact: true })).toBeVisible();
+  });
+}
+
+test('changing return search parameters selects Billing in the mounted Settings page', async ({ page }) => {
+  await setupAccount(page, { currentPlan: 'free' });
+  await page.goto('/v2/app/settings');
+  await expect(page.getByLabel('Current password', { exact: true })).toBeVisible();
+  for (const marker of ['success', 'cancel', 'portal']) {
+    await page.evaluate((billing) => {
+      window.history.pushState({}, '', `/v2/app/settings?billing=${billing}`);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, marker);
+    await expect(page.getByText('Account status', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Account', exact: true }).click();
+    await expect(page.getByLabel('Current password', { exact: true })).toBeVisible();
+  }
+});
 
 for (const destination of ['/v2/app/settings?section=billing', '/v2/app']) {
   test(`paid upgrade uses existing subscription portal from ${destination}`, async ({ page }) => {

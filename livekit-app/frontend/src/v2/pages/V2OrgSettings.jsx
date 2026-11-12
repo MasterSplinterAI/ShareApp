@@ -6,6 +6,7 @@ import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
 import { getRecommendedUpgrade, formatPlanPrice } from '../lib/upgradeOffers';
+import { resolveSettingsSection } from '../lib/settingsSection';
 import { cn } from '../../lib/utils';
 import { Compass, Loader2, ImagePlus, Trash2 } from 'lucide-react';
 import { startLaliaOnboardingTour } from '../components/LaliaOnboardingTour';
@@ -51,7 +52,11 @@ function humanizeUsageLabel(eventType) {
 export default function V2OrgSettings() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [section, setSection] = useState(searchParams.get('section') || 'profile');
+  const search = searchParams.toString();
+  const [section, setSection] = useState(() => resolveSettingsSection(searchParams));
+  useEffect(() => {
+    setSection(resolveSettingsSection(new URLSearchParams(search)));
+  }, [search]);
   const [role, setRole] = useState('');
   const [members, setMembers] = useState([]);
   const [org, setOrg] = useState(null);

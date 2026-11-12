@@ -1,12 +1,12 @@
 # Operations alerts, agent logs, and runtime-secret recovery
 
-Status: proposed design for final user review. This document does not authorize or perform resource creation, secret copying, email subscription, agent restart, or deployment. Existing backup timers remain running. Stripe remains TEST and automatic charging remains off.
+Status: approved by owner on November 12, 2026; alert recipient kennyrhule@proton.me. This document does not authorize or perform resource creation, secret copying, email subscription, agent restart, or deployment. Existing backup timers remain running. Stripe remains TEST and automatic charging remains off.
 
 ## Outcome and scope
 
 Provide off-host failure alerts, retain sanitized runtime logs from both selectable LiveKit agents, and preserve the runtime secrets needed to recover the verified database/upload backups. Use the existing AWS account `690248313257` and region `us-east-2`.
 
-Candidate notification recipient: **kennyrhule@gmail.com**, pending the user's confirmation that this is the intended operations address. After subscription creation, the recipient must also complete Amazon SNS's email confirmation. Do not claim email delivery is working until a controlled alert and recovery notification are received. [SNS confirmation requirements](https://docs.aws.amazon.com/sns/latest/dg/sns-email-notifications.html)
+Approved notification recipient: **kennyrhule@proton.me**. After subscription creation, the recipient must also complete Amazon SNS's email confirmation. Do not claim email delivery is working until a controlled alert and recovery notification are received. [SNS confirmation requirements](https://docs.aws.amazon.com/sns/latest/dg/sns-email-notifications.html)
 
 This adds no automatic remediation, customer-account changes, payment changes, provider-key rotation, or customer audio recording. It does not promise full disaster independence from the AWS account/region, complete provider invoice reconciliation, or continuous end-to-end RTC testing.
 
