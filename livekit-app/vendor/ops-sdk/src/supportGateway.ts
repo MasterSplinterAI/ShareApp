@@ -15,14 +15,17 @@ export interface SupportIntent {
   operation: string; key: string; payload: Record<string, unknown>; payloadHash: string;
   acceptedAt: number; acceptedUntil: number; encryptedGuestToken?: string;
   status: 'pending' | 'accepted' | 'failed'; responseStatus?: number; response?: unknown;
+  automaticAttempts?:number; nextAttemptAt?:number; retryPaused?:boolean;
 }
 /** put must atomically insert by scope or return the existing row (never overwrite it). */
 export interface SupportIntentStore {
   put(intent: SupportIntent): Promise<SupportIntent>;
   get(receiptId: string): Promise<SupportIntent | null>;
   find(scope: string): Promise<SupportIntent | null>;
-  pending(businessId:string,limit:number):Promise<SupportIntent[]>;
-  update(receiptId: string, patch: Partial<SupportIntent>): Promise<void>;
+  pending(businessId:string,limit:number,now?:number):Promise<SupportIntent[]>;
+  claimAttempt(receiptId:string,now:number,leaseMs:number):Promise<{token:string;attempt:number}|null>;
+  finishAttempt(receiptId:string,token:string,attempt:number,now:number):Promise<void>;
+  update(receiptId: string, patch: Partial<SupportIntent>, fence?:{token:string;now:number}): Promise<void>;
   rememberGuest?(businessId: string, evidence: GuestEvidence): Promise<void>;
   guest?(businessId: string, tokenHash: string): Promise<GuestEvidence | null>;
 }
@@ -37,6 +40,7 @@ export interface SupportGatewayOptions {
   openSecret?: (secret: string) => string | Promise<string>;
   fetchImpl?: typeof fetch; timeoutMs?: number; now?: () => number;
 }
+export const SUPPORT_MAX_AUTOMATIC_ATTEMPTS = 64;
 const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
 const MAX_BODY = 64 * 1024;
 const keyPattern = /^[A-Za-z0-9:_-]{8,128}$/;
@@ -113,28 +117,35 @@ export function createSupportGateway(options: SupportGatewayOptions) {
       ]);
     } finally { clearTimeout(timer); }
   }
-  async function deliver(intent: SupportIntent, auth: Awaited<ReturnType<typeof authority>>) {
-    const valid = intent.businessId === auth.lease.businessId && intent.generation === auth.lease.generation && intent.acceptedUntil > now() &&
-      (intent.actorType === 'guest' || await options.customerActive?.(intent.businessId,intent.actor));
-    if (!valid) { await options.store.update(intent.receiptId,{status:'failed'});return {...intent,status:'failed' as const}; }
-    if (intent.status !== 'pending') return intent;
+  async function mayAccess(intent:SupportIntent,auth:Awaited<ReturnType<typeof authority>>) {
+    return intent.businessId===auth.lease.businessId && intent.generation===auth.lease.generation && intent.acceptedUntil>now() &&
+      (intent.actorType==='guest' || Boolean(await options.customerActive?.(intent.businessId,intent.actor)));
+  }
+  async function deliver(intent:SupportIntent,auth:Awaited<ReturnType<typeof authority>>,attemptToken?:string) {
+    // Always report the winning durable outcome, even if this caller held an older pending snapshot.
+    intent=await options.store.get(intent.receiptId)??intent;
+    if(intent.status!=='pending' || !await mayAccess(intent,auth))return intent;
     let result;
     try {
-      const secret = intent.encryptedGuestToken ? await options.openSecret?.(intent.encryptedGuestToken) : undefined;
-      if(intent.actorType === 'guest' && !secret)throw Error('Guest secret unavailable');
+      const secret=intent.encryptedGuestToken?await options.openSecret?.(intent.encryptedGuestToken):undefined;
+      if(intent.actorType==='guest'&&!secret)throw Error('Guest secret unavailable');
       const [method,path]=intent.operation.split(':');
-      result=await remote(auth,method,path,intent.payload,intent.actorType === 'customer' ? intent.actor : null,intent.key,secret,intent);
-    } catch { return intent; }
-    if(result.status >= 500 || result.status === 429)return intent;
-    const updated: SupportIntent = {...intent,status:result.status >= 200 && result.status < 300 ? 'accepted' : 'failed',responseStatus:result.status,response:result.body};
-    await options.store.update(intent.receiptId,{status:updated.status,responseStatus:updated.responseStatus,response:updated.response});
-    return await options.store.get(intent.receiptId) ?? updated;
+      result=await remote(auth,method,path,intent.payload,intent.actorType==='customer'?intent.actor:null,intent.key,secret,intent);
+    }catch{return await options.store.get(intent.receiptId)??intent;}
+    // Authentication failure says nothing about a prior ambiguous remote commit.
+    if(result.status>=500 || [401,403,429].includes(result.status))return await options.store.get(intent.receiptId)??intent;
+    await options.store.update(intent.receiptId,{status:result.status>=200&&result.status<300?'accepted':'failed',responseStatus:result.status,response:result.body},attemptToken?{token:attemptToken,now:now()}:undefined);
+    return await options.store.get(intent.receiptId)??intent;
   }
-  const publicStatus = (intent:SupportIntent) => ({status:intent.status,receiptId:intent.receiptId,...(intent.status === 'accepted' ? {result:intent.response} : {})});
+  const publicStatus=(intent:SupportIntent,accessible=true)=>({status:intent.status,receiptId:intent.receiptId,
+    ...(accessible&&intent.status==='accepted'?{result:intent.response}:{}),
+    ...(intent.status==='pending'&&intent.retryPaused?{retryPaused:true}:{}),
+    ...(!accessible?{accessDenied:true}:{})});
   return {
-    async replay(receiptId:string) {
+    async replay(receiptId:string,attemptToken?:string) {
       const auth=await authority();const intent=await options.store.get(receiptId);
-      if(!intent)throw Error('Unknown receipt');return publicStatus(await deliver(intent,auth));
+      if(!intent)throw Error('Unknown receipt');
+      const result=await deliver(intent,auth,attemptToken);return publicStatus(result,await mayAccess(result,auth));
     },
     async handler(req:any,res:any) {
       const reply=(status:number,body:unknown)=>{res.setHeader?.('Cache-Control','no-store');return res.status(status).json(body);};
@@ -177,6 +188,7 @@ export function createSupportGateway(options: SupportGatewayOptions) {
           if(guest && (!options.openSecret || await options.openSecret(guest.encryptedToken)!==guestToken))throw Error('Guest proof encryption unavailable');
           const retained=existing??await options.store.put(candidate);
           if(retained.payloadHash !== payloadHash)return reply(409,{error:'Idempotency key payload conflict'});
+          if(!await mayAccess(retained,auth))return reply(409,{error:"Accepted intent access expired or revoked",receiptId:retained.receiptId});
           let result:SupportIntent;
           try {result=await deliver(retained,auth);} catch {return reply(202,publicStatus(retained));}
           if(result.status === 'pending')return reply(202,publicStatus(result));
@@ -202,25 +214,48 @@ export function createSupportGateway(options: SupportGatewayOptions) {
 export interface SupportSql {run(sql:string,params?:unknown[]):Promise<unknown>;get(sql:string,params?:unknown[]):Promise<any>;all(sql:string,params?:unknown[]):Promise<any[]>}
 export const SUPPORT_PENDING_SCHEMA = [
  `CREATE TABLE IF NOT EXISTS ops_support_pending (receipt_id TEXT PRIMARY KEY, business_id TEXT NOT NULL, scope TEXT NOT NULL UNIQUE, record_json TEXT NOT NULL, encrypted_secret TEXT, status TEXT NOT NULL, response_status INTEGER, response_json TEXT)`,
+ `CREATE TABLE IF NOT EXISTS ops_support_retry (receipt_id TEXT PRIMARY KEY, attempts INTEGER NOT NULL, next_attempt_at BIGINT NOT NULL, lease_token TEXT, lease_until BIGINT NOT NULL)`,
  `CREATE TABLE IF NOT EXISTS ops_support_guest_evidence (business_id TEXT NOT NULL, token_hash TEXT NOT NULL, issued_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, encrypted_secret TEXT NOT NULL, PRIMARY KEY(business_id,token_hash))`,
 ];
 /** Each transition is one atomic SQL statement; no shared SQLite transaction can capture other work. */
 export function createSqlSupportIntentStore(sql:SupportSql):SupportIntentStore {
- const decode=(row:any):SupportIntent|null=>row ? {...JSON.parse(row.record_json),...(row.encrypted_secret?{encryptedGuestToken:row.encrypted_secret}:{}),status:row.status,...(row.response_status?{responseStatus:row.response_status,response:JSON.parse(row.response_json)}:{})} : null;
- const find=async(scope:string)=>decode(await sql.get('SELECT * FROM ops_support_pending WHERE scope=?',[scope]));
+ const decode=(row:any):SupportIntent|null=>row?{...JSON.parse(row.record_json),...(row.encrypted_secret?{encryptedGuestToken:row.encrypted_secret}:{}),status:row.status,
+  automaticAttempts:Number(row.attempts??0),nextAttemptAt:Number(row.next_attempt_at??0),retryPaused:row.status==='pending'&&Number(row.attempts??0)>=SUPPORT_MAX_AUTOMATIC_ATTEMPTS,
+  ...(row.response_status?{responseStatus:row.response_status,response:JSON.parse(row.response_json)}:{})}:null;
+ const select='SELECT p.*,r.attempts,r.next_attempt_at FROM ops_support_pending p LEFT JOIN ops_support_retry r ON r.receipt_id=p.receipt_id';
+ const find=async(scope:string)=>decode(await sql.get(select+' WHERE p.scope=?',[scope]));
  return {
   find,
-  async pending(businessId,limit){const rows=await sql.all("SELECT * FROM ops_support_pending WHERE business_id=? AND status='pending' ORDER BY receipt_id LIMIT ?",[businessId,Math.max(1,Math.min(50,Math.floor(limit)))]);return rows.map(decode) as SupportIntent[];},
-  get:async(id)=>decode(await sql.get('SELECT * FROM ops_support_pending WHERE receipt_id=?',[id])),
+  async pending(businessId,limit,now=Date.now()) {
+   const rows=await sql.all(select+" WHERE p.business_id=? AND p.status='pending' AND COALESCE(r.next_attempt_at,0)<=? AND COALESCE(r.lease_until,0)<=? AND COALESCE(r.attempts,0)<? ORDER BY COALESCE(r.next_attempt_at,0),COALESCE(r.attempts,0),p.receipt_id LIMIT ?",[businessId,now,now,SUPPORT_MAX_AUTOMATIC_ATTEMPTS,Math.max(1,Math.min(50,Math.floor(limit)))]);
+   return rows.map(decode) as SupportIntent[];
+  },
+  get:async(id)=>decode(await sql.get(select+' WHERE p.receipt_id=?',[id])),
+  async claimAttempt(id,now,leaseMs) {
+   const token=crypto.randomUUID();
+   // A missing scheduling row is reconstructed atomically from the accepted intent, including after a crash.
+   const row=await sql.get(`INSERT INTO ops_support_retry(receipt_id,attempts,next_attempt_at,lease_token,lease_until)
+    SELECT receipt_id,1,?,?,? FROM ops_support_pending WHERE receipt_id=? AND status='pending'
+    ON CONFLICT(receipt_id) DO UPDATE SET attempts=ops_support_retry.attempts+1,lease_token=excluded.lease_token,lease_until=excluded.lease_until
+    WHERE ops_support_retry.lease_until<=? AND ops_support_retry.next_attempt_at<=? AND ops_support_retry.attempts<?
+    RETURNING lease_token,attempts`,[now,token,now+leaseMs,id,now,now,SUPPORT_MAX_AUTOMATIC_ATTEMPTS]);
+   return row?{token:row.lease_token,attempt:Number(row.attempts)}:null;
+  },
+  async finishAttempt(id,token,attempt,now) {
+   const delay=Math.min(3600000,5000*2**Math.min(attempt-1,20));
+   await sql.run('UPDATE ops_support_retry SET next_attempt_at=?,lease_token=NULL,lease_until=0 WHERE receipt_id=? AND lease_token=? AND lease_until>?',[now+delay,id,token,now]);
+  },
   async put(intent) {
    const {encryptedGuestToken,...record}=intent;
    await sql.run('INSERT INTO ops_support_pending(receipt_id,business_id,scope,record_json,encrypted_secret,status) VALUES(?,?,?,?,?,?) ON CONFLICT(scope) DO NOTHING',[intent.receiptId,intent.businessId,intent.scope,JSON.stringify(record),encryptedGuestToken??null,'pending']);
    const saved=await find(intent.scope);if(!saved)throw Error('Intent persistence failed');return saved;
   },
-  async update(id,patch) {
+  async update(id,patch,fence) {
    // Timeout has no write. Terminal results cannot be overwritten by another concurrent attempt.
    if(!['accepted','failed'].includes(patch.status??''))throw Error('Invalid intent transition');
-   await sql.run("UPDATE ops_support_pending SET status=?,response_status=?,response_json=? WHERE receipt_id=? AND status='pending'",[patch.status,patch.responseStatus??null,patch.response===undefined?null:JSON.stringify(patch.response),id]);
+   await sql.run("UPDATE ops_support_pending SET status=?,response_status=?,response_json=? WHERE receipt_id=? AND status='pending'"+
+    (fence?" AND EXISTS(SELECT 1 FROM ops_support_retry r WHERE r.receipt_id=ops_support_pending.receipt_id AND r.lease_token=? AND r.lease_until>?)":""),
+    [patch.status,patch.responseStatus??null,patch.response===undefined?null:JSON.stringify(patch.response),id,...(fence?[fence.token,fence.now]:[])]);
   },
   async rememberGuest(b,e) {await sql.run('INSERT INTO ops_support_guest_evidence(business_id,token_hash,issued_at,expires_at,encrypted_secret) VALUES(?,?,?,?,?) ON CONFLICT(business_id,token_hash) DO NOTHING',[b,e.tokenHash,e.issuedAt,e.expiresAt,e.encryptedToken]);},
   async guest(b,h) {const row=await sql.get('SELECT * FROM ops_support_guest_evidence WHERE business_id=? AND token_hash=?',[b,h]);return row?{tokenHash:h,issuedAt:Number(row.issued_at),expiresAt:Number(row.expires_at),encryptedToken:row.encrypted_secret}:null;},
@@ -234,7 +269,13 @@ export function createSupportReplayPump(options:SupportGatewayOptions & {interva
   const cfg=await options.getConfig();if(cfg.mode!=='central')return;
   const authority=await options.resolveAuthority?.(cfg.tenantSlug);
   if(!authority||authority.businessId!==cfg.tenantSlug||authority.expiresAt<=(options.now??Date.now)())return;
-  for(const intent of await options.store.pending(cfg.tenantSlug,Math.max(1,Math.min(options.batchSize??20,50))))await gateway.replay(intent.receiptId);
+  const clock=options.now??Date.now;
+  for(const intent of await options.store.pending(cfg.tenantSlug,Math.max(1,Math.min(options.batchSize??20,50)),clock())) {
+   const attempt=await options.store.claimAttempt(intent.receiptId,clock(),35000);
+   if(!attempt)continue;
+   try{await gateway.replay(intent.receiptId,attempt.token);}
+   finally{await options.store.finishAttempt(intent.receiptId,attempt.token,attempt.attempt,clock());}
+  }
  })().finally(()=>{running=undefined;}));
  const stop=()=>{stopped=true;clearTimeout(timer);};
  return {runOnce,stop,start(){if(!stopped)return stop;stopped=false;

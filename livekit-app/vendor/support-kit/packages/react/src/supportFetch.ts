@@ -1,6 +1,12 @@
 import {PendingIntents} from './pendingIntent.js';
 function normalizeApiBase(v:string){return v.replace(/\/$/,'');}
 function leadStorageKey(v:string){return `support-kit:leadId:${normalizeApiBase(v)}`;}
+function requestScope(apiBase:string,path:string,init:RequestInit|undefined,token:string|null,actorScope?:string) {
+  return JSON.stringify([normalizeApiBase(apiBase),actorScope||token||null,path,init?.method,init?.headers]);
+}
+export function hasRetainedSupportIntent(apiBase:string,path:string,init:RequestInit,pending:PendingIntents,getAccessToken?:()=>string|null|undefined,actorScope?:string) {
+  return pending.has(requestScope(apiBase,path,init,getAccessToken?.()?.trim()||null,actorScope),String(init.body??''));
+}
 export async function supportFetch<T>(
   apiBase: string,
   path: string,
@@ -12,16 +18,17 @@ export async function supportFetch<T>(
   const url = `${normalizeApiBase(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
   const token = getAccessToken?.()?.trim() || null;
   let guestToken: string | undefined;
-  let expiredGuestToken: string | undefined;
   try {
     const session = JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`) || 'null');
     if (session && Date.parse(session.expiresAt) > Date.now()) guestToken = session.token;
-    else if(session?.token)expiredGuestToken=session.token;
   } catch { /* storage unavailable */ }
   const { headers: initHeaders, ...rest } = init ?? {};
-  const intentScope=JSON.stringify([apiBase,actorScope || token || guestToken || expiredGuestToken,path,rest.method,initHeaders]);
-  if(!guestToken && expiredGuestToken && (pending?.has(intentScope,String(rest.body??'')) || (path.startsWith('/pending/') && pending?.ownsReceipt(path.slice('/pending/'.length)))))guestToken=expiredGuestToken;
-  const intentKey=rest.method && !['GET','HEAD'].includes(rest.method.toUpperCase()) && path!=='/coach' && path!=='/guest-session' ? pending?.key(intentScope,String(rest.body??'')) : undefined;
+  const intentScope=requestScope(apiBase,path,init,token,actorScope);
+  const body=String(rest.body??'');
+  const retained=pending?.retained(intentScope,body);
+  if(retained)guestToken=retained.guestToken;
+  else if(path.startsWith('/pending/'))guestToken=pending?.receiptProof(path.slice('/pending/'.length));
+  const intentKey=rest.method && !['GET','HEAD'].includes(rest.method.toUpperCase()) && path!=='/coach' && path!=='/guest-session' ? pending?.key(intentScope,body,guestToken) : undefined;
   const res = await fetch(url, {
     credentials: "include",
     ...rest,
@@ -35,6 +42,7 @@ export async function supportFetch<T>(
     },
   });
   const data = (await res.json()) as T & { error?: string };
+  if(rest.signal?.aborted)throw new DOMException("Support client scope changed","AbortError");
   if (!res.ok) {
     const message =
       typeof data === "object" && data && "error" in data && data.error

@@ -1,8 +1,9 @@
-import { supportFetch } from './supportFetch.js';
+import { supportFetch, hasRetainedSupportIntent } from './supportFetch.js';
 import { PendingIntents } from './pendingIntent.js';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -143,6 +144,12 @@ const shell: CSSProperties = {
 };
 
 export function SupportLauncher(props: SupportLauncherProps) {
+  // The component itself owns isolation; hosts need not know to add a React key.
+  const identity=props.user?.id?`user:${props.user.id}`:props.getAccessToken?.()?.trim()||'guest';
+  return <SupportLauncherSession key={JSON.stringify([normalizeApiBase(props.apiBase),identity,props.audience])} {...props} />;
+}
+
+function SupportLauncherSession(props: SupportLauncherProps) {
   const {
     apiBase,
     user,
@@ -158,16 +165,25 @@ export function SupportLauncher(props: SupportLauncherProps) {
   } = props;
 
   const pendingIntents=useRef(new PendingIntents());
-  const [submission,setSubmission]=useState<{status:'pending'|'accepted'|'failed';receiptId:string}|null>(null);
+  const [submission,setSubmission]=useState<{status:'pending'|'accepted'|'failed';receiptId:string;retryPaused?:boolean}|null>(null);
+  const clientAbort=useRef(new AbortController());
+  useLayoutEffect(()=>{
+    if(clientAbort.current.signal.aborted)clientAbort.current=new AbortController();
+    const controller=clientAbort.current;return ()=>controller.abort();
+  },[]);
 
-  const fetchApi = useCallback(
-    <T,>(path: string, init?: RequestInit) =>
-      supportFetch<T>(apiBase, path, init, getAccessToken,pendingIntents.current,user?.id).catch((err)=>{
-        if(err?.code==='support_pending')setSubmission({status:'pending',receiptId:err.receiptId});
-        throw err;
-      }),
-    [apiBase, getAccessToken,user?.id],
-  );
+  const fetchApi = useCallback(async <T,>(path:string,init?:RequestInit):Promise<T>=>{
+    const signal=clientAbort.current.signal;
+    try {
+      const result=await supportFetch<T>(apiBase,path,{...init,signal},getAccessToken,pendingIntents.current,user?.id);
+      if(signal.aborted)throw new DOMException('Support client scope changed','AbortError');
+      return result;
+    } catch(err:any) {
+      if(!signal.aborted&&err?.code==='support_pending')setSubmission({status:'pending',receiptId:err.receiptId,retryPaused:Boolean(err.retryPaused)});
+      throw err;
+    }
+  },[apiBase,getAccessToken,user?.id]);
+
 
   const accent = brand?.accent ?? DEFAULT_ACCENT;
   const label = brand?.name ?? "Support";
@@ -216,16 +232,14 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [threadDraft, setThreadDraft] = useState("");
 
   const isOpen = mode === "page" || open;
-  useEffect(()=>{
-    pendingIntents.current=new PendingIntents();setSubmission(null);setDraft('');setThreadDraft('');setError(null);setChatFailed(false);setSupportMessages([]);setSupportTicketId(null);setSubmittedTicket(null);setThread(null);setTickets([]);
-  },[apiBase,user?.id]);
+
 
   useEffect(()=>{
     if(submission?.status!=='pending')return;
     let stopped=false;
-    const timer=setInterval(()=>void fetchApi<{status:'pending'|'accepted'|'failed';result?:{ticket?:TicketSummary}}>(`/pending/${submission.receiptId}`).then(result=>{
+    const timer=setInterval(()=>void fetchApi<{status:'pending'|'accepted'|'failed';retryPaused?:boolean;result?:{ticket?:TicketSummary}}>(`/pending/${submission.receiptId}`).then(result=>{
       if(stopped)return;
-      setSubmission({status:result.status,receiptId:submission.receiptId});
+      setSubmission({status:result.status,receiptId:submission.receiptId,retryPaused:Boolean(result.retryPaused)});
       if(result.status!=='pending')setError(null);
       if(result.status==='accepted' && result.result?.ticket)setSubmittedTicket(result.result.ticket);
     }).catch(()=>{/* Keep bounded receipt and draft available for explicit retry. */}),4000);
@@ -290,11 +304,13 @@ export function SupportLauncher(props: SupportLauncherProps) {
       setError("Name and email are required");
       return;
     }
+    const leadBody=JSON.stringify({name:gateName.trim(),email:gateEmail.trim(),...(gatePhone.trim()?{phone:gatePhone.trim()}:{}),marketingOptIn:gateMarketing,source:'public_launcher',consentText:marketingLabel});
+    const retainedLead=hasRetainedSupportIntent(apiBase,'/leads',{method:'POST',body:leadBody},pendingIntents.current,getAccessToken,user?.id);
     setSending(true);
     setError(null);
     try {
       if(!requiresBootstrap.current) {const config=await fetchApi<{guestBootstrapRequired?:boolean}>('/config');requiresBootstrap.current=Boolean(config.guestBootstrapRequired);}
-      if(requiresBootstrap.current) {
+      if(requiresBootstrap.current && !retainedLead) {
         let proof;try{proof=JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`)||'null');}catch{}
         if(!proof || Date.parse(proof.expiresAt)<=Date.now()) {
           const bootstrap=await fetchApi<{guestSessionToken:string;guestSessionExpiresAt:string}>('/guest-session',{method:'POST',body:JSON.stringify({name:gateName.trim(),email:gateEmail.trim()})});
@@ -303,14 +319,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
       }
       const data = await fetchApi<{ ok: boolean; leadId: string; guestSessionToken?:string; guestSessionExpiresAt?:string }>("/leads", {
         method: "POST",
-        body: JSON.stringify({
-          name: gateName.trim(),
-          email: gateEmail.trim(),
-          ...(gatePhone.trim() ? { phone: gatePhone.trim() } : {}),
-          marketingOptIn: gateMarketing,
-          source: "public_launcher",
-          consentText: marketingLabel,
-        }),
+        body: leadBody,
       });
       setLeadId(data.leadId);
       setGuestEmail(gateEmail.trim());
@@ -1640,7 +1649,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
         ) : null}
 
         {submission ? <div role="status" style={{padding:12,fontSize:13}}>
-            {submission.status === 'pending' ? 'Submission pending — your draft is retained. Retry keeps the same submission.' : submission.status === 'accepted' ? 'Submission accepted.' : 'Submission failed. Your draft is retained; please retry.'}
+            {submission.status === 'pending' && submission.retryPaused ? 'Automatic retries paused. Your submission is unconfirmed; retry the saved draft with the same key.' : submission.status === 'pending' ? 'Submission pending — your draft is retained. Retry keeps the same submission.' : submission.status === 'accepted' ? 'Submission accepted.' : 'Submission failed. Your draft is retained; please retry.'}
           </div> : null}
           {error && error !== "Submission is pending. Your draft is retained." ? (
           <p style={{ color: "#b91c1c", fontSize: 13, marginTop: 8 }}>{error}</p>

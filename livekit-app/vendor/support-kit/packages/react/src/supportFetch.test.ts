@@ -12,3 +12,11 @@ test('launcher keeps expired proof only for its retained receipt and exact retry
  await supportFetch('/support','/tickets',undefined,undefined,p);assert.equal(seen.at(-1).headers['x-support-guest-token'],undefined);
  await supportFetch('/support','/pending/someone-else',undefined,undefined,new PendingIntents());assert.equal(seen.at(-1).headers['x-support-guest-token'],undefined);
 });
+test('an aborted client cannot settle a late response even when transport ignores abort',async t=>{
+ const original=globalThis.fetch;let finish:(response:Response)=>void=()=>{};
+ globalThis.fetch=()=>new Promise<Response>(resolve=>finish=resolve);t.after(()=>{globalThis.fetch=original;});
+ const pending=new PendingIntents(),controller=new AbortController();
+ const response=supportFetch('/support','/tickets',{method:'POST',body:'{"body":"old actor"}',signal:controller.signal},undefined,pending,'old-actor');
+ controller.abort();finish(new Response('{"status":"pending","receiptId":"old-private-receipt"}',{status:202}));
+ await assert.rejects(()=>response,(error:any)=>error.name==='AbortError');assert.equal(pending.ownsReceipt('old-private-receipt'),false);
+});
