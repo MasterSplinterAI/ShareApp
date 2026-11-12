@@ -1,0 +1,26 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+const {prepareSupportTest}=require('./supportIsolation');prepareSupportTest();
+const db=require('../db/v2Database');const {createShareAppPending}=require('../lib/supportPending');
+const {signSession,verifyToken}=require('../lib/authAdapter');
+test('Lalia JWT current user/membership and durable acceptance on selected isolated backend',async t=>{
+ await db.initDatabase();t.after(()=>db.close());
+ await db.run("INSERT INTO v2_users(id,email,password_hash,display_name) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",['gateway-user','gateway@example.test','unused','Gateway']);
+ await db.run("INSERT INTO v2_organizations(id,name) VALUES(?,?) ON CONFLICT(id) DO NOTHING",['gateway-org','Gateway']);
+ await db.run("INSERT INTO v2_org_members(user_id,org_id,role) VALUES(?,?,?) ON CONFLICT(user_id,org_id) DO NOTHING",['gateway-user','gateway-org','owner']);
+ await db.run('UPDATE v2_users SET disabled_at=NULL WHERE id=?',['gateway-user']);
+ let contexts=0;
+ const adapter=createShareAppPending({db,verifyToken,describeUser:async()=>{contexts++;return {planLabel:'Pro',contextSummary:'Safe preference and usage facts'};}});await db.run('DROP TABLE IF EXISTS ops_support_pending');await adapter.ensureSchema();
+ const req={headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'gateway-org',role:'admin'}),'x-support-user-json':'forged'}};
+ const actor=await adapter.resolveUser(req);assert.equal(actor.id,'gateway-user');assert.equal(actor.role,'user');assert.equal(actor.orgId,'gateway-org');assert.equal(contexts,1);
+ await assert.rejects(()=>adapter.resolveUser({headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'unowned-org'})}}));assert.equal(contexts,1);
+ const {createSupportGateway}=require('@rhule/ops-sdk');const gateway=createSupportGateway({...adapter,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>{throw Error('offline');}});
+ let result,status;await gateway.handler({...req,method:'POST',url:'/tickets',headers:{...req.headers,'idempotency-key':'lalia-'+Date.now()},body:{body:'retained'}},{setHeader(){},status(n){status=n;return this;},json(x){result=x;}});assert.equal(status,202);
+ const saved=await adapter.store.get(result.receiptId);const copies=await Promise.all([adapter.store.put(saved),adapter.store.put({...saved,receiptId:'alternate'})]);assert.equal(copies[0].receiptId,copies[1].receiptId);
+ const {createSupportReplayPump}=require('@rhule/ops-sdk');const restarted=createShareAppPending({db,verifyToken,describeUser:async()=>({planLabel:'Fixture',contextSummary:''})});
+ const pump=createSupportReplayPump({...restarted,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>new Response('{"ticket":{"id":"recovered"}}',{status:201})});
+ await pump.runOnce();assert.equal((await restarted.store.get(saved.receiptId)).status,'accepted');
+await adapter.store.update(saved.receiptId,{status:'failed'});assert.equal((await adapter.store.get(saved.receiptId)).status,'accepted');
+ await db.run('DELETE FROM v2_org_members WHERE user_id=?',['gateway-user']);assert.equal(await adapter.customerActive('lalia',actor),false);await assert.rejects(()=>adapter.resolveUser(req));
+ await db.run('UPDATE v2_users SET disabled_at=? WHERE id=?',[new Date().toISOString(),'gateway-user']);assert.equal(await adapter.customerActive('lalia',actor),false);
+ assert.throws(()=>adapter.openSecret('plaintext'),/Encrypted/);
+});

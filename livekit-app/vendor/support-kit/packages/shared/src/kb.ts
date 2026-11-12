@@ -9,6 +9,12 @@ import {
 export const KbArticleSchema = z.object({
   id: z.string().min(1),
   tenantId: TenantIdSchema,
+  revisionId: z.string().nullable().optional(),
+  /** Exact source revision matched/created by ingestion; latest operator draft may differ. */
+  ingestedRevisionId: z.string().optional(),
+  publishedRevisionId: z.string().nullable().optional(),
+  publicationVersion: z.number().optional(),
+  removalCandidate: z.boolean().optional(),
   title: z.string().min(1),
   body: z.string().min(1),
   status: KbArticleStatusSchema,

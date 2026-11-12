@@ -3,6 +3,8 @@
  * Thin adapters only — tickets/KB/agent live in the kit.
  */
 const path = require('path');
+const {createShareAppPending}=require('./supportPending');
+const {createSupportReplayPump}=require('@rhule/ops-sdk');
 const db = require('../db/v2Database');
 const { verifyToken } = require('./authAdapter');
 const { isSuperadminEmail } = require('./v2Superadmin');
@@ -18,6 +20,7 @@ const {
 const { createTelegramOpsNotifier } = require('@quill/support-channels');
 const {
   createOpsSupportProxyMiddleware,
+  getOpsHubConfig,
   syncContact,
   syncCuratedDocsToOpsHub,
   backfillLaliaStateToOpsHub,
@@ -95,63 +98,14 @@ async function buildContextSummary(user, orgId, role) {
   }
 }
 
-async function resolveUser(req) {
-  const header = req?.headers?.authorization || '';
-  const m = String(header).match(/^Bearer\s+(.+)$/i);
-  if (!m) return null;
-
-  let payload;
-  try {
-    payload = verifyToken(m[1]);
-  } catch {
-    return null;
-  }
-  if (!payload?.sub) return null;
-
-  const user = await db.get(
-    `SELECT id, email, display_name FROM v2_users WHERE id = ?`,
-    [payload.sub]
-  );
-  if (!user) return null;
-
-  const isAdmin = isSuperadminEmail(user.email);
-  let orgId = payload.orgId || undefined;
-  if (!orgId) {
-    try {
-      const mem = await db.get(
-        `SELECT org_id FROM v2_org_members WHERE user_id = ? LIMIT 1`,
-        [user.id]
-      );
-      if (mem?.org_id) orgId = mem.org_id;
-    } catch {
-      /* ignore */
-    }
-  }
-  const role = isAdmin ? 'admin' : 'user';
-  let planLabel = role === 'admin' ? 'platform admin' : 'member';
-  try {
-    if (orgId) {
-      const ent = await getOrgEntitlements(orgId);
-      if (ent?.planName || ent?.planId) {
-        planLabel = ent.planName || ent.planId;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-
-  const contextSummary = await buildContextSummary(user, orgId, role);
-  const out = {
-    id: user.id,
-    role,
-    planLabel,
-    contextSummary,
-  };
-  if (user.email) out.email = user.email;
-  if (user.display_name) out.name = user.display_name;
-  if (orgId) out.orgId = orgId;
-  return out;
+function createPending(trusted={}) {
+  return createShareAppPending({db,verifyToken,...trusted,describeUser:async(user,orgId)=>{
+    let planLabel='member';
+    if(orgId){const ent=await getOrgEntitlements(orgId);planLabel=ent?.planName||ent?.planId||planLabel;}
+    return {planLabel,contextSummary:await buildContextSummary(user,orgId,'user')};
+  }});
 }
+async function resolveUser(req){const user=await createPending().resolveUser(req);return user?{...user,role:isSuperadminEmail(user.email)?'admin':'user'}:null;}
 
 function createOpsNotifier() {
   return {
@@ -246,7 +200,9 @@ function createGithubAdapter() {
 /**
  * @returns {{ handler: Function, meta: object }}
  */
-function createShareAppSupportRouter() {
+function createShareAppSupportRouter(trusted={}) {
+  const pending=createPending(trusted);
+  const replay=createSupportReplayPump({...pending,resolveUser,getConfig:()=>{const cfg=getOpsHubConfig();return {...cfg,tenantSlug:'lalia',mode:cfg.supportMode};}});
   const frontendBase = (
     process.env.PUBLIC_FRONTEND_BASE_URL ||
     process.env.FRONTEND_URL ||
@@ -329,9 +285,13 @@ function createShareAppSupportRouter() {
     resolveUser,
     localHandler: (req, res, next) => localRouter.handler(req, res, next),
     db,
+    central:pending,
   });
   return {
     ...localRouter,
+    pending,
+    startReplay:()=>trusted.resolveAuthority?replay.start():()=>{},
+    stopReplay:replay.stop,
     handler: proxiedHandler,
   };
 }
@@ -352,6 +312,7 @@ module.exports = {
 };
 
 async function ensureSupportSchema() {
+  if(getOpsHubConfig().supportMode==='central'){await createPending().ensureSchema();return {central:true};}
   const { ensureSchema, seedCuratedDocs } = require('@quill/support-core');
   const supportDb = createSqliteSupportDb();
   const result = await ensureSchema(supportDb);

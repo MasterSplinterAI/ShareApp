@@ -2,6 +2,8 @@ import { z } from "zod";
 
 export const SupportUserSchema = z.object({
   id: z.string().min(1),
+  /** Trusted host projection only. Never accept this from forwarded customer data. */
+  principalType: z.enum(['operator', 'customer', 'guest']).optional(),
   email: z.string().email().optional(),
   name: z.string().optional(),
   role: z.enum(["user", "admin", "ops"]).default("user"),

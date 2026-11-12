@@ -214,6 +214,7 @@ app.use((err, req, res, next) => {
   try {
     const { supportKitEnabled, ensureSupportSchema } = require('./lib/supportKit');
     if (supportKitEnabled()) {
+      // Central mode initializes only durable gateway storage; local seeding/senders stay fenced.
       await ensureSupportSchema();
     }
   } catch (e) {

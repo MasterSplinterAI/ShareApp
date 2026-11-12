@@ -40,3 +40,21 @@ it("upgrades a populated legacy tenant table additively and idempotently", async
   const row=await db.get<{name:string;brand_json:string;ingest_token_hash:string}>("SELECT * FROM support_tenants WHERE id='old'");
   assert.equal(row?.name,"Original"); assert.equal(row?.ingest_token_hash,"existing-hash"); assert.equal(JSON.parse(row!.brand_json).name,"New brand");
 });
+
+it('creates the operator view with PostgreSQL-compatible syntax and preserves it on repeat',async()=>{
+ const sqlite=createMemorySqliteAdapter();
+ const db={...sqlite,run:async(sql:string,params?:unknown[])=>{
+  if(/^CREATE VIEW IF NOT EXISTS/i.test(sql))throw Object.assign(Error('syntax error at or near NOT'),{code:'42601'});
+  return sqlite.run(sql,params);
+ }};
+ await ensureSchema(db);await ensureSchema(db);
+ assert.deepEqual(await db.all('SELECT draft_revision_id,published_revision_id,revision_version,removal_candidate FROM support_kb_operator_articles'),[]);
+});
+it('does not hide a malformed operator view creation error',async()=>{
+ const sqlite=createMemorySqliteAdapter();
+ const db={...sqlite,run:async(sql:string,params?:unknown[])=>{
+  if(/^CREATE VIEW/i.test(sql))throw Object.assign(Error('malformed view'),{code:'42601'});
+  return sqlite.run(sql,params);
+ }};
+ await assert.rejects(ensureSchema(db),/malformed view/);
+});

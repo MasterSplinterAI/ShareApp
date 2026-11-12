@@ -117,6 +117,12 @@ export function buildSchemaStatements(tablePrefix: string): string[] {
       UNIQUE (tenant_id, source_kind, source_key)
     )
     `,
+    `CREATE TABLE IF NOT EXISTS ${p}kb_revisions (
+      id TEXT PRIMARY KEY, article_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+      title TEXT NOT NULL, body TEXT NOT NULL, visibility TEXT NOT NULL,
+      provenance_json TEXT, source_revision TEXT NOT NULL, created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_${p}kb_revision_article ON ${p}kb_revisions(tenant_id, article_id)`,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_status ON ${p}kb_articles(tenant_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_visibility ON ${p}kb_articles(tenant_id, visibility)`,
     `
@@ -163,6 +169,10 @@ export function buildAlterStatements(tablePrefix: string): Array<{
 }> {
   const p = tablePrefix;
   return [
+    ...["draft_revision_id TEXT", "published_revision_id TEXT", "revision_version INTEGER NOT NULL DEFAULT 0", "removal_candidate INTEGER NOT NULL DEFAULT 0", "retrieval_eligible INTEGER NOT NULL DEFAULT 1"].map(definition => ({
+      table: `${p}kb_articles`, column: definition.split(" ")[0]!,
+      ddl: `ALTER TABLE ${p}kb_articles ADD COLUMN ${definition}`,
+    })),
     {
       table: `${p}tickets`,
       column: "kind",

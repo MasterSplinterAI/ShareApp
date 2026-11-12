@@ -4,6 +4,7 @@
  * no-ops gracefully when unset so local/offline operation is never blocked.
  */
 const fs = require('fs');
+const { createOpsSupportProxy } = require('@rhule/ops-sdk');
 const path = require('path');
 
 const TENANT_SLUG = 'lalia';
@@ -22,7 +23,7 @@ function getOpsHubConfig() {
     .trim()
     .toLowerCase();
   const supportMode =
-    rawMode === 'proxy' || rawMode === 'local' ? rawMode : 'mirror';
+    rawMode === 'proxy' || rawMode === 'local' || rawMode === 'central' ? rawMode : 'mirror';
 
   return {
     baseUrl: baseUrl || null,
@@ -424,60 +425,11 @@ async function syncSupportHistoryToOpsHub(db) {
  * Middleware that proxies or mirrors `/api/v2/support/*` to Ops Hub with `X-Support-User-Json`
  * (falling back gracefully to the local support-kit handler if Ops Hub is unset or unreachable).
  */
-function createOpsSupportProxyMiddleware({ resolveUser, localHandler, db }) {
-  return async function laliaSupportOpsMiddleware(req, res, next) {
-    const cfg = getOpsHubConfig();
-    if (!cfg.configured || cfg.supportMode === 'local') {
-      return localHandler(req, res, next);
-    }
-
-    const pathAndQuery = String(req.url || req.path || '/');
-    const method = String(req.method || 'GET').toUpperCase();
-
-    if (cfg.supportMode === 'proxy') {
-      try {
-        const user = resolveUser ? await resolveUser(req) : null;
-        const targetPath = `/api/v1/support${pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`}`;
-        const headers = {
-          Accept: 'application/json',
-          Authorization: `Bearer ${cfg.secretKey}`,
-          'X-Ops-Key': cfg.secretKey,
-          'X-Ops-Tenant': TENANT_SLUG,
-          'x-tenant-id': TENANT_SLUG,
-          ...(user ? { 'X-Support-User-Json': encodeSupportUserHeader(user) } : {}),
-        };
-        let bodyPayload;
-        if (method !== 'GET' && method !== 'HEAD' && req.body !== undefined) {
-          headers['Content-Type'] = 'application/json';
-          bodyPayload = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-        }
-
-        const upstream = await fetch(`${cfg.baseUrl}${targetPath}`, {
-          method,
-          headers,
-          body: bodyPayload,
-        });
-        const contentType = upstream.headers.get('content-type') || 'application/json';
-        const text = await upstream.text();
-        res.status(upstream.status).setHeader('Content-Type', contentType).send(text);
-        return;
-      } catch {
-        return localHandler(req, res, next);
-      }
-    }
-
-    // Default 'mirror' mode: serve locally (running AI triage, creating tickets/messages/proposals/gaps/leads)
-    // and sync the full support snapshot to Ops Hub as soon as the response completes.
-    if (method === 'POST' || method === 'PATCH') {
-      res?.on?.('finish', () => {
-        if (db) {
-          void syncSupportHistoryToOpsHub(db);
-        }
-      });
-    }
-
-    return localHandler(req, res, next);
-  };
+function createOpsSupportProxyMiddleware({resolveUser,localHandler,db,central}) {
+  return createOpsSupportProxy({
+    getConfig:()=>{const cfg=getOpsHubConfig();return {...cfg,tenantSlug:TENANT_SLUG,mode:cfg.supportMode};},
+    resolveUser,localHandler,central,onMirrorSync:()=>syncSupportHistoryToOpsHub(db),
+  });
 }
 
 module.exports = {

@@ -43,6 +43,7 @@ export async function researchGapToKbDraft(input: {
   brand: BrandConfig;
   docsRoot?: string;
   tablePrefix?: string;
+  preserveActive?: boolean;
 }): Promise<GapResearchResult> {
   const prefix = input.tablePrefix ?? DEFAULT_TABLE_PREFIX;
   const gaps = new KnowledgeGapService(input.db, prefix);
@@ -185,30 +186,14 @@ When insufficient=true: title/body may be empty; reason required.`;
     sourceKey: `code_research:gap:${gap.id}`,
     sourceKind: "code_research",
     path: `gap/${gap.id}`,
+    provenance:{gapId:gap.id,ticketId:gap.ticketId,confidence,citedPaths,codebase:input.codebase.label??null,researchedAt:new Date().toISOString()},
     tablePrefix: prefix,
+    ...(input.preserveActive ? {preserveActive:true} : {}),
   });
-
-  // Enrich provenance with research metadata
-  const provenance = JSON.stringify({
-    gapId: gap.id,
-    ticketId: gap.ticketId,
-    confidence,
-    citedPaths,
-    codebase: input.codebase.label ?? null,
-    researchedAt: new Date().toISOString(),
-  });
-  await input.db.run(
-    `UPDATE ${prefix}kb_articles SET provenance_json = ?, updated_at = ? WHERE id = ?`,
-    [provenance, new Date().toISOString(), article.id],
-  );
-  const refreshed = {
-    ...article,
-    provenanceJson: provenance,
-  };
 
   return {
     ok: true,
-    article: refreshed,
+    article,
     confidence,
     citedPaths,
     insufficient: false,
@@ -228,6 +213,7 @@ export async function curateAnswerToKbDraft(input: {
   userQuestion?: string;
   sourceKey: string;
   tablePrefix?: string;
+  preserveActive?: boolean;
 }): Promise<KbArticle> {
   const prefix = input.tablePrefix ?? DEFAULT_TABLE_PREFIX;
   const system = `You curate support answers into clean knowledge-base articles for ${input.brand.name}.
@@ -260,6 +246,7 @@ Keep facts from the raw answer; improve structure and clarity. Do not invent new
     sourceKey: input.sourceKey,
     sourceKind: "evolutionary",
     tablePrefix: prefix,
+    ...(input.preserveActive ? {preserveActive:true} : {}),
   });
 }
 

@@ -12,6 +12,8 @@ import type {
   SupportUser,
 } from "@quill/support-shared";
 import type {
+  DurableMutationScope,
+  SupportAction,
   CodebaseAdapter,
   CreateSupportRouterOptions,
   DbAdapter,
@@ -30,16 +32,20 @@ import { TenantStore, CreateTenantInput, type TenantBrand } from "../tenants/sto
 import { ProposalService } from "../proposals/service.js";
 import { KnowledgeGapService } from "../gaps/service.js";
 import { LeadService } from "../leads/service.js";
-import { triageMessage, type TriageDeps } from "../agent/triage.js";
+import { triageMessage, prepareTriage, persistPreparedTriage, type TriageDeps } from "../agent/triage.js";
 import {
+  PublishedKnowledgeConflict,
   deprecateKbArticle,
   getKbArticle,
   ingestDocsSources,
   ingestFromChangelog,
   listKbArticles,
+  listKbRevisions,
   promoteKbArticle,
   updateKbArticle,
 } from "../kb/codegen.js";
+import {validateDocsSources} from "../kb/docsArtifact.js";
+import { searchActiveArticles } from "../kb/search.js";
 import { promoteTicketAnswerToKb } from "../kb/evolutionary.js";
 import { executeProposalAction } from "../proposals/executor.js";
 import {
@@ -48,6 +54,9 @@ import {
 } from "../telegram/webhook.js";
 import { curateAnswerToKbDraft, researchGapToKbDraft } from "../kb/gapResearch.js";
 import { coachFeatureRequest } from "../agent/featureCoach.js";
+import { authorizeOperatorRoute } from "./authorization.js";
+import { GuestSessions } from "./guestSessions.js";
+import { normalizeAction } from "../proposals/executor.js";
 import { createHash } from "node:crypto";
 
 type JsonResponse = {
@@ -119,6 +128,7 @@ function matchRoute(
   if (method === "GET" && path === "/config") return { name: "config", params: {} };
   if (method === "POST" && path === "/chat") return { name: "chat", params: {} };
   if (method === "POST" && path === "/coach") return { name: "coach", params: {} };
+  if (method === "POST" && path === "/guest-session") return {name:"guestBootstrap",params:{}};
   if (method === "POST" && path === "/leads") return { name: "createLead", params: {} };
   if (method === "GET" && path === "/tickets") return { name: "listTickets", params: {} };
   if (method === "POST" && path === "/tickets") return { name: "createTicket", params: {} };
@@ -174,6 +184,8 @@ function matchRoute(
   if (method === "POST" && adminKbDeprecate) {
     return { name: "adminKbDeprecate", params: { id: adminKbDeprecate[1]! } };
   }
+  const adminKbRevisions=path.match(/^\/admin\/kb\/([^/]+)\/revisions$/);
+  if(method==='GET' && adminKbRevisions)return {name:'adminKbRevisions',params:{id:adminKbRevisions[1]!}};
   const adminKbPatch = path.match(/^\/admin\/kb\/([^/]+)$/);
   if (method === "PATCH" && adminKbPatch) {
     return { name: "adminKbPatch", params: { id: adminKbPatch[1]! } };
@@ -310,6 +322,13 @@ function createMockResponse(): {
 }
 
 export interface HttpRouterContext {
+  mutationMode?: CreateSupportRouterOptions['mutationMode'];
+  durableMutations?: CreateSupportRouterOptions['durableMutations'];
+  listDeliveries?: CreateSupportRouterOptions['listDeliveries'];
+  effects?: DurableMutationScope;
+  preparedTriage?: Awaited<ReturnType<typeof prepareTriage>>;
+  authorizationMode?: CreateSupportRouterOptions['authorizationMode'];
+  authorizeSupport?: CreateSupportRouterOptions['authorizeSupport'];
   tenantId: string;
   db: DbAdapter;
   resolveUser: ResolveUser;
@@ -381,8 +400,11 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
     return res;
   };
   const tenantStore = new TenantStore(baseCtx.db, tablePrefix);
+  const central = baseCtx.authorizationMode === 'central';
+  const guestSessions = new GuestSessions(baseCtx.db, tablePrefix);
+  let guestSchemaReady: Promise<void> | undefined;
 
-  const handler = async (req: unknown, res: unknown, _next?: unknown) => {
+  const dispatch = async (req: unknown, res: unknown, _next?: unknown, transactionContext?: HttpRouterContext) => {
     await ensureReady();
 
     const r = req as MockRequest & IncomingMessage;
@@ -411,13 +433,30 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
     const queryTenant = parseQueryString(String(r.url ?? r.path ?? "/")).tenant;
     const headerTenant = header(r, "x-tenant-id");
     const requestedTenantId = queryTenant ?? headerTenant;
-    const resolved =
-      baseCtx.resolveTenant && requestedTenantId
+    // Internal redispatch already carries the authorized, resolved business.
+    // Re-resolving through the host here may acquire a second pool connection.
+    const resolved = transactionContext
+      ? { tenantId: transactionContext.tenantId, brand: transactionContext.brand }
+      : baseCtx.resolveTenant && requestedTenantId
         ? await baseCtx.resolveTenant(req, requestedTenantId)
         : null;
-    const ctx: HttpRouterContext = resolved
-      ? { ...baseCtx, tenantId: resolved.tenantId, brand: resolved.brand }
-      : baseCtx;
+    if ((central || baseCtx.authorizeSupport) && (
+      (queryTenant && headerTenant && queryTenant !== headerTenant) ||
+      (requestedTenantId && requestedTenantId !== baseCtx.tenantId && !resolved) ||
+      (resolved?.tenantId ?? baseCtx.tenantId) === 'all'
+    )) { finish(403, {ok:false,error:'Invalid business scope'}); return; }
+    let ctx: HttpRouterContext = transactionContext ?? (resolved
+      ? { ...baseCtx, ...resolved }
+      : {...baseCtx});
+    if(central && resolved && !transactionContext){
+      // A missing tenant adapter means unavailable, never fallback to another
+      // business's globally configured provider or documentation source.
+      for(const key of ['llm','codebase','email','opsNotifier','github'] as const)
+        if(!resolved[key])delete ctx[key];
+      delete ctx.docsRoot;
+    }
+    const requiredActions = new Set<SupportAction>();
+    if(ctx.authorizeSupport) { const authorize=ctx.authorizeSupport; ctx={...ctx,authorizeSupport:async input=>{const allowed=await authorize(input);if(allowed)requiredActions.add(input.action);return allowed;}};}
 
     if (!route) {
       finish(404, { ok: false, error: "Not found" });
@@ -437,10 +476,30 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
     // Multi-tenant embed page: self-contained drop-in widget (one-line iframe).
     if (route.name === "embedPage") {
       const { buildEmbedPage } = await import("./embedPage.js");
-      const html = buildEmbedPage(ctx.brand);
+      const html = buildEmbedPage(ctx.brand,ctx.mutationMode==='durable');
       response.setHeader("Content-Type", "text/html; charset=utf-8");
       response.end(html);
       return;
+    }
+
+    if (central) {
+      try { await (guestSchemaReady ??= guestSessions.ensureSchema()); }
+      catch { guestSchemaReady = undefined; finish(503,{ok:false,error:'Guest ownership schema unavailable'}); return; }
+    }
+    if (route.name.startsWith('admin') && (central || ctx.authorizeSupport)) {
+      if (r.body === undefined && typeof r.on === 'function') r.body = await readJsonBody(r);
+      const body = (r.body ?? {}) as Record<string,unknown>;
+      if (['tenant','tenantId','businessId'].some(key => body[key] != null && body[key] !== ctx.tenantId)) {
+        finish(403,{ok:false,error:'Conflicting business scope'}); return;
+      }
+      const status = await authorizeOperatorRoute({actor:await ctx.resolveUser(req),businessId:ctx.tenantId,
+        route:route.name,...(route.params.id ?? route.params.idOrNumber ? {id:route.params.id ?? route.params.idOrNumber} : {}),
+        body,db:ctx.db,tablePrefix,central,...(ctx.authorizeSupport?{authorizeSupport:ctx.authorizeSupport}:{})});
+      if (status !== 200) { finish(status,{ok:false,error:status === 404?'Resource not found':'Forbidden'}); return; }
+    }
+    if (central && route.name === 'telegramWebhook') {
+      // Secret/Telegram allowlist proves transport, not an OpsHub operator grant.
+      finish(403,{ok:false,error:'Central Telegram operator mapping is not configured'}); return;
     }
 
     // Tenant registry (platform-level, admin-gated).
@@ -456,11 +515,14 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
       }
+      if (central && (!ctx.authorizeSupport || user.principalType !== 'operator')) {
+        finish(403,{ok:false,error:'Forbidden'}); return;
+      }
       const mutating =
         route.name === "createTenant" ||
         route.name === "patchTenant" ||
         route.name === "deleteTenant";
-      if (mutating && !requirePlatformAdmin(user)) {
+      if ((mutating || central) && !requirePlatformAdmin(user)) {
         finish(403, { ok: false, error: "Forbidden" });
         return;
       }
@@ -629,7 +691,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         tenantId: ctx.tenantId,
         tenantStore,
       });
-      if (!authed) {
+      if (!authed && !ctx.authorizeSupport) {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
       }
@@ -638,20 +700,25 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         ? r.body
         : await readJsonBody(r as IncomingMessage)) as {
         gitSha?: string;
+        sourceRevision?:string;
+        completeSnapshot?:boolean;
         changelog?: string;
         sources?: Array<{ path: string; title?: string; body: string }>;
       };
 
+      if(body?.sources)try {validateDocsSources(body.sources);} catch(error){finish(400,{ok:false,error:error instanceof Error?error.message:'Invalid docs artifact'});return;}
       const articles = [];
       if (body?.changelog) {
-        const changelogOpts: { gitSha?: string; tablePrefix: string } = { tablePrefix };
+        const changelogOpts: { gitSha?: string; tablePrefix: string; preserveActive:boolean } = { tablePrefix,preserveActive:central };
         if (body.gitSha) changelogOpts.gitSha = body.gitSha;
         articles.push(
           ...(await ingestFromChangelog(ctx.db, ctx.tenantId, body.changelog, changelogOpts)),
         );
       }
-      if (body?.sources?.length) {
-        const docsOpts: { gitSha?: string; tablePrefix: string } = { tablePrefix };
+      if (body?.sources && (body.sources.length || body.completeSnapshot===true)) {
+        const docsOpts: { gitSha?: string; sourceRevision?:string; completeSnapshot?:boolean; tablePrefix: string; preserveActive:boolean } = { tablePrefix,preserveActive:central };
+        if(body.sourceRevision)docsOpts.sourceRevision=body.sourceRevision;
+        if(body.completeSnapshot===true)docsOpts.completeSnapshot=true;
         if (body.gitSha) docsOpts.gitSha = body.gitSha;
         articles.push(
           ...(await ingestDocsSources(ctx.db, ctx.tenantId, body.sources, docsOpts)),
@@ -674,6 +741,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
 
     // Website crawl → LLM-curated KB drafts
     if (route.name === "adminKbIngestWebsite") {
+      if (central) { finish(503,{ok:false,error:"Central website crawling unavailable until a bounded safe transport is configured"}); return; }
       const secret = ctx.kbIngest?.webhookSecret;
       const token = header(r, "x-support-ingest-token");
       const user = await ctx.resolveUser(req);
@@ -684,7 +752,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         tenantId: ctx.tenantId,
         tenantStore,
       });
-      if (!authed) {
+      if (!authed && !ctx.authorizeSupport) {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
       }
@@ -713,7 +781,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         ctx.tenantId,
         pages,
         ctx.llm,
-        { tablePrefix },
+        { tablePrefix,preserveActive:central },
       );
       if (articles.length > 0 && ctx.opsNotifier) {
         ctx.opsNotifier
@@ -740,7 +808,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         tenantId: ctx.tenantId,
         tenantStore,
       });
-      if (!authed) {
+      if (!authed && !ctx.authorizeSupport) {
         finish(401, { ok: false, error: "Unauthorized" });
         return;
       }
@@ -764,7 +832,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         ctx.tenantId,
         docs,
         ctx.llm,
-        { tablePrefix },
+        { tablePrefix,preserveActive:central },
       );
       if (articles.length > 0 && ctx.opsNotifier) {
         ctx.opsNotifier
@@ -779,7 +847,28 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
       return;
     }
 
-    const user = await ctx.resolveUser(req);
+    const hostUser = await ctx.resolveUser(req);
+    const user = hostUser ?? (central ? await guestSessions.resolve(ctx.tenantId, header(r,'x-support-guest-token')) : null);
+    const durableRoutes = ['chat','createTicket','replyTicket','createLead','adminReplyTicket','adminSetTicketStatus','adminProposalAction'];
+    if(ctx.mutationMode === 'durable' && durableRoutes.includes(route.name) && !transactionContext) {
+      if(!ctx.durableMutations) { finish(503,{ok:false,error:'Durable mutation adapter unavailable'});return; }
+      if(!user) {finish(401,{ok:false,error:'Guest session proof required',code:'guest_session_required'});return;}
+      if(route.name === 'replyTicket') {
+        const owned=await new TicketService(ctx.db,tablePrefix).getTicket(ctx.tenantId,route.params.id!);
+        if(!owned || owned.userId!==user.id) {finish(403,{ok:false,error:'Forbidden'});return;}
+      }
+      const key=header(r,'idempotency-key');
+      if(!key || !/^[A-Za-z0-9:_-]{8,128}$/.test(key)) {finish(400,{ok:false,error:'Valid Idempotency-Key required'});return;}
+      if(r.body===undefined && typeof r.on==='function') r.body=await readJsonBody(r);
+      const result=await ctx.durableMutations.run({businessId:ctx.tenantId,actor:user,operation:`${method}:${path}`,key,payload:r.body??null,requiredActions:[...requiredActions]},async (scope,prepared)=>{
+        if(!scope?.db || !scope.enqueue || !scope.preflight) return {statusCode:503,body:{ok:false,error:'Durable transaction hooks unavailable'}};
+        const capture=createMockResponse();
+        await dispatch(req,capture.res,undefined,{...ctx,db:scope.db,effects:scope,...(prepared?{preparedTriage:prepared as Awaited<ReturnType<typeof prepareTriage>>}:{}),resolveUser:()=>user});
+        const buffered=await capture.done;
+        return {statusCode:buffered.statusCode,body:buffered.body};
+      },['replyTicket','chat'].includes(route.name)?db=>prepareTriage({...ctx,db,publicAudience:central},{tenantId:ctx.tenantId,user,message:String((r.body as Record<string,unknown>)?.[route.name==='chat'?'message':'body']??'').trim(),...(route.name==='replyTicket'?{existingTicketId:route.params.id!}:{}),...(user.email?{guestEmail:user.email}:{}),...(TicketKindSchema.safeParse((r.body as any)?.kind).success?{kind:(r.body as any).kind}:{}),...((r.body as any)?.topic?{topic:String((r.body as any).topic)}:{})}):undefined);
+      finish(result.statusCode,result.body);return;
+    }
     const tickets = new TicketService(ctx.db, tablePrefix);
     const proposals = new ProposalService(ctx.db, tablePrefix);
     const gaps = new KnowledgeGapService(ctx.db, tablePrefix);
@@ -804,14 +893,16 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           coachEnabled: Boolean(ctx.llm),
           guestTickets: true,
           publicLeads: true,
+          guestSessionRequired: central,
+          guestBootstrapRequired: ctx.mutationMode === 'durable',
           defaultMarketingConsentLabel: DEFAULT_MARKETING_CONSENT_LABEL,
         });
         return;
       }
 
       if (route.name === "publicHelp") {
-        const articles = await listKbArticles(ctx.db, ctx.tenantId, {
-          status: "active",
+        const articles = await searchActiveArticles(ctx.db, ctx.tenantId, {
+          publicAudience: true,
           tablePrefix,
           limit: 100,
         });
@@ -822,6 +913,14 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         return;
       }
 
+      if(route.name === 'guestBootstrap') {
+        if(!central || ctx.mutationMode!=='durable') {finish(404,{ok:false,error:'Not found'});return;}
+        const body=await readBody() as {email?:string;name?:string};
+        const email=String(body?.email??'').trim().toLowerCase();
+        if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {finish(400,{ok:false,error:'Valid email required'});return;}
+        const session=await guestSessions.create(ctx.tenantId,email,String(body.name??'').slice(0,200));
+        finish(201,{ok:true,guestSessionToken:session.token,guestSessionExpiresAt:session.expiresAt});return;
+      }
       // Public contact gate — name + email (+ optional phone + marketing consent)
       if (route.name === "createLead") {
         const body = await readBody();
@@ -856,7 +955,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           const lead = await leads.upsertLead({
             tenantId: ctx.tenantId as never,
             name,
-            email,
+            email: ctx.mutationMode==='durable' ? user!.email! : email,
             marketingOptIn,
             source,
             consentText,
@@ -864,10 +963,13 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             ...(ipHash ? { ipHash } : {}),
             ...(ua ? { userAgent: ua } : {}),
           });
-          if (ctx.onLeadCaptured) {
+          if (ctx.effects) await ctx.effects.enqueue({type:'support.lead',payload:{lead}});
+          else if (ctx.onLeadCaptured) {
             void Promise.resolve(ctx.onLeadCaptured(lead)).catch(() => {});
           }
-          finish(201, { ok: true, leadId: lead.id, lead });
+          const session = central && ctx.mutationMode!=='durable' ? await guestSessions.create(ctx.tenantId,email,name) : null;
+          finish(201, { ok: true, leadId: lead.id, ...(central ? {} : {lead}),
+            ...(session ? {guestSessionToken:session.token,guestSessionExpiresAt:session.expiresAt} : {}) });
           return;
         } catch (err) {
           finish(400, {
@@ -933,13 +1035,14 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           return;
         }
         const kindParsed = TicketKindSchema.safeParse(input.kind ?? "support");
+        const session = central ? await guestSessions.create(ctx.tenantId,guestEmail) : null;
         const created = await tickets.createTicket({
           tenantId: ctx.tenantId as CreateTicketInput["tenantId"],
           body: ticketBody,
           kind: kindParsed.success ? kindParsed.data : "support",
           topic: input.topic ?? "other",
           subject: input.subject,
-          userId: `guest:${guestEmail}`,
+          userId: session?.ownerId ?? `guest:${guestEmail}`,
           guestEmail,
           severity: input.severity,
           priority: input.priority,
@@ -966,11 +1069,14 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           });
         }
 
-        finish(201, { ok: true, ...created });
+        finish(201, { ok: true, ...created, ...(session ? {guestSessionToken:session.token,guestSessionExpiresAt:session.expiresAt} : {}) });
         return;
       }
 
       // Public chat after contact gate: require leadId when no session user
+      if (route.name === "chat" && !user && central) {
+        finish(401,{ok:false,error:'Guest session proof required',code:'guest_session_required'}); return;
+      }
       if (route.name === "chat" && !user) {
         const body = await readBody();
         const message = String((body as { message?: string })?.message ?? "").trim();
@@ -1048,6 +1154,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           brand: ctx.brand,
           tablePrefix,
           topics,
+          ...(central ? {publicAudience:true} : {}),
         };
         if (ctx.llm) triageDeps.llm = ctx.llm;
         if (ctx.docsRoot) triageDeps.docsRoot = ctx.docsRoot;
@@ -1058,22 +1165,23 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           triageDeps.autoReplyMinConfidence = ctx.autoReplyMinConfidence;
         }
 
-        const result = await triageMessage(triageDeps, {
-          tenantId: ctx.tenantId,
-          user,
-          message,
-          ...(kindParsed?.success ? { kind: kindParsed.data } : {}),
-          ...(topic ? { topic } : {}),
-        });
+        const triageInput = {
+          tenantId:ctx.tenantId,user,message,
+          ...(user.email?{guestEmail:user.email}:{}),
+          ...(kindParsed?.success?{kind:kindParsed.data}:{}),...(topic?{topic}:{}),
+        };
+        const result=ctx.effects && ctx.preparedTriage
+          ? await persistPreparedTriage({...triageDeps,effects:ctx.effects},triageInput,ctx.preparedTriage)
+          : await triageMessage(triageDeps,triageInput);
 
         finish(200, { ok: true, ...result });
         return;
       }
 
       if (route.name === "listTickets") {
-        const list = await tickets.listTickets(ctx.tenantId, { limit: 100, ...(requireAdmin(user) ? {} : { userId: user.id }) });
+        const list = await tickets.listTickets(ctx.tenantId, { limit: 100, ...(!central && requireAdmin(user) ? {} : { userId: user.id }) });
         const scoped =
-          user.role === "admin" || user.role === "ops"
+          !central && (user.role === "admin" || user.role === "ops")
             ? list
             : list.filter((t) => t.userId === user.id);
         finish(200, { ok: true, tickets: scoped });
@@ -1096,8 +1204,8 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           topic: input.topic ?? "other",
           subject: input.subject,
           userId: user.id,
-          orgId: user.orgId ?? input.orgId,
-          guestEmail: input.guestEmail,
+          orgId: central ? user.orgId : user.orgId ?? input.orgId,
+          guestEmail: central ? user.email : input.guestEmail,
           severity: input.severity,
           priority: input.priority,
           contextJson: input.contextJson,
@@ -1123,6 +1231,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           });
         }
 
+        if(ctx.effects) await ctx.effects.enqueue({type:'support.ops',ticketId:created.ticket.id,payload:{kind:'ticket_created',title:`Ticket #${created.ticket.publicNumber}`,body:ticketBody}});
         finish(201, { ok: true, ...created });
         return;
       }
@@ -1133,7 +1242,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           finish(404, { ok: false, error: "Ticket not found" });
           return;
         }
-        if (user.role !== "admin" && user.role !== "ops" && ticket.userId !== user.id) {
+        if ((central || (user.role !== "admin" && user.role !== "ops")) && ticket.userId !== user.id) {
           finish(403, { ok: false, error: "Forbidden" });
           return;
         }
@@ -1147,6 +1256,10 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           finish(400, { ok: false, error: "body is required" });
           return;
         }
+        if(ctx.effects && ctx.preparedTriage) {
+          const result=await persistPreparedTriage({...ctx,publicAudience:central},{tenantId:ctx.tenantId,user,message:replyBody,existingTicketId:ticket.id},ctx.preparedTriage);
+          finish(200,{ok:true,...result});return;
+        }
         // Run AI triage on follow-up user messages so the user always gets an
         // assistant reply in the thread (auto-reply from KB/context or escalation acknowledgment)
         const triageDeps: TriageDeps = {
@@ -1154,6 +1267,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           brand: ctx.brand,
           tablePrefix,
           topics,
+          ...(central ? {publicAudience:true} : {}),
         };
         if (ctx.llm) triageDeps.llm = ctx.llm;
         if (ctx.docsRoot) triageDeps.docsRoot = ctx.docsRoot;
@@ -1188,7 +1302,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           finish(404, { ok: false, error: "Ticket not found" });
           return;
         }
-        if (user.role !== "admin" && user.role !== "ops" && ticket.userId !== user.id) {
+        if ((central || (user.role !== "admin" && user.role !== "ops")) && ticket.userId !== user.id) {
           finish(403, { ok: false, error: "Forbidden" });
           return;
         }
@@ -1198,7 +1312,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
       }
 
       if (route.name.startsWith("admin")) {
-        if (!requireAdmin(user)) {
+        if (!ctx.authorizeSupport && !requireAdmin(user)) {
           finish(403, { ok: false, error: "Forbidden" });
           return;
         }
@@ -1291,7 +1405,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             ctx.tenantId,
             ticket.id,
           );
-          finish(200, { ok: true, ticket, messages, proposals: ticketProposals });
+          finish(200, { ok: true, ticket, messages, proposals: ticketProposals, ...(ctx.listDeliveries ? {deliveries:await ctx.listDeliveries(ctx.tenantId,ticket.id,user)} : {}) });
           return;
         }
 
@@ -1327,7 +1441,8 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             if (next) updated = next;
           }
 
-          notifyEmail(ctx.email, updated, replyBody, ctx.brand.name);
+          if(ctx.effects) await ctx.effects.enqueue({type:'support.email',ticketId:ticket.id,payload:{body:replyBody,subject:`${ctx.brand.name} support — ticket #${ticket.publicNumber}`}});
+          else notifyEmail(ctx.email, updated, replyBody, ctx.brand.name);
           finish(200, { ok: true, ticket: updated, message });
           return;
         }
@@ -1363,6 +1478,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           }
           const body = await readBody();
           const activate = Boolean((body as { activate?: boolean })?.activate);
+          if (central && activate) { finish(400,{ok:false,error:"Create a draft first, then publish its exact reviewed revision"}); return; }
           const title = String((body as { title?: string })?.title ?? "").trim();
           let articleBody = String((body as { body?: string })?.body ?? "").trim();
           const curate = (body as { curate?: boolean })?.curate !== false;
@@ -1388,6 +1504,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
                 brand: ctx.brand,
                 rawAnswer: answer.body,
                 sourceKey: `evolutionary:ticket:${ticket.id}`,
+                preserveActive:central,
                 tablePrefix,
                 ...(title ? { title } : {}),
                 ...(userQ?.body ? { userQuestion: userQ.body } : {}),
@@ -1398,6 +1515,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
                   ctx.tenantId,
                   curated.id,
                   tablePrefix,
+                  {revisionId:curated.ingestedRevisionId,expectedDraftRevisionId:curated.revisionId,expectedPublishedRevisionId:curated.publishedRevisionId??null},
                 );
                 finish(200, { ok: true, article: promoted, curated: true });
                 return;
@@ -1412,6 +1530,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             ticketId: string;
             tablePrefix: string;
             activate: boolean;
+            preserveActive: boolean;
             title?: string;
             body?: string;
           } = {
@@ -1419,6 +1538,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             ticketId: ticket.id,
             tablePrefix,
             activate,
+            preserveActive:central,
           };
           if (title) promoteInput.title = title;
           if (articleBody) promoteInput.body = articleBody;
@@ -1457,6 +1577,9 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           return;
         }
 
+        if (route.name === "adminKbRevisions") {
+          finish(200,{ok:true,revisions:await listKbRevisions(ctx.db,ctx.tenantId,route.params.id!,tablePrefix)});return;
+        }
         if (route.name === "adminKbGet") {
           const article = await getKbArticle(ctx.db, ctx.tenantId, route.params.id!, tablePrefix);
           if (!article) {
@@ -1471,23 +1594,30 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
           const body = await readBody();
           const visibility = (body as { visibility?: "public" | "agent" | "internal" })
             ?.visibility;
-          const article = await promoteKbArticle(
-            ctx.db,
-            ctx.tenantId,
-            route.params.id!,
-            tablePrefix,
-            visibility ? { visibility } : undefined,
-          );
+          const review=body as {revisionId?:string;expectedPublishedRevisionId?:string|null;expectedDraftRevisionId?:string|null};
+          if(central && (!review?.revisionId || !Object.prototype.hasOwnProperty.call(review,'expectedPublishedRevisionId'))) {
+            finish(400,{ok:false,error:"Reviewed revisionId and expectedPublishedRevisionId are required"}); return;
+          }
+          const article = await promoteKbArticle(ctx.db,ctx.tenantId,route.params.id!,tablePrefix,{
+            ...(visibility?{visibility}:{}),...(review?.revisionId?{revisionId:review.revisionId}:{}),
+            ...(review && 'expectedPublishedRevisionId' in review?{expectedPublishedRevisionId:review.expectedPublishedRevisionId}:{}),
+            ...(review && 'expectedDraftRevisionId' in review?{expectedDraftRevisionId:review.expectedDraftRevisionId}:{}),
+          });
           finish(200, { ok: true, article });
           return;
         }
 
         if (route.name === "adminKbDeprecate") {
+          const review=await readBody() as {expectedPublishedRevisionId?:string|null;publicationVersion?:number}|undefined;
+          if(central && (!review || !Object.prototype.hasOwnProperty.call(review,'expectedPublishedRevisionId') || typeof review.publicationVersion!=='number')) {
+            finish(400,{ok:false,error:"Publication pointer and version are required"}); return;
+          }
           const article = await deprecateKbArticle(
             ctx.db,
             ctx.tenantId,
             route.params.id!,
             tablePrefix,
+            review,
           );
           finish(200, { ok: true, article });
           return;
@@ -1513,6 +1643,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             route.params.id!,
             patch as { title?: string; body?: string; visibility?: "public" | "agent" | "internal" },
             tablePrefix,
+            {preserveActive:central && !await ctx.authorizeSupport?.({actor:user,businessId:ctx.tenantId,action:'knowledge.publish',resource:{type:'kb_articles',id:route.params.id!}}).catch(()=>false)},
           );
           finish(200, { ok: true, article });
           return;
@@ -1571,6 +1702,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
             db: ctx.db,
             tenantId: ctx.tenantId,
             gapId: route.params.id!,
+            preserveActive:central,
             llm: ctx.llm,
             codebase: ctx.codebase,
             brand: ctx.brand,
@@ -1606,7 +1738,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
 
         if (route.name === "adminProposalAction") {
           const body = await readBody();
-          const action = String((body as { action?: string })?.action ?? "").trim();
+          const action = normalizeAction(String((body as { action?: string })?.action ?? "").trim()) ?? "";
           const allowed = [
             "approve",
             "reject",
@@ -1638,6 +1770,7 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
               proposals,
               tickets,
               brand: ctx.brand,
+              ...(ctx.effects ? {effects:ctx.effects} : {}),
               ...(ctx.github ? { github: ctx.github } : {}),
               ...(ctx.email ? { email: ctx.email } : {}),
               ...(telegramEditor ? { telegram: telegramEditor } : {}),
@@ -1674,11 +1807,22 @@ export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
         }
       }
     } catch (err) {
+      if(err instanceof PublishedKnowledgeConflict) throw err;
       const message = err instanceof Error ? err.message : "Internal error";
       finish(500, { ok: false, error: message });
     }
   };
 
+  const handler: SupportRouter['handler'] = async (req,res,next) => {
+    try { return await dispatch(req,res,next); }
+    catch(error) {
+      if(!(error instanceof PublishedKnowledgeConflict)) throw error;
+      const response=res as ServerResponse & {status?:(status:number)=>{json:(body:unknown)=>void}};
+      const payload={ok:false,error:error.message};
+      if(response.status) response.status(409).json(payload);
+      else sendJson(response,409,payload);
+    }
+  };
   return {
     handler,
     meta: {
@@ -1697,6 +1841,11 @@ export function createRouter(options: CreateSupportRouterOptions): SupportRouter
     resolveUser: options.resolveUser,
     brand: options.brand,
   };
+  if (options.listDeliveries) ctx.listDeliveries=options.listDeliveries;
+  if (options.mutationMode) ctx.mutationMode=options.mutationMode;
+  if (options.durableMutations) ctx.durableMutations=options.durableMutations;
+  if (options.authorizationMode) ctx.authorizationMode = options.authorizationMode;
+  if (options.authorizeSupport) ctx.authorizeSupport = options.authorizeSupport;
   if (options.llm) ctx.llm = options.llm;
   if (options.tablePrefix) ctx.tablePrefix = options.tablePrefix;
   if (options.docsRoot) ctx.docsRoot = options.docsRoot;

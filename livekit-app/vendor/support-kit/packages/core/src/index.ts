@@ -3,7 +3,12 @@ import type { CreateSupportRouterOptions, SupportRouter } from "./adapters/types
 import { createRouter } from "./http/createRouter.js";
 
 export type {
+  DurableMutationAdapter, DurableMutationInput, DurableMutationResult, DurableMutationScope, DurableEffect,
+  TenantContext,
+  ResolveTenant,
   CreateSupportRouterOptions,
+  AuthorizeSupport,
+  SupportAction,
   CodebaseAdapter,
   CodebaseSearchHit,
   DbAdapter,
@@ -24,6 +29,8 @@ export type { OpenAiCompatibleLlmOptions } from "./adapters/openaiCompatibleLlm.
 export { ensureSchema, DEFAULT_TABLE_PREFIX } from "./db/migrate.js";
 // createMemorySqliteAdapter lives in ./db/memorySqlite.js (dev/test only —
 // not re-exported here so production bundles don't require better-sqlite3).
+export {readDocsArtifact,validateDocsSources} from "./kb/docsArtifact.js";
+export type {DocsArtifact,DocsArtifactOptions} from "./kb/docsArtifact.js";
 export { seedCuratedDocs } from "./kb/seedCuratedDocs.js";
 export type { SeedCuratedDocsResult } from "./kb/seedCuratedDocs.js";
 export {
@@ -49,15 +56,18 @@ export {
 } from "./kb/search.js";
 export {
   ingestCodegenArticle,
+  PublishedKnowledgeConflict,
   promoteKbArticle,
   deprecateKbArticle,
   updateKbArticle,
   listKbArticles,
+  listKbRevisions,
   getKbArticle,
   ingestFromChangelog,
   ingestDocsSources,
 } from "./kb/codegen.js";
 export type {
+  PromoteKbOptions,
   IngestCodegenArticleInput,
   IngestFromChangelogOptions,
   IngestDocSource,

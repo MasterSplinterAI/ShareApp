@@ -80,6 +80,8 @@ function all(sql, params = []) {
 }
 
 async function migrate() {
+  const {SUPPORT_PENDING_SCHEMA}=require('@rhule/ops-sdk');
+  for(const statement of SUPPORT_PENDING_SCHEMA)await run(statement);
   await run(`
     CREATE TABLE IF NOT EXISTS v2_users (
       id TEXT PRIMARY KEY,
@@ -979,7 +981,14 @@ function initDatabase() {
   return initPromise;
 }
 
+async function close() {
+  if(pool)await pool.end();
+  if(db)await new Promise((resolve,reject)=>db.close(err=>err?reject(err):resolve()));
+  pool=null;db=null;initPromise=null;
+}
+
 module.exports = {
+  close,
   initDatabase,
   DB_PATH,
   DATABASE_URL: usePostgres ? DATABASE_URL : '',

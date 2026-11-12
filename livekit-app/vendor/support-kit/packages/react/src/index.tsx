@@ -1,3 +1,5 @@
+import { supportFetch } from './supportFetch.js';
+import { PendingIntents } from './pendingIntent.js';
 import {
   useCallback,
   useEffect,
@@ -111,35 +113,6 @@ function normalizeApiBase(apiBase: string): string {
   return apiBase.replace(/\/$/, "");
 }
 
-async function supportFetch<T>(
-  apiBase: string,
-  path: string,
-  init?: RequestInit,
-  getAccessToken?: () => string | null | undefined,
-): Promise<T> {
-  const url = `${normalizeApiBase(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
-  const token = getAccessToken?.()?.trim() || null;
-  const { headers: initHeaders, ...rest } = init ?? {};
-  const res = await fetch(url, {
-    credentials: "include",
-    ...rest,
-    headers: {
-      Accept: "application/json",
-      ...(rest.body ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(initHeaders as Record<string, string> | undefined),
-    },
-  });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) {
-    const message =
-      typeof data === "object" && data && "error" in data && data.error
-        ? String(data.error)
-        : `Request failed (${res.status})`;
-    throw new Error(message);
-  }
-  return data;
-}
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -184,10 +157,16 @@ export function SupportLauncher(props: SupportLauncherProps) {
     getAccessToken,
   } = props;
 
+  const pendingIntents=useRef(new PendingIntents());
+  const [submission,setSubmission]=useState<{status:'pending'|'accepted'|'failed';receiptId:string}|null>(null);
+
   const fetchApi = useCallback(
     <T,>(path: string, init?: RequestInit) =>
-      supportFetch<T>(apiBase, path, init, getAccessToken),
-    [apiBase, getAccessToken],
+      supportFetch<T>(apiBase, path, init, getAccessToken,pendingIntents.current,user?.id).catch((err)=>{
+        if(err?.code==='support_pending')setSubmission({status:'pending',receiptId:err.receiptId});
+        throw err;
+      }),
+    [apiBase, getAccessToken,user?.id],
   );
 
   const accent = brand?.accent ?? DEFAULT_ACCENT;
@@ -202,6 +181,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [open, setOpen] = useState(mode === "page");
   const [view, setView] = useState<View>(isPublic ? { name: "gate" } : { name: "home" });
   const [draft, setDraft] = useState("");
+  const [chatFailed,setChatFailed]=useState(false);
   const [supportMessages, setSupportMessages] = useState<ChatBubble[]>([]);
   const [supportTicketId, setSupportTicketId] = useState<string | null>(null);
   const [bugTitle, setBugTitle] = useState("");
@@ -220,6 +200,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [coachInput, setCoachInput] = useState("");
   const [guestEmail, setGuestEmail] = useState(user?.email ?? "");
   const [submittedTicket, setSubmittedTicket] = useState<TicketSummary | null>(null);
+  const guestResume = useRef(false);
   const [leadId, setLeadId] = useState<string | null>(null);
   const [gateName, setGateName] = useState("");
   const [gateEmail, setGateEmail] = useState("");
@@ -235,6 +216,22 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [threadDraft, setThreadDraft] = useState("");
 
   const isOpen = mode === "page" || open;
+  useEffect(()=>{
+    pendingIntents.current=new PendingIntents();setSubmission(null);setDraft('');setThreadDraft('');setError(null);setChatFailed(false);setSupportMessages([]);setSupportTicketId(null);setSubmittedTicket(null);setThread(null);setTickets([]);
+  },[apiBase,user?.id]);
+
+  useEffect(()=>{
+    if(submission?.status!=='pending')return;
+    let stopped=false;
+    const timer=setInterval(()=>void fetchApi<{status:'pending'|'accepted'|'failed';result?:{ticket?:TicketSummary}}>(`/pending/${submission.receiptId}`).then(result=>{
+      if(stopped)return;
+      setSubmission({status:result.status,receiptId:submission.receiptId});
+      if(result.status!=='pending')setError(null);
+      if(result.status==='accepted' && result.result?.ticket)setSubmittedTicket(result.result.ticket);
+    }).catch(()=>{/* Keep bounded receipt and draft available for explicit retry. */}),4000);
+    return ()=>{stopped=true;clearInterval(timer);};
+  },[submission?.receiptId,submission?.status,fetchApi]);
+
 
   // Host apps (e.g. Lex chat header) can open Help without a floating FAB:
   // window.dispatchEvent(new Event("legalai:open-support"))
@@ -249,16 +246,18 @@ export function SupportLauncher(props: SupportLauncherProps) {
       setView((v) => (v.name === "gate" ? { name: "home" } : v));
       return;
     }
-    if (typeof sessionStorage === "undefined") return;
-    try {
-      const stored = sessionStorage.getItem(leadStorageKey(apiBase));
-      if (stored) {
-        setLeadId(stored);
-        setView((v) => (v.name === "gate" ? { name: "home" } : v));
-      }
-    } catch {
-      /* ignore */
-    }
+    let cancelled=false;
+    void fetchApi<{guestSessionRequired?:boolean;guestBootstrapRequired?:boolean}>('/config').then(config=>{
+      if(cancelled) return;
+      requiresBootstrap.current=Boolean(config.guestBootstrapRequired);
+      let stored:string|null=null,proof:any=null;
+      try {stored=sessionStorage.getItem(leadStorageKey(apiBase));proof=JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`)||'null');} catch {}
+      const validProof=proof && Date.parse(proof.expiresAt)>Date.now();
+      if(stored && (!config.guestSessionRequired || validProof)) {
+        setLeadId(stored); setView(v=>v.name==='gate'?{name:'home'}:v);
+      } else if(config.guestSessionRequired) {setLeadId(null);setView({name:'gate'});}
+    }).catch(()=>{});
+    return ()=>{cancelled=true;};
   }, [apiBase, isPublic]);
 
   useEffect(() => {
@@ -283,6 +282,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     setView({ name: "supportChat" });
   }, [agentName, isPublic, label]);
 
+  const requiresBootstrap=useRef(false);
   const submitGate = async (event?: FormEvent) => {
     event?.preventDefault();
     if (sending) return;
@@ -293,7 +293,15 @@ export function SupportLauncher(props: SupportLauncherProps) {
     setSending(true);
     setError(null);
     try {
-      const data = await fetchApi<{ ok: boolean; leadId: string }>("/leads", {
+      if(!requiresBootstrap.current) {const config=await fetchApi<{guestBootstrapRequired?:boolean}>('/config');requiresBootstrap.current=Boolean(config.guestBootstrapRequired);}
+      if(requiresBootstrap.current) {
+        let proof;try{proof=JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`)||'null');}catch{}
+        if(!proof || Date.parse(proof.expiresAt)<=Date.now()) {
+          const bootstrap=await fetchApi<{guestSessionToken:string;guestSessionExpiresAt:string}>('/guest-session',{method:'POST',body:JSON.stringify({name:gateName.trim(),email:gateEmail.trim()})});
+          sessionStorage.setItem(`${leadStorageKey(apiBase)}:proof`,JSON.stringify({token:bootstrap.guestSessionToken,expiresAt:bootstrap.guestSessionExpiresAt}));
+        }
+      }
+      const data = await fetchApi<{ ok: boolean; leadId: string; guestSessionToken?:string; guestSessionExpiresAt?:string }>("/leads", {
         method: "POST",
         body: JSON.stringify({
           name: gateName.trim(),
@@ -308,10 +316,12 @@ export function SupportLauncher(props: SupportLauncherProps) {
       setGuestEmail(gateEmail.trim());
       try {
         sessionStorage.setItem(leadStorageKey(apiBase), data.leadId);
+        if (data.guestSessionToken) sessionStorage.setItem(`${leadStorageKey(apiBase)}:proof`,JSON.stringify({token:data.guestSessionToken,expiresAt:data.guestSessionExpiresAt}));
       } catch {
         /* ignore */
       }
-      setView({ name: "home" });
+      setView(guestResume.current ? {name:"supportChat"} : {name:"home"});
+      guestResume.current=false;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save contact info");
     } finally {
@@ -385,7 +395,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
     };
     const history = [...coachMessages, nextUser];
     setCoachMessages(history);
-    setCoachInput("");
     try {
       const data = await fetchApi<{
         ok: boolean;
@@ -411,6 +420,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
           text: data.reply,
         },
       ]);
+      setCoachInput("");
       setCoachDraft(data.draft);
       setCoachReady(Boolean(data.readyToSubmit));
       if (data.draft?.priority) setFeaturePriority(data.draft.priority);
@@ -437,6 +447,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     async (id: string) => {
       setError(null);
       try {
+        setDraft("");
         const data = await fetchApi<{
           ok: boolean;
           ticket: TicketSummary;
@@ -479,6 +490,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
   }, [view, thread, openThread]);
 
   const sendSupportChat = async (event?: FormEvent) => {
+    setChatFailed(false);
     event?.preventDefault();
     const message = draft.trim();
     if (!message || sending) return;
@@ -489,7 +501,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
       text: message,
     };
     setSupportMessages((prev) => [...prev, userBubble]);
-    setDraft("");
     setSending(true);
     setError(null);
 
@@ -499,6 +510,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
           method: "POST",
           body: JSON.stringify({ body: message }),
         });
+        setDraft("");
         const data = await fetchApi<{
           ok: boolean;
           ticket: TicketSummary;
@@ -547,9 +559,13 @@ export function SupportLauncher(props: SupportLauncherProps) {
           bot.ticketPublicNumber = data.ticket.publicNumber;
         }
         setSupportMessages((prev) => [...prev, bot]);
+        setDraft("");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chat failed");
+      if(isPublic && (err as {code?:string}).code === 'guest_session_required') {
+        guestResume.current=true;setLeadId(null);setDraft(message);setView({name:'gate'});
+        setError('Your contact session expired. Confirm your contact details to continue.');
+      } else {setChatFailed(!supportTicketId && (err as {code?:string}).code!=="support_pending");setError(err instanceof Error ? err.message : "Chat failed");}
     } finally {
       setSending(false);
     }
@@ -1054,6 +1070,12 @@ export function SupportLauncher(props: SupportLauncherProps) {
                 </div>
               ) : null}
             </div>
+            {chatFailed && draft.trim() ? <button type="button" disabled={sending} onClick={async()=>{
+              setSending(true);setError(null);
+              try {const result=await fetchApi<{ticket?:TicketSummary}>('/tickets',{method:'POST',body:JSON.stringify({kind:'support',subject:draft.trim().slice(0,120),body:draft.trim(),...(!user?.id?{guestEmail}: {})})});
+                if(result.ticket){setSubmittedTicket(result.ticket);setDraft('');setView({name:'home'});}
+              }catch(err){setError(err instanceof Error?err.message:'Submission failed');}finally{setSending(false);}
+            }}>Send as support ticket</button> : null}
             <form onSubmit={sendSupportChat} style={{ display: "flex", gap: 8 }}>
               <input
                 value={draft}
@@ -1617,7 +1639,10 @@ export function SupportLauncher(props: SupportLauncherProps) {
           </>
         ) : null}
 
-        {error ? (
+        {submission ? <div role="status" style={{padding:12,fontSize:13}}>
+            {submission.status === 'pending' ? 'Submission pending — your draft is retained. Retry keeps the same submission.' : submission.status === 'accepted' ? 'Submission accepted.' : 'Submission failed. Your draft is retained; please retry.'}
+          </div> : null}
+          {error && error !== "Submission is pending. Your draft is retained." ? (
           <p style={{ color: "#b91c1c", fontSize: 13, marginTop: 8 }}>{error}</p>
         ) : null}
       </div>

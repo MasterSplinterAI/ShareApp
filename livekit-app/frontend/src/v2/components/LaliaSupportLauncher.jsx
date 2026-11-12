@@ -24,6 +24,7 @@ export default function LaliaSupportLauncher({ user, openRef, audience }) {
 
   return (
     <SupportLauncher
+      key={user?.id || getSupportAccessToken() || "guest"}
       apiBase={SUPPORT_API_BASE}
       getAccessToken={getSupportAccessToken}
       brand={{

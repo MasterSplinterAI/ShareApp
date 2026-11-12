@@ -156,6 +156,7 @@ function parseCurationJson(raw: string): { title: string; body: string } | null 
 }
 
 interface CurationOptions {
+  preserveActive?: boolean;
   tablePrefix?: string;
 }
 
@@ -184,6 +185,7 @@ async function curateSource(
     path,
     sourceKind: "curated",
   };
+  if (opts.preserveActive) input.preserveActive = true;
   if (opts.tablePrefix !== undefined) input.tablePrefix = opts.tablePrefix;
   return ingestCodegenArticle(db, input);
 }

@@ -7,7 +7,7 @@ import type {
   KnowledgeGap,
 } from "@quill/support-shared";
 import { DEFAULT_TOPICS, SENSITIVE_TOPICS_DEFAULT } from "@quill/support-shared";
-import type { DbAdapter, LlmAdapter, OpsNotification, OpsNotifier } from "../adapters/types.js";
+import type { DbAdapter, DurableMutationScope, LlmAdapter, OpsNotification, OpsNotifier } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { KnowledgeGapService } from "../gaps/service.js";
 import { ProposalService } from "../proposals/service.js";
@@ -47,6 +47,7 @@ export interface TriageInput {
 }
 
 export interface TriageDeps {
+  effects?: DurableMutationScope;
   db: DbAdapter;
   brand: BrandConfig;
   llm?: LlmAdapter;
@@ -274,16 +275,17 @@ function citationsJson(docHits: KbSearchHit[]): string {
 /**
  * Triage a user chat message. Always creates (or continues) an auditable ticket.
  */
-export async function triageMessage(
+export async function prepareTriage(
   deps: TriageDeps,
   input: TriageInput,
-): Promise<TriageResult> {
+): Promise<{decision: RoutingDecision;kbHits: KbSearchHit[]}> {
   const prefix = deps.tablePrefix ?? DEFAULT_TABLE_PREFIX;
-  const docHits = deps.docsRoot
+  const docHits = deps.docsRoot && !deps.publicAudience
     ? searchCuratedDocs(input.message, { docsRoot: deps.docsRoot, limit: 5 })
     : [];
   const articleHits = await searchActiveArticleHits(deps.db, input.tenantId, {
     query: input.message,
+    publicAudience: Boolean(deps.publicAudience),
     limit: 5,
     tablePrefix: prefix,
   });
@@ -315,6 +317,17 @@ export async function triageMessage(
   );
   decision = applyPublishedKbAnswer(decision, articleHits, input.message);
 
+  return {decision,kbHits};
+}
+
+export async function persistPreparedTriage(deps:TriageDeps,input:TriageInput,prepared:Awaited<ReturnType<typeof prepareTriage>>):Promise<TriageResult> {
+  const prefix=deps.tablePrefix??DEFAULT_TABLE_PREFIX;
+  const tickets=new TicketService(deps.db,prefix);
+  const proposals=new ProposalService(deps.db,prefix);
+  const gaps=new KnowledgeGapService(deps.db,prefix);
+  const {decision,kbHits}=prepared;
+  const existingTicket=input.existingTicketId?await tickets.getTicket(input.tenantId,input.existingTicketId):null;
+  if(input.existingTicketId && (!existingTicket || (existingTicket.userId!==input.user.id && input.user.role!=='admin' && input.user.role!=='ops'))) throw new Error('Forbidden');
   const initialStatus =
     decision.action === "auto_reply"
       ? decision.resolveAfterReply
@@ -427,7 +440,8 @@ export async function triageMessage(
       ticketPublicNumber: ticket.publicNumber,
     };
     if (adminUrl) ticketNotification.adminUrl = adminUrl;
-    notifyOps(deps, ticketNotification);
+    if(deps.effects) await deps.effects.enqueue({type:'support.ops',ticketId:ticket.id,payload:{...ticketNotification}});
+    else notifyOps(deps, ticketNotification);
 
   if (proposal) {
       const proposalNotification: OpsNotification = {
@@ -438,7 +452,8 @@ export async function triageMessage(
       };
       if (adminUrl) proposalNotification.adminUrl = adminUrl;
 
-      if (deps.opsNotifier?.notifyProposalReady) {
+      if(deps.effects) await deps.effects.enqueue({type:'support.ops',ticketId:ticket.id,payload:{...proposalNotification,proposalId:proposal.id}});
+      else if (deps.opsNotifier?.notifyProposalReady) {
         deps.opsNotifier
           .notifyProposalReady({
             ticketPublicNumber: ticket.publicNumber,
@@ -483,4 +498,8 @@ export async function triageMessage(
   if (proposal) result.proposal = proposal;
   if (gap) result.gap = gap;
   return result;
+}
+
+export async function triageMessage(deps:TriageDeps,input:TriageInput):Promise<TriageResult> {
+  return persistPreparedTriage(deps,input,await prepareTriage(deps,input));
 }

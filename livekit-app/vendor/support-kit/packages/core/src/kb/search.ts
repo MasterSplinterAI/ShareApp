@@ -191,11 +191,15 @@ type KbArticleRow = {
   source_key: string | null;
   created_at: string;
   updated_at: string;
+  published_revision_id?:string|null;
+  retrieval_eligible?:number;
 };
 
 function mapKbArticle(row: KbArticleRow): KbArticle {
   return {
     id: row.id,
+    revisionId:row.published_revision_id??null,
+    publishedRevisionId:row.published_revision_id??null,
     tenantId: row.tenant_id as KbArticle["tenantId"],
     title: row.title,
     body: row.body,
@@ -224,6 +228,7 @@ function scoreArticle(article: KbArticle, queryTokens: string[]): number {
 }
 
 export interface SearchActiveArticlesOptions {
+  publicAudience?: boolean;
   query?: string;
   limit?: number;
   tablePrefix?: string;
@@ -246,7 +251,7 @@ export async function searchActiveArticles(
     `SELECT * FROM ${table} WHERE tenant_id = ? AND status = 'active' ORDER BY updated_at DESC`,
     [tenantId],
   );
-  const articles = rows.map(mapKbArticle);
+  const articles = rows.filter(row => row.retrieval_eligible !== 0 && (!options?.publicAudience || row.visibility === "public")).map(mapKbArticle);
 
   const queryTokens = tokenize(options?.query ?? "");
   if (queryTokens.length === 0) {
@@ -278,7 +283,7 @@ export async function searchActiveArticleHits(
     `SELECT * FROM ${table} WHERE tenant_id = ? AND status = 'active'`,
     [tenantId],
   );
-  const articles = rows.map(mapKbArticle);
+  const articles = rows.filter(row => row.retrieval_eligible !== 0 && (!options?.publicAudience || row.visibility === "public")).map(mapKbArticle);
   const queryTokens = tokenize(options?.query ?? "");
   if (queryTokens.length === 0) return [];
 

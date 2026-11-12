@@ -56,3 +56,5 @@ livekit-app/backend/uploads/
 
 # Canonical support snapshots build both formats during staged deployment
 livekit-app/vendor/support-kit/packages/*/dist/
+
+livekit-app/vendor/ops-sdk/dist/

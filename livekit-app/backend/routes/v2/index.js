@@ -19,6 +19,7 @@ router.use('/announcements', require('./announcements'));
 if (require('../../lib/supportKit').supportKitEnabled()) {
   const { createShareAppSupportRouter } = require('../../lib/supportKit');
   const kit = createShareAppSupportRouter();
+  kit.startReplay(); // Inert until server registry authority is explicitly injected.
   console.log(
     `[support] kit mounted at /api/v2/support (tenant=${kit.meta.tenantId}, ${kit.meta.kitVersion})`
   );

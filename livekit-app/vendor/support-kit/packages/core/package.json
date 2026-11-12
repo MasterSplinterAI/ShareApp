@@ -19,7 +19,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --external better-sqlite3",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/db/fileSqlite.test.ts src/db/migrate.test.ts src/tickets/store.test.ts src/proposals/store.test.ts src/proposals/executor.test.ts src/gaps/store.test.ts src/kb/search.test.ts src/kb/codegen.test.ts src/kb/seedCuratedDocs.test.ts src/hosts/shareapp.test.ts src/kb/filesystemCodebase.test.ts src/kb/siteCrawl.test.ts src/agent/featureCoach.test.ts src/agent/triage.test.ts src/http/leadsRouter.test.ts src/http/createRouter.test.ts src/http/adminRouter.test.ts src/leads/service.test.ts src/tenants/store.test.ts src/tenants/resolveFromStore.test.ts src/tenants/tenantKbIntegration.test.ts src/adapters/openaiCompatibleLlm.test.ts",
+    "test": "tsx --test src/db/fileSqlite.test.ts src/db/migrate.test.ts src/tickets/store.test.ts src/proposals/store.test.ts src/proposals/executor.test.ts src/proposals/durableEffects.test.ts src/gaps/store.test.ts src/kb/search.test.ts src/kb/codegen.test.ts src/kb/docsArtifact.test.ts src/kb/seedCuratedDocs.test.ts src/hosts/shareapp.test.ts src/kb/filesystemCodebase.test.ts src/kb/siteCrawl.test.ts src/agent/featureCoach.test.ts src/agent/triage.test.ts src/http/authorization.test.ts src/http/leadsRouter.test.ts src/http/createRouter.test.ts src/http/adminRouter.test.ts src/leads/service.test.ts src/tenants/store.test.ts src/tenants/resolveFromStore.test.ts src/tenants/tenantKbIntegration.test.ts src/adapters/openaiCompatibleLlm.test.ts",
     "clean": "rm -rf dist",
     "lint": "echo 'no lint yet'"
   },

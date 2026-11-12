@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS ops_support_pending (receipt_id TEXT PRIMARY KEY, business_id TEXT NOT NULL, scope TEXT NOT NULL UNIQUE, record_json TEXT NOT NULL, encrypted_secret TEXT, status TEXT NOT NULL, response_status INTEGER, response_json TEXT);
+CREATE TABLE IF NOT EXISTS ops_support_guest_evidence (business_id TEXT NOT NULL, token_hash TEXT NOT NULL, issued_at BIGINT NOT NULL, expires_at BIGINT NOT NULL, encrypted_secret TEXT NOT NULL, PRIMARY KEY(business_id,token_hash));
