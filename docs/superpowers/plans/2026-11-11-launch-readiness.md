@@ -49,9 +49,9 @@ Owner decision follow-up: new meetings/direct calls save transcripts by default 
 ## Owner-authorized follow-up
 
 - [x] Provision the approved private encrypted backup bucket and upload-only instance role, install daily backups, and restore an actual off-host recovery point in an isolated database.
-- [x] Send one ordinary delivery test through the production mailer; provider delivery verified.
+- [x] Send one ordinary delivery test through the production mailer; provider delivery and Proton Primary inbox placement verified.
 - [ ] Complete password recovery with an existing account; the approved test recipient has no account. No account/password was changed.
 - [x] Record mobile testing as owner-verified; this does not imply a documented device/browser matrix.
 - [x] Publish Oracle Orchestration LLC as the confirmed Wyoming operator and disclose backup retention.
-- [ ] Finalize the court-location choice after confirming actual operating location; existing dispute clause preserved.
+- [ ] Obtain legal review of the prepared Florida/Hillsborough/Tampa dispute clause. Owner confirmed Tampa operations; existing live clause preserved.
 - [x] Update final readiness evidence and the existing PR after verification.

@@ -1,6 +1,6 @@
 {
   "recipient": "owner-approved recipient",
-  "status": "transactional_delivery_verified_recovery_unverified",
+  "status": "transactional_primary_inbox_verified_recovery_unverified",
   "recoveryCheck": {
     "recipient": "owner-approved recipient",
     "checkedAt": "2026-11-11T23:14:33.629233+00:00",
@@ -54,5 +54,20 @@
     "sendAttempts": 1,
     "recipientMatches": true,
     "additionalEmailSent": false
+  },
+  "inboxVerification": {
+    "checkedAt": "2026-11-12T00:01:27.463943+00:00",
+    "method": "Existing signed-in Proton Mail browser tab; visible accessibility state",
+    "mailbox": "owner-approved recipient",
+    "folder": "Inbox",
+    "category": "Primary",
+    "subject": "Lalia launch check \u2014 email delivery test",
+    "senderDisplayName": "Lalia",
+    "displayedReceivedAt": "Wednesday, November 11th, 2026 at 6:15 PM",
+    "displayTimezone": "America/New_York",
+    "placementVerified": true,
+    "messageOpened": false,
+    "additionalEmailSent": false,
+    "unrelatedMailboxContentRetained": false
   }
 }
