@@ -1,3 +1,4 @@
+import { ensureGuestSessionsSchema } from "../db/guestSessionsSchema.js";
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { SupportUser } from '@quill/support-shared';
 import type { DbAdapter } from '../adapters/types.js';
@@ -6,12 +7,7 @@ import type { DbAdapter } from '../adapters/types.js';
 export class GuestSessions {
   constructor(private db: DbAdapter, private prefix: string) {}
   async ensureSchema(): Promise<void> {
-    await this.db.run(`CREATE TABLE IF NOT EXISTS ${this.prefix}guest_sessions (
-      token_hash TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, owner_id TEXT NOT NULL,
-      email TEXT NOT NULL, name TEXT, expires_at TEXT NOT NULL
-    )`);
-    // Deliberately strict: central ownership must not run with a partially applied schema.
-    await this.db.all(`SELECT token_hash, tenant_id, owner_id, email, name, expires_at FROM ${this.prefix}guest_sessions LIMIT 0`);
+    await ensureGuestSessionsSchema(this.db, this.prefix);
   }
   async create(tenantId:string,email:string,name?:string) {
     const token=randomBytes(32).toString('base64url');

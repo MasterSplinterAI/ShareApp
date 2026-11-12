@@ -388,17 +388,18 @@ function notifyEmail(
 export function createHttpRouter(baseCtx: HttpRouterContext): SupportRouter {
   const tablePrefix = baseCtx.tablePrefix ?? DEFAULT_TABLE_PREFIX;
   const topics = baseCtx.topics ?? [...DEFAULT_TOPICS];
-  // Run ensureSchema eagerly for already-open DBs, and retry on the first
-  // request if the host DB wasn't initialized yet at router construction time
-  // (e.g. ShareApp sqlite/pg init).
-  let ready = ensureSchema(baseCtx.db, tablePrefix);
+  // A host may construct its dormant local router after central enrollment.
+  // Start schema writes only inside an invoked handler's authority fence.
+  let ready: ReturnType<typeof ensureSchema> | undefined;
   const ensureReady = async () => {
-    const res = await ready;
-    if (res.statements === 0) {
-      ready = ensureSchema(baseCtx.db, tablePrefix);
-      return ready;
+    try {
+      const result = await (ready ??= ensureSchema(baseCtx.db, tablePrefix));
+      if (result.statements === 0) ready = undefined;
+      return result;
+    } catch (error) {
+      ready = undefined;
+      throw error;
     }
-    return res;
   };
   const tenantStore = new TenantStore(baseCtx.db, tablePrefix);
   const central = baseCtx.authorizationMode === 'central';

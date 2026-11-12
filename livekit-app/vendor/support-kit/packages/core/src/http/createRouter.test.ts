@@ -31,6 +31,40 @@ describe("createSupportRouter HTTP API", () => {
     clearDocsCache();
   });
 
+  it("defers schema writes until the host invokes a handler inside its authority fence", async () => {
+    const actual = createMemorySqliteAdapter();
+    let insideFence = false;
+    const writes: boolean[] = [];
+    const db = { ...actual, async run(sql: string, params?: unknown[]) {
+      writes.push(insideFence);
+      return actual.run(sql, params);
+    } };
+    const router = createSupportRouter({ tenantId, db, brand, resolveUser: () => null });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(writes.length, 0, "a dormant local router must not write after central enrollment");
+    insideFence = true;
+    const { res, done } = createMockResponse();
+    await router.handler({ method: "GET", url: "/health" }, res);
+    assert.equal((await done).statusCode, 200);
+    assert.ok(writes.length > 0);
+    assert.ok(writes.every(Boolean), "schema setup belongs to the authorized host scope");
+  });
+
+  it("propagates schema failure and retries initialization on a later authorized request", async () => {
+    const actual = createMemorySqliteAdapter();
+    let available = false;
+    const db = { ...actual, async run(sql: string, params?: unknown[]) {
+      if (!available) throw Error("source database unavailable");
+      return actual.run(sql, params);
+    } };
+    const router = createSupportRouter({ tenantId, db, brand, resolveUser: () => null });
+    await assert.rejects(async () => router.handler({ method: "GET", url: "/health" }, createMockResponse().res), /source database unavailable/);
+    available = true;
+    const { res, done } = createMockResponse();
+    await router.handler({ method: "GET", url: "/health" }, res);
+    assert.equal((await done).statusCode, 200);
+  });
+
   it("GET /health returns ok without auth", async () => {
     const db = createMemorySqliteAdapter();
     const router = createSupportRouter({

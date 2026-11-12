@@ -1,3 +1,4 @@
+import { ensureGuestSessionsSchema } from "./guestSessionsSchema.js";
 import type { DbAdapter } from "../adapters/types.js";
 import { buildAlterStatements, buildSchemaStatements } from "./schema.js";
 
@@ -157,5 +158,6 @@ export async function ensureSchema(
     /* ignore backfill errors */
   }
 
+  await ensureGuestSessionsSchema(db, tablePrefix);
   return { tablePrefix, statements: applied };
 }

@@ -58,3 +58,9 @@ it('does not hide a malformed operator view creation error',async()=>{
  }};
  await assert.rejects(ensureSchema(db),/malformed view/);
 });
+
+it('initializes guest proof storage before any HTTP request or migration snapshot', async () => {
+  const db = createMemorySqliteAdapter();
+  await ensureSchema(db, 'journey_');
+  assert.deepEqual(await db.all('SELECT tenant_id,token_hash,owner_id,email,name,expires_at FROM journey_guest_sessions'), []);
+});

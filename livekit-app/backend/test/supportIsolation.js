@@ -1,7 +1,7 @@
 const {syncBuiltinESMExports}=require('node:module');
 function prepareSupportTest(){
  const target=process.env.TEST_SUPPORT_DATABASE_URL;const sqlite=process.env.TEST_SUPPORT_SQLITE_PATH;
- if(target!=='postgresql://rhule@127.0.0.1:5432/lalia_opshub_test_20261111' && !(target===undefined&&sqlite==='/private/tmp/lalia-opshub-gateway-test.sqlite'))throw Error('Explicit isolated Lalia support database required');
+ if(target!=='postgresql://rhule@127.0.0.1:5432/lalia_opshub_test_20261111' && !(target===undefined&&['/private/tmp/lalia-opshub-gateway-test.sqlite','/private/tmp/lalia-opshub-test-journey.sqlite'].includes(sqlite)))throw Error('Explicit isolated Lalia support database required');
  for(const k of Object.keys(process.env))if(!['PATH','HOME','TMPDIR','SHELL','LANG','NODE_TEST_CONTEXT'].includes(k))delete process.env[k];
  Object.assign(process.env,{NODE_ENV:'test',DOTENV_CONFIG_PATH:'/dev/null',JWT_SECRET_V2:'isolated-lalia-support-jwt-fixture-20261111',SETTINGS_ENCRYPTION_KEY:'isolated-lalia-proof-encryption'});
  if(target)process.env.DATABASE_URL=target;else process.env.V2_DB_PATH=sqlite;
