@@ -216,19 +216,10 @@ async function ingestCogs(cogsInput) {
  * Sync user signup, plan tier, and marketing email consent to Ops Hub Lifecycle CRM.
  */
 async function syncContact(contactInput) {
-  if (!isOpsHubConfigured() || !contactInput?.email) return null;
-  try {
-    return await opsHubRequest('/api/v1/ingest/contact', {
-      method: 'POST',
-      body: {
-        tenantId: TENANT_SLUG,
-        ...contactInput,
-      },
-    });
-  } catch (err) {
-    console.warn('[opsHubClient] syncContact skipped:', err.message);
-    return null;
-  }
+  if (!contactInput?.externalUserId) throw Error('Persisted user identity required');
+  const db = require('../db/v2Database');
+  const { queueContact } = require('./opsOutbox');
+  return db.transaction(tx => queueContact(tx, contactInput.externalUserId));
 }
 
 /**
@@ -323,21 +314,10 @@ async function backfillLaliaStateToOpsHub(db) {
       usersSynced += 1;
     }
 
-    const costRow = await db
-      .get(`SELECT SUM(total_cost_usd) AS total FROM meeting_cost_events`)
-      .catch(() => null);
-    const totalCostUsd = Math.round((Number(costRow?.total || 0) || 0) * 100) / 100;
-    if (totalCostUsd >= 0.01) {
-      const monthKey = new Date().toISOString().slice(0, 7);
-      await ingestCogs({
-        externalEventId: `lalia_backfill_media_cost_${monthKey}`,
-        cogsCategory: 'media_stt',
-        amountUsd: totalCostUsd,
-        provider: 'LiveKit + Deepgram',
-        description: 'Lalia.cloud cumulative meeting STT/translation spend',
-        livemode: true,
-      });
-    }
+    const costRows = await db.all('SELECT * FROM meeting_cost_events');
+    const totalCostUsd = costRows.reduce((sum, row) => sum + Number(row.total_cost_usd || 0), 0);
+    const { queueCostEvent } = require('./opsOutbox');
+    for (const row of costRows) await db.transaction(tx => queueCostEvent(tx, row));
 
     await opsHubRequest('/api/v1/ingest/heartbeat', {
       method: 'POST',

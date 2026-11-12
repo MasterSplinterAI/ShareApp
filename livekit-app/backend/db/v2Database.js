@@ -7,6 +7,15 @@
 const path = require('path');
 const crypto = require('crypto');
 const { toPostgresSql } = require('./sqlCompat');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const transactionContext = new AsyncLocalStorage();
+let sqliteQueue = Promise.resolve();
+
+function sqliteExclusive(work) {
+  const result = sqliteQueue.then(work, work);
+  sqliteQueue = result.catch(() => {});
+  return result;
+}
 
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const usePostgres = Boolean(DATABASE_URL);
@@ -68,20 +77,53 @@ function sqliteAll(sql, params = []) {
 }
 
 function run(sql, params = []) {
-  return usePostgres ? pgRun(sql, params) : sqliteRun(sql, params);
+  const tx = transactionContext.getStore();
+  if (tx) return tx.run(sql, params);
+  return usePostgres ? pgRun(sql, params) : sqliteExclusive(() => sqliteRun(sql, params));
 }
 
 function get(sql, params = []) {
-  return usePostgres ? pgGet(sql, params) : sqliteGet(sql, params);
+  const tx = transactionContext.getStore();
+  if (tx) return tx.get(sql, params);
+  return usePostgres ? pgGet(sql, params) : sqliteExclusive(() => sqliteGet(sql, params));
 }
 
 function all(sql, params = []) {
-  return usePostgres ? pgAll(sql, params) : sqliteAll(sql, params);
+  const tx = transactionContext.getStore();
+  if (tx) return tx.all(sql, params);
+  return usePostgres ? pgAll(sql, params) : sqliteExclusive(() => sqliteAll(sql, params));
+}
+
+/** All facade calls in this async scope use the held connection. Other SQLite
+ * operations wait for commit/rollback; they cannot join a transaction by accident. */
+async function transaction(work) {
+  const existing = transactionContext.getStore();
+  if (existing) return work(existing);
+  const execute = async () => {
+    const client = usePostgres ? await pool.connect() : null;
+    const query = (statement, params = []) => client.query(toPostgresSql(statement), params);
+    const tx = client ? {
+      run: async (s, p) => { const r = await query(s, p); return { lastID: r.rows[0]?.id ?? 0, changes: r.rowCount ?? 0 }; },
+      get: async (s, p) => (await query(s, p)).rows[0],
+      all: async (s, p) => (await query(s, p)).rows,
+    } : { run: sqliteRun, get: sqliteGet, all: sqliteAll };
+    try {
+      await tx.run(client ? 'BEGIN' : 'BEGIN IMMEDIATE');
+      const result = await transactionContext.run(tx, () => work(tx));
+      await tx.run('COMMIT');
+      return result;
+    } catch (error) {
+      await tx.run('ROLLBACK');
+      throw error;
+    } finally { client?.release(); }
+  };
+  return usePostgres ? execute() : sqliteExclusive(execute);
 }
 
 async function migrate() {
-  const {SUPPORT_PENDING_SCHEMA}=require('@rhule/ops-sdk');
+  const {SUPPORT_PENDING_SCHEMA,BUSINESS_OUTBOX_SCHEMA}=require('@rhule/ops-sdk');
   for(const statement of SUPPORT_PENDING_SCHEMA)await run(statement);
+  for(const statement of BUSINESS_OUTBOX_SCHEMA)await run(statement);
   await run(`
     CREATE TABLE IF NOT EXISTS v2_users (
       id TEXT PRIMARY KEY,
@@ -997,4 +1039,5 @@ module.exports = {
   get,
   all,
   uuid,
+  transaction,
 };

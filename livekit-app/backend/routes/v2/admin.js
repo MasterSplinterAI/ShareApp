@@ -575,7 +575,8 @@ router.get('/webhooks', requireV2Auth, requireSuperadmin, async (req, res) => {
     res.json({
       events: rows.map((row) => ({ ...row, processed: Boolean(row.processed_at) })),
       totals: { total: counts?.total || 0, unprocessed: counts?.unprocessed || 0 },
-      notes: 'v2_webhook_events has no failure column — health is approximated as processed_at IS NULL (unprocessed).',
+      eventDelivery: await require('../../lib/opsOutbox').opsEventDiagnostics(),
+      notes: 'Legacy webhook rows retain their original processing evidence. Verified receipts and projection delivery are tracked separately.',
     });
   } catch (e) {
     console.error('[admin/webhooks]', e);

@@ -1,11 +1,5 @@
-process.env.V2_DB_PATH = ':memory:';
-process.env.JWT_SECRET_V2 = 'billing-launch-tests-secret-with-32chars';
-if (process.env.BILLING_TEST_DATABASE_URL) {
-  process.env.DATABASE_URL = process.env.BILLING_TEST_DATABASE_URL;
-} else {
-  delete process.env.DATABASE_URL;
-}
-const { test, before } = require('node:test');
+require('./supportIsolation').prepareSupportTest();
+const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const db = require('../db/v2Database');
 const settings = require('../lib/v2StripeSettings');
@@ -24,6 +18,7 @@ before(async () => {
   await db.initDatabase();
   for (const plan of ['starter', 'pro']) await db.run('UPDATE v2_plans SET stripe_price_id=? WHERE id=?', [`price_${plan}`, plan]);
 });
+after(()=>db.close());
 async function seed(plan = 'free') {
   const org = db.uuid();
   await db.run("INSERT INTO v2_organizations (id,name,billing_status) VALUES (?,?,'active')", [org,'Test']);
@@ -97,13 +92,13 @@ test('unpaid delayed checkout does not grant access even if subscription is acti
  assert.equal((await row(org)).plan_id,'free');
 });
 test('concurrent snapshot reconciliation fetches current state after prior write completes',async()=>{
- const org=await seed('starter'); let calls=0; let unblock;
+ const org=await seed('starter'); let calls=0; let unblock, fetched;
+ const firstFetch = new Promise(resolve=>{fetched=resolve;});
  const firstResult = new Promise(resolve=>{unblock=resolve;});
- stripe={subscriptions:{retrieve:async()=>{calls++; return calls===1 ? firstResult : subscription(org,'canceled');}}};
+ stripe={subscriptions:{retrieve:async()=>{calls++; fetched(); return calls===1 ? firstResult : subscription(org,'canceled');}}};
  const first=sync.reconcileStripeSubscriptionEvent(subscription(org));
- await new Promise(resolve=>setImmediate(resolve));
+ await firstFetch;
  const second=sync.reconcileStripeSubscriptionEvent(subscription(org));
- await new Promise(resolve=>setImmediate(resolve));
  const inFlightCalls=calls;
  unblock(subscription(org));
  await Promise.all([first,second]);
@@ -127,7 +122,7 @@ test('launch checkout explicitly uses cards to avoid delayed-payment provisionin
 });
 
 async function deliver(event, signatureOverride) {
-  const body=Buffer.from(JSON.stringify(event));
+  const body=Buffer.from(JSON.stringify({created:1234567890,livemode:false,...event}));
   const timestamp=Math.floor(Date.now()/1000);
   const signature=require('crypto').createHmac('sha256','whsec_billing_test').update(`${timestamp}.`).update(body).digest('hex');
   let response;
@@ -156,10 +151,12 @@ test('Stripe retrieval failure leaves webhook retryable, then successfully provi
  const org=await seed(); let reads=0;
  stripe={subscriptions:{retrieve:async()=>{if(++reads===1)throw new Error('simulated Stripe outage');return subscription(org);}}};
  const event={id:`evt_${db.uuid()}`,type:'customer.subscription.created',data:{object:subscription(org)}};
- assert.equal((await deliver(event)).status,500);
- assert.equal((await row(org)).plan_id,'free');
- assert.equal((await db.get('SELECT processed_at FROM v2_webhook_events WHERE id=?',[event.id])).processed_at,null);
  assert.equal((await deliver(event)).status,200);
+ assert.equal((await row(org)).plan_id,'free');
+ assert.equal((await db.get('SELECT status FROM ops_verified_stripe_receipts WHERE id=?',[event.id])).status,'pending');
+ await db.run('UPDATE ops_verified_stripe_receipts SET next_attempt_at=0 WHERE id=?',[event.id]);
+ const {createStripeReceiptWorker}=require('../lib/opsOutbox');
+ await createStripeReceiptWorker(require('../routes/v2/billingWebhook').processStripeEvent).drain();
  assert.equal((await row(org)).plan_id,'starter');
 });
 test('checkout event replay waits for payment before applying authoritative plan',async()=>{

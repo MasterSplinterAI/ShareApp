@@ -61,7 +61,25 @@ function resolveCancelFlags(stripeSub) {
 /**
  * Apply Stripe subscription object to local v2_org_subscriptions + v2_organizations.billing_status.
  */
-async function applyStripeSubscriptionToOrg(stripeSub) {
+async function applyStripeSubscriptionToOrg(stripeSub, sourceRevision) {
+  return db.transaction(async tx => {
+    if (sourceRevision) {
+      const applied = await tx.get(`INSERT INTO ops_source_revisions(source_id,revision) VALUES(?,?)
+        ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision
+        WHERE ops_source_revisions.revision<excluded.revision RETURNING revision`, [`subscription-applied:${stripeSub.id}`, sourceRevision]);
+      if (!applied) return {ok:true, skipped:'stale_source_revision'};
+    }
+    const result = await applyStripeSubscriptionWithinTransaction(stripeSub);
+    if (result.orgId) {
+      const { queueContact } = require('./opsOutbox');
+      const members = await tx.all('SELECT user_id FROM v2_org_members WHERE org_id=?', [result.orgId]);
+      for (const member of members) await queueContact(tx, member.user_id);
+    }
+    return result;
+  });
+}
+
+async function applyStripeSubscriptionWithinTransaction(stripeSub) {
   const stripeSubId = stripeSub.id;
   const customerId =
     typeof stripeSub.customer === 'string' ? stripeSub.customer : stripeSub.customer?.id || null;
@@ -198,8 +216,12 @@ async function reconcileStripeSubscriptionEvent(snapshot) {
     const settings = await getStripeSettings();
     const stripe = getStripeClient(settings);
     if (!stripe) throw new Error('Stripe subscription reconciliation unavailable');
+    const { nextSourceRevision } = require('@rhule/ops-sdk');
+    // Allocate before provider I/O, then fence the write: a slower earlier read
+    // cannot overwrite a later completed reconciliation from another process.
+    const revision = await nextSourceRevision(db, `subscription-fetch:${snapshot.id}`);
     const current = await stripe.subscriptions.retrieve(snapshot.id);
-    return applyStripeSubscriptionToOrg(current);
+    return applyStripeSubscriptionToOrg(current, revision);
   });
   subscriptionSyncLocks.set(snapshot.id, operation);
   try {

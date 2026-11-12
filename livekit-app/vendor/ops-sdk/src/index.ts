@@ -1,3 +1,5 @@
+import type { BusinessEvent, BusinessEventReceipt } from './events.js';
+export * from './events.js';
 import { createSupportGateway, type SupportGatewayOptions } from './supportGateway.js';
 export * from './supportGateway.js';
 export type OpsBusinessUnit = "legalai" | "lalia" | "metalarb" | "shared_corporate" | (string & {});
@@ -334,6 +336,12 @@ export class OpsHubClient {
         tenantId: this.tenantSlug,
         ...contact,
       }),
+    });
+  }
+
+  async sendBusinessEvent(event: BusinessEvent): Promise<BusinessEventReceipt> {
+    return this.request<BusinessEventReceipt>("/api/v1/ingest/events", {
+      method: "POST", authMode: "secret", body: JSON.stringify(event),
     });
   }
 
@@ -838,3 +846,5 @@ export * from './supportRecoveryGateway.js';
 export * from './supportAcceptance.js';
 
 export * from './supportIdentity.js';
+
+export * from './eventOutbox.js';

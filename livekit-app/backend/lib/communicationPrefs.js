@@ -21,20 +21,24 @@ function clientMeta(req) {
 }
 
 async function recordConsentEvent(userId, consentType, granted, req) {
+  return db.transaction(async tx => {
+  const id = db.uuid(), occurredAt = new Date().toISOString();
   await db.run(
     `INSERT INTO v2_consent_events (id, user_id, consent_type, granted, ip, user_agent, policy_version, created_at)
      VALUES (?,?,?,?,?,?,?,?)`,
     [
-      db.uuid(),
+      id,
       userId,
       consentType,
       granted ? 1 : 0,
       clientMeta(req).ip,
       clientMeta(req).userAgent,
       POLICY_VERSION,
-      new Date().toISOString(),
+      occurredAt,
     ]
   );
+  await require('./opsOutbox').queueConsent(tx, {id,userId,consentType,granted,occurredAt,policyVersion:POLICY_VERSION});
+  });
 }
 
 async function ensureDefaultPrefs(userId, { marketingEmail = false } = {}) {
@@ -93,6 +97,10 @@ async function setSignupPrefs(userId, { marketingEmail = false }, req) {
 }
 
 async function updatePrefs(userId, body, req) {
+  return db.transaction(() => updatePrefsWithinTransaction(userId, body, req));
+}
+
+async function updatePrefsWithinTransaction(userId, body, req) {
   await ensureDefaultPrefs(userId);
   const current = await db.get(`SELECT * FROM v2_user_communication_prefs WHERE user_id = ?`, [userId]);
 
@@ -160,21 +168,6 @@ async function updatePrefs(userId, body, req) {
 
   if (body.marketingEmail !== undefined && Boolean(body.marketingEmail) !== Boolean(current.marketing_email)) {
     await recordConsentEvent(userId, 'marketing_email', next.marketingEmail, req);
-    try {
-      const { syncContact } = require('./opsHubClient');
-      const u = await db.get(`SELECT email, display_name FROM v2_users WHERE id = ?`, [userId]);
-      if (u?.email) {
-        void syncContact({
-          externalUserId: userId,
-          email: u.email,
-          name: u.display_name || u.email.split('@')[0],
-          marketingOptIn: next.marketingEmail,
-          source: 'lalia_prefs_update',
-        });
-      }
-    } catch {
-      /* ignore */
-    }
   }
 
   return { ok: true, prefs: await getPrefs(userId) };
