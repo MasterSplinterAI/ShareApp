@@ -350,3 +350,125 @@ def test_shutdown_cancels_stalled_final_report_before_reporter_close(monkeypatch
         assert all(task.done() for task in agent._bg_tasks)
         assert "agent_shutdown_cleanup_exceeded_s" in caplog.text
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("module", [stable, codeswitch])
+@pytest.mark.parametrize("repeated_cancel", [False, True])
+@pytest.mark.parametrize("frame_count", [0, 2])
+def test_pipeline_final_stt_report_survives_room_handler_cancellation(
+    monkeypatch, module, repeated_cancel, frame_count
+):
+    """Exercise real PCM feed, finalizer, disconnect handler, and shutdown drain."""
+    import sys
+    import agent_lifecycle
+
+    for name, symbol in (("llm", "ChatContext"), ("stt", "SpeechEventType"),
+                         ("vad", "VADEventType")):
+        monkeypatch.setitem(sys.modules, f"livekit.agents.{name}",
+                            SimpleNamespace(**{symbol: object}))
+
+    async def run():
+        input_waiting, feed_cancelled, release_feed = (
+            asyncio.Event(), asyncio.Event(), asyncio.Event()
+        )
+        accepted, rows, order, callbacks = [], [], [], []
+        release_report = asyncio.Event()
+
+        class Stream:
+            def __init__(self, audio=False):
+                self.audio = audio
+                self.frames = [SimpleNamespace(frame=SimpleNamespace(
+                    samples_per_channel=samples, sample_rate=16000,
+                    data=bytes(samples * 2), num_channels=1,
+                )) for samples in (16000, 8000)][:frame_count] if audio else []
+                self.aclose = AsyncMock()
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if self.frames:
+                    return self.frames.pop(0)
+                if self.audio:
+                    input_waiting.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    if self.audio:
+                        feed_cancelled.set()
+                        # Model asynchronous iterator cleanup. Shutdown cancels
+                        # its awaiting room handler again while this is pending.
+                        await release_feed.wait()
+                    raise
+
+            def push_frame(self, frame):
+                if self is stt_stream:
+                    accepted.append(frame.samples_per_channel / frame.sample_rate)
+
+        audio_stream, stt_stream, vad_stream = Stream(True), Stream(), Stream()
+        monkeypatch.setattr(module.rtc, "AudioStream", SimpleNamespace(
+            from_participant=lambda **kwargs: audio_stream), raising=False)
+        agent = module.TranscriptionOnlyAgent()
+        agent.participant_languages["speaker"] = "en"
+        monkeypatch.setattr(agent, "_audio_stream_noise_cancellation", lambda: None)
+        monkeypatch.setattr(agent, "_create_stt_instance", lambda *args, **kwargs: (
+            SimpleNamespace(capabilities=SimpleNamespace(streaming=True),
+                            stream=lambda: stt_stream), "deepgram"))
+        monkeypatch.setattr(agent, "_load_shared_vad", lambda: SimpleNamespace(stream=lambda: vad_stream))
+        if module is codeswitch:
+            monkeypatch.setattr(agent, "_broadcast_provider_status", AsyncMock())
+
+        async def emit_stt(**row):
+            await release_report.wait()
+            rows.append(row)
+            order.append("reported")
+
+        async def close_reporter():
+            order.append("closed")
+
+        close_pipelines = agent._shutdown_all_assistants
+
+        async def release_reports_after_teardown(ctx):
+            await close_pipelines(ctx)
+            release_report.set()
+
+        monkeypatch.setattr(agent, "_shutdown_all_assistants", release_reports_after_teardown)
+        agent.cost_reporter = SimpleNamespace(emit_stt=emit_stt, aclose=close_reporter)
+        ctx = SimpleNamespace(add_shutdown_callback=callbacks.append, room=SimpleNamespace(
+            remote_participants={"speaker": SimpleNamespace(identity="speaker")}))
+        run_ctx = SimpleNamespace(speaker_id="speaker", get_targets=AsyncMock(return_value=[]))
+        before = asyncio.all_tasks()
+        pipeline = asyncio.create_task(agent._run_speaker_pipeline(ctx, run_ctx))
+        agent.speaker_pipelines["speaker"] = pipeline
+        agent_lifecycle.register_shutdown(ctx, agent)
+        try:
+            await asyncio.wait_for(input_waiting.wait(), 1)
+            handler = agent._spawn_bg(agent._cancel_speaker_pipeline("speaker"))
+            await asyncio.wait_for(feed_cancelled.wait(), 1)
+            assert "speaker" not in agent.speaker_pipelines
+            if not repeated_cancel:
+                release_report.set()
+                release_feed.set()
+                await asyncio.wait_for(handler, 1)
+            await asyncio.wait_for(callbacks[0](), 1)
+            expected = [dict(duration_seconds=1.5, provider="deepgram",
+                             participant="speaker", language="en")] if frame_count else []
+            assert rows == expected
+            assert sum(accepted) == (1.5 if frame_count else 0)
+            assert order == (["reported", "closed"] if frame_count else ["closed"])
+            assert pipeline.done()
+            assert all(task.done() for task in agent._bg_tasks)
+            legs = [task for task in asyncio.all_tasks() - before
+                    if task.get_name().startswith("speaker-")]
+            assert not legs, "Pipeline legs must not outlive shutdown"
+            if not repeated_cancel:
+                for stream in (audio_stream, stt_stream, vad_stream):
+                    stream.aclose.assert_awaited_once()
+        finally:
+            release_feed.set()
+            remaining = asyncio.all_tasks() - before
+            for task in remaining:
+                task.cancel()
+            await asyncio.gather(*remaining, return_exceptions=True)
+
+    asyncio.run(run())

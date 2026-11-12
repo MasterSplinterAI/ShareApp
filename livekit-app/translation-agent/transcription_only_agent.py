@@ -2335,28 +2335,26 @@ class TranscriptionOnlyAgent:
         except Exception as e:
             logger.error('pipeline_error', extra={"error_type": type(e).__name__})
         finally:
-            # Stop input before taking the final accepted-PCM snapshot. Keep
-            # STT/VAD output processing alive through the existing reporting
-            # interval, then perform the normal final-turn cleanup below.
-            feed_task = legs[0]
-            if not feed_task.done():
-                feed_task.cancel()
-            await asyncio.gather(feed_task, return_exceptions=True)
-            # Includes silent frames, excludes no-frame/muted gaps. Each stream
-            # (including provider fallback) reports its own accepted input.
+            # Cancel every leg before yielding: a room handler awaiting this
+            # pipeline can itself be cancelled again during room shutdown.
+            for task in legs:
+                if not task.done():
+                    task.cancel()
+            # push_frame and its meter update are synchronous; the cancelled
+            # feed cannot accept more PCM before its next cancellation point.
+            # Register the final report before any await so repeated cancellation
+            # cannot lose it. Lifecycle shutdown drains these protected tasks.
             streamed_seconds = metered_stt.duration_seconds
             if self.cost_reporter and streamed_seconds > 0:
-                await self.cost_reporter.emit_stt(
-                    duration_seconds=streamed_seconds,
-                    provider=stt_provider_name,
-                    participant=speaker_id,
-                    language=speaker_lang,
+                self._spawn_bg(
+                    self.cost_reporter.emit_stt(
+                        duration_seconds=streamed_seconds,
+                        provider=stt_provider_name,
+                        participant=speaker_id,
+                        language=speaker_lang,
+                    ),
+                    during_shutdown=True,
                 )
-            # Unlike gather(), asyncio.wait does not propagate cancellation to the
-            # legs — cancel them explicitly on every exit path.
-            for t in legs:
-                if not t.done():
-                    t.cancel()
             await asyncio.gather(*legs, return_exceptions=True)
             await self._unregister_caption_session(speaker_id)
             if turn_id[0]:
