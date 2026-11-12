@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { ArrowRight, Globe2, LogIn, Sparkles, Video } from 'lucide-react';
+import { Globe2, LogIn, Video } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { MarketingNav } from './marketing/MarketingNav';
 import { Hero } from './marketing/Hero';
@@ -88,14 +88,7 @@ function NativeMobileWelcome() {
               Sign in to workspace
             </Link>
           </Button>
-          <Button asChild size="lg" variant="outline" className="w-full gap-2">
-            <Link to="/demo">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Try live translation demo
-              <ArrowRight className="ml-auto h-4 w-4 opacity-70" />
-            </Link>
-          </Button>
-          <Button asChild size="lg" variant="ghost" className="w-full">
+          <Button asChild size="lg" variant="outline" className="w-full">
             <Link to="/v2/signup">Create free account</Link>
           </Button>
         </div>

@@ -170,8 +170,8 @@ function applyChromeStrings(html, locale, route) {
     );
     // Replace the English hero description paragraph body when present.
     out = out.replace(
-      /Your voice\. Their language\. A real connection\.(?:<br class="desktop-break">)?\s*Talk naturally with anyone, anywhere, with live(?:<br class="desktop-break">)?\s*voice translation that brings you closer\./,
-      s.heroDesc
+      /(<p class="hero-description">)[\s\S]*?(<\/p>)/,
+      (_match, open, close) => `${open}${escapeHtml(s.heroDesc)}${close}`
     );
   }
 
