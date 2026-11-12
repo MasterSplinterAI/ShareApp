@@ -1,7 +1,7 @@
 const {createSqlSupportIntentStore,SUPPORT_PENDING_SCHEMA}=require('@rhule/ops-sdk');
 const {encryptSecret,decryptSecret}=require('./secretCrypto');
 /** Server-owned JWT verification + current account and membership; never trust orgId by itself. */
-function createShareAppPending({db,verifyToken,describeUser,resolveAuthority}) {
+function createShareAppPending({businessId:canonicalBusinessId='lalia',db,verifyToken,describeUser,resolveAuthority}) {
  const current=async(id,orgId)=>{
   const user=await db.get('SELECT id,email,display_name,disabled_at FROM v2_users WHERE id=?',[id]);
   if(!user||user.disabled_at)return null;
@@ -22,7 +22,7 @@ function createShareAppPending({db,verifyToken,describeUser,resolveAuthority}) {
    const {user,orgId}=account;
    return {id:user.id,role:'user',...(user.email?{email:user.email}:{}),...(user.display_name?{name:user.display_name}:{}),...(orgId?{orgId}:{}),...await describeUser(user,orgId)};
   },
-  async customerActive(businessId,actor){return businessId==='lalia'&&Boolean(await current(actor.id,actor.orgId));},
+  async customerActive(businessId,actor){return businessId===canonicalBusinessId&&Boolean(await current(actor.id,actor.orgId));},
   sealSecret(value){keyReady();const encrypted=encryptSecret(value);if(!encrypted?.startsWith('enc:v1:'))throw Error('Encrypted guest proof required');return encrypted;},
   openSecret(value){keyReady();if(!value.startsWith('enc:v1:'))throw Error('Encrypted guest proof required');const plain=decryptSecret(value);if(!plain)throw Error('Guest proof decryption failed');return plain;},
   async ensureSchema(){for(const sql of SUPPORT_PENDING_SCHEMA)await db.run(sql);},

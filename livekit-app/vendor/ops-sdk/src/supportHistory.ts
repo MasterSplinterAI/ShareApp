@@ -13,7 +13,7 @@ export type HistoryEntity=keyof typeof SUPPORT_HISTORY_COLUMNS;
 export type HistoryRow=Record<string,any> & {id:string};
 export interface HistoryPage {entity:HistoryEntity;after:string;cursor:string;rows:HistoryRow[];checksum:string}
 export interface SupportHistoryManifest {
- version:1;businessId:string;source:string;generation:string;revision:string;freezeId?:string;complete:true;
+ version:1;businessId:string;source:string;generation:string;revision:string;sourceTenantId?:string;freezeId?:string;complete:true;
  pages:HistoryPage[];entities:Partial<Record<HistoryEntity,{count:number;checksum:string}>>;checksum:string;
 }
 const identity=/^[a-zA-Z0-9_-]{1,120}$/;
@@ -25,8 +25,8 @@ export function historyRow(entity:HistoryEntity,row:HistoryRow,businessId:string
  return Object.fromEntries(allowed.split(' ').filter(k=>Object.hasOwn(row,k)).map(k=>[k,row[k]])) as HistoryRow;
 }
 /** Caller MUST hold a repeatable-read/read-only database snapshot for the entire call. No catches turn read failures into absence. */
-export async function exportSupportHistory(options:{businessId:string;source:string;generation:string;revision:string;freezeId?:string;tables:Partial<Record<HistoryEntity,string>>;pageSize?:number;readPage:(table:string,after:string,limit:number)=>Promise<HistoryRow[]>;checkpoint?:(page:HistoryPage)=>Promise<void>}):Promise<SupportHistoryManifest>{
- if(!identity.test(options.businessId)||!identity.test(options.source)||!/^\d+$/.test(options.generation)||!options.revision)throw Error('Invalid snapshot identity');
+export async function exportSupportHistory(options:{businessId:string;source:string;generation:string;revision:string;sourceTenantId?:string;freezeId?:string;tables:Partial<Record<HistoryEntity,string>>;pageSize?:number;readPage:(table:string,after:string,limit:number)=>Promise<HistoryRow[]>;checkpoint?:(page:HistoryPage)=>Promise<void>}):Promise<SupportHistoryManifest>{
+ if(options.sourceTenantId&&!identity.test(options.sourceTenantId)||!identity.test(options.businessId)||!identity.test(options.source)||!/^\d+$/.test(options.generation)||!options.revision)throw Error('Invalid snapshot identity');
  const pages:HistoryPage[]=[],entities:SupportHistoryManifest['entities']={};
  const size=Math.min(1000,Math.max(1,options.pageSize??250));
  for(const entity of Object.keys(options.tables).sort() as HistoryEntity[]){
@@ -41,12 +41,12 @@ export async function exportSupportHistory(options:{businessId:string;source:str
   }
   entities[entity]={count,checksum:await supportPayloadHash(checksums)};
  }
- const artifact={version:1 as const,businessId:options.businessId,source:options.source,generation:options.generation,revision:options.revision,...(options.freezeId?{freezeId:options.freezeId}:{}),complete:true as const,pages,entities};
+ const artifact={...(options.sourceTenantId?{sourceTenantId:options.sourceTenantId}:{}),version:1 as const,businessId:options.businessId,source:options.source,generation:options.generation,revision:options.revision,...(options.freezeId?{freezeId:options.freezeId}:{}),complete:true as const,pages,entities};
  return {...artifact,checksum:await supportPayloadHash(artifact)};
 }
 export async function verifySupportHistory(manifest:SupportHistoryManifest):Promise<Array<{entity:HistoryEntity;row:HistoryRow}>>{
  const {checksum,...body}=manifest;
- if(manifest.version!==1||manifest.complete!==true||!identity.test(manifest.businessId)||!identity.test(manifest.source)||!/^\d+$/.test(manifest.generation)||!manifest.revision||await supportPayloadHash(body)!==checksum)throw Error('Invalid or incomplete manifest checksum');
+ if(manifest.sourceTenantId&&!identity.test(manifest.sourceTenantId)||manifest.version!==1||manifest.complete!==true||!identity.test(manifest.businessId)||!identity.test(manifest.source)||!/^\d+$/.test(manifest.generation)||!manifest.revision||await supportPayloadHash(body)!==checksum)throw Error('Invalid or incomplete manifest checksum');
  const result:Array<{entity:HistoryEntity;row:HistoryRow}>=[];
  for(const entity of Object.keys(manifest.entities) as HistoryEntity[]){
   if(!SUPPORT_HISTORY_COLUMNS[entity])throw Error('Unknown entity');

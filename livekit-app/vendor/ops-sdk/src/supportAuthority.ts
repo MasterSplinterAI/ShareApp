@@ -7,13 +7,14 @@ export interface SupportAuthorityLatch {revision:number;origin:string;legacyDisa
 export function createSupportAuthorityClient(options:{businessId:string;getConfig:()=>Promise<SupportGatewayConfig>|SupportGatewayConfig;readLatch:()=>Promise<number|SupportAuthorityLatch|null>;writeLatch:(revision:number,details:{origin:string;legacyDisabled:boolean})=>Promise<void>;fetchImpl?:typeof fetch;acceptance?:ReturnType<typeof createSupportAcceptanceStore>}){
  const transport=options.fetchImpl??fetch;
  async function rpc(body?:unknown){
-  const cfg=await options.getConfig();const latch=await options.readLatch();
+  const cfg=await options.getConfig();if(cfg.businessId&&cfg.businessId!==options.businessId)throw Error('Configured support identity changed');const latch=await options.readLatch();
   if(!cfg.baseUrl||!cfg.secretKey){if(latch!==null||cfg.mode==='central')throw Error('Enrolled support authority unavailable');return {businessId:options.businessId,state:'unmanaged',generation:'0',revision:0,expiresAt:Date.now()+30000};}
   const known=typeof latch==='number'?{revision:latch,origin:'',legacyDisabled:true}:latch;
   const url=new URL(cfg.baseUrl);if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Invalid authority origin');
   if(known?.origin&&known.origin!==url.origin)throw Error('Known support authority origin cannot be changed');
   let response:Response;try{response=await transport(url.origin+'/api/v1/support/authority',{method:body?'POST':'GET',headers:{'X-Ops-Key':cfg.secretKey,'X-Ops-Tenant':options.businessId,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{}),redirect:'error',signal:AbortSignal.timeout(5000)});}catch{throw new AuthorityTransportUnavailable('Authority transport unavailable');}
   if(response.status>=500)throw new AuthorityTransportUnavailable('Authority transport unavailable');
+  if([401,403].includes(response.status))await options.acceptance?.invalidate(options.businessId);
   if(!response.ok)throw Error('Support authority unavailable');const value=await response.json();if(value.businessId!==options.businessId)throw Error('Wrong business authority');
   if(value.state){if(!['unmanaged','legacy','frozen','central','central_frozen','recovery','recovery_frozen'].includes(value.state)||!Number.isSafeInteger(value.revision)||!Number.isFinite(value.expiresAt)||value.expiresAt<=Date.now())throw Error('Invalid authority state');if(value.state==='unmanaged'&&known!==null||known&&value.revision<known.revision||known?.legacyDisabled&&value.state==='legacy')throw Error('Support authority rollback refused');if(value.state!=='unmanaged')await options.writeLatch(value.revision,{origin:url.origin,legacyDisabled:Boolean(known?.legacyDisabled||!['unmanaged','legacy'].includes(value.state))});}
   return value;
@@ -25,7 +26,7 @@ export function createSupportAuthorityClient(options:{businessId:string;getConfi
  }
  return {
   read,
-  async config(){const cfg=await options.getConfig(),authority=await read();return {...cfg,mode:authority.state==='unmanaged'?cfg.mode:['legacy','recovery'].includes(authority.state)?'local' as const:'central' as const};},
+  async config(){const cfg=await options.getConfig(),authority=await read();return {...cfg,businessId:options.businessId,tenantSlug:options.businessId,mode:authority.state==='unmanaged'?cfg.mode:['legacy','recovery'].includes(authority.state)?'local' as const:'central' as const};},
   async resolveAuthority(businessId:string){if(businessId!==options.businessId)return null;const row=await read();return !row.acceptanceClosed&&['frozen','central','central_frozen'].includes(row.state)?{businessId,generation:row.generation,expiresAt:row.expiresAt}:null;},
   async acquire(){const row=await read();if(row.state==='unmanaged')return {id:null,expiresAt:Date.now()+30000};if(row.state!=='legacy')throw Error('Legacy authority fenced');return rpc({action:'acquire'});},
   async release(id:string|null,outcome:'complete'|'unknown'){if(id)await rpc({action:'release',id,outcome});},

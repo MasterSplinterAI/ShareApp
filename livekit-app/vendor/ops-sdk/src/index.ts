@@ -836,3 +836,5 @@ export * from './supportRestore.js';
 export * from './supportRecoveryGateway.js';
 
 export * from './supportAcceptance.js';
+
+export * from './supportIdentity.js';

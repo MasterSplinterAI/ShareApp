@@ -1,3 +1,4 @@
+const {getSupportBusinessId}=require('./supportIdentity');
 const {getSupportRecoveryDatabase,closeSupportRecoveryDatabase}=require('./supportRecoveryDatabase');
 const {createSupportRecoveryGateway}=require('@rhule/ops-sdk');
 const {hostSupportAuthority,legacySupportFence,fenceSupportAdapter,supportAuthorityHttp}=require('./supportAuthority');
@@ -103,7 +104,7 @@ async function buildContextSummary(user, orgId, role) {
 }
 
 function createPending(trusted={}) {
-  return createShareAppPending({db:{...db,...require('./supportRecoveryDatabase').getSupportAcceptanceStore().sql},verifyToken,...trusted,describeUser:async(user,orgId)=>{
+  return createShareAppPending({businessId:getSupportBusinessId(),db:{...db,...require('./supportRecoveryDatabase').getSupportAcceptanceStore().sql},verifyToken,...trusted,describeUser:async(user,orgId)=>{
     let planLabel='member';
     if(orgId){const ent=await getOrgEntitlements(orgId);planLabel=ent?.planName||ent?.planId||planLabel;}
     return {planLabel,contextSummary:await buildContextSummary(user,orgId,'user')};
@@ -206,7 +207,7 @@ function createGithubAdapter() {
  */
 function createShareAppSupportRouter(trusted={resolveAuthority:hostSupportAuthority.resolveAuthority}) {
   const pending={...createPending(trusted),authorizeTransfer:hostSupportAuthority.authorizeTransfer,withAcceptance:hostSupportAuthority.withAcceptance};
-  const recovery=createSupportRecoveryGateway({...pending,businessId:'lalia',db:{transaction:work=>getSupportRecoveryDatabase().transaction(work)},state:()=>hostSupportAuthority.read(),resolveUser});
+  const recovery=createSupportRecoveryGateway({...pending,businessId:getSupportBusinessId(),db:{transaction:work=>getSupportRecoveryDatabase().transaction(work)},state:()=>hostSupportAuthority.read(),resolveUser});
   const replay=createSupportReplayPump({...pending,resolveUser,getConfig:hostSupportAuthority.config});
   const frontendBase = (
     process.env.PUBLIC_FRONTEND_BASE_URL ||

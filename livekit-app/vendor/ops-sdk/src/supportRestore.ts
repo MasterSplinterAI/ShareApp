@@ -61,6 +61,10 @@ export async function runRestoredSupportRequest(db:RecoveryDatabase,input:{busin
   const {businessId,actor}=input;const path=input.path.split('?')[0];const scope=[businessId,actor.principalType,actor.id,`${input.method}:${path}`,input.key];
   const ticket=async(id:string)=>sql.get('SELECT * FROM support_tickets WHERE tenant_id=? AND id=? AND user_id=?',[businessId,id,actor.id]);
   if(input.method==='GET'){
+   if(path==='/aliases'){const params=new URLSearchParams(input.path.split('?')[1]??''),legacy=params.get('ticket'),source=params.get('source');if(!legacy||!/^[a-zA-Z0-9_-]{1,128}$/.test(legacy)||source&&!/^[a-zA-Z0-9_-]{1,120}$/.test(source))return {statusCode:400,body:{error:'Invalid legacy alias'}};const alias=/^\d+$/.test(legacy)?'number:'+legacy:'id:'+legacy;
+    const archived=(await sql.all("SELECT record_json FROM ops_support_restore_archive WHERE business_id=? AND collection='ops_support_history_aliases'",[businessId])).map(r=>JSON.parse(r.record_json));const choices=[];for(const row of archived)if(row.alias===alias&&(!source||row.source===source)&&await ticket(row.central_id))choices.push({source:row.source,ticketId:row.central_id});const ids=[...new Set(choices.map(r=>r.ticketId))];return ids.length?{statusCode:200,body:ids.length===1?{ticketId:ids[0]}:{ambiguous:true,choices}}:{statusCode:404,body:{error:'Not found'}};
+   }
+
    if(path==='/tickets')return {statusCode:200,body:{ok:true,tickets:(await sql.all('SELECT * FROM support_tickets WHERE tenant_id=? AND user_id=? ORDER BY created_at DESC',[businessId,actor.id])).map(dto)}};
    const match=path.match(/^\/tickets\/([A-Za-z0-9_-]{1,128})$/);if(!match)throw Error('Unsupported recovery read');const row=await ticket(match[1]);if(!row)return {statusCode:404,body:{error:'Not found'}};return {statusCode:200,body:{ok:true,ticket:dto(row),messages:(await sql.all('SELECT * FROM support_messages WHERE tenant_id=? AND ticket_id=? ORDER BY created_at,id',[businessId,row.id])).map(dto)}};
   }

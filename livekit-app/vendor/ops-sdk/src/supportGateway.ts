@@ -69,8 +69,8 @@ function route(method: string, raw: string) {
   const [path, query = ''] = raw.split('?');
   const params = new URLSearchParams(query);
   const keys = [...params.keys()];
-  if (keys.length !== new Set(keys).size || keys.some(k => !['status','kind','q','limit'].includes(k)) || query.length > 1024) return null;
-  const read = method === 'GET' && ['/health','/config','/tickets','/help/articles'].includes(path) || method === 'GET' && new RegExp(`^/tickets/${idPattern}$`).test(path);
+  if (keys.length !== new Set(keys).size || keys.some(k => !(path==='/aliases'?['ticket','source']:['status','kind','q','limit']).includes(k)) || query.length > 1024) return null;
+  const read = method === 'GET' && ['/health','/config','/tickets','/help/articles','/aliases'].includes(path) || method === 'GET' && new RegExp(`^/tickets/${idPattern}$`).test(path);
   const durable = method === 'POST' && (['/tickets','/leads'].includes(path) || new RegExp(`^/tickets/${idPattern}/messages$`).test(path));
   const transient = method === 'POST' && ['/chat','/coach','/guest-session'].includes(path);
   const pending = method === 'GET' && new RegExp(`^/pending/${idPattern}$`).test(path);
