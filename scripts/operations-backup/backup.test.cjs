@@ -65,3 +65,21 @@ test('restore inventory detects lost rows and missing constraints', () => {
   const missing = structuredClone(original); missing.constraints = [];
   assert.throws(() => assertInventory(original, missing), /inventory/i);
 });
+
+test('trusted deployed uploads root alias resolves while nested and unrelated links remain rejected', async () => {
+  const { resolveUploadsDirectory } = require('./backup.cjs');
+  assert.equal(typeof resolveUploadsDirectory, 'function');
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lalia-upload-root-'));
+  try {
+    const backend = path.join(root, 'backend'); const shared = path.join(root, 'persistent-uploads'); const other = path.join(root, 'unrelated');
+    await fs.mkdir(backend); await fs.mkdir(shared); await fs.mkdir(other);
+    await fs.writeFile(path.join(shared, 'synthetic.txt'), 'synthetic');
+    const alias = path.join(backend, 'uploads'); await fs.symlink(shared, alias);
+    const canonical = await resolveUploadsDirectory(backend, alias);
+    assert.equal(canonical, await fs.realpath(shared));
+    assert.equal((await inspectUploads(canonical)).length, 1);
+    await assert.rejects(resolveUploadsDirectory(backend, other), /Unexpected uploads path/);
+    await fs.symlink(other, path.join(shared, 'nested'));
+    await assert.rejects(inspectUploads(canonical), /symlink|regular/);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
+});

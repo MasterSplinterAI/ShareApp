@@ -1,0 +1,41 @@
+{
+  "startedAt": "2026-11-12T20:03:21.726470+00:00",
+  "completedAt": "2026-11-12T20:03:30.799149+00:00",
+  "account": "690248313257",
+  "region": "us-east-2",
+  "backupBucket": "lalia-backups-690248313257-us-east-2",
+  "backupPrefix": "lalia/daily/2026-11-12T20-02-10-202Z-cac62d44-18cd-4c4e-89e9-ff81ebd24479/",
+  "recovery": {
+    "format": 1,
+    "backend": {
+      "secretArn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/backend-wwUefO",
+      "versionId": "344243e5-46b3-4cfc-a433-58c0a35c0b5f",
+      "keyGeneration": "key-generation-7d02d7dea765cd01ff4c6c60"
+    }
+  },
+  "keyRetrieval": {
+    "requestedVersionId": "344243e5-46b3-4cfc-a433-58c0a35c0b5f",
+    "actualVersionId": "344243e5-46b3-4cfc-a433-58c0a35c0b5f",
+    "historicalGenerationFallbackUsed": false,
+    "exactConfigurationVersionRetrieved": true
+  },
+  "verification": {
+    "status": "restore_and_key_verified",
+    "tables": 84,
+    "constraints": 134,
+    "previouslyUnvalidatedConstraints": 0,
+    "files": 1,
+    "encryptedValues": 6,
+    "authenticatedValues": 6,
+    "allAuthenticated": true,
+    "artifactChecksumsVerified": true,
+    "manifestHadRecoveryReference": true,
+    "applicationStarted": false,
+    "providerCalls": false
+  },
+  "temporaryInputsRemoved": true,
+  "isolatedClusterStoppedAndRemoved": true,
+  "localCustomerFilesCreated": false,
+  "plaintextKeyFilesCreated": false,
+  "ec2SecretReadGranted": false
+}

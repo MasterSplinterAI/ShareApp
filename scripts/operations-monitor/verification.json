@@ -1,0 +1,143 @@
+{
+  "verifiedAt": "2026-11-12T19:45:55.062056+00:00",
+  "account": "690248313257",
+  "region": "us-east-2",
+  "functionArn": "arn:aws:lambda:us-east-2:690248313257:function:lalia-operations-monitor",
+  "topicArn": "arn:aws:sns:us-east-2:690248313257:lalia-operations-alerts",
+  "checks": {
+    "lambda_configuration": true,
+    "lambda_no_vpc": true,
+    "lambda_architecture": true,
+    "reserved_concurrency": true,
+    "runtime_trust": true,
+    "runtime_policy": true,
+    "runtime_no_extra_inline": true,
+    "runtime_no_managed_policies": true,
+    "scheduler_trust": true,
+    "scheduler_policy": true,
+    "scheduler_no_extra_inline": true,
+    "scheduler_no_managed_policies": true,
+    "sns_policy": true,
+    "scheduler_configuration": true,
+    "alarm_configuration": true,
+    "log_retention": true,
+    "iam_prefix_list": true,
+    "iam_other_prefix": true,
+    "iam_other_bucket": true,
+    "iam_dump_read": true,
+    "iam_secret_read": true,
+    "iam_namespace_write": true,
+    "iam_other_namespace": true,
+    "iam_own_log_write": true,
+    "iam_other_log_write": true,
+    "iam_log_read": true,
+    "iam_log_delete": true,
+    "iam_scheduler_exact_function": true,
+    "iam_scheduler_other_function": true,
+    "metric_ApiHealthy": true,
+    "metric_BackupFresh": true,
+    "metric_MonitorHeartbeat": true
+  },
+  "iamDecisions": {
+    "prefix_list": "allowed",
+    "other_prefix": "implicitDeny",
+    "other_bucket": "implicitDeny",
+    "dump_read": "implicitDeny",
+    "secret_read": "implicitDeny",
+    "namespace_write": "allowed",
+    "other_namespace": "implicitDeny",
+    "own_log_write": "allowed",
+    "other_log_write": "implicitDeny",
+    "log_read": "implicitDeny",
+    "log_delete": "implicitDeny",
+    "scheduler_exact_function": "allowed",
+    "scheduler_other_function": "implicitDeny"
+  },
+  "metrics": {
+    "ApiHealthy": [
+      {
+        "timestamp": "2026-11-12T14:40:00-05:00",
+        "minimum": 1.0,
+        "samples": 2.0
+      }
+    ],
+    "BackupFresh": [
+      {
+        "timestamp": "2026-11-12T14:40:00-05:00",
+        "minimum": 1.0,
+        "samples": 2.0
+      }
+    ],
+    "MonitorHeartbeat": [
+      {
+        "timestamp": "2026-11-12T14:40:00-05:00",
+        "minimum": 1.0,
+        "samples": 2.0
+      }
+    ]
+  },
+  "alarmStates": {
+    "lalia-operations-monitor-ApiHealthy": "OK",
+    "lalia-operations-monitor-BackupFresh": "OK",
+    "lalia-operations-monitor-MonitorHeartbeat": "OK"
+  },
+  "emailSubscriptionConfirmed": true,
+  "emailDeliveryVerified": false,
+  "isolatedHeartbeatAcceptance": {
+    "period": 300,
+    "evaluationPeriods": 3,
+    "datapointsToAlarm": 2,
+    "missingData": "breaching",
+    "actionsEnabled": false,
+    "states": [
+      {
+        "state": "INSUFFICIENT_DATA",
+        "at": "2026-11-12T19:42:48.605085+00:00"
+      },
+      {
+        "state": "ALARM",
+        "at": "2026-11-12T19:43:49.534083+00:00"
+      },
+      {
+        "state": "OK",
+        "at": "2026-11-12T19:44:50.916453+00:00"
+      }
+    ],
+    "missingDetected": true,
+    "recoveryObserved": true,
+    "productionMetricsUntouched": true,
+    "temporaryAlarmRemoved": true
+  },
+  "productionAlarmsRecoveredAt": "2026-11-12T19:47:12.575173+00:00",
+  "productionAlarmsRecoveredAutomatically": true,
+  "schedulerInvocationsObserved": true,
+  "controlledNotificationTest": {
+    "startedAt": "2026-11-12T19:47:49.173219+00:00",
+    "alarmName": "lalia-operations-monitor-MonitorHeartbeat",
+    "requestedStates": [
+      "ALARM",
+      "OK"
+    ],
+    "actions": [
+      {
+        "at": "2026-11-12T14:47:59.683000-05:00",
+        "summary": "Successfully executed action arn:aws:sns:us-east-2:690248313257:lalia-operations-alerts",
+        "outcome": "Succeeded",
+        "notificationState": null
+      },
+      {
+        "at": "2026-11-12T14:47:49.483000-05:00",
+        "summary": "Successfully executed action arn:aws:sns:us-east-2:690248313257:lalia-operations-alerts",
+        "outcome": "Succeeded",
+        "notificationState": null
+      }
+    ],
+    "snsActionsSucceeded": true,
+    "recipientReceiptVerified": false,
+    "productionMetricsUntouched": true
+  },
+  "rootIndependentReadback": {
+    "allThreeAlarmStates": "OK",
+    "logWriterIsolationVerifiedSeparately": true
+  }
+}

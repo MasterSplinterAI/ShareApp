@@ -2,7 +2,13 @@
 
 Production is **https://lalia.cloud**. The `staging.jarmetals.com` hostname and server directory/process names are historical aliases for this same environment, not an isolated staging system.
 
-## Release decision
+## November 12 update
+
+The owner approved the operations setup and Proton alert recipient. The Billing return fix is deployed and verified with signed-in paid/canceled Sandbox checkouts. Independent five-minute AWS monitoring is active. Backend recovery now includes encrypted runtime configuration, exact backup/key references, and a fresh actual restore of 84 tables, 134 constraints and six encrypted settings. Agent privacy/logging rollout results and current limitations are maintained in the [November 12 operations report](2026-11-12-operations.md). Stripe remains TEST with overage autocharge OFF.
+
+The sections below preserve the November 11 verification record; their pending operations/navigation items are superseded by the current report.
+
+## November 11 release decision
 
 **Paid public launch is not yet cleared.** The owner explicitly requested that Stripe remain in test mode. Web fixes, default-on transcript disclosures, and corrected backend usage accounting are deployed at `4fa02a1cafecf246043d5b381c1a8fd2ac67e36b`. Live activation remains a later owner action; account capability checks reported charges/payouts disabled and onboarding details incomplete. The startup-fixed agent image `jN9YKCyo7vv9` is deployed and verified: two canary rooms ran for ten minutes, then three production rooms ran for four minutes each, passing all 64 translation/audio direction checks and five reconnects. The approved daily backup system and real S3 restore drill are now verified. Oracle Orchestration LLC is the confirmed Wyoming operator; legal identity and backup-retention disclosure are published. The owner-approved Florida governing-law and Tampa court clause is live at frontend commit `a4ad508` and its rendered text exactly matches the approved draft. Remaining launch gates are listed below.
 
@@ -69,7 +75,7 @@ The candidate passed synthetic English → Spanish and Spanish → English final
 
 The two-room ten-minute canary soak passed all 40 direction checks, with one midpoint leave/rejoin per room, both client exits 0, and exact test-room cleanup. Both server job shutdown callbacks completed with no forced kill or cleanup error observed for at least 46 seconds afterward. The exact image was promoted without rebuilding; production retained CPU request/limit 2/4 and memory 4/8 GiB, minimum one and maximum eight replicas. The new production worker `CAW_T4SjYG6Y6tiG` registered at 20:30:39 UTC. Three independent production rooms each completed four minutes, all 24 direction checks, one midpoint rejoin per room, and client cleanup with exit 0. All exact test rooms were deleted. The temporary named canary was deleted after production verification. Production autoscaled from one to three replicas during the run; this is not proof of three-room capacity on a single replica. The CLI switched to the newest server after scaling, so the original production jobs’ server-side cleanup logs are not available through that interface. Per [LiveKit’s log documentation](https://docs.livekit.io/deploy/agents/logs/#follow-runtime-logs), complete multi-instance logging requires session insights or a log drain; no cross-instance error-free claim is made. The previous production image `sUuVnNMCMHJP` remains available for rollback. The reusable smoke harness is `livekit-app/translation-agent/scripts/verify_rtc_smoke.py`; checks use synthetic macOS voices and RTC 1.2.0. These tests verify media flow and reconnect behavior, not human microphone behavior or linguistic quality. RTC 1.2.1 fixes shared FFI-client creation across threads; no evidence established that this fixes the observed publication stall, so no speculative SDK upgrade was made.
 
-## Remaining launch gates
+## November 11 launch gates — historical snapshot
 
 1. Owner confirmed live activation will happen when ready; keep test mode until then. Owner completes Stripe onboarding and supplies live-mode keys, live recurring prices, and a live webhook signing secret through secure admin configuration. Never paste secrets into chat. Verify live account capabilities and approved real-payment/refund flow before accepting paying customers.
 2. **Agent rollout gate passed:** startup is fixed, sustained canary and production media checks passed, and the tested image is deployed. Previous production version `sUuVnNMCMHJP` is retained for rollback. The initial multi-room publication stall remains an unresolved diagnostic finding; independent-process reruns passed, so it is not presented as a proven harness-only issue.

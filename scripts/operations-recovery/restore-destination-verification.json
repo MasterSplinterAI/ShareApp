@@ -1,0 +1,9 @@
+{
+  "awsAccount": "690248313257",
+  "instanceId": "i-0272367e1422b061d",
+  "publicIp": "3.16.210.84",
+  "backendOnline": true,
+  "sourceHostAlreadyHoldsMatchingKey": true,
+  "fileKeyMatchesEffectiveKey": true,
+  "existingIsolatedRestoreHelper": true
+}
