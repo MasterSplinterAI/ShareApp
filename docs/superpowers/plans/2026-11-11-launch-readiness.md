@@ -53,5 +53,6 @@ Owner decision follow-up: new meetings/direct calls save transcripts by default 
 - [ ] Complete password recovery with an existing account; the approved test recipient has no account. No account/password was changed.
 - [x] Record mobile testing as owner-verified; this does not imply a documented device/browser matrix.
 - [x] Publish Oracle Orchestration LLC as the confirmed Wyoming operator and disclose backup retention.
-- [ ] Obtain legal review of the prepared Florida/Hillsborough/Tampa dispute clause. Owner confirmed Tampa operations; existing live clause preserved.
+- [x] Publish and verify the Florida/Hillsborough/Tampa dispute clause with explicit owner approval.
+- [ ] Independent legal review and any Florida foreign-LLC qualification assessment remain recommended follow-ups.
 - [x] Update final readiness evidence and the existing PR after verification.
