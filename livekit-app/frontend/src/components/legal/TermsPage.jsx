@@ -144,11 +144,15 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section title="10. Governing Law">
+        <Section title="10. Governing Law and Courts">
           <p>
-            These Terms are governed by the laws of the jurisdiction in which {COMPANY_LEGAL_NAME} is organized,
-            without regard to conflict-of-law principles. Any disputes will be resolved in the courts located in that
-            jurisdiction, and the parties consent to their exclusive jurisdiction and venue.
+            These Terms are governed by the laws of the State of Florida, without regard to its conflict-of-laws
+            rules, except where applicable law requires otherwise. Subject to any mandatory rights to bring
+            proceedings elsewhere, disputes arising out of or relating to these Terms or the Service will be brought
+            in the state courts located in Hillsborough County, Florida, or, where federal subject-matter jurisdiction
+            exists, the United States District Court for the Middle District of Florida, Tampa Division. You and{' '}
+            {COMPANY_LEGAL_NAME} consent to those courts&rsquo; personal jurisdiction and venue for such disputes.
+            Nothing in these Terms limits consumer rights or protections that cannot be waived under applicable law.
           </p>
         </Section>
 
