@@ -1,13 +1,15 @@
 import type {createSupportAcceptanceStore} from './supportAcceptance.js';
 class AuthorityTransportUnavailable extends Error {}
-import {supportIntentEvidence,type SupportIntent,type SupportGatewayConfig} from './supportGateway.js';
+import {supportPayloadHash,supportIntentEvidence,type SupportIntent,type SupportGatewayConfig} from './supportGateway.js';
 export interface HostSupportAuthority {businessId:string;generation:string;state:'unmanaged'|'legacy'|'frozen'|'central'|'central_frozen'|'recovery'|'recovery_frozen';expiresAt:number;revision:number;freezeId?:string|null;acceptanceClosed?:boolean;restoreId?:string}
 /** Persisted latch prevents config removal, old generation replay or a host flag from resurrecting a writer. */
 export interface SupportAuthorityLatch {revision:number;origin:string;legacyDisabled:boolean}
 export function createSupportAuthorityClient(options:{businessId:string;getConfig:()=>Promise<SupportGatewayConfig>|SupportGatewayConfig;readLatch:()=>Promise<number|SupportAuthorityLatch|null>;writeLatch:(revision:number,details:{origin:string;legacyDisabled:boolean})=>Promise<void>;fetchImpl?:typeof fetch;acceptance?:ReturnType<typeof createSupportAcceptanceStore>}){
  const transport=options.fetchImpl??fetch;
- async function rpc(body?:unknown){
-  const cfg=await options.getConfig();if(cfg.businessId&&cfg.businessId!==options.businessId)throw Error('Configured support identity changed');const latch=await options.readLatch();
+ const currentConfig=async()=>({...await options.getConfig()});
+ const configHash=(cfg:SupportGatewayConfig)=>{let origin=cfg.baseUrl??null;try{if(origin)origin=new URL(origin).origin;}catch{}return supportPayloadHash({version:1,businessId:options.businessId,configuredBusiness:cfg.businessId??options.businessId,origin,credential:cfg.secretKey??null});};
+ async function rpc(body?:unknown,suppliedConfig?:SupportGatewayConfig){
+  const cfg=suppliedConfig??await currentConfig();if(cfg.businessId&&cfg.businessId!==options.businessId)throw Error('Configured support identity changed');const latch=await options.readLatch();
   if(!cfg.baseUrl||!cfg.secretKey){if(latch!==null||cfg.mode==='central')throw Error('Enrolled support authority unavailable');return {businessId:options.businessId,state:'unmanaged',generation:'0',revision:0,expiresAt:Date.now()+30000};}
   const known=typeof latch==='number'?{revision:latch,origin:'',legacyDisabled:true}:latch;
   const url=new URL(cfg.baseUrl);if(!['https:','http:'].includes(url.protocol)||url.username||url.password||url.pathname!=='/'||url.search||url.hash)throw Error('Invalid authority origin');
@@ -19,19 +21,21 @@ export function createSupportAuthorityClient(options:{businessId:string;getConfi
   if(value.state){if(!['unmanaged','legacy','frozen','central','central_frozen','recovery','recovery_frozen'].includes(value.state)||!Number.isSafeInteger(value.revision)||!Number.isFinite(value.expiresAt)||value.expiresAt<=Date.now())throw Error('Invalid authority state');if(value.state==='unmanaged'&&known!==null||known&&value.revision<known.revision||known?.legacyDisabled&&value.state==='legacy')throw Error('Support authority rollback refused');if(value.state!=='unmanaged')await options.writeLatch(value.revision,{origin:url.origin,legacyDisabled:Boolean(known?.legacyDisabled||!['unmanaged','legacy'].includes(value.state))});}
   return value;
  }
- async function read():Promise<HostSupportAuthority>{
-  let value:HostSupportAuthority;try{value=await rpc();}catch(error){if(!(error instanceof AuthorityTransportUnavailable)||!options.acceptance)throw error;const cfg=await options.getConfig();if(!cfg.baseUrl||!cfg.secretKey)throw error;const cached=await options.acceptance.cached(options.businessId,new URL(cfg.baseUrl).origin);if(!cached)throw error;return cached;}
-  if(options.acceptance&&['frozen','central','central_frozen','recovery'].includes(value.state)&&!value.acceptanceClosed){const cfg=await options.getConfig();await options.acceptance.establish(value,new URL(cfg.baseUrl!).origin,()=>rpc({action:'acquire-intent',generation:value.generation}),id=>rpc({action:'release',id,outcome:'complete'}));}
+ async function readWithConfig(cfg:SupportGatewayConfig):Promise<HostSupportAuthority>{
+  const fingerprint=await configHash(cfg);await options.acceptance?.validateConfig(options.businessId,fingerprint);
+  let value:HostSupportAuthority;try{value=await rpc(undefined,cfg);}catch(error){if(!(error instanceof AuthorityTransportUnavailable)||!options.acceptance)throw error;if(!cfg.baseUrl||!cfg.secretKey)throw error;const cached=await options.acceptance.cached(options.businessId,new URL(cfg.baseUrl).origin,fingerprint);if(!cached)throw error;return cached;}
+  if(options.acceptance&&['frozen','central','central_frozen','recovery'].includes(value.state)&&!value.acceptanceClosed)await options.acceptance.establish(value,new URL(cfg.baseUrl!).origin,fingerprint,()=>rpc({action:'acquire-intent',generation:value.generation},cfg),id=>rpc({action:'release',id,outcome:'complete'},cfg));
   return value;
  }
+ const read=async()=>readWithConfig(await currentConfig());
  return {
   read,
-  async config(){const cfg=await options.getConfig(),authority=await read();return {...cfg,businessId:options.businessId,tenantSlug:options.businessId,mode:authority.state==='unmanaged'?cfg.mode:['legacy','recovery'].includes(authority.state)?'local' as const:'central' as const};},
+  async config(){const cfg=await currentConfig(),authority=await readWithConfig(cfg);return {...cfg,businessId:options.businessId,tenantSlug:options.businessId,mode:authority.state==='unmanaged'?cfg.mode:['legacy','recovery'].includes(authority.state)?'local' as const:'central' as const};},
   async resolveAuthority(businessId:string){if(businessId!==options.businessId)return null;const row=await read();return !row.acceptanceClosed&&['frozen','central','central_frozen'].includes(row.state)?{businessId,generation:row.generation,expiresAt:row.expiresAt}:null;},
   async acquire(){const row=await read();if(row.state==='unmanaged')return {id:null,expiresAt:Date.now()+30000};if(row.state!=='legacy')throw Error('Legacy authority fenced');return rpc({action:'acquire'});},
   async release(id:string|null,outcome:'complete'|'unknown'){if(id)await rpc({action:'release',id,outcome});},
   async withAcceptance<T>(businessId:string,generation:string,persist:()=>Promise<T>):Promise<T>{
-   if(businessId!==options.businessId||!options.acceptance)throw Error('Local acceptance fence required');return options.acceptance.run(businessId,generation,persist);
+   if(businessId!==options.businessId||!options.acceptance)throw Error('Local acceptance fence required');return options.acceptance.run(businessId,generation,async()=>configHash(await currentConfig()),persist);
   },
   async sealAcceptance(freezeId:string){
    if(!options.acceptance)throw Error('Source acceptance fence required');const authority:HostSupportAuthority=await rpc();if(!['frozen','central_frozen','recovery_frozen'].includes(authority.state)||authority.freezeId!==freezeId)throw Error('Matching frozen authority required');
