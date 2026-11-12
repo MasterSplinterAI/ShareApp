@@ -6,9 +6,24 @@ export const SUPPORT_ACCEPTANCE_SCHEMA='CREATE TABLE IF NOT EXISTS ops_support_h
 export function createSupportAcceptanceStore(raw:RecoveryDatabase,context:{getStore():RecoverySql|undefined;run<T>(sql:RecoverySql,work:()=>T):T}){
  const denied=new WeakMap<RecoverySql,Set<string>>();
  const database:RecoveryDatabase={transaction:async work=>{
-  const active=context.getStore();if(active)return work(active);let held:RecoverySql|undefined;
-  try{return await raw.transaction(sql=>{held=sql;return context.run(sql,()=>work(sql));});}
-  finally{const invalidations=held&&denied.get(held);if(invalidations?.size)await raw.transaction(async sql=>{await sql.run(SUPPORT_ACCEPTANCE_SCHEMA);for(const business of invalidations)await sql.run('UPDATE ops_support_host_acceptance SET authority_json=NULL WHERE business_id=?',[business]);});}
+  const active=context.getStore();if(active)return work(active);
+  let rejection:{error:unknown}|undefined;
+  const result=await raw.transaction(async sql=>{
+   // Keep the source lock while rolling back caller work. A confirmed denial must
+   // become durable before another process can start an acceptance transaction.
+   await sql.run('SAVEPOINT support_acceptance_work');
+   return context.run(sql,async()=>{
+    try{return await work(sql);}
+    catch(error){
+     const invalidations=denied.get(sql);if(!invalidations?.size)throw error;
+     await sql.run('ROLLBACK TO SAVEPOINT support_acceptance_work');
+     await sql.run(SUPPORT_ACCEPTANCE_SCHEMA);
+     for(const business of invalidations)await sql.run('UPDATE ops_support_host_acceptance SET authority_json=NULL WHERE business_id=?',[business]);
+     rejection={error};return undefined;
+    }finally{denied.delete(sql);}
+   });
+  });
+  if(rejection)throw rejection.error;return result as Awaited<ReturnType<typeof work>>;
  }};
  const transaction=<T>(work:(sql:RecoverySql)=>Promise<T>)=>database.transaction(sql=>context.run(sql,async()=>{await sql.run(SUPPORT_ACCEPTANCE_SCHEMA);return work(sql);}));
  const row=(sql:RecoverySql,business:string)=>sql.get('SELECT * FROM ops_support_host_acceptance WHERE business_id=?',[business]);
