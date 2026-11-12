@@ -19,22 +19,26 @@ export function getSupportAccessToken() {
  */
 export default function LaliaSupportLauncher({ user, openRef, audience }) {
   const localOpen = useRef(null);
-  const hasToken = Boolean(getSupportAccessToken());
-  const resolvedAudience = audience || (user?.id || hasToken ? 'app' : 'public');
+  // Public/auth pages intentionally stay guest clients, even with an ambient JWT.
+  // Only the app shell supplies verified me.user; never infer customer identity from token presence.
+  const resolvedAudience = audience || (user?.id ? 'app' : 'public');
+  const customerContext = resolvedAudience === 'app';
 
   return (
     <SupportLauncher
-      key={user?.id || getSupportAccessToken() || "guest"}
+      key={customerContext ? user?.id || "unresolved-customer" : "guest"}
       apiBase={SUPPORT_API_BASE}
-      getAccessToken={getSupportAccessToken}
+      getAccessToken={customerContext ? getSupportAccessToken : undefined}
       brand={{
         name: 'Lalia',
         supportAgentName: 'Lalia Help',
         signupUrl: '/v2/signup',
       }}
       audience={resolvedAudience}
+      requireCustomer={customerContext}
+      guestOnly={!customerContext}
       user={
-        user
+        customerContext && user
           ? {
               id: user.id,
               email: user.email || undefined,

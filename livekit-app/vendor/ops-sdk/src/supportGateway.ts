@@ -155,7 +155,9 @@ export function createSupportGateway(options: SupportGatewayOptions) {
         if(!matched)return reply(400,{error:'Unsupported customer support operation'});
         const resolved=await options.resolveUser(req);const actor=resolved ? safeActor(resolved) : null;
         if(actor && !await options.customerActive?.(auth.cfg.tenantSlug,actor))return reply(matched.pending?404:401,{error:'Account unavailable'});
-        const guestToken=header(req,'x-support-guest-token');
+        // Restrictive browser context is never identity: only host authentication can satisfy it.
+        if(!actor && (header(req,'x-support-require-customer')==='1' || header(req,'authorization')))return reply(401,{error:'Sign in again to retry your retained submission.',code:'customer_auth_required'});
+        const guestToken=actor?'':header(req,'x-support-guest-token');
         const tokenHash=guestToken ? await supportPayloadHash(guestToken) : '';
         if(matched.pending) {
           const intent=await options.store.get(matched.path.slice('/pending/'.length));

@@ -15,8 +15,9 @@ function createShareAppPending({db,verifyToken,describeUser,resolveAuthority}) {
   resolveAuthority:resolveAuthority|| (async()=>null),
   async resolveUser(req){
    const header=String(req?.headers?.authorization||'');if(!header)return null;
-   const match=header.match(/^Bearer\s+(.+)$/i);if(!match)throw Error('Invalid session');
-   const payload=verifyToken(match[1]);if(!payload?.sub)throw Error('Invalid session');
+   const match=header.match(/^Bearer\s+(.+)$/i);if(!match)return null;
+   let payload;try{payload=verifyToken(match[1]);}catch{return null;}
+   if(!payload?.sub)return null;
    const account=await current(payload.sub,payload.orgId);if(!account)throw Error('Account or membership unavailable');
    const {user,orgId}=account;
    return {id:user.id,role:'user',...(user.email?{email:user.email}:{}),...(user.display_name?{name:user.display_name}:{}),...(orgId?{orgId}:{}),...await describeUser(user,orgId)};

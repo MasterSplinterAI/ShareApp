@@ -14,31 +14,39 @@ export async function supportFetch<T>(
   getAccessToken?: () => string | null | undefined,
   pending?: PendingIntents,
   actorScope?: string,
+  guestOnly = false,
 ): Promise<T> {
   const url = `${normalizeApiBase(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
-  const token = getAccessToken?.()?.trim() || null;
+  if(guestOnly)actorScope=undefined;
+  const token = guestOnly?null:getAccessToken?.()?.trim() || null;
+  const requiresCustomer=Boolean(actorScope||token);
   let guestToken: string | undefined;
   try {
     const session = JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`) || 'null');
     if (session && Date.parse(session.expiresAt) > Date.now()) guestToken = session.token;
   } catch { /* storage unavailable */ }
   const { headers: initHeaders, ...rest } = init ?? {};
+  const extraHeaders=Object.fromEntries(new Headers(initHeaders));
+  if(requiresCustomer)delete extraHeaders['x-support-guest-token'];
+  if(guestOnly){delete extraHeaders.authorization;delete extraHeaders['x-support-require-customer'];}
   const intentScope=requestScope(apiBase,path,init,token,actorScope);
   const body=String(rest.body??'');
   const retained=pending?.retained(intentScope,body);
   if(retained)guestToken=retained.guestToken;
   else if(path.startsWith('/pending/'))guestToken=pending?.receiptProof(path.slice('/pending/'.length));
+  if(requiresCustomer)guestToken=undefined;
   const intentKey=rest.method && !['GET','HEAD'].includes(rest.method.toUpperCase()) && path!=='/coach' && path!=='/guest-session' ? pending?.key(intentScope,body,guestToken) : undefined;
   const res = await fetch(url, {
-    credentials: "include",
     ...rest,
+    credentials: guestOnly?"omit":rest.credentials??"include",
     headers: {
       Accept: "application/json",
       ...(intentKey ? {"Idempotency-Key":intentKey} : {}),
       ...(rest.body ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(guestToken ? { "x-support-guest-token": guestToken } : {}),
-      ...(initHeaders as Record<string, string> | undefined),
+      ...extraHeaders,
+      ...(requiresCustomer ? {"x-support-require-customer":"1"} : {}),
     },
   });
   const data = (await res.json()) as T & { error?: string };

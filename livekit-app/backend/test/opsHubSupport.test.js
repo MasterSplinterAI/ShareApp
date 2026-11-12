@@ -11,6 +11,7 @@ test('Lalia JWT current user/membership and durable acceptance on selected isola
  let contexts=0;
  const adapter=createShareAppPending({db,verifyToken,describeUser:async()=>{contexts++;return {planLabel:'Pro',contextSummary:'Safe preference and usage facts'};}});await db.run('DROP TABLE IF EXISTS ops_support_pending');await adapter.ensureSchema();
  const req={headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'gateway-org',role:'admin'}),'x-support-user-json':'forged'}};
+ for(const token of ['expired-invalid-fixture',signSession({sub:'gateway-user',iat:1})])assert.equal(await adapter.resolveUser({headers:{authorization:'Bearer '+token}}),null);
  const actor=await adapter.resolveUser(req);assert.equal(actor.id,'gateway-user');assert.equal(actor.role,'user');assert.equal(actor.orgId,'gateway-org');assert.equal(contexts,1);
  await assert.rejects(()=>adapter.resolveUser({headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'unowned-org'})}}));assert.equal(contexts,1);
  const {createSupportGateway}=require('@rhule/ops-sdk');const gateway=createSupportGateway({...adapter,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>{throw Error('offline');}});

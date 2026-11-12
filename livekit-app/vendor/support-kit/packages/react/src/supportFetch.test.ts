@@ -20,3 +20,23 @@ test('an aborted client cannot settle a late response even when transport ignore
  controller.abort();finish(new Response('{"status":"pending","receiptId":"old-private-receipt"}',{status:202}));
  await assert.rejects(()=>response,(error:any)=>error.name==='AbortError');assert.equal(pending.ownsReceipt('old-private-receipt'),false);
 });
+test('customer cookie and JWT retries never inherit a guest proof and retain their key through reauthentication',async t=>{
+ const original=globalThis.fetch,storage=globalThis.sessionStorage;const seen:any[]=[];let expired=false;
+ Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:()=>JSON.stringify({token:'surviving-guest-proof',expiresAt:new Date(Date.now()+60000).toISOString()})}});
+ globalThis.fetch=async(_url,init)=>{seen.push(init);return new Response(JSON.stringify(expired?{error:'Sign in again',code:'customer_auth_required'}:{status:'pending',receiptId:'owned-receipt'}),{status:expired?401:202});};
+ t.after(()=>{globalThis.fetch=original;Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:storage});});
+ for(const jwt of [false,true]) {
+  const pending=new PendingIntents();const init={method:'POST',body:'{"body":"customer draft"}'};let token=jwt?'valid-jwt':null;expired=false;
+  await assert.rejects(()=>supportFetch('/support','/tickets',init,()=>token,pending,'customer'),/pending/);const first=seen.at(-1).headers;
+  assert.equal(first['x-support-guest-token'],undefined);assert.equal(first['x-support-require-customer'],'1');
+  expired=true;token=null;await assert.rejects(()=>supportFetch('/support','/tickets',init,()=>token,pending,'customer'),/Sign in/);
+  assert.equal(seen.at(-1).headers['Idempotency-Key'],first['Idempotency-Key']);assert.equal(seen.at(-1).headers['x-support-guest-token'],undefined);
+  expired=false;token=jwt?'renewed-jwt':null;await assert.rejects(()=>supportFetch('/support','/tickets',init,()=>token,pending,'customer'),/pending/);assert.equal(seen.at(-1).headers['Idempotency-Key'],first['Idempotency-Key']);
+ }
+ const freshGuest=new PendingIntents();await assert.rejects(()=>supportFetch('/support','/tickets',{method:'POST',body:'{}'},undefined,freshGuest),/pending/);assert.equal(seen.at(-1).headers['x-support-guest-token'],'surviving-guest-proof');assert.equal(seen.at(-1).headers['x-support-require-customer'],undefined);
+});
+test('explicit public transport omits ambient cookies and bearer while retaining guest proof/key',async t=>{
+ const original=globalThis.fetch,storage=globalThis.sessionStorage;const seen:any[]=[];Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:{getItem:()=>JSON.stringify({token:'public-proof',expiresAt:new Date(Date.now()+60000).toISOString()})}});globalThis.fetch=async(_url,init)=>{seen.push(init);return new Response('{"status":"pending","receiptId":"guest-receipt"}',{status:202});};t.after(()=>{globalThis.fetch=original;Object.defineProperty(globalThis,'sessionStorage',{configurable:true,value:storage});});
+ const pending=new PendingIntents();for(const token of ['existing-token','expired-token'])await assert.rejects(()=>supportFetch('/support','/leads',{method:'POST',body:'{}'},()=>token,pending,undefined,true),/pending/);
+ assert.equal(seen[0].headers['Idempotency-Key'],seen[1].headers['Idempotency-Key']);for(const request of seen){assert.equal(request.credentials,'omit');assert.equal(request.headers.Authorization,undefined);assert.equal(request.headers['x-support-guest-token'],'public-proof');assert.equal(request.headers['x-support-require-customer'],undefined);}
+});

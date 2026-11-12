@@ -41,6 +41,10 @@ export interface SupportLauncherProps {
    * (escalation happens inside Ask a question — no separate Contact form).
    */
   audience?: "app" | "public";
+  /** Host integration requires a stable authenticated user.id before submitting. Default preserves standalone behavior. */
+  requireCustomer?: boolean;
+  /** Explicit public host transport: omit ambient cookies and bearer tokens. Default is unchanged. */
+  guestOnly?: boolean;
   /**
    * When false, no floating bubble — open via `legalai:open-support` or
    * `renderTrigger` (Lex chat header uses a Help button instead of a FAB).
@@ -145,8 +149,8 @@ const shell: CSSProperties = {
 
 export function SupportLauncher(props: SupportLauncherProps) {
   // The component itself owns isolation; hosts need not know to add a React key.
-  const identity=props.user?.id?`user:${props.user.id}`:props.getAccessToken?.()?.trim()||'guest';
-  return <SupportLauncherSession key={JSON.stringify([normalizeApiBase(props.apiBase),identity,props.audience])} {...props} />;
+  const identity=props.guestOnly?'guest':props.user?.id?`user:${props.user.id}`:props.getAccessToken?.()?.trim()||'guest';
+  return <SupportLauncherSession key={JSON.stringify([normalizeApiBase(props.apiBase),identity,props.audience,props.requireCustomer,props.guestOnly])} {...props} />;
 }
 
 function SupportLauncherSession(props: SupportLauncherProps) {
@@ -158,6 +162,8 @@ function SupportLauncherSession(props: SupportLauncherProps) {
     offset,
     mode = "bubble",
     audience = "app",
+    requireCustomer = false,
+    guestOnly = false,
     showTrigger = true,
     renderTrigger,
     className,
@@ -175,14 +181,15 @@ function SupportLauncherSession(props: SupportLauncherProps) {
   const fetchApi = useCallback(async <T,>(path:string,init?:RequestInit):Promise<T>=>{
     const signal=clientAbort.current.signal;
     try {
-      const result=await supportFetch<T>(apiBase,path,{...init,signal},getAccessToken,pendingIntents.current,user?.id);
+      if(requireCustomer&&!user?.id && init?.method && !['GET','HEAD'].includes(init.method.toUpperCase()))throw Object.assign(new Error('Please wait for your account to finish signing in.'),{code:'customer_identity_required'});
+      const result=await supportFetch<T>(apiBase,path,{...init,signal},getAccessToken,pendingIntents.current,user?.id||(requireCustomer?'unresolved-customer':undefined),guestOnly);
       if(signal.aborted)throw new DOMException('Support client scope changed','AbortError');
       return result;
     } catch(err:any) {
       if(!signal.aborted&&err?.code==='support_pending')setSubmission({status:'pending',receiptId:err.receiptId,retryPaused:Boolean(err.retryPaused)});
       throw err;
     }
-  },[apiBase,getAccessToken,user?.id]);
+  },[apiBase,getAccessToken,user?.id,requireCustomer,guestOnly]);
 
 
   const accent = brand?.accent ?? DEFAULT_ACCENT;
@@ -197,7 +204,6 @@ function SupportLauncherSession(props: SupportLauncherProps) {
   const [open, setOpen] = useState(mode === "page");
   const [view, setView] = useState<View>(isPublic ? { name: "gate" } : { name: "home" });
   const [draft, setDraft] = useState("");
-  const [chatFailed,setChatFailed]=useState(false);
   const [supportMessages, setSupportMessages] = useState<ChatBubble[]>([]);
   const [supportTicketId, setSupportTicketId] = useState<string | null>(null);
   const [bugTitle, setBugTitle] = useState("");
@@ -305,7 +311,7 @@ function SupportLauncherSession(props: SupportLauncherProps) {
       return;
     }
     const leadBody=JSON.stringify({name:gateName.trim(),email:gateEmail.trim(),...(gatePhone.trim()?{phone:gatePhone.trim()}:{}),marketingOptIn:gateMarketing,source:'public_launcher',consentText:marketingLabel});
-    const retainedLead=hasRetainedSupportIntent(apiBase,'/leads',{method:'POST',body:leadBody},pendingIntents.current,getAccessToken,user?.id);
+    const retainedLead=hasRetainedSupportIntent(apiBase,'/leads',{method:'POST',body:leadBody},pendingIntents.current,guestOnly?undefined:getAccessToken,guestOnly?undefined:user?.id);
     setSending(true);
     setError(null);
     try {
@@ -499,7 +505,6 @@ function SupportLauncherSession(props: SupportLauncherProps) {
   }, [view, thread, openThread]);
 
   const sendSupportChat = async (event?: FormEvent) => {
-    setChatFailed(false);
     event?.preventDefault();
     const message = draft.trim();
     if (!message || sending) return;
@@ -574,7 +579,7 @@ function SupportLauncherSession(props: SupportLauncherProps) {
       if(isPublic && (err as {code?:string}).code === 'guest_session_required') {
         guestResume.current=true;setLeadId(null);setDraft(message);setView({name:'gate'});
         setError('Your contact session expired. Confirm your contact details to continue.');
-      } else {setChatFailed(!supportTicketId && (err as {code?:string}).code!=="support_pending");setError(err instanceof Error ? err.message : "Chat failed");}
+      } else {setError(err instanceof Error ? err.message : "Chat failed");}
     } finally {
       setSending(false);
     }
@@ -1079,12 +1084,6 @@ function SupportLauncherSession(props: SupportLauncherProps) {
                 </div>
               ) : null}
             </div>
-            {chatFailed && draft.trim() ? <button type="button" disabled={sending} onClick={async()=>{
-              setSending(true);setError(null);
-              try {const result=await fetchApi<{ticket?:TicketSummary}>('/tickets',{method:'POST',body:JSON.stringify({kind:'support',subject:draft.trim().slice(0,120),body:draft.trim(),...(!user?.id?{guestEmail}: {})})});
-                if(result.ticket){setSubmittedTicket(result.ticket);setDraft('');setView({name:'home'});}
-              }catch(err){setError(err instanceof Error?err.message:'Submission failed');}finally{setSending(false);}
-            }}>Send as support ticket</button> : null}
             <form onSubmit={sendSupportChat} style={{ display: "flex", gap: 8 }}>
               <input
                 value={draft}
