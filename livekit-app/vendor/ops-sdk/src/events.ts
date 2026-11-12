@@ -23,6 +23,9 @@ export interface BillingFact {
   revenueStream?: 'usage_topup' | 'annual_deferred' | 'subscription';
   apiVersion?: string;
   description?: string;
+  /** Provider linkage is evidence, never equivalence between financial effects. */
+  relatedPaymentId?: string;
+  relatedChargeId?: string;
   /** Only cumulative refunds use this: monotonic charge-level totals, not per-webhook amounts. */
   refundChargeId?: string;
   cumulativeRefundMinor?: string;
@@ -117,6 +120,14 @@ export function stripeBusinessEvent(businessId: string, event: any): BusinessEve
     gross = Number(obj.amount);
     factId = `payout:${obj.id}`;
   } else return null;
+  const isSale = eventType === 'charge.succeeded' || eventType === 'invoice.paid';
+  const relatedChargeId = refundChargeId || id(obj.charge) || id(obj.payment_intent?.latest_charge);
+  const equivalentAliases = refundChargeId ? [event.id, `refund:${refundChargeId}`] : [event.id, obj.id];
+  if (isSale) {
+    if (payment) equivalentAliases.push(`payment:${payment}`);
+    const invoice = event.type === 'invoice.paid' ? obj.id : id(obj.invoice);
+    if (invoice) equivalentAliases.push(`invoice:${invoice}`);
+  }
   return {
     schemaVersion: 1,
     eventId: event.id,
@@ -132,7 +143,9 @@ export function stripeBusinessEvent(businessId: string, event: any): BusinessEve
       grossMinor: minor(gross),
       taxMinor: minor(tax),
       feeStatus: 'unknown',
-      aliases: [event.id, obj.id, ...(payment ? [`payment:${payment}`] : []), ...(event.type === 'invoice.paid' ? [`invoice:${obj.id}`] : id(obj.invoice) ? [`invoice:${id(obj.invoice)}`] : [])],
+      aliases: equivalentAliases,
+      ...(payment ? { relatedPaymentId: payment } : {}),
+      ...(relatedChargeId ? { relatedChargeId } : {}),
       apiVersion: event.api_version || 'unknown',
       ...(refundChargeId ? {
         refundChargeId,

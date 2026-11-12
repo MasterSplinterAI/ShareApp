@@ -1,13 +1,13 @@
 {
   "namespace": "@rhule/ops-sdk",
   "contractVersion": "1.0.0",
-  "sourceCommit": "6cb192e4ef58933783ee184b1000d35234367b0e",
+  "sourceCommit": "2552e2718a45c368af4757b6c285235db077a2cc",
   "developmentOnly": false,
   "files": {
     "package.json": "78aa788f9ad87b521780e11b5a4ec5f6968aa87d1ee564bd2969a40f7543b1df",
     "scripts/build.mjs": "4f914ac681030d179a1580ae9639270480aca40270dee7e3c7e7443cb04860b3",
     "src/eventOutbox.ts": "cb1dc765a6ea77edc6ba257ec7c8a7e399b0ef734ec06302e95609ee76168895",
-    "src/events.ts": "a6bb14cbc35679496faff0e1f045535829ceac1e4ed4520527a325f1485aa9be",
+    "src/events.ts": "fb66139cf65208b90149e518fc282bb18a6b094878157cb61d546ef6ce3d65c8",
     "src/index.ts": "7275fd0cc75d1627f69358e80afeb8ac972e90313f2e83e2ffc1fc88b34db876",
     "src/supportAcceptance.ts": "41412073595e12f702390463a1967bf74958a0655cee921c57954f9ff0cee29f",
     "src/supportAuthority.ts": "d919f11e80eb665196d4602259b062043cd9f1c65b60d759cf02be88fb97ff77",
@@ -18,5 +18,5 @@
     "src/supportRestore.ts": "cbb1e1d67230a8c2f3c1596d6c630f0b928d54f2ba626bcc935cb3130aa4cc83",
     "tsconfig.json": "ae4a13267ca7ed4650344529e08bc96340c2d67eb31cf6d5a4576a567ec0d226"
   },
-  "contentHash": "845ba486776c2e0f9d1af7824eaa9f65b580846f73e15aa05d79492403491b83"
+  "contentHash": "2720699c3a4df528b5b8c572ea8ed6f3242733c63554b38e12f945be243b3402"
 }
