@@ -1,5 +1,6 @@
 import type { BusinessEvent, BusinessEventReceipt } from './events.js';
 export * from './events.js';
+export * from './marketingDelegation.js';
 import { createSupportGateway, type SupportGatewayOptions } from './supportGateway.js';
 export * from './supportGateway.js';
 export type OpsBusinessUnit = "legalai" | "lalia" | "metalarb" | "shared_corporate" | (string & {});

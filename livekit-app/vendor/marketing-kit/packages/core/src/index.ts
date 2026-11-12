@@ -12,3 +12,4 @@ export * from "./consentPolicy.js";
 export * from './hostConsent.js';
 export * from './databaseAdapters.js';
 export * from './consentReporting.js';
+export * from './authorityTransfer.js';

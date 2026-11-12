@@ -161,6 +161,18 @@ export function buildMarketingSchemaStatements(prefix = DEFAULT_MARKETING_TABLE_
       UNIQUE (tenant_id, email)
     )
     `,
+    `CREATE TABLE IF NOT EXISTS ${p}execution_approvals (
+      tenant_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      actor_json TEXT NOT NULL,
+      content_hash TEXT NOT NULL,
+      PRIMARY KEY (tenant_id, action, resource_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS ${p}delegation_nonces (
+      nonce TEXT PRIMARY KEY,
+      expires_at BIGINT NOT NULL
+    )`,
   ];
 }
 

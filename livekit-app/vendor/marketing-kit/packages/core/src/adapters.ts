@@ -42,6 +42,20 @@ export interface MarketingAuthUser {
   email?: string;
   name?: string;
   role: "user" | "admin" | "ops";
+  revision?: number;
+  origin?: 'opshub' | 'host';
+}
+
+export type MarketingOperation = 'marketing.read' | 'marketing.edit' | 'marketing.publish' | 'marketing.send';
+
+export interface MarketingOperationRequest {
+  req: any;
+  tenantId: string;
+  method: string;
+  path: string;
+  body: unknown;
+  action: MarketingOperation;
+  resource: string;
 }
 
 export interface MarketingEmailAdapter {
@@ -91,6 +105,11 @@ export interface CreateMarketingRouterOptions {
   email?: MarketingEmailAdapter;
   codebase?: MarketingCodebaseAdapter;
   resolveUser?: (req: any) => Promise<MarketingAuthUser | null> | MarketingAuthUser | null;
+  resolveDelegatedUser?: (request: MarketingOperationRequest) => Promise<MarketingAuthUser | null>;
+  authorizeActor?: (actor: MarketingAuthUser, tenantId: string, action: MarketingOperation, resource: string) => Promise<boolean>;
+  isWriteAuthority?: (tenantId: string) => Promise<boolean>;
+  forwardVerifiedProviderEvent?: (tenantId: string, event: unknown) => Promise<boolean>;
+  publicHeroImageUrl?: (url: string) => string;
   /** Service keys accepted via `X-Ops-Key` (ops.lalia.cloud federation). Compared in constant time. */
   opsKeys?: () => Array<string | null | undefined> | Promise<Array<string | null | undefined>>;
   getProductContext?: (tenantId: string) => Promise<Partial<MarketingProductContextSnapshot>>;

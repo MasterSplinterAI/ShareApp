@@ -1,4 +1,5 @@
 const {consentRuntime,consentDatabase,initializeConsent}=require('./consent');
+const marketingAuthority = require('./marketingAuthority');
 /**
  * ShareApp host wiring for @rhule/marketing-kit.
  * Sibling to supportKit — Admin Marketing console + public SEO + Resend webhooks.
@@ -8,6 +9,7 @@ const fs = require('fs');
 const db = require('../db/v2Database');
 const { aiEnabled, callSupportLlm } = require('./supportAgent/llm');
 const { getEmailSettings } = require('./v2EmailSettings');
+const { isSuperadminEmail } = require('./v2Superadmin');
 const {
   getResolvedMarketingEmailConfig,
 } = require('./v2MarketingEmailSettings');
@@ -398,9 +400,17 @@ function getLaliaMarketingKit() {
         email: u.email || undefined,
         name: u.name || undefined,
         role: u.role === 'admin' ? 'admin' : 'user',
+        origin: 'host',
       };
     },
-    opsKeys: () => [process.env.MARKETING_FEDERATION_KEY],
+    authorizeActor: async (actor, tenantId) => {
+      if (actor.origin !== 'host' || tenantId !== TENANT_ID) return false;
+      const user = await db.get('SELECT email,disabled_at FROM v2_users WHERE id=?', [actor.id]);
+      return !!user && !user.disabled_at && isSuperadminEmail(user.email);
+    },
+    isWriteAuthority: async tenant => tenant === TENANT_ID && (await marketingAuthority.authority())?.mode === 'legacy',
+    publicHeroImageUrl: marketingAuthority.cachedHeroImageUrl,
+    forwardVerifiedProviderEvent: marketingAuthority.forwardVerifiedProviderEvent,
     resendWebhookSecret: async () => (await getResolvedMarketingEmailConfig()).webhookSecret,
     getProductContext: productContext,
     listSegments,
@@ -427,12 +437,17 @@ async function initLaliaMarketing() {
   const kit = getLaliaMarketingKit();
   await kit.ensureSchema();
   await initializeConsent();
+  await marketingAuthority.initializeMarketingAuthority();
+  await require('./marketingPublicPages').ensureStaticBaseline();
   const seeds = loadSeedPosts();
-  if (seeds.length) {
+  if (seeds.length && (await marketingAuthority.authority())?.mode === 'legacy') {
     const seeded = await kit.seedPosts(TENANT_ID, seeds);
     if (seeded) console.log(`[marketing] seeded ${seeded} journal posts`);
   }
-  kit.startScheduler(60_000);
+  if (process.env.NODE_ENV !== 'test') {
+    kit.startScheduler(60_000);
+    marketingAuthority.startMarketingProjectionRefresh();
+  }
   return kit;
 }
 

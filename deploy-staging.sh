@@ -146,6 +146,22 @@ if [ "$NEED_MARKETING_PACKAGE" = true ]; then
 fi
 # END MARKETING_RUNTIME_PREPARE
 
+NEED_SHARED_RUNTIME=false
+if [ -f "$TEMP_DIR/livekit-app/vendor/ops-sdk/manifest.json" ]; then
+  if [ ! -f "$VENDOR_DIR/ops-sdk/dist/index.cjs" ] \
+     || [ ! -f "$VENDOR_DIR/support-kit/packages/core/dist/index.cjs" ] \
+     || ! cmp -s "$TEMP_DIR/livekit-app/vendor/ops-sdk/manifest.json" "$VENDOR_DIR/ops-sdk/manifest.json" \
+     || ! cmp -s "$TEMP_DIR/livekit-app/vendor/support-kit/manifest.json" "$VENDOR_DIR/support-kit/manifest.json"; then
+    NEED_SHARED_RUNTIME=true
+    (
+      cd "$TEMP_DIR/livekit-app/backend"
+      npm ci --include=dev --prefer-offline --no-audit --silent
+      npm run build:ops-sdk
+      npm run build:support-kit
+    )
+  fi
+fi
+
 sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR"
 
 # ---------- Vendor (support-kit file: deps for backend + frontend build) ----------
@@ -154,6 +170,8 @@ if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
   sudo rsync -a --delete \
     --exclude 'node_modules' \
     --exclude 'marketing-kit' \
+    --exclude 'ops-sdk/dist' \
+    --exclude 'support-kit/packages/*/dist' \
     "$TEMP_DIR/livekit-app/vendor/" "$VENDOR_DIR/"
   # Nested file: deps resolve from each package dir when Node loads via backend/frontend symlinks
   for pkg in shared core channels react; do
@@ -162,6 +180,13 @@ if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
       echo "npm install vendor/support-kit/packages/$pkg..."
       (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
     fi
+  done
+fi
+
+if [ "$NEED_SHARED_RUNTIME" = true ]; then
+  sudo rsync -a "$TEMP_DIR/livekit-app/vendor/ops-sdk/dist/" "$VENDOR_DIR/ops-sdk/dist/"
+  for pkg in shared core channels react; do
+    sudo rsync -a "$TEMP_DIR/livekit-app/vendor/support-kit/packages/$pkg/dist/" "$VENDOR_DIR/support-kit/packages/$pkg/dist/"
   done
 fi
 
@@ -302,6 +327,9 @@ fi
 # BEGIN MARKETING_RUNTIME_SMOKE
 if [ -f "$VENDOR_DIR/marketing-kit/manifest.json" ]; then
   (cd "$BACKEND_DIR" && node -e 'const core=require("@rhule/marketing-core"); const shared=require("@rhule/marketing-shared"); if(typeof core.createMarketingKit!=="function" || !Object.keys(shared).length) throw Error("Marketing runtime import failed");')
+fi
+if [ -f "$VENDOR_DIR/ops-sdk/manifest.json" ]; then
+  (cd "$BACKEND_DIR" && node -e 'if(typeof require("@rhule/ops-sdk").createSupportGateway!=="function" || typeof require("@quill/support-core").ensureSchema!=="function") throw Error("Shared runtime import failed");')
 fi
 # END MARKETING_RUNTIME_SMOKE
 

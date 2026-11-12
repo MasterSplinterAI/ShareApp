@@ -1867,6 +1867,9 @@ function AnalyticsPanel({ call, isAll, tenants, apiBase, getAccessToken, request
 
   return (
     <div style={{ display: "grid", gap: 12 }} data-testid="marketing-analytics">
+      {isAll && perTenant.some(row => row.error) && (
+        <p role="status">Totals cover the businesses that responded. Unavailable sources are listed below.</p>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
         <Stat label="Published posts" value={total.published} hint={`${total.drafts} in review`} />
         <Stat label="Emails sent" value={total.sent.toLocaleString()} hint={`${total.delivered.toLocaleString()} delivered`} />

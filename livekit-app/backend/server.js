@@ -168,16 +168,19 @@ app.use('/api/translate', translateLimiter, translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
 app.post('/api/consent/eligibility',require('./lib/consent').consentEligibilityHandler);
+app.post('/api/marketing/transfer',require('./lib/marketingAuthority').marketingTransferHandler);
 
 // @rhule/marketing-kit — Admin console API + public SEO + Resend webhooks
 try {
   const { marketingKitEnabled, getLaliaMarketingKit } = require('./lib/marketingKit');
   if (marketingKitEnabled()) {
     const marketing = getLaliaMarketingKit();
+    const pages = require('./lib/marketingPublicPages').publicMarketingHandlers(marketing);
+    app.post('/marketing/subscribe',require('./lib/marketingAuthority').forwardMarketingSubscribe);
     app.use('/marketing', (req, res, next) => void marketing.handler(req, res, next));
-    app.get('/blog', (req, res, next) => void marketing.publicHandlers.blogIndex(req, res, next));
-    app.get('/blog/:slug', (req, res, next) => void marketing.publicHandlers.blogPost(req, res, next));
-    app.get('/sitemap.xml', (req, res, next) => void marketing.publicHandlers.sitemap(req, res, next));
+    app.get(['/blog','/blog/index.html'], (req, res, next) => void pages.blogIndex(req, res, next));
+    app.get(['/blog/:slug','/blog/:slug/index.html'], (req, res, next) => void pages.blogPost(req, res, next));
+    app.get('/sitemap.xml', (req, res, next) => void pages.sitemap(req, res, next));
     console.log('[marketing] kit mounted (/marketing, /blog, /sitemap.xml)');
   }
 } catch (e) {

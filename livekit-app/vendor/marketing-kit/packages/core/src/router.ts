@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type {
   AudienceSegmentInfo,
   BlogGenerationJob,
@@ -17,6 +17,7 @@ import type {
   MarketingBrandConfig,
   MarketingCustomSegmentFilter,
   MarketingLlmAdapter,
+  MarketingOperation,
 } from "./adapters.js";
 import { buildDefaultStudioCardSpec, renderEditorialSvgArtwork } from "./artwork.js";
 import { buildResponsiveEmailHtml, interpolateEmailVariables } from "./emailRenderer.js";
@@ -49,12 +50,14 @@ interface RouteCtx {
   tenantId: string;
   brand: MarketingBrandConfig;
   user: MarketingAuthUser | null;
+  action: MarketingOperation;
 }
 
 type Handler = (ctx: RouteCtx) => Promise<unknown> | unknown;
 
 interface Route {
   method: string;
+  path: string;
   pattern: RegExp;
   keys: string[];
   handler: Handler;
@@ -66,6 +69,22 @@ class HttpError extends Error {
   constructor(public status: number, message: string) {
     super(message);
   }
+}
+
+function operation(method: string, path: string): MarketingOperation {
+  if (method === 'GET' || method === 'HEAD') return 'marketing.read';
+  if (/\/(publish|unpublish)$/.test(path)) return 'marketing.publish';
+  if (/\/(send|test-send)$/.test(path)) return 'marketing.send';
+  return 'marketing.edit';
+}
+
+function executionContent(record: MarketingPost | EmailCampaign): string {
+  const content = Object.fromEntries(Object.entries(record).filter(([key]) => ![
+    'status', 'updatedAt', 'publishedAt', 'scheduledAt', 'sentAt', 'lastError',
+    'recipientCount', 'sentCount', 'deliveredCount', 'openedCount', 'clickedCount',
+    'bouncedCount', 'complainedCount', 'unsubscribedCount',
+  ].includes(key)));
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex');
 }
 
 export const KIT_SEGMENTS: AudienceSegmentInfo[] = [
@@ -207,6 +226,7 @@ export interface MarketingKit {
   ensureSchema: () => Promise<void>;
   seedPosts: (tenantId: string, posts: Array<Partial<MarketingPost> & { title: string; slug: string }>) => Promise<number>;
   runScheduledWork: () => Promise<{ campaignsSent: number; postsPublished: number }>;
+  applyVerifiedProviderEvent: (tenantId: string, event: unknown) => Promise<unknown>;
   startScheduler: (intervalMs?: number) => () => void;
 }
 
@@ -557,13 +577,39 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     return { firstName: "Alex", name: "Alex Rivera", email: "alex@example.com", matterTitle: "Smith v. Landlord Holdings", proposedDocsList: "- Answer to Complaint\n- Motion to Dismiss", unlockUrl: "#" };
   }
 
+  async function saveExecutionApproval(tenantId: string, action: MarketingOperation, record: MarketingPost | EmailCampaign, actor: MarketingAuthUser | null) {
+    if (!opts.authorizeActor || !actor) return;
+    await opts.db.run(`INSERT INTO mkt_execution_approvals (tenant_id,action,resource_id,actor_json,content_hash)
+      VALUES (?,?,?,?,?) ON CONFLICT (tenant_id,action,resource_id) DO UPDATE SET
+      actor_json=excluded.actor_json,content_hash=excluded.content_hash`,
+    [tenantId, action, record.id, JSON.stringify(actor), executionContent(record)]);
+  }
+
+  async function mayExecute(tenantId: string, action: MarketingOperation, record: MarketingPost | EmailCampaign) {
+    if (!opts.authorizeActor) return true;
+    try {
+      const approval = await opts.db.get<{actor_json: string; content_hash: string}>(
+        'SELECT actor_json,content_hash FROM mkt_execution_approvals WHERE tenant_id=? AND action=? AND resource_id=?',
+        [tenantId, action, record.id],
+      );
+      if (!approval || approval.content_hash !== executionContent(record)) return false;
+      return await opts.authorizeActor(JSON.parse(approval.actor_json), tenantId, action, record.id);
+    } catch {
+      return false;
+    }
+  }
+
   async function sendCampaign(tenantId: string, campaignId: string): Promise<EmailCampaign | null> {
+    if (opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) return null;
     const campaign = await store.getCampaign(tenantId, campaignId);
     if (!campaign) throw new HttpError(404, "Campaign not found");
     const claimed = await store.claimCampaignForSend(campaignId, ["draft", "approved", "scheduled", "failed", "paused"]);
     if (!claimed) throw new HttpError(409, "Campaign is already sending or sent");
     const brand = brandFor(tenantId);
     try {
+      if (!(await mayExecute(tenantId, 'marketing.send', campaign))) {
+        return store.updateCampaign(tenantId, campaignId, { status: 'paused', lastError: 'Sending requires a current operator approval.' });
+      }
       if (!opts.email) throw new Error("No email provider configured");
       const contacts = await resolveContacts(tenantId, campaign.segmentId, (campaign.segmentFilter || null) as MarketingCustomSegmentFilter | null);
       const seen = new Set<string>();
@@ -595,6 +641,12 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       // Each recipient is authorized immediately before its provider request. sendBatch receives
       // a singleton so no earlier positive decision survives later authorization I/O in a batch.
       for (const message of messages) {
+        if (opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) {
+          return store.updateCampaign(tenantId, campaignId, { status: 'paused', lastError: 'Marketing authority changed.' });
+        }
+        if (!(await mayExecute(tenantId, 'marketing.send', campaign))) {
+          return store.updateCampaign(tenantId, campaignId, { status: 'paused', ...(await store.recipientProgress(campaignId)), lastError: 'Sending requires a current operator approval.' });
+        }
         const scope = { businessId: tenantId, recipient: message.to, channel: 'email', purpose: 'marketing' };
         const decision = opts.consent ? await opts.consent.authorize(scope, campaignId) : {status:'paused' as const};
         if (decision.status === 'paused') {
@@ -628,11 +680,15 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
 
   async function runScheduledWork(): Promise<{ campaignsSent: number; postsPublished: number }> {
     await ensureSchema();
+    const active = new Set<string>();
+    for (const tenant of knownTenants()) if (!opts.isWriteAuthority || await opts.isWriteAuthority(tenant)) active.add(tenant);
+    if (!active.size) return { campaignsSent: 0, postsPublished: 0 };
     const runningPostIds = new Set(Array.from(jobs.values()).filter((j) => j.status === "running").flatMap((j) => j.postIds));
     const staleBefore = new Date(Date.now() - Math.max(llmTimeoutMs * 3, 15 * 60_000)).toISOString();
     await store.recoverStaleGenerating(staleBefore, Array.from(runningPostIds));
     let campaignsSent = 0;
     for (const c of await store.listDueCampaigns()) {
+      if (!active.has(c.tenantId)) continue;
       try {
         const result = await sendCampaign(c.tenantId, c.id);
         if (result?.status === 'sent') campaignsSent += 1;
@@ -641,10 +697,15 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       }
     }
     let postsPublished = 0;
-    for (const tenantId of knownTenants()) {
+    for (const tenantId of active) {
       const scheduled = await store.listPosts(tenantId, { status: "scheduled", limit: 50 });
       for (const p of scheduled) {
         if (p.publishedAt && p.publishedAt <= nowIso()) {
+          if (opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) break;
+          if (!(await mayExecute(tenantId, 'marketing.publish', p))) {
+            await store.updatePost(tenantId, p.id, { status: 'approved', publishedAt: null, generationError: 'Publishing requires a current operator approval.' });
+            continue;
+          }
           await store.updatePost(tenantId, p.id, { status: "published" });
           postsPublished += 1;
         }
@@ -658,12 +719,16 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   const routes: Route[] = [];
   const add = (method: string, path: string, handler: Handler, flags: { public?: boolean; allowAllTenant?: boolean } = {}) => {
     const { pattern, keys } = compilePath(path);
-    routes.push({ method, pattern, keys, handler, ...flags });
+    routes.push({ method, path, pattern, keys, handler, ...flags });
   };
 
   const requirePost = async (ctx: RouteCtx) => {
     const post = await store.getPost(ctx.tenantId, ctx.params.id);
     if (!post) throw new HttpError(404, "Post not found");
+    if (post.status === 'published' && ctx.action === 'marketing.edit' && opts.authorizeActor &&
+        (!ctx.user || !(await opts.authorizeActor(ctx.user, ctx.tenantId, 'marketing.publish', post.id)))) {
+      throw new HttpError(403, 'Publishing access is required to change a published post');
+    }
     return post;
   };
   const requireCampaign = async (ctx: RouteCtx) => {
@@ -914,6 +979,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     if (post.status === "generating") throw new HttpError(409, "Post is still generating");
     const publishAt = ctx.body?.publishAt ? new Date(String(ctx.body.publishAt)) : null;
     if (publishAt && !Number.isNaN(publishAt.getTime()) && publishAt.getTime() > Date.now() + 60_000) {
+      await saveExecutionApproval(ctx.tenantId, 'marketing.publish', { ...post, artworkStatus: 'approved' }, ctx.user);
       return { post: await store.updatePost(ctx.tenantId, post.id, { status: "scheduled", publishedAt: publishAt.toISOString(), artworkStatus: "approved" }) };
     }
     return { post: await store.updatePost(ctx.tenantId, post.id, { status: "published", publishedAt: post.publishedAt && post.status === "published" ? post.publishedAt : nowIso(), artworkStatus: "approved" }) };
@@ -1109,12 +1175,12 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   add("POST", "/email/campaigns/:id/test-send", async (ctx) => {
     const c = await requireCampaign(ctx);
     if (!opts.email) throw new HttpError(503, "No email provider configured");
-    const to = String(ctx.body?.to || ctx.user?.email || headerValue(ctx.req, "x-marketing-actor-email") || "").trim().toLowerCase();
+    const to = String(ctx.body?.to || ctx.user?.email || "").trim().toLowerCase();
     if (!EMAIL_RE.test(to)) throw new HttpError(400, "A valid test recipient is required");
     const contact = await sampleContact(ctx.tenantId, c.segmentId, (c.segmentFilter || null) as MarketingCustomSegmentFilter | null);
     const vars = contactVars({ ...contact, email: to }, ctx.brand, `${publicOrigin(ctx.brand)}${mountPath}/unsubscribe?token=test`);
     const decision = opts.consent ? await opts.consent.authorize({businessId:ctx.tenantId,recipient:to,channel:'email',purpose:'marketing'},c.id) : {status:'paused'};
-    if (decision.status !== 'eligible') throw new HttpError(409,'Test recipient is not currently eligible');
+    if (decision.status !== 'eligible' || !('expiresAt' in decision) || Date.now() > Date.parse(decision.expiresAt)) throw new HttpError(409,'Test recipient is not currently eligible');
     const result = await opts.email.sendEmail({
       to,
       subject: `[Test] ${interpolateEmailVariables(c.subject, vars, { escape: false })}`,
@@ -1139,6 +1205,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       throw new HttpError(409, "Approve the campaign first, or pass confirm: true");
     }
     const scheduledAt = ctx.body?.scheduledAt ? new Date(String(ctx.body.scheduledAt)) : null;
+    await saveExecutionApproval(ctx.tenantId, 'marketing.send', c, ctx.user);
     if (scheduledAt && !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now() + 60_000) {
       return { campaign: await store.updateCampaign(ctx.tenantId, c.id, { status: "scheduled", scheduledAt: scheduledAt.toISOString() }) };
     }
@@ -1271,6 +1338,25 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   add("GET", "/unsubscribe", (ctx) => unsubscribe(ctx, false), { public: true });
   add("POST", "/unsubscribe", (ctx) => unsubscribe(ctx, true), { public: true });
 
+  async function applyVerifiedProviderEvent(tenantId: string, input: unknown) {
+    const event = input as { type?: string; data?: { email_id?: string } };
+    const messageId = String(event?.data?.email_id || '');
+    const map: Record<string, 'delivered' | 'opened' | 'clicked' | 'bounced' | 'complained'> = {
+      'email.delivered': 'delivered', 'email.opened': 'opened', 'email.clicked': 'clicked',
+      'email.bounced': 'bounced', 'email.complained': 'complained',
+    };
+    const kind = map[String(event?.type || '')];
+    if (!kind || !messageId) return { ok: true, ignored: true };
+    const recipient = await store.recipientEmailForMessage(messageId);
+    if (!recipient || recipient.tenantId !== tenantId) return { ok: true, ignored: true };
+    const applied = await store.applyDeliveryEvent(messageId, kind);
+    if (kind === 'bounced' || kind === 'complained') {
+      await store.suppressEmail(tenantId, recipient.email);
+      if (opts.consent) await opts.consent.choose({ id:`provider:${messageId}:${kind}`, sourceId:`provider:${messageId}:${kind}`, sourceRevision:'1', scope:{businessId:tenantId,recipient:recipient.email,channel:'email',purpose:'marketing'},granted:false,evidence:null,permanent:true });
+    }
+    return { ok: true, applied };
+  }
+
   add(
     "POST",
     "/webhooks/resend",
@@ -1293,25 +1379,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       } catch {
         throw new HttpError(400, "Invalid JSON");
       }
-      const messageId = String(event?.data?.email_id || "");
-      const map: Record<string, "delivered" | "opened" | "clicked" | "bounced" | "complained"> = {
-        "email.delivered": "delivered",
-        "email.opened": "opened",
-        "email.clicked": "clicked",
-        "email.bounced": "bounced",
-        "email.complained": "complained",
-      };
-      const kind = map[String(event?.type || "")];
-      if (!kind || !messageId) return { ok: true, ignored: true };
-      const applied = await store.applyDeliveryEvent(messageId, kind);
-      if (kind === "bounced" || kind === "complained") {
-        const rcpt = await store.recipientEmailForMessage(messageId);
-        if (rcpt) {
-          await store.suppressEmail(rcpt.tenantId, rcpt.email);
-          if (opts.consent) await opts.consent.choose({id:`provider:${messageId}:${kind}`,sourceId:`provider:${messageId}:${kind}`,sourceRevision:'1',scope:{businessId:rcpt.tenantId,recipient:rcpt.email,channel:'email',purpose:'marketing'},granted:false,evidence:null,permanent:true});
-        }
-      }
-      return { ok: true, applied };
+      if (await opts.forwardVerifiedProviderEvent?.(ctx.tenantId, event)) return { ok: true, forwarded: true };
+      return applyVerifiedProviderEvent(ctx.tenantId,event);
     },
     { public: true },
   );
@@ -1353,10 +1422,6 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     }
     try {
       await ensureSchema();
-      const user = route.public ? null : await authenticate(req);
-      if (!route.public && (!user || (user.role !== "admin" && user.role !== "ops"))) {
-        return sendJson(res, user ? 403 : 401, { error: user ? "Admin access required" : "Authentication required" });
-      }
       if (tenantId === "all" && !route.allowAllTenant) {
         return sendJson(res, 400, { error: "Select a specific tenant for this action" });
       }
@@ -1364,7 +1429,22 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       const params: Record<string, string> = {};
       route.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
       const body = method === "GET" || method === "HEAD" ? {} : await readJsonBody(req);
-      const result = await route.handler({ req, res, params, query: url.searchParams, body, tenantId, brand: brandFor(tenantId === "all" ? opts.tenantId : tenantId), user });
+      const action = operation(method, route.path);
+      const resource = Object.values(params).join('/') || route.path;
+      const delegated = Boolean(headerValue(req, 'x-marketing-credential') || headerValue(req, 'x-marketing-delegation'));
+      const user = route.public ? null : delegated
+        ? await opts.resolveDelegatedUser?.({ req, tenantId, method, path: url.pathname + url.search, body, action, resource }) ?? null
+        : await authenticate(req);
+      if (!route.public && (!user || (user.role !== 'admin' && user.role !== 'ops'))) {
+        return sendJson(res, user || delegated ? 403 : 401, { error: 'Marketing access required' });
+      }
+      if (!route.public && user && opts.authorizeActor && !(await opts.authorizeActor(user, tenantId, action, resource))) {
+        return sendJson(res, 403, { error: 'Marketing operation denied' });
+      }
+      if (!route.public && method !== 'GET' && opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) {
+        return sendJson(res, 409, { error: 'Marketing is read only here. Open the active Marketing workspace.' });
+      }
+      const result = await route.handler({ req, res, params, query: url.searchParams, body, tenantId, brand: brandFor(tenantId === "all" ? opts.tenantId : tenantId), user, action });
       if (result !== undefined && !res.writableEnded) sendJson(res, res.statusCode && res.statusCode !== 200 ? res.statusCode : 200, result);
     } catch (err: any) {
       if (res.writableEnded) return;
@@ -1374,12 +1454,14 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     }
   };
 
+  const publicPost = (post: MarketingPost): MarketingPost => opts.publicHeroImageUrl && post.heroImageUrl
+    ? { ...post, heroImageUrl: opts.publicHeroImageUrl(post.heroImageUrl) } : post;
   const publicHandlers: MarketingKit["publicHandlers"] = {
     async blogIndex(_req, res, next) {
       try {
         await ensureSchema();
         const posts = await store.listPublishedPosts(opts.tenantId);
-        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogIndexHtml({ posts, brand: opts.brand }), "public, max-age=300");
+        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogIndexHtml({ posts: posts.map(publicPost), brand: opts.brand }), "public, max-age=300");
       } catch (err) {
         log.error("[marketing-kit] blog index failed", err);
         if (next) next(err);
@@ -1395,7 +1477,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
           return sendText(res, 404, "text/html; charset=utf-8", simplePage(opts.brand, "Article not found", `<p>This article doesn't exist or is no longer published.</p><p><a href="/blog" style="color:#1d4ed8">Browse the journal</a></p>`));
         }
         const related = (await store.listPublishedPosts(opts.tenantId, 6)).filter((p) => p.id !== post.id).slice(0, 3);
-        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogPostHtml({ post, relatedPosts: related, brand: opts.brand }), "public, max-age=300");
+        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogPostHtml({ post: publicPost(post), relatedPosts: related.map(publicPost), brand: opts.brand }), "public, max-age=300");
       } catch (err) {
         log.error("[marketing-kit] blog post failed", err);
         if (next) next(err);
@@ -1441,7 +1523,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     return () => clearInterval(timer);
   }
 
-  return { handler, publicHandlers, store, ensureSchema, seedPosts, runScheduledWork, startScheduler };
+  return { handler, publicHandlers, store, ensureSchema, seedPosts, runScheduledWork, startScheduler, applyVerifiedProviderEvent };
 }
 
 /** Convenience wrapper returning only the request handler. */
