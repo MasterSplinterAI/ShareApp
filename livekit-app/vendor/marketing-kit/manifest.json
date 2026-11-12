@@ -1,0 +1,41 @@
+{
+  "namespace": "@rhule/marketing-*",
+  "contractVersion": "1.0.0",
+  "packageVersions": {
+    "@rhule/marketing-core": "0.1.0",
+    "@rhule/marketing-react": "0.1.0",
+    "@rhule/marketing-shared": "0.1.0"
+  },
+  "sourceCommit": "f9d31e56bf038e16429b306e796b8af3cba9e677",
+  "developmentOnly": false,
+  "contentHash": "b5819a0210d588b9233259de03e1f09259a772521bd4c39d8d3a2424ca55d980",
+  "files": {
+    "packages/core/package.json": "418f4ad2cbc49f90c0046daf29e779479b5d24fa689717ee3b18c0d6508d9a4e",
+    "packages/core/src/adapters.ts": "1b4e55fa04928d09e54bbd4896b8ad704b5b7f6d04333f51755e101ffea9b38e",
+    "packages/core/src/artwork.ts": "070a314c999a224a6dcd82e902a3de61e2cc96ce2391325761dbe73f176014a7",
+    "packages/core/src/emailRenderer.ts": "d4d77617bedd7ad99b890de5174521b0ccaf2279759023f0c699f3089cee840e",
+    "packages/core/src/generation.ts": "216e980dd5aaf299a5e0f468fc93bccefcdd2bf470638d0a3c793bc51293547c",
+    "packages/core/src/index.ts": "b40a820f9c01ab1d3e72499c28d14a82a10e5575947b394048e8a4bfae05ee9c",
+    "packages/core/src/router.test.ts": "a5b69bb494269643d8404a9601edb812e8a49ea3f20ac7c44036b53523f3fc07",
+    "packages/core/src/router.ts": "0b71605196f7c34b000b694031ad037be8f8af1c47aa86c90c095d25fd338ca3",
+    "packages/core/src/schema.ts": "361311c227de11466f8d4976733eebf0a51f92b08ca0949c7175da484797a3a1",
+    "packages/core/src/seoRenderer.ts": "aff1371df7574f289ec03fb32209d25ebd6e438ab40524b16290614bc631ba50",
+    "packages/core/src/store.ts": "0f378bb6e797714e240d8b5e83bceaff8ad94cec793c2b7a7347745a370adccc",
+    "packages/core/tsconfig.json": "08957aa8808e670b09067e1b23daa7e2249b7d142db389a1cea4c46fdcc9f1fe",
+    "packages/react/package.json": "dfb97532647f2ef5444e236685d24a782bc64372aa732e069933ec76a0657ed5",
+    "packages/react/src/MarketingOpsConsole.tsx": "18247c935f602970ceb27a73b68cd37c808df6aa2f5e731ef8ffcfcf92af56c5",
+    "packages/react/src/index.tsx": "e529f9752acfb44c9287331ae86b5f98a12e36c835ca60dfc452c4f80ffba93d",
+    "packages/react/tsconfig.json": "d54a7e900c1664b61b2fc40fa70302d7c75b0d8514a9439a44bfda81439cbf81",
+    "packages/shared/package.json": "36630f47629e64136ccc4b36164cc01bef037a5a79bba6be8fcacbf477a31f89",
+    "packages/shared/src/index.ts": "dcb919a3461b8f679ce22af9db941e7e2d2292ef174f92b48b66cbbf1250b6fe",
+    "packages/shared/tsconfig.json": "8f6e85eeaa8025fe7b2f01763e03f32540d3e2869ae857490d685098460f4e3a",
+    "scripts/build-snapshot.mjs": "546df35e517d3b66a5d06cf64a02e37f1a7c29eaf9036504660c9895331617f9",
+    "tsconfig.base.json": "98b559a2d395a887b094ae7630bed0b9d719b6ecc07ee5b13f30a05e984b527b"
+  },
+  "host": "lalia",
+  "hostFiles": {
+    "packages/core/package-lock.json": "a05bb324ba72e41e2ce076e8a7d2ea157e218f29eb228a422d8ec29826ac5e6f",
+    "packages/react/package-lock.json": "e18a2cdf1724862f0f4ccd39a7315bbf1a6ba539955836dc7d7861daf3a6377f",
+    "packages/shared/package-lock.json": "4eaac0df20c004597579b155fddf2b8aeec7e32f2ac05139e8c3fe7ae7840152"
+  }
+}

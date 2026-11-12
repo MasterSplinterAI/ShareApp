@@ -357,6 +357,7 @@ function getLaliaMarketingKit() {
   if (kitSingleton) return kitSingleton;
 
   const options = {
+    generationProfile: 'lalia',
     tenantId: TENANT_ID,
     db: createSqliteMarketingDb(),
     brand: LALIA_MARKETING_BRAND,

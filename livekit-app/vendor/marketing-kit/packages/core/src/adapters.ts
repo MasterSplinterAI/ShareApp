@@ -1,3 +1,4 @@
+import type { MarketingGenerationProfile } from "./generation.js";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
 import type {
@@ -110,6 +111,20 @@ export interface CreateMarketingRouterOptions {
   llmTimeoutMs?: number;
   /** Max concurrent post generations per batch. Default 3. */
   generationConcurrency?: number;
+  /**
+   * Optional host writing brief (e.g. CONTENT_BRIEF.md) appended to Copilot, Blog Studio,
+   * and email generation system prompts. Same pattern as Support Kit host hints.
+   * Used when no tenant-specific brief is set in `contentBriefsByTenant`.
+   */
+  contentBrief?: string | null;
+  /** Existing product template/guardrail selection. Defaults to Lalia for compatibility. */
+  generationProfile?: MarketingGenerationProfile;
+  generationProfilesByTenant?: Record<string, MarketingGenerationProfile | undefined>;
+  /**
+   * Per-tenant writing briefs (e.g. Lalia vs LexIt). Takes precedence over `contentBrief`
+   * for that tenant; missing tenants fall back to `contentBrief`.
+   */
+  contentBriefsByTenant?: Record<string, string | null | undefined>;
   logger?: Pick<Console, "info" | "warn" | "error">;
 }
 

@@ -214,6 +214,14 @@ export function createMarketingKit(opts: CreateMarketingRouterOptions): Marketin
   const store = new MarketingStore(opts.db);
   const log = opts.logger || console;
   const mountPath = (opts.mountPath ?? "/marketing").replace(/\/$/, "");
+  const defaultContentBrief =
+    typeof opts.contentBrief === "string" && opts.contentBrief.trim() ? opts.contentBrief.trim() : null;
+  const resolveContentBrief = (tenantId: string): string | null => {
+    const byTenant = opts.contentBriefsByTenant?.[tenantId];
+    if (typeof byTenant === "string" && byTenant.trim()) return byTenant.trim();
+    return defaultContentBrief;
+  };
+  const resolveGenerationProfile = (tenantId: string) => opts.generationProfilesByTenant?.[tenantId] ?? opts.generationProfile;
   const jobs = new Map<string, BlogGenerationJob>();
   const subscribeHits = new Map<string, number[]>();
   const contextCache = new Map<string, { at: number; ctx: MarketingProductContextSnapshot }>();
@@ -428,7 +436,16 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   async function generateIntoPost(tenantId: string, postId: string, topic: string, audience: MarketingPost["audience"], instruction: string | undefined, artworkMode: "ai_illustration" | "studio_card") {
     const ctx = await productContext(tenantId);
     const hits = await searchCode(`${topic} ${instruction || ""}`, 5);
-    const { draft, usedFallback, error } = await generatePostDraft({ llm, ctx, hits, topic, audience, instruction });
+    const { draft, usedFallback, error } = await generatePostDraft({
+      llm,
+      ctx,
+      hits,
+      topic,
+      audience,
+      instruction,
+      contentBrief: resolveContentBrief(tenantId),
+      generationProfile: resolveGenerationProfile(tenantId),
+    });
     const slug = await store.uniqueSlug(tenantId, draft.slug, postId);
     let post = await store.updatePost(tenantId, postId, {
       ...draft,
@@ -691,6 +708,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       history,
       message,
       segmentIds: segments.filter((s) => s.id !== "custom").map((s) => s.id),
+      contentBrief: resolveContentBrief(ctx.tenantId),
+      generationProfile: resolveGenerationProfile(ctx.tenantId),
     });
     const assistant = await store.addMessage(ctx.tenantId, "assistant", reply, { actions, sources: hits.map((h) => h.path) });
     return { userMessage, message: assistant };
@@ -709,6 +728,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       audience: ctx.body?.audience,
       theme,
       existingTitles: existing.map((p) => p.title),
+      contentBrief: resolveContentBrief(ctx.tenantId),
+      generationProfile: resolveGenerationProfile(ctx.tenantId),
     });
     return { ideas };
   });
@@ -730,6 +751,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
         audience,
         theme: String(ctx.body?.theme || instruction || ""),
         existingTitles: [...existing.map((p) => p.title), ...topics],
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
       });
       topics = [...topics, ...ideas.map((i) => i.title)];
     }
@@ -792,7 +815,15 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     const product = await productContext(ctx.tenantId);
     let patch: Awaited<ReturnType<typeof rewritePost>> = null;
     try {
-      patch = await rewritePost({ llm, ctx: product, post, instruction, sectionHeading });
+      patch = await rewritePost({
+        llm,
+        ctx: product,
+        post,
+        instruction,
+        sectionHeading,
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
+      });
     } catch (err: any) {
       throw new HttpError(502, `Rewrite failed: ${String(err?.message || err).slice(0, 200)}`);
     }
@@ -931,7 +962,17 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     const segmentId = String(ctx.body?.segmentId || "all_individuals");
     const segments = await listSegments(ctx.tenantId);
     const seg = segments.find((s) => s.id === segmentId);
-    return { ideas: await generateEmailIdeas({ llm, ctx: await productContext(ctx.tenantId), segmentId, segmentLabel: seg?.label || segmentId, goal: String(ctx.body?.goal || "") }) };
+    return {
+      ideas: await generateEmailIdeas({
+        llm,
+        ctx: await productContext(ctx.tenantId),
+        segmentId,
+        segmentLabel: seg?.label || segmentId,
+        goal: String(ctx.body?.goal || ""),
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
+      }),
+    };
   });
 
   add("GET", "/email/campaigns", async (ctx) => ({ campaigns: await store.listCampaigns(ctx.tenantId) }), { allowAllTenant: true });
@@ -956,6 +997,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       segmentLabel: seg.label,
       goal,
       instruction: String(ctx.body?.instruction || "") || undefined,
+      contentBrief: resolveContentBrief(ctx.tenantId),
+      generationProfile: resolveGenerationProfile(ctx.tenantId),
     });
     let campaign = await store.createCampaign(ctx.tenantId, {
       ...draft,
@@ -1026,6 +1069,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
         segmentId: c.segmentId,
         instruction,
         current: { name: c.name, subject: c.subject, preheader: c.preheader, headline: c.headline, bodyMarkdown: c.bodyMarkdown, ctaLabel: c.ctaLabel, ctaUrl: c.ctaUrl, artworkPrompt: c.artworkPrompt, bannerKicker: "" },
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
       }).catch(() => null);
       if (!revised && target === "copy") throw new HttpError(502, "The model returned an unusable revision");
       if (revised) Object.assign(patch, { subject: revised.subject, preheader: revised.preheader, headline: revised.headline, bodyMarkdown: revised.bodyMarkdown, ctaLabel: revised.ctaLabel, ctaUrl: revised.ctaUrl, artworkPrompt: revised.artworkPrompt || c.artworkPrompt });
@@ -1220,7 +1265,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     "POST",
     "/webhooks/resend",
     async (ctx) => {
-      const secret = (await opts.resendWebhookSecret?.())?.trim() || "";
+      const resolvedSecret = await opts.resendWebhookSecret?.();
+      const secret = typeof resolvedSecret === "string" ? resolvedSecret.trim() : "";
       if (!secret) throw new HttpError(503, "Resend webhook secret not configured");
       const raw = await readRawBody(ctx.req);
       const ok = verifySvixSignature({

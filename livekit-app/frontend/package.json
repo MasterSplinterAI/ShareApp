@@ -20,9 +20,10 @@
     "test:desktop": "npx playwright test --project='Desktop Chrome'",
     "test:report": "npx playwright show-report",
     "build:support-kit": "node ../vendor/support-kit/scripts/build-consumer-snapshot.mjs",
-    "prebuild:app": "npm run build:support-kit",
-    "prebuild": "npm run build:support-kit",
-    "predev": "npm run build:support-kit"
+    "prebuild:app": "npm run build:support-kit && npm run build:marketing-kit",
+    "prebuild": "npm run build:support-kit && npm run build:marketing-kit",
+    "predev": "npm run build:support-kit && npm run build:marketing-kit",
+    "build:marketing-kit": "node ../vendor/marketing-kit/scripts/build-snapshot.mjs"
   },
   "dependencies": {
     "@capacitor/app": "^8.1.2",

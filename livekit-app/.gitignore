@@ -110,3 +110,6 @@ vendor/support-kit/packages/*/dist/
 
 # SDK consumer runtime is rebuilt from the verified source manifest
 vendor/ops-sdk/dist/
+
+# Canonical marketing snapshots rebuild generated package outputs
+vendor/marketing-kit/packages/*/dist/
