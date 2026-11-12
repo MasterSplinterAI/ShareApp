@@ -36,7 +36,7 @@ test("Lalia keyset backfill reports exact source inventory including durable tom
   const report = await projection.reportCustomerProjection();
   assert.equal(report.count, 105);
   assert.ok(report.backlog >= 105);
-  await db.transaction(async (tx) => {
+  await outbox.customerMutation(async (tx) => {
     await tx.run("DELETE FROM v2_users WHERE id=?", ["projection-000"]);
     await outbox.queueContactTombstone(tx, "projection-000");
   });
@@ -63,7 +63,7 @@ test("Lalia keyset backfill reports exact source inventory including durable tom
   assert.equal(clean.backlog, 0);
   assert.equal(clean.count, 104);
   await assert.rejects(
-    db.transaction(async (tx) => {
+    outbox.customerMutation(async (tx) => {
       await outbox.queueContactTombstone(tx, "projection-001");
       throw Error("rollback");
     }),
@@ -292,7 +292,7 @@ test("Lalia keyset backfill reports exact source inventory including durable tom
         changed = false;
       const ready = new Promise((r) => (start = r));
       const mutation = ready.then(() =>
-        db.transaction(async (tx) => {
+        outbox.customerMutation(async (tx) => {
           await tx.run(
             "UPDATE v2_users SET display_name='Concurrent' WHERE id='projection-001'",
           );

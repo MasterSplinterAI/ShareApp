@@ -1,4 +1,5 @@
 const db = require('../db/v2Database');
+const { customerMutation, queueOrgContacts } = require('./opsOutbox');
 const { getStripeSettings, getStripeClient } = require('./v2StripeSettings');
 
 const DOWNGRADE_STRIPE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
@@ -62,7 +63,7 @@ function resolveCancelFlags(stripeSub) {
  * Apply Stripe subscription object to local v2_org_subscriptions + v2_organizations.billing_status.
  */
 async function applyStripeSubscriptionToOrg(stripeSub, sourceRevision) {
-  return db.transaction(async tx => {
+  return customerMutation(async tx => {
     if (sourceRevision) {
       const applied = await tx.get(`INSERT INTO ops_source_revisions(source_id,revision) VALUES(?,?)
         ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision
@@ -71,9 +72,7 @@ async function applyStripeSubscriptionToOrg(stripeSub, sourceRevision) {
     }
     const result = await applyStripeSubscriptionWithinTransaction(stripeSub);
     if (result.orgId) {
-      const { queueContact } = require('./opsOutbox');
-      const members = await tx.all('SELECT user_id FROM v2_org_members WHERE org_id=?', [result.orgId]);
-      for (const member of members) await queueContact(tx, member.user_id);
+      await queueOrgContacts(tx, result.orgId);
     }
     return result;
   });

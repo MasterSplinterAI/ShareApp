@@ -7,7 +7,7 @@ const { hashPassword, verifyPassword, signSession } = require('../../lib/authAda
 const { sendPasswordResetEmail } = require('../../lib/passwordReset');
 const { PERSONAL, TEAM, normalizeAccountTypeHint, resolveNewWorkspace } = require('../../lib/v2Workspace');
 const { getPrefs, setSignupPrefs, updatePrefs } = require('../../lib/communicationPrefs');
-const { queueContact } = require('../../lib/opsOutbox');
+const { queueContact, customerMutation } = require('../../lib/opsOutbox');
 
 function emailValid(email) {
   return typeof email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
@@ -58,7 +58,7 @@ router.post('/signup', async (req, res) => {
     }
     const userId = db.uuid();
     const hash = await hashPassword(password);
-    const { orgId, orgName: org, accountType } = await db.transaction(async tx => {
+    const { orgId, orgName: org, accountType } = await customerMutation(async tx => {
     await db.run(
       `INSERT INTO v2_users (id, email, password_hash, display_name) VALUES (?,?,?,?)`,
       [userId, email.trim().toLowerCase(), hash, displayName || email.split('@')[0]]
@@ -137,7 +137,7 @@ router.post('/login', async (req, res) => {
     if (org?.suspended_at) {
       return res.status(403).json({ error: 'Workspace suspended', code: 'org_suspended' });
     }
-    await db.transaction(async tx=>{await tx.run(`UPDATE v2_users SET last_login_at = datetime('now') WHERE id = ?`, [user.id]);await queueContact(tx,user.id);});
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_users SET last_login_at = datetime('now') WHERE id = ?`, [user.id]);await queueContact(tx,user.id);});
     try {
       const { ensureCurrentBillingCycle } = require('../../lib/v2BillingCycles');
       await ensureCurrentBillingCycle(membership.org_id);
@@ -424,7 +424,7 @@ router.patch('/me', requireV2Auth, async (req, res) => {
           error: `Name must be between ${DISPLAY_NAME_MIN} and ${DISPLAY_NAME_MAX} characters`,
         });
       }
-      await db.transaction(async tx=>{
+      await customerMutation(async tx=>{
         await tx.run(`UPDATE v2_users SET display_name = ? WHERE id = ?`, [trimmed, req.v2Auth.userId]);
         const org=await tx.get(`SELECT account_type FROM v2_organizations WHERE id = ?`,[req.v2Auth.orgId]);
         if(org?.account_type===PERSONAL)await tx.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`,[trimmed,req.v2Auth.orgId]);
@@ -437,7 +437,7 @@ router.patch('/me', requireV2Auth, async (req, res) => {
       if (cleaned === undefined) {
         return res.status(400).json({ error: 'Invalid preferredLanguage' });
       }
-      await db.transaction(async tx=>{await tx.run(`UPDATE v2_users SET preferred_language = ? WHERE id = ?`, [cleaned,req.v2Auth.userId]);await queueContact(tx,req.v2Auth.userId);});
+      await customerMutation(async tx=>{await tx.run(`UPDATE v2_users SET preferred_language = ? WHERE id = ?`, [cleaned,req.v2Auth.userId]);await queueContact(tx,req.v2Auth.userId);});
     }
 
     const user = await db.get(

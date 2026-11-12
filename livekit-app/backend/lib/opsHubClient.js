@@ -219,9 +219,8 @@ async function ingestCogs(cogsInput) {
  */
 async function syncContact(contactInput) {
   if (!contactInput?.externalUserId) throw Error('Persisted user identity required');
-  const db = require('../db/v2Database');
-  const { queueContact } = require('./opsOutbox');
-  return db.transaction(tx => queueContact(tx, contactInput.externalUserId));
+  const { queueContact, customerMutation } = require('./opsOutbox');
+  return customerMutation(tx => queueContact(tx, contactInput.externalUserId));
 }
 
 /**

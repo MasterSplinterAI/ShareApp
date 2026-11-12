@@ -44,19 +44,33 @@ async function queueCostEvent(tx, row) {
     }
   });
 }
+/** Acquire before any customer source row or per-source revision lock. Reports
+ * use this same fence. Only customer mutations opt in; unrelated transactions
+ * never acquire it. Call customerMutation at the outer source mutation boundary. */
+async function lockCustomerDataset(tx) {
+  return tx.get("INSERT INTO ops_source_revisions(source_id,revision) VALUES('customer-dataset',0) ON CONFLICT(source_id) DO UPDATE SET revision=ops_source_revisions.revision RETURNING revision");
+}
+async function customerMutation(work) {
+  return db.transaction(async tx => {
+    await lockCustomerDataset(tx);
+    return work(tx);
+  });
+}
 async function queueContact(tx,userId) {
+ await lockCustomerDataset(tx);
  const user=await tx.get(`SELECT id,email,display_name,disabled_at FROM v2_users WHERE id=?${db.isPostgres()?' FOR UPDATE':''}`,[userId]);if(!user)throw Error('Persisted contact required');
  const memberships=await tx.all("SELECT m.org_id,o.name,m.role,s.plan_id,s.status,CASE WHEN o.suspended_at IS NOT NULL THEN 'suspended' ELSE o.billing_status END AS account_status FROM v2_org_members m JOIN v2_organizations o ON o.id=m.org_id LEFT JOIN v2_org_subscriptions s ON s.org_id=m.org_id WHERE m.user_id=? ORDER BY m.org_id",[user.id]);
  return queueCustomerPayload(tx,{sourceId:user.id,email:user.email,name:user.display_name,accountStatus:user.disabled_at?'disabled':'active',memberships});
 }
 async function queueCustomerPayload(tx,payload){
+ await lockCustomerDataset(tx);
  const revision=await nextSourceRevision(tx,`contact:${payload.sourceId}`),sequence=await nextSourceRevision(tx,'customer-dataset');
  const previous=await tx.get('SELECT deleted FROM ops_customer_source WHERE source_id=?',[payload.sourceId]);
  if(Number(previous?.deleted)===1&&!payload.deleted)throw Error('Deleted customer cannot be recreated by snapshot');
  await tx.run('INSERT INTO ops_customer_source(source_id,revision,sequence,deleted,payload) VALUES(?,?,?,?,?) ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision,sequence=excluded.sequence,deleted=excluded.deleted,payload=excluded.payload',[payload.sourceId,revision,sequence,payload.deleted?1:0,JSON.stringify(payload)]);
  await enqueueBusinessEvent(tx,{schemaVersion:1,businessId:businessId(),environment:'live',type:'contact.changed',eventId:`contact:${payload.sourceId}:${revision}`,sourceRevision:revision,occurredAt:new Date().toISOString(),payload});
 }
-async function queueOrgContacts(tx,orgId){for(const row of await tx.all('SELECT user_id FROM v2_org_members WHERE org_id=? ORDER BY user_id',[orgId]))await queueContact(tx,row.user_id);}
+async function queueOrgContacts(tx,orgId){await lockCustomerDataset(tx);for(const row of await tx.all('SELECT user_id FROM v2_org_members WHERE org_id=? ORDER BY user_id',[orgId]))await queueContact(tx,row.user_id);}
 async function queueContactTombstone(tx,id){return queueCustomerPayload(tx,{sourceId:id,deleted:true});}
 async function queueStripeEvent(tx, event) {
   const normalized = stripeBusinessEvent(businessId(), event);
@@ -134,6 +148,8 @@ async function opsEventDiagnostics() {
   };
 }
 module.exports = {
+  customerMutation,
+  lockCustomerDataset,
   ensureOpsOutboxSchema,
   queueCostEvent,
   queueContact,

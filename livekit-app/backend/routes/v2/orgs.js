@@ -1,4 +1,4 @@
-const {queueContact,queueOrgContacts}=require('../../lib/opsOutbox');
+const {queueContact,queueOrgContacts,customerMutation}=require('../../lib/opsOutbox');
 const express = require('express');
 const multer = require('multer');
 const router = express.Router();
@@ -74,9 +74,9 @@ router.patch('/me', requireV2Auth, async (req, res) => {
           code: 'personal_account',
         });
       }
-      await db.transaction(async tx=>{await tx.run(`UPDATE v2_organizations SET name = ?, account_type = ? WHERE id = ?`,[trimmed,TEAM,req.v2Auth.orgId]);await queueOrgContacts(tx,req.v2Auth.orgId);});
+      await customerMutation(async tx=>{await tx.run(`UPDATE v2_organizations SET name = ?, account_type = ? WHERE id = ?`,[trimmed,TEAM,req.v2Auth.orgId]);await queueOrgContacts(tx,req.v2Auth.orgId);});
     } else {
-      await db.transaction(async tx=>{await tx.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);await queueOrgContacts(tx,req.v2Auth.orgId);});
+      await customerMutation(async tx=>{await tx.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);await queueOrgContacts(tx,req.v2Auth.orgId);});
     }
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
     res.json({ org });
@@ -140,7 +140,7 @@ router.post('/members', requireV2Auth, async (req, res) => {
       const passHash = await hashPassword(tempPass);
       const displayName = (name && String(name).trim().slice(0, 80)) || normEmail.split('@')[0];
 
-      await db.transaction(async tx=>{await tx.run(`INSERT INTO v2_users (id, email, password_hash, display_name) VALUES (?,?,?,?)`,[newUserId,normEmail,passHash,displayName]);await queueContact(tx,newUserId);});
+      await customerMutation(async tx=>{await tx.run(`INSERT INTO v2_users (id, email, password_hash, display_name) VALUES (?,?,?,?)`,[newUserId,normEmail,passHash,displayName]);await queueContact(tx,newUserId);});
       user = { id: newUserId, email: normEmail, display_name: displayName };
       createdNewAccount = true;
     }
@@ -151,7 +151,7 @@ router.post('/members', requireV2Auth, async (req, res) => {
     ]);
     if (exists) return res.status(409).json({ error: 'Already a member' });
 
-    await db.transaction(async tx=>{await tx.run(`INSERT INTO v2_org_members (org_id, user_id, role) VALUES (?,?,?)`,[req.v2Auth.orgId,user.id,r]);await queueContact(tx,user.id);});
+    await customerMutation(async tx=>{await tx.run(`INSERT INTO v2_org_members (org_id, user_id, role) VALUES (?,?,?)`,[req.v2Auth.orgId,user.id,r]);await queueContact(tx,user.id);});
 
     // Send an onboarding / workspace-added email
     try {
@@ -243,7 +243,7 @@ router.patch('/members/:userId', requireV2Auth, async (req, res) => {
     ]);
     if (!row) return res.status(404).json({ error: 'Not found' });
     if (row.role === 'owner') return res.status(403).json({ error: 'Cannot change owner role' });
-    await db.transaction(async tx=>{await tx.run(`UPDATE v2_org_members SET role = ? WHERE org_id = ? AND user_id = ?`, [role, req.v2Auth.orgId, targetId]);await queueContact(tx,targetId);});
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_org_members SET role = ? WHERE org_id = ? AND user_id = ?`, [role, req.v2Auth.orgId, targetId]);await queueContact(tx,targetId);});
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
@@ -266,7 +266,7 @@ router.delete('/members/:userId', requireV2Auth, async (req, res) => {
     if (row.role === 'admin' && req.v2Auth.role !== 'owner') {
       return res.status(403).json({ error: 'Only owners can remove admins' });
     }
-    await db.transaction(async tx=>{await tx.run(`DELETE FROM v2_org_members WHERE org_id = ? AND user_id = ?`, [req.v2Auth.orgId, targetId]);await queueContact(tx,targetId);});
+    await customerMutation(async tx=>{await tx.run(`DELETE FROM v2_org_members WHERE org_id = ? AND user_id = ?`, [req.v2Auth.orgId, targetId]);await queueContact(tx,targetId);});
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
@@ -346,7 +346,7 @@ router.patch('/admin/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req,
       billing_status: nextStatus,
       reason: reasonTrim.slice(0, 2000),
     });
-    await db.transaction(async tx=>{await tx.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [nextStatus, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [nextStatus, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     res.json({ org });

@@ -1,5 +1,5 @@
 const db = require('../db/v2Database');
-const {queueOrgContacts}=require('./opsOutbox');
+const {queueOrgContacts,customerMutation}=require('./opsOutbox');
 const { getStripeSettings, getStripeClient, isStripeBillingActive } = require('./v2StripeSettings');
 
 const SUSPEND_REASON_PREFIX = 'stripe_dispute:';
@@ -141,7 +141,7 @@ async function suspendOrgForDispute(orgId, disputeId, status) {
   if (sub?.is_comp === 1) return { suspended: false, reason: 'comp_account' };
 
   const suspendReason = `${SUSPEND_REASON_PREFIX}${disputeId}:${status}`.slice(0, 500);
-  await db.transaction(async tx=>{await tx.run(
+  await customerMutation(async tx=>{await tx.run(
     `UPDATE v2_organizations
      SET suspended_at = COALESCE(suspended_at, datetime('now')),
          suspended_reason = ?,
@@ -172,7 +172,7 @@ async function maybeReactivateAfterWonDispute(orgId, disputeId) {
   );
   if (openOther) return { reactivated: false, reason: 'other_open_disputes' };
 
-  await db.transaction(async tx=>{await tx.run(
+  await customerMutation(async tx=>{await tx.run(
     `UPDATE v2_organizations
      SET suspended_at = NULL, suspended_reason = NULL, billing_status = 'active'
      WHERE id = ?`,

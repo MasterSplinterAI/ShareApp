@@ -35,7 +35,7 @@ test("dispute access changes and customer snapshots commit together without priv
     "INSERT INTO v2_org_subscriptions(org_id,plan_id,status,stripe_customer_id) VALUES(?,'free','active',?)",
     [org, customer],
   );
-  await db.transaction((tx) => outbox.queueContact(tx, user));
+  await outbox.customerMutation((tx) => outbox.queueContact(tx, user));
   const snapshot = async () =>
     JSON.parse(
       (

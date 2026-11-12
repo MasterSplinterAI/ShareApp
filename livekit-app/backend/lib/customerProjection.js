@@ -1,6 +1,10 @@
 const { createHash } = require("node:crypto");
 const db = require("../db/v2Database");
-const { queueContact } = require("./opsOutbox");
+const {
+  queueContact,
+  customerMutation,
+  lockCustomerDataset,
+} = require("./opsOutbox");
 const { nextSourceRevision, enqueueBusinessEvent } = require("@rhule/ops-sdk");
 const expectedInterval = () =>
   Math.min(
@@ -20,7 +24,7 @@ async function backfillCustomerProjection(pageSize = 100) {
     );
     if (!rows.length) break;
     for (const row of rows)
-      await db.transaction(async (tx) => {
+      await customerMutation(async (tx) => {
         const current = await tx.get(
           `SELECT id FROM v2_users WHERE id=?${db.isPostgres() ? " FOR UPDATE" : ""}`,
           [row.id],
@@ -37,9 +41,7 @@ async function backfillCustomerProjection(pageSize = 100) {
 async function reportCustomerProjection(options = {}) {
   return db.transaction(async (tx) => {
     // Hold the same mutation fence used by source snapshots through all report reads.
-    const fence = await tx.get(
-      "INSERT INTO ops_source_revisions(source_id,revision) VALUES('customer-dataset',0) ON CONFLICT(source_id) DO UPDATE SET revision=ops_source_revisions.revision RETURNING revision",
-    );
+    const fence = await lockCustomerDataset(tx);
     const asOf = new Date().toISOString(),
       revision = await nextSourceRevision(tx, "customer-report");
     const rows = await tx.all(
