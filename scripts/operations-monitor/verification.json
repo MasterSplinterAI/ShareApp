@@ -82,7 +82,7 @@
     "lalia-operations-monitor-MonitorHeartbeat": "OK"
   },
   "emailSubscriptionConfirmed": true,
-  "emailDeliveryVerified": false,
+  "emailDeliveryVerified": true,
   "isolatedHeartbeatAcceptance": {
     "period": 300,
     "evaluationPeriods": 3,
@@ -139,5 +139,12 @@
   "rootIndependentReadback": {
     "allThreeAlarmStates": "OK",
     "logWriterIsolationVerifiedSeparately": true
+  },
+  "emailReceiptConfirmation": {
+    "source": "owner report in chat",
+    "recipient": "kennyrhule@proton.me",
+    "alarmReceived": true,
+    "recoveryReceived": true,
+    "answer": "Both arrived"
   }
 }

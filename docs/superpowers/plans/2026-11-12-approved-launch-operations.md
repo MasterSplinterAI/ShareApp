@@ -8,7 +8,7 @@
 
 **Tech Stack:** Node.js/React, Python LiveKit Agents, AWS Lambda/Scheduler/CloudWatch/SNS/Secrets Manager, PostgreSQL16, SSH.
 
-**Approval:** Owner approved setup and Proton alert recipient on November12. No further design approval needed within this scope; SNS confirmation was completed; AWS test ALARM/OK publications succeeded. Owner inbox receipt has not yet been confirmed.
+**Approval:** Owner approved setup and Proton alert recipient on November12. No further design approval needed within this scope; SNS confirmation was completed; AWS test ALARM/OK publications succeeded. Owner confirmed both ALARM and recovery (OK) emails arrived.
 
 ## Task 1: Billing return navigation
 Files: backend/routes/v2/billing.js; frontend/src/v2/pages/V2OrgSettings.jsx; focused tests under backend/test and frontend tests.
@@ -53,7 +53,7 @@ Create scripts/operations-recovery/{capture.py,verify.py,README.md} or equivalen
 ## Acceptance notes — November 12
 
 - Checkout success/cancel and legacy success return passed live Sandbox UI checks; fixtures and private credential files cleaned, OpsHub tombstones applied.
-- Independent monitor installed; all three alarms OK. SNS subscription confirmed and controlled ALARM/OK actions succeeded; inbox receipt remains pending owner confirmation.
+- Independent monitor installed; all three alarms OK. SNS subscription confirmed and controlled ALARM/OK actions succeeded; owner confirmed both emails arrived.
 - Both sanitized agent profiles promoted; each log group shows four matching reviewed-build workers, safe lifecycle/error events, and retained restart history. Named canary cleanup is recorded in final rollout evidence.
 - Backend key recovery passed against a fresh actual S3 backup: 84 tables, 134 constraints, six encrypted settings, temporary-data cleanup. Exact references are embedded in ongoing backups.
 - Agent provider credential coverage remains candidate/unknown where cloud values cannot be exported. Stable fallback usage reporting has a pre-existing missing backend URL/cost credential; this is not certified by caption/logging tests.

@@ -27,8 +27,9 @@ The five-minute Lambda/Scheduler monitor is outside the app server. It checks
 the API health response, complete recent backup object sets, and its own metric
 heartbeat. Three alarms treat missing metrics as failures and send failure and
 recovery notifications through SNS. The Proton subscription is confirmed; AWS
-reported successful publication of both controlled test notifications. Inbox
-receipt remains separately tracked in the evidence.
+reported successful publication of both controlled test notifications. The owner
+confirmed that both the ALARM and recovery (OK) emails arrived at Proton, completing
+end-to-end notification verification.
 
 The monitor cannot read database dumps, runtime secrets or customer records.
 Root independently read all three alarms as OK and verified both log-writer
