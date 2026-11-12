@@ -1,0 +1,23 @@
+{
+  "/terms": {
+    "httpStatus": 200,
+    "confirmedOperator": true,
+    "wyomingIdentity": true,
+    "updatedDate": true
+  },
+  "/privacy": {
+    "httpStatus": 200,
+    "confirmedOperator": true,
+    "wyomingIdentity": true,
+    "updatedDate": true,
+    "backupDisclosure": true
+  },
+  "healthStatus": 200,
+  "checkedAt": "2026-11-11T23:18:21.052384+00:00",
+  "deployedCommit": "248a045",
+  "governingLawClauseChanged": false,
+  "postDeployBillingCheck": {
+    "stripeMode": "test",
+    "autoChargeEnabled": false
+  }
+}

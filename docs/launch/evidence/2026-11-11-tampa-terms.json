@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-11-12T00:10:15.739055+00:00",
+  "deployedCommit": "a4ad508d5ecd0bb784c93cbdf4ed7efe827a5b45",
+  "termsHttpStatus": 200,
+  "approvedClauseExactMatch": true,
+  "oldClauseAbsent": true,
+  "wyomingOperatorIdentityPreserved": true,
+  "frontendBuildAndPrerender": "passed",
+  "userPublicationAuthorized": true,
+  "healthStatus": 200,
+  "postDeployBillingCheck": {
+    "stripeMode": "test",
+    "autoChargeEnabled": false
+  }
+}

@@ -4,8 +4,7 @@ import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 import LaliaSupportLauncher from '../../v2/components/LaliaSupportLauncher';
 
-// TODO: replace with the final legal entity name once incorporated.
-const COMPANY_LEGAL_NAME = 'Lalia';
+const COMPANY_LEGAL_NAME = 'Oracle Orchestration LLC';
 const LAST_UPDATED = 'November 11, 2026';
 const CONTACT_EMAIL = 'hello@lalia.cloud';
 
@@ -34,7 +33,7 @@ export default function PrivacyPage() {
         <p className="mt-2 text-sm text-muted-foreground">Last updated: {LAST_UPDATED}</p>
 
         <p className="mt-8 text-base leading-relaxed text-muted-foreground">
-          This Privacy Policy explains how {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
+          This Privacy Policy explains how {COMPANY_LEGAL_NAME}, a Wyoming limited liability company (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or
           &ldquo;our&rdquo;) collects, uses, and shares information when you use Lalia, our video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;).
         </p>
@@ -113,6 +112,11 @@ export default function PrivacyPage() {
             deleted; hosts and organization admins can delete stored transcripts through the Service. Account information is retained while your account is active; when you
             delete your account, we delete or anonymize your personal information within a reasonable period, except
             where retention is required for legal, billing, or security purposes.
+          </p>
+          <p>
+            Encrypted recovery backups may retain copies of deleted information until those backups expire.
+            Daily backups are scheduled to expire after 30 days; permanent deletion may take additional time
+            while automated retention processing completes.
           </p>
         </Section>
 

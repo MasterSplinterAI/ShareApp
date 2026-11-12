@@ -1,6 +1,6 @@
 # Lalia backup and isolated restore
 
-Prepared for operator review. Preparing or testing these files does not provision AWS or run a production backup. Stripe is unrelated and stays TEST.
+Installed with explicit owner approval on November 11, 2026. The first encrypted S3 backup completed at 23:13:24 UTC; an isolated PostgreSQL 16 restore verified 58 tables, 104 constraints (none unvalidated), and one uploaded file. Downloaded restore inputs and the temporary cluster were removed. The daily backup and hourly freshness timers are enabled. Sanitized evidence, installed-file hashes, and verification commands are recorded in [the backup/restore evidence](../../docs/launch/evidence/2026-11-11-backup-restore.json). Stripe remains TEST and was not changed.
 
 ## Design and boundaries
 
