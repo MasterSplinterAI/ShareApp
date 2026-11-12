@@ -69,6 +69,7 @@ export default function V2OrgSettings() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [communicationPrefsVersion, setCommunicationPrefsVersion] = useState(null);
   const [marketingEmailPref, setMarketingEmailPref] = useState(false);
   const [timezonePref, setTimezonePref] = useState('');
   const [guestInviteCcHost, setGuestInviteCcHost] = useState(true);
@@ -200,6 +201,7 @@ export default function V2OrgSettings() {
         }
         if (commPrefs?.prefs) {
           setMarketingEmailPref(Boolean(commPrefs.prefs.marketingEmail));
+          setCommunicationPrefsVersion(commPrefs.prefs.prefsUpdatedAt);
           const browserTz = detectBrowserTimezone();
           setTimezonePref(commPrefs.prefs.timezone || browserTz);
           setGuestInviteCcHost(commPrefs.prefs.guestInviteCcHost !== false);
@@ -342,17 +344,20 @@ export default function V2OrgSettings() {
     try {
       const { prefs } = await v2Auth.updateCommunicationPrefs({
         marketingEmail: marketingEmailPref,
+        prefsUpdatedAt: communicationPrefsVersion,
         timezone: timezonePref || detectBrowserTimezone(),
         guestInviteCcHost,
         guestInviteReminderOffsets: reminderOffsets,
       });
       setMarketingEmailPref(Boolean(prefs?.marketingEmail));
+      setCommunicationPrefsVersion(prefs?.prefsUpdatedAt);
       setTimezonePref(prefs?.timezone || detectBrowserTimezone());
       setGuestInviteCcHost(prefs?.guestInviteCcHost !== false);
       const toggles = togglesFromOffsets(prefs?.guestInviteReminderOffsets || []);
       setReminderDayBefore(toggles.dayBefore);
       setReminder15Min(toggles.fifteenMin);
-      toast.success('Communication preferences saved');
+      if(prefs?.consentStatus==='pending')toast('Preferences saved. Marketing consent is pending; save a fresh choice when the connection is available.');
+      else toast.success('Communication preferences saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not save preferences');
     } finally {

@@ -71,7 +71,8 @@ export async function ensureSchema(
 
   let applied = 0;
   for (const sql of creates) {
-    if (await runQuiet(db, sql)) applied += 1;
+    if(sql.includes(`${tablePrefix}lead_consent_`)){await db.run(sql.trim());applied += 1;}
+    else if (await runQuiet(db, sql)) applied += 1;
   }
 
   for (const alter of buildAlterStatements(tablePrefix)) {
@@ -83,6 +84,22 @@ export async function ensureSchema(
 
   for (const sql of indexes) {
     if (await runQuiet(db, sql)) applied += 1;
+  }
+
+  // Preserve pre-history preferences before a later lead upsert can overwrite them. These
+  // immutable rows also remain available to a host's durable consent-reporting worker.
+  if (!await db.get(`SELECT id FROM ${tablePrefix}lead_consent_migrations WHERE id='legacy-v1'`)) {
+  for (const channel of ['email','sms']) {
+    await db.run(`INSERT INTO ${tablePrefix}lead_consent_events
+      (id,tenant_id,email,lead_id,revision,channel,purpose,granted,source,consent_text,policy_version,occurred_at)
+      SELECT 'legacy:' || l.id || ':${channel}',l.tenant_id,l.email,l.id,0,'${channel}','marketing',l.marketing_${channel}_opt_in,l.source,l.consent_text,'support-lead-legacy-v1',COALESCE(l.consent_at,l.updated_at)
+      FROM ${tablePrefix}leads l WHERE NOT EXISTS (SELECT 1 FROM ${tablePrefix}lead_consent_heads h WHERE h.tenant_id=l.tenant_id AND h.email=l.email)
+      ON CONFLICT(id) DO NOTHING`);
+  }
+  await db.run(`INSERT INTO ${tablePrefix}lead_consent_heads(tenant_id,email,revision)
+    SELECT tenant_id,email,0 FROM ${tablePrefix}leads WHERE 1=1 ON CONFLICT(tenant_id,email) DO NOTHING`);
+
+  await db.run(`INSERT INTO ${tablePrefix}lead_consent_migrations(id) VALUES('legacy-v1') ON CONFLICT(id) DO NOTHING`);
   }
 
   // Preserve existing reviewed snapshots as immutable revisions. Deterministic IDs make
@@ -108,7 +125,7 @@ export async function ensureSchema(
       ON r.id=a.draft_revision_id AND r.tenant_id=a.tenant_id AND r.article_id=a.id`);
   } catch (error) {
     const duplicate = error as { code?: string; message?: string };
-    if (duplicate.code !== '42P07' && !/^view [^ ]+ already exists$/i.test(duplicate.message ?? '')) throw error;
+    if (duplicate.code !== '42P07' && !/^(?:SQLITE_ERROR: )?view [^ ]+ already exists$/i.test(duplicate.message ?? '')) throw error;
     // Duplicate creation is expected on startup or a concurrent initializer. Verify
     // the existing projection rather than masking a missing/incompatible view.
     await db.all(`SELECT id,tenant_id,title,body,status,source_kind,visibility,provenance_json,

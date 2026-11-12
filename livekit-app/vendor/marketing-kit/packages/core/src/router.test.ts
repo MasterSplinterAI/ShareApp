@@ -1,3 +1,5 @@
+import {ConsentStore} from './consent.js';
+import {ConsentPolicy} from './consentPolicy.js';
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -15,7 +17,7 @@ import {
 
 function sqliteDb(): MarketingDbAdapter {
   const db = new DatabaseSync(":memory:");
-  return {
+  const adapter:MarketingDbAdapter = {
     async run(sql, params = []) {
       const r = db.prepare(sql).run(...(params as any[]));
       return { changes: Number(r.changes) };
@@ -26,7 +28,21 @@ function sqliteDb(): MarketingDbAdapter {
     async all(sql, params = []) {
       return db.prepare(sql).all(...(params as any[])) as any;
     },
+    async transaction(work) {db.exec('BEGIN');try {const value=await work(adapter);db.exec('COMMIT');return value;}catch(error){db.exec('ROLLBACK');throw error;}},
   };
+  return adapter;
+}
+
+function fixtureConsent(db:MarketingDbAdapter) {
+ const store=new ConsentStore(db,'fixture');
+ const ready=(async()=>{await store.ensureSchema();await store.registerAuthority({businessId:'legalai',id:'fixture',endpoint:'local',keyRef:'local'});
+ for(const recipient of ['a@example.com','b@example.com','admin@lexit.legal'])await store.append({id:recipient,sourceId:recipient,sourceRevision:'1',scope:{businessId:'legalai',recipient,channel:'email',purpose:'marketing'},granted:true,evidence:{kind:'explicit_choice',text:'Synthetic explicit choice',version:'fixture'},supersedes:[]});})();
+ return new ConsentPolicy({store,resolveKey:()=>undefined,peers:()=>[],localFacts:async scope=>{
+  await ready;const facts=await store.facts(scope);
+  const row=await db.get<any>('SELECT unsubscribe_token,unsubscribed_at FROM mkt_subscribers WHERE tenant_id=? AND email=?',[scope.businessId,scope.recipient]);
+  if(row?.unsubscribed_at)facts.suppressions.push({id:'legacy:'+row.unsubscribe_token+row.unsubscribed_at,sourceRevision:row.unsubscribed_at});
+  return facts;
+ }});
 }
 
 const brand: MarketingBrandConfig = {
@@ -106,9 +122,11 @@ const WEBHOOK_SECRET = `whsec_${Buffer.from("super-secret-key").toString("base64
 let server: Server;
 let base = "";
 let adminCookie = true;
+const mainDb=sqliteDb();
 const kit = createMarketingKit({
+  consent:fixtureConsent(mainDb),
   tenantId: "legalai",
-  db: sqliteDb(),
+  db: mainDb,
   brand,
   brandsByTenant: { legalai: brand, lalia: { ...brand, tenantId: "lalia", name: "Lalia", domain: "lalia.cloud" } },
   llm: fakeLlm,
@@ -596,8 +614,9 @@ describe("send and callback reconciliation", () => {
     const delivered: string[] = [];
     let release!: () => void;
     const gate = new Promise<void>(r => { release = r; });
+    const fixtureDb=sqliteDb();
     const k = createMarketingKit({
-      tenantId: "legalai", db: sqliteDb(), brand, llm: fakeLlm,
+      tenantId: "legalai", db: fixtureDb, consent:fixtureConsent(fixtureDb), brand, llm: fakeLlm,
       email: { async sendEmail(message) { delivered.push(message.to); await gate; return { status: "sent", providerMessageId: "single-fixture" }; } },
       resolveSegmentContacts: async () => [contacts[0]],
       logger: { info() {}, warn() {}, error() {} },

@@ -80,6 +80,8 @@ export interface MarketingBrandConfig {
 }
 
 export interface CreateMarketingRouterOptions {
+  /** Required for delivery. Without complete live authority checks campaigns pause. */
+  consent?: import("./consentPolicy.js").ConsentPolicy;
   tenantId: string;
   db: MarketingDbAdapter;
   brand: MarketingBrandConfig;

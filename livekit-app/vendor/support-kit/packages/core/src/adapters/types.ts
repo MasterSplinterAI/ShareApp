@@ -41,6 +41,9 @@ export type ResolveTenant = (
  * Use `?` placeholders; adapters should translate to `$1` for Postgres if needed.
  */
 export interface DbAdapter {
+  transaction?<T>(work: (db: DbAdapter) => Promise<T>): Promise<T>;
+  /** Set only on an adapter already bound to a host-owned transaction. */
+  transactional?: boolean;
   run(sql: string, params?: unknown[]): Promise<{ changes: number }>;
   get<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T | undefined>;
   all<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;

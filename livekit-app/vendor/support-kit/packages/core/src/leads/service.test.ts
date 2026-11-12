@@ -58,3 +58,22 @@ describe("LeadService", () => {
     );
   });
 });
+
+describe('immutable consent intake',()=>{
+ it('keeps an acknowledged opt-out after a later lead overwrite, with separate channels',async()=>{
+  const db=createMemorySqliteAdapter();await ensureSchema(db);const leads=new LeadService(db);
+  const input={tenantId:TenantIdSchema.parse('dev'),name:'Alex',email:'alex@example.test',source:'public_launcher',consentText:'Email and optional SMS'};
+  await leads.upsertLead({...input,marketingOptIn:false});
+  await leads.upsertLead({...input,marketingOptIn:true});
+  const history=await db.all<any>('SELECT * FROM support_lead_consent_events WHERE email=? ORDER BY revision,channel',['alex@example.test']);
+  assert.equal(history.length,4);assert.equal(history.filter(e=>e.channel==='email'&&e.granted===0).length,1);
+  assert.equal(history.filter(e=>e.channel==='sms'&&e.granted===1).length,0);
+  assert.equal(history[2].revision,2);assert.equal(history[2].consent_text,input.consentText);
+ });
+});
+
+it('schema restart does not manufacture new consent from an imported lead snapshot',async()=>{
+ const db=createMemorySqliteAdapter();await ensureSchema(db);
+ await db.run("INSERT INTO support_leads(id,tenant_id,email,name,source,marketing_email_opt_in,marketing_sms_opt_in,created_at,updated_at) VALUES('copied','dev','copy@example.test','Copied','public_launcher',0,0,'2020','2020')");
+ await ensureSchema(db);assert.equal((await db.all('SELECT * FROM support_lead_consent_events')).length,0);
+});

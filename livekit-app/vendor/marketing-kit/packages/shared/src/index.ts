@@ -141,7 +141,7 @@ export interface EmailCampaign {
   artworkMode: ArtworkMode;
   studioCardSpec: StudioCardSpec | null;
   bannerImageUrl: string | null;
-  status: "draft" | "approved" | "scheduled" | "sending" | "sent" | "failed";
+  status: "draft" | "approved" | "scheduled" | "sending" | "sent" | "failed" | "paused";
   lastError: string | null;
   recipientCount: number;
   sentCount: number;

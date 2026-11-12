@@ -74,8 +74,22 @@ export async function runRestoredSupportRequest(db:RecoveryDatabase,input:{busin
   if(previous)return previous.payload_hash===payloadHash?JSON.parse(previous.result_json):{statusCode:409,body:{error:'Idempotency key payload conflict'}};
   const now=new Date().toISOString();let result:any;
   if(path==='/leads'){
-   const email=String(input.payload.email??'').trim(),name=String(input.payload.name??'').trim();if(!email||!name||email.length>254||name.length>320)throw Error('Invalid lead');
-   const old=await sql.get('SELECT id FROM support_leads WHERE tenant_id=? AND email=?',[businessId,email]);const id=old?.id??crypto.randomUUID();if(!old)await sql.run('INSERT INTO support_leads(id,tenant_id,email,name,source,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',[id,businessId,email,name,'recovery',now,now]);result={statusCode:201,body:{ok:true,lead:{id},deliveryStatus:'unavailable'}};
+   const email=String(input.payload.email??'').trim().toLowerCase(),name=String(input.payload.name??'').trim();if(!email||!name||email.length>254||name.length>320)throw Error('Invalid lead');
+   const phone=typeof input.payload.phone==='string'?input.payload.phone.trim()||null:null;
+   const emailChoice=input.payload.marketingOptIn===true,smsChoice=emailChoice&&Boolean(phone);
+   const consentText=typeof input.payload.consentText==='string'?input.payload.consentText.slice(0,8000)||null:null;
+   // Match the normal lead writer's lock order: lead row first, then its consent head.
+   // The receipt transaction commits both the visible preference and immutable history.
+   const candidateId=crypto.randomUUID();
+   await sql.run(`INSERT INTO support_leads(id,tenant_id,email,name,phone,marketing_email_opt_in,marketing_sms_opt_in,source,consent_text,consent_at,created_at,updated_at)
+    VALUES(?,?,?,?,?,?,?,'recovery',?,?,?,?) ON CONFLICT(tenant_id,email) DO UPDATE SET name=excluded.name,phone=excluded.phone,marketing_email_opt_in=excluded.marketing_email_opt_in,marketing_sms_opt_in=excluded.marketing_sms_opt_in,source=excluded.source,consent_text=excluded.consent_text,consent_at=excluded.consent_at,updated_at=excluded.updated_at`,
+    [candidateId,businessId,email,name,phone,emailChoice?1:0,smsChoice?1:0,consentText,now,now,now]);
+   const {id}=await sql.get('SELECT id FROM support_leads WHERE tenant_id=? AND email=?',[businessId,email]);
+   await sql.run('INSERT INTO support_lead_consent_heads(tenant_id,email,revision) VALUES(?,?,1) ON CONFLICT(tenant_id,email) DO UPDATE SET revision=support_lead_consent_heads.revision+1',[businessId,email]);
+   const {revision}=await sql.get('SELECT revision FROM support_lead_consent_heads WHERE tenant_id=? AND email=?',[businessId,email]);
+   for(const [channel,granted] of [['email',emailChoice],['sms',smsChoice]])await sql.run('INSERT INTO support_lead_consent_events(id,tenant_id,email,lead_id,revision,channel,purpose,granted,source,consent_text,policy_version,occurred_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+    [crypto.randomUUID(),businessId,email,id,revision,channel,'marketing',granted?1:0,'recovery',consentText,'support-lead-v1',now]);
+   result={statusCode:201,body:{ok:true,lead:{id},deliveryStatus:'unavailable'}};
   }else{
    const message=String(input.payload.body??'');if(!message.trim()||message.length>64000)throw Error('A bounded message is required');let row:any;
    if(path==='/tickets'){const id=crypto.randomUUID(),number=Number((await sql.get('SELECT COALESCE(MAX(public_number),0)+1 AS n FROM support_tickets WHERE tenant_id=?',[businessId])).n);await sql.run('INSERT INTO support_tickets(id,tenant_id,public_number,kind,topic,category,status,subject,user_id,org_id,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[id,businessId,number,input.payload.kind??'support',input.payload.topic??'other','general','open',String(input.payload.subject??'').slice(0,1000),actor.id,actor.orgId??null,now,now]);row=await ticket(id);}

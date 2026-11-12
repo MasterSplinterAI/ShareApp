@@ -167,6 +167,7 @@ app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateLimiter, translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
+app.post('/api/consent/eligibility',require('./lib/consent').consentEligibilityHandler);
 
 // @rhule/marketing-kit — Admin console API + public SEO + Resend webhooks
 try {
@@ -228,6 +229,9 @@ app.use((err, req, res, next) => {
     console.error('[support] schema ensure failed:', e.message);
   }
   try {
+    const {initializeConsent,consentReporter}=require('./lib/consent');
+    await initializeConsent();
+    if(process.env.NODE_ENV!=='test')consentReporter.start();
     const { marketingKitEnabled, initLaliaMarketing } = require('./lib/marketingKit');
     if (marketingKitEnabled()) {
       await initLaliaMarketing();

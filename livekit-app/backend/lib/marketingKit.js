@@ -1,3 +1,4 @@
+const {consentRuntime,consentDatabase,initializeConsent}=require('./consent');
 /**
  * ShareApp host wiring for @rhule/marketing-kit.
  * Sibling to supportKit — Admin Marketing console + public SEO + Resend webhooks.
@@ -89,7 +90,7 @@ function userContact(row) {
     planTier: String(row.plan_id || row.plan_tier || 'free'),
     lifecycleState: String(row.billing_status || row.subscription_status || 'none'),
     userType: 'individual',
-    marketingOptIn: true,
+    marketingOptIn: false,
     unsubscribeToken: '',
   };
 }
@@ -111,7 +112,7 @@ async function resolveSegmentContacts(_tenantId, segmentId, filter) {
       name: String(r.name || ''),
       planTier: 'lead',
       lifecycleState: 'lead',
-      marketingOptIn: true,
+      marketingOptIn: false,
       unsubscribeToken: '',
     }));
   }
@@ -359,7 +360,8 @@ function getLaliaMarketingKit() {
   const options = {
     generationProfile: 'lalia',
     tenantId: TENANT_ID,
-    db: createSqliteMarketingDb(),
+    db: consentDatabase,
+    consent: consentRuntime.policy,
     brand: LALIA_MARKETING_BRAND,
     mountPath: '/marketing',
     assetBaseUrl: APP_ORIGIN,
@@ -424,6 +426,7 @@ function loadSeedPosts() {
 async function initLaliaMarketing() {
   const kit = getLaliaMarketingKit();
   await kit.ensureSchema();
+  await initializeConsent();
   const seeds = loadSeedPosts();
   if (seeds.length) {
     const seeded = await kit.seedPosts(TENANT_ID, seeds);

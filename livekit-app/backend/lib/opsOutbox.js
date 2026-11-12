@@ -13,6 +13,7 @@ const businessId = () => String(process.env.OPS_HUB_BUSINESS_ID || 'lalia');
 async function ensureOpsOutboxSchema() {
   await db.run('CREATE TABLE IF NOT EXISTS ops_customer_source(source_id TEXT PRIMARY KEY,revision TEXT NOT NULL,sequence BIGINT NOT NULL,deleted INTEGER NOT NULL,payload TEXT NOT NULL)');
   for (const statement of BUSINESS_OUTBOX_SCHEMA) await db.run(statement);
+  for (const statement of require("@rhule/marketing-core").CONSENT_SCHEMA) await db.run(statement);
 }
 async function queueCostEvent(tx, row) {
   if (!row.id || !Number.isSafeInteger(Number(row.id))) throw Error('Persisted cost row identity required');
@@ -78,22 +79,26 @@ async function queueStripeEvent(tx, event) {
 }
 async function queueConsent(tx, record) {
   const revision = await nextSourceRevision(tx, `consent:${record.userId}:${record.consentType}`);
+  const user = await tx.get('SELECT email FROM v2_users WHERE id=?',[record.userId]);
+  const marketing = record.consentType === 'marketing_email';
+  const consent = marketing && user?.email ? {
+    id:`account:${record.id}`,sourceId:`account:${record.userId}:marketing_email`,sourceRevision:revision,
+    scope:{businessId:businessId(),recipient:user.email.toLowerCase(),channel:'email',purpose:'marketing'},
+    granted:record.granted,evidence:record.granted?{kind:'explicit_choice',text:'Marketing email preference',version:String(record.policyVersion)}:null,
+    supersedes:record.observation?.supersedes||[],pending:record.granted&&!record.observation,
+    occurredAt:record.occurredAt,
+  } : null;
   await enqueueBusinessEvent(tx, {
-    schemaVersion: 1,
-    businessId: businessId(),
-    environment: 'live',
-    type: 'consent.changed',
-    eventId: record.id,
-    sourceRevision: revision,
-    occurredAt: record.occurredAt,
-    payload: {
-      sourceId: record.userId,
-      consentType: record.consentType,
-      granted: record.granted,
-      policyVersion: record.policyVersion
-    }
+    schemaVersion:1,businessId:businessId(),environment:'live',type:'consent.changed',eventId:record.id,
+    sourceRevision:revision,occurredAt:record.occurredAt,
+    payload:{sourceId:record.userId,consentType:record.consentType,granted:record.granted,policyVersion:record.policyVersion,...(consent?{consent}:{})}
   });
+  if(consent){
+    const adapter={run:(sql,p=[])=>tx.run(sql,p),get:(sql,p=[])=>tx.get(sql,p),all:(sql,p=[])=>tx.all(sql,p),transaction:work=>work(adapter)};
+    await new (require('@rhule/marketing-core').ConsentStore)(adapter,'lalia').append(consent);
+  }
 }
+
 function createOpsOutboxWorker(options = {}) {
   return createBusinessEventWorker({
     db,

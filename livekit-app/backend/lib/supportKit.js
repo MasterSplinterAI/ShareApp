@@ -34,18 +34,20 @@ const {
 const LIVEKIT_ROOT = path.join(__dirname, '../..');
 const DOCS_ROOT = path.join(__dirname, '../docs/support');
 
-function createSqliteSupportDb() {
+function createSqliteSupportDb(executor = db, transactional = false) {
   return {
+    ...(transactional ? {transactional:true} : {transaction:work=>db.transaction(tx=>work(createSqliteSupportDb(tx,true)))}),
     async run(sql, params = []) {
       legacySupportFence.assertLease();
-      const result = await db.run(sql, params);
-      return { changes: result.changes ?? 0 };
+      const result = await executor.run(sql, params);
+      return {
+    ...(transactional ? {transactional:true} : {transaction:work=>db.transaction(tx=>work(createSqliteSupportDb(tx,true)))}), changes: result.changes ?? 0 };
     },
     async get(sql, params = []) {
-      return db.get(sql, params);
+      return executor.get(sql, params);
     },
     async all(sql, params = []) {
-      return db.all(sql, params);
+      return executor.all(sql, params);
     },
   };
 }

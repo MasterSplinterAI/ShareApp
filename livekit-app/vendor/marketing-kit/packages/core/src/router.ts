@@ -560,21 +560,20 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   async function sendCampaign(tenantId: string, campaignId: string): Promise<EmailCampaign | null> {
     const campaign = await store.getCampaign(tenantId, campaignId);
     if (!campaign) throw new HttpError(404, "Campaign not found");
-    const claimed = await store.claimCampaignForSend(campaignId, ["draft", "approved", "scheduled", "failed"]);
+    const claimed = await store.claimCampaignForSend(campaignId, ["draft", "approved", "scheduled", "failed", "paused"]);
     if (!claimed) throw new HttpError(409, "Campaign is already sending or sent");
     const brand = brandFor(tenantId);
     try {
       if (!opts.email) throw new Error("No email provider configured");
       const contacts = await resolveContacts(tenantId, campaign.segmentId, (campaign.segmentFilter || null) as MarketingCustomSegmentFilter | null);
-      const suppressed = await store.suppressedEmails(tenantId);
       const seen = new Set<string>();
       const messages: Array<{ to: string; name: string; subject: string; html: string; headers: Record<string, string>; tags: Array<{ name: string; value: string }> }> = [];
       for (const contact of contacts) {
         const email = String(contact.email || "").trim().toLowerCase();
-        if (!EMAIL_RE.test(email) || seen.has(email) || suppressed.has(email) || contact.marketingOptIn === false) continue;
+        if (!EMAIL_RE.test(email) || seen.has(email) || contact.tenantId !== tenantId) continue;
         seen.add(email);
         const sub = await store.ensureSubscriber(tenantId, email, contact.name || null, campaign.segmentId === "blog_subscribers" ? "blog_inline" : "account");
-        if (sub.unsubscribed) continue;
+        if (!(await store.prepareRecipient(campaignId, tenantId, email, contact.name || ""))) continue;
         const unsubscribeUrl = `${publicOrigin(brand)}${mountPath}/unsubscribe?token=${encodeURIComponent(sub.token)}&c=${encodeURIComponent(campaignId)}`;
         const vars = contactVars(contact, brand, unsubscribeUrl);
         messages.push({
@@ -593,41 +592,37 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
         });
       }
 
-      let sent = 0;
-      let failedCount = 0;
-      const errors: string[] = [];
-      for (let i = 0; i < messages.length; i += 100) {
-        const chunk = messages.slice(i, i + 100);
-        const results = opts.email.sendBatch
-          ? await opts.email.sendBatch(chunk.map(({ name: _n, ...m }) => m))
-          : await Promise.all(chunk.map(async ({ name: _n, ...m }) => ({ to: m.to, ...(await opts.email!.sendEmail(m)) })));
-        for (let j = 0; j < chunk.length; j++) {
-          const r = results[j] || { status: "failed" as const, error: "missing result" };
-          if (r.status === "sent") sent += 1;
-          else {
-            failedCount += 1;
-            if (r.error && errors.length < 3) errors.push(r.error);
-          }
-          await store.addRecipient({
-            campaignId,
-            tenantId,
-            email: chunk[j].to,
-            contactName: chunk[j].name,
-            providerMessageId: r.providerMessageId || null,
-            status: r.status === "sent" ? "sent" : r.status,
-          });
+      // Each recipient is authorized immediately before its provider request. sendBatch receives
+      // a singleton so no earlier positive decision survives later authorization I/O in a batch.
+      for (const message of messages) {
+        const scope = { businessId: tenantId, recipient: message.to, channel: 'email', purpose: 'marketing' };
+        const decision = opts.consent ? await opts.consent.authorize(scope, campaignId) : {status:'paused' as const};
+        if (decision.status === 'paused') {
+          return store.updateCampaign(tenantId,campaignId,{status:'paused',...(await store.recipientProgress(campaignId)),lastError:'Live consent authority unavailable; remaining recipients paused.'});
         }
+        if (decision.status === 'suppressed') {
+          await store.transitionRecipient(campaignId,message.to,'suppressed');
+          continue;
+        }
+        // Durable dispatch intent precedes provider I/O. A crash/throw is ambiguous and never
+        // automatically retried. Already-dispatched requests cannot be recalled by this policy.
+        await store.transitionRecipient(campaignId,message.to,'dispatching');
+        if (!('expiresAt' in decision) || Date.now() > Date.parse(decision.expiresAt)) {
+          await store.transitionRecipient(campaignId,message.to,'queued');
+          return store.updateCampaign(tenantId,campaignId,{status:'paused',...(await store.recipientProgress(campaignId)),lastError:'Authorization expired before dispatch; fresh checks required.'});
+        }
+        const { name: _name, ...mail } = message;
+        const result = opts.email.sendBatch ? (await opts.email.sendBatch([mail]))[0]
+          : await opts.email.sendEmail(mail);
+        if (!result) throw new Error('Provider result missing; dispatch remains ambiguous');
+        await store.transitionRecipient(campaignId,message.to,result.status,result.providerMessageId || null);
       }
-      const status: EmailCampaign["status"] = messages.length > 0 && sent === 0 ? "failed" : "sent";
-      return store.updateCampaign(tenantId, campaignId, {
-        status,
-        recipientCount: messages.length,
-        sentCount: sent,
-        sentAt: nowIso(),
-        lastError: errors.length ? `${failedCount} failed: ${errors.join("; ")}`.slice(0, 500) : messages.length === 0 ? "No eligible recipients in this segment." : null,
-      });
+      const progress = await store.recipientProgress(campaignId);
+      return store.updateCampaign(tenantId, campaignId, progress.sentCount > 0
+        ? { status: 'sent', ...progress, sentAt: nowIso(), lastError: null }
+        : { status: 'failed', ...progress, sentAt: null, lastError: 'No messages were sent. Check recipient consent and delivery results.' });
     } catch (err: any) {
-      return store.updateCampaign(tenantId, campaignId, { status: "failed", lastError: String(err?.message || err).slice(0, 500) });
+      return store.updateCampaign(tenantId, campaignId, { status: 'paused', ...(await store.recipientProgress(campaignId)), lastError: String(err?.message || err).slice(0, 500) });
     }
   }
 
@@ -639,8 +634,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     let campaignsSent = 0;
     for (const c of await store.listDueCampaigns()) {
       try {
-        await sendCampaign(c.tenantId, c.id);
-        campaignsSent += 1;
+        const result = await sendCampaign(c.tenantId, c.id);
+        if (result?.status === 'sent') campaignsSent += 1;
       } catch (err: any) {
         if (!(err instanceof HttpError && err.status === 409)) log.error("[marketing-kit] scheduled send failed", err);
       }
@@ -1118,6 +1113,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     if (!EMAIL_RE.test(to)) throw new HttpError(400, "A valid test recipient is required");
     const contact = await sampleContact(ctx.tenantId, c.segmentId, (c.segmentFilter || null) as MarketingCustomSegmentFilter | null);
     const vars = contactVars({ ...contact, email: to }, ctx.brand, `${publicOrigin(ctx.brand)}${mountPath}/unsubscribe?token=test`);
+    const decision = opts.consent ? await opts.consent.authorize({businessId:ctx.tenantId,recipient:to,channel:'email',purpose:'marketing'},c.id) : {status:'paused'};
+    if (decision.status !== 'eligible') throw new HttpError(409,'Test recipient is not currently eligible');
     const result = await opts.email.sendEmail({
       to,
       subject: `[Test] ${interpolateEmailVariables(c.subject, vars, { escape: false })}`,
@@ -1156,6 +1153,14 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     if (c.status !== "scheduled") throw new HttpError(409, "Campaign is not scheduled");
     return { campaign: await store.updateCampaign(ctx.tenantId, c.id, { status: "approved", scheduledAt: null }) };
   });
+
+  add('POST', '/consent/eligibility', async (ctx) => {
+    if (!opts.consent ||
+      !(await opts.consent.authenticate(String(ctx.body?.businessId||''),headerValue(ctx.req,'x-consent-authority'),headerValue(ctx.req,'x-consent-key')))) {
+      throw new HttpError(403,'Consent peer access denied');
+    }
+    return opts.consent.localFacts({businessId:String(ctx.body?.businessId||''),recipient:String(ctx.body.recipient||''),channel:String(ctx.body.channel||''),purpose:String(ctx.body.purpose||'')});
+  }, {public:true});
 
   // Public: media, cover fallback, subscribe, unsubscribe, webhook
   add(
@@ -1220,6 +1225,10 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       if (!EMAIL_RE.test(email) || email.length > 254) throw new HttpError(400, "A valid email is required");
       const source = String(ctx.body?.source || "blog_inline").replace(/[^a-z0-9_-]/gi, "").slice(0, 40) || "blog_inline";
       await store.ensureSubscriber(ctx.tenantId, email, String(ctx.body?.name || "").slice(0, 120) || null, source === "account" ? "blog_inline" : source);
+      if (!opts.consent) throw new HttpError(503,'Consent authorities unavailable');
+      const facts = await opts.consent.localFacts({businessId:ctx.tenantId,recipient:email,channel:'email',purpose:'marketing'});
+      const choice = await opts.consent.choose({id:newId('choice'),sourceId:`kit-subscribe:${email}`,sourceRevision:String(BigInt(facts.version)+BigInt(1)),scope:facts.scope,granted:true,evidence:{kind:'explicit_choice',text:'Subscribe to marketing email',version:'kit-subscribe-v1'},expectedVersion:facts.version});
+      if ("pending" in choice && choice.pending) return {ok:true,consentStatus:"pending",message:"Marketing consent remains pending; make a fresh choice when authorities are available."};
       await store.resubscribe(ctx.tenantId, email);
       return { ok: true };
     },
@@ -1248,6 +1257,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       return undefined;
     }
     const result = await store.unsubscribeByToken(token);
+    if (result && opts.consent) await opts.consent.choose({id:newId('unsubscribe'),sourceId:`kit-unsubscribe:${token}`,sourceRevision:'auto',scope:{businessId:result.tenantId,recipient:result.email,channel:'email',purpose:'marketing'},granted:false,evidence:null});
     const campaignId = String(ctx.query.get("c") || "");
     if (result && campaignId) await store.markRecipientUnsubscribed(campaignId, result.email);
     sendText(
@@ -1296,7 +1306,10 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       const applied = await store.applyDeliveryEvent(messageId, kind);
       if (kind === "bounced" || kind === "complained") {
         const rcpt = await store.recipientEmailForMessage(messageId);
-        if (rcpt) await store.suppressEmail(rcpt.tenantId, rcpt.email);
+        if (rcpt) {
+          await store.suppressEmail(rcpt.tenantId, rcpt.email);
+          if (opts.consent) await opts.consent.choose({id:`provider:${messageId}:${kind}`,sourceId:`provider:${messageId}:${kind}`,sourceRevision:'1',scope:{businessId:rcpt.tenantId,recipient:rcpt.email,channel:'email',purpose:'marketing'},granted:false,evidence:null,permanent:true});
+        }
       }
       return { ok: true, applied };
     },

@@ -300,7 +300,7 @@ router.patch('/communication-prefs', requireV2Auth, async (req, res) => {
   try {
     const result = await updatePrefs(req.v2Auth.userId, req.body || {}, req);
     if (!result.ok) {
-      return res.status(400).json({ error: result.error });
+      return res.status(result.status || 400).json({ error: result.error });
     }
     res.json({ prefs: result.prefs });
   } catch (e) {

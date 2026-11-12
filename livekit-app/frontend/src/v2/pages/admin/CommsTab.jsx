@@ -411,6 +411,7 @@ function AnnouncementsSection() {
 }
 
 function EmailOrgSection({ selectedOrgId }) {
+  const [purpose, setPurpose] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
   const [reason, setReason] = useState('');
@@ -435,6 +436,7 @@ function EmailOrgSection({ selectedOrgId }) {
         subject: subject.trim(),
         body: body.trim(),
         reason: reason.trim(),
+        purpose,
       });
       toast.success(`Sent to ${r.recipients?.length || 0} owner(s)`);
       setSubject('');
@@ -450,9 +452,9 @@ function EmailOrgSection({ selectedOrgId }) {
   return (
     <Card className="app-card border-border/60">
       <CardHeader>
-        <CardTitle className="text-lg">Email organization owners</CardTitle>
+        <CardTitle className="text-lg">Account and service notices</CardTitle>
         <CardDescription>
-          Sends to the owner(s) of the selected organization.{' '}
+          Sends an account or service notice to the current owners of the selected organization.{' '}
           {selectedOrgId ? (
             <span>
               Target org: <code>{selectedOrgId}</code>
@@ -463,6 +465,11 @@ function EmailOrgSection({ selectedOrgId }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
+        <label className="block">Notice purpose
+          <select aria-label="Notice purpose" value={purpose} onChange={e=>setPurpose(e.target.value)} className="ml-2 rounded border p-2">
+            <option value="">Select purpose</option><option value="account_notice">Account notice</option><option value="service_notice">Service notice</option>
+          </select>
+        </label>
         <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" aria-label="Email subject" />
         <textarea
           aria-label="Email body"
@@ -477,7 +484,7 @@ function EmailOrgSection({ selectedOrgId }) {
           placeholder="Audit reason (4+ chars)"
           aria-label="Audit reason"
         />
-        <Button type="button" onClick={send} disabled={sending || !selectedOrgId}>
+        <Button type="button" onClick={send} disabled={sending || !selectedOrgId || !purpose}>
           {sending ? 'Sending…' : 'Send email'}
         </Button>
       </CardContent>
@@ -486,85 +493,9 @@ function EmailOrgSection({ selectedOrgId }) {
 }
 
 function BroadcastSection() {
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [reason, setReason] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [sending, setSending] = useState(false);
-
-  const send = async () => {
-    if (!subject.trim() || !body.trim()) {
-      toast.error('Subject and body are required.');
-      return;
-    }
-    if (reason.trim().length < 4) {
-      toast.error('Audit reason must be at least 4 characters.');
-      return;
-    }
-    if (confirm !== 'SEND_ALL') {
-      toast.error('Type SEND_ALL to confirm a broadcast to every org owner.');
-      return;
-    }
-    setSending(true);
-    try {
-      const r = await v2Admin.broadcastEmail({
-        subject: subject.trim(),
-        body: body.trim(),
-        reason: reason.trim(),
-        confirm: 'SEND_ALL',
-      });
-      toast.success(`Broadcast sent to ${r.sentCount}/${r.recipientCount} owners`);
-      setSubject('');
-      setBody('');
-      setReason('');
-      setConfirm('');
-    } catch (e) {
-      toast.error(e.response?.data?.error || 'Failed to send broadcast');
-    } finally {
-      setSending(false);
-    }
-  };
-
-  return (
-    <Card className="app-card border-destructive/40">
-      <CardHeader>
-        <CardTitle className="text-lg">Broadcast to all org owners</CardTitle>
-        <CardDescription>
-          High-blast-radius action. Emails every organization owner. Type <code>SEND_ALL</code> to confirm.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject" aria-label="Broadcast subject" />
-        <textarea
-          aria-label="Broadcast body"
-          className="min-h-28 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Message body…"
-        />
-        <Input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="Audit reason (4+ chars)"
-          aria-label="Broadcast audit reason"
-        />
-        <Input
-          value={confirm}
-          onChange={(e) => setConfirm(e.target.value)}
-          placeholder="Type SEND_ALL to confirm"
-          aria-label="Broadcast confirmation"
-        />
-        <Button
-          type="button"
-          variant="destructive"
-          onClick={send}
-          disabled={sending || confirm !== 'SEND_ALL'}
-        >
-          {sending ? 'Sending…' : 'Send broadcast'}
-        </Button>
-      </CardContent>
-    </Card>
-  );
+  const [url,setUrl]=useState(null);
+  useEffect(()=>{let active=true;v2Admin.marketingWorkflow().then(r=>{if(active)setUrl(r.marketingUrl);}).catch(()=>{});return ()=>{active=false;};},[]);
+  return <Card className="app-card"><CardHeader><CardTitle>Marketing campaigns</CardTitle><CardDescription>Create campaigns for this business in Marketing.</CardDescription></CardHeader><CardContent>{url?<a className="underline" href={url}>Open Marketing</a>:<span>Marketing navigation unavailable</span>}</CardContent></Card>;
 }
 
 function MarketingConsentSection() {

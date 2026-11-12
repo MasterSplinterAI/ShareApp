@@ -5,6 +5,9 @@
 export function buildSchemaStatements(tablePrefix: string): string[] {
   const p = tablePrefix;
   return [
+    `CREATE TABLE IF NOT EXISTS ${p}lead_consent_migrations (id TEXT PRIMARY KEY)`,
+    `CREATE TABLE IF NOT EXISTS ${p}lead_consent_heads (tenant_id TEXT NOT NULL,email TEXT NOT NULL,revision BIGINT NOT NULL,PRIMARY KEY(tenant_id,email))`,
+    `CREATE TABLE IF NOT EXISTS ${p}lead_consent_events (id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,email TEXT NOT NULL,lead_id TEXT NOT NULL,revision BIGINT NOT NULL,channel TEXT NOT NULL,purpose TEXT NOT NULL,granted INTEGER NOT NULL,source TEXT NOT NULL,consent_text TEXT,policy_version TEXT NOT NULL,occurred_at TEXT NOT NULL,UNIQUE(tenant_id,email,revision,channel))`,
     `
     CREATE TABLE IF NOT EXISTS ${p}tickets (
       id TEXT PRIMARY KEY,

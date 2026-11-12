@@ -1,4 +1,6 @@
 export interface MarketingDbAdapter {
+  snapshot?<T>(work: (db: MarketingDbAdapter) => Promise<T>): Promise<T>;
+  transaction?<T>(work: (db: MarketingDbAdapter) => Promise<T>): Promise<T>;
   run(sql: string, params?: unknown[]): Promise<{ changes: number }>;
   get<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T | undefined>;
   all<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
