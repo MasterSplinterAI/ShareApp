@@ -153,7 +153,20 @@ export function createSupportGateway(options: SupportGatewayOptions) {
         const auth=await authority();
         const method=String(req.method||'GET').toUpperCase();const raw=String(req.url||'/');const matched=route(method,raw);
         if(!matched)return reply(400,{error:'Unsupported customer support operation'});
+        // Expected context only constrains host authentication. It never supplies an actor.
+        let expected:{id:string;orgId?:string|null}|undefined;
+        if(Object.hasOwn(req.headers??{},'x-support-expected-customer')) {
+          try {
+            const raw=header(req,'x-support-expected-customer');if(raw.length>4096)throw Error('Oversized expected context');
+            const value=JSON.parse(decodeURIComponent(raw));
+            if(!value || Array.isArray(value) || typeof value.id!=='string' || !value.id || value.id.length>256 || Object.keys(value).some(k=>!['id','orgId'].includes(k)) ||
+              Object.hasOwn(value,'orgId') && value.orgId!==null && (typeof value.orgId!=='string' || !value.orgId || value.orgId.length>256))throw Error('Invalid expected context');
+            expected=value;
+          }catch{return reply(400,{error:'Invalid expected customer context'});}
+        }
         const resolved=await options.resolveUser(req);const actor=resolved ? safeActor(resolved) : null;
+        if(expected && !actor)return reply(401,{error:'Sign in again to retry your retained submission.',code:'customer_auth_required'});
+        if(expected && actor && (expected.id!==actor.id || Object.hasOwn(expected,'orgId') && expected.orgId!==(actor.orgId??null)))return reply(409,{error:'Account or workspace changed. Return to the original account and workspace to retry this saved draft.',code:'customer_context_changed'});
         if(actor && !await options.customerActive?.(auth.cfg.tenantSlug,actor))return reply(matched.pending?404:401,{error:'Account unavailable'});
         // Restrictive browser context is never identity: only host authentication can satisfy it.
         if(!actor && (header(req,'x-support-require-customer')==='1' || header(req,'authorization')))return reply(401,{error:'Sign in again to retry your retained submission.',code:'customer_auth_required'});

@@ -16,7 +16,14 @@ test('Lalia JWT current user/membership and durable acceptance on selected isola
  await assert.rejects(()=>adapter.resolveUser({headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'unowned-org'})}}));assert.equal(contexts,1);
  const {createSupportGateway}=require('@rhule/ops-sdk');const gateway=createSupportGateway({...adapter,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>{throw Error('offline');}});
  let result,status;await gateway.handler({...req,method:'POST',url:'/tickets',headers:{...req.headers,'idempotency-key':'lalia-'+Date.now()},body:{body:'retained'}},{setHeader(){},status(n){status=n;return this;},json(x){result=x;}});assert.equal(status,202);
- const saved=await adapter.store.get(result.receiptId);const copies=await Promise.all([adapter.store.put(saved),adapter.store.put({...saved,receiptId:'alternate'})]);assert.equal(copies[0].receiptId,copies[1].receiptId);
+ const saved=await adapter.store.get(result.receiptId);
+ await db.run("INSERT INTO v2_organizations(id,name) VALUES(?,?) ON CONFLICT(id) DO NOTHING",['gateway-org-other','Other gateway workspace']);
+ await db.run("INSERT INTO v2_org_members(user_id,org_id,role) VALUES(?,?,?) ON CONFLICT(user_id,org_id) DO NOTHING",['gateway-user','gateway-org-other','member']);
+ const boundHeaders={'idempotency-key':saved.key,'x-support-expected-customer':encodeURIComponent(JSON.stringify({id:'gateway-user',orgId:'gateway-org'}))};
+ const retry=async(token)=>{let status,data;await gateway.handler({method:'POST',url:'/tickets',headers:{...boundHeaders,authorization:'Bearer '+token},body:saved.payload},{setHeader(){},status(n){status=n;return this;},json(x){data=x;}});return {status,data};};
+ assert.equal((await retry(signSession({sub:'gateway-user',orgId:'gateway-org-other'}))).status,409);assert.equal(Number((await db.get('SELECT COUNT(*) AS count FROM ops_support_pending')).count),1);
+ assert.equal((await retry(signSession({sub:'gateway-user',orgId:'gateway-org'}))).data.receiptId,saved.receiptId);
+ const copies=await Promise.all([adapter.store.put(saved),adapter.store.put({...saved,receiptId:'alternate'})]);assert.equal(copies[0].receiptId,copies[1].receiptId);
  const {createSupportReplayPump}=require('@rhule/ops-sdk');const restarted=createShareAppPending({db,verifyToken,describeUser:async()=>({planLabel:'Fixture',contextSummary:''})});
  const pump=createSupportReplayPump({...restarted,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>new Response('{"ticket":{"id":"recovered"}}',{status:201})});
  await pump.runOnce();assert.equal((await restarted.store.get(saved.receiptId)).status,'accepted');

@@ -17,10 +17,10 @@ export function getSupportAccessToken() {
  * - Logged-in app: pass `user` (+ optional `openRef` for menu → open).
  * - Marketing / auth pages: omit `user` → contact gate + FAQ/Contact only.
  */
-export default function LaliaSupportLauncher({ user, openRef, audience }) {
+export default function LaliaSupportLauncher({ user, orgId = null, openRef, audience }) {
   const localOpen = useRef(null);
   // Public/auth pages intentionally stay guest clients, even with an ambient JWT.
-  // Only the app shell supplies verified me.user; never infer customer identity from token presence.
+  // The app shell supplies verified me.user and me.org.id (null means no organization); never infer customer identity from token presence.
   const resolvedAudience = audience || (user?.id ? 'app' : 'public');
   const customerContext = resolvedAudience === 'app';
 
@@ -41,6 +41,7 @@ export default function LaliaSupportLauncher({ user, openRef, audience }) {
         customerContext && user
           ? {
               id: user.id,
+              orgId,
               email: user.email || undefined,
               name: user.display_name || user.name || undefined,
               planLabel: user.planLabel,

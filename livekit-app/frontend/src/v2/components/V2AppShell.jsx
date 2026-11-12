@@ -391,7 +391,7 @@ export default function V2AppShell({ me, onLogout }) {
           </button>
         </nav>
 
-        <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} audience="app" />
+        <LaliaSupportLauncher user={me?.user} orgId={me?.org?.id ?? null} openRef={openHelpRef} audience="app" />
       </div>
     </div>
   );

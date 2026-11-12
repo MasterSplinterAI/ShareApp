@@ -40,3 +40,11 @@ test('explicit public transport omits ambient cookies and bearer while retaining
  const pending=new PendingIntents();for(const token of ['existing-token','expired-token'])await assert.rejects(()=>supportFetch('/support','/leads',{method:'POST',body:'{}'},()=>token,pending,undefined,true),/pending/);
  assert.equal(seen[0].headers['Idempotency-Key'],seen[1].headers['Idempotency-Key']);for(const request of seen){assert.equal(request.credentials,'omit');assert.equal(request.headers.Authorization,undefined);assert.equal(request.headers['x-support-guest-token'],'public-proof');assert.equal(request.headers['x-support-require-customer'],undefined);}
 });
+test('retained customer requests constrain user and explicit workspace independent of rotated JWT',async t=>{
+ const original=globalThis.fetch;const seen:any[]=[];globalThis.fetch=async(_url,init)=>{seen.push(init);return new Response('{"status":"pending","receiptId":"owned"}',{status:202});};t.after(()=>globalThis.fetch=original);
+ const pending=new PendingIntents(),init={method:'POST',body:'{"body":"owned draft"}'};
+ for(const token of ['jwt-a','jwt-other-actor'])await assert.rejects(()=>supportFetch('/support','/tickets',init,()=>token,pending,'customer-a',false,'org-a'),/pending/);
+ assert.equal(seen[0].headers['Idempotency-Key'],seen[1].headers['Idempotency-Key']);for(const request of seen)assert.deepEqual(JSON.parse(decodeURIComponent(request.headers['x-support-expected-customer'])),{id:'customer-a',orgId:'org-a'});
+ await assert.rejects(()=>supportFetch('/support','/tickets',init,()=>null,pending,'customer-a',false,null),/pending/);assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1).headers['x-support-expected-customer'])),{id:'customer-a',orgId:null});assert.notEqual(seen.at(-1).headers['Idempotency-Key'],seen[0].headers['Idempotency-Key']);
+ await assert.rejects(()=>supportFetch('/support','/tickets',init,()=>null,pending,'customer-a'),/pending/);assert.deepEqual(JSON.parse(decodeURIComponent(seen.at(-1).headers['x-support-expected-customer'])),{id:'customer-a'});
+});

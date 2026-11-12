@@ -1,11 +1,11 @@
 import {PendingIntents} from './pendingIntent.js';
 function normalizeApiBase(v:string){return v.replace(/\/$/,'');}
 function leadStorageKey(v:string){return `support-kit:leadId:${normalizeApiBase(v)}`;}
-function requestScope(apiBase:string,path:string,init:RequestInit|undefined,token:string|null,actorScope?:string) {
-  return JSON.stringify([normalizeApiBase(apiBase),actorScope||token||null,path,init?.method,init?.headers]);
+function requestScope(apiBase:string,path:string,init:RequestInit|undefined,token:string|null,actorScope?:string,expectedOrgId?:string|null) {
+  return JSON.stringify([normalizeApiBase(apiBase),actorScope||token||null,expectedOrgId===undefined?{}:{orgId:expectedOrgId},path,init?.method,init?.headers]);
 }
-export function hasRetainedSupportIntent(apiBase:string,path:string,init:RequestInit,pending:PendingIntents,getAccessToken?:()=>string|null|undefined,actorScope?:string) {
-  return pending.has(requestScope(apiBase,path,init,getAccessToken?.()?.trim()||null,actorScope),String(init.body??''));
+export function hasRetainedSupportIntent(apiBase:string,path:string,init:RequestInit,pending:PendingIntents,getAccessToken?:()=>string|null|undefined,actorScope?:string,expectedOrgId?:string|null) {
+  return pending.has(requestScope(apiBase,path,init,getAccessToken?.()?.trim()||null,actorScope,expectedOrgId),String(init.body??''));
 }
 export async function supportFetch<T>(
   apiBase: string,
@@ -15,9 +15,10 @@ export async function supportFetch<T>(
   pending?: PendingIntents,
   actorScope?: string,
   guestOnly = false,
+  expectedOrgId?: string | null,
 ): Promise<T> {
   const url = `${normalizeApiBase(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
-  if(guestOnly)actorScope=undefined;
+  if(guestOnly){actorScope=undefined;expectedOrgId=undefined;}
   const token = guestOnly?null:getAccessToken?.()?.trim() || null;
   const requiresCustomer=Boolean(actorScope||token);
   let guestToken: string | undefined;
@@ -28,8 +29,8 @@ export async function supportFetch<T>(
   const { headers: initHeaders, ...rest } = init ?? {};
   const extraHeaders=Object.fromEntries(new Headers(initHeaders));
   if(requiresCustomer)delete extraHeaders['x-support-guest-token'];
-  if(guestOnly){delete extraHeaders.authorization;delete extraHeaders['x-support-require-customer'];}
-  const intentScope=requestScope(apiBase,path,init,token,actorScope);
+  if(guestOnly){delete extraHeaders.authorization;delete extraHeaders['x-support-require-customer'];delete extraHeaders['x-support-expected-customer'];}
+  const intentScope=requestScope(apiBase,path,init,token,actorScope,expectedOrgId);
   const body=String(rest.body??'');
   const retained=pending?.retained(intentScope,body);
   if(retained)guestToken=retained.guestToken;
@@ -47,6 +48,7 @@ export async function supportFetch<T>(
       ...(guestToken ? { "x-support-guest-token": guestToken } : {}),
       ...extraHeaders,
       ...(requiresCustomer ? {"x-support-require-customer":"1"} : {}),
+      ...(actorScope ? {"x-support-expected-customer":encodeURIComponent(JSON.stringify({id:actorScope,...(expectedOrgId!==undefined?{orgId:expectedOrgId}:{})}))} : {}),
     },
   });
   const data = (await res.json()) as T & { error?: string };

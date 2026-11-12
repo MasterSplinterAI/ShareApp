@@ -1,14 +1,14 @@
 {
   "namespace": "@rhule/ops-sdk",
   "contractVersion": "1.0.0",
-  "sourceCommit": "4acf2fb6c24db83f44d74aba9784bc6ace701d9f",
+  "sourceCommit": "e9904deb574434b9803e6d142aedd9fcadb6bc44",
   "developmentOnly": false,
   "files": {
     "package.json": "78aa788f9ad87b521780e11b5a4ec5f6968aa87d1ee564bd2969a40f7543b1df",
     "scripts/build.mjs": "4f914ac681030d179a1580ae9639270480aca40270dee7e3c7e7443cb04860b3",
     "src/index.ts": "8f09f97ac22c3e5672679ea64f4d8b01b6043d77f5dc45576af64686f004aa96",
-    "src/supportGateway.ts": "aedd5a1b28db08d356e4c075e8785844b9cb151691a7c89c872aea95dc148e2a",
+    "src/supportGateway.ts": "217982b000025d4ed4817cd9133e0537ce1bf63cac2663e6a702552d0e616c14",
     "tsconfig.json": "ae4a13267ca7ed4650344529e08bc96340c2d67eb31cf6d5a4576a567ec0d226"
   },
-  "contentHash": "357a0219185fe8b486a3cfbb3d961d2ea8659c98f993d92381e3fd532f33ae50"
+  "contentHash": "7036cfe8e29c031871cdaf4472dcbf1296171f8b7f87d8d4742560027e9a634f"
 }

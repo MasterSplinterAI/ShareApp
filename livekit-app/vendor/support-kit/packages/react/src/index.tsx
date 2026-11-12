@@ -17,6 +17,8 @@ export interface SupportLauncherProps {
   apiBase: string;
   user?: {
     id: string;
+    /** Omit for legacy clients; null asserts no organization; string asserts the exact verified workspace. */
+    orgId?: string | null;
     name?: string;
     email?: string;
     planLabel?: string;
@@ -150,7 +152,7 @@ const shell: CSSProperties = {
 export function SupportLauncher(props: SupportLauncherProps) {
   // The component itself owns isolation; hosts need not know to add a React key.
   const identity=props.guestOnly?'guest':props.user?.id?`user:${props.user.id}`:props.getAccessToken?.()?.trim()||'guest';
-  return <SupportLauncherSession key={JSON.stringify([normalizeApiBase(props.apiBase),identity,props.audience,props.requireCustomer,props.guestOnly])} {...props} />;
+  return <SupportLauncherSession key={JSON.stringify([normalizeApiBase(props.apiBase),identity,{orgId:props.guestOnly?undefined:props.user?.orgId},props.audience,props.requireCustomer,props.guestOnly])} {...props} />;
 }
 
 function SupportLauncherSession(props: SupportLauncherProps) {
@@ -182,14 +184,14 @@ function SupportLauncherSession(props: SupportLauncherProps) {
     const signal=clientAbort.current.signal;
     try {
       if(requireCustomer&&!user?.id && init?.method && !['GET','HEAD'].includes(init.method.toUpperCase()))throw Object.assign(new Error('Please wait for your account to finish signing in.'),{code:'customer_identity_required'});
-      const result=await supportFetch<T>(apiBase,path,{...init,signal},getAccessToken,pendingIntents.current,user?.id||(requireCustomer?'unresolved-customer':undefined),guestOnly);
+      const result=await supportFetch<T>(apiBase,path,{...init,signal},getAccessToken,pendingIntents.current,user?.id||(requireCustomer?'unresolved-customer':undefined),guestOnly,user?.orgId);
       if(signal.aborted)throw new DOMException('Support client scope changed','AbortError');
       return result;
     } catch(err:any) {
       if(!signal.aborted&&err?.code==='support_pending')setSubmission({status:'pending',receiptId:err.receiptId,retryPaused:Boolean(err.retryPaused)});
       throw err;
     }
-  },[apiBase,getAccessToken,user?.id,requireCustomer,guestOnly]);
+  },[apiBase,getAccessToken,user?.id,user?.orgId,requireCustomer,guestOnly]);
 
 
   const accent = brand?.accent ?? DEFAULT_ACCENT;
@@ -311,7 +313,7 @@ function SupportLauncherSession(props: SupportLauncherProps) {
       return;
     }
     const leadBody=JSON.stringify({name:gateName.trim(),email:gateEmail.trim(),...(gatePhone.trim()?{phone:gatePhone.trim()}:{}),marketingOptIn:gateMarketing,source:'public_launcher',consentText:marketingLabel});
-    const retainedLead=hasRetainedSupportIntent(apiBase,'/leads',{method:'POST',body:leadBody},pendingIntents.current,guestOnly?undefined:getAccessToken,guestOnly?undefined:user?.id);
+    const retainedLead=hasRetainedSupportIntent(apiBase,'/leads',{method:'POST',body:leadBody},pendingIntents.current,guestOnly?undefined:getAccessToken,guestOnly?undefined:user?.id,guestOnly?undefined:user?.orgId);
     setSending(true);
     setError(null);
     try {
