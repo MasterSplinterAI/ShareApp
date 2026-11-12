@@ -7,7 +7,7 @@ const fs = require('fs');
 const { createOpsSupportProxy } = require('@rhule/ops-sdk');
 const path = require('path');
 
-const TENANT_SLUG = 'lalia';
+const businessId = () => String(process.env.OPS_HUB_BUSINESS_ID || 'lalia');
 
 function getOpsHubConfig() {
   const baseUrl = String(process.env.OPS_HUB_URL || '')
@@ -43,7 +43,7 @@ function encodeSupportUserHeader(user) {
   return Buffer.from(JSON.stringify(user), 'utf8').toString('base64url');
 }
 
-async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, usePublicKey = false } = {}) {
+async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, usePublicKey = false, signal } = {}) {
   const cfg = getOpsHubConfig();
   if (!cfg.baseUrl) return null;
   const key = usePublicKey ? cfg.publicKey || cfg.secretKey : cfg.secretKey;
@@ -53,8 +53,8 @@ async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, u
     Accept: 'application/json',
     Authorization: `Bearer ${key}`,
     'X-Ops-Key': key,
-    'X-Ops-Tenant': TENANT_SLUG,
-    'x-tenant-id': TENANT_SLUG,
+    'X-Ops-Tenant': businessId(),
+    'x-tenant-id': businessId(),
   };
   if (forwardedUser) {
     headers['X-Support-User-Json'] = encodeSupportUserHeader(forwardedUser);
@@ -66,6 +66,8 @@ async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, u
   const res = await fetch(`${cfg.baseUrl}${endpoint}`, {
     method,
     headers,
+    signal: signal || AbortSignal.timeout(10000),
+    redirect: 'error',
     body: body !== undefined ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -84,7 +86,7 @@ async function ingestBillingEvent(eventInput) {
     return await opsHubRequest('/api/v1/ingest/billing-event', {
       method: 'POST',
       body: {
-        businessUnitId: TENANT_SLUG,
+        businessUnitId: businessId(),
         ...eventInput,
       },
     });
@@ -198,7 +200,7 @@ async function ingestCogs(cogsInput) {
     return await opsHubRequest('/api/v1/ingest/cogs', {
       method: 'POST',
       body: {
-        businessUnitId: TENANT_SLUG,
+        businessUnitId: businessId(),
         livemode: cogsInput.livemode !== undefined ? Boolean(cogsInput.livemode) : true,
         environment: cogsInput.livemode === false ? 'test' : 'live',
         creditAccountNumber: '1060',
@@ -249,7 +251,7 @@ async function syncCuratedDocsToOpsHub(docsRoot) {
     if (!articles.length) return 0;
     const res = await opsHubRequest('/api/v1/support/kb/sync', {
       method: 'POST',
-      body: { tenantId: TENANT_SLUG, articles },
+      body: { tenantId: businessId(), articles },
     });
     return res?.syncedCount ?? 0;
   } catch (err) {
@@ -264,105 +266,17 @@ async function syncCuratedDocsToOpsHub(docsRoot) {
 async function backfillLaliaStateToOpsHub(db) {
   if (!isOpsHubConfigured() || !db) return null;
   try {
-    const users = await db.all(
-      `SELECT u.id, u.email, u.display_name, p.marketing_email
-       FROM v2_users u
-       LEFT JOIN v2_user_communication_prefs p ON p.user_id = u.id`
-    ).catch(() => []);
-
-    const subs = await db.all(
-      `SELECT org_id, plan_id, status, is_comp, stripe_subscription_id FROM v2_org_subscriptions`
-    ).catch(() => []);
-
-    const { getStripeSettings } = require('./v2StripeSettings');
-    const stripeSettings = await getStripeSettings().catch(() => ({}));
-    const isLiveKey = Boolean(
-      stripeSettings?.secretKey && String(stripeSettings.secretKey).startsWith('sk_live_')
-    );
-
-    let livePaidOrgs = 0;
-    let testPaidOrgs = 0;
-    let trialOrgs = 0;
-    let compOrgs = 0;
-
-    for (const s of subs) {
-      if (s.is_comp === 1) {
-        compOrgs += 1;
-      } else if (s.status === 'active' && s.plan_id && s.plan_id !== 'free') {
-        if (isLiveKey && s.stripe_subscription_id && !String(s.stripe_subscription_id).startsWith('sub_test')) {
-          livePaidOrgs += 1;
-        } else {
-          testPaidOrgs += 1;
-        }
-      } else {
-        trialOrgs += 1;
-      }
-    }
-
-    let usersSynced = 0;
-    for (const u of users) {
-      if (!u.email) continue;
-      await syncContact({
-        externalUserId: u.id,
-        email: u.email,
-        name: u.display_name || u.email.split('@')[0],
-        planTier: 'free',
-        lifecycleState: 'trial_active',
-        marketingOptIn: Boolean(u.marketing_email),
-        source: 'lalia_backfill',
-      });
-      usersSynced += 1;
-    }
-
+    const {backfillCustomerProjection,reportCustomerProjection}=require('./customerProjection');
+    const usersSynced=await backfillCustomerProjection();
     const costRows = await db.all('SELECT * FROM meeting_cost_events');
     const totalCostUsd = costRows.reduce((sum, row) => sum + Number(row.total_cost_usd || 0), 0);
     const { queueCostEvent } = require('./opsOutbox');
     for (const row of costRows) await db.transaction(tx => queueCostEvent(tx, row));
 
-    await opsHubRequest('/api/v1/ingest/heartbeat', {
-      method: 'POST',
-      body: {
-        tenantId: TENANT_SLUG,
-        environment: 'live',
-        status: 'up',
-        latencyMs: 28,
-        activeOrgs: subs.length,
-        paidOrgs: livePaidOrgs,
-        trialOrgs,
-        compOrgs,
-        activeUsersDau: users.length,
-        activeUsersMau: users.length,
-        mrrCents: livePaidOrgs * 4900,
-      },
-    });
+    await reportCustomerProjection();
+    await opsHubRequest('/api/v1/ingest/heartbeat',{body:{status:'up'}});
+    return {usersSynced,totalCostUsd};
 
-    if (testPaidOrgs > 0 || compOrgs > 0) {
-      await opsHubRequest('/api/v1/ingest/heartbeat', {
-        method: 'POST',
-        body: {
-          tenantId: TENANT_SLUG,
-          environment: 'test',
-          status: 'up',
-          latencyMs: 28,
-          activeOrgs: subs.length,
-          paidOrgs: testPaidOrgs,
-          trialOrgs,
-          compOrgs,
-          activeUsersDau: users.length,
-          activeUsersMau: users.length,
-          mrrCents: testPaidOrgs * 4900,
-        },
-      });
-    }
-
-    return {
-      usersSynced,
-      orgsCount: subs.length,
-      livePaidOrgs,
-      testPaidOrgs,
-      compOrgs,
-      totalCostUsd,
-    };
   } catch (err) {
     console.warn('[opsHubClient] backfillLaliaStateToOpsHub skipped:', err.message);
     return null;
@@ -390,6 +304,8 @@ function createOpsSupportProxyMiddleware({resolveUser,localHandler,db,central}) 
 }
 
 module.exports = {
+  opsHubRequest,
+  ...require('./customerProjection'),
   getOpsHubConfig,
   isOpsHubConfigured,
   ingestBillingEvent,

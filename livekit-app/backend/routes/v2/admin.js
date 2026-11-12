@@ -1,3 +1,4 @@
+const {queueContact,queueOrgContacts}=require('../../lib/opsOutbox');
 const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
@@ -232,7 +233,7 @@ router.patch('/orgs/:orgId/plan', requireV2Auth, requireSuperadmin, async (req, 
       plan_id,
       reason: reasonTrim,
     });
-    await db.run(`UPDATE v2_org_subscriptions SET plan_id = ? WHERE org_id = ?`, [plan_id, req.params.orgId]);
+    await db.transaction(async tx=>{await tx.run(`UPDATE v2_org_subscriptions SET plan_id = ? WHERE org_id = ?`, [plan_id, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.params.orgId]);
     res.json({ subscription: sub });
   } catch (e) {
@@ -593,10 +594,10 @@ router.post('/orgs/:orgId/suspend', requireV2Auth, requireSuperadmin, async (req
     const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_suspend_org', { orgId: req.params.orgId, reason });
-    await db.run(
+    await db.transaction(async tx=>{await tx.run(
       `UPDATE v2_organizations SET suspended_at = datetime('now'), suspended_reason = ?, billing_status = 'suspended' WHERE id = ?`,
       [reason, req.params.orgId]
-    );
+    );await queueOrgContacts(tx,req.params.orgId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/suspend org]', e);
@@ -611,10 +612,10 @@ router.post('/orgs/:orgId/reactivate', requireV2Auth, requireSuperadmin, async (
     const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_reactivate_org', { orgId: req.params.orgId, reason });
-    await db.run(
+    await db.transaction(async tx=>{await tx.run(
       `UPDATE v2_organizations SET suspended_at = NULL, suspended_reason = NULL, billing_status = 'active' WHERE id = ?`,
       [req.params.orgId]
-    );
+    );await queueOrgContacts(tx,req.params.orgId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/reactivate org]', e);
@@ -629,7 +630,7 @@ router.post('/users/:userId/disable', requireV2Auth, requireSuperadmin, async (r
     const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_disable_user', { userId: req.params.userId, reason });
-    await db.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);
+    await db.transaction(async tx=>{await tx.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);await queueContact(tx,req.params.userId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/disable user]', e);
@@ -644,7 +645,7 @@ router.post('/users/:userId/enable', requireV2Auth, requireSuperadmin, async (re
     const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_enable_user', { userId: req.params.userId, reason });
-    await db.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);
+    await db.transaction(async tx=>{await tx.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);await queueContact(tx,req.params.userId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/enable user]', e);
@@ -668,7 +669,7 @@ router.patch('/orgs/:orgId/billing-status', requireV2Auth, requireSuperadmin, as
       billing_status,
       reason: reasonTrim,
     });
-    await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);
+    await db.transaction(async tx=>{await tx.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     res.json({ org });

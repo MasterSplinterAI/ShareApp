@@ -207,11 +207,13 @@ app.use((err, req, res, next) => {
 
 (async function start() {
   let stopOpsEventWorkers = () => {};
+  let stopCustomerReporting = () => {};
   try {
     await v2Database.initDatabase();
     const { startOpsEventWorkers } = require('./lib/opsOutbox');
     const { processStripeEvent } = require('./routes/v2/billingWebhook');
     stopOpsEventWorkers = await startOpsEventWorkers(processStripeEvent);
+    stopCustomerReporting = require('./lib/customerProjection').startCustomerReporting();
   } catch (e) {
     console.error('[v2Database] init failed:', e.message);
   }
@@ -274,6 +276,6 @@ app.use((err, req, res, next) => {
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
-  server.once('close',()=>{stopOpsEventWorkers();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
+  server.once('close',()=>{stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
   process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
 })();

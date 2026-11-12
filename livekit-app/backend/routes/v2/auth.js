@@ -137,7 +137,7 @@ router.post('/login', async (req, res) => {
     if (org?.suspended_at) {
       return res.status(403).json({ error: 'Workspace suspended', code: 'org_suspended' });
     }
-    await db.run(`UPDATE v2_users SET last_login_at = datetime('now') WHERE id = ?`, [user.id]);
+    await db.transaction(async tx=>{await tx.run(`UPDATE v2_users SET last_login_at = datetime('now') WHERE id = ?`, [user.id]);await queueContact(tx,user.id);});
     try {
       const { ensureCurrentBillingCycle } = require('../../lib/v2BillingCycles');
       await ensureCurrentBillingCycle(membership.org_id);
@@ -424,11 +424,12 @@ router.patch('/me', requireV2Auth, async (req, res) => {
           error: `Name must be between ${DISPLAY_NAME_MIN} and ${DISPLAY_NAME_MAX} characters`,
         });
       }
-      await db.run(`UPDATE v2_users SET display_name = ? WHERE id = ?`, [trimmed, req.v2Auth.userId]);
-      const org = await db.get(`SELECT account_type FROM v2_organizations WHERE id = ?`, [req.v2Auth.orgId]);
-      if (org?.account_type === PERSONAL) {
-        await db.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`, [trimmed, req.v2Auth.orgId]);
-      }
+      await db.transaction(async tx=>{
+        await tx.run(`UPDATE v2_users SET display_name = ? WHERE id = ?`, [trimmed, req.v2Auth.userId]);
+        const org=await tx.get(`SELECT account_type FROM v2_organizations WHERE id = ?`,[req.v2Auth.orgId]);
+        if(org?.account_type===PERSONAL)await tx.run(`UPDATE v2_organizations SET name = ? WHERE id = ?`,[trimmed,req.v2Auth.orgId]);
+        await queueContact(tx,req.v2Auth.userId);
+      });
     }
 
     if (hasPreferredLanguage) {
@@ -436,10 +437,7 @@ router.patch('/me', requireV2Auth, async (req, res) => {
       if (cleaned === undefined) {
         return res.status(400).json({ error: 'Invalid preferredLanguage' });
       }
-      await db.run(`UPDATE v2_users SET preferred_language = ? WHERE id = ?`, [
-        cleaned,
-        req.v2Auth.userId,
-      ]);
+      await db.transaction(async tx=>{await tx.run(`UPDATE v2_users SET preferred_language = ? WHERE id = ?`, [cleaned,req.v2Auth.userId]);await queueContact(tx,req.v2Auth.userId);});
     }
 
     const user = await db.get(
