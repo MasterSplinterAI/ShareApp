@@ -1,0 +1,48 @@
+{
+  "installedAt": "2026-11-12T20:02:12.147240+00:00",
+  "recovery": {
+    "format": 1,
+    "backend": {
+      "secretArn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/backend-wwUefO",
+      "versionId": "344243e5-46b3-4cfc-a433-58c0a35c0b5f",
+      "keyGeneration": "key-generation-7d02d7dea765cd01ff4c6c60"
+    }
+  },
+  "previousBackupSourceSha256": "f8781ec48dd3f71058d33c54eb4769ec6eb296a9c77db1b9be2e93adb1ff2a80",
+  "installedSha256": {
+    "/opt/lalia-backup/backup.cjs": "d8f57fbedeca8c4b1f2b65b83391614f70f32ebdf7f22a7f85b655cfd08dd4bc",
+    "/opt/lalia-backup/recovery-metadata.cjs": "c9ef2a55ddb2c9257ec9a69e106a92889b88cb824caa69856d1bb2ec64d18f00",
+    "/etc/lalia-backup-recovery.json": "3de9b5b737915cb3f4f8f12a0c9cbc6c8543dda91759cf2bea575e2f8d529c43"
+  },
+  "referenceRootOwnedAndProtectedVerified": true,
+  "backupServiceSuccessful": true,
+  "freshnessServiceSuccessful": true,
+  "backupTimersUnchangedAndEnabled": true,
+  "ec2IamModified": false,
+  "backendOrPm2Modified": false,
+  "temporarySourceDirectoryRemoved": true,
+  "verifiedBackupPrefix": "lalia/daily/2026-11-12T20-02-10-202Z-cac62d44-18cd-4c4e-89e9-ff81ebd24479/",
+  "freshManifestRecoveryReferenceMatches": true,
+  "referencedVersionExists": true,
+  "keyGenerationPinned": true,
+  "ec2IamReadDenials": {
+    "secretRead": "implicitDeny",
+    "backupRead": "implicitDeny"
+  },
+  "ec2ManagedPolicies": [],
+  "ec2InlinePolicyNames": [
+    "LaliaDailyBackupPutOnly"
+  ],
+  "deployedUploadsRootAliasDiscovered": true,
+  "trustedUploadsRootCanonicalized": true,
+  "nestedSymlinksStillRejected": true,
+  "rootIndependentReadback": {
+    "sourceHashesMatched": true,
+    "timersActive": true,
+    "backupAndFreshnessResult": "success",
+    "apiHealth": {
+      "status": "ok",
+      "service": "livekit-backend"
+    }
+  }
+}

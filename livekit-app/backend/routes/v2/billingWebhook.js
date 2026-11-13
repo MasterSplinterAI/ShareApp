@@ -1,12 +1,10 @@
 const crypto = require('crypto');
 const db = require('../../db/v2Database');
 const { getStripeSettings } = require('../../lib/v2StripeSettings');
-const { applyStripeSubscriptionToOrg, applyCheckoutSessionToOrg } = require('../../lib/v2StripeSubscriptionSync');
+const { reconcileStripeSubscriptionEvent, applyCheckoutSessionToOrg } = require('../../lib/v2StripeSubscriptionSync');
 const { applyStripeDisputeEvent } = require('../../lib/v2StripeDispute');
 const { markOverageLedgerForInvoice } = require('../../lib/v2OverageSettlement');
-const { forwardStripeWebhookToOpsHub } = require('../../lib/opsHubClient');
-
-const MAX_PAYLOAD_CHARS = 500_000;
+const { acceptVerifiedStripeEvent, createStripeReceiptWorker, queueStripeEvent } = require('../../lib/opsOutbox');
 
 function verifyStripeSignature(rawBuffer, sigHeader, secret, maxSkewSec = 300) {
   if (!secret || !sigHeader || typeof sigHeader !== 'string') {
@@ -47,18 +45,18 @@ async function processStripeEvent(event) {
   const obj = event.data && event.data.object;
   if (!obj) return;
 
-  if (type === 'checkout.session.completed') {
+  if (['checkout.session.completed', 'checkout.session.async_payment_succeeded', 'checkout.session.async_payment_failed'].includes(type)) {
     await applyCheckoutSessionToOrg(obj);
     return;
   }
 
   if (type === 'customer.subscription.deleted') {
-    await applyStripeSubscriptionToOrg({ ...obj, status: 'canceled' });
+    await reconcileStripeSubscriptionEvent(obj);
     return;
   }
 
   if (type.startsWith('customer.subscription.')) {
-    await applyStripeSubscriptionToOrg(obj);
+    await reconcileStripeSubscriptionEvent(obj);
     return;
   }
 
@@ -69,7 +67,11 @@ async function processStripeEvent(event) {
   }
 
   if (type === 'invoice.paid') {
-    const result = await markOverageLedgerForInvoice(obj, 'charged');
+    const result = await db.transaction(async tx => {
+      const result = await markOverageLedgerForInvoice(obj, 'charged');
+      await queueStripeEvent(tx, event);
+      return result;
+    });
     if (result.updated) console.info('[v2/billing/webhook] overage invoice paid', result);
     return;
   }
@@ -92,11 +94,9 @@ async function handleV2BillingWebhook(req, res) {
         console.warn('[v2/billing/webhook] signature verification failed:', v.reason);
         return res.status(400).json({ error: 'Invalid signature' });
       }
-    } else if (process.env.NODE_ENV === 'production') {
+    } else {
       console.error('[v2/billing/webhook] STRIPE_WEBHOOK_SECRET unset in production');
       return res.status(400).json({ error: 'Webhook secret not configured' });
-    } else {
-      console.warn('[v2/billing/webhook] STRIPE_WEBHOOK_SECRET unset — accepting unsigned webhook (development only)');
     }
 
     let event;
@@ -111,43 +111,17 @@ async function handleV2BillingWebhook(req, res) {
       return res.status(400).json({ error: 'Missing event id' });
     }
 
-    const existing = await db.get(`SELECT id, processed_at FROM v2_webhook_events WHERE id = ?`, [eventId]);
-    if (existing && existing.processed_at) {
-      return res.json({ received: true, duplicate: true });
-    }
+    // New receipts contain the full verified input. Historical/truncated rows are
+    // retained separately and never promoted into automatic verified replay.
+    const previous = await db.get('SELECT status FROM ops_verified_stripe_receipts WHERE id=?',[event.id]);
+    await acceptVerifiedStripeEvent(event);
+    await createStripeReceiptWorker(processStripeEvent).drain();
 
-    const payloadStr = JSON.stringify(event);
-    const truncated = payloadStr.length > MAX_PAYLOAD_CHARS ? payloadStr.slice(0, MAX_PAYLOAD_CHARS) : payloadStr;
-
-    if (!existing) {
-      try {
-        await db.run(
-          `INSERT INTO v2_webhook_events (id, provider, type, payload_json, received_at) VALUES (?,?,?,?, datetime('now'))`,
-          [eventId, 'stripe', String(event.type || 'unknown').slice(0, 128), truncated]
-        );
-      } catch (e) {
-        if (!String(e.message || '').includes('SQLITE_CONSTRAINT')) throw e;
-      }
-    }
-
-    const again = await db.get(`SELECT processed_at FROM v2_webhook_events WHERE id = ?`, [eventId]);
-    if (again && again.processed_at) {
-      return res.json({ received: true, duplicate: true });
-    }
-
-    await processStripeEvent(event);
-    void forwardStripeWebhookToOpsHub(event);
-
-    await db.run(`UPDATE v2_webhook_events SET processed_at = datetime('now'), type = ? WHERE id = ?`, [
-      String(event.type || 'unknown').slice(0, 128),
-      eventId,
-    ]);
-
-    res.json({ received: true });
+    res.json({ received: true, ...(previous?.status==='delivered'?{duplicate:true}:{}) });
   } catch (e) {
     console.error('[v2/billing/webhook]', e.message);
     res.status(500).json({ error: 'Webhook handler failed' });
   }
 }
 
-module.exports = { handleV2BillingWebhook };
+module.exports = { handleV2BillingWebhook, processStripeEvent, verifyStripeSignature };

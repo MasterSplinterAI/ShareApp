@@ -30,13 +30,13 @@ describe("ShareApp host mapping", () => {
         calls.push(`run:${sql}:${params.join(",")}`);
         return { lastID: 1, changes: 1 };
       },
-      get: async (sql: string, params: unknown[] = []) => {
+      get: async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T | undefined> => {
         calls.push(`get:${sql}:${params.join(",")}`);
-        return { id: "row" };
+        return { id: "row" } as T;
       },
-      all: async (sql: string, params: unknown[] = []) => {
+      all: async <T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> => {
         calls.push(`all:${sql}:${params.join(",")}`);
-        return [{ id: "row" }];
+        return [{ id: "row" }] as T[];
       },
     };
 

@@ -64,7 +64,7 @@
       },
       "transcripts": {
         "title": "自分で管理する文字起こし",
-        "description": "会議ごとのポリシーで確定行をサーバーに保存。記録が必要なときはJSONとプレーンテキストでダウンロード。"
+        "description": "新しい通話や会議では、文字起こしが初期設定で保存されます。ホストは設定で保存をオフにできます。保存されたテキストは、後からの確認や任意のAIレポート作成に利用できます。"
       },
       "accounts": {
         "title": "個人またはチームアカウント",
@@ -122,6 +122,7 @@
     }
   },
   "pricing": {
+    "paidComingSoon": "近日公開",
     "eyebrow": "料金",
     "title": "無料で始めて、成長に合わせて拡張",
     "subtitle": "月60参加者分の分数から開始。準備ができたらアップグレード—組織単位の課金。",
@@ -194,7 +195,7 @@
       },
       "transcripts": {
         "q": "文字起こしの保存は必須ですか？",
-        "a": "いいえ。各会議で確定した字幕行をサーバーに保存するかを選択できます。ホストと組織管理者は、行が存在するときに後からダウンロードできます。"
+        "a": "新しい通話や会議では、文字起こしが初期設定で保存されます。ホストは設定で保存をオフにできます。保存されたテキストは、後からの確認や任意のAIレポート作成に利用できます。"
       },
       "trial": {
         "q": "支払い前に試せますか？",
@@ -202,7 +203,7 @@
       },
       "storage": {
         "q": "データはどこに保存されますか？",
-        "a": "会議はリアルタイムで処理されます。文字起こしはホストが会議ごとに保存を有効にした場合のみ保存され、いつでも削除できます。すべてのデータは転送中に暗号化されます。"
+        "a": "会議はリアルタイムで処理されます。新しい通話や会議では文字起こしが初期設定で保存され、ホストがオフにできます。保存されたテキストは削除されるまで保持されます。データは転送中に暗号化されます。"
       },
       "accuracy": {
         "q": "ライブ翻訳の精度はどのくらいですか？",
@@ -222,7 +223,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -230,7 +231,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -365,14 +366,21 @@
     "namePlaceholder": "お名前",
     "myLanguage": "自分の言語（話す・聞く）",
     "languageHint": "字幕と翻訳はこの言語で表示されます。",
-    "joinMeeting": "会議に参加"
+    "joinMeeting": "会議に参加",
+    "transcriptTitle": "文字起こしの保存",
+    "transcriptOffTitle": "文字起こしの保存はオフです",
+    "transcriptOn": "この会議では、後からの確認や任意のAIレポート作成のために字幕と翻訳が保存されます。発言を保存したくない場合は、話す前にホストへ保存をオフにするよう依頼してください。",
+    "transcriptDefault": "新しい通話や会議では、文字起こしが初期設定で保存されます。ホストは会議設定で保存をオフにできます。話す前に、この会議の設定をホストに確認してください。",
+    "transcriptOff": "この会議では新しい文字起こしは保存されません。ライブ字幕と翻訳は引き続き利用できます。保存をオフにしても、すでに保存されたテキストは削除されません。",
+    "privacyPolicy": "プライバシーポリシー",
+    "transcriptSettings": "保存設定を管理"
   },
   "trust": {
     "poweredBy": "ブラウザでのリアルタイム動画",
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
+      "transcripts": "文字起こしは初期設定で保存",
       "retention": "You control retention"
     }
   },
@@ -393,7 +401,7 @@
       },
       "after": {
         "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "description": "新しい通話や会議では、文字起こしが初期設定で保存されます。ホストは設定で保存をオフにできます。保存されたテキストは、後からの確認や任意のAIレポート作成に利用できます。"
       },
       "insights": {
         "title": "Without the busywork",

@@ -42,10 +42,10 @@ export function useUpgradeOffer(me) {
 
   const startCheckout = useCallback(async (planId) => {
     const id = planId || offer.primaryPlan?.id;
-    if (!id) return false;
+    if (!id || !offer.canCheckout) return false;
     setCheckoutLoading(id);
     try {
-      const { url } = await v2Billing.checkout(id);
+      const { url } = await v2Billing.changePlan(id, subscription?.subscription);
       if (url) {
         window.location.href = url;
         return true;
@@ -58,7 +58,7 @@ export function useUpgradeOffer(me) {
     } finally {
       setCheckoutLoading(null);
     }
-  }, [offer.primaryPlan?.id]);
+  }, [offer.canCheckout, offer.primaryPlan?.id, subscription?.subscription]);
 
   return { offer, loading, checkoutLoading, startCheckout, subscription, plans, usage };
 }

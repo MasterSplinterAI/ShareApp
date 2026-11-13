@@ -81,14 +81,14 @@ export function getRecommendedUpgrade({ subscription, plans, usage, role }) {
   const pressureMeter =
     (LEVEL_RANK[translation.level] || 0) > (LEVEL_RANK[meeting.level] || 0) ? 'translation' : 'meeting';
 
-  const upgrades = nextUpgradePlans(plan.id, plans);
   const stripeEnabled = Boolean(subscription?.stripeEnabled);
+  const upgrades = stripeEnabled ? nextUpgradePlans(plan.id, plans) : [];
   const canCheckout = canManageBilling(role) && stripeEnabled && upgrades.length > 0;
   const primaryPlan = upgrades[0] || null;
   const warnLevel = LEVEL_RANK[pressure.level] || 0;
   const showWarning = warnLevel >= LEVEL_RANK.high;
   const showUpgrade = upgrades.length > 0;
-  if (!showUpgrade && !showWarning) return { show: false };
+  if (!showUpgrade && !showWarning) return { show: false, stripeEnabled };
 
   let headline = primaryPlan ? `Upgrade to ${primaryPlan.name}` : 'Usage notice';
   let detail = primaryPlan
@@ -105,7 +105,7 @@ export function getRecommendedUpgrade({ subscription, plans, usage, role }) {
   const meterLabel = pressureMeter === 'translation' ? 'translation minutes' : 'participant-minutes';
   if (pressure.level === 'hard_stopped') {
     headline = 'Hard usage limit reached';
-    detail = `${pressure.used.toLocaleString()} of ${pressure.hardCap.toLocaleString()} ${meterLabel} used (hard stop). Upgrade or wait for next month.`;
+    detail = `${pressure.used.toLocaleString()} of ${pressure.hardCap.toLocaleString()} ${meterLabel} used (hard stop). ${stripeEnabled ? 'Upgrade or wait for next month.' : 'More minutes are available next month.'}`;
   } else if (pressure.level === 'near_hard_cap') {
     headline = 'Approaching hard stop';
     detail = `${pressure.used.toLocaleString()} of ${pressure.hardCap.toLocaleString()} ${meterLabel} used (${pressure.pctHard}% of hard limit). Meetings may end soon.`;

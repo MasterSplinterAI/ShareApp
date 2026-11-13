@@ -17,7 +17,7 @@ import { PlansTab } from './admin/PlansTab';
 import { BillingTab } from './admin/BillingTab';
 import { CommsTab } from './admin/CommsTab';
 import { StorageTab } from './admin/StorageTab';
-import { SupportOpsConsole } from '@rhule/support-react';
+import { SupportOpsConsole } from '@quill/support-react';
 import { MarketingOpsConsole } from '@rhule/marketing-react';
 import { getSupportAccessToken, SUPPORT_API_BASE } from '../components/LaliaSupportLauncher';
 import MarketingEmailSettings from './admin/MarketingEmailSettings';
@@ -149,11 +149,11 @@ export function AdminStoragePage() {
 }
 
 export function AdminSupportPage() {
-  return (
-    <div className="min-h-[70vh]">
-      <SupportOpsConsole apiBase={SUPPORT_API_BASE} getAccessToken={getSupportAccessToken} />
-    </div>
-  );
+ const [state,setState]=useState(null);
+ useEffect(()=>{let active=true;fetch(SUPPORT_API_BASE+'/authority-state'+window.location.search).then(r=>r.json()).then(value=>{if(active)setState(value);}).catch(()=>{if(active)setState({central:true});});return()=>{active=false;};},[]);
+ if(!state)return <p>Checking support workspace…</p>;
+ if(state.central)return <div className="rounded-lg border p-6"><h2 className="font-semibold">Support is managed in OpsHub</h2><p className="my-3">Review tickets and knowledge in the central workspace. Sign in with your separately authorized OpsHub account; app administrator access does not grant OpsHub access.</p><a className="underline" href={state.url??"https://ops.lalia.cloud/support"}>Open Lalia support workspace</a></div>;
+ return <div className="min-h-[70vh]"><SupportOpsConsole apiBase={SUPPORT_API_BASE} getAccessToken={getSupportAccessToken}/></div>;
 }
 
 export function AdminMarketingPage() {

@@ -1,0 +1,413 @@
+{
+  "purpose": "Post-fix real browser Stripe TEST checkout return verification and exact fixture cleanup",
+  "checkoutFixCommit": "79f8000",
+  "integrationMergeCommit": "e224afc",
+  "browserObservations": {
+    "observer": "Parent agent through CUA; backend verification and cleanup performed by checkout subagent",
+    "accountA": "Signed in via actual form, paid $49 with Stripe TEST card 4242, returned authenticated directly to Billing with section=billing&billing=success and active Starter. Legacy billing=success also selected Billing; subsequent manual Account selection remained stable.",
+    "accountB": "Signed in via actual form, started Pro checkout, used Back, returned authenticated directly to Billing with section=billing&billing=cancel and active Free; then logged out.",
+    "screenshots": [
+      "/tmp/lalia-checkout-fixed-starter.png",
+      "/tmp/lalia-checkout-fixed-cancel.png"
+    ]
+  },
+  "verification": {
+    "checkedAt": "2026-11-12T19:57:19.877Z",
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "fixtureCreatedAt": "2026-11-12T19:45:27.163Z",
+    "accounts": [
+      {
+        "label": "A",
+        "orgId": "6625b439-f8a1-423c-aa65-fa377bf35be0",
+        "appSubscription": {
+          "org_id": "6625b439-f8a1-423c-aa65-fa377bf35be0",
+          "plan_id": "starter",
+          "status": "active",
+          "stripe_customer_id": "cus_VcIYJGZvNjJyQG",
+          "stripe_subscription_id": "sub_1Ub3yZGqClL0BFZZopzogj7v",
+          "cancel_at_period_end": 0
+        },
+        "authenticatedApiMatchesOwnOrg": true,
+        "sessions": [
+          {
+            "id": "cs_test_a0CwHYH9j7L8pt1iCzowtN6lRda83kYeVJxI0jMff0QE58MXITN3Pjaziq",
+            "status": "complete",
+            "paymentStatus": "paid",
+            "amountTotal": 4900,
+            "successReturnOrigin": "https://www.lalia.cloud",
+            "successReturnPath": "/v2/app/settings",
+            "successReturnQuery": "?section=billing&billing=success",
+            "cancelReturnQuery": "?section=billing&billing=cancel",
+            "subscriptionId": "sub_1Ub3yZGqClL0BFZZopzogj7v",
+            "orgMappingMatches": true
+          }
+        ],
+        "stripeSubscription": {
+          "id": "sub_1Ub3yZGqClL0BFZZopzogj7v",
+          "status": "active",
+          "priceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7",
+          "customerId": "cus_VcIYJGZvNjJyQG"
+        },
+        "invoices": [
+          {
+            "id": "in_1Ub3yXGqClL0BFZZzblXnABv",
+            "status": "paid",
+            "amountPaid": 4900,
+            "currency": "usd"
+          }
+        ],
+        "events": [
+          {
+            "id": "evt_1Ub3yaGqClL0BFZZKkYWJaEo",
+            "type": "checkout.session.completed",
+            "status": "delivered",
+            "attempts": 1
+          },
+          {
+            "id": "evt_1Ub3ybGqClL0BFZZn5QdagK4",
+            "type": "customer.subscription.created",
+            "status": "delivered",
+            "attempts": 1
+          },
+          {
+            "id": "evt_1Ub3yaGqClL0BFZZBa1ODA4i",
+            "type": "invoice.paid",
+            "status": "delivered",
+            "attempts": 1
+          }
+        ]
+      },
+      {
+        "label": "B",
+        "orgId": "a204aa3b-9300-4026-8fca-587746207a4b",
+        "appSubscription": {
+          "org_id": "a204aa3b-9300-4026-8fca-587746207a4b",
+          "plan_id": "free",
+          "status": "active",
+          "stripe_customer_id": "cus_VcIbwCX3AYtjLV",
+          "stripe_subscription_id": null,
+          "cancel_at_period_end": 0
+        },
+        "authenticatedApiMatchesOwnOrg": true,
+        "sessions": [
+          {
+            "id": "cs_test_a0XvpM45cMqlRkHUWgBSbQp7EY7Kk2hTXaagq6X76RvwDZsVIumNLa1Qob",
+            "status": "open",
+            "paymentStatus": "unpaid",
+            "amountTotal": 19900,
+            "successReturnOrigin": "https://www.lalia.cloud",
+            "successReturnPath": "/v2/app/settings",
+            "successReturnQuery": "?section=billing&billing=success",
+            "cancelReturnQuery": "?section=billing&billing=cancel",
+            "orgMappingMatches": true
+          }
+        ],
+        "stripeSubscription": null,
+        "invoices": [],
+        "events": []
+      }
+    ],
+    "emailsSentByTest": false,
+    "existingTenantsModified": false,
+    "accountIsolationVerified": true,
+    "requiredWebhookTypes": [
+      "checkout.session.completed",
+      "customer.subscription.created",
+      "invoice.paid"
+    ],
+    "missingProcessedWebhookTypes": []
+  },
+  "cleanup": {
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "startedAt": "2026-11-12T19:57:45.685Z",
+    "accounts": [
+      {
+        "label": "A",
+        "customerId": "cus_VcIYJGZvNjJyQG",
+        "expiredSessions": [],
+        "canceledSubscriptions": [
+          "sub_1Ub3yZGqClL0BFZZopzogj7v"
+        ],
+        "customerDeleted": true,
+        "openSessionsRemaining": 0,
+        "activeSubscriptionsRemaining": 0
+      },
+      {
+        "label": "B",
+        "customerId": "cus_VcIbwCX3AYtjLV",
+        "expiredSessions": [
+          "cs_test_a0XvpM45cMqlRkHUWgBSbQp7EY7Kk2hTXaagq6X76RvwDZsVIumNLa1Qob"
+        ],
+        "canceledSubscriptions": [],
+        "customerDeleted": true,
+        "openSessionsRemaining": 0,
+        "activeSubscriptionsRemaining": 0
+      }
+    ],
+    "deletedRows": {
+      "v2_org_members": 2,
+      "v2_org_subscriptions": 2,
+      "v2_billing_cycles": 3,
+      "v2_user_communication_prefs": 2,
+      "v2_organizations": 2,
+      "v2_users": 2
+    },
+    "customerTombstones": [
+      {
+        "id": "3fe6783d05b312eae39145176864fe2ef7a698211a44e55e4c8a21e8a3f645f1",
+        "event_id": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:3",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:3",
+          "status": "applied",
+          "appliedRevision": "3"
+        },
+        "source_id": "a5f1b0d0-40bb-49cc-89d4-78ec36636e4d"
+      },
+      {
+        "id": "90c7b7fbca59065e395bcb5b9eedb0f750da4c1593b59f70af85330fb3b27e42",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:12",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:12",
+          "status": "applied",
+          "appliedRevision": "12"
+        },
+        "source_id": "d57a7852-8eae-4e7e-a987-9e757132ff94"
+      }
+    ],
+    "retainedCustomerSources": [
+      {
+        "source_id": "a5f1b0d0-40bb-49cc-89d4-78ec36636e4d",
+        "revision": "3",
+        "sequence": "60",
+        "deleted": 1,
+        "personalFieldsCleared": true
+      },
+      {
+        "source_id": "d57a7852-8eae-4e7e-a987-9e757132ff94",
+        "revision": "12",
+        "sequence": "59",
+        "deleted": 1,
+        "personalFieldsCleared": true
+      }
+    ],
+    "fixtureCustomerOutbox": [
+      {
+        "id": "22542be1539ec85f72989a6c7ed3e3cf61cd111205774288ecbb0af567a9e780",
+        "event_id": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:1",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:1",
+          "status": "applied",
+          "appliedRevision": "1"
+        }
+      },
+      {
+        "id": "9fb9da17340f739befaa4dd27a6f2a5f1b7ee021905504148984156b5a33af48",
+        "event_id": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:2",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:2",
+          "status": "applied",
+          "appliedRevision": "2"
+        }
+      },
+      {
+        "id": "3fe6783d05b312eae39145176864fe2ef7a698211a44e55e4c8a21e8a3f645f1",
+        "event_id": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:3",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:a5f1b0d0-40bb-49cc-89d4-78ec36636e4d:3",
+          "status": "applied",
+          "appliedRevision": "3"
+        }
+      },
+      {
+        "id": "c9363d191190fff3c8aa52392cf5b54141f4c0ba51df762c640bd491e9c02e42",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:1",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:1",
+          "status": "applied",
+          "appliedRevision": "1"
+        }
+      },
+      {
+        "id": "b9d3735a9663a8f1faf3be7754bcd902232c3ccac45292a5c366f9c70198ac00",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:10",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:10",
+          "status": "applied",
+          "appliedRevision": "10"
+        }
+      },
+      {
+        "id": "7fa3b826e7aa331b33f1bb0046a952cb812dc7f6cc6dbb2de12f2944fc84fc51",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:11",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:11",
+          "status": "applied",
+          "appliedRevision": "11"
+        }
+      },
+      {
+        "id": "90c7b7fbca59065e395bcb5b9eedb0f750da4c1593b59f70af85330fb3b27e42",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:12",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:12",
+          "status": "applied",
+          "appliedRevision": "12"
+        }
+      },
+      {
+        "id": "738c48c93c84824192ef649de7cf58f7a8c237c5cca1d56c869e58e3ed74cb94",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:2",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:2",
+          "status": "applied",
+          "appliedRevision": "2"
+        }
+      },
+      {
+        "id": "e8ea3b2c3c21fe379843053d8462abf62b137929df0812090fd43e4b5895e23c",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:3",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:3",
+          "status": "stale",
+          "appliedRevision": "7"
+        }
+      },
+      {
+        "id": "83be62b8530a3881a4cc0aee34fc49bf388407da98c2384d105a172bd4be4250",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:4",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:4",
+          "status": "stale",
+          "appliedRevision": "7"
+        }
+      },
+      {
+        "id": "b7f2e932ca049d75678e8908bdffa438c04187e55ae27f1d284bd351a9e3cf79",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:5",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:5",
+          "status": "stale",
+          "appliedRevision": "7"
+        }
+      },
+      {
+        "id": "25cf1d521b9ee46a7259721a33b04067231f7db017e5b35234fd632a9d7f8672",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:6",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:6",
+          "status": "applied",
+          "appliedRevision": "6"
+        }
+      },
+      {
+        "id": "2f39df648f1f7db8c91c043e4e5c71ed9a109428f93cdd8ab1590eb94d5a1d88",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:7",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:7",
+          "status": "applied",
+          "appliedRevision": "7"
+        }
+      },
+      {
+        "id": "2a6baefa6b58b546a063c37bbee3bb87668004c338ee3777a0420a1c3be9adca",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:8",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:8",
+          "status": "applied",
+          "appliedRevision": "8"
+        }
+      },
+      {
+        "id": "f47df5943d116872759e6db3fe67d47a66527fc73febf8665dda86417a540b57",
+        "event_id": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:9",
+        "status": "delivered",
+        "result": {
+          "eventId": "contact:d57a7852-8eae-4e7e-a987-9e757132ff94:9",
+          "status": "stale",
+          "appliedRevision": "10"
+        }
+      }
+    ],
+    "fixtureAppRowsRemaining": 0,
+    "finishedAt": "2026-11-12T19:57:50.107Z",
+    "finalSafety": {
+      "keyMode": "test",
+      "stripeEnabled": true,
+      "autoChargeEnabled": false
+    },
+    "auditHistoryRetained": "Verified Stripe receipts, terminal Stripe history, exact customer outbox delivery audit, and content-free durable customer tombstones are retained; no active customer, subscription, open checkout, or app fixture remains."
+  },
+  "finalReadOnlyAudit": {
+    "checkedAt": "2026-11-12T19:58:36.929Z",
+    "readOnly": true,
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "fixtureAppRowsRemaining": 0,
+    "customers": [
+      {
+        "id": "cus_VcIYJGZvNjJyQG",
+        "deleted": true
+      },
+      {
+        "id": "cus_VcIbwCX3AYtjLV",
+        "deleted": true
+      }
+    ],
+    "subscription": {
+      "id": "sub_1Ub3yZGqClL0BFZZopzogj7v",
+      "status": "canceled"
+    },
+    "sessions": [
+      {
+        "id": "cs_test_a0CwHYH9j7L8pt1iCzowtN6lRda83kYeVJxI0jMff0QE58MXITN3Pjaziq",
+        "status": "complete",
+        "paymentStatus": "paid"
+      },
+      {
+        "id": "cs_test_a0XvpM45cMqlRkHUWgBSbQp7EY7Kk2hTXaagq6X76RvwDZsVIumNLa1Qob",
+        "status": "expired",
+        "paymentStatus": "unpaid"
+      }
+    ],
+    "invalidSessions": [
+      {
+        "label": "A",
+        "status": 403
+      },
+      {
+        "label": "B",
+        "status": 403
+      }
+    ],
+    "durableTombstonesVerified": true
+  },
+  "privateCredentials": {
+    "localFixtureFileRemoved": true,
+    "remoteFixtureFileRemoved": true,
+    "passwordsAndTokensIncluded": false
+  },
+  "notes": [
+    "The merged OpsHub integration stores verified webhook processing in ops_verified_stripe_receipts; legacy v2_webhook_events is not the current processing ledger.",
+    "Normal customer source events and deletion tombstones were used. No sender was globally disabled and no real tenant was modified.",
+    "Retained audit data includes processed Stripe receipts, terminal Stripe invoice/payment/session history and delivered customer outbox records. Durable deleted customer sources contain only sourceId and deleted=true.",
+    "No email or consent acceptance operation was invoked by fixture creation or cleanup; synthetic accounts used example.invalid addresses and marketing preferences remained false."
+  ]
+}

@@ -64,7 +64,7 @@
       },
       "transcripts": {
         "title": "由您掌控的文字稿",
-        "description": "按会议设置是否在服务器保存定稿行，需要记录时可下载 JSON 和纯文本。"
+        "description": "新通话和会议默认保存文字记录。主持人可以在设置中关闭保存。保存的文字可供日后查看及生成可选的 AI 报告。"
       },
       "accounts": {
         "title": "个人或团队账号",
@@ -122,6 +122,7 @@
     }
   },
   "pricing": {
+    "paidComingSoon": "即将推出",
     "eyebrow": "定价",
     "title": "免费起步，随业务增长扩展",
     "subtitle": "每月 60 参与者分钟起步。准备好后再升级——按组织计费。",
@@ -194,7 +195,7 @@
       },
       "transcripts": {
         "q": "必须存储文字稿吗？",
-        "a": "不必。每场会议可选择是否在服务器保存定稿字幕行。主持人和组织管理员可在有内容后下载。"
+        "a": "新通话和会议默认保存文字记录。主持人可以在设置中关闭保存。保存的文字可供日后查看及生成可选的 AI 报告。"
       },
       "trial": {
         "q": "付款前可以试用吗？",
@@ -202,7 +203,7 @@
       },
       "storage": {
         "q": "数据存储在哪里？",
-        "a": "会议实时处理。仅当主持人为某场会议启用存储时才保存文字稿，且可随时删除。所有数据在传输中加密。"
+        "a": "会议实时处理。新通话和会议默认保存文字记录，主持人可以关闭保存。已保存的文字会保留至被删除。数据在传输过程中加密。"
       },
       "accuracy": {
         "q": "实时翻译准确度如何？",
@@ -222,7 +223,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -230,7 +231,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -365,14 +366,21 @@
     "namePlaceholder": "您的姓名",
     "myLanguage": "我的语言（说与听）",
     "languageHint": "字幕和翻译将以此语言显示。",
-    "joinMeeting": "加入会议"
+    "joinMeeting": "加入会议",
+    "transcriptTitle": "文字记录保存",
+    "transcriptOffTitle": "文字记录保存已关闭",
+    "transcriptOn": "此会议会保存字幕和翻译，以供日后查看及生成可选的 AI 报告。如果不希望保存您的发言，请在发言前请主持人关闭保存。",
+    "transcriptDefault": "新通话和会议默认保存文字记录。主持人可以在会议设置中关闭保存。请在发言前向主持人确认本次会议的设置。",
+    "transcriptOff": "此会议不会保存新的文字记录。实时字幕和翻译仍可使用。关闭保存不会删除此前已保存的文字。",
+    "privacyPolicy": "隐私政策",
+    "transcriptSettings": "管理保存设置"
   },
   "trust": {
     "poweredBy": "浏览器中的实时视频",
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
+      "transcripts": "文字记录默认保存",
       "retention": "You control retention"
     }
   },
@@ -393,7 +401,7 @@
       },
       "after": {
         "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "description": "新通话和会议默认保存文字记录。主持人可以在设置中关闭保存。保存的文字可供日后查看及生成可选的 AI 报告。"
       },
       "insights": {
         "title": "Without the busywork",

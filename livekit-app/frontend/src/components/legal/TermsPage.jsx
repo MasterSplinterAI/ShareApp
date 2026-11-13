@@ -3,10 +3,10 @@ import { ArrowLeft } from 'lucide-react';
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 import LaliaSupportLauncher from '../../v2/components/LaliaSupportLauncher';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/supportEmail';
 
-// TODO: replace with the final legal entity name once incorporated.
-const COMPANY_LEGAL_NAME = 'Lalia';
-const LAST_UPDATED = 'June 13, 2026';
+const COMPANY_LEGAL_NAME = 'Oracle Orchestration LLC';
+const LAST_UPDATED = 'November 11, 2026';
 const CONTACT_EMAIL = 'hello@lalia.cloud';
 
 function Section({ title, children }) {
@@ -36,7 +36,7 @@ export default function TermsPage() {
         <p className="mt-8 text-base leading-relaxed text-muted-foreground">
           These Terms of Service (&ldquo;Terms&rdquo;) govern your access to and use of Lalia, a video-conferencing
           service with real-time translation and live captions (the &ldquo;Service&rdquo;), operated by{' '}
-          {COMPANY_LEGAL_NAME} (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). Please read these Terms
+          {COMPANY_LEGAL_NAME}, a Wyoming limited liability company (&ldquo;we&rdquo;, &ldquo;us&rdquo;, or &ldquo;our&rdquo;). Please read these Terms
           carefully before using the Service.
         </p>
 
@@ -64,8 +64,8 @@ export default function TermsPage() {
             Some features require an account. You agree to provide accurate, current information when registering and
             to keep your credentials secure. You are responsible for all activity that occurs under your account.
             Notify us promptly at{' '}
-            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>
-              {CONTACT_EMAIL}
+            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={SUPPORT_MAILTO}>
+              {SUPPORT_EMAIL}
             </a>{' '}
             if you suspect unauthorized use of your account.
           </p>
@@ -145,11 +145,15 @@ export default function TermsPage() {
           </p>
         </Section>
 
-        <Section title="10. Governing Law">
+        <Section title="10. Governing Law and Courts">
           <p>
-            These Terms are governed by the laws of the jurisdiction in which {COMPANY_LEGAL_NAME} is organized,
-            without regard to conflict-of-law principles. Any disputes will be resolved in the courts located in that
-            jurisdiction, and the parties consent to their exclusive jurisdiction and venue.
+            These Terms are governed by the laws of the State of Florida, without regard to its conflict-of-laws
+            rules, except where applicable law requires otherwise. Subject to any mandatory rights to bring
+            proceedings elsewhere, disputes arising out of or relating to these Terms or the Service will be brought
+            in the state courts located in Hillsborough County, Florida, or, where federal subject-matter jurisdiction
+            exists, the United States District Court for the Middle District of Florida, Tampa Division. You and{' '}
+            {COMPANY_LEGAL_NAME} consent to those courts&rsquo; personal jurisdiction and venue for such disputes.
+            Nothing in these Terms limits consumer rights or protections that cannot be waived under applicable law.
           </p>
         </Section>
 

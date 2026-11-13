@@ -1,7 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
-const { publicFrontendBaseUrl } = require('./publicFrontendBaseUrl');
 const { renderPasswordReset } = require('./emailTemplates');
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000;
@@ -10,10 +9,19 @@ function sha256Hex(value) {
   return crypto.createHash('sha256').update(value).digest('hex');
 }
 
-function resetLinkBase(req) {
-  const fromEnv = (process.env.PUBLIC_FRONTEND_BASE_URL || '').trim().replace(/\/$/, '');
-  if (fromEnv) return fromEnv;
-  return publicFrontendBaseUrl(req) || 'https://staging.jarmetals.com';
+function resetLinkBase() {
+  // Reset tokens must never be sent to a request-controlled Origin or Referer.
+  const configured = [process.env.PUBLIC_FRONTEND_BASE_URL, process.env.FRONTEND_URL,
+    process.env.PRODUCTION_URL, process.env.STAGING_FRONTEND_URL]
+    .find((value) => typeof value === 'string' && value.trim());
+  if (!configured) return 'https://lalia.cloud';
+  try {
+    const url = new URL(configured.trim());
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error();
+    return url.origin;
+  } catch {
+    throw new Error('Invalid canonical frontend URL for password reset emails');
+  }
 }
 
 /** Mint a password-reset token and email the user. Returns { sent, resetUrl? } for admin audit. */
@@ -21,13 +29,14 @@ async function sendPasswordResetEmail(req, userId, { initiatedBy } = {}) {
   const user = await db.get(`SELECT id, email FROM v2_users WHERE id = ?`, [userId]);
   if (!user) return { ok: false, error: 'User not found' };
 
+  const baseUrl = resetLinkBase();
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
   await db.run(
     `INSERT INTO v2_password_resets (id, user_id, token_hash, expires_at) VALUES (?,?,?,?)`,
     [db.uuid(), user.id, sha256Hex(token), expiresAt]
   );
-  const resetUrl = `${resetLinkBase(req)}/v2/reset-password?token=${token}`;
+  const resetUrl = `${baseUrl}/v2/reset-password?token=${token}`;
   const email = renderPasswordReset({ resetUrl, initiatedBy });
   const result = await sendEmail({
     to: user.email,

@@ -18,27 +18,29 @@ const router = express.Router();
 
 /**
  * Logged-in admins often open /join/:code in the same browser. The guest token
- * stays a guest, but their org role is copied onto LiveKit metadata so the
- * in-room STT/TTS switcher is accepted.
+ * stays a guest. Only current membership in the meeting's workspace may grant
+ * workspace controls; a role in another workspace (or an old JWT) cannot.
  */
-async function optionalJoinAuth(req) {
+async function optionalJoinAuth(req, meeting) {
   const header = req.headers.authorization || '';
   const match = header.match(/^Bearer\s+(.+)$/i);
   if (!match) return null;
   const payload = verifyToken(match[1]);
   if (!payload?.sub) return null;
-  let role = payload.role || 'member';
-  if (payload.orgId) {
+  const user = await db.get(`SELECT id, email, disabled_at FROM v2_users WHERE id = ?`, [payload.sub]);
+  if (!user || user.disabled_at) return null;
+  let role = 'guest';
+  if (meeting.org_id) {
     const membership = await db.get(
       `SELECT role FROM v2_org_members WHERE user_id = ? AND org_id = ?`,
-      [payload.sub, payload.orgId]
+      [user.id, meeting.org_id]
     );
     if (membership?.role) role = membership.role;
   }
   return {
-    userId: payload.sub,
-    email: payload.email,
-    orgId: payload.orgId,
+    userId: user.id,
+    email: user.email,
+    orgId: meeting.org_id,
     role,
   };
 }
@@ -57,6 +59,7 @@ async function loadV2MeetingByRoom(roomName) {
     `SELECT m.*,
        IFNULL(p.host_required_to_start, 0) AS host_required_to_start,
        IFNULL(p.require_invite_token, 0) AS require_invite_token,
+       IFNULL(p.store_transcripts, 0) AS store_transcripts,
        o.id AS org_id_ref,
        o.name AS org_name,
        o.account_type AS org_account_type,
@@ -286,6 +289,7 @@ router.get('/join-info', async (req, res) => {
       meetingId: meeting.id,
       title: meeting.title,
       inviteRequired: true,
+      policy: { store_transcripts: meeting.store_transcripts === 1 },
       branding: meetingBranding(req, meeting),
       suggestedParticipantName,
       defaultLanguage,
@@ -330,7 +334,7 @@ router.post('/guest-token', async (req, res) => {
     await ensureRoomAndAgent(meeting.livekit_room_name, 'multi-language');
     const displayName = String(participantName).trim().slice(0, 128) || 'Guest';
     const identity = `guest-${crypto.randomUUID()}`;
-    const auth = await optionalJoinAuth(req);
+    const auth = await optionalJoinAuth(req, meeting);
     const at = new AccessToken(process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET, {
       identity,
       name: displayName,

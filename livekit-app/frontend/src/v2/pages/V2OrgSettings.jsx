@@ -6,6 +6,7 @@ import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
 import { getRecommendedUpgrade, formatPlanPrice } from '../lib/upgradeOffers';
+import { resolveSettingsSection } from '../lib/settingsSection';
 import { cn } from '../../lib/utils';
 import { Compass, Loader2, ImagePlus, Trash2 } from 'lucide-react';
 import { startLaliaOnboardingTour } from '../components/LaliaOnboardingTour';
@@ -51,7 +52,11 @@ function humanizeUsageLabel(eventType) {
 export default function V2OrgSettings() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [section, setSection] = useState(searchParams.get('section') || 'profile');
+  const search = searchParams.toString();
+  const [section, setSection] = useState(() => resolveSettingsSection(searchParams));
+  useEffect(() => {
+    setSection(resolveSettingsSection(new URLSearchParams(search)));
+  }, [search]);
   const [role, setRole] = useState('');
   const [members, setMembers] = useState([]);
   const [org, setOrg] = useState(null);
@@ -69,6 +74,7 @@ export default function V2OrgSettings() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [communicationPrefsVersion, setCommunicationPrefsVersion] = useState(null);
   const [marketingEmailPref, setMarketingEmailPref] = useState(false);
   const [timezonePref, setTimezonePref] = useState('');
   const [guestInviteCcHost, setGuestInviteCcHost] = useState(true);
@@ -90,13 +96,14 @@ export default function V2OrgSettings() {
   const [savingOverageAutoCharge, setSavingOverageAutoCharge] = useState(false);
 
   const startCheckout = async (planId) => {
+    if (!billingSnap?.stripeEnabled) return;
     if (isIosNativeApp()) {
       toast('Manage your plan on the web at lalia.cloud');
       return;
     }
     setCheckoutLoading(planId);
     try {
-      const { url } = await v2Billing.checkout(planId);
+      const { url } = await v2Billing.changePlan(planId, billingSnap?.subscription);
       if (url) window.location.href = url;
     } catch (e) {
       toast.error(e.response?.data?.error || 'Checkout unavailable');
@@ -200,6 +207,7 @@ export default function V2OrgSettings() {
         }
         if (commPrefs?.prefs) {
           setMarketingEmailPref(Boolean(commPrefs.prefs.marketingEmail));
+          setCommunicationPrefsVersion(commPrefs.prefs.prefsUpdatedAt);
           const browserTz = detectBrowserTimezone();
           setTimezonePref(commPrefs.prefs.timezone || browserTz);
           setGuestInviteCcHost(commPrefs.prefs.guestInviteCcHost !== false);
@@ -236,7 +244,7 @@ export default function V2OrgSettings() {
       startCheckout(intent);
     } else {
       toast(
-        'Your account is ready on the free plan. Online billing is being set up — we\u2019ll email you to complete the upgrade.',
+        'Paid upgrades are currently unavailable.',
         { icon: 'ℹ️', duration: 6000 }
       );
     }
@@ -342,17 +350,20 @@ export default function V2OrgSettings() {
     try {
       const { prefs } = await v2Auth.updateCommunicationPrefs({
         marketingEmail: marketingEmailPref,
+        prefsUpdatedAt: communicationPrefsVersion,
         timezone: timezonePref || detectBrowserTimezone(),
         guestInviteCcHost,
         guestInviteReminderOffsets: reminderOffsets,
       });
       setMarketingEmailPref(Boolean(prefs?.marketingEmail));
+      setCommunicationPrefsVersion(prefs?.prefsUpdatedAt);
       setTimezonePref(prefs?.timezone || detectBrowserTimezone());
       setGuestInviteCcHost(prefs?.guestInviteCcHost !== false);
       const toggles = togglesFromOffsets(prefs?.guestInviteReminderOffsets || []);
       setReminderDayBefore(toggles.dayBefore);
       setReminder15Min(toggles.fifteenMin);
-      toast.success('Communication preferences saved');
+      if(prefs?.consentStatus==='pending')toast('Preferences saved. Marketing consent is pending; save a fresh choice when the connection is available.');
+      else toast.success('Communication preferences saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not save preferences');
     } finally {
@@ -1010,7 +1021,7 @@ export default function V2OrgSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
-                {!teamWorkspace && canManage && billingSnap?.subscription?.is_comp !== 1 && (
+                {!teamWorkspace && canManage && billingSnap?.stripeEnabled && billingSnap?.subscription?.is_comp !== 1 && (
                   <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-3 text-foreground">
                     <p className="font-medium">Need to invite colleagues?</p>
                     <p className="mt-1 text-muted-foreground">
@@ -1194,7 +1205,7 @@ export default function V2OrgSettings() {
                       </div>
                       {!billingSnap?.stripeEnabled && (
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Payments are disabled. A platform admin can enable Stripe under Admin → Billing & Stripe.
+                          Paid upgrades are currently unavailable.
                         </p>
                       )}
                     </div>

@@ -1,4 +1,4 @@
-import type { SupportUser } from "@rhule/support-shared";
+import type { SupportUser } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 
 /** Shape attached by ShareApp `optionalV2Auth` / `requireV2Auth`. */

@@ -1,9 +1,14 @@
-import { KIT_VERSION, PACKAGE_NAME as SHARED } from "@rhule/support-shared";
+import { KIT_VERSION, PACKAGE_NAME as SHARED } from "@quill/support-shared";
 import type { CreateSupportRouterOptions, SupportRouter } from "./adapters/types.js";
 import { createRouter } from "./http/createRouter.js";
 
 export type {
+  DurableMutationAdapter, DurableMutationInput, DurableMutationResult, DurableMutationScope, DurableEffect,
+  TenantContext,
+  ResolveTenant,
   CreateSupportRouterOptions,
+  AuthorizeSupport,
+  SupportAction,
   CodebaseAdapter,
   CodebaseSearchHit,
   DbAdapter,
@@ -17,9 +22,15 @@ export type {
   ResolveUser,
   SupportRouter,
 } from "./adapters/types.js";
+export {
+  createOpenAiCompatibleLlm,
+} from "./adapters/openaiCompatibleLlm.js";
+export type { OpenAiCompatibleLlmOptions } from "./adapters/openaiCompatibleLlm.js";
 export { ensureSchema, DEFAULT_TABLE_PREFIX } from "./db/migrate.js";
 // createMemorySqliteAdapter lives in ./db/memorySqlite.js (dev/test only —
 // not re-exported here so production bundles don't require better-sqlite3).
+export {readDocsArtifact,validateDocsSources} from "./kb/docsArtifact.js";
+export type {DocsArtifact,DocsArtifactOptions} from "./kb/docsArtifact.js";
 export { seedCuratedDocs } from "./kb/seedCuratedDocs.js";
 export type { SeedCuratedDocsResult } from "./kb/seedCuratedDocs.js";
 export {
@@ -45,15 +56,18 @@ export {
 } from "./kb/search.js";
 export {
   ingestCodegenArticle,
+  PublishedKnowledgeConflict,
   promoteKbArticle,
   deprecateKbArticle,
   updateKbArticle,
   listKbArticles,
+  listKbRevisions,
   getKbArticle,
   ingestFromChangelog,
   ingestDocsSources,
 } from "./kb/codegen.js";
 export type {
+  PromoteKbOptions,
   IngestCodegenArticleInput,
   IngestFromChangelogOptions,
   IngestDocSource,
@@ -98,7 +112,8 @@ export type { LlmTriageParse, RoutingDecision } from "./agent/routing.js";
 export { createHttpRouter, createRouter } from "./http/createRouter.js";
 export { buildEmbedPage } from "./http/embedPage.js";
 export { TenantStore } from "./tenants/store.js";
-export type { Tenant, CreateTenantInput } from "./tenants/store.js";
+export type { Tenant, CreateTenantInput, TenantBrand } from "./tenants/store.js";
+export { resolveTenantFromStore } from "./tenants/resolveFromStore.js";
 export { executeProposalAction } from "./proposals/executor.js";
 export {
   crawlSite,
@@ -124,8 +139,8 @@ export type {
 export { TelegramDraftSessionStore } from "./telegram/draftSessions.js";
 export type { TelegramDraftSession } from "./telegram/draftSessions.js";
 
-export type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-shared";
-export { KIT_VERSION, DEFAULT_MARKETING_CONSENT_LABEL } from "@rhule/support-shared";
+export type { BrandConfig, SupportUser, TenantId, Lead } from "@quill/support-shared";
+export { KIT_VERSION, DEFAULT_MARKETING_CONSENT_LABEL } from "@quill/support-shared";
 
 
 /**

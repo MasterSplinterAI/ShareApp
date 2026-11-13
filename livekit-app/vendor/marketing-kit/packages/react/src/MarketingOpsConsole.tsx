@@ -24,6 +24,17 @@ export interface MarketingOpsConsoleProps {
   /** When provided, a tenant selector is shown and requests go to `${apiBase}/t/<tenant>`. */
   tenants?: MarketingTenantOption[];
   defaultTenantId?: string;
+  selectedTenantId?: string;
+  hideTenantSelector?: boolean;
+  onSelectTenant?: (id: string) => void;
+  selectedTab?: Tab;
+  onTabChange?: (tab: Tab) => void;
+  selectedPostStatus?: string;
+  onPostStatusChange?: (status: string) => void;
+  selectedRecordId?: string | null;
+  onRecordChange?: (id: string | null) => void;
+  requestSignal?: AbortSignal;
+  onUnauthorized?: () => void;
   /** Origin used to resolve relative media URLs per tenant (needed when the console runs on another domain). */
   assetOrigins?: Record<string, string>;
   /** Public site origin per tenant, used for "View live" links. */
@@ -146,13 +157,21 @@ function pct(n: number): string {
 export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
   const { apiBase, tenants, assetOrigins = {}, publicOrigins = {}, getAccessToken, className } = props;
   const multiTenant = Boolean(tenants && tenants.length);
-  const [tenant, setTenant] = useState<string>(props.defaultTenantId || (multiTenant ? tenants![0].id : ""));
-  const [tab, setTab] = useState<Tab>(multiTenant && (props.defaultTenantId || tenants![0].id) === "all" ? "analytics" : "copilot");
+  const [internalTenant, setInternalTenant] = useState<string>(props.defaultTenantId || (multiTenant ? tenants![0].id : ""));
+  const [internalTab, setInternalTab] = useState<Tab>(multiTenant && (props.defaultTenantId || tenants![0].id) === "all" ? "analytics" : "copilot");
+  const tenant=props.selectedTenantId??internalTenant;
+  const setTenant=(id:string)=>{setInternalTenant(id);props.onSelectTenant?.(id);};
+  const tab=props.selectedTab??internalTab;
+  const setTab=(next:Tab)=>{setInternalTab(next);props.onTabChange?.(next);};
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [context, setContext] = useState<{ context: MarketingProductContextSnapshot; capabilities: { imageGen: boolean; email: boolean; codebase: string | null } } | null>(null);
   const [segments, setSegments] = useState<AudienceSegmentInfo[]>([]);
-  const [focusPostId, setFocusPostId] = useState<string | null>(null);
-  const [focusCampaignId, setFocusCampaignId] = useState<string | null>(null);
+  const [internalPostId, setInternalPostId] = useState<string | null>(null);
+  const focusPostId=props.selectedRecordId!==undefined?(tab==='blog'?props.selectedRecordId:null):internalPostId;
+  const setFocusPostId=(id:string|null)=>{setInternalPostId(id);props.onRecordChange?.(id);};
+  const [internalCampaignId, setInternalCampaignId] = useState<string | null>(null);
+  const focusCampaignId=props.selectedRecordId!==undefined?(tab==='email'?props.selectedRecordId:null):internalCampaignId;
+  const setFocusCampaignId=(id:string|null)=>{setInternalCampaignId(id);props.onRecordChange?.(id);};
   const [emailPrefill, setEmailPrefill] = useState<{ segmentId?: string; goal?: string; filter?: Record<string, unknown> } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -169,9 +188,11 @@ export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
     async <T,>(path: string, init: RequestInit & { json?: unknown } = {}): Promise<T> => {
       const token = getAccessToken?.()?.trim();
       const { json, headers, ...rest } = init;
+      const signal = props.requestSignal && rest.signal ? AbortSignal.any([props.requestSignal, rest.signal]) : props.requestSignal ?? rest.signal;
       const res = await fetch(`${base}${path}`, {
         credentials: "include",
         ...rest,
+        signal,
         method: rest.method || (json !== undefined ? "POST" : "GET"),
         headers: {
           Accept: "application/json",
@@ -183,10 +204,12 @@ export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
       });
       const ct = res.headers.get("content-type") || "";
       const data: any = ct.includes("json") ? await res.json().catch(() => ({})) : await res.text();
+      if(res.status===401)props.onUnauthorized?.();
+      signal?.throwIfAborted();
       if (!res.ok) throw new Error((data && typeof data === "object" && data.error) || `Request failed (${res.status})`);
       return data as T;
     },
-    [base, getAccessToken],
+    [base, getAccessToken, props.requestSignal, props.onUnauthorized],
   );
 
   const notify = useCallback((kind: "ok" | "err", text: string) => {
@@ -220,16 +243,16 @@ export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
             json: { topics: action.seedTopics, count: action.count || action.seedTopics?.length || 3, audience: action.audience || "general" },
           });
           notify("ok", `Generating ${r.posts.length} draft${r.posts.length === 1 ? "" : "s"}…`);
-          setFocusPostId(r.posts[0]?.id || null);
           setTab("blog");
+          setFocusPostId(r.posts[0]?.id || null);
         } else {
           notify("ok", "Drafting campaign…");
           const r = await call<{ campaign: EmailCampaign; warning?: string }>("/email/campaigns", {
             json: { segmentId: action.segmentId, goal: action.campaignGoal || action.title, instruction: action.subjectHint ? `Subject idea: ${action.subjectHint}` : undefined },
           });
           if (r.warning) notify("err", r.warning);
-          setFocusCampaignId(r.campaign.id);
           setTab("email");
+          setFocusCampaignId(r.campaign.id);
         }
         setRefreshKey((k) => k + 1);
       } catch (err: any) {
@@ -262,7 +285,7 @@ export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
               )}
             </div>
           </div>
-          {multiTenant && (
+          {multiTenant && !props.hideTenantSelector && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }} data-testid="marketing-tenant-selector">
               {tenants!.map((t) => (
                 <button
@@ -315,7 +338,7 @@ export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
         <div style={{ padding: 16, background: C.surface }}>
           {tab === "copilot" && !isAll && <CopilotPanel call={call} context={context?.context || null} onAction={runAction} notify={notify} />}
           {tab === "blog" && !isAll && (
-            <BlogStudio call={call} notify={notify} resolveAsset={resolveAsset} publicOrigin={publicOrigin} focusId={focusPostId} onFocus={setFocusPostId} refreshKey={refreshKey} assetOrigin={assetOrigin} apiRoot={base} />
+            <BlogStudio selectedStatus={props.selectedPostStatus} onStatusChange={props.onPostStatusChange} call={call} notify={notify} resolveAsset={resolveAsset} publicOrigin={publicOrigin} focusId={focusPostId} onFocus={setFocusPostId} refreshKey={refreshKey} assetOrigin={assetOrigin} apiRoot={base} />
           )}
           {tab === "email" && !isAll && (
             <EmailStudio
@@ -342,7 +365,7 @@ export function MarketingOpsConsole(props: MarketingOpsConsoleProps) {
               }}
             />
           )}
-          {tab === "analytics" && <AnalyticsPanel call={call} isAll={isAll} tenants={tenants} apiBase={apiBase} getAccessToken={getAccessToken} />}
+          {tab === "analytics" && <AnalyticsPanel call={call} isAll={isAll} tenants={tenants} apiBase={apiBase} getAccessToken={getAccessToken} requestSignal={props.requestSignal} onUnauthorized={props.onUnauthorized} />}
         </div>
       </div>
       {toast && (
@@ -583,6 +606,8 @@ function CopilotPanel({ call, context, onAction, notify }: { call: CallFn; conte
 type PostDetail = { post: MarketingPost; revisions: MarketingPostRevision[]; assets: MarketingArtworkAsset[]; sections: string[] };
 
 function BlogStudio({
+  selectedStatus,
+  onStatusChange,
   call,
   notify,
   resolveAsset,
@@ -602,11 +627,17 @@ function BlogStudio({
   refreshKey: number;
   assetOrigin: string;
   apiRoot: string;
+  selectedStatus?: string;
+  onStatusChange?: (status:string)=>void;
 }) {
   const coverUrl = (slug: string) => `${apiRoot}/blog/${encodeURIComponent(slug)}/cover.png`;
   const [posts, setPosts] = useState<MarketingPost[]>([]);
-  const [filter, setFilter] = useState<string>("");
-  const [detail, setDetail] = useState<PostDetail | null>(null);
+  const [internalFilter, setInternalFilter] = useState<string>("");
+  const filter=selectedStatus??internalFilter;
+  const setFilter=(status:string)=>{setInternalFilter(status);onStatusChange?.(status);};
+  const [loadedDetail, setDetail] = useState<PostDetail | null>(null);
+  const detail = loadedDetail?.post.id === focusId ? loadedDetail : null;
+  const detailRequest = useRef(0);
   const [topics, setTopics] = useState("");
   const [count, setCount] = useState(3);
   const [audience, setAudience] = useState<"general" | "individual" | "attorney">("general");
@@ -623,9 +654,10 @@ function BlogStudio({
   }, [call, filter]);
 
   const loadDetail = useCallback(
-    async (id: string) => {
-      const r = await call<PostDetail>(`/blog/posts/${id}`);
-      setDetail(r);
+    async (id: string, signal?: AbortSignal) => {
+      const request = ++detailRequest.current;
+      const r = await call<PostDetail>(`/blog/posts/${encodeURIComponent(id)}`, {signal});
+      if (request === detailRequest.current) setDetail(r);
     },
     [call],
   );
@@ -635,8 +667,10 @@ function BlogStudio({
   }, [load, refreshKey, notify]);
 
   useEffect(() => {
-    if (focusId) void loadDetail(focusId).catch(() => setDetail(null));
+    const controller = new AbortController();
+    if (focusId) void loadDetail(focusId, controller.signal).catch(() => { if (!controller.signal.aborted) setDetail(null); });
     else setDetail(null);
+    return () => { controller.abort(); detailRequest.current++; };
   }, [focusId, loadDetail]);
 
   const generating = posts.some((p) => p.status === "generating") || detail?.post.status === "generating" || detail?.post.artworkStatus === "generating";
@@ -1202,7 +1236,9 @@ function EmailStudio({
   emailEnabled: boolean;
 }) {
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
-  const [detail, setDetail] = useState<CampaignDetail | null>(null);
+  const [loadedDetail, setDetail] = useState<CampaignDetail | null>(null);
+  const detail = loadedDetail?.campaign.id === focusId ? loadedDetail : null;
+  const detailRequest = useRef(0);
   const [segmentId, setSegmentId] = useState(prefill?.segmentId || "");
   const [goal, setGoal] = useState(prefill?.goal || "");
   const [filter, setFilter] = useState<Record<string, unknown> | null>(prefill?.filter || null);
@@ -1229,15 +1265,21 @@ function EmailStudio({
     setCampaigns(r.campaigns);
   }, [call]);
 
-  const loadDetail = useCallback(async (id: string) => setDetail(await call<CampaignDetail>(`/email/campaigns/${id}`)), [call]);
+  const loadDetail = useCallback(async (id: string, signal?: AbortSignal) => {
+    const request = ++detailRequest.current;
+    const result = await call<CampaignDetail>(`/email/campaigns/${encodeURIComponent(id)}`, {signal});
+    if(request === detailRequest.current) setDetail(result);
+  }, [call]);
 
   useEffect(() => {
     void load().catch((e) => notify("err", e.message));
   }, [load, refreshKey, notify]);
 
   useEffect(() => {
-    if (focusId) void loadDetail(focusId).catch(() => setDetail(null));
+    const controller = new AbortController();
+    if (focusId) void loadDetail(focusId, controller.signal).catch(() => { if (!controller.signal.aborted) setDetail(null); });
     else setDetail(null);
+    return () => { controller.abort(); detailRequest.current++; };
   }, [focusId, loadDetail]);
 
   useEffect(() => {
@@ -1769,7 +1811,7 @@ function Stat({ label: l, value, hint }: { label: string; value: ReactNode; hint
   );
 }
 
-function AnalyticsPanel({ call, isAll, tenants, apiBase, getAccessToken }: { call: CallFn; isAll: boolean; tenants?: MarketingTenantOption[]; apiBase: string; getAccessToken?: () => string | null | undefined }) {
+function AnalyticsPanel({ call, isAll, tenants, apiBase, getAccessToken, requestSignal, onUnauthorized }: { requestSignal?:AbortSignal; onUnauthorized?:()=>void; call: CallFn; isAll: boolean; tenants?: MarketingTenantOption[]; apiBase: string; getAccessToken?: () => string | null | undefined }) {
   const [overview, setOverview] = useState<MarketingOverview | null>(null);
   const [perTenant, setPerTenant] = useState<Array<{ tenant: MarketingTenantOption; overview: MarketingOverview | null; error?: string }>>([]);
   const [campaigns, setCampaigns] = useState<EmailCampaign[]>([]);
@@ -1794,8 +1836,10 @@ function AnalyticsPanel({ call, isAll, tenants, apiBase, getAccessToken }: { cal
         .filter((t) => t.id !== "all")
         .map(async (t) => {
           try {
-            const res = await fetch(`${root}/t/${t.id}/overview`, { credentials: "include", headers: { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+            const res = await fetch(`${root}/t/${t.id}/overview`, { signal:requestSignal, credentials: "include", headers: { Accept: "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+            if(res.status===401)onUnauthorized?.();
             const data = await res.json();
+            requestSignal?.throwIfAborted();
             if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
             return { tenant: t, overview: data.overview as MarketingOverview };
           } catch (err: any) {
@@ -1803,7 +1847,7 @@ function AnalyticsPanel({ call, isAll, tenants, apiBase, getAccessToken }: { cal
           }
         }),
     ).then(setPerTenant);
-  }, [isAll, tenants, apiBase, getAccessToken]);
+  }, [isAll, tenants, apiBase, getAccessToken, requestSignal, onUnauthorized]);
 
   const rows = isAll ? perTenant.filter((r) => r.overview).map((r) => r.overview!) : overview ? [overview] : [];
   const total = rows.reduce(
@@ -1823,6 +1867,9 @@ function AnalyticsPanel({ call, isAll, tenants, apiBase, getAccessToken }: { cal
 
   return (
     <div style={{ display: "grid", gap: 12 }} data-testid="marketing-analytics">
+      {isAll && perTenant.some(row => row.error) && (
+        <p role="status">Totals cover the businesses that responded. Unavailable sources are listed below.</p>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
         <Stat label="Published posts" value={total.published} hint={`${total.drafts} in review`} />
         <Stat label="Emails sent" value={total.sent.toLocaleString()} hint={`${total.delivered.toLocaleString()} delivered`} />

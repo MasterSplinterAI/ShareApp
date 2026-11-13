@@ -138,6 +138,7 @@ function applyChromeStrings(html, locale, route) {
     ['Try the live demo', s.navDemo],
     ['Get started', s.navGetStarted],
     ['Start free', s.navStartFree],
+    ['>Available after beta<', `>${s.paidAfterBeta}<`],
     ['Start talking for free', s.ctaStart],
     ['See how it feels', s.ctaSee],
     ['A SMALLER WORLD. A BIGGER CONVERSATION.', s.heroEyebrow],
@@ -170,8 +171,8 @@ function applyChromeStrings(html, locale, route) {
     );
     // Replace the English hero description paragraph body when present.
     out = out.replace(
-      /Your voice\. Their language\. A real connection\.(?:<br class="desktop-break">)?\s*Talk naturally with anyone, anywhere, with live(?:<br class="desktop-break">)?\s*voice translation that brings you closer\./,
-      s.heroDesc
+      /(<p class="hero-description">)[\s\S]*?(<\/p>)/,
+      (_match, open, close) => `${open}${escapeHtml(s.heroDesc)}${close}`
     );
   }
 

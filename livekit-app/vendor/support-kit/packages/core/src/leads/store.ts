@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { CreateLeadInput, Lead } from "@rhule/support-shared";
+import type { CreateLeadInput, Lead } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 
@@ -73,6 +73,8 @@ export class LeadStore {
     marketingEmailOptIn: boolean;
     marketingSmsOptIn: boolean;
   }): Promise<Lead> {
+    if (this.db.transaction) return this.db.transaction(tx => new LeadStore(tx,this.tablePrefix).upsert(input));
+    if (!this.db.transactional) throw new Error('Lead consent requires a source transaction');
     const now = new Date().toISOString();
     const email = input.email.trim().toLowerCase();
     const existing = await this.getByEmail(input.tenantId, email);
@@ -106,6 +108,7 @@ export class LeadStore {
       );
       const updated = await this.getById(input.tenantId, existing.id);
       if (!updated) throw new Error("Lead upsert failed");
+      await this.recordConsent(updated,input);
       return updated;
     }
 
@@ -136,7 +139,17 @@ export class LeadStore {
     );
     const created = await this.getById(input.tenantId, id);
     if (!created) throw new Error("Lead insert failed");
+    await this.recordConsent(created,input);
     return created;
+  }
+
+  private async recordConsent(lead:Lead,input:CreateLeadInput & {marketingEmailOptIn:boolean;marketingSmsOptIn:boolean}) {
+    const p=this.tablePrefix;
+    await this.db.run(`INSERT INTO ${p}lead_consent_heads(tenant_id,email,revision) VALUES(?,?,1) ON CONFLICT(tenant_id,email) DO UPDATE SET revision=${p}lead_consent_heads.revision+1`,[lead.tenantId,lead.email]);
+    const head=await this.db.get<{revision:number}>(`SELECT revision FROM ${p}lead_consent_heads WHERE tenant_id=? AND email=?`,[lead.tenantId,lead.email]);
+    for (const [channel,granted] of [['email',input.marketingEmailOptIn],['sms',input.marketingSmsOptIn]] as const) {
+      await this.db.run(`INSERT INTO ${p}lead_consent_events(id,tenant_id,email,lead_id,revision,channel,purpose,granted,source,consent_text,policy_version,occurred_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,[randomUUID(),lead.tenantId,lead.email,lead.id,head!.revision,channel,'marketing',granted?1:0,input.source,input.consentText||null,'support-lead-v1',lead.updatedAt]);
+    }
   }
 
   async list(

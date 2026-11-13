@@ -1,4 +1,4 @@
-import type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-shared";
+import type { BrandConfig, SupportUser, TenantId, Lead } from "@quill/support-shared";
 
 /**
  * Host-owned auth → kit user shape.
@@ -6,8 +6,21 @@ import type { BrandConfig, SupportUser, TenantId, Lead } from "@rhule/support-sh
  */
 export type ResolveUser = (req: unknown) => SupportUser | null | Promise<SupportUser | null>;
 
+/** Business-scoped operator capabilities; roles are never capabilities in central mode. */
+export type SupportAction = 'support.read' | 'support.reply' | 'support.assign' | 'support.manage'
+  | 'knowledge.read' | 'knowledge.edit' | 'knowledge.publish';
+export type AuthorizeSupport = (input: {
+  actor: SupportUser; businessId: string; action: SupportAction;
+  resource?: { type: string; id: string };
+}) => Promise<boolean>;
+
 /** A per-request tenant+brand resolution result. */
 export interface TenantContext {
+  llm?: LlmAdapter;
+  codebase?: CodebaseAdapter;
+  email?: EmailNotifier;
+  opsNotifier?: OpsNotifier;
+  github?: GitHubAdapter;
   tenantId: string;
   brand: BrandConfig;
 }
@@ -28,6 +41,9 @@ export type ResolveTenant = (
  * Use `?` placeholders; adapters should translate to `$1` for Postgres if needed.
  */
 export interface DbAdapter {
+  transaction?<T>(work: (db: DbAdapter) => Promise<T>): Promise<T>;
+  /** Set only on an adapter already bound to a host-owned transaction. */
+  transactional?: boolean;
   run(sql: string, params?: unknown[]): Promise<{ changes: number }>;
   get<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T | undefined>;
   all<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
@@ -61,7 +77,7 @@ export interface CodebaseAdapter {
   ): Promise<string | null>;
 }
 
-/** Thin duplicate of @rhule/support-channels OpsNotifier — keeps core independent. */
+/** Thin duplicate of @quill/support-channels OpsNotifier — keeps core independent. */
 export type OpsNotificationKind =
   | "ticket_created"
   | "escalation"
@@ -133,7 +149,36 @@ export type ResolveTelegramConfig = () =>
   | null
   | Promise<TelegramOpsRuntimeConfig | null>;
 
+/** Host commits receipt, domain rows, audit and effects on one connection. */
+export interface DurableMutationResult { statusCode: number; body: unknown }
+export interface DurableEffect {
+  type: 'support.email' | 'support.ops' | 'support.github' | 'support.lead';
+  ticketId?: string;
+  payload: Record<string, unknown>;
+}
+export interface DurableMutationScope {
+  db: DbAdapter;
+  enqueue(effect: DurableEffect): Promise<void>;
+  preflight(type: DurableEffect['type']): Promise<boolean>;
+}
+export interface DurableMutationInput {
+  businessId: string; actor: SupportUser; operation: string; key: string;
+  payload: unknown; requiredActions: SupportAction[];
+}
+/** Preparation receives the held connection adapter outside a transaction; never reacquire the host pool. */
+export interface DurableMutationAdapter {
+  run(input: DurableMutationInput, execute: (scope: DurableMutationScope, prepared?: unknown) => Promise<DurableMutationResult>, prepare?: (db: DbAdapter) => Promise<unknown>): Promise<DurableMutationResult>;
+}
+
 export interface CreateSupportRouterOptions {
+  mutationMode?: 'legacy' | 'durable';
+  /** Host lifecycle hook tracks legacy work that outlives its HTTP response. */
+  trackBackground?: (task: Promise<unknown>) => void;
+  durableMutations?: DurableMutationAdapter;
+  listDeliveries?: (businessId:string,ticketId:string,actor:SupportUser)=>Promise<Array<{id:string;type:string;status:string;attempts:number;error_code?:string|null;canRetry?:boolean}>>;
+  /** Legacy standalone defaults remain available; central mode requires explicit grants. */
+  authorizationMode?: 'legacy' | 'central';
+  authorizeSupport?: AuthorizeSupport;
   tenantId: TenantId | string;
   db: DbAdapter;
   resolveUser: ResolveUser;
@@ -172,7 +217,7 @@ export interface CreateSupportRouterOptions {
    */
   telegram?: {
     resolveConfig: ResolveTelegramConfig;
-    /** Factory that wraps @rhule/support-channels createTelegramOpsNotifier. */
+    /** Factory that wraps @quill/support-channels createTelegramOpsNotifier. */
     createClient: (cfg: TelegramOpsRuntimeConfig) => {
       answerCallback(callbackQueryId: string, text: string): Promise<void>;
       sendForceReply(text: string, placeholder?: string): Promise<unknown>;

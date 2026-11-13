@@ -1,0 +1,43 @@
+{
+  "verifiedAt": "2026-11-12T22:47:46.727499+00:00",
+  "deployedRevision": "5f21ea680fc4b588a6a9c1be80408b1b9b099c81",
+  "publicHomepages": {
+    "/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    },
+    "/es/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    },
+    "/fr/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    },
+    "/de/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    },
+    "/pt/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    },
+    "/ja/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    },
+    "/zh-CN/": {
+      "interactiveDemoLinks": 0,
+      "signupLinks": 9
+    }
+  },
+  "browserVerification": {
+    "desktopLayout": true,
+    "mobile390pxLayoutAndMenu": true,
+    "ctaDestination": "https://lalia.cloud/v2/signup",
+    "createAccountFormObserved": true,
+    "spanishHeroTranslationObserved": true
+  },
+  "directDemoRouteRemoved": false,
+  "previewServerStopped": true
+}

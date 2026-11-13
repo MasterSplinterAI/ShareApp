@@ -88,7 +88,7 @@ test('returning home while acknowledgement is saving does not retain a stale ale
   await page.goto('/v2/app/calls?tab=history');
   await expect.poll(() => acknowledgements.length).toBeGreaterThan(0);
   // Use client-side navigation: the pending request must survive leaving the log.
-  await page.locator('a[href="/v2/app"]').first().click();
+  await page.locator('a[href="/v2/app"]:visible').first().click();
   await expect(page).toHaveURL(/\/v2\/app$/);
   // Home must not display stale unread calls while the write is pending.
   await expect(page.getByRole('link', { name: 'View call log' })).toHaveCount(0);

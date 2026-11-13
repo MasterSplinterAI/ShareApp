@@ -1,4 +1,6 @@
 const db = require('../db/v2Database');
+const { customerMutation, queueOrgContacts } = require('./opsOutbox');
+const { getStripeSettings, getStripeClient } = require('./v2StripeSettings');
 
 const DOWNGRADE_STRIPE_STATUSES = new Set(['canceled', 'unpaid', 'incomplete_expired']);
 const LIVE_STRIPE_STATUSES = new Set(['active', 'trialing', 'past_due']);
@@ -8,7 +10,7 @@ function orgBillingStatusFromStripe(stripeStatus) {
   const s = String(stripeStatus || '').toLowerCase();
   if (s === 'active' || s === 'trialing') return 'active';
   if (s === 'past_due') return 'past_due';
-  if (DOWNGRADE_STRIPE_STATUSES.has(s)) return 'canceled';
+  if (DOWNGRADE_STRIPE_STATUSES.has(s)) return 'active'; // The local Free plan remains usable.
   return 'active';
 }
 
@@ -60,12 +62,31 @@ function resolveCancelFlags(stripeSub) {
 /**
  * Apply Stripe subscription object to local v2_org_subscriptions + v2_organizations.billing_status.
  */
-async function applyStripeSubscriptionToOrg(stripeSub) {
+async function applyStripeSubscriptionToOrg(stripeSub, sourceRevision) {
+  return customerMutation(async tx => {
+    if (sourceRevision) {
+      const applied = await tx.get(`INSERT INTO ops_source_revisions(source_id,revision) VALUES(?,?)
+        ON CONFLICT(source_id) DO UPDATE SET revision=excluded.revision
+        WHERE ops_source_revisions.revision<excluded.revision RETURNING revision`, [`subscription-applied:${stripeSub.id}`, sourceRevision]);
+      if (!applied) return {ok:true, skipped:'stale_source_revision'};
+    }
+    const result = await applyStripeSubscriptionWithinTransaction(stripeSub);
+    if (result.orgId) {
+      await queueOrgContacts(tx, result.orgId);
+    }
+    return result;
+  });
+}
+
+async function applyStripeSubscriptionWithinTransaction(stripeSub) {
   const stripeSubId = stripeSub.id;
   const customerId =
     typeof stripeSub.customer === 'string' ? stripeSub.customer : stripeSub.customer?.id || null;
   let orgId = stripeSub.metadata?.org_id ? String(stripeSub.metadata.org_id) : null;
-  const planIdMeta = stripeSub.metadata?.plan_id ? String(stripeSub.metadata.plan_id) : null;
+  const price = stripeSub.items?.data?.[0]?.price;
+  const priceId = typeof price === 'string' ? price : price?.id;
+  const mappedPlan = priceId ? await db.get('SELECT id FROM v2_plans WHERE stripe_price_id = ?', [priceId]) : null;
+  const planIdMeta = mappedPlan?.id || null;
 
   const bySub = await db.get(`SELECT org_id, is_comp FROM v2_org_subscriptions WHERE stripe_subscription_id = ?`, [
     stripeSubId,
@@ -82,11 +103,14 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
   if (!exists) return { ok: false, reason: 'no_local_subscription' };
 
   const stripeStatus = String(stripeSub.status || 'active').slice(0, 32);
-  if (
-    exists.is_comp === 1 &&
-    ['canceled', 'unpaid', 'past_due', 'incomplete_expired'].includes(stripeStatus)
-  ) {
+  if (exists.is_comp === 1) {
     return { ok: true, skipped: 'comp_account' };
+  }
+
+  // An unfinished first payment must not replace an existing usable plan.
+  if (stripeStatus === 'incomplete') return { ok: true, skipped: 'payment_incomplete' };
+  if (!DOWNGRADE_STRIPE_STATUSES.has(stripeStatus) && !planIdMeta) {
+    throw new Error('Stripe subscription price is not mapped to a local plan');
   }
 
   // Duplicate checkouts: ignore cancel/downgrade events for a non-primary Stripe sub
@@ -181,48 +205,44 @@ async function applyStripeSubscriptionToOrg(stripeSub) {
   };
 }
 
+// Serializing retrieve + apply prevents one worker from writing an earlier read last.
+const subscriptionSyncLocks = new Map();
+/** Retrieve current state: event snapshots can arrive out of order. Failures must retry. */
+async function reconcileStripeSubscriptionEvent(snapshot) {
+  if (!snapshot?.id) throw new Error('Stripe subscription id required');
+  const previous = subscriptionSyncLocks.get(snapshot.id) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    const settings = await getStripeSettings();
+    const stripe = getStripeClient(settings);
+    if (!stripe) throw new Error('Stripe subscription reconciliation unavailable');
+    const { nextSourceRevision } = require('@rhule/ops-sdk');
+    // Allocate before provider I/O, then fence the write: a slower earlier read
+    // cannot overwrite a later completed reconciliation from another process.
+    const revision = await nextSourceRevision(db, `subscription-fetch:${snapshot.id}`);
+    const current = await stripe.subscriptions.retrieve(snapshot.id);
+    return applyStripeSubscriptionToOrg(current, revision);
+  });
+  subscriptionSyncLocks.set(snapshot.id, operation);
+  try {
+    return await operation;
+  } finally {
+    if (subscriptionSyncLocks.get(snapshot.id) === operation) subscriptionSyncLocks.delete(snapshot.id);
+  }
+}
+
 async function applyCheckoutSessionToOrg(session) {
-  const orgId = session.metadata?.org_id ? String(session.metadata.org_id) : null;
-  const planId = session.metadata?.plan_id ? String(session.metadata.plan_id) : null;
-  const subId =
-    typeof session.subscription === 'string' ? session.subscription : session.subscription?.id || null;
-  const custId = typeof session.customer === 'string' ? session.customer : session.customer?.id || null;
-
-  if (!orgId || !custId) return { ok: false, reason: 'missing_metadata' };
-
-  const row = await db.get(`SELECT is_comp FROM v2_org_subscriptions WHERE org_id = ?`, [orgId]);
-  if (row?.is_comp === 1) {
-    return { ok: true, skipped: 'comp_account' };
+  if (!['paid', 'no_payment_required'].includes(session.payment_status)) {
+    return { ok: true, skipped: 'checkout_unpaid' };
   }
-
-  if (planId) {
-    await db.run(
-      `UPDATE v2_org_subscriptions SET
-         stripe_customer_id = COALESCE(?, stripe_customer_id),
-         stripe_subscription_id = COALESCE(?, stripe_subscription_id),
-         plan_id = ?,
-         status = 'active',
-         cancel_at_period_end = 0,
-         cancel_at = NULL,
-         canceled_at = NULL
-       WHERE org_id = ?`,
-      [custId, subId, planId, orgId]
-    );
-    await db.run(`UPDATE v2_organizations SET billing_status = 'active' WHERE id = ?`, [orgId]);
-  } else {
-    await db.run(
-      `UPDATE v2_org_subscriptions SET
-         stripe_customer_id = COALESCE(?, stripe_customer_id),
-         stripe_subscription_id = COALESCE(?, stripe_subscription_id)
-       WHERE org_id = ?`,
-      [custId, subId, orgId]
-    );
-  }
-
-  return { ok: true, orgId, planId };
+  const subId = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
+  if (!subId) return { ok: false, reason: 'missing_subscription' };
+  // Checkout completion is not proof of payment (for example, delayed payment methods).
+  // Reconcile the subscription instead of granting access from session metadata.
+  return reconcileStripeSubscriptionEvent({ id: subId });
 }
 
 module.exports = {
+  reconcileStripeSubscriptionEvent,
   applyStripeSubscriptionToOrg,
   applyCheckoutSessionToOrg,
   orgBillingStatusFromStripe,

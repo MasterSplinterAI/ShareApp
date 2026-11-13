@@ -311,11 +311,7 @@ class TtsLane:
             if is_valid_elevenlabs_voice_id(cleaned):
                 self.voice_id = cleaned
             else:
-                logger.warning(
-                    "[TTS:%s] ignoring invalid initial voice_id=%r",
-                    language,
-                    voice_id,
-                )
+                logger.warning('tts_ignoring_invalid_initial_voice_id')
 
         self._now = now_fn
         self._synthesize_hook = synthesize_hook
@@ -345,7 +341,7 @@ class TtsLane:
         """Update the ElevenLabs voice for subsequent synthesis calls."""
         cleaned = (voice_id or "").strip()
         if not is_valid_elevenlabs_voice_id(cleaned):
-            logger.warning("[TTS:%s] ignoring invalid voice_id=%r", self.language, voice_id)
+            logger.warning('tts_ignoring_invalid_voice_id')
             return
         self.voice_id = cleaned
 
@@ -361,12 +357,7 @@ class TtsLane:
             self.xai_voice_id = resolve_xai_voice_id(voice_id)
         elif voice_id and choice == "elevenlabs":
             self.set_voice_id(voice_id)
-        logger.info(
-            "[TTS:%s] provider switch requested=%s active=%s",
-            self.language,
-            choice,
-            self.provider,
-        )
+        logger.info('tts_provider_switch_requested_active')
         return self.provider
 
     def _get_http_session(self) -> aiohttp.ClientSession:
@@ -464,12 +455,7 @@ class TtsLane:
                 continue
 
             if self._is_stale(item):
-                logger.info(
-                    "[TTS:%s] dropping stale sentence speaker=%s age=%.2fs",
-                    self.language,
-                    item.speaker_id,
-                    self._now() - item.enqueued_at,
-                )
+                logger.info('tts_dropping_stale_sentence_speaker_age_s')
                 continue
 
             if item.sequence <= self._superseded_up_to_by_speaker.get(item.speaker_id, 0):
@@ -482,13 +468,7 @@ class TtsLane:
             except asyncio.CancelledError:
                 raise
             except TtsApiError as exc:
-                logger.warning(
-                    "[TTS:%s] provider error speaker=%s code=%s: %s",
-                    self.language,
-                    item.speaker_id,
-                    exc.code,
-                    exc.message,
-                )
+                logger.warning('tts_provider_error_speaker_code', extra={"error_type": type(exc).__name__, "provider": exc.provider, "status_code": exc.http_status})
                 await self._emit_tts_error(
                     speaker_id=item.speaker_id,
                     provider=exc.provider,
@@ -497,12 +477,7 @@ class TtsLane:
                     http_status=exc.http_status,
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[TTS:%s] synthesis/playback failed for speaker=%s: %s",
-                    self.language,
-                    item.speaker_id,
-                    exc,
-                )
+                logger.warning('tts_synthesis_playback_failed_for_speaker', extra={"error_type": type(exc).__name__})
                 await self._emit_tts_error(
                     speaker_id=item.speaker_id,
                     provider=self.provider,
@@ -549,12 +524,7 @@ class TtsLane:
                 if inspect.isawaitable(maybe):
                     await maybe
             except Exception as exc:  # noqa: BLE001
-                logger.debug(
-                    "[TTS:%s] cost hook failed speaker=%s: %s",
-                    self.language,
-                    item.speaker_id,
-                    exc,
-                )
+                logger.debug('tts_cost_hook_failed_speaker')
 
         if self._synthesize_hook is not None:
             synthesis = self._synthesize_hook(item.text, self.language, playback_rate)
@@ -584,11 +554,7 @@ class TtsLane:
             if has_xai and base_lang in XAI_TTS_LANGS:
                 ladder.append("xai")
             else:
-                logger.info(
-                    "[TTS:%s] xAI TTS does not cover %s — using Deepgram/OpenAI/ElevenLabs",
-                    self.language,
-                    base_lang,
-                )
+                logger.info('tts_xai_tts_does_not_cover_using_deepgram_openai_elevenlabs')
             if aura_ok:
                 ladder.append("deepgram")
             if has_openai:
@@ -647,13 +613,7 @@ class TtsLane:
                 if yielded_any or idx == len(ladder) - 1:
                     break
                 next_prov = ladder[idx + 1]
-                logger.warning(
-                    "[TTS:%s] %s failed (%s) — falling back to %s",
-                    self.language,
-                    prov,
-                    exc,
-                    next_prov,
-                )
+                logger.warning('tts_failed_falling_back_to', extra={"error_type": type(exc).__name__})
 
         if last_exc is not None:
             raise last_exc
@@ -922,7 +882,7 @@ class TtsLane:
             return
 
         # Unknown chunk type: ignore quietly to keep lane resilient.
-        logger.debug("[TTS:%s] ignoring unsupported synth chunk type=%s", self.language, type(chunk).__name__)
+        logger.debug('tts_ignoring_unsupported_synth_chunk_type')
 
     def _pcm_to_frames(self, payload: bytes):
         frame_cls = getattr(rtc, "AudioFrame", None)
@@ -1020,7 +980,7 @@ class TtsLane:
                 reliable=True,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[TTS:%s] data event emit failed: %s", self.language, exc)
+            logger.debug('tts_data_event_emit_failed')
 
     async def _ensure_track_published(self) -> None:
         if self.room is None or getattr(self.room, "local_participant", None) is None:

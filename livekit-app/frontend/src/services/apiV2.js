@@ -51,8 +51,10 @@ apiV2.interceptors.response.use(
     const status = error.response?.status;
     const requestUrl = String(error.config?.url || '');
     const isAuthAttempt = /\/auth\/(login|signup|reset-password)/.test(requestUrl);
+    const isPasswordValidation = /\/auth\/change-password$/.test(requestUrl) &&
+      error.response?.data?.error === 'Current password is incorrect' && !error.response?.data?.code;
 
-    if (status === 401 && !isAuthAttempt && !handling401) {
+    if (status === 401 && !error.config?.skipSessionRedirect && !isAuthAttempt && !isPasswordValidation && !handling401) {
       handling401 = true;
       localStorage.removeItem('v2_token');
       const path = window.location.pathname;
@@ -70,7 +72,7 @@ apiV2.interceptors.response.use(
 export const v2Auth = {
   signup: (body) => apiV2.post('/auth/signup', body).then((r) => r.data),
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
-  me: () => apiV2.get('/auth/me').then((r) => r.data),
+  me: (config) => apiV2.get('/auth/me', config).then((r) => r.data),
   switchWorkspace: (orgId) => apiV2.post('/auth/switch-workspace', { orgId }).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/auth/me', body).then((r) => r.data),
   changePassword: (body) => apiV2.post('/auth/change-password', body).then((r) => r.data),
@@ -104,7 +106,7 @@ export const v2Support = {
 };
 
 export const v2Orgs = {
-  me: () => apiV2.get('/orgs/me').then((r) => r.data),
+  me: (config) => apiV2.get('/orgs/me', config).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/orgs/me', body).then((r) => r.data),
   patchBranding: (body) => apiV2.patch('/orgs/me/branding', body).then((r) => r.data),
   uploadBrandingLogo: (file) => {
@@ -205,6 +207,19 @@ export const v2Billing = {
       })
       .then((r) => r.data),
   checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
+  changePlan: async (planId, subscription) => {
+    const terminal = ['canceled', 'cancelled', 'incomplete_expired'].includes(String(subscription?.status || '').toLowerCase());
+    if (subscription?.stripe_subscription_id && !terminal) return v2Billing.portal();
+    try {
+      return await v2Billing.checkout(planId);
+    } catch (error) {
+      // Another checkout may have completed since this page loaded.
+      if (error.response?.status === 409 && error.response?.data?.code === 'subscription_exists') {
+        return v2Billing.portal();
+      }
+      throw error;
+    }
+  },
   portal: (body) => apiV2.post('/billing/portal', body || {}).then((r) => r.data),
   resume: () => apiV2.post('/billing/resume', {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),
@@ -232,6 +247,10 @@ export const v2Admin = {
   patchPlan: (planId, body) => apiV2.patch(`/admin/plans/${encodeURIComponent(planId)}`, body).then((r) => r.data),
   revenue: () => apiV2.get('/admin/revenue').then((r) => r.data),
   disputes: (params = {}) => apiV2.get('/admin/disputes', { params }).then((r) => r.data),
+  liveKitCosts: month => apiV2.get('/admin/costs/livekit', { params: { month } }).then(r => r.data),
+  importLiveKitInvoice: form => apiV2.post('/admin/costs/livekit', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+  liveKitInvoicePdf: month => apiV2.get('/admin/costs/livekit/' + encodeURIComponent(month) + '/pdf', { responseType: 'blob' }).then(r => r.data),
+  retryLiveKitInvoice: month => apiV2.post('/admin/costs/livekit/' + encodeURIComponent(month) + '/retry'),
   costsSummary: () => apiV2.get('/admin/costs/summary').then((r) => r.data),
   audit: () => apiV2.get('/admin/audit').then((r) => r.data),
   trends: (days = 30) => apiV2.get('/admin/trends', { params: { days } }).then((r) => r.data),
@@ -243,6 +262,7 @@ export const v2Admin = {
   announcements: () => apiV2.get('/admin/announcements').then((r) => r.data),
   createAnnouncement: (body) => apiV2.post('/admin/announcements', body).then((r) => r.data),
   patchAnnouncement: (id, body) => apiV2.patch(`/admin/announcements/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  marketingWorkflow: () => apiV2.get('/admin/email/workflow').then((r) => r.data),
   broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
   billingConfig: () => apiV2.get('/admin/billing/config').then((r) => r.data),
   patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),

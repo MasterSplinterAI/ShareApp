@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type {
   AudienceSegmentInfo,
   BlogGenerationJob,
@@ -17,6 +17,7 @@ import type {
   MarketingBrandConfig,
   MarketingCustomSegmentFilter,
   MarketingLlmAdapter,
+  MarketingOperation,
 } from "./adapters.js";
 import { buildDefaultStudioCardSpec, renderEditorialSvgArtwork } from "./artwork.js";
 import { buildResponsiveEmailHtml, interpolateEmailVariables } from "./emailRenderer.js";
@@ -49,12 +50,14 @@ interface RouteCtx {
   tenantId: string;
   brand: MarketingBrandConfig;
   user: MarketingAuthUser | null;
+  action: MarketingOperation;
 }
 
 type Handler = (ctx: RouteCtx) => Promise<unknown> | unknown;
 
 interface Route {
   method: string;
+  path: string;
   pattern: RegExp;
   keys: string[];
   handler: Handler;
@@ -66,6 +69,22 @@ class HttpError extends Error {
   constructor(public status: number, message: string) {
     super(message);
   }
+}
+
+function operation(method: string, path: string): MarketingOperation {
+  if (method === 'GET' || method === 'HEAD') return 'marketing.read';
+  if (/\/(publish|unpublish)$/.test(path)) return 'marketing.publish';
+  if (/\/(send|test-send)$/.test(path)) return 'marketing.send';
+  return 'marketing.edit';
+}
+
+function executionContent(record: MarketingPost | EmailCampaign): string {
+  const content = Object.fromEntries(Object.entries(record).filter(([key]) => ![
+    'status', 'updatedAt', 'publishedAt', 'scheduledAt', 'sentAt', 'lastError',
+    'recipientCount', 'sentCount', 'deliveredCount', 'openedCount', 'clickedCount',
+    'bouncedCount', 'complainedCount', 'unsubscribedCount',
+  ].includes(key)));
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex');
 }
 
 export const KIT_SEGMENTS: AudienceSegmentInfo[] = [
@@ -207,6 +226,7 @@ export interface MarketingKit {
   ensureSchema: () => Promise<void>;
   seedPosts: (tenantId: string, posts: Array<Partial<MarketingPost> & { title: string; slug: string }>) => Promise<number>;
   runScheduledWork: () => Promise<{ campaignsSent: number; postsPublished: number }>;
+  applyVerifiedProviderEvent: (tenantId: string, event: unknown) => Promise<unknown>;
   startScheduler: (intervalMs?: number) => () => void;
 }
 
@@ -214,6 +234,14 @@ export function createMarketingKit(opts: CreateMarketingRouterOptions): Marketin
   const store = new MarketingStore(opts.db);
   const log = opts.logger || console;
   const mountPath = (opts.mountPath ?? "/marketing").replace(/\/$/, "");
+  const defaultContentBrief =
+    typeof opts.contentBrief === "string" && opts.contentBrief.trim() ? opts.contentBrief.trim() : null;
+  const resolveContentBrief = (tenantId: string): string | null => {
+    const byTenant = opts.contentBriefsByTenant?.[tenantId];
+    if (typeof byTenant === "string" && byTenant.trim()) return byTenant.trim();
+    return defaultContentBrief;
+  };
+  const resolveGenerationProfile = (tenantId: string) => opts.generationProfilesByTenant?.[tenantId] ?? opts.generationProfile;
   const jobs = new Map<string, BlogGenerationJob>();
   const subscribeHits = new Map<string, number[]>();
   const contextCache = new Map<string, { at: number; ctx: MarketingProductContextSnapshot }>();
@@ -428,7 +456,16 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   async function generateIntoPost(tenantId: string, postId: string, topic: string, audience: MarketingPost["audience"], instruction: string | undefined, artworkMode: "ai_illustration" | "studio_card") {
     const ctx = await productContext(tenantId);
     const hits = await searchCode(`${topic} ${instruction || ""}`, 5);
-    const { draft, usedFallback, error } = await generatePostDraft({ llm, ctx, hits, topic, audience, instruction });
+    const { draft, usedFallback, error } = await generatePostDraft({
+      llm,
+      ctx,
+      hits,
+      topic,
+      audience,
+      instruction,
+      contentBrief: resolveContentBrief(tenantId),
+      generationProfile: resolveGenerationProfile(tenantId),
+    });
     const slug = await store.uniqueSlug(tenantId, draft.slug, postId);
     let post = await store.updatePost(tenantId, postId, {
       ...draft,
@@ -540,24 +577,49 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     return { firstName: "Alex", name: "Alex Rivera", email: "alex@example.com", matterTitle: "Smith v. Landlord Holdings", proposedDocsList: "- Answer to Complaint\n- Motion to Dismiss", unlockUrl: "#" };
   }
 
+  async function saveExecutionApproval(tenantId: string, action: MarketingOperation, record: MarketingPost | EmailCampaign, actor: MarketingAuthUser | null) {
+    if (!opts.authorizeActor || !actor) return;
+    await opts.db.run(`INSERT INTO mkt_execution_approvals (tenant_id,action,resource_id,actor_json,content_hash)
+      VALUES (?,?,?,?,?) ON CONFLICT (tenant_id,action,resource_id) DO UPDATE SET
+      actor_json=excluded.actor_json,content_hash=excluded.content_hash`,
+    [tenantId, action, record.id, JSON.stringify(actor), executionContent(record)]);
+  }
+
+  async function mayExecute(tenantId: string, action: MarketingOperation, record: MarketingPost | EmailCampaign) {
+    if (!opts.authorizeActor) return true;
+    try {
+      const approval = await opts.db.get<{actor_json: string; content_hash: string}>(
+        'SELECT actor_json,content_hash FROM mkt_execution_approvals WHERE tenant_id=? AND action=? AND resource_id=?',
+        [tenantId, action, record.id],
+      );
+      if (!approval || approval.content_hash !== executionContent(record)) return false;
+      return await opts.authorizeActor(JSON.parse(approval.actor_json), tenantId, action, record.id);
+    } catch {
+      return false;
+    }
+  }
+
   async function sendCampaign(tenantId: string, campaignId: string): Promise<EmailCampaign | null> {
+    if (opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) return null;
     const campaign = await store.getCampaign(tenantId, campaignId);
     if (!campaign) throw new HttpError(404, "Campaign not found");
-    const claimed = await store.claimCampaignForSend(campaignId, ["draft", "approved", "scheduled", "failed"]);
+    const claimed = await store.claimCampaignForSend(campaignId, ["draft", "approved", "scheduled", "failed", "paused"]);
     if (!claimed) throw new HttpError(409, "Campaign is already sending or sent");
     const brand = brandFor(tenantId);
     try {
+      if (!(await mayExecute(tenantId, 'marketing.send', campaign))) {
+        return store.updateCampaign(tenantId, campaignId, { status: 'paused', lastError: 'Sending requires a current operator approval.' });
+      }
       if (!opts.email) throw new Error("No email provider configured");
       const contacts = await resolveContacts(tenantId, campaign.segmentId, (campaign.segmentFilter || null) as MarketingCustomSegmentFilter | null);
-      const suppressed = await store.suppressedEmails(tenantId);
       const seen = new Set<string>();
       const messages: Array<{ to: string; name: string; subject: string; html: string; headers: Record<string, string>; tags: Array<{ name: string; value: string }> }> = [];
       for (const contact of contacts) {
         const email = String(contact.email || "").trim().toLowerCase();
-        if (!EMAIL_RE.test(email) || seen.has(email) || suppressed.has(email) || contact.marketingOptIn === false) continue;
+        if (!EMAIL_RE.test(email) || seen.has(email) || contact.tenantId !== tenantId) continue;
         seen.add(email);
         const sub = await store.ensureSubscriber(tenantId, email, contact.name || null, campaign.segmentId === "blog_subscribers" ? "blog_inline" : "account");
-        if (sub.unsubscribed) continue;
+        if (!(await store.prepareRecipient(campaignId, tenantId, email, contact.name || ""))) continue;
         const unsubscribeUrl = `${publicOrigin(brand)}${mountPath}/unsubscribe?token=${encodeURIComponent(sub.token)}&c=${encodeURIComponent(campaignId)}`;
         const vars = contactVars(contact, brand, unsubscribeUrl);
         messages.push({
@@ -576,63 +638,74 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
         });
       }
 
-      let sent = 0;
-      let failedCount = 0;
-      const errors: string[] = [];
-      for (let i = 0; i < messages.length; i += 100) {
-        const chunk = messages.slice(i, i + 100);
-        const results = opts.email.sendBatch
-          ? await opts.email.sendBatch(chunk.map(({ name: _n, ...m }) => m))
-          : await Promise.all(chunk.map(async ({ name: _n, ...m }) => ({ to: m.to, ...(await opts.email!.sendEmail(m)) })));
-        for (let j = 0; j < chunk.length; j++) {
-          const r = results[j] || { status: "failed" as const, error: "missing result" };
-          if (r.status === "sent") sent += 1;
-          else {
-            failedCount += 1;
-            if (r.error && errors.length < 3) errors.push(r.error);
-          }
-          await store.addRecipient({
-            campaignId,
-            tenantId,
-            email: chunk[j].to,
-            contactName: chunk[j].name,
-            providerMessageId: r.providerMessageId || null,
-            status: r.status === "sent" ? "sent" : r.status,
-          });
+      // Each recipient is authorized immediately before its provider request. sendBatch receives
+      // a singleton so no earlier positive decision survives later authorization I/O in a batch.
+      for (const message of messages) {
+        if (opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) {
+          return store.updateCampaign(tenantId, campaignId, { status: 'paused', lastError: 'Marketing authority changed.' });
         }
+        if (!(await mayExecute(tenantId, 'marketing.send', campaign))) {
+          return store.updateCampaign(tenantId, campaignId, { status: 'paused', ...(await store.recipientProgress(campaignId)), lastError: 'Sending requires a current operator approval.' });
+        }
+        const scope = { businessId: tenantId, recipient: message.to, channel: 'email', purpose: 'marketing' };
+        const decision = opts.consent ? await opts.consent.authorize(scope, campaignId) : {status:'paused' as const};
+        if (decision.status === 'paused') {
+          return store.updateCampaign(tenantId,campaignId,{status:'paused',...(await store.recipientProgress(campaignId)),lastError:'Live consent authority unavailable; remaining recipients paused.'});
+        }
+        if (decision.status === 'suppressed') {
+          await store.transitionRecipient(campaignId,message.to,'suppressed');
+          continue;
+        }
+        // Durable dispatch intent precedes provider I/O. A crash/throw is ambiguous and never
+        // automatically retried. Already-dispatched requests cannot be recalled by this policy.
+        await store.transitionRecipient(campaignId,message.to,'dispatching');
+        if (!('expiresAt' in decision) || Date.now() > Date.parse(decision.expiresAt)) {
+          await store.transitionRecipient(campaignId,message.to,'queued');
+          return store.updateCampaign(tenantId,campaignId,{status:'paused',...(await store.recipientProgress(campaignId)),lastError:'Authorization expired before dispatch; fresh checks required.'});
+        }
+        const { name: _name, ...mail } = message;
+        const result = opts.email.sendBatch ? (await opts.email.sendBatch([mail]))[0]
+          : await opts.email.sendEmail(mail);
+        if (!result) throw new Error('Provider result missing; dispatch remains ambiguous');
+        await store.transitionRecipient(campaignId,message.to,result.status,result.providerMessageId || null);
       }
-      const status: EmailCampaign["status"] = messages.length > 0 && sent === 0 ? "failed" : "sent";
-      return store.updateCampaign(tenantId, campaignId, {
-        status,
-        recipientCount: messages.length,
-        sentCount: sent,
-        sentAt: nowIso(),
-        lastError: errors.length ? `${failedCount} failed: ${errors.join("; ")}`.slice(0, 500) : messages.length === 0 ? "No eligible recipients in this segment." : null,
-      });
+      const progress = await store.recipientProgress(campaignId);
+      return store.updateCampaign(tenantId, campaignId, progress.sentCount > 0
+        ? { status: 'sent', ...progress, sentAt: nowIso(), lastError: null }
+        : { status: 'failed', ...progress, sentAt: null, lastError: 'No messages were sent. Check recipient consent and delivery results.' });
     } catch (err: any) {
-      return store.updateCampaign(tenantId, campaignId, { status: "failed", lastError: String(err?.message || err).slice(0, 500) });
+      return store.updateCampaign(tenantId, campaignId, { status: 'paused', ...(await store.recipientProgress(campaignId)), lastError: String(err?.message || err).slice(0, 500) });
     }
   }
 
   async function runScheduledWork(): Promise<{ campaignsSent: number; postsPublished: number }> {
     await ensureSchema();
+    const active = new Set<string>();
+    for (const tenant of knownTenants()) if (!opts.isWriteAuthority || await opts.isWriteAuthority(tenant)) active.add(tenant);
+    if (!active.size) return { campaignsSent: 0, postsPublished: 0 };
     const runningPostIds = new Set(Array.from(jobs.values()).filter((j) => j.status === "running").flatMap((j) => j.postIds));
     const staleBefore = new Date(Date.now() - Math.max(llmTimeoutMs * 3, 15 * 60_000)).toISOString();
     await store.recoverStaleGenerating(staleBefore, Array.from(runningPostIds));
     let campaignsSent = 0;
     for (const c of await store.listDueCampaigns()) {
+      if (!active.has(c.tenantId)) continue;
       try {
-        await sendCampaign(c.tenantId, c.id);
-        campaignsSent += 1;
+        const result = await sendCampaign(c.tenantId, c.id);
+        if (result?.status === 'sent') campaignsSent += 1;
       } catch (err: any) {
         if (!(err instanceof HttpError && err.status === 409)) log.error("[marketing-kit] scheduled send failed", err);
       }
     }
     let postsPublished = 0;
-    for (const tenantId of knownTenants()) {
+    for (const tenantId of active) {
       const scheduled = await store.listPosts(tenantId, { status: "scheduled", limit: 50 });
       for (const p of scheduled) {
         if (p.publishedAt && p.publishedAt <= nowIso()) {
+          if (opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) break;
+          if (!(await mayExecute(tenantId, 'marketing.publish', p))) {
+            await store.updatePost(tenantId, p.id, { status: 'approved', publishedAt: null, generationError: 'Publishing requires a current operator approval.' });
+            continue;
+          }
           await store.updatePost(tenantId, p.id, { status: "published" });
           postsPublished += 1;
         }
@@ -646,12 +719,16 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   const routes: Route[] = [];
   const add = (method: string, path: string, handler: Handler, flags: { public?: boolean; allowAllTenant?: boolean } = {}) => {
     const { pattern, keys } = compilePath(path);
-    routes.push({ method, pattern, keys, handler, ...flags });
+    routes.push({ method, path, pattern, keys, handler, ...flags });
   };
 
   const requirePost = async (ctx: RouteCtx) => {
     const post = await store.getPost(ctx.tenantId, ctx.params.id);
     if (!post) throw new HttpError(404, "Post not found");
+    if (post.status === 'published' && ctx.action === 'marketing.edit' && opts.authorizeActor &&
+        (!ctx.user || !(await opts.authorizeActor(ctx.user, ctx.tenantId, 'marketing.publish', post.id)))) {
+      throw new HttpError(403, 'Publishing access is required to change a published post');
+    }
     return post;
   };
   const requireCampaign = async (ctx: RouteCtx) => {
@@ -691,6 +768,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       history,
       message,
       segmentIds: segments.filter((s) => s.id !== "custom").map((s) => s.id),
+      contentBrief: resolveContentBrief(ctx.tenantId),
+      generationProfile: resolveGenerationProfile(ctx.tenantId),
     });
     const assistant = await store.addMessage(ctx.tenantId, "assistant", reply, { actions, sources: hits.map((h) => h.path) });
     return { userMessage, message: assistant };
@@ -709,6 +788,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       audience: ctx.body?.audience,
       theme,
       existingTitles: existing.map((p) => p.title),
+      contentBrief: resolveContentBrief(ctx.tenantId),
+      generationProfile: resolveGenerationProfile(ctx.tenantId),
     });
     return { ideas };
   });
@@ -730,6 +811,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
         audience,
         theme: String(ctx.body?.theme || instruction || ""),
         existingTitles: [...existing.map((p) => p.title), ...topics],
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
       });
       topics = [...topics, ...ideas.map((i) => i.title)];
     }
@@ -792,7 +875,15 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     const product = await productContext(ctx.tenantId);
     let patch: Awaited<ReturnType<typeof rewritePost>> = null;
     try {
-      patch = await rewritePost({ llm, ctx: product, post, instruction, sectionHeading });
+      patch = await rewritePost({
+        llm,
+        ctx: product,
+        post,
+        instruction,
+        sectionHeading,
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
+      });
     } catch (err: any) {
       throw new HttpError(502, `Rewrite failed: ${String(err?.message || err).slice(0, 200)}`);
     }
@@ -888,6 +979,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     if (post.status === "generating") throw new HttpError(409, "Post is still generating");
     const publishAt = ctx.body?.publishAt ? new Date(String(ctx.body.publishAt)) : null;
     if (publishAt && !Number.isNaN(publishAt.getTime()) && publishAt.getTime() > Date.now() + 60_000) {
+      await saveExecutionApproval(ctx.tenantId, 'marketing.publish', { ...post, artworkStatus: 'approved' }, ctx.user);
       return { post: await store.updatePost(ctx.tenantId, post.id, { status: "scheduled", publishedAt: publishAt.toISOString(), artworkStatus: "approved" }) };
     }
     return { post: await store.updatePost(ctx.tenantId, post.id, { status: "published", publishedAt: post.publishedAt && post.status === "published" ? post.publishedAt : nowIso(), artworkStatus: "approved" }) };
@@ -931,7 +1023,17 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     const segmentId = String(ctx.body?.segmentId || "all_individuals");
     const segments = await listSegments(ctx.tenantId);
     const seg = segments.find((s) => s.id === segmentId);
-    return { ideas: await generateEmailIdeas({ llm, ctx: await productContext(ctx.tenantId), segmentId, segmentLabel: seg?.label || segmentId, goal: String(ctx.body?.goal || "") }) };
+    return {
+      ideas: await generateEmailIdeas({
+        llm,
+        ctx: await productContext(ctx.tenantId),
+        segmentId,
+        segmentLabel: seg?.label || segmentId,
+        goal: String(ctx.body?.goal || ""),
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
+      }),
+    };
   });
 
   add("GET", "/email/campaigns", async (ctx) => ({ campaigns: await store.listCampaigns(ctx.tenantId) }), { allowAllTenant: true });
@@ -956,6 +1058,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       segmentLabel: seg.label,
       goal,
       instruction: String(ctx.body?.instruction || "") || undefined,
+      contentBrief: resolveContentBrief(ctx.tenantId),
+      generationProfile: resolveGenerationProfile(ctx.tenantId),
     });
     let campaign = await store.createCampaign(ctx.tenantId, {
       ...draft,
@@ -1026,6 +1130,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
         segmentId: c.segmentId,
         instruction,
         current: { name: c.name, subject: c.subject, preheader: c.preheader, headline: c.headline, bodyMarkdown: c.bodyMarkdown, ctaLabel: c.ctaLabel, ctaUrl: c.ctaUrl, artworkPrompt: c.artworkPrompt, bannerKicker: "" },
+        contentBrief: resolveContentBrief(ctx.tenantId),
+        generationProfile: resolveGenerationProfile(ctx.tenantId),
       }).catch(() => null);
       if (!revised && target === "copy") throw new HttpError(502, "The model returned an unusable revision");
       if (revised) Object.assign(patch, { subject: revised.subject, preheader: revised.preheader, headline: revised.headline, bodyMarkdown: revised.bodyMarkdown, ctaLabel: revised.ctaLabel, ctaUrl: revised.ctaUrl, artworkPrompt: revised.artworkPrompt || c.artworkPrompt });
@@ -1069,10 +1175,12 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   add("POST", "/email/campaigns/:id/test-send", async (ctx) => {
     const c = await requireCampaign(ctx);
     if (!opts.email) throw new HttpError(503, "No email provider configured");
-    const to = String(ctx.body?.to || ctx.user?.email || headerValue(ctx.req, "x-marketing-actor-email") || "").trim().toLowerCase();
+    const to = String(ctx.body?.to || ctx.user?.email || "").trim().toLowerCase();
     if (!EMAIL_RE.test(to)) throw new HttpError(400, "A valid test recipient is required");
     const contact = await sampleContact(ctx.tenantId, c.segmentId, (c.segmentFilter || null) as MarketingCustomSegmentFilter | null);
     const vars = contactVars({ ...contact, email: to }, ctx.brand, `${publicOrigin(ctx.brand)}${mountPath}/unsubscribe?token=test`);
+    const decision = opts.consent ? await opts.consent.authorize({businessId:ctx.tenantId,recipient:to,channel:'email',purpose:'marketing'},c.id) : {status:'paused'};
+    if (decision.status !== 'eligible' || !('expiresAt' in decision) || Date.now() > Date.parse(decision.expiresAt)) throw new HttpError(409,'Test recipient is not currently eligible');
     const result = await opts.email.sendEmail({
       to,
       subject: `[Test] ${interpolateEmailVariables(c.subject, vars, { escape: false })}`,
@@ -1097,6 +1205,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       throw new HttpError(409, "Approve the campaign first, or pass confirm: true");
     }
     const scheduledAt = ctx.body?.scheduledAt ? new Date(String(ctx.body.scheduledAt)) : null;
+    await saveExecutionApproval(ctx.tenantId, 'marketing.send', c, ctx.user);
     if (scheduledAt && !Number.isNaN(scheduledAt.getTime()) && scheduledAt.getTime() > Date.now() + 60_000) {
       return { campaign: await store.updateCampaign(ctx.tenantId, c.id, { status: "scheduled", scheduledAt: scheduledAt.toISOString() }) };
     }
@@ -1111,6 +1220,14 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     if (c.status !== "scheduled") throw new HttpError(409, "Campaign is not scheduled");
     return { campaign: await store.updateCampaign(ctx.tenantId, c.id, { status: "approved", scheduledAt: null }) };
   });
+
+  add('POST', '/consent/eligibility', async (ctx) => {
+    if (!opts.consent ||
+      !(await opts.consent.authenticate(String(ctx.body?.businessId||''),headerValue(ctx.req,'x-consent-authority'),headerValue(ctx.req,'x-consent-key')))) {
+      throw new HttpError(403,'Consent peer access denied');
+    }
+    return opts.consent.localFacts({businessId:String(ctx.body?.businessId||''),recipient:String(ctx.body.recipient||''),channel:String(ctx.body.channel||''),purpose:String(ctx.body.purpose||'')});
+  }, {public:true});
 
   // Public: media, cover fallback, subscribe, unsubscribe, webhook
   add(
@@ -1175,6 +1292,10 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       if (!EMAIL_RE.test(email) || email.length > 254) throw new HttpError(400, "A valid email is required");
       const source = String(ctx.body?.source || "blog_inline").replace(/[^a-z0-9_-]/gi, "").slice(0, 40) || "blog_inline";
       await store.ensureSubscriber(ctx.tenantId, email, String(ctx.body?.name || "").slice(0, 120) || null, source === "account" ? "blog_inline" : source);
+      if (!opts.consent) throw new HttpError(503,'Consent authorities unavailable');
+      const facts = await opts.consent.localFacts({businessId:ctx.tenantId,recipient:email,channel:'email',purpose:'marketing'});
+      const choice = await opts.consent.choose({id:newId('choice'),sourceId:`kit-subscribe:${email}`,sourceRevision:String(BigInt(facts.version)+BigInt(1)),scope:facts.scope,granted:true,evidence:{kind:'explicit_choice',text:'Subscribe to marketing email',version:'kit-subscribe-v1'},expectedVersion:facts.version});
+      if ("pending" in choice && choice.pending) return {ok:true,consentStatus:"pending",message:"Marketing consent remains pending; make a fresh choice when authorities are available."};
       await store.resubscribe(ctx.tenantId, email);
       return { ok: true };
     },
@@ -1203,6 +1324,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       return undefined;
     }
     const result = await store.unsubscribeByToken(token);
+    if (result && opts.consent) await opts.consent.choose({id:newId('unsubscribe'),sourceId:`kit-unsubscribe:${token}`,sourceRevision:'auto',scope:{businessId:result.tenantId,recipient:result.email,channel:'email',purpose:'marketing'},granted:false,evidence:null});
     const campaignId = String(ctx.query.get("c") || "");
     if (result && campaignId) await store.markRecipientUnsubscribed(campaignId, result.email);
     sendText(
@@ -1216,11 +1338,31 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
   add("GET", "/unsubscribe", (ctx) => unsubscribe(ctx, false), { public: true });
   add("POST", "/unsubscribe", (ctx) => unsubscribe(ctx, true), { public: true });
 
+  async function applyVerifiedProviderEvent(tenantId: string, input: unknown) {
+    const event = input as { type?: string; data?: { email_id?: string } };
+    const messageId = String(event?.data?.email_id || '');
+    const map: Record<string, 'delivered' | 'opened' | 'clicked' | 'bounced' | 'complained'> = {
+      'email.delivered': 'delivered', 'email.opened': 'opened', 'email.clicked': 'clicked',
+      'email.bounced': 'bounced', 'email.complained': 'complained',
+    };
+    const kind = map[String(event?.type || '')];
+    if (!kind || !messageId) return { ok: true, ignored: true };
+    const recipient = await store.recipientEmailForMessage(messageId);
+    if (!recipient || recipient.tenantId !== tenantId) return { ok: true, ignored: true };
+    const applied = await store.applyDeliveryEvent(messageId, kind);
+    if (kind === 'bounced' || kind === 'complained') {
+      await store.suppressEmail(tenantId, recipient.email);
+      if (opts.consent) await opts.consent.choose({ id:`provider:${messageId}:${kind}`, sourceId:`provider:${messageId}:${kind}`, sourceRevision:'1', scope:{businessId:tenantId,recipient:recipient.email,channel:'email',purpose:'marketing'},granted:false,evidence:null,permanent:true });
+    }
+    return { ok: true, applied };
+  }
+
   add(
     "POST",
     "/webhooks/resend",
     async (ctx) => {
-      const secret = (await opts.resendWebhookSecret?.())?.trim() || "";
+      const resolvedSecret = await opts.resendWebhookSecret?.();
+      const secret = typeof resolvedSecret === "string" ? resolvedSecret.trim() : "";
       if (!secret) throw new HttpError(503, "Resend webhook secret not configured");
       const raw = await readRawBody(ctx.req);
       const ok = verifySvixSignature({
@@ -1237,22 +1379,8 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       } catch {
         throw new HttpError(400, "Invalid JSON");
       }
-      const messageId = String(event?.data?.email_id || "");
-      const map: Record<string, "delivered" | "opened" | "clicked" | "bounced" | "complained"> = {
-        "email.delivered": "delivered",
-        "email.opened": "opened",
-        "email.clicked": "clicked",
-        "email.bounced": "bounced",
-        "email.complained": "complained",
-      };
-      const kind = map[String(event?.type || "")];
-      if (!kind || !messageId) return { ok: true, ignored: true };
-      const applied = await store.applyDeliveryEvent(messageId, kind);
-      if (kind === "bounced" || kind === "complained") {
-        const rcpt = await store.recipientEmailForMessage(messageId);
-        if (rcpt) await store.suppressEmail(rcpt.tenantId, rcpt.email);
-      }
-      return { ok: true, applied };
+      if (await opts.forwardVerifiedProviderEvent?.(ctx.tenantId, event)) return { ok: true, forwarded: true };
+      return applyVerifiedProviderEvent(ctx.tenantId,event);
     },
     { public: true },
   );
@@ -1294,10 +1422,6 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     }
     try {
       await ensureSchema();
-      const user = route.public ? null : await authenticate(req);
-      if (!route.public && (!user || (user.role !== "admin" && user.role !== "ops"))) {
-        return sendJson(res, user ? 403 : 401, { error: user ? "Admin access required" : "Authentication required" });
-      }
       if (tenantId === "all" && !route.allowAllTenant) {
         return sendJson(res, 400, { error: "Select a specific tenant for this action" });
       }
@@ -1305,7 +1429,22 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
       const params: Record<string, string> = {};
       route.keys.forEach((k, i) => (params[k] = decodeURIComponent(m[i + 1])));
       const body = method === "GET" || method === "HEAD" ? {} : await readJsonBody(req);
-      const result = await route.handler({ req, res, params, query: url.searchParams, body, tenantId, brand: brandFor(tenantId === "all" ? opts.tenantId : tenantId), user });
+      const action = operation(method, route.path);
+      const resource = Object.values(params).join('/') || route.path;
+      const delegated = Boolean(headerValue(req, 'x-marketing-credential') || headerValue(req, 'x-marketing-delegation'));
+      const user = route.public ? null : delegated
+        ? await opts.resolveDelegatedUser?.({ req, tenantId, method, path: url.pathname + url.search, body, action, resource }) ?? null
+        : await authenticate(req);
+      if (!route.public && (!user || (user.role !== 'admin' && user.role !== 'ops'))) {
+        return sendJson(res, user || delegated ? 403 : 401, { error: 'Marketing access required' });
+      }
+      if (!route.public && user && opts.authorizeActor && !(await opts.authorizeActor(user, tenantId, action, resource))) {
+        return sendJson(res, 403, { error: 'Marketing operation denied' });
+      }
+      if (!route.public && method !== 'GET' && opts.isWriteAuthority && !(await opts.isWriteAuthority(tenantId))) {
+        return sendJson(res, 409, { error: 'Marketing is read only here. Open the active Marketing workspace.' });
+      }
+      const result = await route.handler({ req, res, params, query: url.searchParams, body, tenantId, brand: brandFor(tenantId === "all" ? opts.tenantId : tenantId), user, action });
       if (result !== undefined && !res.writableEnded) sendJson(res, res.statusCode && res.statusCode !== 200 ? res.statusCode : 200, result);
     } catch (err: any) {
       if (res.writableEnded) return;
@@ -1315,12 +1454,14 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     }
   };
 
+  const publicPost = (post: MarketingPost): MarketingPost => opts.publicHeroImageUrl && post.heroImageUrl
+    ? { ...post, heroImageUrl: opts.publicHeroImageUrl(post.heroImageUrl) } : post;
   const publicHandlers: MarketingKit["publicHandlers"] = {
     async blogIndex(_req, res, next) {
       try {
         await ensureSchema();
         const posts = await store.listPublishedPosts(opts.tenantId);
-        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogIndexHtml({ posts, brand: opts.brand }), "public, max-age=300");
+        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogIndexHtml({ posts: posts.map(publicPost), brand: opts.brand }), "public, max-age=300");
       } catch (err) {
         log.error("[marketing-kit] blog index failed", err);
         if (next) next(err);
@@ -1336,7 +1477,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
           return sendText(res, 404, "text/html; charset=utf-8", simplePage(opts.brand, "Article not found", `<p>This article doesn't exist or is no longer published.</p><p><a href="/blog" style="color:#1d4ed8">Browse the journal</a></p>`));
         }
         const related = (await store.listPublishedPosts(opts.tenantId, 6)).filter((p) => p.id !== post.id).slice(0, 3);
-        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogPostHtml({ post, relatedPosts: related, brand: opts.brand }), "public, max-age=300");
+        sendText(res, 200, "text/html; charset=utf-8", renderPublicBlogPostHtml({ post: publicPost(post), relatedPosts: related.map(publicPost), brand: opts.brand }), "public, max-age=300");
       } catch (err) {
         log.error("[marketing-kit] blog post failed", err);
         if (next) next(err);
@@ -1382,7 +1523,7 @@ Keep each field short (docHighlight <= 90 chars, others <= 40). Never invent cas
     return () => clearInterval(timer);
   }
 
-  return { handler, publicHandlers, store, ensureSchema, seedPosts, runScheduledWork, startScheduler };
+  return { handler, publicHandlers, store, ensureSchema, seedPosts, runScheduledWork, startScheduler, applyVerifiedProviderEvent };
 }
 
 /** Convenience wrapper returning only the request handler. */

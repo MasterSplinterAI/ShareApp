@@ -1,6 +1,7 @@
-import type { Proposal, ProposalType, Ticket } from "@rhule/support-shared";
-import type { BrandConfig } from "@rhule/support-shared";
+import type { Proposal, ProposalType, Ticket } from "@quill/support-shared";
+import type { BrandConfig } from "@quill/support-shared";
 import type {
+  DurableMutationScope,
   EmailNotifier,
   GitHubAdapter,
 } from "../adapters/types.js";
@@ -73,6 +74,7 @@ export interface TelegramMessageEditor {
 }
 
 export interface ProposalExecutorDeps {
+  effects?: DurableMutationScope;
   tenantId: string;
   proposals: ProposalService;
   tickets: TicketService;
@@ -99,7 +101,7 @@ function parseProposalBody(bodyJson: string): {
   }
 }
 
-function normalizeAction(action: string): ProposalAction | null {
+export function normalizeAction(action: string): ProposalAction | null {
   const a = String(action || "").toLowerCase();
   if (a === "approve" || a === "issue" || a === "approve_backlog") return "approve";
   if (a === "send_reply" || a === "send") return "send_reply";
@@ -193,6 +195,15 @@ async function refreshTelegramMessage(
           claimedBy: proposalView.claimedBy,
         });
 
+  if (deps.effects) {
+    await deps.effects.enqueue({
+      type: 'support.ops',
+      ticketId: ticket.id,
+      payload: { kind: 'telegram_edit', proposalId: proposal.id, chatId, messageId, text, replyMarkup },
+    });
+    return;
+  }
+
   try {
     await deps.telegram.editProposalMessage({
       chatId,
@@ -281,8 +292,6 @@ export async function executeProposalAction(
 
   // Take over: soft-claim + reject proposal + escalate ticket (atomic reject)
   if (act === "take_over") {
-    await deps.proposals.setClaim(deps.tenantId, proposal.id, reviewer);
-    await deps.tickets.setAssignedTo(deps.tenantId, ticket.id, reviewer);
     const rejected = await deps.proposals.tryAtomicTransition(
       deps.tenantId,
       proposal.id,
@@ -293,6 +302,8 @@ export async function executeProposalAction(
       const existing = await deps.proposals.getProposal(deps.tenantId, proposal.id);
       return alreadyHandled(existing);
     }
+    await deps.proposals.setClaim(deps.tenantId, proposal.id, reviewer);
+    await deps.tickets.setAssignedTo(deps.tenantId, ticket.id, reviewer);
     const next = await deps.tickets.setStatus(deps.tenantId, ticket.id, "escalated");
     if (next) ticket = next;
     const label = reviewer.replace(/^telegram:/, "@");
@@ -358,7 +369,8 @@ export async function executeProposalAction(
     });
     const next = await deps.tickets.setStatus(deps.tenantId, proposal.ticketId, "waiting_user");
     if (next) ticket = next;
-    notifyEmail(deps.email, ticket, prompt, deps.brand.name);
+    if (deps.effects) await deps.effects.enqueue({type:'support.email',ticketId:ticket.id,payload:{body:prompt,subject:`${deps.brand.name} support — ticket #${ticket.publicNumber}`}});
+    else notifyEmail(deps.email, ticket, prompt, deps.brand.name);
     const label = reviewer.replace(/^telegram:/, "@");
     await refreshTelegramMessage(deps, marked, ticket, {
       doneLabel: `Done by ${label} — asked for info`,
@@ -375,6 +387,10 @@ export async function executeProposalAction(
   }
 
   // approve / send_reply / edit_send
+  const isGithub = ['bug_fix','feature','github_issue'].includes(proposal.proposalType);
+  if (isGithub && (deps.effects ? !await deps.effects.preflight('support.github') : !deps.github)) {
+    return {ok:false,status:503,error:'GitHub delivery unavailable'};
+  }
   const editedReply = String(opts?.draftReply ?? "").trim();
   const approved = await deps.proposals.tryAtomicTransition(
     deps.tenantId,
@@ -392,6 +408,10 @@ export async function executeProposalAction(
   const type = proposal.proposalType as ProposalType;
 
   if (type === "bug_fix" || type === "feature" || type === "github_issue") {
+    if (deps.effects) {
+      await deps.effects.enqueue({type:'support.github',ticketId:ticket.id,payload:{proposalId:proposal.id,proposalType:type,bodyJson:proposal.bodyJson,summary:proposal.summary,ticketPublicNumber:ticket.publicNumber,draftReply:editedReply || parseProposalBody(proposal.bodyJson).draft_reply?.trim() || ''}});
+      return {ok:true,result:'approved',proposal:approved,ticket,doneLabel:'GitHub delivery queued'};
+    }
     if (!deps.github) {
       return {
         ok: false,
@@ -442,7 +462,8 @@ export async function executeProposalAction(
     });
     const next = await deps.tickets.setStatus(deps.tenantId, proposal.ticketId, "waiting_user");
     if (next) ticket = next;
-    notifyEmail(deps.email, ticket, draft, deps.brand.name);
+    if (deps.effects) await deps.effects.enqueue({type:'support.email',ticketId:ticket.id,payload:{body:draft,subject:`${deps.brand.name} support — ticket #${ticket.publicNumber}`}});
+    else notifyEmail(deps.email, ticket, draft, deps.brand.name);
   }
 
   await refreshTelegramMessage(deps, approved, ticket, {
