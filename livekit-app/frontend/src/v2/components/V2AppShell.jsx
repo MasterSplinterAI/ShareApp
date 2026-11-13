@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Check, ChevronsUpDown, Compass, Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
+import { Check, ChevronsUpDown, Compass, Home, LayoutDashboard, LifeBuoy, LogOut, Mail, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Announcements, v2Auth } from '../../services/apiV2';
 import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
@@ -21,6 +21,7 @@ import { cn } from '../../lib/utils';
 import { workspaceLabel, workspaceKindLabel } from '../lib/workspaceDisplay';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/supportEmail';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeSidebarCard } from './UpgradePrompt';
 import IncomingCallOverlay from './IncomingCallOverlay';
@@ -266,6 +267,12 @@ export default function V2AppShell({ me, onLogout }) {
             <DropdownMenuItem onClick={() => openHelpRef.current?.()}>
               <LifeBuoy className="mr-2 h-4 w-4" />
               {t('app.helpSupport')}
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href={SUPPORT_MAILTO}>
+                <Mail className="mr-2 h-4 w-4" />
+                {SUPPORT_EMAIL}
+              </a>
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {

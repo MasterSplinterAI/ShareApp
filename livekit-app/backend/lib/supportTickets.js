@@ -1,5 +1,6 @@
 const db = require('../db/v2Database');
 const { sendEmail } = require('./mailer');
+const { SUPPORT_EMAIL } = require('./supportEmail');
 const { renderSupportReply } = require('./emailTemplates');
 const { notifyNewTicket, notifyUserMessage } = require('./telegramSupport');
 const { shouldNotifyOpsOnNewTicket, shouldNotifyOpsOnUserMessage, submitAckMessage } = require('./supportAgent/routing');
@@ -365,6 +366,7 @@ async function postStaffReply(ticketId, bodyText, staffLabel) {
     });
     await sendEmail({
       to,
+      replyTo: SUPPORT_EMAIL,
       subject: email.subject,
       text: email.text,
       html: email.html,

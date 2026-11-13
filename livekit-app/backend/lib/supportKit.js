@@ -16,6 +16,7 @@ const { getOrgEntitlements } = require('./v2Entitlements');
 const { buildUserContextSnapshot, formatUserContextForPrompt } = require('./supportUserContext');
 const { aiEnabled, callSupportLlm } = require('./supportAgent/llm');
 const { sendEmail } = require('./mailer');
+const { SUPPORT_EMAIL } = require('./supportEmail');
 const { githubConfigured } = require('./githubIssues');
 const {
   createSupportRouter,
@@ -247,7 +248,7 @@ function createShareAppSupportRouter(trusted={resolveAuthority:hostSupportAuthor
     }),
     email: {
       async sendToUser({ to, subject, body }) {
-        await sendEmail({ to, subject, text: body });
+        await sendEmail({ to, subject, text: body, replyTo: SUPPORT_EMAIL });
       },
     },
     telegram: {

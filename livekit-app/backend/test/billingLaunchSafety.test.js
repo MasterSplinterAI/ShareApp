@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const db = require('../db/v2Database');
 const settings = require('../lib/v2StripeSettings');
 let stripe;
-settings.getStripeSettings = async () => ({ stripeEnabled: true, secretKey: 'sk_test_mock', autoChargeEnabled: false, webhookSecret: 'whsec_billing_test' });
+let stripeKeyMode = 'live';
+settings.getStripeSettings = async () => ({ stripeEnabled: true, secretKey: 'fixture-key', stripeKeyMode, autoChargeEnabled: false, webhookSecret: 'whsec_billing_test' });
 settings.getStripeClient = () => stripe;
 const sync = require('../lib/v2StripeSubscriptionSync');
 const { assertCanCreateMeeting } = require('../lib/v2Entitlements');
@@ -29,12 +30,44 @@ function subscription(org, status='active', plan='starter') {
   return {id:`sub_${org}`, customer:`cus_${org}`, status, metadata:{org_id:org,plan_id:'starter'}, items:{data:[{price:{id:`price_${plan}`}}]}};
 }
 async function row(org) { return db.get('SELECT * FROM v2_org_subscriptions WHERE org_id=?',[org]); }
-async function invokeCheckout(org, planId='starter', headers={}) {
+async function invokeCheckout(org, planId='starter', headers={}, { path = '/checkout', email = 'test@example.com', role = 'owner' } = {}) {
   let result;
   const res = { statusCode:200, status(code) { this.statusCode=code; return this; }, json(body) { result={status:this.statusCode,body}; return this; } };
-  await checkout({v2Auth:{orgId:org,role:'owner',email:'test@example.com'},body:{planId},headers,get(name){return headers[name.toLowerCase()];}},res);
+  const handler = path === '/checkout' ? checkout : router.stack.find(r => r.route?.path === path).route.stack.at(-1).handle;
+  await handler({v2Auth:{orgId:org,role,email},query:{},body:{planId},headers,get(name){return headers[name.toLowerCase()];}},res);
   return result;
 }
+
+test('test Stripe is hidden from public plans and blocks ordinary account owners before provider access', async () => {
+  const org = await seed();
+  const previousAdmins = process.env.V2_SUPERADMIN_EMAILS;
+  stripeKeyMode = 'test';
+  process.env.V2_SUPERADMIN_EMAILS = 'billing-admin@example.com';
+  let providerCalls = 0;
+  stripe = {
+    subscriptions: { list: async () => { providerCalls++; return { data: [] }; } },
+    checkout: { sessions: { list: async () => ({ data: [] }), create: async () => ({ id: 'cs_test_fixture' }) } },
+    billingPortal: { sessions: { create: async () => { providerCalls++; return { url: 'https://example.com' }; } } },
+  };
+  try {
+    assert.equal((await invokeCheckout(org, 'starter', {}, { path: '/plans' })).body.stripeEnabled, false);
+    assert.equal((await invokeCheckout(org, 'starter', {}, { path: '/subscription' })).body.stripeEnabled, false);
+    for (const path of ['/checkout', '/portal', '/resume']) {
+      const result = await invokeCheckout(org, 'starter', {}, { path, role: 'admin' });
+      assert.equal(result.status, 403);
+      assert.equal(result.body.code, 'paid_upgrades_unavailable');
+    }
+    assert.equal(providerCalls, 0);
+    const admin = { email: 'billing-admin@example.com' };
+    assert.equal((await invokeCheckout(org, 'starter', {}, { ...admin, path: '/subscription' })).body.stripeEnabled, true);
+    assert.equal((await invokeCheckout(org, 'starter', {}, admin)).body.sessionId, 'cs_test_fixture');
+    assert.equal(providerCalls, 1);
+  } finally {
+    stripeKeyMode = 'live';
+    if (previousAdmins === undefined) delete process.env.V2_SUPERADMIN_EMAILS;
+    else process.env.V2_SUPERADMIN_EMAILS = previousAdmins;
+  }
+});
 
 test('unpaid checkout does not grant a paid plan',async()=>{
  const org=await seed();

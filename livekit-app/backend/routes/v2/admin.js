@@ -7,6 +7,7 @@ const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin')
 const { getMonthToDateUsage } = require('../../lib/v2Entitlements');
 const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
 const { sendEmail } = require('../../lib/mailer');
+const { SUPPORT_EMAIL } = require('../../lib/supportEmail');
 const { sendPasswordResetEmail } = require('../../lib/passwordReset');
 const { getPrefs } = require('../../lib/communicationPrefs');
 const {
@@ -986,6 +987,7 @@ router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, 
     const email = renderAdminMessage({ subject: subject.trim(), body: body.trim() });
     const result = await sendEmail({
       to: emails,
+      replyTo: SUPPORT_EMAIL,
       subject: email.subject,
       text: email.text,
       html: email.html,

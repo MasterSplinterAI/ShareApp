@@ -54,7 +54,7 @@ apiV2.interceptors.response.use(
     const isPasswordValidation = /\/auth\/change-password$/.test(requestUrl) &&
       error.response?.data?.error === 'Current password is incorrect' && !error.response?.data?.code;
 
-    if (status === 401 && !isAuthAttempt && !isPasswordValidation && !handling401) {
+    if (status === 401 && !error.config?.skipSessionRedirect && !isAuthAttempt && !isPasswordValidation && !handling401) {
       handling401 = true;
       localStorage.removeItem('v2_token');
       const path = window.location.pathname;
@@ -72,7 +72,7 @@ apiV2.interceptors.response.use(
 export const v2Auth = {
   signup: (body) => apiV2.post('/auth/signup', body).then((r) => r.data),
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
-  me: () => apiV2.get('/auth/me').then((r) => r.data),
+  me: (config) => apiV2.get('/auth/me', config).then((r) => r.data),
   switchWorkspace: (orgId) => apiV2.post('/auth/switch-workspace', { orgId }).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/auth/me', body).then((r) => r.data),
   changePassword: (body) => apiV2.post('/auth/change-password', body).then((r) => r.data),
@@ -106,7 +106,7 @@ export const v2Support = {
 };
 
 export const v2Orgs = {
-  me: () => apiV2.get('/orgs/me').then((r) => r.data),
+  me: (config) => apiV2.get('/orgs/me', config).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/orgs/me', body).then((r) => r.data),
   patchBranding: (body) => apiV2.patch('/orgs/me/branding', body).then((r) => r.data),
   uploadBrandingLogo: (file) => {

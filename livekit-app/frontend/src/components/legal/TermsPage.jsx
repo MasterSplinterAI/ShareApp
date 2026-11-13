@@ -3,6 +3,7 @@ import { ArrowLeft } from 'lucide-react';
 import { MarketingNav } from '../marketing/MarketingNav';
 import { MarketingFooter } from '../marketing/MarketingFooter';
 import LaliaSupportLauncher from '../../v2/components/LaliaSupportLauncher';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/supportEmail';
 
 const COMPANY_LEGAL_NAME = 'Oracle Orchestration LLC';
 const LAST_UPDATED = 'November 11, 2026';
@@ -63,8 +64,8 @@ export default function TermsPage() {
             Some features require an account. You agree to provide accurate, current information when registering and
             to keep your credentials secure. You are responsible for all activity that occurs under your account.
             Notify us promptly at{' '}
-            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={`mailto:${CONTACT_EMAIL}`}>
-              {CONTACT_EMAIL}
+            <a className="rounded-sm text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background" href={SUPPORT_MAILTO}>
+              {SUPPORT_EMAIL}
             </a>{' '}
             if you suspect unauthorized use of your account.
           </p>

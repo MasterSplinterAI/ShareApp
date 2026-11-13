@@ -244,7 +244,8 @@ app.use((err, req, res, next) => {
   }
   try {
     const { startGuestInviteReminders } = require('./lib/guestInvites');
-    const baseUrl = (process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'https://staging.jarmetals.com').replace(/\/$/, '');
+    const { publicFrontendBaseUrl } = require('./lib/publicFrontendBaseUrl');
+    const baseUrl = publicFrontendBaseUrl();
     startGuestInviteReminders((roomName, token) =>
       token
         ? `${baseUrl}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(token)}`

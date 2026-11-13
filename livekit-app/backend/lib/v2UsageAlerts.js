@@ -12,6 +12,7 @@ const {
 const { getOverageAutoChargeState } = require('./v2OrgBillingPrefs');
 const { sendEmail } = require('./mailer');
 const { renderUsageAlert } = require('./emailTemplates/usageAlert');
+const { SUPPORT_EMAIL } = require('./supportEmail');
 
 function meterState(used, included, hardCap) {
   const u = Number(used) || 0;
@@ -156,6 +157,7 @@ async function evaluateAndSendUsageAlerts(orgId) {
     for (const r of recipients) {
       await sendEmail({
         to: r.email,
+        replyTo: SUPPORT_EMAIL,
         subject: email.subject,
         text: email.text,
         html: email.html,

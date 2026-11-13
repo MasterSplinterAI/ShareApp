@@ -281,7 +281,7 @@ function MeetingRoom() {
     // so they don't have to type it when answering a call or joining a meeting link.
     if (!participantName && typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
       v2Auth
-        .me()
+        .me({ skipSessionRedirect: !isHost })
         .then((res) => {
           const u = res?.user;
           const resolvedName = (u?.display_name || u?.displayName || u?.email?.split('@')[0] || '').trim();
@@ -300,7 +300,7 @@ function MeetingRoom() {
     if (meetingBranding || !isInitialized) return;
     if (typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) return;
     v2Orgs
-      .me()
+      .me({ skipSessionRedirect: !participantInfo?.isHost })
       .then((res) => {
         const orgRow = res?.org;
         const configured =
@@ -314,7 +314,7 @@ function MeetingRoom() {
         );
       })
       .catch(() => {});
-  }, [isInitialized, meetingBranding]);
+  }, [isInitialized, meetingBranding, participantInfo?.isHost]);
 
   // Disclose the current storage policy before any room connection or publishing.
   useEffect(() => {

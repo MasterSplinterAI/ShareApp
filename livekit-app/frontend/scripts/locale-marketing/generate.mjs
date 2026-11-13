@@ -138,6 +138,7 @@ function applyChromeStrings(html, locale, route) {
     ['Try the live demo', s.navDemo],
     ['Get started', s.navGetStarted],
     ['Start free', s.navStartFree],
+    ['>Available after beta<', `>${s.paidAfterBeta}<`],
     ['Start talking for free', s.ctaStart],
     ['See how it feels', s.ctaSee],
     ['A SMALLER WORLD. A BIGGER CONVERSATION.', s.heroEyebrow],

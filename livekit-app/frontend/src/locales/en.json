@@ -186,6 +186,7 @@
     }
   },
   "pricing": {
+    "paidComingSoon": "Coming soon",
     "eyebrow": "Pricing",
     "title": "Start free, scale as you grow",
     "subtitle": "Begin with 60 participant-minutes a month. Paid plans include translation minutes too—billed per organization.",

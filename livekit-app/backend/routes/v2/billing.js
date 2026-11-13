@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
+const { isSuperadminEmail } = require('../../lib/v2Superadmin');
 const { planAllowsTeamWorkspace } = require('../../lib/v2PlanFeatures');
 const { writeOverageLedgerForCycle } = require('../../lib/v2OverageLedger');
 const {
@@ -39,6 +40,20 @@ function frontendBaseUrl() {
   return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
 }
 
+function canAccessStripeCheckout(settings, auth) {
+  return isStripeBillingActive(settings) && (
+    settings.stripeKeyMode === 'live' ||
+    (settings.stripeKeyMode === 'test' && isSuperadminEmail(auth?.email))
+  );
+}
+
+function paidUpgradesUnavailable(res) {
+  return res.status(403).json({
+    error: 'Paid upgrades are currently unavailable.',
+    code: 'paid_upgrades_unavailable',
+  });
+}
+
 router.get('/plans', async (req, res) => {
   try {
     const settings = await getStripeSettings();
@@ -47,7 +62,7 @@ router.get('/plans', async (req, res) => {
       ...planRow,
       teamWorkspace: planAllowsTeamWorkspace(planRow.id),
     }));
-    res.json({ plans, stripeEnabled: isStripeBillingActive(settings) });
+    res.json({ plans, stripeEnabled: canAccessStripeCheckout(settings) });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -86,7 +101,7 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
     res.json({
       subscription: sub,
       plan,
-      stripeEnabled: isStripeBillingActive(settings),
+      stripeEnabled: canAccessStripeCheckout(settings, req.v2Auth),
       overageAutoCharge,
     });
   } catch (e) {
@@ -121,6 +136,7 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
     if (!isStripeBillingActive(settings)) {
       return res.status(400).json({ error: 'billing_not_enabled', code: 'stripe_disabled', message: 'Stripe billing is not enabled' });
     }
+    if (!canAccessStripeCheckout(settings, req.v2Auth)) return paidUpgradesUnavailable(res);
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -237,6 +253,7 @@ router.post('/portal', requireV2Auth, async (req, res) => {
     if (!isStripeBillingActive(settings)) {
       return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
     }
+    if (!canAccessStripeCheckout(settings, req.v2Auth)) return paidUpgradesUnavailable(res);
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -273,6 +290,7 @@ router.post('/resume', requireV2Auth, async (req, res) => {
     if (!isStripeBillingActive(settings)) {
       return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
     }
+    if (!canAccessStripeCheckout(settings, req.v2Auth)) return paidUpgradesUnavailable(res);
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }

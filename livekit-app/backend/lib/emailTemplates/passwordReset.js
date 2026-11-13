@@ -1,12 +1,13 @@
 const { renderEmailLayout } = require('./layout');
 const { escapeHtml } = require('./escape');
+const { SUPPORT_EMAIL } = require('../supportEmail');
 
 function renderPasswordReset({ resetUrl, initiatedBy }) {
   const initiated = initiatedBy
     ? ` (requested by ${initiatedBy})`
     : '';
   const subject = 'Reset your Lalia password';
-  const text = `We received a request to reset your Lalia password${initiated}.\n\nReset it here (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.`;
+  const text = `We received a request to reset your Lalia password${initiated}.\n\nReset it here (link expires in 1 hour):\n${resetUrl}\n\nIf you didn't request this, you can safely ignore this email.\n\nNeed help? Email ${SUPPORT_EMAIL}.`;
   const html = renderEmailLayout({
     preheader: 'Use this link to choose a new Lalia password.',
     title: 'Reset your password',

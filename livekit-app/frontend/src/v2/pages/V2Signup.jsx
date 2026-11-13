@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { v2Auth } from '../../services/apiV2';
+import { v2Auth, v2Billing } from '../../services/apiV2';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -17,7 +17,8 @@ export default function V2Signup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const planParam = (searchParams.get('plan') || '').toLowerCase();
-  const planName = PAID_PLANS.has(planParam) ? t(`pricing.tiers.${planParam}.name`) : null;
+  const [paidPlansAvailable, setPaidPlansAvailable] = useState(false);
+  const planName = paidPlansAvailable && PAID_PLANS.has(planParam) ? t(`pricing.tiers.${planParam}.name`) : null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -32,6 +33,15 @@ export default function V2Signup() {
       navigate('/v2/app', { replace: true });
     }
   }, [navigate]);
+
+  useEffect(() => {
+    if (!PAID_PLANS.has(planParam)) return undefined;
+    let active = true;
+    v2Billing.plans().then(({ stripeEnabled }) => {
+      if (active) setPaidPlansAvailable(stripeEnabled === true);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [planParam]);
 
   const submit = async (e) => {
     e.preventDefault();

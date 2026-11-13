@@ -7,7 +7,7 @@
 const axios = require('axios');
 const { getEmailSettings, DEFAULT_FROM } = require('./v2EmailSettings');
 
-async function sendEmail({ to, subject, text, html, attachments, cc }) {
+async function sendEmail({ to, subject, text, html, attachments, cc, replyTo }) {
   const settings = await getEmailSettings();
   const apiKey = settings.resendApiKey;
   const from = settings.mailFrom || DEFAULT_FROM;
@@ -32,6 +32,7 @@ async function sendEmail({ to, subject, text, html, attachments, cc }) {
         from,
         to: Array.isArray(to) ? to : [to],
         ...(ccList.length ? { cc: ccList } : {}),
+        ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
         ...(text ? { text } : {}),
         ...(html ? { html } : {}),

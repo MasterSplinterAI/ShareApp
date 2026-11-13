@@ -46,9 +46,10 @@ export default function AdminTtsProviderSwitch() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
+    if (!localStorage.getItem('v2_token')) return undefined;
     let cancelled = false;
     v2Auth
-      .me()
+      .me({ skipSessionRedirect: true })
       .then((me) => {
         if (!cancelled) setAllowed(isTtsAdminAccount(me));
       })

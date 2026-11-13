@@ -1,9 +1,10 @@
 const { renderEmailLayout } = require('./layout');
 const { escapeHtml, nl2br } = require('./escape');
+const { SUPPORT_EMAIL } = require('../supportEmail');
 
 function renderSupportReply({ body, ticketNumber, ticketSubject }) {
   const subject = `Re: Lalia support #${ticketNumber} — ${ticketSubject || 'your request'}`;
-  const text = `${body}\n\n— Lalia Support\n\nReply from the app: Help → My requests (ticket #${ticketNumber}).`;
+  const text = `${body}\n\n— Lalia Support\n\nReply from the app: Help → My requests (ticket #${ticketNumber}).\nYou can also email ${SUPPORT_EMAIL}.`;
   const html = renderEmailLayout({
     preheader: `Reply to your Lalia support request #${ticketNumber}.`,
     title: `Support reply · #${ticketNumber}`,

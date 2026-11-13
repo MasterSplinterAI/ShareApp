@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/supportEmail';
 
 const linkClass =
   'rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background';
@@ -82,10 +83,10 @@ export function MarketingFooter() {
         <p>
           {t('footer.support')}{' '}
           <a
-            href="mailto:hello@lalia.cloud"
+            href={SUPPORT_MAILTO}
             className="rounded-sm font-medium text-foreground transition-colors hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            hello@lalia.cloud
+            {SUPPORT_EMAIL}
           </a>
         </p>
       </div>

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-async function setupAccount(page, { subscriptionStatus = 'active', passwordCode, checkoutConflict = false, currentPlan = 'starter' } = {}) {
+async function setupAccount(page, { subscriptionStatus = 'active', passwordCode, checkoutConflict = false, currentPlan = 'starter', stripeEnabled = true } = {}) {
   const billingRequests = [];
   const plans = [
     { id: 'starter', name: 'Starter', monthly_price_cents: 1900, included_meeting_minutes: 2000, included_translation_minutes: 500 },
@@ -15,7 +15,7 @@ async function setupAccount(page, { subscriptionStatus = 'active', passwordCode,
     let body = {};
     if (path.endsWith('/auth/me')) body = { user: { id: 'user', email: 'user@example.test', display_name: 'Test User', preferredLanguage: 'en' }, org: { id: 'org', name: 'Personal', account_type: 'personal' }, role: 'owner' };
     else if (path.endsWith('/auth/change-password')) return route.fulfill({ status: 401, json: passwordCode ? { error: 'Unauthorized', code: passwordCode } : { error: 'Current password is incorrect' } });
-    else if (path.endsWith('/billing/subscription')) body = { stripeEnabled: true, subscription: { plan_id: currentPlan, status: subscriptionStatus, stripe_subscription_id: checkoutConflict || currentPlan === 'free' ? null : 'sub_existing', stripe_customer_id: 'cus_existing' }, plan: currentPlan === 'free' ? { id: 'free', name: 'Free', monthly_price_cents: 0 } : plans[0] };
+    else if (path.endsWith('/billing/subscription')) body = { stripeEnabled, subscription: { plan_id: currentPlan, status: subscriptionStatus, stripe_subscription_id: checkoutConflict || currentPlan === 'free' ? null : 'sub_existing', stripe_customer_id: 'cus_existing' }, plan: currentPlan === 'free' ? { id: 'free', name: 'Free', monthly_price_cents: 0 } : plans[0] };
     else if (path.endsWith('/billing/plans')) body = { plans };
     else if (path.endsWith('/billing/checkout') || path.endsWith('/billing/portal')) {
       billingRequests.push(path.split('/').pop());
@@ -31,6 +31,15 @@ async function setupAccount(page, { subscriptionStatus = 'active', passwordCode,
   });
   return billingRequests;
 }
+
+test('a public account cannot start checkout from a saved upgrade link', async ({ page }) => {
+  const requests = await setupAccount(page, { stripeEnabled: false, currentPlan: 'free' });
+  await page.goto('/v2/app/settings?section=billing&checkout=pro');
+  await expect(page.getByText('active · Free', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upgrade to Pro', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Manage in Stripe' })).toHaveCount(0);
+  expect(requests).toEqual([]);
+});
 
 for (const query of [
   'billing=success', 'billing=cancel', 'billing=portal',
@@ -181,3 +190,39 @@ test('host prejoin refreshes the notice after changing settings in another tab',
   await page.evaluate(() => window.dispatchEvent(new Event('focus')));
   await expect(notice).toContainText('not saving new transcript lines');
 });
+
+for (const savedToken of [null, 'expired-session-token']) {
+  test(`guest stays in the meeting with ${savedToken ? 'a stale' : 'no'} account session`, async ({ page }) => {
+    const authLookups = [];
+    await page.addInitScript((token) => {
+      if (token) localStorage.setItem('v2_token', token);
+      sessionStorage.setItem('participantInfo', JSON.stringify({
+        roomName: 'guest-regression', meetingId: 'guest-meeting', inviteToken: 'guest-invite',
+        isHost: false, participantName: '', selectedLanguage: 'en',
+      }));
+      navigator.mediaDevices.getUserMedia = async () => { throw new DOMException('Permission denied', 'NotAllowedError'); };
+    }, savedToken);
+    await page.route('**/api/**', (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/auth/me') || path.endsWith('/orgs/me')) {
+        authLookups.push(path);
+        return route.fulfill({ status: 401, json: { error: 'Unauthorized', code: 'invalid_token' } });
+      }
+      if (path.endsWith('/join-info')) {
+        return route.fulfill({ json: { mode: 'v2', allowed: true, policy: { store_transcripts: true } } });
+      }
+      if (path.endsWith('/guest-token')) {
+        return route.fulfill({ json: { token: 'test-only-room-token', url: 'wss://127.0.0.1:1' } });
+      }
+      return route.fulfill({ json: {} });
+    });
+    await page.goto('/room/guest-regression');
+    await page.getByLabel('Display name', { exact: true }).fill('Guest');
+    const receivedGuestToken = page.waitForResponse((response) => response.url().endsWith('/guest-token'));
+    await page.getByRole('button', { name: 'Join meeting', exact: true }).click();
+    await receivedGuestToken;
+    await expect(page.getByRole('button', { name: 'Leave meeting', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/room\/guest-regression$/);
+    if (!savedToken) expect(authLookups).toEqual([]);
+  });
+}

@@ -42,6 +42,8 @@ async function runSandboxVerification(config, { stripe: injectedStripe, report =
   process.env.STRIPE_ENABLED = 'true';
   process.env.V2_AUTO_CHARGE_ENABLED = 'false';
   process.env.FRONTEND_URL = 'https://example.com';
+  const fixtureEmail = 'sandbox-verification@example.invalid';
+  process.env.V2_SUPERADMIN_EMAILS = fixtureEmail;
   const stripe = injectedStripe || new (require('stripe'))(config.key);
   const db = require('../db/v2Database');
   const settings = require('../lib/v2StripeSettings');
@@ -66,7 +68,7 @@ async function runSandboxVerification(config, { stripe: injectedStripe, report =
       status(code) { this.statusCode = code; return this; },
       json(value) { result = { status: this.statusCode, body: value }; return this; },
     };
-    await handler({ body, v2Auth: { orgId, role: 'owner', email: 'sandbox-verification@example.invalid' } }, res);
+    await handler({ body, v2Auth: { orgId, role: 'owner', email: fixtureEmail } }, res);
     return result;
   }
   async function localPlan() {

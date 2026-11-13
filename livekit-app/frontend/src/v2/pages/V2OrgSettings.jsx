@@ -96,6 +96,7 @@ export default function V2OrgSettings() {
   const [savingOverageAutoCharge, setSavingOverageAutoCharge] = useState(false);
 
   const startCheckout = async (planId) => {
+    if (!billingSnap?.stripeEnabled) return;
     if (isIosNativeApp()) {
       toast('Manage your plan on the web at lalia.cloud');
       return;
@@ -243,7 +244,7 @@ export default function V2OrgSettings() {
       startCheckout(intent);
     } else {
       toast(
-        'Your account is ready on the free plan. Online billing is being set up — we\u2019ll email you to complete the upgrade.',
+        'Paid upgrades are currently unavailable.',
         { icon: 'ℹ️', duration: 6000 }
       );
     }
@@ -1020,7 +1021,7 @@ export default function V2OrgSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
-                {!teamWorkspace && canManage && billingSnap?.subscription?.is_comp !== 1 && (
+                {!teamWorkspace && canManage && billingSnap?.stripeEnabled && billingSnap?.subscription?.is_comp !== 1 && (
                   <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-3 text-foreground">
                     <p className="font-medium">Need to invite colleagues?</p>
                     <p className="mt-1 text-muted-foreground">
@@ -1204,7 +1205,7 @@ export default function V2OrgSettings() {
                       </div>
                       {!billingSnap?.stripeEnabled && (
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Payments are disabled. A platform admin can enable Stripe under Admin → Billing & Stripe.
+                          Paid upgrades are currently unavailable.
                         </p>
                       )}
                     </div>

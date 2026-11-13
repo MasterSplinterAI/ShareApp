@@ -335,6 +335,9 @@ fi
 
 # ---------- Services ----------
 echo "Restarting staging backend ($PM2_NAME)..."
+# Override any older PM2 environment values so customer links use the public host.
+export FRONTEND_URL=https://lalia.cloud
+export PUBLIC_FRONTEND_BASE_URL=https://lalia.cloud
 if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
   pm2 restart "$PM2_NAME" --update-env
 else
