@@ -117,8 +117,13 @@ test('Lalia transaction facade and durable business event outbox', async t => {
         'X-Cost-Secret': 'isolated-cost-fixture'
       })).status, 200);
       const costRow = await db.get('SELECT * FROM meeting_cost_events WHERE meeting_id=? ORDER BY id DESC LIMIT 1',[cost.meeting_id]);
-      const costEnvelope = JSON.parse((await db.get('SELECT envelope FROM ops_business_outbox WHERE event_id=?', [`lalia_cost_row_${costRow.id}:1`])).envelope);
-      assert.equal(costEnvelope.payload.costMicros, '500');
+      assert.equal(await db.get('SELECT envelope FROM ops_business_outbox WHERE event_id=?', [`lalia_cost_row_${costRow.id}:1`]), undefined);
+
+      cost.event_type = 'openai_stt_minute';
+      assert.equal((await post('/cost', cost, { 'X-Cost-Secret': 'isolated-cost-fixture' })).status, 200);
+      const sttRow = await db.get('SELECT * FROM meeting_cost_events WHERE meeting_id=? ORDER BY id DESC LIMIT 1', [cost.meeting_id]);
+      const costEnvelope = JSON.parse((await db.get('SELECT envelope FROM ops_business_outbox WHERE event_id=?', [`lalia_cost_row_${sttRow.id}:1`])).envelope);
+      assert.equal(costEnvelope.payload.costMicros, '6000');
       const before = (await db.all('SELECT id FROM meeting_cost_events WHERE meeting_id=?',[cost.meeting_id])).length;
       if (db.isPostgres()) await db.run("ALTER TABLE ops_business_outbox ADD CONSTRAINT event_fixture_failure CHECK(event_type<>'usage.accrued') NOT VALID");else await db.run("CREATE TRIGGER event_fixture_failure BEFORE INSERT ON ops_business_outbox WHEN NEW.event_type='usage.accrued' BEGIN SELECT RAISE(ABORT,'fixture outbox failure'); END");
       try {

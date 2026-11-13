@@ -101,6 +101,15 @@ function renderTable(doc, token) {
   doc.moveDown(0.6);
 }
 
+function reportCreatedAt(value) {
+  if (!value) return new Date();
+  // Legacy SQL timestamps are UTC but lack an offset. ISO timestamps already carry one.
+  const timestamp = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(value)
+    ? `${value.replace(' ', 'T')}Z`
+    : value;
+  return new Date(timestamp);
+}
+
 /**
  * Build a PDF buffer from a stored report row + meeting metadata.
  * @returns {Promise<Buffer>}
@@ -132,7 +141,7 @@ function reportToPdfBuffer({ report, meetingTitle, orgName }) {
       .font('Helvetica')
       .fillColor(COLORS.muted)
       .text(templateLabel(report.template_id));
-    const created = report.created_at ? new Date(report.created_at + 'Z') : new Date();
+    const created = reportCreatedAt(report.created_at);
     const metaBits = [
       orgName ? `Workspace: ${orgName}` : null,
       `Generated: ${created.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}`,
@@ -231,7 +240,7 @@ function reportToPdfBuffer({ report, meetingTitle, orgName }) {
 
 /** Markdown export with a metadata front-matter header. */
 function reportToMarkdown({ report, meetingTitle, orgName }) {
-  const created = report.created_at ? new Date(report.created_at + 'Z') : new Date();
+  const created = reportCreatedAt(report.created_at);
   const header = [
     `# ${templateLabel(report.template_id)} — ${meetingTitle || 'Meeting'}`,
     '',
