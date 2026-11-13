@@ -219,6 +219,7 @@ app.use((err, req, res, next) => {
   const stopSeoSchema = process.env.NODE_ENV === 'test' ? () => {} : await schemaHost.start();
   try {
     await v2Database.initDatabase();
+    await require('./lib/livekitInvoices').ensureLiveKitInvoiceSchema();
     const { startOpsEventWorkers } = require('./lib/opsOutbox');
     const { processStripeEvent } = require('./routes/v2/billingWebhook');
     stopOpsEventWorkers = await startOpsEventWorkers(processStripeEvent);

@@ -278,6 +278,8 @@ router.patch('/orgs/:orgId/comp', requireV2Auth, requireSuperadmin, async (req, 
   }
 });
 
+router.use('/costs/livekit', require('./livekitInvoices'));
+
 router.get('/costs/summary', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
     const totals = await db.get(

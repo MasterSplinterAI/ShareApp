@@ -1,5 +1,5 @@
 /** Host-generated IDs and revisions are durable source identities, never transport timestamps. */
-export const BUSINESS_EVENT_TYPES = ['contact.changed', 'consent.changed', 'billing.recorded', 'usage.accrued', 'metrics.snapshot'] as const;
+export const BUSINESS_EVENT_TYPES = ['contact.changed', 'consent.changed', 'billing.recorded', 'vendor.invoice.recorded', 'usage.accrued', 'metrics.snapshot'] as const;
 export type BusinessEventType = typeof BUSINESS_EVENT_TYPES[number];
 export interface BusinessEvent<T = Record<string, unknown>> {
   schemaVersion: 1;
@@ -154,4 +154,26 @@ export function stripeBusinessEvent(businessId: string, event: any): BusinessEve
       revenueStream: obj.metadata?.type === 'credit_topup' ? 'usage_topup' : 'subscription'
     }
   };
+}
+
+export interface LiveKitInvoiceFact {
+  provider: 'livekit';
+  invoiceNumber: string;
+  billingMonth: string;
+  currency: 'USD';
+  amountMinor: string;
+  documentSha256: string;
+}
+export function liveKitInvoiceEventId(month: string): string {
+  return 'livekit-invoice:' + month;
+}
+export function validateLiveKitInvoiceFact(value: unknown): asserts value is LiveKitInvoiceFact {
+  const fact = value as LiveKitInvoiceFact;
+  if (!fact || fact.provider !== 'livekit' || fact.currency !== 'USD' ||
+      typeof fact.invoiceNumber !== 'string' || !/^[A-Z0-9][A-Z0-9._-]{0,29}$/.test(fact.invoiceNumber) ||
+      typeof fact.billingMonth !== 'string' || !/^20\d{2}-(0[1-9]|1[0-2])$/.test(fact.billingMonth) ||
+      typeof fact.amountMinor !== 'string' || !/^[1-9]\d{0,9}$/.test(fact.amountMinor) ||
+      typeof fact.documentSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(fact.documentSha256)) {
+    throw new Error('Invalid LiveKit invoice details');
+  }
 }
