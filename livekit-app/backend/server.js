@@ -170,6 +170,10 @@ app.use('/api/cost-events', require('./routes/costEvents'));
 app.post('/api/consent/eligibility',require('./lib/consent').consentEligibilityHandler);
 app.post('/api/marketing/transfer',require('./lib/marketingAuthority').marketingTransferHandler);
 
+const { schemaHost, serveStaticMarketingPage } = require('./lib/seoSchema');
+app.get(/^\/(?:index\.html)?$/, serveStaticMarketingPage);
+app.get(/^\/(?:languages|(?:de|es|fr|ja|pt|zh-CN)(?:\/(?:languages|blog(?:\/[a-z0-9-]+)?))?)(?:\/index\.html|\/)?$/, serveStaticMarketingPage);
+
 // @rhule/marketing-kit — Admin console API + public SEO + Resend webhooks
 try {
   const { marketingKitEnabled, getLaliaMarketingKit } = require('./lib/marketingKit');
@@ -212,8 +216,10 @@ app.use((err, req, res, next) => {
 (async function start() {
   let stopOpsEventWorkers = () => {};
   let stopCustomerReporting = () => {};
+  const stopSeoSchema = process.env.NODE_ENV === 'test' ? () => {} : await schemaHost.start();
   try {
     await v2Database.initDatabase();
+    await require('./lib/livekitInvoices').ensureLiveKitInvoiceSchema();
     const { startOpsEventWorkers } = require('./lib/opsOutbox');
     const { processStripeEvent } = require('./routes/v2/billingWebhook');
     stopOpsEventWorkers = await startOpsEventWorkers(processStripeEvent);
@@ -284,6 +290,6 @@ app.use((err, req, res, next) => {
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
-  server.once('close',()=>{stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
+  server.once('close',()=>{stopSeoSchema(); stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
   process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
 })();

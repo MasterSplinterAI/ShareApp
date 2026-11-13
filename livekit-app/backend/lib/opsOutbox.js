@@ -16,6 +16,8 @@ async function ensureOpsOutboxSchema() {
   for (const statement of require("@rhule/marketing-core").CONSENT_SCHEMA) await db.run(statement);
 }
 async function queueCostEvent(tx, row) {
+  // LiveKit metering supports Lalia's estimates. Only invoices post its actuals.
+  if (/livekit/i.test(row.provider || '')) return;
   if (!row.id || !Number.isSafeInteger(Number(row.id))) throw Error('Persisted cost row identity required');
   const sourceId = `lalia_cost_row_${row.id}`,
     revision = await nextSourceRevision(tx, sourceId);

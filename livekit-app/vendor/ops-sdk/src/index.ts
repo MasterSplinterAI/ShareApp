@@ -849,3 +849,6 @@ export * from './supportAcceptance.js';
 export * from './supportIdentity.js';
 
 export * from './eventOutbox.js';
+
+export * from './seoSchema.js';
+export * from './seoSchemaHost.js';
