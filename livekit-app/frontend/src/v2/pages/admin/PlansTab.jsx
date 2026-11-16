@@ -10,13 +10,14 @@ import { useAuditReason, orgKey } from './useAuditReason';
 
 const NUMERIC_FIELDS = [
   'monthly_price_cents',
+  'annual_price_cents',
   'included_meeting_minutes',
   'included_translation_minutes',
   'overage_meeting_cents_per_min',
   'overage_translation_cents_per_min',
 ];
 
-const EDITABLE_FIELDS = ['name', ...NUMERIC_FIELDS, 'stripe_price_id'];
+const EDITABLE_FIELDS = ['name', ...NUMERIC_FIELDS, 'stripe_price_id', 'stripe_annual_price_id'];
 
 export function PlansTab() {
   const [plans, setPlans] = useState([]);
@@ -82,11 +83,13 @@ export function PlansTab() {
               <th className="px-3 py-3 font-medium">Plan</th>
               <th className="px-3 py-3 font-medium">Name</th>
               <th className="px-3 py-3 font-medium">Price (¢/mo)</th>
+              <th className="px-3 py-3 font-medium">Annual (¢/yr)</th>
               <th className="px-3 py-3 font-medium">Incl. meeting min</th>
               <th className="px-3 py-3 font-medium">Incl. translation min</th>
               <th className="px-3 py-3 font-medium">Overage meeting ¢/min</th>
               <th className="px-3 py-3 font-medium">Overage transl. ¢/min</th>
-              <th className="px-3 py-3 font-medium">Stripe price ID</th>
+              <th className="px-3 py-3 font-medium">Monthly Stripe price ID</th>
+              <th className="px-3 py-3 font-medium">Annual Stripe price ID</th>
               <th className="px-3 py-3 font-medium">Audit reason</th>
               <th className="px-3 py-3 font-medium" />
             </tr>
@@ -134,6 +137,15 @@ export function PlansTab() {
                   </td>
                   <td className="px-3 py-3">
                     <Input
+                      aria-label={`${plan.id} annual stripe price id`}
+                      className="h-9 w-40"
+                      placeholder="price_…"
+                      value={fieldValue(plan, 'stripe_annual_price_id')}
+                      onChange={(e) => setField(plan.id, 'stripe_annual_price_id', e.target.value)}
+                    />
+                  </td>
+                  <td className="px-3 py-3">
+                    <Input
                       id={`audit-reason-${key}`}
                       aria-label={`${plan.id} audit reason`}
                       autoComplete="off"
@@ -162,7 +174,7 @@ export function PlansTab() {
             })}
             {plans.length === 0 && (
               <tr>
-                <td className="px-4 py-6 text-muted-foreground" colSpan={10}>
+                <td className="px-4 py-6 text-muted-foreground" colSpan={12}>
                   No plans configured.
                 </td>
               </tr>

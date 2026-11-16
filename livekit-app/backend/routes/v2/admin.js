@@ -701,11 +701,13 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
     const {
       name,
       monthly_price_cents,
+      annual_price_cents,
       included_meeting_minutes,
       included_translation_minutes,
       overage_meeting_cents_per_min,
       overage_translation_cents_per_min,
       stripe_price_id,
+      stripe_annual_price_id,
     } = req.body || {};
     const updates = [];
     const params = [];
@@ -716,6 +718,10 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
     if (monthly_price_cents != null) {
       updates.push('monthly_price_cents = ?');
       params.push(Math.max(0, Number(monthly_price_cents) || 0));
+    }
+    if (annual_price_cents != null) {
+      updates.push('annual_price_cents = ?');
+      params.push(Math.max(0, Number(annual_price_cents) || 0));
     }
     if (included_meeting_minutes != null) {
       updates.push('included_meeting_minutes = ?');
@@ -743,6 +749,17 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
       }
       updates.push('stripe_price_id = ?');
       params.push(priceId);
+    }
+    if (stripe_annual_price_id !== undefined) {
+      const annualPriceId = stripe_annual_price_id ? String(stripe_annual_price_id).trim().slice(0, 128) : null;
+      if (annualPriceId && !annualPriceId.startsWith('price_')) {
+        return res.status(400).json({
+          error:
+            'stripe_annual_price_id must be a Stripe Price ID starting with price_ (not a Product ID like prod_…)',
+        });
+      }
+      updates.push('stripe_annual_price_id = ?');
+      params.push(annualPriceId);
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_plan', {
@@ -807,7 +824,13 @@ router.get('/revenue', requireV2Auth, requireSuperadmin, async (req, res) => {
     );
     const compRow = await db.get(`SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE is_comp = 1`);
     const mrrRow = await db.get(
-      `SELECT COALESCE(SUM(p.monthly_price_cents), 0) AS mrr_cents
+      `SELECT COALESCE(SUM(
+         CASE
+           WHEN s.billing_interval = 'year' AND COALESCE(p.annual_price_cents, 0) > 0
+             THEN ROUND(p.annual_price_cents / 12.0)
+           ELSE p.monthly_price_cents
+         END
+       ), 0) AS mrr_cents
        FROM v2_org_subscriptions s JOIN v2_plans p ON p.id = s.plan_id
        WHERE lower(s.status) IN ('active', 'trialing') AND COALESCE(s.is_comp, 0) = 0 AND s.plan_id != 'free'`
     );
@@ -1013,7 +1036,8 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
   try {
     const settings = await getStripeSettings();
     const plans = await db.all(
-      `SELECT id, name, stripe_price_id, monthly_price_cents FROM v2_plans ORDER BY monthly_price_cents ASC`
+      `SELECT id, name, stripe_price_id, stripe_annual_price_id, monthly_price_cents, annual_price_cents
+       FROM v2_plans ORDER BY monthly_price_cents ASC`
     );
     const withCustomer = await db.get(
       `SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE stripe_customer_id IS NOT NULL AND stripe_customer_id != ''`
@@ -1040,6 +1064,8 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
       autoChargeEnabled: settings.autoChargeEnabled,
       settings: adminSettings,
       plansConfigured: plans.filter((p) => p.stripe_price_id).length,
+      annualPlansConfigured: plans.filter((p) => p.stripe_annual_price_id).length,
+      paidPlansTotal: plans.filter((p) => p.id !== 'free').length,
       plansTotal: plans.length,
       plans,
       stats: {

@@ -17,7 +17,12 @@ const checkout = router.stack.find(r => r.route?.path === '/checkout').route.sta
 
 before(async () => {
   await db.initDatabase();
-  for (const plan of ['starter', 'pro']) await db.run('UPDATE v2_plans SET stripe_price_id=? WHERE id=?', [`price_${plan}`, plan]);
+  for (const plan of ['starter', 'pro']) {
+    await db.run(
+      'UPDATE v2_plans SET stripe_price_id=?, stripe_annual_price_id=? WHERE id=?',
+      [`price_${plan}`, `price_${plan}_annual`, plan]
+    );
+  }
 });
 after(()=>db.close());
 async function seed(plan = 'free') {
@@ -30,11 +35,12 @@ function subscription(org, status='active', plan='starter') {
   return {id:`sub_${org}`, customer:`cus_${org}`, status, metadata:{org_id:org,plan_id:'starter'}, items:{data:[{price:{id:`price_${plan}`}}]}};
 }
 async function row(org) { return db.get('SELECT * FROM v2_org_subscriptions WHERE org_id=?',[org]); }
-async function invokeCheckout(org, planId='starter', headers={}, { path = '/checkout', email = 'test@example.com', role = 'owner' } = {}) {
+async function invokeCheckout(org, planId='starter', headers={}, { path = '/checkout', email = 'test@example.com', role = 'owner', billingInterval } = {}) {
   let result;
   const res = { statusCode:200, status(code) { this.statusCode=code; return this; }, json(body) { result={status:this.statusCode,body}; return this; } };
   const handler = path === '/checkout' ? checkout : router.stack.find(r => r.route?.path === path).route.stack.at(-1).handle;
-  await handler({v2Auth:{orgId:org,role,email},query:{},body:{planId},headers,get(name){return headers[name.toLowerCase()];}},res);
+  const body = billingInterval !== undefined ? { planId, billingInterval } : { planId };
+  await handler({v2Auth:{orgId:org,role,email},query:{},body,headers,get(name){return headers[name.toLowerCase()];}},res);
   return result;
 }
 
@@ -269,3 +275,55 @@ for (const atPeriodEnd of [true, false]) {
   assert.equal((await row(org)).cancel_at_period_end,0);
  });
 }
+
+test('annual checkout uses annual price, replaces unpaid monthly checkout, and syncs yearly cadence with monthly quota cycles', async () => {
+  const org = await seed();
+  const expired = [];
+  let createdParams;
+  const openMonthly = { id: 'cs_open_monthly', status: 'open', payment_status: 'unpaid', metadata: { plan_id: 'starter', billing_interval: 'month' } };
+  stripe = {
+    subscriptions: { list: async () => ({ data: [] }) },
+    checkout: {
+      sessions: {
+        list: async () => ({ data: [openMonthly] }),
+        expire: async (id) => { expired.push(id); return { ...openMonthly, status: 'expired' }; },
+        create: async (params) => { createdParams = params; return { id: 'cs_annual_new', url: 'https://example.com/annual' }; },
+      },
+    },
+  };
+  const result = await invokeCheckout(org, 'starter', {}, { billingInterval: 'annual' });
+  assert.equal(result.status, 200);
+  assert.deepEqual(expired, ['cs_open_monthly']);
+  assert.equal(createdParams.line_items[0].price, 'price_starter_annual');
+  assert.equal(createdParams.metadata.billing_interval, 'year');
+  assert.equal(createdParams.subscription_data.metadata.billing_interval, 'year');
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  await sync.applyStripeSubscriptionToOrg({
+    id: `sub_${org}_annual`,
+    customer: `cus_${org}`,
+    status: 'active',
+    current_period_start: nowSec,
+    current_period_end: nowSec + 365 * 86400,
+    metadata: { org_id: org, plan_id: 'starter', billing_interval: 'year' },
+    items: { data: [{ price: { id: 'price_pro_annual', recurring: { interval: 'year' } } }] },
+  });
+  const updated = await row(org);
+  assert.equal(updated.plan_id, 'pro');
+  assert.equal(updated.billing_interval, 'year');
+
+  const { resolveOrgPeriodBounds } = require('../lib/v2BillingCycles');
+  const bounds = await resolveOrgPeriodBounds(org);
+  assert.equal(bounds.source, 'calendar');
+
+  await sync.applyStripeSubscriptionToOrg({
+    id: `sub_${org}_annual`,
+    customer: `cus_${org}`,
+    status: 'canceled',
+    metadata: { org_id: org },
+    items: { data: [{ price: { id: 'price_pro_annual', recurring: { interval: 'year' } } }] },
+  });
+  const canceled = await row(org);
+  assert.equal(canceled.plan_id, 'free');
+  assert.equal(canceled.billing_interval, 'month');
+});

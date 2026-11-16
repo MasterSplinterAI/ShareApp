@@ -85,8 +85,18 @@ async function applyStripeSubscriptionWithinTransaction(stripeSub) {
   let orgId = stripeSub.metadata?.org_id ? String(stripeSub.metadata.org_id) : null;
   const price = stripeSub.items?.data?.[0]?.price;
   const priceId = typeof price === 'string' ? price : price?.id;
-  const mappedPlan = priceId ? await db.get('SELECT id FROM v2_plans WHERE stripe_price_id = ?', [priceId]) : null;
+  const mappedPlan = priceId
+    ? await db.get(
+        'SELECT id, stripe_price_id, stripe_annual_price_id FROM v2_plans WHERE stripe_price_id = ? OR stripe_annual_price_id = ?',
+        [priceId, priceId]
+      )
+    : null;
   const planIdMeta = mappedPlan?.id || null;
+  const recurringInterval = typeof price === 'object' && price ? price.recurring?.interval : null;
+  const resolvedInterval =
+    recurringInterval === 'year' || (priceId && mappedPlan?.stripe_annual_price_id === priceId)
+      ? 'year'
+      : 'month';
 
   const bySub = await db.get(`SELECT org_id, is_comp FROM v2_org_subscriptions WHERE stripe_subscription_id = ?`, [
     stripeSubId,
@@ -131,6 +141,7 @@ async function applyStripeSubscriptionWithinTransaction(stripeSub) {
   const { cps, cpe } = resolvePeriodBounds(stripeSub);
   const { cancelAtPeriodEnd, cancelAt, canceledAt } = resolveCancelFlags(stripeSub);
   const planId = resolvePlanIdFromStripe(stripeSub, planIdMeta);
+  const billingInterval = DOWNGRADE_STRIPE_STATUSES.has(stripeStatus) ? 'month' : resolvedInterval;
   const orgBillingStatus = orgBillingStatusFromStripe(stripeStatus);
 
   if (planId) {
@@ -140,6 +151,7 @@ async function applyStripeSubscriptionWithinTransaction(stripeSub) {
          stripe_customer_id = COALESCE(?, stripe_customer_id),
          status = ?,
          plan_id = ?,
+         billing_interval = ?,
          current_period_start = COALESCE(?, current_period_start),
          current_period_end = COALESCE(?, current_period_end),
          cancel_at_period_end = ?,
@@ -151,6 +163,7 @@ async function applyStripeSubscriptionWithinTransaction(stripeSub) {
         customerId,
         stripeStatus,
         planId,
+        billingInterval,
         cps,
         cpe,
         cancelAtPeriodEnd ? 1 : 0,
@@ -165,6 +178,7 @@ async function applyStripeSubscriptionWithinTransaction(stripeSub) {
          stripe_subscription_id = ?,
          stripe_customer_id = COALESCE(?, stripe_customer_id),
          status = ?,
+         billing_interval = ?,
          current_period_start = COALESCE(?, current_period_start),
          current_period_end = COALESCE(?, current_period_end),
          cancel_at_period_end = ?,
@@ -175,6 +189,7 @@ async function applyStripeSubscriptionWithinTransaction(stripeSub) {
         stripeSubId,
         customerId,
         stripeStatus,
+        billingInterval,
         cps,
         cpe,
         cancelAtPeriodEnd ? 1 : 0,

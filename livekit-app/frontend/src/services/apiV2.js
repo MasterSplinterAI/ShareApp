@@ -206,12 +206,18 @@ export const v2Billing = {
         params: opts.reconcile ? { reconcile: '1' } : undefined,
       })
       .then((r) => r.data),
-  checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
-  changePlan: async (planId, subscription) => {
+  checkout: (planId, billingInterval) =>
+    apiV2
+      .post('/billing/checkout', {
+        planId,
+        ...(billingInterval ? { billingInterval } : {}),
+      })
+      .then((r) => r.data),
+  changePlan: async (planId, subscription, billingInterval) => {
     const terminal = ['canceled', 'cancelled', 'incomplete_expired'].includes(String(subscription?.status || '').toLowerCase());
     if (subscription?.stripe_subscription_id && !terminal) return v2Billing.portal();
     try {
-      return await v2Billing.checkout(planId);
+      return await v2Billing.checkout(planId, billingInterval);
     } catch (error) {
       // Another checkout may have completed since this page loaded.
       if (error.response?.status === 409 && error.response?.data?.code === 'subscription_exists') {

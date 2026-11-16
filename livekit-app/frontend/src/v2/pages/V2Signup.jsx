@@ -17,6 +17,7 @@ export default function V2Signup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const planParam = (searchParams.get('plan') || '').toLowerCase();
+  const billingParam = (searchParams.get('billing') || '').toLowerCase() === 'annual' ? 'annual' : 'monthly';
   const [paidPlansAvailable, setPaidPlansAvailable] = useState(false);
   const planName = paidPlansAvailable && PAID_PLANS.has(planParam) ? t(`pricing.tiers.${planParam}.name`) : null;
   const [email, setEmail] = useState('');
@@ -37,11 +38,17 @@ export default function V2Signup() {
   useEffect(() => {
     if (!PAID_PLANS.has(planParam)) return undefined;
     let active = true;
-    v2Billing.plans().then(({ stripeEnabled }) => {
-      if (active) setPaidPlansAvailable(stripeEnabled === true);
+    v2Billing.plans().then(({ stripeEnabled, plans = [] }) => {
+      if (!active) return;
+      const target = (plans || []).find((p) => p.id === planParam);
+      const intervalReady =
+        billingParam === 'annual'
+          ? !target || Boolean(target.stripe_annual_price_id)
+          : !target || !('stripe_price_id' in target) || Boolean(target.stripe_price_id);
+      setPaidPlansAvailable(stripeEnabled === true && intervalReady);
     }).catch(() => {});
     return () => { active = false; };
-  }, [planParam]);
+  }, [planParam, billingParam]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -71,7 +78,8 @@ export default function V2Signup() {
       }
       toast.success(t('auth.signup.success'));
       if (planName) {
-        navigate(`/v2/app/settings?checkout=${planParam}`, { replace: true });
+        const intervalSuffix = billingParam === 'annual' ? '&interval=annual' : '';
+        navigate(`/v2/app/settings?checkout=${planParam}${intervalSuffix}`, { replace: true });
       } else {
         navigate('/v2/app', { replace: true });
       }

@@ -487,9 +487,18 @@ async function migrate() {
   if (!planColNames.has('stripe_price_id')) {
     await run(`ALTER TABLE v2_plans ADD COLUMN stripe_price_id TEXT`);
   }
+  if (!planColNames.has('annual_price_cents')) {
+    await run(`ALTER TABLE v2_plans ADD COLUMN annual_price_cents INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!planColNames.has('stripe_annual_price_id')) {
+    await run(`ALTER TABLE v2_plans ADD COLUMN stripe_annual_price_id TEXT`);
+  }
 
   const subCols = await all(`PRAGMA table_info(v2_org_subscriptions)`);
   const subColNames = new Set((subCols || []).map((c) => c.name));
+  if (!subColNames.has('billing_interval')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN billing_interval TEXT NOT NULL DEFAULT 'month'`);
+  }
   if (!subColNames.has('is_comp')) {
     await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN is_comp INTEGER NOT NULL DEFAULT 0`);
   }
@@ -624,25 +633,27 @@ async function migrate() {
 
   if (!planCount || planCount.c === 0) {
     await run(
-      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['free', 'Free', 0, 60, 60, 0, 0]
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+      ['free', 'Free', 0, 0, 60, 60, 0, 0]
     );
     await run(
-      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['starter', 'Starter', 4900, 2000, 500, 3, 6]
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+      ['starter', 'Starter', 4900, 46800, 2000, 500, 3, 6]
     );
     await run(
-      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['pro', 'Pro', 19900, 10000, 3000, 2, 5]
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+      ['pro', 'Pro', 19900, 190800, 10000, 3000, 2, 5]
     );
   } else {
     const freePlan = await get(`SELECT id FROM v2_plans WHERE id = 'free'`);
     if (!freePlan) {
       await run(
-        `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-        ['free', 'Free', 0, 60, 60, 0, 0]
+        `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+        ['free', 'Free', 0, 0, 60, 60, 0, 0]
       );
     }
+    await run(`UPDATE v2_plans SET annual_price_cents = 46800 WHERE id = 'starter' AND annual_price_cents = 0`);
+    await run(`UPDATE v2_plans SET annual_price_cents = 190800 WHERE id = 'pro' AND annual_price_cents = 0`);
   }
 
   // Phase 1 cost-tracking tables

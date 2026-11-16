@@ -129,6 +129,14 @@ router.patch('/overage-auto-charge', requireV2Auth, async (req, res) => {
   }
 });
 
+function normalizeBillingInterval(raw) {
+  if (raw === undefined || raw === null || raw === '') return 'month';
+  const v = String(raw).trim().toLowerCase();
+  if (v === 'month' || v === 'monthly') return 'month';
+  if (v === 'year' || v === 'annual' || v === 'yearly') return 'year';
+  return null;
+}
+
 router.post('/checkout', requireV2Auth, async (req, res) => {
   let release;
   try {
@@ -140,23 +148,33 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const { planId } = req.body || {};
+    const { planId, billingInterval: rawInterval } = req.body || {};
     if (!planId || typeof planId !== 'string') {
       return res.status(400).json({ error: 'planId required' });
     }
-    const plan = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [planId]);
-    if (!plan || !plan.stripe_price_id) {
-      return res.status(400).json({ error: 'Plan not available for self-serve checkout' });
-    }
-    if (!String(plan.stripe_price_id).startsWith('price_')) {
-      return res.status(400).json({
-        error:
-          'Plan is misconfigured: stripe_price_id must be a Price ID (price_…), not a Product ID (prod_…). Update it in Admin → Plans.',
-        code: 'invalid_stripe_price_id',
-      });
+    const billingInterval = normalizeBillingInterval(rawInterval);
+    if (!billingInterval) {
+      return res.status(400).json({ error: 'Invalid billingInterval (expected monthly or annual)' });
     }
     if (planId === 'free') {
       return res.status(400).json({ error: 'Free plan does not require checkout' });
+    }
+    const plan = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [planId]);
+    const targetPriceId = billingInterval === 'year' ? plan?.stripe_annual_price_id : plan?.stripe_price_id;
+    if (!plan || !targetPriceId) {
+      return res.status(400).json({
+        error:
+          billingInterval === 'year'
+            ? 'Annual billing is not yet configured for this plan'
+            : 'Plan not available for self-serve checkout',
+      });
+    }
+    if (!String(targetPriceId).startsWith('price_')) {
+      return res.status(400).json({
+        error:
+          'Plan is misconfigured: Stripe price ID must start with price_… (not a Product ID prod_…). Update it in Admin → Plans.',
+        code: 'invalid_stripe_price_id',
+      });
     }
 
     release = await lockCheckout(req.v2Auth.orgId);
@@ -195,14 +213,15 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
     }
     const open = openSessions[0];
     if (open) {
-      if (open.metadata?.plan_id === planId) {
+      const openInterval = open.metadata?.billing_interval || 'month';
+      if (open.metadata?.plan_id === planId && openInterval === billingInterval) {
         return res.json({ url: open.url, sessionId: open.id });
       }
       if (open.payment_status !== 'unpaid') {
         return res.status(409).json({ error: 'Your previous checkout is being processed. Open billing again shortly.', code: 'checkout_in_progress' });
       }
-      // Back/cancel redirects leave Checkout open. Explicitly changing plans replaces
-      // that unpaid session so it cannot subsequently create another subscription.
+      // Back/cancel redirects leave Checkout open. Explicitly changing plans or cadence
+      // replaces that unpaid session so it cannot subsequently create another subscription.
       const expired = await stripe.checkout.sessions.expire(open.id);
       if (expired.status !== 'expired') throw new Error('Previous checkout could not be expired');
     }
@@ -221,14 +240,14 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
       // Delayed-payment methods need a separate fulfillment policy before enabling.
       payment_method_types: ['card'],
       customer: customerId,
-      line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
+      line_items: [{ price: targetPriceId, quantity: 1 }],
       success_url: `${base}/v2/app/settings?section=billing&billing=success`,
       cancel_url: `${base}/v2/app/settings?section=billing&billing=cancel`,
-      metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
+      metadata: { org_id: req.v2Auth.orgId, plan_id: planId, billing_interval: billingInterval },
       subscription_data: {
-        metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
+        metadata: { org_id: req.v2Auth.orgId, plan_id: planId, billing_interval: billingInterval },
       },
-    }, { idempotencyKey: `lalia-checkout-${req.v2Auth.orgId}-${lastSession?.id || 'first'}` });
+    }, { idempotencyKey: `lalia-checkout-${req.v2Auth.orgId}-${billingInterval}-${lastSession?.id || 'first'}` });
 
     res.json({ url: session.url, sessionId: session.id });
   } catch (e) {
