@@ -99,7 +99,7 @@ function rewriteInternalLinks(html, locale) {
   if (locale === 'en') return html;
   const prefix = `/${locale}`;
   const keepPrefix =
-    /^(\/studio-assets|\/assets|\/api|\/v2|\/login|\/signup|\/demo|\/join|\/room|\/marketing|https?:|mailto:|tel:)/i;
+    /^(\/studio-assets|\/assets|\/api|\/v2|\/login|\/signup|\/demo|\/terms|\/privacy|\/join|\/room|\/marketing|https?:|mailto:|tel:)/i;
 
   let out = html.replace(/href=(["'])([^"']*)\1/gi, (full, q, href) => {
     if (!href || href.startsWith('#') || keepPrefix.test(href)) return full;
@@ -148,6 +148,8 @@ function applyChromeStrings(html, locale, route) {
     ['>EXPLORE<', `>${s.explore}<`],
     ['>LET’S CONNECT<', `>${s.connect}<`],
     ['>LET&apos;S CONNECT<', `>${s.connect}<`],
+    ['<a href="/terms">Terms</a>', `<a href="/terms">${s.footerTerms}</a>`],
+    ['<a href="/privacy">Privacy</a>', `<a href="/privacy">${s.footerPrivacy}</a>`],
     ['Supported languages — Lalia', s.titleLanguages],
     ['Every language<br><span>Lalia speaks.</span>', `${s.languagesH1Lead}<br><span>${s.languagesH1Mint}</span>`],
     [

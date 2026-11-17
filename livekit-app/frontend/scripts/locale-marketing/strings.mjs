@@ -34,6 +34,8 @@ const shared = {
     footerTag: 'A world of languages. One human connection.',
     explore: 'EXPLORE',
     connect: 'LET’S CONNECT',
+    footerTerms: 'Terms',
+    footerPrivacy: 'Privacy',
     languagesH1Lead: 'Every language',
     languagesH1Mint: 'Lalia speaks.',
     languagesLead:
@@ -75,6 +77,8 @@ shared.es = {
   footerTag: 'Un mundo de idiomas. Una conexión humana.',
   explore: 'EXPLORAR',
   connect: 'CONECTEMOS',
+  footerTerms: 'Términos',
+  footerPrivacy: 'Privacidad',
   languagesH1Lead: 'Cada idioma',
   languagesH1Mint: 'que habla Lalia.',
   languagesLead:
@@ -115,6 +119,8 @@ shared.fr = {
   footerTag: 'Un monde de langues. Une connexion humaine.',
   explore: 'EXPLORER',
   connect: 'RESTONS CONNECTÉS',
+  footerTerms: 'Conditions',
+  footerPrivacy: 'Confidentialité',
   languagesH1Lead: 'Chaque langue',
   languagesH1Mint: 'que parle Lalia.',
   languagesLead:
@@ -155,6 +161,8 @@ shared.de = {
   footerTag: 'Eine Welt voller Sprachen. Eine menschliche Verbindung.',
   explore: 'ENTDECKEN',
   connect: 'VERBINDEN',
+  footerTerms: 'AGB',
+  footerPrivacy: 'Datenschutz',
   languagesH1Lead: 'Jede Sprache',
   languagesH1Mint: 'die Lalia spricht.',
   languagesLead:
@@ -195,6 +203,8 @@ shared.pt = {
   footerTag: 'Um mundo de idiomas. Uma ligação humana.',
   explore: 'EXPLORAR',
   connect: 'VAMOS LIGAR',
+  footerTerms: 'Termos',
+  footerPrivacy: 'Privacidade',
   languagesH1Lead: 'Cada idioma',
   languagesH1Mint: 'que a Lalia fala.',
   languagesLead:
@@ -235,6 +245,8 @@ shared.ja = {
   footerTag: '言語の世界。ひとつの人間的なつながり。',
   explore: '探す',
   connect: 'つながる',
+  footerTerms: '利用規約',
+  footerPrivacy: 'プライバシー',
   languagesH1Lead: 'すべての言語を',
   languagesH1Mint: 'Laliaは話します。',
   languagesLead:
@@ -272,6 +284,8 @@ shared['zh-CN'] = {
   footerTag: '语言的世界。一次人与人的连接。',
   explore: '探索',
   connect: '保持联系',
+  footerTerms: '服务条款',
+  footerPrivacy: '隐私政策',
   languagesH1Lead: '每一种语言',
   languagesH1Mint: 'Lalia 都会说。',
   languagesLead: '在 61 种以上语言与方言中说话、阅读、聆听。在会议里选你的语言，其他人选他们的。',
