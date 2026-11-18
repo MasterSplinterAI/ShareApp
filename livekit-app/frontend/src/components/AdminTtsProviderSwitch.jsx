@@ -20,6 +20,8 @@ const STT_PROVIDERS = [
 ];
 
 const XAI_VOICES = ['eve', 'ara', 'rex', 'carina', 'orion'];
+const SHARED_TEXT_DECODER = new TextDecoder();
+const TRANSCRIPTION_PROVIDER_SAMPLE_MS = 2500;
 
 function isTtsAdminAccount(me) {
   if (!me) return false;
@@ -63,18 +65,24 @@ export default function AdminTtsProviderSwitch() {
 
   useEffect(() => {
     if (!room || !allowed) return undefined;
+    let lastTranscriptionSampleAt = 0;
     const onData = (payload, _participant, _kind, topic) => {
       if (topic && topic !== 'tts_config' && topic !== 'transcription') return;
+      if (topic === 'transcription') {
+        const now = Date.now();
+        if (now - lastTranscriptionSampleAt < TRANSCRIPTION_PROVIDER_SAMPLE_MS) return;
+        lastTranscriptionSampleAt = now;
+      }
       try {
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
-        const msg = JSON.parse(new TextDecoder().decode(raw));
+        const msg = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         if (msg?.type === 'provider_status' || msg?.type === 'tts_provider_status') {
           const tts = msg.activeTtsProvider || msg.activeProvider;
-          if (tts) setActiveTts(String(tts));
+          if (tts) setActiveTts((prev) => (prev === String(tts) ? prev : String(tts)));
           if (msg.ttsProvider) setProvider(String(msg.ttsProvider));
           const stt = msg.activeSttProvider || msg.sttProvider;
-          if (stt) setActiveStt(String(stt));
+          if (stt) setActiveStt((prev) => (prev === String(stt) ? prev : String(stt)));
           if (msg.sttProvider) setSttProvider(String(msg.sttProvider));
           if (msg.voiceId && XAI_VOICES.includes(String(msg.voiceId).toLowerCase())) {
             setVoice(String(msg.voiceId).toLowerCase());
@@ -82,7 +90,8 @@ export default function AdminTtsProviderSwitch() {
           return;
         }
         if (msg?.type === 'transcription' && msg.sttProvider) {
-          setActiveStt(String(msg.sttProvider));
+          const nextStt = String(msg.sttProvider);
+          setActiveStt((prev) => (prev === nextStt ? prev : nextStt));
         }
       } catch {
         /* non-JSON room traffic */
