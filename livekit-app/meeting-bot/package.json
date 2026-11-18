@@ -1,0 +1,16 @@
+{
+  "name": "lalia-meeting-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Autonomous Google Meet & Microsoft Teams AI Notetaker worker for Lalia",
+  "main": "src/worker.js",
+  "scripts": {
+    "start": "node src/worker.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "playwright": "^1.58.2",
+    "ws": "^8.18.0"
+  }
+}

@@ -30,6 +30,36 @@ function fileObjectKey(orgId, storedName) {
   return objectKey(orgId, path.basename(storedName));
 }
 
+function recordingObjectKey(orgId, fileName) {
+  return objectKey(orgId, `recordings/${path.basename(fileName)}`);
+}
+
+function parseHttpByteRange(rangeHeader, totalBytes) {
+  if (!rangeHeader || typeof rangeHeader !== 'string' || !Number.isFinite(totalBytes) || totalBytes <= 0) {
+    return null;
+  }
+  const m = /^bytes=(\d*)-(\d*)$/i.exec(rangeHeader.trim());
+  if (!m) return null;
+  let start = m[1] !== '' ? Number.parseInt(m[1], 10) : null;
+  let end = m[2] !== '' ? Number.parseInt(m[2], 10) : null;
+  if (start === null && end === null) return null;
+  if (start === null) {
+    const suffixLen = end;
+    if (!Number.isFinite(suffixLen) || suffixLen <= 0) return null;
+    start = Math.max(0, totalBytes - suffixLen);
+    end = totalBytes - 1;
+  } else {
+    if (!Number.isFinite(start) || start < 0 || start >= totalBytes) {
+      return { unsatisfiable: true, totalBytes };
+    }
+    if (end === null || !Number.isFinite(end) || end >= totalBytes) {
+      end = totalBytes - 1;
+    }
+    if (end < start) return { unsatisfiable: true, totalBytes };
+  }
+  return { start, end, chunkSize: end - start + 1, totalBytes };
+}
+
 class LocalDriver {
   constructor(rootDir) {
     this.rootDir = rootDir;
@@ -56,6 +86,33 @@ class LocalDriver {
     const full = this.absolutePath(key);
     if (!fs.existsSync(full)) return null;
     return fs.createReadStream(full);
+  }
+
+  async getRange(key, rangeHeader) {
+    const full = this.absolutePath(key);
+    if (!fs.existsSync(full)) return null;
+    const stat = await fsp.stat(full);
+    const totalBytes = stat.size;
+    const parsed = parseHttpByteRange(rangeHeader, totalBytes);
+    if (parsed?.unsatisfiable) {
+      return { unsatisfiable: true, totalBytes };
+    }
+    if (parsed) {
+      return {
+        partial: true,
+        start: parsed.start,
+        end: parsed.end,
+        contentLength: parsed.chunkSize,
+        totalBytes,
+        stream: fs.createReadStream(full, { start: parsed.start, end: parsed.end }),
+      };
+    }
+    return {
+      partial: false,
+      contentLength: totalBytes,
+      totalBytes,
+      stream: fs.createReadStream(full),
+    };
   }
 
   async getBytes(key) {
@@ -144,6 +201,56 @@ class S3Driver {
       return out.Body;
     } catch (e) {
       if (e.name === 'NoSuchKey' || e.$metadata?.httpStatusCode === 404) return null;
+      throw e;
+    }
+  }
+
+  async getRange(key, rangeHeader) {
+    try {
+      const head = await this.client.send(
+        new this._HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: this.fullKey(key),
+        })
+      );
+      const totalBytes = Number(head.ContentLength || 0);
+      const parsed = parseHttpByteRange(rangeHeader, totalBytes);
+      if (parsed?.unsatisfiable) {
+        return { unsatisfiable: true, totalBytes };
+      }
+      if (parsed) {
+        const out = await this.client.send(
+          new this._GetObjectCommand({
+            Bucket: this.bucket,
+            Key: this.fullKey(key),
+            Range: `bytes=${parsed.start}-${parsed.end}`,
+          })
+        );
+        return {
+          partial: true,
+          start: parsed.start,
+          end: parsed.end,
+          contentLength: parsed.chunkSize,
+          totalBytes,
+          stream: out.Body,
+        };
+      }
+      const out = await this.client.send(
+        new this._GetObjectCommand({
+          Bucket: this.bucket,
+          Key: this.fullKey(key),
+        })
+      );
+      return {
+        partial: false,
+        contentLength: totalBytes,
+        totalBytes,
+        stream: out.Body,
+      };
+    } catch (e) {
+      if (e.name === 'NoSuchKey' || e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404) {
+        return null;
+      }
       throw e;
     }
   }
@@ -252,8 +359,10 @@ async function testStorageConnection(overrides = {}) {
   if (!cfg.bucket) {
     return { ok: false, driver: 's3', error: 'Bucket name is required' };
   }
-  if (!cfg.accessKeyId || !cfg.secretAccessKey) {
-    return { ok: false, driver: 's3', error: 'Access key ID and secret access key are required' };
+  // Custom S3 endpoints (R2, MinIO) require explicit credentials; native AWS S3
+  // can authenticate via EC2 IAM Instance Profile / default credential chain.
+  if (cfg.endpoint && (!cfg.accessKeyId || !cfg.secretAccessKey)) {
+    return { ok: false, driver: 's3', error: 'Access key ID and secret access key are required for custom S3 endpoints' };
   }
   try {
     const driver = new S3Driver(cfg);
@@ -282,6 +391,12 @@ async function streamOrgObject(orgId, relativePath) {
   const { driver } = await getObjectStorage();
   const key = objectKey(orgId, relativePath);
   return driver.getStream(key);
+}
+
+async function rangeOrgObject(orgId, relativePath, rangeHeader) {
+  const { driver } = await getObjectStorage();
+  const key = objectKey(orgId, relativePath);
+  return driver.getRange(key, rangeHeader);
 }
 
 async function deleteOrgObject(orgId, relativePath) {
@@ -326,6 +441,31 @@ async function pipeObjectToResponse(streamOrNull, res, { contentType, contentDis
   return false;
 }
 
+/** Pipe an HTTP Range result (from rangeOrgObject) with 200 or 206 Partial Content headers. */
+async function pipeRangeToResponse(rangeResult, res, { contentType = 'audio/mpeg', contentDisposition, cacheControl = 'private, max-age=3600' } = {}) {
+  if (!rangeResult) return false;
+  if (rangeResult.unsatisfiable) {
+    res.status(416);
+    res.setHeader('Content-Range', `bytes */${rangeResult.totalBytes || 0}`);
+    res.end();
+    return true;
+  }
+  res.setHeader('Accept-Ranges', 'bytes');
+  if (contentType) res.setHeader('Content-Type', contentType);
+  if (contentDisposition) res.setHeader('Content-Disposition', contentDisposition);
+  if (cacheControl) res.setHeader('Cache-Control', cacheControl);
+  if (Number.isFinite(rangeResult.contentLength)) {
+    res.setHeader('Content-Length', String(rangeResult.contentLength));
+  }
+  if (rangeResult.partial) {
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${rangeResult.start}-${rangeResult.end}/${rangeResult.totalBytes}`);
+  } else {
+    res.status(200);
+  }
+  return pipeObjectToResponse(rangeResult.stream, res, {});
+}
+
 module.exports = {
   LocalDriver,
   S3Driver,
@@ -335,10 +475,14 @@ module.exports = {
   objectKey,
   brandingObjectKey,
   fileObjectKey,
+  recordingObjectKey,
+  parseHttpByteRange,
   putOrgObject,
   streamOrgObject,
+  rangeOrgObject,
   deleteOrgObject,
   orgObjectExists,
   pipeObjectToResponse,
+  pipeRangeToResponse,
   createDriverFromConfig,
 };

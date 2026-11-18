@@ -9,6 +9,12 @@ const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
 const { participantMetadata } = require('../../lib/livekitTokenMetadata');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const { listTemplates, instructionsHash, synthesizeTranscript } = require('../../lib/transcriptSynthesis');
+const { rangeOrgObject, deleteOrgObject, pipeRangeToResponse } = require('../../lib/objectStorage');
+const { safeFilename } = require('../../lib/reportExport');
+const {
+  mintRecordingPlaybackToken,
+  verifyRecordingPlaybackToken,
+} = require('../../lib/notetakerPipeline');
 const {
   maxInviteTtlMs,
   defaultExpiryModeForMeeting,
@@ -449,8 +455,10 @@ router.get('/', requireV2Auth, async (req, res) => {
       rows.push(m);
     }
 
-    // Enrich live/scheduled meetings with room presence (best-effort)
-    const liveMeetings = rows.filter((m) => m.status === 'live' || m.status === 'scheduled');
+    // Enrich live/scheduled Lalia room meetings with room presence (best-effort)
+    const liveMeetings = rows.filter(
+      (m) => (m.status === 'live' || m.status === 'scheduled') && (!m.meeting_source || m.meeting_source === 'lalia')
+    );
     if (liveMeetings.length > 0) {
       try {
         const roomService = getRoomService();
@@ -471,21 +479,47 @@ router.get('/', requireV2Auth, async (req, res) => {
     const allIds = rows.map((m) => m.id);
     if (allIds.length > 0) {
       const placeholders = allIds.map(() => '?').join(',');
-      const inviteRows = await db.all(
-        `SELECT meeting_id, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode
-         FROM v2_meeting_invite_links
-         WHERE meeting_id IN (${placeholders}) AND revoked_at IS NULL`,
-        allIds
-      );
+      const [inviteRows, botRows, recRows] = await Promise.all([
+        db.all(
+          `SELECT meeting_id, expires_at, revoked_at, reusable, use_count, max_uses, expiry_mode
+           FROM v2_meeting_invite_links
+           WHERE meeting_id IN (${placeholders}) AND revoked_at IS NULL`,
+          allIds
+        ),
+        db.all(
+          `SELECT id, meeting_id, platform, status, status_detail, joined_at, ended_at, duration_seconds, created_at
+           FROM v2_external_bot_sessions
+           WHERE meeting_id IN (${placeholders})
+           ORDER BY created_at DESC`,
+          allIds
+        ).catch(() => []),
+        db.all(
+          `SELECT id, meeting_id, size_bytes, duration_seconds
+           FROM v2_meeting_recordings
+           WHERE meeting_id IN (${placeholders})
+           ORDER BY created_at DESC`,
+          allIds
+        ).catch(() => []),
+      ]);
       const invitesByMeeting = new Map();
       for (const inv of inviteRows) {
         const list = invitesByMeeting.get(inv.meeting_id) || [];
         list.push(inv);
         invitesByMeeting.set(inv.meeting_id, list);
       }
+      const botByMeeting = new Map();
+      for (const b of botRows) {
+        if (!botByMeeting.has(b.meeting_id)) botByMeeting.set(b.meeting_id, b);
+      }
+      const recByMeeting = new Map();
+      for (const r of recRows) {
+        if (!recByMeeting.has(r.meeting_id)) recByMeeting.set(r.meeting_id, r);
+      }
       for (const m of rows) {
         m.require_invite_token = 1;
         m.guestAccessActive = guestAccessActive(m, invitesByMeeting.get(m.id) || [], true);
+        m.bot_session = botByMeeting.get(m.id) || null;
+        m.has_recording = recByMeeting.has(m.id);
       }
     }
 
@@ -892,22 +926,64 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       };
     }
     let roomPresence = { humanCount: 0, participants: [] };
-    try {
-      const roomService = getRoomService();
-      const lp = await roomService.listParticipants(row.livekit_room_name);
-      const humans = (lp || []).filter((p) => !looksLikeAgentParticipant(p));
-      roomPresence = {
-        humanCount: humans.length,
-        participants: humans.map((p) => ({
-          identity: p.identity,
-          name: p.name || p.identity || '',
-        })),
-      };
-    } catch (e) {
-      console.warn('[v2/meetings/:id] listParticipants:', e.message);
+    if (!row.meeting_source || row.meeting_source === 'lalia') {
+      try {
+        const roomService = getRoomService();
+        const lp = await roomService.listParticipants(row.livekit_room_name);
+        const humans = (lp || []).filter((p) => !looksLikeAgentParticipant(p));
+        roomPresence = {
+          humanCount: humans.length,
+          participants: humans.map((p) => ({
+            identity: p.identity,
+            name: p.name || p.identity || '',
+          })),
+        };
+      } catch (e) {
+        console.warn('[v2/meetings/:id] listParticipants:', e.message);
+      }
     }
-    const tr = await db.get(`SELECT COUNT(*) AS c FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [req.params.id]);
+    const [tr, botSession, latestRec] = await Promise.all([
+      db.get(`SELECT COUNT(*) AS c FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [req.params.id]),
+      db
+        .get(
+          `SELECT id, platform, target_url, normalized_url, external_meeting_code, bot_display_name,
+                  status, status_detail, stop_requested, scheduled_for, joined_at, ended_at,
+                  duration_seconds, recap_sent_at, error_code, created_at, updated_at
+           FROM v2_external_bot_sessions
+           WHERE meeting_id = ?
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [req.params.id]
+        )
+        .catch(() => null),
+      db
+        .get(
+          `SELECT id, mime_type, size_bytes, duration_seconds, created_at
+           FROM v2_meeting_recordings
+           WHERE meeting_id = ?
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [req.params.id]
+        )
+        .catch(() => null),
+    ]);
     const transcriptLineCount = tr && Number.isFinite(Number(tr.c)) ? Number(tr.c) : 0;
+
+    let recording = null;
+    if (latestRec) {
+      const rt = mintRecordingPlaybackToken({
+        meetingId: row.id,
+        orgId: row.org_id,
+        recordingId: latestRec.id,
+      });
+      const streamPath = `/api/v2/meetings/${encodeURIComponent(row.id)}/recording/stream?rt=${encodeURIComponent(rt)}`;
+      recording = {
+        ...latestRec,
+        size_bytes: Number(latestRec.size_bytes || 0),
+        streamUrl: streamPath,
+        downloadUrl: `${streamPath}&download=1`,
+      };
+    }
 
     const guestAccessActiveFlag = guestAccessActive(row, invites, true);
     const { host_required_to_start, require_invite_token, store_transcripts, ...meetingRow } = row;
@@ -922,6 +998,8 @@ router.get('/:id', requireV2Auth, async (req, res) => {
       defaultExpiryMode: defaultExpiryModeForMeeting(row),
       roomPresence,
       transcriptLineCount,
+      botSession: botSession || null,
+      recording,
     });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
@@ -941,11 +1019,20 @@ router.patch('/:id', requireV2Auth, async (req, res) => {
       scheduled_start,
       scheduled_end,
       notify_guests,
+      auto_recap_mode,
+      recap_language,
     } = req.body || {};
     if (store_transcripts !== undefined && typeof store_transcripts !== 'boolean') {
       return res.status(400).json({ error: 'store_transcripts must be a boolean' });
     }
     if (title != null) await db.run(`UPDATE v2_meetings SET title = ? WHERE id = ?`, [String(title).slice(0, 200), req.params.id]);
+    if (auto_recap_mode != null && ['off', 'host_only', 'workspace', 'attendees'].includes(auto_recap_mode)) {
+      await db.run(`UPDATE v2_meetings SET auto_recap_mode = ? WHERE id = ?`, [auto_recap_mode, req.params.id]);
+    }
+    if (recap_language !== undefined) {
+      const rl = recap_language ? String(recap_language).trim().slice(0, 24) : null;
+      await db.run(`UPDATE v2_meetings SET recap_language = ? WHERE id = ?`, [rl, req.params.id]);
+    }
 
     let scheduleChanged = false;
     let notifiedGuestCount = 0;
@@ -1484,6 +1571,16 @@ router.delete('/:id', requireV2Auth, async (req, res) => {
     if (!(await assertMeetingAccess(row, req.v2Auth))) return res.status(403).json({ error: 'Forbidden' });
 
     const meetingId = req.params.id;
+    const recordings = await db
+      .all(`SELECT id, org_id, relative_path FROM v2_meeting_recordings WHERE meeting_id = ?`, [meetingId])
+      .catch(() => []);
+    for (const rec of recordings) {
+      if (rec.relative_path) {
+        await deleteOrgObject(rec.org_id, rec.relative_path).catch(() => {});
+      }
+    }
+    await db.run(`DELETE FROM v2_meeting_recordings WHERE meeting_id = ?`, [meetingId]).catch(() => {});
+    await db.run(`DELETE FROM v2_external_bot_sessions WHERE meeting_id = ?`, [meetingId]).catch(() => {});
     await db.run(`DELETE FROM v2_meeting_transcript_reports WHERE meeting_id = ?`, [meetingId]);
     await db.run(`DELETE FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [meetingId]);
     await db.run(`DELETE FROM v2_meeting_invite_links WHERE meeting_id = ?`, [meetingId]);
@@ -1494,6 +1591,78 @@ router.delete('/:id', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/meetings DELETE]', e);
     res.status(500).json({ error: 'Failed to delete meeting' });
+  }
+});
+
+router.get('/:id/recording/stream', async (req, res) => {
+  try {
+    const meetingId = req.params.id;
+    const tokenClaims = req.query.rt
+      ? verifyRecordingPlaybackToken(String(req.query.rt), meetingId)
+      : null;
+
+    let meetingRow = null;
+    if (tokenClaims?.oid) {
+      meetingRow = await db.get(`SELECT * FROM v2_meetings WHERE id = ? AND org_id = ?`, [
+        meetingId,
+        tokenClaims.oid,
+      ]);
+    } else {
+      // Fallback to standard Bearer JWT auth
+      await new Promise((resolve) => {
+        requireV2Auth(req, res, () => resolve(true));
+      });
+      if (res.headersSent) return;
+      meetingRow = await loadMeetingForAccess(meetingId, req.v2Auth);
+      if (meetingRow && !(await assertMeetingAccess(meetingRow, req.v2Auth))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
+
+    if (!meetingRow) return res.status(404).json({ error: 'Not found' });
+
+    const rec = tokenClaims?.rid
+      ? await db.get(`SELECT * FROM v2_meeting_recordings WHERE id = ? AND meeting_id = ?`, [
+          tokenClaims.rid,
+          meetingId,
+        ])
+      : await db.get(
+          `SELECT * FROM v2_meeting_recordings WHERE meeting_id = ? ORDER BY created_at DESC LIMIT 1`,
+          [meetingId]
+        );
+
+    if (!rec || !rec.relative_path) {
+      return res.status(404).json({ error: 'Recording not found' });
+    }
+
+    const isDownload = req.query.download === '1';
+    const ext = rec.mime_type?.includes('mp4')
+      ? 'm4a'
+      : rec.mime_type?.includes('webm')
+        ? 'webm'
+        : rec.mime_type?.includes('ogg')
+          ? 'ogg'
+          : 'mp3';
+    const filename = `${safeFilename(meetingRow.title || 'meeting-recording')}.${ext}`;
+    const rangeResult = await rangeOrgObject(
+      rec.org_id,
+      rec.relative_path,
+      isDownload ? null : req.headers.range
+    );
+    if (!rangeResult) {
+      return res.status(404).json({ error: 'Recording file missing in storage' });
+    }
+
+    await pipeRangeToResponse(rangeResult, res, {
+      contentType: rec.mime_type || 'audio/mpeg',
+      contentDisposition: isDownload ? `attachment; filename="${filename}"` : undefined,
+      cacheControl: 'private, max-age=3600',
+    });
+  } catch (e) {
+    console.error('[v2/meetings recording/stream]', e);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to stream recording' });
+    }
   }
 });
 

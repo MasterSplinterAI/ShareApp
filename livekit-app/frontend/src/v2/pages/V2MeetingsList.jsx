@@ -7,10 +7,12 @@ import {
   Archive,
   ArrowLeft,
   ArrowRight,
+  Bot,
   CalendarClock,
   ChevronDown,
   Clock,
   FileText,
+  Headphones,
   Link2,
   MoreHorizontal,
   Phone,
@@ -20,6 +22,7 @@ import {
   Video,
   Zap,
 } from 'lucide-react';
+import SendNotetakerDialog from '../components/SendNotetakerDialog';
 import { v2Auth, v2Meetings } from '../../services/apiV2';
 import { resolvePreferredMeetingLanguage } from '../../lib/languages';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
@@ -119,8 +122,15 @@ function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore,
   const ui = getMeetingUiState(m);
   const live = isLiveState(ui.key);
   const lineCount = Number(m.transcript_line_count) || 0;
+  const isExternalBot = Boolean(m.meeting_source && m.meeting_source !== 'lalia');
+  const externalPlatformLabel =
+    m.meeting_source === 'google_meet'
+      ? 'Google Meet'
+      : m.meeting_source === 'ms_teams'
+        ? 'MS Teams'
+        : null;
   const url = inviteUrlFor(m);
-  const canQuickJoin = !isArchivedView && isJoinableState(ui.key, m);
+  const canQuickJoin = !isExternalBot && !isArchivedView && isJoinableState(ui.key, m);
   const canCopyInvite = canQuickJoin && Boolean(url) && m.guestAccessActive !== false;
   const timeLabel = friendlyTime(m.scheduled_start || m.created_at);
 
@@ -156,6 +166,18 @@ function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore,
             <Clock className="h-3.5 w-3.5" />
             {timeLabel}
           </span>
+          {externalPlatformLabel && (
+            <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+              <Bot className="h-3 w-3" />
+              {externalPlatformLabel}
+            </span>
+          )}
+          {m.has_recording && (
+            <span className="inline-flex items-center gap-1 text-primary" title="Audio recording saved">
+              <Headphones className="h-3.5 w-3.5" />
+              Audio
+            </span>
+          )}
           {!m.is_mine && m.host_name && (
             <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground">
               Host: {m.host_name}
@@ -292,7 +314,14 @@ export default function V2MeetingsList() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [quotaBlocked, setQuotaBlocked] = useState(null);
+  const [notetakerOpen, setNotetakerOpen] = useState(false);
   const { offer, checkoutLoading, startCheckout } = useUpgradeOffer(me);
+  const hostFirstName = useMemo(() => {
+    const u = me?.user;
+    return (u?.display_name || u?.displayName || u?.email?.split('@')[0] || 'Lalia')
+      .trim()
+      .split(/\s+/)[0];
+  }, [me]);
 
   const archivedView = view === 'archived';
   const directCallsView = view === 'direct_calls';
@@ -532,6 +561,15 @@ export default function V2MeetingsList() {
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setNotetakerOpen(true)}
+            className="gap-2 border-primary/35 hover:bg-primary/10"
+          >
+            <Bot className="h-4 w-4 text-primary" />
+            Send AI Notetaker
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -820,6 +858,13 @@ export default function V2MeetingsList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SendNotetakerDialog
+        open={notetakerOpen}
+        onOpenChange={setNotetakerOpen}
+        defaultFirstName={hostFirstName}
+        onDispatched={(res) => navigate(`/v2/app/meetings/${res.meetingId}`)}
+      />
     </div>
   );
 }

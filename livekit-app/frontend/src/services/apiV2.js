@@ -336,4 +336,12 @@ export const v2Push = {
   iosDebug: (payload) => apiV2.post('/push/ios-debug', payload).then((r) => r.data).catch(() => {}),
 };
 
+export const v2Notetaker = {
+  parseUrl: (url) => apiV2.post('/notetaker/parse-url', { url }).then((r) => r.data),
+  listSessions: () => apiV2.get('/notetaker/sessions').then((r) => r.data),
+  createSession: (body) => apiV2.post('/notetaker/sessions', body).then((r) => r.data),
+  getSession: (id) => apiV2.get(`/notetaker/sessions/${encodeURIComponent(id)}`).then((r) => r.data),
+  stopSession: (id) => apiV2.post(`/notetaker/sessions/${encodeURIComponent(id)}/stop`, {}).then((r) => r.data),
+};
+
 export default apiV2;

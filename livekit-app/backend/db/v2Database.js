@@ -992,6 +992,101 @@ async function migrate() {
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_ios_push_tokens_user ON v2_ios_push_tokens(user_id)`);
+
+  // External meeting notetaker (017_external_meeting_notetaker.sql)
+  const meetingCols2 = await all(`PRAGMA table_info(v2_meetings)`);
+  const meetingColNames2 = new Set((meetingCols2 || []).map((c) => c.name));
+  if (!meetingColNames2.has('meeting_source')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN meeting_source TEXT NOT NULL DEFAULT 'lalia'`);
+  }
+  if (!meetingColNames2.has('external_meeting_url')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN external_meeting_url TEXT`);
+  }
+  if (!meetingColNames2.has('auto_recap_mode')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN auto_recap_mode TEXT NOT NULL DEFAULT 'host_only'`);
+  }
+  if (!meetingColNames2.has('recap_language')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN recap_language TEXT`);
+  }
+  if (!meetingColNames2.has('attendee_emails_json')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN attendee_emails_json TEXT`);
+  }
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_meetings_source ON v2_meetings(org_id, meeting_source)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_external_bot_sessions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      meeting_id TEXT NOT NULL,
+      requested_by_user_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      target_url TEXT NOT NULL,
+      normalized_url TEXT NOT NULL,
+      external_meeting_code TEXT,
+      bot_display_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      status_detail TEXT,
+      stop_requested INTEGER NOT NULL DEFAULT 0,
+      worker_id TEXT,
+      claim_token TEXT,
+      heartbeat_at TEXT,
+      scheduled_for TEXT,
+      joined_at TEXT,
+      ended_at TEXT,
+      duration_seconds INTEGER,
+      recap_sent_at TEXT,
+      error_code TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id),
+      FOREIGN KEY (requested_by_user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_queue ON v2_external_bot_sessions(status, scheduled_for, created_at)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_meeting ON v2_external_bot_sessions(meeting_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_org ON v2_external_bot_sessions(org_id, created_at DESC)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_recordings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      meeting_id TEXT NOT NULL,
+      bot_session_id TEXT,
+      storage_key TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'audio/mpeg',
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      duration_seconds INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_meeting_recordings_meeting ON v2_meeting_recordings(meeting_id, created_at DESC)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_calendar_connections (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      account_email TEXT NOT NULL,
+      access_token_enc TEXT,
+      refresh_token_enc TEXT,
+      token_expires_at TEXT,
+      auto_join_rule TEXT NOT NULL DEFAULT 'all_with_link',
+      sync_cursor TEXT,
+      last_synced_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, provider, account_email),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_calendar_connections_user ON v2_calendar_connections(user_id, status)`);
 }
 
 async function initPostgres() {

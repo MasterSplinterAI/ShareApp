@@ -35,6 +35,8 @@ if (require('../../lib/supportKit').supportKitEnabled()) {
 }
 router.use('/branding', require('./brandingPublic'));
 router.use('/rooms', require('./captionConfig'));
+router.use('/notetaker', require('./notetaker'));
+router.use('/bot-internal', require('./botInternal'));
 // Org-scoped file uploads disabled for product UX; in-meeting chat file share (e.g. S3) is planned separately.
 // router.use('/files', require('./files'));
 
