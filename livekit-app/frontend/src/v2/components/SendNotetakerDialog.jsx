@@ -228,6 +228,11 @@ export default function SendNotetakerDialog({
             )}
           </div>
 
+          <p className="rounded-lg border border-border/60 bg-muted/20 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
+            <strong className="font-medium text-foreground">Using Proton Mail, iCloud, or any calendar?</strong>{' '}
+            Add <code className="font-mono text-primary">notes@lalia.cloud</code> as a guest or forward any meeting invite from your Lalia email—we&apos;ll schedule the Notetaker automatically.
+          </p>
+
           <DialogFooter className="gap-2 sm:gap-0">
             <Button
               type="button"

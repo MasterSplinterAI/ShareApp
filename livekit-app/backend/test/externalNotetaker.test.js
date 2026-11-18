@@ -21,6 +21,10 @@ const {
   ingestBotTranscriptLines,
   finalizeBotSessionAndRunPipeline,
 } = require('../lib/notetakerPipeline');
+const {
+  hasNotetakerRecipient,
+  scheduleNotetakerFromParsedEmail,
+} = require('../lib/inboundNotetakerInvite');
 const notetakerRouter = require('../routes/v2/notetaker');
 const botInternalRouter = require('../routes/v2/botInternal');
 
@@ -337,5 +341,51 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
     );
     assert.ok(usageRow);
     assert.ok(usageRow.quantity > 0);
+  });
+
+  it('schedules a future Notetaker session when a Proton Mail user forwards an .ics invite to notes@lalia.cloud', async () => {
+    assert.equal(hasNotetakerRecipient({ to: ['notes@lalia.cloud'] }), true);
+    assert.equal(hasNotetakerRecipient({ to: ['rsvp+123@lalia.cloud'] }), false);
+
+    const futureDate = new Date(Date.now() + 2 * 3600 * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    const dtStartUtc = `${futureDate.getUTCFullYear()}${pad(futureDate.getUTCMonth() + 1)}${pad(futureDate.getUTCDate())}T${pad(futureDate.getUTCHours())}${pad(futureDate.getUTCMinutes())}00Z`;
+
+    const icsSample = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'METHOD:REQUEST',
+      'BEGIN:VEVENT',
+      'UID:proton-event-42@proton.me',
+      `DTSTART:${dtStartUtc}`,
+      'SUMMARY:Board Strategy Sync',
+      'LOCATION:https://teams.live.com/meet/9876543210123?p=abc',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    const res = await scheduleNotetakerFromParsedEmail({
+      fromEmail: 'Kenneth Rhule <kenneth@example.com>',
+      subject: 'Fwd: Invitation: Board Strategy Sync',
+      textBody: 'Forwarding from Proton Mail',
+      icsTexts: [icsSample],
+    });
+
+    assert.equal(res.ok, true);
+    assert.equal(res.platform, 'ms_teams');
+    assert.ok(res.meetingId);
+
+    const session = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [res.sessionId]);
+    assert.equal(session.status, 'scheduled');
+    assert.equal(session.external_meeting_code, '9876543210123');
+
+    // Forwarding the exact same invite again deduplicates cleanly
+    const dup = await scheduleNotetakerFromParsedEmail({
+      fromEmail: 'kenneth@example.com',
+      icsTexts: [icsSample],
+    });
+    assert.equal(dup.ok, true);
+    assert.equal(dup.deduplicated, true);
+    assert.equal(dup.sessionId, res.sessionId);
   });
 });
