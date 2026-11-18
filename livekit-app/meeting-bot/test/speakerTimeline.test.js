@@ -3,7 +3,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { SpeakerTimeline } = require('../src/speakerTimeline');
-const { LiveAudioPipeline, buildWavHeader } = require('../src/audioPipeline');
+const { LiveAudioPipeline, buildWavHeader, resolveSttAttemptOrder } = require('../src/audioPipeline');
 const { getAdapterForPlatform } = require('../src/adapters');
 
 describe('SpeakerTimeline', () => {
@@ -45,6 +45,21 @@ describe('SpeakerTimeline', () => {
 });
 
 describe('Adapters & Audio Encoding', () => {
+  it('defaults STT provider ladder to xAI primary with Deepgram Nova-3 fallback', () => {
+    assert.deepEqual(
+      resolveSttAttemptOrder('xai', { xaiApiKey: 'xai-key', deepgramApiKey: 'dg-key' }),
+      ['xai', 'deepgram']
+    );
+    assert.deepEqual(
+      resolveSttAttemptOrder('auto', { xaiApiKey: 'xai-key', deepgramApiKey: 'dg-key' }),
+      ['xai', 'deepgram']
+    );
+    assert.deepEqual(
+      resolveSttAttemptOrder('xai', { xaiApiKey: '', deepgramApiKey: 'dg-key' }),
+      ['deepgram']
+    );
+  });
+
   it('resolves Google Meet and Microsoft Teams adapters and normalizes Teams web URLs', () => {
     const meet = getAdapterForPlatform('google_meet');
     const teams = getAdapterForPlatform('ms_teams');

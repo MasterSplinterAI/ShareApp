@@ -10,6 +10,8 @@ const config = {
   apiBaseUrl: process.env.LALIA_API_BASE_URL || 'http://localhost:3001',
   workerSecret: process.env.BOT_WORKER_SECRET || '',
   workerId: process.env.BOT_WORKER_ID || `bot-${os.hostname()}-${process.pid}`,
+  sttProvider: process.env.STT_PROVIDER || 'xai',
+  xaiApiKey: process.env.XAI_API_KEY || '',
   deepgramApiKey: process.env.DEEPGRAM_API_KEY || '',
   maxConcurrent: Math.max(1, Number(process.env.MAX_CONCURRENT_SESSIONS || 2)),
   pollIntervalMs: Math.max(1500, Number(process.env.POLL_INTERVAL_MS || 4000)),

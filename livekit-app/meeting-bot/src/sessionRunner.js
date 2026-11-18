@@ -40,6 +40,8 @@ async function runBotSession(session, { apiClient, config, abortSignal }) {
   };
 
   const audioPipeline = new LiveAudioPipeline({
+    sttProvider: config.sttProvider || 'xai',
+    xaiApiKey: config.xaiApiKey,
     deepgramApiKey: config.deepgramApiKey,
     speakerTimeline,
     onUtterance: (line) => {
