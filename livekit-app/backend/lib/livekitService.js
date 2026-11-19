@@ -9,6 +9,7 @@ const { readRoomMetadata, mergeRoomMetadata } = require('./livekitRoomMetadata')
 const STT_PIPELINE_AGENTS = {
   deepgram: 'translation-cloud-prod',
   deepgram_codeswitch: 'translation-cloud-deepgram-codeswitch',
+  selfhosted_xai: 'translation-selfhosted-xai',
 };
 
 const VALID_STT_PIPELINES = Object.keys(STT_PIPELINE_AGENTS);

@@ -3169,6 +3169,10 @@ if __name__ == "__main__":
         emit_controlled_probe()
 
     agent_name = os.getenv('AGENT_NAME', 'translation-cloud-deepgram-codeswitch')
+    idle_raw = os.getenv('AGENT_NUM_IDLE_PROCESSES', '').strip()
+    extra_worker_kwargs = {}
+    if idle_raw.isdigit():
+        extra_worker_kwargs['num_idle_processes'] = int(idle_raw)
     worker_opts = WorkerOptions(
         entrypoint_fnc=main,
         prewarm_fnc=prewarm,
@@ -3176,6 +3180,7 @@ if __name__ == "__main__":
         api_secret=os.getenv('LIVEKIT_API_SECRET'),
         ws_url=os.getenv('LIVEKIT_URL', 'wss://production-uiycx4ku.livekit.cloud'),
         agent_name=agent_name,
+        **extra_worker_kwargs,
     )
 
     if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] in ['dev', 'start']):

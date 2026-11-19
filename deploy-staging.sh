@@ -19,6 +19,7 @@ APP_DIR="/var/www/share-app-staging"
 BACKEND_DIR="$APP_DIR/livekit-app/backend"
 FRONTEND_DIR="$APP_DIR/livekit-app/frontend"
 VENDOR_DIR="$APP_DIR/livekit-app/vendor"
+AGENT_DIR="$APP_DIR/livekit-app/translation-agent"
 GIT_REPO="/home/ubuntu/git/share-app.git"
 PM2_NAME="livekit-backend-staging"
 NGINX_STAGING_SRC="deploy/nginx-staging.jarmetals.com.conf"
@@ -55,7 +56,7 @@ echo "Ops note: staging should use a separate LiveKit project/API keys from prod
 
 echo "=== Step 2: deploy $DEPLOY_BRANCH to $REMOTE_HOST ==="
 ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
-  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' FORCE_FRONTEND_BUILD='$FORCE_FRONTEND_BUILD' NGINX_STAGING_DEST='$NGINX_STAGING_DEST' bash -s" <<'REMOTE'
+  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' AGENT_DIR='$AGENT_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' FORCE_FRONTEND_BUILD='$FORCE_FRONTEND_BUILD' NGINX_STAGING_DEST='$NGINX_STAGING_DEST' bash -s" <<'REMOTE'
 set -euo pipefail
 
 echo "Fetching latest code..."
@@ -162,7 +163,7 @@ if [ -f "$TEMP_DIR/livekit-app/vendor/ops-sdk/manifest.json" ]; then
   fi
 fi
 
-sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR"
+sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR" "$AGENT_DIR"
 
 # ---------- Vendor (support-kit file: deps for backend + frontend build) ----------
 if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
@@ -324,6 +325,18 @@ if [ -d "$TEMP_DIR/livekit-app/frontend/src" ]; then
   sudo rsync -a "$TEMP_DIR/livekit-app/frontend/src/" "$APP_DIR/livekit-app/frontend/src/"
 fi
 
+# ---------- Translation Agent (self-hosted hybrid worker source) ----------
+if [ -d "$TEMP_DIR/livekit-app/translation-agent" ]; then
+  sudo mkdir -p "$AGENT_DIR"
+  sudo rsync -a --delete \
+    --exclude '.env*' \
+    --exclude '.venv' \
+    --exclude '__pycache__' \
+    --exclude '.pytest_cache' \
+    "$TEMP_DIR/livekit-app/translation-agent/" "$AGENT_DIR/"
+  sudo chown -R ubuntu:ubuntu "$AGENT_DIR"
+fi
+
 # BEGIN MARKETING_RUNTIME_SMOKE
 if [ -f "$VENDOR_DIR/marketing-kit/manifest.json" ]; then
   (cd "$BACKEND_DIR" && node -e 'const core=require("@rhule/marketing-core"); const shared=require("@rhule/marketing-shared"); if(typeof core.createMarketingKit!=="function" || !Object.keys(shared).length) throw Error("Marketing runtime import failed");')
@@ -345,6 +358,11 @@ else
   pm2 start server.js --name "$PM2_NAME" --update-env
 fi
 pm2 save >/dev/null
+
+if systemctl is-active --quiet lalia-selfhosted-agent.service && { [ -z "$CHANGED_FILES" ] || echo "$CHANGED_FILES" | grep -q '^livekit-app/translation-agent/'; }; then
+  echo "Restarting lalia-selfhosted-agent.service..."
+  sudo systemctl restart lalia-selfhosted-agent.service
+fi
 
 echo "Deployed $DEPLOY_BRANCH commit: $NEW_COMMIT"
 REMOTE
