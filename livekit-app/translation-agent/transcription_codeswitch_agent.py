@@ -356,20 +356,102 @@ def _csv_env(name: str) -> List[str]:
     return [t.strip() for t in raw.split(",") if t.strip()]
 
 
-def _translation_keyterms() -> List[str]:
-    """Terms the LLM must keep verbatim (brand names, product terms)."""
-    return _csv_env("TRANSLATION_KEYTERMS")
+DEFAULT_VERBATIM_KEYTERMS = [
+    # Brands, exchanges, assay standards & software acronyms kept verbatim across translations
+    "Lalia", "LexIt", "Notetaker", "LiveKit", "xAI", "Grok",
+    "LME", "LBMA", "COMEX", "JORC", "NI 43-101",
+    "ICP-OES", "ICP-MS", "XRF", "PGM", "PGMs",
+    "WebRTC", "SFU", "STUN", "TURN", "VAD", "BVC",
+    "API", "SDK", "AWS", "S3", "EC2", "PostgreSQL",
+    "Kubernetes", "OAuth", "JWT", "Webhook", "WebSocket", "CI/CD",
+]
 
+DEFAULT_DOMAIN_TERMS = [
+    # Mining, tin/cassiterite concentrates, metallurgy & precious-metals refining
+    "tin", "cassiterite", "stannite", "coltan", "tantalite", "columbite",
+    "wolframite", "scheelite", "chalcopyrite", "alluvial", "placer",
+    "concentrate", "tailings", "gangue", "beneficiation", "froth flotation",
+    "doré", "doré bar", "bullion", "troy ounce", "fineness", "millesimal", "karat",
+    "fire assay", "cupellation", "inquartation", "parting", "aqua regia",
+    "Miller process", "Wohlwill process", "electrorefining", "electrowinning",
+    "smelting", "calcining", "roasting", "slag", "matte", "speiss", "anode slime",
+    "cyanidation", "leaching", "Merrill-Crowe", "solvent extraction",
+    "platinum", "palladium", "rhodium", "iridium", "ruthenium", "osmium",
+    "tolling", "refining charges", "outturn", "settlement",
+    # Technical software engineering
+    "worker", "pipeline", "deployment", "latency", "throughput",
+    "idempotent", "microservice", "failover",
+]
 
-# Deepgram Nova-3 caps keyterms at 500 BPE tokens across the entire list;
-# exceeding that makes /v1/listen reject the WebSocket handshake with HTTP 400
-# ("Keyterm limit exceeded"), which forces the pipeline onto non-streaming
-# fallback STT. Keep only uncommon domain terms and hard-cap the list at 45.
+MAX_XAI_KEYTERMS = 100
 MAX_DEEPGRAM_KEYTERMS = 45
 
 DEFAULT_DEEPGRAM_KEYTERMS = [
     "Lalia",
 ]
+
+
+def _merge_terms(
+    sources: Sequence[Sequence[str]],
+    *,
+    max_terms: Optional[int] = None,
+    min_len: int = 1,
+    max_len: int = 64,
+    ignore_generic: bool = False,
+) -> List[str]:
+    merged: List[str] = []
+    seen: Set[str] = set()
+    generic = {"guest", "unknown", "host"}
+    for seq in sources:
+        for term in seq:
+            clean = str(term or "").strip()
+            if not clean or len(clean) < min_len or len(clean) > max_len:
+                continue
+            low = clean.lower()
+            if (ignore_generic and low in generic) or low in seen:
+                continue
+            seen.add(low)
+            merged.append(clean)
+            if max_terms is not None and len(merged) >= max_terms:
+                return merged
+    return merged
+
+
+def _translation_keyterms() -> List[str]:
+    """Verbatim brands, exchanges, assay standards & software acronyms for LLM prompts."""
+    include_defaults = os.getenv("TRANSLATION_DEFAULT_KEYTERMS", "true").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+    sources = [_csv_env("TRANSLATION_KEYTERMS")]
+    if include_defaults:
+        sources.append(DEFAULT_VERBATIM_KEYTERMS)
+    return _merge_terms(sources, ignore_generic=True)
+
+
+def _translation_domain_terms() -> List[str]:
+    """Technical mining, refining & software vocabulary translated via domain context."""
+    include_defaults = os.getenv("TRANSLATION_DEFAULT_DOMAIN_TERMS", "true").strip().lower() not in (
+        "0", "false", "no", "off",
+    )
+    sources = [_csv_env("TRANSLATION_DOMAIN_TERMS")]
+    if include_defaults:
+        sources.append(DEFAULT_DOMAIN_TERMS)
+    return _merge_terms(sources, ignore_generic=True)
+
+
+def _xai_stt_keyterms(extra_terms: Optional[Sequence[str]] = None) -> List[str]:
+    """Acoustic keyterm boost list for xAI streaming STT (room/custom terms prioritized)."""
+    return _merge_terms(
+        [
+            extra_terms or (),
+            _csv_env("XAI_STT_KEYTERMS"),
+            _translation_keyterms(),
+            _translation_domain_terms(),
+        ],
+        max_terms=MAX_XAI_KEYTERMS,
+        min_len=2,
+        ignore_generic=True,
+    )
 
 
 def _deepgram_keyterms(extra_terms: Optional[Sequence[str]] = None) -> List[str]:
@@ -381,20 +463,12 @@ def _deepgram_keyterms(extra_terms: Optional[Sequence[str]] = None) -> List[str]
     configured = _csv_env("DEEPGRAM_KEYTERMS")
     base_terms = configured or list(DEFAULT_DEEPGRAM_KEYTERMS)
     env_extra = _csv_env("DEEPGRAM_EXTRA_KEYTERMS")
-    merged: List[str] = []
-    seen: Set[str] = set()
-    for term in [*base_terms, *env_extra, *(extra_terms or [])]:
-        clean = str(term or "").strip()
-        if not clean or len(clean) < 2 or len(clean) > 64:
-            continue
-        low = clean.lower()
-        if low in ("guest", "unknown", "host") or low in seen:
-            continue
-        seen.add(low)
-        merged.append(clean)
-        if len(merged) >= MAX_DEEPGRAM_KEYTERMS:
-            break
-    return merged
+    return _merge_terms(
+        [base_terms, env_extra, extra_terms or ()],
+        max_terms=MAX_DEEPGRAM_KEYTERMS,
+        min_len=2,
+        ignore_generic=True,
+    )
 
 
 def _speech_times(speech_data: Any) -> Tuple[float, float]:
@@ -1618,12 +1692,14 @@ class TranscriptionOnlyAgent:
                 endpointing = int(os.getenv("XAI_STT_ENDPOINTING_MS", "800") or "800")
             except ValueError:
                 endpointing = 800
+            keyterms = _xai_stt_keyterms(self._collect_room_keyterms(room))
             inst = build_xai_streaming_stt(
                 endpointing=endpointing,
                 multilingual=multilingual,
                 language=None if multilingual else (normalized_lang or "en"),
+                keyterm=keyterms,
             )
-            logger.info('stt_xai_streaming_multilingual_language_sample_rate_shared')
+            logger.info('stt_xai_streaming_multilingual_language_sample_rate_shared', extra={"keyterms": len(keyterms)})
             stt_provider_name = "xai"
             return inst
 
@@ -2072,7 +2148,8 @@ class TranscriptionOnlyAgent:
                 target_lang_name=lane.target_lang_name,
                 source_text=source_text,
                 context_pairs=context_pairs,
-                keyterms=_translation_keyterms(),
+                keyterms=_merge_terms([_translation_keyterms(), self.caption_keyterms]),
+                domain_terms=_translation_domain_terms(),
                 partial=partial,
                 source_lang=src_lang_hint,
             )

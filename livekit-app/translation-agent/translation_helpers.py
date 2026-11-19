@@ -362,6 +362,7 @@ def build_translation_messages(
     source_text: str,
     context_pairs: Sequence[Tuple[str, str]],
     keyterms: Sequence[str],
+    domain_terms: Optional[Sequence[str]] = None,
     partial: bool = False,
     source_lang: Optional[str] = None,
 ) -> List[Tuple[str, str]]:
@@ -396,6 +397,13 @@ def build_translation_messages(
     if terms:
         sys_lines.append(
             "Keep these terms exactly as written (do not translate them): " + ", ".join(terms) + "."
+        )
+    d_terms = [t.strip() for t in (domain_terms or ()) if t and t.strip()]
+    if d_terms:
+        sys_lines.append(
+            "Domain vocabulary context (when these mining, metallurgy, precious-metals refining, or software-engineering terms appear, translate them into their accurate technical equivalents in the target language — e.g., metal/mineral 'tin' rather than a tin container, metallurgical 'cassiterite/doré/bullion/assay/slag/matte/tailings/electrorefining/aqua regia', and idiomatic software-engineering phrasing): "
+            + ", ".join(d_terms)
+            + "."
         )
 
     messages: List[Tuple[str, str]] = [("system", " ".join(sys_lines))]
