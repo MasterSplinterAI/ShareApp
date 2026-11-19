@@ -272,12 +272,24 @@ def _turn_max_words() -> int:
 
 
 def _llm_model() -> str:
-    """Primary translation model — supports TRANSLATION_LLM_MODEL or LLM_MODEL."""
+    """Primary OpenAI translation model — supports TRANSLATION_LLM_MODEL or LLM_MODEL."""
     for env_key in ("TRANSLATION_LLM_MODEL", "LLM_MODEL"):
         val = os.getenv(env_key, "").strip()
         if val:
             return val
     return "gpt-4.1-mini"
+
+
+def _xai_llm_model() -> str:
+    """Primary xAI translation model — defaults to grok-4.20-0309-non-reasoning."""
+    for env_key in ("XAI_LLM_MODEL", "TRANSLATION_XAI_MODEL"):
+        val = os.getenv(env_key, "").strip()
+        if val:
+            return val
+    raw = os.getenv("LLM_MODEL", "").strip()
+    if raw.lower().startswith("grok"):
+        return raw
+    return "grok-4.20-0309-non-reasoning"
 
 
 def _llm_fallback_model() -> str:
@@ -524,6 +536,9 @@ class TargetLaneState:
     target_lang_name: str
     llm_provider: str = "openai"
     fallback_llm_instance: Optional[Any] = None
+    llm_model: str = ""
+    fallback_llm_provider: str = "openai"
+    fallback_llm_model: str = ""
     # Same-language lanes mirror STT segments here (multi-slot). Foreign lanes
     # derive their text from frozen_tgt/tail_translation via display_translation().
     turn_translated_parts: List[str] = field(default_factory=list)
@@ -1643,31 +1658,63 @@ class TranscriptionOnlyAgent:
         logger.info('llm_openai_temp_timeout_s')
         return inst
 
+    def _create_xai_llm_instance(self, model: str, label: str) -> Optional[Any]:
+        xai_key = os.getenv("XAI_API_KEY", "").strip()
+        if not (PLUGINS_AVAILABLE and openai and xai_key):
+            return None
+        if hasattr(openai.LLM, "with_x_ai"):
+            inst = openai.LLM.with_x_ai(
+                model=model,
+                api_key=xai_key,
+                temperature=_llm_temperature(),
+            )
+        else:
+            inst = openai.LLM(
+                model=model,
+                api_key=xai_key,
+                base_url="https://api.x.ai/v1",
+                temperature=_llm_temperature(),
+                max_retries=1,
+            )
+        logger.info('llm_xai_initialized')
+        return inst
+
     def _create_llm_for_target(self, speaker_id: str, target_lang: str, model_override: Optional[str] = None):
         """Returns (llm_instance, provider_name) tuple; provider_name used for cost reporting."""
         L = f"[{speaker_id}→{target_lang}]"
-        llm_provider = os.getenv("LLM_PROVIDER", "openai").strip().lower()
-        llm_provider_name = "openai"
-        primary_model = (model_override or _llm_model()).strip() or _llm_model()
+        llm_provider = os.getenv("LLM_PROVIDER", "xai").strip().lower()
+        llm_provider_name = "xai"
+        xai_model = (model_override or _xai_llm_model()).strip() or _xai_llm_model()
+        openai_primary = (model_override or _llm_model()).strip() or _llm_model()
         fallback_model = _llm_fallback_model()
+
+        def _try_primary_xai_llm():
+            nonlocal llm_provider_name
+            inst = self._create_xai_llm_instance(xai_model, L)
+            if inst is not None:
+                llm_provider_name = "xai"
+            return inst
 
         def _try_primary_openai_llm():
             nonlocal llm_provider_name
-            inst = self._create_openai_llm_instance(primary_model, L)
+            inst = self._create_openai_llm_instance(openai_primary, L)
             if inst is not None:
                 llm_provider_name = "openai"
             return inst
 
         def _try_fallback_openai_llm():
             nonlocal llm_provider_name
-            if fallback_model == primary_model:
+            if fallback_model == openai_primary:
                 return None
             inst = self._create_openai_llm_instance(fallback_model, f"{L}(fallback)")
             if inst is not None:
                 llm_provider_name = "openai"
             return inst
 
-        llm_order = [_try_primary_openai_llm, _try_fallback_openai_llm]
+        if llm_provider in ("", "auto", "xai", "grok"):
+            llm_order = [_try_primary_xai_llm, _try_primary_openai_llm, _try_fallback_openai_llm]
+        else:
+            llm_order = [_try_primary_openai_llm, _try_fallback_openai_llm, _try_primary_xai_llm]
 
         llm_instance = None
         for attempt in llm_order:
@@ -1798,9 +1845,11 @@ class TranscriptionOnlyAgent:
                     if new_same:
                         lane.llm_instance = None
                         lane.llm_provider = "openai"
+                        lane.llm_model = ""
                     elif use_gladia_native_translation[0]:
                         lane.llm_provider = "gladia"
                         lane.llm_instance = None
+                        lane.llm_model = ""
                     else:
                         llm, llm_pname = self._create_llm_for_target(speaker_id, tgt)
                         if llm is None:
@@ -1809,6 +1858,7 @@ class TranscriptionOnlyAgent:
                             continue
                         lane.llm_instance = llm
                         lane.llm_provider = llm_pname
+                        lane.llm_model = _xai_llm_model() if llm_pname == "xai" else _llm_model()
                         self._spawn_bg(self._prewarm_llm(llm, speaker_id, tgt))
                     logger.info('lane_mode_updated_effective_multilingual_same_language')
                     continue
@@ -1817,6 +1867,7 @@ class TranscriptionOnlyAgent:
                 )
                 llm = None
                 llm_pname = "openai"
+                llm_model_name = ""
                 if not is_same:
                     if use_gladia_native_translation[0]:
                         llm_pname = "gladia"
@@ -1825,6 +1876,7 @@ class TranscriptionOnlyAgent:
                         if llm is None:
                             logger.error('no_llm_skipping_translation_lane')
                             continue
+                        llm_model_name = _xai_llm_model() if llm_pname == "xai" else _llm_model()
                         # Warm the connection now so the FIRST utterance translates
                         # within budget instead of paying cold-start inside the call.
                         self._spawn_bg(self._prewarm_llm(llm, speaker_id, tgt))
@@ -1834,6 +1886,7 @@ class TranscriptionOnlyAgent:
                     llm_instance=llm,
                     target_lang_name=LANG_NAMES.get(tgt, tgt),
                     llm_provider=llm_pname,
+                    llm_model=llm_model_name,
                     context_pairs=deque(maxlen=_translation_context_pairs()),
                 )
             await sync_gladia_translation_options()
@@ -2002,6 +2055,7 @@ class TranscriptionOnlyAgent:
             on_delta: Optional[Callable[[str], Awaitable[None]]] = None,
             llm_override: Optional[Any] = None,
             model_name: Optional[str] = None,
+            provider_name: Optional[str] = None,
         ) -> Tuple[str, Any]:
             """One LLM streaming call. Returns (text, usage). Raises on failure."""
             active_llm = llm_override or lane.llm_instance
@@ -2053,16 +2107,35 @@ class TranscriptionOnlyAgent:
             finally:
                 await stream.aclose()
             total_ms = (time.perf_counter() - t0) * 1000.0
-            logger.info('translation_completed', extra={"count": len(source_text), "duration_ms": total_ms, "ttft_ms": ttft_ms, "provider": "openai"})
+            resolved_provider = provider_name or lane.llm_provider
+            logger.info('translation_completed', extra={"count": len(source_text), "duration_ms": total_ms, "ttft_ms": ttft_ms, "provider": resolved_provider})
             return accumulated.strip(), last_usage
 
-        def emit_llm_cost(lane: TargetLaneState, source_text: str, output_text: str, usage: Any) -> None:
+        def emit_llm_cost(
+            lane: TargetLaneState,
+            source_text: str,
+            output_text: str,
+            usage: Any,
+            *,
+            provider_override: Optional[str] = None,
+            model_override: Optional[str] = None,
+        ) -> None:
             """Fire-and-forget LLM cost event — never interrupts translation."""
             if not self.cost_reporter:
                 return
-            if usage and hasattr(usage, "prompt_tokens"):
-                in_tok = usage.prompt_tokens or 0
-                out_tok = usage.completion_tokens or 0
+            provider = provider_override or lane.llm_provider
+            model = model_override or lane.llm_model or (
+                _xai_llm_model() if provider == "xai" else _llm_model()
+            )
+            prompt_tok = getattr(usage, "prompt_tokens", None)
+            if prompt_tok is None:
+                prompt_tok = getattr(usage, "input_tokens", None)
+            compl_tok = getattr(usage, "completion_tokens", None)
+            if compl_tok is None:
+                compl_tok = getattr(usage, "output_tokens", None)
+            if prompt_tok is not None or compl_tok is not None:
+                in_tok = int(prompt_tok or 0)
+                out_tok = int(compl_tok or 0)
             else:
                 # Estimate: ~4 chars/token
                 in_tok = max(1, (200 + len(source_text)) // 4)
@@ -2070,9 +2143,9 @@ class TranscriptionOnlyAgent:
             self._spawn_bg(self.cost_reporter.emit_llm(
                 input_tokens=in_tok,
                 output_tokens=out_tok,
-                provider=lane.llm_provider,
+                provider=provider,
                 participant=speaker_id,
-                model=_llm_model(),
+                model=model,
             ), during_shutdown=True)
 
         def maybe_freeze_lane(
@@ -2125,17 +2198,32 @@ class TranscriptionOnlyAgent:
             last_err: Optional[BaseException] = None
             for attempt in (1, 2):
                 llm_override = None
-                model_label = _llm_model()
+                attempt_provider = lane.llm_provider
+                model_label = lane.llm_model or (
+                    _xai_llm_model() if attempt_provider == "xai" else _llm_model()
+                )
                 if attempt == 2:
-                    fb_model = _llm_fallback_model()
-                    if fb_model and fb_model != _llm_model():
+                    if lane.llm_provider == "xai":
+                        oai_fb_model = _llm_model()
                         if lane.fallback_llm_instance is None:
                             lane.fallback_llm_instance = self._create_openai_llm_instance(
-                                fb_model, f"{L}→{tgt_lang}(fallback)"
+                                oai_fb_model, f"{L}→{tgt_lang}(openai-fallback)"
                             )
                         if lane.fallback_llm_instance is not None:
                             llm_override = lane.fallback_llm_instance
-                            model_label = fb_model
+                            attempt_provider = "openai"
+                            model_label = oai_fb_model
+                    else:
+                        fb_model = _llm_fallback_model()
+                        if fb_model and fb_model != _llm_model():
+                            if lane.fallback_llm_instance is None:
+                                lane.fallback_llm_instance = self._create_openai_llm_instance(
+                                    fb_model, f"{L}→{tgt_lang}(fallback)"
+                                )
+                            if lane.fallback_llm_instance is not None:
+                                llm_override = lane.fallback_llm_instance
+                                attempt_provider = "openai"
+                                model_label = fb_model
                 try:
                     result, usage = await asyncio.wait_for(
                         run_llm_stream(
@@ -2146,6 +2234,7 @@ class TranscriptionOnlyAgent:
                             on_delta=on_delta,
                             llm_override=llm_override,
                             model_name=model_label,
+                            provider_name=attempt_provider,
                         ),
                         timeout=_llm_timeout_sec(),
                     )
@@ -2155,7 +2244,14 @@ class TranscriptionOnlyAgent:
                     lane.interim_stable = ""
                     self._translation_cache.put(effective_source_lang[0], tgt_lang, tail_src, result)
                     maybe_freeze_lane(lane, tail_src, committed_snapshot, result)
-                    emit_llm_cost(lane, tail_src, result, usage)
+                    emit_llm_cost(
+                        lane,
+                        tail_src,
+                        result,
+                        usage,
+                        provider_override=attempt_provider,
+                        model_override=model_label,
+                    )
                     return
                 except asyncio.CancelledError:
                     raise

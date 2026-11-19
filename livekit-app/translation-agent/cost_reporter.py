@@ -23,6 +23,7 @@ _STT_EVENT_TYPES = {
 # Maps LLM provider name → (input_event_type, output_event_type)
 _LLM_EVENT_TYPES = {
     "openai": ("openai_llm_input_mtok", "openai_llm_output_mtok"),
+    "xai": ("xai_llm_input_mtok", "xai_llm_output_mtok"),
 }
 
 _TTS_EVENT_TYPES = {
