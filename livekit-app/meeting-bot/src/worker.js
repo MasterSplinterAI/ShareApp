@@ -19,6 +19,8 @@ const config = {
   aloneTimeoutMs: Math.max(15_000, Number(process.env.ALONE_TIMEOUT_MS || 90_000)),
   maxCallDurationMs: Math.max(60_000, Number(process.env.MAX_CALL_DURATION_MS || 14_400_000)),
   googleStorageStatePath: process.env.GOOGLE_STORAGE_STATE_PATH || '',
+  googleUserDataDir: process.env.GOOGLE_USER_DATA_DIR || '',
+  browserChannel: process.env.BROWSER_CHANNEL || '',
   headless: String(process.env.HEADLESS || 'true').toLowerCase() !== 'false',
 };
 

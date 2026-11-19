@@ -6,6 +6,7 @@
   "main": "src/worker.js",
   "scripts": {
     "start": "node src/worker.js",
+    "login:google": "node scripts/googleLogin.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {

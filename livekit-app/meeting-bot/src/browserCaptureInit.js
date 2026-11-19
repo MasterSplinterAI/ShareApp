@@ -170,6 +170,11 @@ function buildBrowserCaptureInitScript({ botDisplayName = 'Lalia Notetaker' } = 
       } catch {}
       return origGetUserMedia ? origGetUserMedia(constraints) : new MediaStream();
     };
+    navigator.mediaDevices.enumerateDevices = async () => [
+      { deviceId: 'default', kind: 'audioinput', label: 'Virtual Microphone', groupId: 'lalia-audio' },
+      { deviceId: 'default', kind: 'audiooutput', label: 'Virtual Speakers', groupId: 'lalia-audio' },
+      { deviceId: 'default', kind: 'videoinput', label: 'Virtual Camera', groupId: 'lalia-video' },
+    ];
   }
 
   window.__laliaSetRecordingActive = (active) => {

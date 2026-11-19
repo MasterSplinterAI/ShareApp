@@ -206,7 +206,9 @@ router.post(
           ? 'webm'
           : contentType.includes('ogg') || contentType.includes('opus')
             ? 'ogg'
-            : 'mp3';
+            : contentType.includes('wav')
+              ? 'wav'
+              : 'mp3';
 
       const durationSeconds = req.headers['x-recording-duration-seconds']
         ? Math.max(0, Math.round(Number(req.headers['x-recording-duration-seconds']) || 0))

@@ -1642,7 +1642,9 @@ router.get('/:id/recording/stream', async (req, res) => {
         ? 'webm'
         : rec.mime_type?.includes('ogg')
           ? 'ogg'
-          : 'mp3';
+          : rec.mime_type?.includes('wav')
+            ? 'wav'
+            : 'mp3';
     const filename = `${safeFilename(meetingRow.title || 'meeting-recording')}.${ext}`;
     const rangeResult = await rangeOrgObject(
       rec.org_id,

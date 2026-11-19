@@ -1,0 +1,5 @@
+node_modules/
+.env
+*.storage-state.json
+google-bot-storage-state.json
+google-bot-profile/

@@ -28,30 +28,47 @@ const GoogleMeetAdapter = {
     }
 
     // Ensure camera and microphone are turned off on prejoin
-    for (const toggleLabel of [/turn off microphone/i, /turn off camera/i]) {
-      const toggle = page.getByRole('button', { name: toggleLabel }).first();
+    for (const selector of [
+      'button[aria-label*="Turn off microphone" i]',
+      'button[aria-label*="Turn off camera" i]',
+    ]) {
+      const toggle = page.locator(selector).first();
       if (await toggle.isVisible().catch(() => false)) {
         await toggle.click().catch(() => {});
+        await page.waitForTimeout(250);
       }
+    }
+
+    // 2026 Google Meet 2-step guest entry: click "Continue as guest" first if shown
+    const continueGuestBtn = page
+      .locator('button')
+      .filter({ hasText: /continue as guest/i })
+      .first();
+    if (await continueGuestBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await continueGuestBtn.click();
+      await page.waitForTimeout(900);
     }
 
     // Fill guest name input if not signed into a Google account
     const nameInput = page
-      .locator('input[placeholder*="Your name" i], input[aria-label*="Your name" i]')
+      .locator(
+        'input[placeholder*="Your name" i], input[aria-label*="Your name" i], input[placeholder*="name" i], input[type="text"]'
+      )
       .first();
-    if (await nameInput.isVisible({ timeout: 4000 }).catch(() => false)) {
+    if (await nameInput.isVisible({ timeout: 5000 }).catch(() => false)) {
       await nameInput.fill(botDisplayName);
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(400);
     }
 
     // Click "Ask to join" or "Join now"
     const joinBtn = page
-      .getByRole('button', { name: /^(ask to join|join now|join|switch here)$/i })
+      .getByRole('button', { name: /ask to join|join now/i })
       .first();
     if (!(await joinBtn.isVisible({ timeout: 10_000 }).catch(() => false))) {
       throw new Error('Could not find Google Meet Join button (meeting may be restricted to organization users)');
     }
     await joinBtn.click();
+    await page.waitForTimeout(1500);
 
     // Poll until admitted to call, denied, or lobby timeout
     const deadline = Date.now() + lobbyTimeoutMs;
@@ -96,7 +113,7 @@ const GoogleMeetAdapter = {
       }
 
       if (
-        /someone in the call denied your request|you can't join this video call|no one responded to your request|meeting has ended|you've been removed from the meeting|return to home screen/i.test(
+        /someone in the call denied your request|you can't join this video call|no one responded to your request|the call ended because everyone left|you've been removed from the meeting/i.test(
           bodyText
         )
       ) {

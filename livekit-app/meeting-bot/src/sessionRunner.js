@@ -1,6 +1,8 @@
 'use strict';
 
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const { chromium } = require('playwright');
 const { getAdapterForPlatform } = require('./adapters');
 const { SpeakerTimeline } = require('./speakerTimeline');
@@ -10,13 +12,12 @@ const { buildBrowserCaptureInitScript } = require('./browserCaptureInit');
 const CHROMIUM_ARGS = [
   '--autoplay-policy=no-user-gesture-required',
   '--use-fake-ui-for-media-stream',
-  '--use-fake-device-for-media-stream',
-  '--disable-blink-features=AutomationControlled',
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
   '--disable-renderer-backgrounding',
-  '--no-sandbox',
-  '--disable-dev-shm-usage',
+  ...(process.platform === 'linux' && process.env.CHROMIUM_NO_SANDBOX === 'true'
+    ? ['--no-sandbox', '--disable-dev-shm-usage']
+    : []),
 ];
 
 async function runBotSession(session, { apiClient, config, abortSignal }) {
@@ -56,34 +57,66 @@ async function runBotSession(session, { apiClient, config, abortSignal }) {
   });
 
   let browser = null;
+  let persistentContext = null;
+  let tempProfileDir = null;
   let joinedAtMs = 0;
 
   try {
     await audioPipeline.start();
 
-    browser = await chromium.launch({
+    const launchOpts = {
       headless: config.headless !== false,
       args: CHROMIUM_ARGS,
-    });
+    };
+    if (config.browserChannel) {
+      launchOpts.channel = config.browserChannel;
+    }
 
     const contextOptions = {
       viewport: { width: 1280, height: 720 },
       permissions: ['microphone', 'camera'],
-      userAgent:
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     };
+
+    let context;
     if (
       session.platform === 'google_meet' &&
-      config.googleStorageStatePath &&
-      fs.existsSync(config.googleStorageStatePath)
+      config.googleUserDataDir &&
+      fs.existsSync(path.join(config.googleUserDataDir, '.signed_in'))
     ) {
-      contextOptions.storageState = config.googleStorageStatePath;
+      tempProfileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'lalia-gmeet-profile-'));
+      fs.cpSync(config.googleUserDataDir, tempProfileDir, {
+        recursive: true,
+        filter: (src) => {
+          const base = path.basename(src);
+          return (
+            !base.startsWith('Singleton') &&
+            base !== 'RunningChromeVersion' &&
+            base !== 'Cache' &&
+            base !== 'Code Cache' &&
+            base !== 'GPUCache'
+          );
+        },
+      });
+      persistentContext = await chromium.launchPersistentContext(tempProfileDir, {
+        ...launchOpts,
+        ...contextOptions,
+      });
+      context = persistentContext;
+    } else {
+      browser = await chromium.launch(launchOpts);
+      if (
+        session.platform === 'google_meet' &&
+        config.googleStorageStatePath &&
+        fs.existsSync(config.googleStorageStatePath)
+      ) {
+        contextOptions.storageState = config.googleStorageStatePath;
+      }
+      context = await browser.newContext(contextOptions);
     }
 
-    const context = await browser.newContext(contextOptions);
     await context.addInitScript(buildBrowserCaptureInitScript({ botDisplayName }));
 
-    const page = await context.newPage();
+    const page = context.pages()[0] || (await context.newPage());
     await page.exposeFunction('__laliaPushPcmBase64', (b64) => {
       audioPipeline.pushPcmBase64(b64);
     });
@@ -231,8 +264,14 @@ async function runBotSession(session, { apiClient, config, abortSignal }) {
       .catch(() => {});
   } finally {
     if (flushTimer) clearTimeout(flushTimer);
+    if (persistentContext) {
+      await persistentContext.close().catch(() => {});
+    }
     if (browser) {
       await browser.close().catch(() => {});
+    }
+    if (tempProfileDir) {
+      fs.rmSync(tempProfileDir, { recursive: true, force: true });
     }
     await audioPipeline.cleanup();
   }
