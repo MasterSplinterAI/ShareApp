@@ -3173,6 +3173,14 @@ if __name__ == "__main__":
     extra_worker_kwargs = {}
     if idle_raw.isdigit():
         extra_worker_kwargs['num_idle_processes'] = int(idle_raw)
+    load_thresh_raw = os.getenv('AGENT_LOAD_THRESHOLD', '').strip().lower()
+    if load_thresh_raw == 'inf':
+        extra_worker_kwargs['load_threshold'] = float('inf')
+    elif load_thresh_raw:
+        try:
+            extra_worker_kwargs['load_threshold'] = float(load_thresh_raw)
+        except ValueError:
+            pass
     worker_opts = WorkerOptions(
         entrypoint_fnc=main,
         prewarm_fnc=prewarm,
