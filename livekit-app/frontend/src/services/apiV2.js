@@ -285,6 +285,9 @@ export const v2Admin = {
   acknowledgeAgentAlerts: (body = {}) => apiV2.post('/admin/agent-alerts/acknowledge', body).then((r) => r.data),
   resetAgentCircuit: (body = {}) => apiV2.post('/admin/agent-alerts/reset-circuit', body).then((r) => r.data),
   testAgentAlerts: () => apiV2.post('/admin/agent-alerts/test', {}).then((r) => r.data),
+  notetakerConfig: () => apiV2.get('/admin/notetaker/config').then((r) => r.data),
+  patchNotetakerConfig: (body) => apiV2.patch('/admin/notetaker/config', body).then((r) => r.data),
+  verifyNotetakerConfig: (body = {}) => apiV2.post('/admin/notetaker/verify', body).then((r) => r.data),
   cancelOrgSubscription: (orgId, body) =>
     apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
   marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),

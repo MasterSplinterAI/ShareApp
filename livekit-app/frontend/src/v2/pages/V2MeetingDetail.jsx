@@ -860,7 +860,11 @@ export default function V2MeetingDetail() {
       ? 'Google Meet'
       : meeting.meeting_source === 'ms_teams'
         ? 'MS Teams'
-        : null;
+        : meeting.meeting_source === 'zoom'
+          ? 'Zoom'
+          : meeting.meeting_source === 'webex'
+            ? 'Webex'
+            : null;
 
   const metricCards = (
     <div className="grid grid-cols-3 gap-2 border-t border-border/60 pt-3.5">

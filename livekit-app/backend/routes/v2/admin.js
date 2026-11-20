@@ -23,6 +23,14 @@ const {
   toAdminView: toEmailAdminView,
 } = require('../../lib/v2EmailSettings');
 const {
+  getNotetakerSettings,
+  saveNotetakerSettings,
+  toNotetakerAdminView,
+  verifyRecallCredentials,
+  persistDetectedRegionIfStored,
+} = require('../../lib/recallNotetaker');
+const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
+const {
   getMarketingEmailAdminView,
   saveMarketingEmailSettings,
 } = require('../../lib/v2MarketingEmailSettings');
@@ -1514,6 +1522,64 @@ router.post('/agent-alerts/test', requireV2Auth, requireSuperadmin, async (req, 
   } catch (e) {
     console.error('[admin/agent-alerts/test]', e);
     res.status(500).json({ error: 'Failed to send test alert' });
+  }
+});
+
+router.get('/notetaker/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const settings = await getNotetakerSettings({ fresh: true });
+    res.json({
+      settings: toNotetakerAdminView(settings, { publicBaseUrl: publicFrontendBaseUrl(req) }),
+    });
+  } catch (e) {
+    console.error('[admin/notetaker/config]', e);
+    res.status(500).json({ error: 'Failed to load notetaker config' });
+  }
+});
+
+router.patch('/notetaker/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveNotetakerSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_notetaker_config', {
+      driverMode: result.settings.driverMode,
+      recallRegion: result.settings.recallRegion,
+      transcriptMode: result.settings.transcriptMode,
+      xaiFallbackEnabled: result.settings.xaiFallbackEnabled,
+      deleteRecallMediaAfterIngest: result.settings.deleteRecallMediaAfterIngest,
+      waitingRoomTimeoutSec: result.settings.waitingRoomTimeoutSec,
+      everyoneLeftTimeoutSec: result.settings.everyoneLeftTimeoutSec,
+      reason: result.reason,
+    });
+    res.json({
+      ok: true,
+      settings: toNotetakerAdminView(result.settings, { publicBaseUrl: publicFrontendBaseUrl(req) }),
+    });
+  } catch (e) {
+    console.error('[admin/notetaker/config patch]', e);
+    res.status(500).json({ error: 'Failed to save notetaker settings' });
+  }
+});
+
+router.post('/notetaker/verify', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const current = await getNotetakerSettings({ fresh: true });
+    const result = await verifyRecallCredentials({
+      apiKey: req.body?.recallApiKey,
+      region: req.body?.recallRegion,
+    });
+    if (result.ok && result.regionAutoDetected && !req.body?.recallApiKey && current.hasDbKey) {
+      await persistDetectedRegionIfStored(result.region, req.v2Auth.email);
+    }
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/notetaker/verify]', e);
+    res.status(500).json({ ok: false, error: 'Failed to verify Recall.ai credentials' });
   }
 });
 

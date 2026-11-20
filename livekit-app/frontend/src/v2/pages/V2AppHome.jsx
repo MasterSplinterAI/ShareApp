@@ -379,7 +379,7 @@ export default function V2AppHome() {
         </Button>
       </form>
 
-      {/* AI Notetaker for Google Meet & Microsoft Teams */}
+      {/* AI Notetaker for Meet, Teams, Zoom & Webex */}
       <div className="flex flex-col justify-between gap-3 rounded-xl border border-primary/25 bg-gradient-to-r from-primary/[0.06] via-card to-card p-4 sm:flex-row sm:items-center">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
@@ -387,10 +387,10 @@ export default function V2AppHome() {
           </span>
           <div>
             <h2 className="text-sm font-semibold text-foreground">
-              AI Notetaker for Google Meet &amp; Microsoft Teams
+              AI Notetaker for Meet, Teams, Zoom &amp; Webex
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Send Lalia to record audio, transcribe speakers, and email AI summaries from any Meet or Teams call.
+              Send Lalia to record audio, transcribe speakers, and email AI summaries from any external meeting.
             </p>
           </div>
         </div>

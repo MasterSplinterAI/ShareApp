@@ -45,7 +45,11 @@ export default function ExternalBotStatusCard({ meeting, botSession, canManage, 
       ? 'Google Meet'
       : meeting?.meeting_source === 'ms_teams'
         ? 'Microsoft Teams'
-        : 'External Meeting';
+        : meeting?.meeting_source === 'zoom'
+          ? 'Zoom'
+          : meeting?.meeting_source === 'webex'
+            ? 'Webex'
+            : 'External Meeting';
 
   const externalUrl = botSession?.normalized_url || meeting?.external_meeting_url || null;
   const meta = statusMeta(botSession);

@@ -43,6 +43,12 @@ export function detectExternalMeetingPlatformClient(raw) {
   if (/teams\.(microsoft|live)\.com\/(l\/meetup-join\/|meet\/|v2\/)/i.test(text)) {
     return { platform: 'ms_teams', label: 'Microsoft Teams' };
   }
+  if (/(?:[a-z0-9-]+\.)?zoom\.us\/(?:j|w|s|my)\//i.test(text)) {
+    return { platform: 'zoom', label: 'Zoom' };
+  }
+  if (/(?:[a-z0-9-]+\.)?webex\.com\/(?:meet\/|join\/|wbxmjs\/joinservice)/i.test(text)) {
+    return { platform: 'webex', label: 'Webex' };
+  }
   return null;
 }
 
@@ -75,7 +81,7 @@ export default function SendNotetakerDialog({
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!url.trim()) {
-      toast.error('Paste a Google Meet or Microsoft Teams meeting link');
+      toast.error('Paste a Google Meet, Microsoft Teams, Zoom, or Webex meeting link');
       return;
     }
     setSubmitting(true);
@@ -110,7 +116,7 @@ export default function SendNotetakerDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            Send AI Notetaker to Meet or Teams
+            Send AI Notetaker to Meet, Teams, or Zoom
           </DialogTitle>
           <DialogDescription>
             Lalia joins as a notetaker participant, records the audio file, captures speaker-attributed transcripts, and generates AI summaries.
@@ -120,7 +126,7 @@ export default function SendNotetakerDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-2">
-              <Label htmlFor="notetaker-url">Google Meet or Microsoft Teams link</Label>
+              <Label htmlFor="notetaker-url">Google Meet, Microsoft Teams, Zoom, or Webex link</Label>
               {detected && (
                 <Badge variant="success" className="gap-1 text-[11px]">
                   <CheckCircle2 className="h-3 w-3" />
@@ -132,7 +138,7 @@ export default function SendNotetakerDialog({
               id="notetaker-url"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://meet.google.com/abc-defg-hij or https://teams.microsoft.com/..."
+              placeholder="https://meet.google.com/abc-defg-hij or https://zoom.us/j/1234567890"
               autoFocus
               required
             />

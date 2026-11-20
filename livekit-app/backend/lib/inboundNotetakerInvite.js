@@ -18,6 +18,10 @@ const {
   downloadAttachmentText,
 } = require('./resendReceivingApi');
 const { assertCanCreateMeeting } = require('./v2Entitlements');
+const {
+  getNotetakerSettings,
+  dispatchRecallBotForSession,
+} = require('./recallNotetaker');
 
 const NOTETAKER_LOCAL_PARTS = new Set(['notes', 'notetaker', 'bot']);
 
@@ -228,6 +232,9 @@ async function scheduleNotetakerFromParsedEmail({
   const sessionId = db.uuid();
   const placeholderRoomName = `ext-${parsedUrl.platform.replace('_', '-')}-${crypto.randomUUID().slice(0, 12)}`;
   const hostCode = crypto.randomBytes(4).toString('hex');
+  const ntSettings = await getNotetakerSettings();
+  const useRecall = ntSettings.effectiveDriver === 'recall';
+  const botProvider = useRecall ? 'recall' : 'worker';
 
   await db.transaction(async (tx) => {
     await tx.run(
@@ -250,6 +257,7 @@ async function scheduleNotetakerFromParsedEmail({
           source: 'email_invite_notetaker',
           platform: parsedUrl.platform,
           botSessionId: sessionId,
+          botProvider,
           icsUid: ics?.uid || null,
         }),
         1,
@@ -269,8 +277,8 @@ async function scheduleNotetakerFromParsedEmail({
       `INSERT INTO v2_external_bot_sessions (
         id, org_id, meeting_id, requested_by_user_id, platform,
         target_url, normalized_url, external_meeting_code, bot_display_name,
-        status, status_detail, scheduled_for, created_at, updated_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        bot_provider, status, status_detail, scheduled_for, created_at, updated_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         sessionId,
         membership.org_id,
@@ -281,6 +289,7 @@ async function scheduleNotetakerFromParsedEmail({
         parsedUrl.normalizedUrl,
         parsedUrl.externalCode || null,
         botDisplayName,
+        botProvider,
         isFutureSchedule ? 'scheduled' : 'queued',
         isFutureSchedule
           ? `Scheduled via email invite for ${parsedUrl.platformLabel}`
@@ -291,6 +300,12 @@ async function scheduleNotetakerFromParsedEmail({
       ]
     );
   });
+
+  if (useRecall) {
+    await dispatchRecallBotForSession(sessionId).catch((err) => {
+      console.warn('[inboundNotetakerInvite] Recall dispatch warning:', err.message);
+    });
+  }
 
   return {
     ok: true,

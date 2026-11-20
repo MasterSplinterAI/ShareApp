@@ -5,6 +5,11 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { parseExternalMeetingUrl } = require('../../lib/externalMeetingUrls');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
+const {
+  getNotetakerSettings,
+  dispatchRecallBotForSession,
+  stopRecallBotSession,
+} = require('../../lib/recallNotetaker');
 
 const VALID_RECAP_MODES = new Set(['off', 'host_only', 'workspace', 'attendees']);
 
@@ -27,6 +32,22 @@ function sanitizeEmails(rawList) {
   }
   return out.slice(0, 100);
 }
+
+router.get('/status', requireV2Auth, async (_req, res) => {
+  try {
+    const ntSettings = await getNotetakerSettings();
+    res.json({
+      driver: ntSettings.effectiveDriver,
+      ready:
+        ntSettings.effectiveDriver === 'recall'
+          ? Boolean(ntSettings.recallApiKey)
+          : Boolean(process.env.BOT_WORKER_SECRET),
+      supportedPlatforms: ['google_meet', 'ms_teams', 'zoom', 'webex'],
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Failed to inspect notetaker status' });
+  }
+});
 
 router.post('/parse-url', requireV2Auth, (req, res) => {
   const parsed = parseExternalMeetingUrl(req.body?.url || '');
@@ -121,6 +142,9 @@ router.post('/sessions', requireV2Auth, async (req, res) => {
     const hostCode = crypto.randomBytes(4).toString('hex');
     const initialMeetingStatus = isFutureSchedule ? 'scheduled' : 'live';
     const initialBotStatus = isFutureSchedule ? 'scheduled' : 'queued';
+    const ntSettings = await getNotetakerSettings();
+    const useRecall = ntSettings.effectiveDriver === 'recall';
+    const botProvider = useRecall ? 'recall' : 'worker';
 
     await db.transaction(async (tx) => {
       await tx.run(
@@ -143,6 +167,7 @@ router.post('/sessions', requireV2Auth, async (req, res) => {
             source: 'external_notetaker',
             platform: parsed.platform,
             botSessionId: sessionId,
+            botProvider,
           }),
           1,
           parsed.platform,
@@ -163,8 +188,8 @@ router.post('/sessions', requireV2Auth, async (req, res) => {
         `INSERT INTO v2_external_bot_sessions (
           id, org_id, meeting_id, requested_by_user_id, platform,
           target_url, normalized_url, external_meeting_code, bot_display_name,
-          status, status_detail, scheduled_for, created_at, updated_at
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          bot_provider, status, status_detail, scheduled_for, created_at, updated_at
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           sessionId,
           req.v2Auth.orgId,
@@ -175,6 +200,7 @@ router.post('/sessions', requireV2Auth, async (req, res) => {
           parsed.normalizedUrl,
           parsed.externalCode || null,
           resolvedBotName,
+          botProvider,
           initialBotStatus,
           isFutureSchedule
             ? `Scheduled to join ${parsed.platformLabel}`
@@ -185,6 +211,26 @@ router.post('/sessions', requireV2Auth, async (req, res) => {
         ]
       );
     });
+
+    if (useRecall) {
+      const dispatch = await dispatchRecallBotForSession(sessionId);
+      const updatedSession = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [sessionId]);
+      if (!dispatch.ok) {
+        return res.status(502).json({
+          error: dispatch.error || 'Failed to dispatch Recall.ai bot',
+          meetingId,
+          session: updatedSession,
+          platform: parsed.platform,
+          platformLabel: parsed.platformLabel,
+        });
+      }
+      return res.status(201).json({
+        meetingId,
+        session: updatedSession,
+        platform: parsed.platform,
+        platformLabel: parsed.platformLabel,
+      });
+    }
 
     const session = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [sessionId]);
     res.status(201).json({
@@ -221,6 +267,12 @@ router.post('/sessions/:id/stop', requireV2Auth, async (req, res) => {
     if (!session) return res.status(404).json({ error: 'Not found' });
 
     const nowIso = new Date().toISOString();
+    if (session.bot_provider === 'recall') {
+      await stopRecallBotSession(session);
+      const updated = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [session.id]);
+      return res.json({ ok: true, session: updated });
+    }
+
     if (session.status === 'queued' || session.status === 'scheduled') {
       await db.run(
         `UPDATE v2_external_bot_sessions

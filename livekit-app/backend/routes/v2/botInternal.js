@@ -48,7 +48,10 @@ router.post('/claim', async (req, res) => {
       await tx.run(
         `UPDATE v2_external_bot_sessions
          SET status = 'queued', updated_at = ?
-         WHERE status = 'scheduled' AND scheduled_for IS NOT NULL AND scheduled_for <= ?`,
+         WHERE status = 'scheduled'
+           AND COALESCE(bot_provider, 'worker') = 'worker'
+           AND scheduled_for IS NOT NULL
+           AND scheduled_for <= ?`,
         [nowIso, leadIso]
       );
 
@@ -60,6 +63,7 @@ router.post('/claim', async (req, res) => {
              ended_at = ?,
              updated_at = ?
          WHERE status IN ('joining', 'waiting_in_lobby', 'recording')
+           AND COALESCE(bot_provider, 'worker') = 'worker'
            AND heartbeat_at IS NOT NULL
            AND heartbeat_at < ?`,
         [nowIso, nowIso, staleHeartbeatIso]
@@ -67,7 +71,9 @@ router.post('/claim', async (req, res) => {
 
       const candidate = await tx.get(
         `SELECT * FROM v2_external_bot_sessions
-         WHERE status = 'queued' AND stop_requested = 0
+         WHERE status = 'queued'
+           AND COALESCE(bot_provider, 'worker') = 'worker'
+           AND stop_requested = 0
          ORDER BY COALESCE(scheduled_for, created_at) ASC, created_at ASC
          LIMIT 1`
       );

@@ -117,11 +117,13 @@ app.use(cors({
 const { handleV2BillingWebhook } = require('./routes/v2/billingWebhook');
 const { handleLiveKitWebhook } = require('./routes/webhooks');
 const { handleResendInboundWebhook } = require('./routes/v2/resendInboundWebhook');
+const { handleRecallWebhook } = require('./routes/v2/recallWebhook');
 
 // Raw-body routes must come before express.json()
 app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
 app.post('/api/webhooks/livekit', express.raw({ type: '*/*' }), handleLiveKitWebhook);
 app.post('/api/v2/webhooks/resend/inbound', express.raw({ type: 'application/json' }), handleResendInboundWebhook);
+app.post('/api/v2/webhooks/recall', express.raw({ type: 'application/json' }), handleRecallWebhook);
 // Preserve raw bytes for Svix verification on Resend marketing webhooks (@rhule/marketing-kit).
 app.use(
   express.json({
@@ -283,6 +285,10 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[overage-settlement] scheduler start failed:', e.message);
   }
+  const { startRecallReconciler, stopRecallReconciler } = require('./lib/recallNotetaker');
+  if (process.env.NODE_ENV !== 'test') {
+    startRecallReconciler();
+  }
   const server=app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
@@ -290,6 +296,6 @@ app.use((err, req, res, next) => {
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
-  server.once('close',()=>{stopSeoSchema(); stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
+  server.once('close',()=>{stopRecallReconciler(); stopSeoSchema(); stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
   process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
 })();

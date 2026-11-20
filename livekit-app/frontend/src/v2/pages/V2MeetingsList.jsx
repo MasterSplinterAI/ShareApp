@@ -128,7 +128,11 @@ function MeetingCard({ meeting: m, isArchivedView, onJoin, onArchive, onRestore,
       ? 'Google Meet'
       : m.meeting_source === 'ms_teams'
         ? 'MS Teams'
-        : null;
+        : m.meeting_source === 'zoom'
+          ? 'Zoom'
+          : m.meeting_source === 'webex'
+            ? 'Webex'
+            : null;
   const url = inviteUrlFor(m);
   const canQuickJoin = !isExternalBot && !isArchivedView && isJoinableState(ui.key, m);
   const canCopyInvite = canQuickJoin && Boolean(url) && m.guestAccessActive !== false;

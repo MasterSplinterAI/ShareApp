@@ -1123,6 +1123,37 @@ async function migrate() {
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_agent_failover_ack_created ON v2_agent_failover_events(acknowledged_at, created_at DESC)`);
+
+  // Recall.ai external notetaker driver & settings (019_recall_notetaker_settings.sql)
+  const botCols = await all(`PRAGMA table_info(v2_external_bot_sessions)`);
+  const botColNames = new Set((botCols || []).map((c) => c.name));
+  if (!botColNames.has('bot_provider')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN bot_provider TEXT NOT NULL DEFAULT 'worker'`);
+  }
+  if (!botColNames.has('external_bot_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN external_bot_id TEXT`);
+  }
+  if (!botColNames.has('ingested_at')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN ingested_at TEXT`);
+  }
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_external_bot_id ON v2_external_bot_sessions(external_bot_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_notetaker_settings (
+      id TEXT PRIMARY KEY,
+      driver_mode TEXT NOT NULL DEFAULT 'auto',
+      recall_region TEXT NOT NULL DEFAULT 'us-east-1',
+      recall_api_key_enc TEXT,
+      recall_webhook_secret_enc TEXT,
+      transcript_mode TEXT NOT NULL DEFAULT 'meeting_captions',
+      xai_fallback_enabled INTEGER NOT NULL DEFAULT 1,
+      delete_recall_media_after_ingest INTEGER NOT NULL DEFAULT 1,
+      waiting_room_timeout_sec INTEGER NOT NULL DEFAULT 600,
+      everyone_left_timeout_sec INTEGER NOT NULL DEFAULT 30,
+      updated_at TEXT,
+      updated_by TEXT
+    )
+  `);
 }
 
 async function initPostgres() {

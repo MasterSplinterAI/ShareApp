@@ -7,6 +7,7 @@ import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { fmtDateTime } from './formatters';
 import { AgentFailoverAlertsSection } from './AgentFailoverAlertsSection';
+import { NotetakerSettingsSection } from './NotetakerSettingsSection';
 
 function StatusBadge({ ok, label }) {
   return (
@@ -681,6 +682,7 @@ export function CommsTab({ selectedOrgId }) {
   return (
     <div className="space-y-4">
       <AgentFailoverAlertsSection />
+      <NotetakerSettingsSection />
       <EmailSettingsSection />
       <MarketingConsentSection />
       <AnnouncementsSection />
