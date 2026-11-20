@@ -27,12 +27,22 @@ const {
   scheduleNotetakerFromParsedEmail,
 } = require('../lib/inboundNotetakerInvite');
 const {
+  assertPublicRecallUrl,
+  verifyRequestFromRecall,
+  fetchWithRecallRetry,
+  buildRecallBotPayload,
+  processVerifiedRecallWebhookEvent,
   getNotetakerSettings,
   saveNotetakerSettings,
   toNotetakerAdminView,
   verifyRecallCredentials,
 } = require('../lib/recallNotetaker');
-const { handleRecallWebhook } = require('../routes/v2/recallWebhook');
+const {
+  buildCalendarOAuthForwardRedirect,
+  evaluateCalendarEventOptIn,
+  syncCalendarEventsFromRecall,
+} = require('../lib/recallCalendarV2');
+const { handleRecallWebhook, drainPendingRecallWebhookJobs } = require('../routes/v2/recallWebhook');
 const notetakerRouter = require('../routes/v2/notetaker');
 const botInternalRouter = require('../routes/v2/botInternal');
 const adminRouter = require('../routes/v2/admin');
@@ -77,6 +87,13 @@ async function invokeRouter(router, { method = 'GET', url = '/', headers = {}, b
       end(payload) {
         this.headersSent = true;
         resolve({ status: this.statusCode, headers: resHeaders, body: payload });
+      },
+      redirect(statusOrUrl, maybeUrl) {
+        this.headersSent = true;
+        const code = typeof statusOrUrl === 'number' ? statusOrUrl : 302;
+        const location = typeof statusOrUrl === 'number' ? maybeUrl : statusOrUrl;
+        resHeaders.location = location;
+        resolve({ status: code, headers: resHeaders, location, body: null });
       },
     };
     router.handle(req, res, (err) => {
@@ -424,20 +441,136 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
     assert.equal(dup.sessionId, res.sessionId);
   });
 
-  it('encrypts Recall settings, auto-detects Recall region, runs webhook + xAI STT fallback + COGS rollup, and isolates worker queue', async () => {
+  it('verifies Recall webhooks (webhook-*, svix-*, multi-sig rotation, replay window), asserts public URLs, retries 429/503/507, and omits chat on Webex', async () => {
+    const rawKey = crypto.randomBytes(24).toString('base64');
+    const secret = `whsec_${rawKey}`;
+    const payload = JSON.stringify({ event: 'bot.done', data: { bot: { id: 'b1' } } });
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    const signWithKey = (keyB64, id, ts, body) =>
+      crypto.createHmac('sha256', Buffer.from(keyB64, 'base64')).update(`${id}.${ts}.${body}`).digest('base64');
+
+    const sig1 = signWithKey(rawKey, 'msg_std_1', nowSec, payload);
+    assert.deepEqual(
+      verifyRequestFromRecall({
+        secret,
+        headers: {
+          'webhook-id': 'msg_std_1',
+          'webhook-timestamp': String(nowSec),
+          'webhook-signature': `v1,deadbeef== v1,${sig1}`,
+        },
+        rawBody: Buffer.from(payload, 'utf8'),
+      }),
+      { ok: true, webhookId: 'msg_std_1' }
+    );
+
+    const sigSvix = signWithKey(rawKey, 'msg_svix_1', nowSec, payload);
+    assert.deepEqual(
+      verifyRequestFromRecall({
+        secret,
+        headers: {
+          'svix-id': 'msg_svix_1',
+          'svix-timestamp': String(nowSec),
+          'svix-signature': `v1,${sigSvix}`,
+        },
+        rawBody: payload,
+      }),
+      { ok: true, webhookId: 'msg_svix_1' }
+    );
+
+    // Reject expired timestamp / invalid signature / missing secret
+    assert.equal(
+      verifyRequestFromRecall({
+        secret,
+        headers: {
+          'webhook-id': 'msg_old',
+          'webhook-timestamp': String(nowSec - 600),
+          'webhook-signature': `v1,${signWithKey(rawKey, 'msg_old', nowSec - 600, payload)}`,
+        },
+        rawBody: payload,
+      }).reason,
+      'timestamp_skew'
+    );
+    assert.equal(
+      verifyRequestFromRecall({
+        secret: '',
+        headers: { 'webhook-id': 'x', 'webhook-timestamp': String(nowSec), 'webhook-signature': `v1,${sig1}` },
+        rawBody: payload,
+      }).reason,
+      'missing_secret'
+    );
+
+    // Public URL enforcement
+    assert.equal(assertPublicRecallUrl('https://lalia.cloud'), 'https://lalia.cloud');
+    assert.throws(() => assertPublicRecallUrl('http://localhost:3101'), /localhost or a private IP/i);
+    assert.throws(() => assertPublicRecallUrl('https://127.0.0.1:3101'), /localhost or a private IP/i);
+    assert.throws(() => assertPublicRecallUrl('http://10.0.1.5'), /localhost or a private IP/i);
+
+    // Retry 429 (with Retry-After), 503, and 507
+    const statuses = [429, 503, 507, 200];
+    let attempts = 0;
+    const retryRes = await fetchWithRecallRetry(
+      'https://us-west-2.recall.ai/api/v1/bot/',
+      { method: 'GET' },
+      {
+        baseDelayMs: 1,
+        fetchImpl: async () => {
+          const code = statuses[attempts++];
+          return {
+            ok: code === 200,
+            status: code,
+            headers: { get: (h) => (h.toLowerCase() === 'retry-after' && code === 429 ? '1' : null) },
+            json: async () => ({ ok: true }),
+          };
+        },
+      }
+    );
+    assert.equal(retryRes.status, 200);
+    assert.equal(attempts, 4);
+
+    // Bot payload generation: join_at always present, chat on zoom/meet/teams, omitted on webex
+    const baseSettings = {
+      transcriptMode: 'recallai_async',
+      waitingRoomTimeoutSec: 600,
+      everyoneLeftTimeoutSec: 30,
+      chatNoticeEnabled: true,
+      chatNoticeText: 'Lalia Notetaker is recording this meeting for notes and summary.',
+    };
+    const zoomPayload = buildRecallBotPayload({
+      meetingUrl: 'https://zoom.us/j/123',
+      joinAtIso: '2026-12-01T15:00:00.000Z',
+      botDisplayName: 'Lalia Notetaker',
+      platform: 'zoom',
+      settings: baseSettings,
+    });
+    assert.equal(zoomPayload.join_at, '2026-12-01T15:00:00.000Z');
+    assert.equal(zoomPayload.chat?.on_bot_join?.send_to, 'everyone');
+    assert.ok(zoomPayload.chat?.on_bot_join?.message.includes('recording'));
+
+    const webexPayload = buildRecallBotPayload({
+      meetingUrl: 'https://acme.webex.com/meet/demo',
+      joinAtIso: '2026-12-01T15:00:00.000Z',
+      botDisplayName: 'Lalia Notetaker',
+      platform: 'webex',
+      settings: baseSettings,
+    });
+    assert.equal(webexPayload.chat, undefined);
+  });
+
+  it('runs v1.11 Recall flow: POST /sessions -> strict webhook 401/200 + idempotency -> bot.* -> recording.done + create_transcript -> transcript.done -> AI summary + COGS + worker queue isolation', async () => {
     const rawWhKey = crypto.randomBytes(24).toString('base64');
     const webhookSecret = `whsec_${rawWhKey}`;
     const apiKey = 'recall_test_api_key_9876543210';
 
-    // 1. Save encrypted Recall credentials
     const saved = await saveNotetakerSettings('kenny@lalia.cloud', {
       driverMode: 'auto',
-      recallRegion: 'us-east-1',
+      recallRegion: 'us-west-2',
       recallApiKey: apiKey,
       recallWebhookSecret: webhookSecret,
-      transcriptMode: 'meeting_captions',
-      xaiFallbackEnabled: true,
-      reason: 'Enable Recall.ai in test suite',
+      transcriptMode: 'recallai_async',
+      chatNoticeEnabled: true,
+      xaiFallbackEnabled: false,
+      reason: 'Enable Recall.ai v1.11 async flow in test suite',
     });
     assert.equal(saved.ok, true);
     assert.equal(saved.settings.effectiveDriver, 'recall');
@@ -446,13 +579,12 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
     assert.equal(adminView.hasRecallApiKey, true);
     assert.ok(!adminView.recallApiKeyMasked.includes('9876543210'));
     assert.equal(adminView.webhookUrl, 'https://lalia.cloud/api/v2/webhooks/recall');
+    assert.equal(adminView.calendarConnectedRedirectUri, 'https://lalia.cloud/api/v2/notetaker/calendar/oauth/callback');
 
-    // 2. Verify region auto-detection across Recall regions
     const verifyRes = await verifyRecallCredentials(
       { apiKey, region: 'us-east-1' },
       {
         fetchImpl: async (url) => {
-          if (url.startsWith('https://us-east-1.recall.ai')) return { ok: false, status: 401 };
           if (url.startsWith('https://us-west-2.recall.ai')) return { ok: true, status: 200 };
           return { ok: false, status: 401 };
         },
@@ -462,24 +594,23 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
     assert.equal(verifyRes.region, 'us-west-2');
     assert.equal(verifyRes.regionAutoDetected, true);
 
-    // Update DB region to us-east-1 explicitly and enable xAI fallback key
-    process.env.XAI_API_KEY = 'xai-test-key-for-stt-fallback';
-
-    // Mock global fetch for Recall dispatch -> webhook GET bot -> S3 download -> xAI STT fallback
     const origFetch = global.fetch;
     const fakeAudioBytes = Buffer.alloc(2048, 0x41);
-    const createdBotId = 'rec-bot-1111-2222';
-    let botPhase = 'joining_call';
-    let transcriptPayload = []; // Empty native captions -> triggers xAI STT fallback
-    let xaiMultipartSawFileLast = false;
+    const createdBotId = 'rec-bot-v111-1111';
+    const recId = 'rec-recording-2222';
+    const trId = 'rec-transcript-3333';
+    let createTranscriptBody = null;
+    let botCreateSentChat = false;
+    let deleteMediaCalled = false;
 
     global.fetch = async (url, init = {}) => {
       const urlStr = String(url);
-      if (urlStr === 'https://us-east-1.recall.ai/api/v1/bot/' && init.method === 'POST') {
+      if (urlStr === 'https://us-west-2.recall.ai/api/v1/bot/' && init.method === 'POST') {
         assert.equal(init.headers.Authorization, `Token ${apiKey}`);
         const sent = JSON.parse(init.body);
         assert.ok(sent.meeting_url.includes('zoom.us/j/44455566677'));
-        assert.deepEqual(sent.recording_config.transcript.provider, { meeting_captions: {} });
+        assert.ok(sent.join_at);
+        botCreateSentChat = sent.chat?.on_bot_join?.send_to === 'everyone';
         return {
           ok: true,
           status: 201,
@@ -487,104 +618,95 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
         };
       }
 
-      if (urlStr === `https://us-east-1.recall.ai/api/v1/bot/${createdBotId}/` && (!init.method || init.method === 'GET')) {
+      if (urlStr === `https://us-west-2.recall.ai/api/v1/recording/${recId}/` && (!init.method || init.method === 'GET')) {
         assert.equal(init.headers.Authorization, `Token ${apiKey}`);
-        if (botPhase === 'in_waiting_room') {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              id: createdBotId,
-              status_changes: [{ code: 'joining_call' }, { code: 'in_waiting_room' }],
-            }),
-          };
-        }
-        if (botPhase === 'done') {
-          const t0 = '2026-11-20T12:00:00.000Z';
-          const t1 = '2026-11-20T12:02:00.000Z';
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              id: createdBotId,
-              status_changes: [
-                { code: 'in_call_recording', created_at: t0 },
-                { code: 'call_ended', created_at: t1 },
-                { code: 'done', created_at: t1 },
-              ],
-              recordings: [
-                {
-                  id: 'rec-rec-1',
-                  media_shortcuts: {
-                    audio_mixed: {
-                      status: { code: 'done' },
-                      data: { download_url: 'https://recall-artifacts.example.com/audio.mp3?sig=1' },
-                    },
-                    transcript: {
-                      status: { code: 'done' },
-                      data: { download_url: 'https://recall-artifacts.example.com/transcript.json?sig=1' },
-                    },
-                  },
-                },
-              ],
-            }),
-          };
-        }
-        return { ok: true, status: 200, json: async () => ({ id: createdBotId, status_changes: [{ code: botPhase }] }) };
-      }
-
-      if (urlStr.startsWith('https://recall-artifacts.example.com/audio.mp3')) {
-        assert.equal(init.headers?.Authorization, undefined);
-        return {
-          ok: true,
-          status: 200,
-          arrayBuffer: async () => fakeAudioBytes,
-        };
-      }
-
-      if (urlStr.startsWith('https://recall-artifacts.example.com/transcript.json')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => transcriptPayload,
-        };
-      }
-
-      if (urlStr === 'https://api.x.ai/v1/stt') {
-        const keys = [...init.body.keys()];
-        xaiMultipartSawFileLast = keys[0] === 'model' && keys[1] === 'diarize' && keys[2] === 'file';
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            text: 'Hello everyone. Welcome to Lalia.',
-            language: 'en',
-            duration: 120,
-            words: [
-              { text: 'Hello', start: 0.1, end: 0.3, speaker: 0 },
-              { text: 'everyone.', start: 0.4, end: 0.7, speaker: 0 },
-              { text: 'Welcome.', start: 1.0, end: 1.5, speaker: 1 },
-            ],
+            id: recId,
+            started_at: '2026-11-20T12:00:00.000Z',
+            completed_at: '2026-11-20T12:02:00.000Z',
+            media_shortcuts: {
+              audio_mixed: {
+                status: { code: 'done' },
+                data: { download_url: 'https://recall-artifacts.example.com/audio-v111.mp3?sig=1' },
+              },
+            },
           }),
         };
       }
 
-      if (urlStr.endsWith('/delete_media/')) {
+      if (urlStr === 'https://recall-artifacts.example.com/audio-v111.mp3?sig=1') {
+        assert.equal(init.headers?.Authorization, undefined);
+        return { ok: true, status: 200, arrayBuffer: async () => fakeAudioBytes };
+      }
+
+      if (
+        urlStr === `https://us-west-2.recall.ai/api/v1/recording/${recId}/create_transcript/` &&
+        init.method === 'POST'
+      ) {
+        assert.equal(init.headers.Authorization, `Token ${apiKey}`);
+        createTranscriptBody = JSON.parse(init.body);
+        return { ok: true, status: 201, json: async () => ({ id: trId, status: { code: 'processing' } }) };
+      }
+
+      if (urlStr === `https://us-west-2.recall.ai/api/v1/transcript/${trId}/` && (!init.method || init.method === 'GET')) {
+        assert.equal(init.headers.Authorization, `Token ${apiKey}`);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: trId,
+            data: { download_url: 'https://recall-artifacts.example.com/transcript-v111.json?sig=2' },
+          }),
+        };
+      }
+
+      if (urlStr === 'https://recall-artifacts.example.com/transcript-v111.json?sig=2') {
+        assert.equal(init.headers?.Authorization, undefined);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => [
+            {
+              participant: { name: 'Alice Host' },
+              words: [
+                { text: 'Hello', start_timestamp: { relative: 0.1 }, end_timestamp: { relative: 0.3 } },
+                { text: 'everyone.', start_timestamp: { relative: 0.4 }, end_timestamp: { relative: 0.8 } },
+              ],
+            },
+            {
+              participant: { name: 'Bob Guest' },
+              words: [
+                { text: 'Welcome', start_timestamp: { relative: 1.5 }, end_timestamp: { relative: 1.9 } },
+                { text: 'today.', start_timestamp: { relative: 2.0 }, end_timestamp: { relative: 2.3 } },
+              ],
+            },
+            {
+              participant: { name: "Kenneth's Lalia Notetaker" },
+              text: 'Bot name filtered out',
+            },
+          ],
+        };
+      }
+
+      if (urlStr === `https://us-west-2.recall.ai/api/v1/bot/${createdBotId}/delete_media/`) {
+        deleteMediaCalled = true;
         return { ok: true, status: 204 };
       }
 
-      throw new Error(`Unexpected fetch in test: ${urlStr}`);
+      throw new Error(`Unexpected fetch in v1.11 test: ${urlStr}`);
     };
 
     try {
-      // 3. Dispatch Zoom call through API router
       const dispatchRes = await invokeRouter(notetakerRouter, {
         method: 'POST',
         url: '/sessions',
         headers: { Authorization: `Bearer ${userToken}` },
         body: {
           url: 'https://zoom.us/j/44455566677?pwd=xyz',
-          title: 'Recall E2E Test',
+          title: 'Recall v1.11 Async Test',
           autoRecapMode: 'off',
         },
       });
@@ -592,10 +714,11 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       assert.equal(dispatchRes.body.platform, 'zoom');
       assert.equal(dispatchRes.body.session.bot_provider, 'recall');
       assert.equal(dispatchRes.body.session.external_bot_id, createdBotId);
+      assert.equal(botCreateSentChat, true);
       const recallSessionId = dispatchRes.body.session.id;
       const recallMeetingId = dispatchRes.body.meetingId;
 
-      // 4. Self-hosted worker /claim ignores Recall sessions
+      // Worker queue stays isolated from Recall sessions
       const workerClaim = await invokeRouter(botInternalRouter, {
         method: 'POST',
         url: '/claim',
@@ -605,21 +728,21 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       assert.equal(workerClaim.status, 200);
       assert.equal(workerClaim.body.session, null);
 
-      const signSvix = (msgId, payloadStr) => {
+      const signStandard = (msgId, payloadStr) => {
         const ts = String(Math.floor(Date.now() / 1000));
         const sig = crypto
           .createHmac('sha256', Buffer.from(rawWhKey, 'base64'))
           .update(`${msgId}.${ts}.${payloadStr}`)
           .digest('base64');
         return {
-          'svix-id': msgId,
-          'svix-timestamp': ts,
-          'svix-signature': `v1,${sig}`,
+          'webhook-id': msgId,
+          'webhook-timestamp': ts,
+          'webhook-signature': `v1,${sig}`,
         };
       };
 
-      const callWebhook = async (rawText, headers) => {
-        return new Promise((resolve) => {
+      const callWebhook = async (rawText, headers) =>
+        new Promise((resolve) => {
           const res = {
             statusCode: 200,
             status(c) {
@@ -632,102 +755,141 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
           };
           handleRecallWebhook({ headers, body: Buffer.from(rawText, 'utf8') }, res);
         });
-      };
 
-      // Invalid webhook signature is rejected with 401
-      const badBody = JSON.stringify({ event: 'bot.in_waiting_room', data: { bot: { id: createdBotId } } });
+      // Unverified request rejected 401
+      const badBody = JSON.stringify({
+        event: 'bot.in_waiting_room',
+        data: { bot: { id: createdBotId }, data: { code: 'in_waiting_room' } },
+      });
       const badWh = await callWebhook(badBody, {
-        'svix-id': 'msg_bad',
-        'svix-timestamp': String(Math.floor(Date.now() / 1000)),
-        'svix-signature': 'v1,invalid',
+        'webhook-id': 'msg_bad',
+        'webhook-timestamp': String(Math.floor(Date.now() / 1000)),
+        'webhook-signature': 'v1,invalid',
       });
       assert.equal(badWh.status, 401);
 
-      // 5. Valid Svix webhook moves session -> waiting_in_lobby
-      botPhase = 'in_waiting_room';
-      const lobbyWh = await callWebhook(badBody, signSvix('msg_lobby', badBody));
+      // 1. bot.in_waiting_room -> 200 queued + idempotency on duplicate webhook-id
+      const lobbyWh = await callWebhook(badBody, signStandard('wh_lobby_1', badBody));
       assert.equal(lobbyWh.status, 200);
-      assert.equal(lobbyWh.body.synced, true);
+      assert.equal(lobbyWh.body.queued, true);
+      await drainPendingRecallWebhookJobs();
+
+      const dupWh = await callWebhook(badBody, signStandard('wh_lobby_1', badBody));
+      assert.equal(dupWh.status, 200);
+      assert.equal(dupWh.body.duplicate, true);
+
       const midSession = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [recallSessionId]);
       assert.equal(midSession.status, 'waiting_in_lobby');
 
-      // 6. Valid Svix webhook on bot.done triggers MP3 ingest + xAI STT fallback + COGS + completion
-      botPhase = 'done';
-      const doneBody = JSON.stringify({ event: 'bot.done', data: { bot: { id: createdBotId } } });
-      const doneWh = await callWebhook(doneBody, signSvix('msg_done', doneBody));
-      assert.equal(doneWh.status, 200);
-      assert.equal(doneWh.body.synced, true);
-      assert.equal(xaiMultipartSawFileLast, true);
+      // 2. bot.in_call_recording -> recording + meeting live
+      const recStartBody = JSON.stringify({
+        event: 'bot.in_call_recording',
+        data: { bot: { id: createdBotId }, data: { code: 'in_call_recording', updated_at: '2026-11-20T12:00:00.000Z' } },
+      });
+      const recStartWh = await callWebhook(recStartBody, signStandard('wh_recstart_2', recStartBody));
+      assert.equal(recStartWh.status, 200);
+      await drainPendingRecallWebhookJobs();
+      const recSession = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [recallSessionId]);
+      assert.equal(recSession.status, 'recording');
+      assert.ok(recSession.joined_at);
 
-      const finalSession = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [recallSessionId]);
-      assert.equal(finalSession.status, 'completed');
-      assert.equal(finalSession.duration_seconds, 120);
-      assert.ok(finalSession.ingested_at);
+      // 3. recording.done -> S3 MP3 saved + POST create_transcript (recallai_async)
+      const recDoneBody = JSON.stringify({
+        event: 'recording.done',
+        data: { bot: { id: createdBotId }, recording: { id: recId }, data: { code: 'done' } },
+      });
+      const recDoneWh = await callWebhook(recDoneBody, signStandard('wh_recdone_3', recDoneBody));
+      assert.equal(recDoneWh.status, 200);
+      await drainPendingRecallWebhookJobs();
 
+      assert.deepEqual(createTranscriptBody, {
+        provider: { recallai_async: { language_code: 'auto' } },
+        diarization: { use_separate_streams_when_available: true },
+      });
       const recRow = await db.get(`SELECT * FROM v2_meeting_recordings WHERE bot_session_id = ?`, [recallSessionId]);
       assert.ok(recRow);
       assert.equal(recRow.size_bytes, fakeAudioBytes.length);
+      assert.equal(recRow.duration_seconds, 120);
+
+      // 4. transcript.done -> speaker-grouped transcript lines + COGS + completed
+      const trDoneBody = JSON.stringify({
+        event: 'transcript.done',
+        data: {
+          bot: { id: createdBotId },
+          recording: { id: recId },
+          transcript: { id: trId },
+          data: { code: 'done' },
+        },
+      });
+      const trDoneWh = await callWebhook(trDoneBody, signStandard('wh_trdone_4', trDoneBody));
+      assert.equal(trDoneWh.status, 200);
+      await drainPendingRecallWebhookJobs();
+
+      const finalSession = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [recallSessionId]);
+      assert.equal(finalSession.status, 'completed');
+      assert.equal(finalSession.external_recording_id, recId);
+      assert.equal(finalSession.external_transcript_id, trId);
+      assert.ok(finalSession.ingested_at);
 
       const lines = await db.all(
-        `SELECT * FROM v2_meeting_transcript_lines WHERE meeting_id = ? ORDER BY recorded_at ASC`,
+        `SELECT participant_identity, original_text FROM v2_meeting_transcript_lines WHERE meeting_id = ? ORDER BY recorded_at ASC`,
         [recallMeetingId]
       );
       assert.equal(lines.length, 2);
-      assert.equal(lines[0].participant_identity, 'Speaker 1');
+      assert.equal(lines[0].participant_identity, 'Alice Host');
       assert.equal(lines[0].original_text, 'Hello everyone.');
+      assert.equal(lines[1].participant_identity, 'Bob Guest');
+      assert.equal(lines[1].original_text, 'Welcome today.');
 
       const meetingRow = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [recallMeetingId]);
       const costRows = await db.all(
         `SELECT * FROM meeting_cost_events WHERE meeting_id = ? ORDER BY id ASC`,
         [meetingRow.livekit_room_name]
       );
-      assert.equal(costRows.length, 2);
+      assert.equal(costRows.length, 1);
       assert.equal(costRows[0].event_type, 'recall_bot_minute');
-      assert.equal(costRows[1].event_type, 'xai_stt_minute');
 
-      const rollupRow = await db.get(
-        `SELECT * FROM meeting_cost_rollups WHERE meeting_id = ?`,
-        [meetingRow.livekit_room_name]
-      );
+      const rollupRow = await db.get(`SELECT * FROM meeting_cost_rollups WHERE meeting_id = ?`, [
+        meetingRow.livekit_room_name,
+      ]);
       assert.ok(rollupRow);
-      assert.ok(rollupRow.total_cost_usd > 0.01);
+      assert.ok(rollupRow.total_cost_usd > 0);
+      assert.equal(deleteMediaCalled, true);
+
+      const whEventRows = await db.all(`SELECT status FROM v2_recall_webhook_events`);
+      assert.ok(whEventRows.length >= 4);
+      assert.ok(whEventRows.every((r) => r.status === 'processed'));
     } finally {
       global.fetch = origFetch;
-      delete process.env.XAI_API_KEY;
     }
   });
 
-  it('ingests native Recall meeting_captions without xAI fallback, stops scheduled vs active Recall bots, and serves superadmin /notetaker/* routes', async () => {
+  it('handles Webex stop (cancel vs leave_call), admin /notetaker/* routes, Calendar OAuth forwarding/probe, Calendar V2 opt-in sync, and per-event recording toggle', async () => {
     const prevSuperadmins = process.env.V2_SUPERADMIN_EMAILS;
     const origFetch = global.fetch;
     process.env.V2_SUPERADMIN_EMAILS = 'kenneth@example.com';
-    process.env.XAI_API_KEY = 'xai-should-not-be-called-for-native-captions';
 
-    const apiKey = 'recall_native_captions_key_123456';
+    const apiKey = 'recall_calendar_test_key_123456';
+    const rawWhKey = crypto.randomBytes(24).toString('base64');
+    const webhookSecret = `whsec_${rawWhKey}`;
+
     const patchAdminRes = await invokeRouter(adminRouter, {
       method: 'PATCH',
       url: '/notetaker/config',
       headers: { Authorization: `Bearer ${userToken}` },
       body: {
         driverMode: 'recall',
-        recallRegion: 'us-east-1',
+        recallRegion: 'us-west-2',
         recallApiKey: apiKey,
-        clearRecallWebhookSecret: true,
-        transcriptMode: 'meeting_captions',
-        reason: 'Test native captions and admin routes',
+        recallWebhookSecret: webhookSecret,
+        transcriptMode: 'recallai_async',
+        chatNoticeEnabled: true,
+        calendarRegionalCallbackUri: 'https://us-west-2.recall.ai/api/v1/calendar/google_oauth_callback/',
+        reason: 'Test Calendar V2 and stop endpoints',
       },
     });
     assert.equal(patchAdminRes.status, 200);
-    assert.equal(patchAdminRes.body.ok, true);
-    assert.equal(patchAdminRes.body.settings.effectiveDriver, 'recall');
-
-    const getAdminRes = await invokeRouter(adminRouter, {
-      method: 'GET',
-      url: '/notetaker/config',
-      headers: { Authorization: `Bearer ${userToken}` },
-    });
-    assert.equal(getAdminRes.status, 200);
-    assert.equal(getAdminRes.body.settings.hasRecallApiKey, true);
+    assert.equal(patchAdminRes.body.settings.hasCalendarRegionalCallbackUri, true);
 
     const statusRes = await invokeRouter(notetakerRouter, {
       method: 'GET',
@@ -737,28 +899,63 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
     assert.equal(statusRes.status, 200);
     assert.equal(statusRes.body.driver, 'recall');
     assert.equal(statusRes.body.ready, true);
-    assert.ok(statusRes.body.supportedPlatforms.includes('zoom'));
-    assert.ok(statusRes.body.supportedPlatforms.includes('webex'));
+
+    // Calendar OAuth callback forwarding & probe tests
+    const probeRes = await invokeRouter(notetakerRouter, {
+      method: 'GET',
+      url: '/calendar/oauth/callback',
+      query: { state: 'opaque-state-1', recall_calendar_setup_probe: '1' },
+    });
+    assert.equal(probeRes.status, 302);
+    assert.ok(probeRes.location.startsWith('https://us-west-2.recall.ai/api/v1/calendar/google_oauth_callback/'));
+    assert.ok(probeRes.location.includes('state=opaque-state-1'));
+    assert.ok(probeRes.location.includes('recall_calendar_setup_probe=1'));
+
+    const oauthCodeRes = await invokeRouter(notetakerRouter, {
+      method: 'GET',
+      url: '/calendar/oauth/callback',
+      query: { state: 'opaque-state-2', code: 'oauth-auth-code-xyz' },
+    });
+    assert.equal(oauthCodeRes.status, 302);
+    assert.ok(oauthCodeRes.location.includes('code=oauth-auth-code-xyz'));
+
+    const invalidFwd = buildCalendarOAuthForwardRedirect(
+      { state: 's', code: 'c', error: 'access_denied' },
+      { recallRegion: 'us-west-2' }
+    );
+    assert.equal(invalidFwd.ok, false);
+    assert.equal(invalidFwd.status, 400);
 
     let nextBotNum = 1;
     const deletedBots = [];
     const leaveCallBots = [];
-    let xaiCalled = false;
+    const calendarBotCalls = [];
+    const deletedCalendarBots = [];
+    const deletedCalendars = [];
+    let webexSentChat = false;
+
+    const futureStart1 = new Date(Date.now() + 3600_000).toISOString();
+    const futureEnd1 = new Date(Date.now() + 5400_000).toISOString();
+    const futureStart2 = new Date(Date.now() + 7200_000).toISOString();
+    const futureEnd2 = new Date(Date.now() + 9000_000).toISOString();
+    const pastStart = new Date(Date.now() - 7200_000).toISOString();
+    const pastEnd = new Date(Date.now() - 3600_000).toISOString();
+    const recallCalId = 'cal-v2-uuid-1';
 
     global.fetch = async (url, init = {}) => {
       const u = String(url);
-      if (u === 'https://us-east-1.recall.ai/api/v1/bot/?limit=1') {
-        return { ok: true, status: 200, json: async () => ({ results: [] }) };
-      }
-      if (u === 'https://us-east-1.recall.ai/api/v1/bot/' && init.method === 'POST') {
-        const botId = `rec-native-${nextBotNum++}`;
+      if (u === 'https://us-west-2.recall.ai/api/v1/bot/' && init.method === 'POST') {
+        const sent = JSON.parse(init.body);
+        if (sent.meeting_url?.includes('webex.com') && sent.chat) {
+          webexSentChat = true;
+        }
         return {
           ok: true,
           status: 201,
-          json: async () => ({ id: botId, status_changes: [{ code: 'joining_call' }] }),
+          json: async () => ({ id: `rec-stop-${nextBotNum++}`, status_changes: [{ code: 'joining_call' }] }),
         };
       }
-      if (u.startsWith('https://us-east-1.recall.ai/api/v1/bot/') && init.method === 'DELETE') {
+      if (u.startsWith('https://us-west-2.recall.ai/api/v1/bot/') && init.method === 'DELETE') {
         deletedBots.push(u);
         return { ok: true, status: 204 };
       }
@@ -766,92 +963,99 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
         leaveCallBots.push(u);
         return { ok: true, status: 200, json: async () => ({}) };
       }
-      if (u.startsWith('https://us-east-1.recall.ai/api/v1/bot/rec-native-2/') && (!init.method || init.method === 'GET')) {
-        const t0 = '2026-11-20T13:00:00.000Z';
-        const t1 = '2026-11-20T13:01:00.000Z';
+      if (u === `https://us-west-2.recall.ai/api/v2/calendars/${recallCalId}/` && (!init.method || init.method === 'GET')) {
         return {
           ok: true,
           status: 200,
           json: async () => ({
-            id: 'rec-native-2',
-            status_changes: [
-              { code: 'in_call_recording', created_at: t0 },
-              { code: 'done', created_at: t1 },
-            ],
-            recordings: [
+            id: recallCalId,
+            platform: 'google_calendar',
+            platform_email: 'kenneth@example.com',
+            status: 'connected',
+          }),
+        };
+      }
+      if (u === `https://us-west-2.recall.ai/api/v2/calendars/${recallCalId}/` && init.method === 'DELETE') {
+        deletedCalendars.push(u);
+        return { ok: true, status: 204 };
+      }
+      if (u.startsWith(`https://us-west-2.recall.ai/api/v2/calendar-events/?calendar_id=${recallCalId}`)) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            next: null,
+            results: [
               {
-                id: 'rec-n2',
-                media_shortcuts: {
-                  audio_mixed: {
-                    status: 'done',
-                    data: { download_url: 'https://recall-artifacts.example.com/native2.mp3' },
-                  },
-                  transcript: {
-                    status: 'done',
-                    data: { download_url: 'https://recall-artifacts.example.com/native2.json' },
-                  },
-                },
+                id: 'cal-ev-org-meet',
+                platform: 'google_calendar',
+                start_time: futureStart1,
+                end_time: futureEnd1,
+                meeting_url: 'https://meet.google.com/org-meet-abc',
+                is_deleted: false,
+                raw: { summary: 'Weekly Sync (I Organize)', organizer: { email: 'kenneth@example.com' } },
+              },
+              {
+                id: 'cal-ev-other-zoom',
+                platform: 'google_calendar',
+                start_time: futureStart2,
+                end_time: futureEnd2,
+                meeting_url: 'https://zoom.us/j/999888777?pwd=abc',
+                is_deleted: false,
+                raw: { summary: 'External Vendor Demo', organizer: { email: 'vendor@example.com' } },
+              },
+              {
+                id: 'cal-ev-nolink',
+                platform: 'google_calendar',
+                start_time: futureStart1,
+                end_time: futureEnd1,
+                meeting_url: null,
+                is_deleted: false,
+                raw: { summary: 'Focus Time Block', organizer: { email: 'kenneth@example.com' } },
+              },
+              {
+                id: 'cal-ev-past',
+                platform: 'google_calendar',
+                start_time: pastStart,
+                end_time: pastEnd,
+                meeting_url: 'https://meet.google.com/old-meet-xyz',
+                is_deleted: false,
+                raw: { summary: 'Yesterday Standup', organizer: { email: 'kenneth@example.com' } },
               },
             ],
           }),
         };
       }
-      if (u === 'https://recall-artifacts.example.com/native2.mp3') {
-        return { ok: true, status: 200, arrayBuffer: async () => Buffer.alloc(1024, 0x42) };
-      }
-      if (u === 'https://recall-artifacts.example.com/native2.json') {
+      if (u.startsWith('https://us-west-2.recall.ai/api/v2/calendar-events/') && u.endsWith('/bot/') && init.method === 'POST') {
+        const body = JSON.parse(init.body);
+        calendarBotCalls.push({ url: u, body });
         return {
           ok: true,
           status: 200,
-          json: async () => [
-            {
-              participant: { name: 'Alice Host' },
-              words: [
-                { text: 'Quarterly', start_timestamp: { relative: 2.0 } },
-                { text: 'review', start_timestamp: { relative: 2.4 } },
-              ],
-            },
-            {
-              participant: { name: "Kenneth's Lalia Notetaker" },
-              text: 'Bot self audio should be skipped',
-            },
-          ],
+          json: async () => ({ id: u.split('/').slice(-3, -2)[0], bots: [{ id: `cal-bot-${calendarBotCalls.length}` }] }),
         };
       }
-      if (u === 'https://api.x.ai/v1/stt') {
-        xaiCalled = true;
-        return { ok: true, status: 200, json: async () => ({ text: 'unexpected', words: [] }) };
-      }
-      if (u.endsWith('/delete_media/')) {
+      if (u.startsWith('https://us-west-2.recall.ai/api/v2/calendar-events/') && u.endsWith('/bot/') && init.method === 'DELETE') {
+        deletedCalendarBots.push(u);
         return { ok: true, status: 204 };
       }
-      throw new Error(`Unexpected fetch in native-captions test: ${u}`);
+      throw new Error(`Unexpected fetch in Calendar/Stop test: ${u}`);
     };
 
     try {
-      const verifyAdminRes = await invokeRouter(adminRouter, {
-        method: 'POST',
-        url: '/notetaker/verify',
-        headers: { Authorization: `Bearer ${userToken}` },
-        body: { recallRegion: 'us-east-1' },
-      });
-      assert.equal(verifyAdminRes.status, 200);
-      assert.equal(verifyAdminRes.body.ok, true);
-
-      // Scheduled bot -> stop triggers DELETE
-      const futureIso = new Date(Date.now() + 3600_000).toISOString();
+      // Scheduled Webex bot -> omits chat, stop triggers DELETE
       const schedRes = await invokeRouter(notetakerRouter, {
         method: 'POST',
         url: '/sessions',
         headers: { Authorization: `Bearer ${userToken}` },
         body: {
           url: 'https://acme.webex.com/meet/exec-sync',
-          scheduledFor: futureIso,
+          scheduledFor: futureStart1,
           autoRecapMode: 'off',
         },
       });
       assert.equal(schedRes.status, 201);
-      assert.equal(schedRes.body.session.status, 'scheduled');
+      assert.equal(webexSentChat, false);
 
       const cancelRes = await invokeRouter(notetakerRouter, {
         method: 'POST',
@@ -862,71 +1066,121 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       assert.equal(cancelRes.body.session.status, 'canceled');
       assert.equal(deletedBots.length, 1);
 
-      // Active bot -> stop triggers leave_call/, then bot.done uses native captions without xAI fallback
+      // Live Google Meet bot -> stop triggers leave_call
       const liveRes = await invokeRouter(notetakerRouter, {
         method: 'POST',
         url: '/sessions',
         headers: { Authorization: `Bearer ${userToken}` },
-        body: {
-          url: 'https://meet.google.com/aaa-bbbb-ccc',
-          autoRecapMode: 'off',
-        },
+        body: { url: 'https://meet.google.com/aaa-bbbb-ccc', autoRecapMode: 'off' },
       });
       assert.equal(liveRes.status, 201);
-      const liveSessionId = liveRes.body.session.id;
-      const liveMeetingId = liveRes.body.meetingId;
-
       const leaveRes = await invokeRouter(notetakerRouter, {
         method: 'POST',
-        url: `/sessions/${liveSessionId}/stop`,
+        url: `/sessions/${liveRes.body.session.id}/stop`,
         headers: { Authorization: `Bearer ${userToken}` },
       });
       assert.equal(leaveRes.status, 200);
-      assert.equal(leaveRes.body.session.stop_requested, 1);
       assert.equal(leaveCallBots.length, 1);
 
-      const whRes = await new Promise((resolve) => {
-        const res = {
-          statusCode: 200,
-          status(c) {
-            this.statusCode = c;
-            return this;
-          },
-          json(payload) {
-            resolve({ status: this.statusCode, body: payload });
-          },
-        };
-        handleRecallWebhook(
-          {
-            headers: {},
-            body: Buffer.from(JSON.stringify({ event: 'bot.done', data: { bot: { id: 'rec-native-2' } } })),
-          },
-          res
-        );
+      // Calendar V2: calendar.update connects Kenneth's calendar (default manual opt-in -> 0 auto-bots)
+      await processVerifiedRecallWebhookEvent({
+        event: 'calendar.update',
+        data: { calendar_id: recallCalId },
       });
-      assert.equal(whRes.status, 200);
-      assert.equal(xaiCalled, false);
+      const calSyncRes = await processVerifiedRecallWebhookEvent({
+        event: 'calendar.sync_events',
+        data: { calendar_id: recallCalId },
+      });
+      assert.equal(calSyncRes.ok, true);
+      assert.equal(calSyncRes.eventsProcessed, 4);
+      assert.equal(calSyncRes.scheduledCount, 0);
 
-      const nativeLines = await db.all(
-        `SELECT participant_identity, original_text FROM v2_meeting_transcript_lines WHERE meeting_id = ?`,
-        [liveMeetingId]
-      );
-      assert.equal(nativeLines.length, 1);
-      assert.equal(nativeLines[0].participant_identity, 'Alice Host');
-      assert.equal(nativeLines[0].original_text, 'Quarterly review');
+      const listCalRes = await invokeRouter(notetakerRouter, {
+        method: 'GET',
+        url: '/calendars',
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      assert.equal(listCalRes.status, 200);
+      assert.equal(listCalRes.body.calendars.length, 1);
+      const connId = listCalRes.body.calendars[0].id;
+      assert.equal(listCalRes.body.calendars[0].auto_join_rule, 'manual');
 
-      const meetingRow = await db.get(`SELECT livekit_room_name FROM v2_meetings WHERE id = ?`, [liveMeetingId]);
-      const costRows = await db.all(
-        `SELECT event_type FROM meeting_cost_events WHERE meeting_id = ?`,
-        [meetingRow.livekit_room_name]
+      const eventsRes = await invokeRouter(notetakerRouter, {
+        method: 'GET',
+        url: '/calendar-events',
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      assert.equal(eventsRes.status, 200);
+      assert.equal(eventsRes.body.events.length, 3); // past event filtered out by end_time >= now-1h
+
+      const vendorZoomEv = eventsRes.body.events.find((e) => e.recall_event_id === 'cal-ev-other-zoom');
+      const noLinkEv = eventsRes.body.events.find((e) => e.recall_event_id === 'cal-ev-nolink');
+      assert.ok(vendorZoomEv && noLinkEv);
+
+      // Attempting to toggle event with no supported video link fails 400
+      const noLinkToggle = await invokeRouter(notetakerRouter, {
+        method: 'POST',
+        url: `/calendar-events/${noLinkEv.id}/toggle`,
+        headers: { Authorization: `Bearer ${userToken}` },
+        body: { enabled: true },
+      });
+      assert.equal(noLinkToggle.status, 400);
+
+      // Manual opt-in ON for vendor Zoom event -> schedules Calendar V2 bot with deduplication_key & no meeting_url
+      const optInRes = await invokeRouter(notetakerRouter, {
+        method: 'POST',
+        url: `/calendar-events/${vendorZoomEv.id}/toggle`,
+        headers: { Authorization: `Bearer ${userToken}` },
+        body: { enabled: true },
+      });
+      assert.equal(optInRes.status, 200);
+      assert.equal(calendarBotCalls.length, 1);
+      assert.equal(calendarBotCalls[0].body.deduplication_key, `${futureStart2}-https://zoom.us/j/999888777?pwd=abc`);
+      assert.equal(calendarBotCalls[0].body.bot_config.meeting_url, undefined);
+      assert.equal(optInRes.body.event.scheduled_bot_id, 'cal-bot-1');
+
+      // Manual opt-out OFF for vendor Zoom event -> DELETE calendar-events/:id/bot/
+      const optOutRes = await invokeRouter(notetakerRouter, {
+        method: 'POST',
+        url: `/calendar-events/${vendorZoomEv.id}/toggle`,
+        headers: { Authorization: `Bearer ${userToken}` },
+        body: { enabled: false },
+      });
+      assert.equal(optOutRes.status, 200);
+      assert.equal(deletedCalendarBots.length, 1);
+      assert.equal(optOutRes.body.event.scheduled_bot_id, null);
+
+      // Switch calendar default to organizer_only -> schedules ONLY Weekly Sync (I Organize), skips vendor/past/no-link
+      const patchCalRes = await invokeRouter(notetakerRouter, {
+        method: 'PATCH',
+        url: `/calendars/${connId}`,
+        headers: { Authorization: `Bearer ${userToken}` },
+        body: { autoJoinRule: 'organizer_only' },
+      });
+      assert.equal(patchCalRes.status, 200);
+      assert.equal(patchCalRes.body.calendar.auto_join_rule, 'organizer_only');
+      assert.equal(calendarBotCalls.length, 2);
+      assert.ok(calendarBotCalls[1].url.includes('cal-ev-org-meet'));
+
+      // Check evaluateCalendarEventOptIn explicitly skips past event
+      assert.equal(
+        evaluateCalendarEventOptIn(
+          { is_deleted: 0, end_time: pastEnd, normalized_meeting_url: 'https://meet.google.com/old-meet-xyz' },
+          { auto_join_rule: 'all_with_link', account_email: 'kenneth@example.com' }
+        ).reason,
+        'event_ended'
       );
-      assert.deepEqual(
-        costRows.map((r) => r.event_type),
-        ['recall_bot_minute']
-      );
+
+      // Disconnect calendar -> DELETE /api/v2/calendars/{id}/ & cancels scheduled bot
+      const delCalRes = await invokeRouter(notetakerRouter, {
+        method: 'DELETE',
+        url: `/calendars/${connId}`,
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      assert.equal(delCalRes.status, 200);
+      assert.equal(deletedCalendars.length, 1);
     } finally {
       global.fetch = origFetch;
-      delete process.env.XAI_API_KEY;
       if (prevSuperadmins === undefined) delete process.env.V2_SUPERADMIN_EMAILS;
       else process.env.V2_SUPERADMIN_EMAILS = prevSuperadmins;
     }

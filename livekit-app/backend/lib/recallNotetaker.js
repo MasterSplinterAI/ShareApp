@@ -1,9 +1,12 @@
 'use strict';
 
 /**
- * Recall.ai external meeting notetaker driver, encrypted settings, Svix-triggered
- * & polling reconciler, xAI Grok STT fallback, and COGS tracking.
+ * Recall.ai v1.11 external meeting notetaker client, startup & URL guards,
+ * signature verification, retry/backoff helper, async recording -> transcript
+ * pipeline, encrypted settings, and COGS tracking.
  */
+const crypto = require('crypto');
+const net = require('net');
 const db = require('../db/v2Database');
 const { computeCost } = require('./costConstants');
 const { encryptSecret, decryptSecret } = require('./secretCrypto');
@@ -17,17 +20,15 @@ const {
 } = require('./notetakerPipeline');
 
 const SETTINGS_ID = 'default';
-const RECALL_REGIONS = ['us-east-1', 'us-west-2', 'eu-central-1', 'ap-northeast-1'];
+const DEFAULT_REGION = 'us-west-2';
+const RECALL_REGIONS = ['us-west-2', 'us-east-1', 'eu-central-1', 'ap-northeast-1'];
 const DRIVER_MODES = ['auto', 'recall', 'worker'];
-const TRANSCRIPT_MODES = ['meeting_captions', 'recallai_streaming'];
+const TRANSCRIPT_MODES = ['recallai_async', 'meeting_captions', 'recallai_streaming'];
 const CACHE_MS = 3000;
-const DEFAULT_RECONCILE_INTERVAL_MS = 12_000;
+const DEFAULT_CHAT_NOTICE = 'Lalia Notetaker is recording this meeting for notes and summary.';
 
 let settingsCache = null;
 let settingsCacheAt = 0;
-let reconcilerTimer = null;
-let reconcilerRunning = false;
-const inFlightSyncs = new Map();
 
 function maskSecret(value) {
   if (!value || typeof value !== 'string') return null;
@@ -51,7 +52,7 @@ function toBool(raw, fallback) {
   return fallback;
 }
 
-function normalizeRegion(raw, fallback = 'us-east-1') {
+function normalizeRegion(raw, fallback = DEFAULT_REGION) {
   const s = String(raw || '').trim().toLowerCase();
   return RECALL_REGIONS.includes(s) ? s : fallback;
 }
@@ -61,7 +62,7 @@ function normalizeDriverMode(raw, fallback = 'auto') {
   return DRIVER_MODES.includes(s) ? s : fallback;
 }
 
-function normalizeTranscriptMode(raw, fallback = 'meeting_captions') {
+function normalizeTranscriptMode(raw, fallback = 'recallai_async') {
   const s = String(raw || '').trim().toLowerCase();
   return TRANSCRIPT_MODES.includes(s) ? s : fallback;
 }
@@ -81,20 +82,80 @@ function invalidateNotetakerSettingsCache() {
   settingsCacheAt = 0;
 }
 
+function isPrivateOrLocalHostname(hostname) {
+  const host = String(hostname || '').trim().toLowerCase();
+  if (!host) return true;
+  if (host === 'localhost' || host === '::1' || host.endsWith('.localhost') || host.endsWith('.local')) {
+    return true;
+  }
+  const ipVer = net.isIP(host);
+  if (ipVer === 4) {
+    const parts = host.split('.').map(Number);
+    if (parts[0] === 127 || parts[0] === 10 || parts[0] === 0) return true;
+    if (parts[0] === 169 && parts[1] === 254) return true;
+    if (parts[0] === 192 && parts[1] === 168) return true;
+    if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+    return false;
+  }
+  if (ipVer === 6) {
+    return host === '::1' || host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80');
+  }
+  return false;
+}
+
+function assertPublicRecallUrl(rawUrl, label = 'PUBLIC_API_BASE_URL') {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || '').trim());
+  } catch {
+    throw new Error(`${label} must be a valid public URL`);
+  }
+  if (!['https:', 'http:'].includes(parsed.protocol)) {
+    throw new Error(`${label} must use https:// or http://`);
+  }
+  if (isPrivateOrLocalHostname(parsed.hostname)) {
+    throw new Error(`${label} must not be localhost or a private IP address`);
+  }
+  return parsed.toString().replace(/\/$/, '');
+}
+
+function resolvePublicApiBaseUrl({ publicBaseUrl } = {}) {
+  const raw =
+    publicBaseUrl ||
+    process.env.PUBLIC_API_BASE_URL ||
+    process.env.PUBLIC_FRONTEND_BASE_URL ||
+    process.env.FRONTEND_URL ||
+    publicFrontendBaseUrl();
+  return String(raw || '').trim().replace(/\/$/, '');
+}
+
 function mergeNotetakerSettings(row) {
   const envDriverMode = normalizeDriverMode(process.env.NOTETAKER_BOT_DRIVER, 'auto');
-  const envRegion = normalizeRegion(process.env.RECALL_REGION, 'us-east-1');
+  const envRegion = normalizeRegion(process.env.RECALL_REGION, DEFAULT_REGION);
   const envApiKey = String(process.env.RECALL_API_KEY || '').trim() || null;
-  const envWebhookSecret = String(process.env.RECALL_WEBHOOK_SECRET || '').trim() || null;
+  const envWebhookSecret =
+    String(
+      process.env.RECALL_WEBHOOK_VERIFICATION_SECRET ||
+        process.env.RECALL_WORKSPACE_VERIFICATION_SECRET ||
+        process.env.RECALL_WEBHOOK_SECRET ||
+        ''
+    ).trim() || null;
+  const envCalendarCallbackUri =
+    String(process.env.RECALL_CALENDAR_REGIONAL_CALLBACK_URI || '').trim() || null;
 
   const dbApiKey = decryptField(row?.recall_api_key_enc, 'recall_api_key_enc');
   const dbWebhookSecret = decryptField(row?.recall_webhook_secret_enc, 'recall_webhook_secret_enc');
 
   const driverMode = row?.driver_mode ? normalizeDriverMode(row.driver_mode, envDriverMode) : envDriverMode;
-  const recallRegion = row?.recall_region ? normalizeRegion(row.recall_region, envRegion) : envRegion;
+  const recallRegion =
+    process.env.RECALL_REGION && !row?.recall_api_key_enc
+      ? envRegion
+      : row?.recall_region
+        ? normalizeRegion(row.recall_region, envRegion)
+        : envRegion;
   const recallApiKey = dbApiKey || envApiKey;
   const recallWebhookSecret = dbWebhookSecret || envWebhookSecret;
-  const transcriptMode = normalizeTranscriptMode(row?.transcript_mode, 'meeting_captions');
+  const transcriptMode = normalizeTranscriptMode(row?.transcript_mode, 'recallai_async');
 
   const hasDbOverrides = Boolean(
     row &&
@@ -103,7 +164,7 @@ function mergeNotetakerSettings(row) {
         row.updated_at ||
         row.updated_by)
   );
-  const hasEnv = Boolean(envApiKey || envWebhookSecret || process.env.NOTETAKER_BOT_DRIVER);
+  const hasEnv = Boolean(envApiKey || envWebhookSecret || process.env.RECALL_REGION || process.env.NOTETAKER_BOT_DRIVER);
 
   let source = 'environment';
   if (hasDbOverrides && hasEnv) source = 'mixed';
@@ -121,10 +182,21 @@ function mergeNotetakerSettings(row) {
     recallApiKey,
     recallWebhookSecret,
     transcriptMode,
-    xaiFallbackEnabled: toBool(row?.xai_fallback_enabled, true),
+    xaiFallbackEnabled: toBool(row?.xai_fallback_enabled, false),
     deleteRecallMediaAfterIngest: toBool(row?.delete_recall_media_after_ingest, true),
     waitingRoomTimeoutSec: clampInt(row?.waiting_room_timeout_sec, 600, 60, 1800),
     everyoneLeftTimeoutSec: clampInt(row?.everyone_left_timeout_sec, 30, 5, 600),
+    chatNoticeEnabled: toBool(row?.chat_notice_enabled, true),
+    chatNoticeText:
+      row?.chat_notice_text && String(row.chat_notice_text).trim()
+        ? String(row.chat_notice_text).trim()
+        : DEFAULT_CHAT_NOTICE,
+    calendarRegionalCallbackUri:
+      (row?.calendar_regional_callback_uri && String(row.calendar_regional_callback_uri).trim()) ||
+      envCalendarCallbackUri ||
+      null,
+    calendarSetupId: row?.calendar_setup_id ? String(row.calendar_setup_id).trim() : null,
+    publicApiBaseUrl: resolvePublicApiBaseUrl(),
     hasDbKey: Boolean(dbApiKey),
     hasEnvKey: Boolean(envApiKey),
     hasDbWebhookSecret: Boolean(dbWebhookSecret),
@@ -156,8 +228,38 @@ async function getNotetakerSettings({ fresh = false } = {}) {
   return merged;
 }
 
+async function validateRecallStartupConfig() {
+  const settings = await getNotetakerSettings({ fresh: true });
+  const missing = [];
+  if (!settings.recallRegion || !RECALL_REGIONS.includes(settings.recallRegion)) {
+    missing.push('RECALL_REGION');
+  }
+  if (!settings.recallApiKey) missing.push('RECALL_API_KEY');
+  if (!settings.recallWebhookSecret) missing.push('RECALL_WEBHOOK_VERIFICATION_SECRET');
+  let publicUrlOk = false;
+  try {
+    assertPublicRecallUrl(settings.publicApiBaseUrl, 'PUBLIC_API_BASE_URL');
+    publicUrlOk = true;
+  } catch {
+    missing.push('PUBLIC_API_BASE_URL');
+  }
+  return {
+    region: settings.recallRegion,
+    ready: missing.length === 0,
+    publicUrlOk,
+    missing,
+  };
+}
+
+async function logRecallStartupSummary() {
+  const status = await validateRecallStartupConfig();
+  const missingInfo = status.missing.length ? `, missing=[${status.missing.join(',')}]` : '';
+  console.log(`[recall] configured region: ${status.region} (ready=${status.ready}${missingInfo})`);
+  return status;
+}
+
 function toNotetakerAdminView(settings, { publicBaseUrl } = {}) {
-  const baseUrl = String(publicBaseUrl || publicFrontendBaseUrl()).replace(/\/$/, '');
+  const baseUrl = resolvePublicApiBaseUrl({ publicBaseUrl });
   return {
     driverMode: settings.driverMode,
     effectiveDriver: settings.effectiveDriver,
@@ -173,6 +275,10 @@ function toNotetakerAdminView(settings, { publicBaseUrl } = {}) {
     deleteRecallMediaAfterIngest: settings.deleteRecallMediaAfterIngest,
     waitingRoomTimeoutSec: settings.waitingRoomTimeoutSec,
     everyoneLeftTimeoutSec: settings.everyoneLeftTimeoutSec,
+    chatNoticeEnabled: settings.chatNoticeEnabled,
+    chatNoticeText: settings.chatNoticeText,
+    calendarConnectedRedirectUri: `${baseUrl}/api/v2/notetaker/calendar/oauth/callback`,
+    hasCalendarRegionalCallbackUri: Boolean(settings.calendarRegionalCallbackUri),
     webhookUrl: `${baseUrl}/api/v2/webhooks/recall`,
     source: settings.source,
     updatedAt: settings.updatedAt,
@@ -189,37 +295,35 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
   const row = await loadSettingsRow().catch(() => null);
   const next = {
     driver_mode: row?.driver_mode || 'auto',
-    recall_region: row?.recall_region || 'us-east-1',
+    recall_region: row?.recall_region || DEFAULT_REGION,
     recall_api_key_enc: row?.recall_api_key_enc || null,
     recall_webhook_secret_enc: row?.recall_webhook_secret_enc || null,
-    transcript_mode: row?.transcript_mode || 'meeting_captions',
-    xai_fallback_enabled: row?.xai_fallback_enabled ?? 1,
+    transcript_mode: row?.transcript_mode || 'recallai_async',
+    xai_fallback_enabled: row?.xai_fallback_enabled ?? 0,
     delete_recall_media_after_ingest: row?.delete_recall_media_after_ingest ?? 1,
     waiting_room_timeout_sec: row?.waiting_room_timeout_sec ?? 600,
     everyone_left_timeout_sec: row?.everyone_left_timeout_sec ?? 30,
+    chat_notice_enabled: row?.chat_notice_enabled ?? 1,
+    chat_notice_text: row?.chat_notice_text ?? DEFAULT_CHAT_NOTICE,
+    calendar_regional_callback_uri: row?.calendar_regional_callback_uri || null,
+    calendar_setup_id: row?.calendar_setup_id || null,
   };
 
   if (body.driverMode !== undefined) {
     const dm = String(body.driverMode || '').trim().toLowerCase();
-    if (!DRIVER_MODES.includes(dm)) {
-      return { ok: false, error: 'Invalid driverMode' };
-    }
+    if (!DRIVER_MODES.includes(dm)) return { ok: false, error: 'Invalid driverMode' };
     next.driver_mode = dm;
   }
 
   if (body.recallRegion !== undefined) {
     const reg = String(body.recallRegion || '').trim().toLowerCase();
-    if (!RECALL_REGIONS.includes(reg)) {
-      return { ok: false, error: 'Invalid recallRegion' };
-    }
+    if (!RECALL_REGIONS.includes(reg)) return { ok: false, error: 'Invalid recallRegion' };
     next.recall_region = reg;
   }
 
   if (body.transcriptMode !== undefined) {
     const tm = String(body.transcriptMode || '').trim().toLowerCase();
-    if (!TRANSCRIPT_MODES.includes(tm)) {
-      return { ok: false, error: 'Invalid transcriptMode' };
-    }
+    if (!TRANSCRIPT_MODES.includes(tm)) return { ok: false, error: 'Invalid transcriptMode' };
     next.transcript_mode = tm;
   }
 
@@ -227,9 +331,7 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
     next.recall_api_key_enc = null;
   } else if (body.recallApiKey !== undefined && String(body.recallApiKey).trim() !== '') {
     const trimmed = String(body.recallApiKey).trim();
-    if (trimmed.length < 8) {
-      return { ok: false, error: 'Recall API key looks too short' };
-    }
+    if (trimmed.length < 8) return { ok: false, error: 'Recall API key looks too short' };
     next.recall_api_key_enc = encryptSecret(trimmed);
   }
 
@@ -237,8 +339,8 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
     next.recall_webhook_secret_enc = null;
   } else if (body.recallWebhookSecret !== undefined && String(body.recallWebhookSecret).trim() !== '') {
     const trimmed = String(body.recallWebhookSecret).trim();
-    if (trimmed.length < 8) {
-      return { ok: false, error: 'Recall webhook signing secret looks too short' };
+    if (!trimmed.startsWith('whsec_') || trimmed.length < 16) {
+      return { ok: false, error: 'Recall webhook verification secret must start with whsec_' };
     }
     next.recall_webhook_secret_enc = encryptSecret(trimmed);
   }
@@ -255,6 +357,20 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
   if (body.everyoneLeftTimeoutSec !== undefined) {
     next.everyone_left_timeout_sec = clampInt(body.everyoneLeftTimeoutSec, 30, 5, 600);
   }
+  if (body.chatNoticeEnabled !== undefined) {
+    next.chat_notice_enabled = body.chatNoticeEnabled ? 1 : 0;
+  }
+  if (body.chatNoticeText !== undefined) {
+    next.chat_notice_text = String(body.chatNoticeText || '').trim().slice(0, 300) || DEFAULT_CHAT_NOTICE;
+  }
+  if (body.calendarRegionalCallbackUri !== undefined) {
+    next.calendar_regional_callback_uri = body.calendarRegionalCallbackUri
+      ? String(body.calendarRegionalCallbackUri).trim().slice(0, 1000)
+      : null;
+  }
+  if (body.calendarSetupId !== undefined) {
+    next.calendar_setup_id = body.calendarSetupId ? String(body.calendarSetupId).trim().slice(0, 128) : null;
+  }
 
   const nowIso = new Date().toISOString();
   if (row) {
@@ -269,6 +385,10 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
            delete_recall_media_after_ingest = ?,
            waiting_room_timeout_sec = ?,
            everyone_left_timeout_sec = ?,
+           chat_notice_enabled = ?,
+           chat_notice_text = ?,
+           calendar_regional_callback_uri = ?,
+           calendar_setup_id = ?,
            updated_at = ?,
            updated_by = ?
        WHERE id = ?`,
@@ -282,6 +402,10 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
         next.delete_recall_media_after_ingest,
         next.waiting_room_timeout_sec,
         next.everyone_left_timeout_sec,
+        next.chat_notice_enabled,
+        next.chat_notice_text,
+        next.calendar_regional_callback_uri,
+        next.calendar_setup_id,
         nowIso,
         actorEmail || null,
         SETTINGS_ID,
@@ -292,8 +416,10 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
       `INSERT INTO v2_platform_notetaker_settings (
          id, driver_mode, recall_region, recall_api_key_enc, recall_webhook_secret_enc,
          transcript_mode, xai_fallback_enabled, delete_recall_media_after_ingest,
-         waiting_room_timeout_sec, everyone_left_timeout_sec, updated_at, updated_by
-       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+         waiting_room_timeout_sec, everyone_left_timeout_sec,
+         chat_notice_enabled, chat_notice_text, calendar_regional_callback_uri, calendar_setup_id,
+         updated_at, updated_by
+       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         SETTINGS_ID,
         next.driver_mode,
@@ -305,6 +431,10 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
         next.delete_recall_media_after_ingest,
         next.waiting_room_timeout_sec,
         next.everyone_left_timeout_sec,
+        next.chat_notice_enabled,
+        next.chat_notice_text,
+        next.calendar_regional_callback_uri,
+        next.calendar_setup_id,
         nowIso,
         actorEmail || null,
       ]
@@ -316,8 +446,119 @@ async function saveNotetakerSettings(actorEmail, body = {}) {
   return { ok: true, settings, reason };
 }
 
-function recallApiBase(region) {
-  return `https://${normalizeRegion(region)}.recall.ai/api/v1`;
+function recallApiBase(region, version = 'v1') {
+  return `https://${normalizeRegion(region)}.recall.ai/api/${version}`;
+}
+
+/**
+ * Verifies Recall.ai webhook / callback / websocket requests per authenticating-requests-from-recallai.
+ */
+function verifyRequestFromRecall({ secret, headers = {}, rawBody = null, maxSkewSeconds = 300 }) {
+  const normalizedHeaders = {};
+  for (const [k, v] of Object.entries(headers || {})) {
+    normalizedHeaders[String(k).toLowerCase()] = Array.isArray(v) ? v.join(',') : v;
+  }
+
+  const msgId = normalizedHeaders['webhook-id'] ?? normalizedHeaders['svix-id'];
+  const msgTimestamp = normalizedHeaders['webhook-timestamp'] ?? normalizedHeaders['svix-timestamp'];
+  const msgSignature = normalizedHeaders['webhook-signature'] ?? normalizedHeaders['svix-signature'];
+
+  if (!secret || typeof secret !== 'string' || !secret.startsWith('whsec_')) {
+    return { ok: false, reason: 'missing_secret' };
+  }
+  if (!msgId || !msgTimestamp || !msgSignature) {
+    return { ok: false, reason: 'missing_headers' };
+  }
+
+  const ts = Number(msgTimestamp);
+  if (!Number.isFinite(ts)) {
+    return { ok: false, reason: 'bad_timestamp' };
+  }
+  const nowSec = Math.floor(Date.now() / 1000);
+  if (Math.abs(nowSec - ts) > maxSkewSeconds) {
+    return { ok: false, reason: 'timestamp_skew' };
+  }
+
+  let keyBytes;
+  try {
+    keyBytes = Buffer.from(secret.slice('whsec_'.length), 'base64');
+  } catch {
+    return { ok: false, reason: 'bad_secret' };
+  }
+
+  let payloadStr = '';
+  if (rawBody !== null && rawBody !== undefined) {
+    payloadStr = Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : String(rawBody);
+  }
+
+  const toSign = `${msgId}.${msgTimestamp}.${payloadStr}`;
+  const expectedSigBytes = Buffer.from(
+    crypto.createHmac('sha256', keyBytes).update(toSign).digest('base64'),
+    'base64'
+  );
+
+  for (const versionedSig of String(msgSignature).split(' ')) {
+    const idx = versionedSig.indexOf(',');
+    if (idx <= 0) continue;
+    const version = versionedSig.slice(0, idx);
+    const sigB64 = versionedSig.slice(idx + 1);
+    if (version !== 'v1' || !sigB64) continue;
+    try {
+      const sigBytes = Buffer.from(sigB64, 'base64');
+      if (sigBytes.length === expectedSigBytes.length && crypto.timingSafeEqual(expectedSigBytes, sigBytes)) {
+        return { ok: true, webhookId: String(msgId) };
+      }
+    } catch {
+      /* continue */
+    }
+  }
+
+  return { ok: false, reason: 'sig_mismatch' };
+}
+
+/**
+ * Retries Recall HTTP 429 (honoring Retry-After), 503, and 507 responses with jitter.
+ */
+async function fetchWithRecallRetry(
+  url,
+  options = {},
+  { fetchImpl = global.fetch, maxAttempts = 6, retryNetwork = false, baseDelayMs = 1000 } = {}
+) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let response;
+    try {
+      response = await fetchImpl(url, {
+        signal: AbortSignal.timeout(15_000),
+        ...options,
+      });
+    } catch (err) {
+      if (!retryNetwork || attempt >= maxAttempts) throw err;
+      const delay = baseDelayMs * Math.min(8, 2 ** (attempt - 1));
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+
+    let waitSeconds = 0;
+    if (response.status === 429) {
+      const ra = response.headers?.get?.('Retry-After') || response.headers?.get?.('retry-after');
+      waitSeconds = Math.max(1, parseInt(ra || '1', 10) || 1);
+    } else if (response.status === 503) {
+      waitSeconds = 10;
+    } else if (response.status === 507) {
+      waitSeconds = 30;
+    }
+
+    if (waitSeconds > 0 && attempt < maxAttempts) {
+      const jitter = Math.ceil(Math.random() * 5);
+      const waitMs = baseDelayMs * (waitSeconds + (baseDelayMs >= 500 ? jitter : 1));
+      await new Promise((r) => setTimeout(r, waitMs));
+      continue;
+    }
+
+    return response;
+  }
+
+  throw new Error(`Max attempts (${maxAttempts}) reached while calling Recall API`);
 }
 
 async function probeRecallRegion(region, apiKey, fetchImpl) {
@@ -340,7 +581,7 @@ async function verifyRecallCredentials({ apiKey, region } = {}, { fetchImpl = gl
     return { ok: false, error: 'Enter a Recall.ai API key first.' };
   }
 
-  const startRegion = normalizeRegion(region || settings.recallRegion, 'us-east-1');
+  const startRegion = normalizeRegion(region || settings.recallRegion, DEFAULT_REGION);
   const first = await probeRecallRegion(startRegion, key, fetchImpl);
   if (first.ok) {
     return { ok: true, region: startRegion, regionAutoDetected: false };
@@ -382,24 +623,66 @@ async function persistDetectedRegionIfStored(region, actorEmail = 'auto-detect')
   }
 }
 
-function selectTranscriptProviderConfig(platform, transcriptMode) {
-  if (platform === 'webex' || transcriptMode === 'recallai_streaming') {
-    return { recallai_streaming: {} };
-  }
-  return { meeting_captions: {} };
-}
-
 function summarizeRecallError(data, statusCode) {
   const raw =
     data?.detail ||
     data?.error ||
     data?.message ||
     (typeof data === 'object' && data ? JSON.stringify(data) : '');
-  const clean = String(raw || `Recall API returned HTTP ${statusCode}`).trim();
-  return clean.slice(0, 260);
+  return String(raw || `Recall API returned HTTP ${statusCode}`).trim().slice(0, 260);
 }
 
-async function dispatchRecallBotForSession(sessionId, { fetchImpl = global.fetch } = {}) {
+/**
+ * Builds unified Create Bot / Calendar V2 bot_config payload.
+ */
+function buildRecallBotPayload({
+  meetingUrl,
+  joinAtIso,
+  botDisplayName,
+  platform,
+  settings,
+  metadata = {},
+  omitMeetingUrl = false,
+}) {
+  const payload = {
+    bot_name: botDisplayName || 'Lalia Notetaker',
+    join_at: joinAtIso || new Date().toISOString(),
+    metadata,
+    recording_config: {
+      audio_mixed_mp3: {},
+    },
+    automatic_leave: {
+      waiting_room_timeout: settings.waitingRoomTimeoutSec || 600,
+      noone_joined_timeout: 900,
+      everyone_left_timeout: {
+        timeout: settings.everyoneLeftTimeoutSec || 30,
+        activate_after: null,
+      },
+    },
+  };
+
+  if (!omitMeetingUrl && meetingUrl) {
+    payload.meeting_url = meetingUrl;
+  }
+
+  if (settings.transcriptMode === 'meeting_captions' && platform !== 'webex') {
+    payload.recording_config.transcript = { provider: { meeting_captions: {} } };
+  }
+
+  // Recall chat.on_bot_join supports Zoom, Google Meet, and Microsoft Teams (not Webex).
+  if (settings.chatNoticeEnabled && platform !== 'webex') {
+    payload.chat = {
+      on_bot_join: {
+        send_to: 'everyone',
+        message: settings.chatNoticeText || DEFAULT_CHAT_NOTICE,
+      },
+    };
+  }
+
+  return payload;
+}
+
+async function dispatchRecallBotForSession(sessionId, { fetchImpl = global.fetch, retryOptions } = {}) {
   const session = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [sessionId]);
   if (!session) return { ok: false, error: 'Session not found' };
 
@@ -424,46 +707,36 @@ async function dispatchRecallBotForSession(sessionId, { fetchImpl = global.fetch
 
   const schedMs = session.scheduled_for ? new Date(session.scheduled_for).getTime() : NaN;
   const isScheduled = Number.isFinite(schedMs) && schedMs > Date.now() + 60_000;
-  const payload = {
-    meeting_url: session.normalized_url || session.target_url,
-    bot_name: session.bot_display_name || 'Lalia Notetaker',
+  const joinAtIso = Number.isFinite(schedMs) ? new Date(schedMs).toISOString() : nowIso;
+
+  const payload = buildRecallBotPayload({
+    meetingUrl: session.normalized_url || session.target_url,
+    joinAtIso,
+    botDisplayName: session.bot_display_name || 'Lalia Notetaker',
+    platform: session.platform,
+    settings,
     metadata: {
       lalia_session_id: session.id,
       lalia_meeting_id: session.meeting_id,
       lalia_org_id: session.org_id,
     },
-    recording_config: {
-      audio_mixed_mp3: {},
-      video_mixed_mp4: null,
-      transcript: {
-        provider: selectTranscriptProviderConfig(session.platform, settings.transcriptMode),
-      },
-    },
-    automatic_leave: {
-      waiting_room_timeout: settings.waitingRoomTimeoutSec,
-      noone_joined_timeout: 900,
-      everyone_left_timeout: {
-        timeout: settings.everyoneLeftTimeoutSec,
-        activate_after: null,
-      },
-    },
-  };
-  if (isScheduled) {
-    payload.join_at = new Date(schedMs).toISOString();
-  }
+  });
 
   let res;
   let botData = null;
   try {
-    res = await fetchImpl(`${recallApiBase(settings.recallRegion)}/bot/`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Token ${settings.recallApiKey}`,
-        'Content-Type': 'application/json',
+    res = await fetchWithRecallRetry(
+      `${recallApiBase(settings.recallRegion)}/bot/`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${settings.recallApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15_000),
-    });
+      { fetchImpl, retryNetwork: false, ...retryOptions }
+    );
     botData = await res.json().catch(() => null);
   } catch (err) {
     botData = { detail: `Failed reaching Recall API: ${err.message}` };
@@ -523,11 +796,11 @@ async function stopRecallBotSession(session, { fetchImpl = global.fetch } = {}) 
   const headers = { Authorization: `Token ${settings.recallApiKey}` };
 
   if (session.status === 'scheduled' || session.status === 'queued') {
-    const delRes = await fetchImpl(`${botBase}/`, {
-      method: 'DELETE',
-      headers,
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => ({ ok: false, status: 0 }));
+    const delRes = await fetchWithRecallRetry(
+      `${botBase}/`,
+      { method: 'DELETE', headers },
+      { fetchImpl, maxAttempts: 3, retryNetwork: true }
+    ).catch(() => ({ ok: false, status: 0 }));
 
     if ([200, 202, 204, 404].includes(delRes.status)) {
       await db.run(
@@ -546,11 +819,11 @@ async function stopRecallBotSession(session, { fetchImpl = global.fetch } = {}) 
   }
 
   if (!['completed', 'failed', 'canceled'].includes(session.status)) {
-    const leaveRes = await fetchImpl(`${botBase}/leave_call/`, {
-      method: 'POST',
-      headers,
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => ({ ok: false, status: 0 }));
+    const leaveRes = await fetchWithRecallRetry(
+      `${botBase}/leave_call/`,
+      { method: 'POST', headers },
+      { fetchImpl, maxAttempts: 3, retryNetwork: true }
+    ).catch(() => ({ ok: false, status: 0 }));
 
     await db.run(
       `UPDATE v2_external_bot_sessions
@@ -562,58 +835,6 @@ async function stopRecallBotSession(session, { fetchImpl = global.fetch } = {}) 
   }
 
   return { ok: true };
-}
-
-function getLatestRecallStatus(botData) {
-  const changes = Array.isArray(botData?.status_changes) ? botData.status_changes : [];
-  if (changes.length > 0) {
-    const last = changes[changes.length - 1];
-    return {
-      code: String(last?.code || '').toLowerCase(),
-      subCode: last?.sub_code ? String(last.sub_code) : null,
-      createdAt: last?.created_at || null,
-      message: last?.message || null,
-    };
-  }
-  const st = botData?.status;
-  if (st && typeof st === 'object') {
-    return {
-      code: String(st.code || '').toLowerCase(),
-      subCode: st.sub_code ? String(st.sub_code) : null,
-      createdAt: st.created_at || st.updated_at || null,
-      message: st.message || null,
-    };
-  }
-  return {
-    code: String(st || '').toLowerCase(),
-    subCode: null,
-    createdAt: null,
-    message: null,
-  };
-}
-
-function computeRecallDurationSeconds(botData, session) {
-  const changes = Array.isArray(botData?.status_changes) ? botData.status_changes : [];
-  const startEv = changes.find(
-    (c) => c?.code === 'in_call_recording' || c?.code === 'recording_permission_allowed'
-  );
-  const endEv = [...changes]
-    .reverse()
-    .find((c) => c?.code === 'call_ended' || c?.code === 'done');
-
-  const startMs = startEv?.created_at
-    ? new Date(startEv.created_at).getTime()
-    : session.joined_at
-      ? new Date(session.joined_at).getTime()
-      : NaN;
-  const endMs = endEv?.created_at ? new Date(endEv.created_at).getTime() : Date.now();
-
-  if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
-    return Math.max(1, Math.round((endMs - startMs) / 1000));
-  }
-  return Number.isFinite(Number(session.duration_seconds)) && Number(session.duration_seconds) > 0
-    ? Number(session.duration_seconds)
-    : 0;
 }
 
 function humanFatalReason(subCode, message) {
@@ -646,7 +867,11 @@ function extractRelativeSeconds(rawTimestamp) {
   return null;
 }
 
-function parseRecallTranscriptJson(rawJson, { baseStartMs, botDisplayName = '' } = {}) {
+/**
+ * Converts Recall normalized transcript JSON (word/chunk array) into speaker-grouped
+ * readable utterances while filtering out the bot's own utterances.
+ */
+function convertRecallTranscriptToReadableLines(rawJson, { baseStartMs, botDisplayName = '' } = {}) {
   const items = Array.isArray(rawJson)
     ? rawJson
     : Array.isArray(rawJson?.transcript)
@@ -654,124 +879,84 @@ function parseRecallTranscriptJson(rawJson, { baseStartMs, botDisplayName = '' }
       : Array.isArray(rawJson?.results)
         ? rawJson.results
         : [];
+
   const baseMs = Number.isFinite(baseStartMs) ? baseStartMs : Date.now();
   const botLower = String(botDisplayName || '').trim().toLowerCase();
-  const lines = [];
+  const grouped = [];
+  let current = null;
 
-  items.forEach((item, idx) => {
+  const flush = () => {
+    if (!current || !current.tokens.length) return;
+    const text = current.tokens.join(' ').replace(/\s+([,.;!?])/g, '$1').trim();
+    if (text) {
+      grouped.push({
+        participant_identity: current.speaker,
+        original_text: text,
+        language: current.language || 'en',
+        transcription_id: `recall-${grouped.length}`,
+        recorded_at: current.recordedAt,
+      });
+    }
+    current = null;
+  };
+
+  for (const item of items) {
     const words = Array.isArray(item?.words) ? item.words : [];
-    const text = String(
+    const chunkText = String(
       item?.text ||
         words
           .map((w) => w?.text || w?.word || '')
           .filter(Boolean)
           .join(' ')
     ).trim();
-    if (!text) return;
+    if (!chunkText) continue;
 
     const speakerRaw =
       item?.participant?.name ||
       item?.speaker ||
       (item?.participant?.id != null ? `Speaker ${item.participant.id}` : 'Speaker');
     const speaker = String(speakerRaw).trim().slice(0, 200) || 'Speaker';
-    if (botLower && speaker.toLowerCase() === botLower) return;
+    if (botLower && speaker.toLowerCase() === botLower) continue;
 
-    const relSec =
+    const relStart =
       extractRelativeSeconds(item?.start_timestamp) ??
       extractRelativeSeconds(words[0]?.start_timestamp) ??
       (typeof words[0]?.start_time === 'number' ? Math.max(0, words[0].start_time) : 0);
+    const relEnd =
+      extractRelativeSeconds(item?.end_timestamp) ??
+      extractRelativeSeconds(words[words.length - 1]?.end_timestamp) ??
+      relStart;
 
     const recordedAt =
       item?.start_timestamp?.absolute ||
-      new Date(baseMs + (relSec || 0) * 1000).toISOString();
+      words[0]?.start_timestamp?.absolute ||
+      new Date(baseMs + (relStart || 0) * 1000).toISOString();
 
-    lines.push({
-      participant_identity: speaker,
-      original_text: text,
-      language: String(item?.language || 'en').trim().slice(0, 32) || 'en',
-      transcription_id: `recall-${idx}`,
-      recorded_at: recordedAt,
-    });
-  });
+    const language = String(item?.language_code || item?.language || 'en').trim().slice(0, 32) || 'en';
+    const gapSec = current ? Math.max(0, relStart - current.lastEndSec) : 0;
+    const shouldSplit =
+      !current ||
+      current.speaker !== speaker ||
+      current.tokens.length >= 60 ||
+      gapSec > 4.0;
 
-  return lines;
-}
-
-function groupXaiWordsIntoLines(data, { baseStartMs }) {
-  const baseMs = Number.isFinite(baseStartMs) ? baseStartMs : Date.now();
-  const words = Array.isArray(data?.words) ? data.words : [];
-  const language = String(data?.language || 'en').trim().slice(0, 32) || 'en';
-  const lines = [];
-
-  if (words.length > 0) {
-    let curSpeaker = words[0]?.speaker ?? 0;
-    let curStart = Number(words[0]?.start) || 0;
-    let tokens = [];
-
-    const flush = () => {
-      const txt = tokens.join(' ').trim();
-      if (!txt) return;
-      const uttIdx = lines.length;
-      lines.push({
-        participant_identity: `Speaker ${Number(curSpeaker) + 1}`,
-        original_text: txt,
+    if (shouldSplit) {
+      flush();
+      current = {
+        speaker,
         language,
-        transcription_id: `xai-${uttIdx}`,
-        recorded_at: new Date(baseMs + curStart * 1000).toISOString(),
-      });
-      tokens = [];
-    };
-
-    for (const w of words) {
-      const tok = String(w?.text || '').trim();
-      if (!tok) continue;
-      const spk = w?.speaker ?? 0;
-      if (spk !== curSpeaker || tokens.length >= 45) {
-        flush();
-        curSpeaker = spk;
-        curStart = Number(w?.start) || curStart;
-      }
-      tokens.push(tok);
+        recordedAt,
+        lastEndSec: relEnd,
+        tokens: [chunkText],
+      };
+    } else {
+      current.tokens.push(chunkText);
+      current.lastEndSec = Math.max(current.lastEndSec, relEnd);
     }
-    flush();
-  } else if (String(data?.text || '').trim()) {
-    lines.push({
-      participant_identity: 'Speaker 1',
-      original_text: String(data.text).trim(),
-      language,
-      transcription_id: 'xai-0',
-      recorded_at: new Date(baseMs).toISOString(),
-    });
   }
 
-  return lines;
-}
-
-async function transcribeAudioBufferWithXai(audioBuf, { xaiApiKey, baseStartMs, fetchImpl = global.fetch } = {}) {
-  if (!audioBuf || !audioBuf.length || !xaiApiKey) return { lines: [], durationSeconds: 0 };
-
-  const form = new FormData();
-  // xAI STT requires option fields to precede the file field in multipart bodies.
-  form.append('model', 'grok-voice-transcribe-2.0');
-  form.append('diarize', 'true');
-  form.append('file', new Blob([audioBuf], { type: 'audio/mpeg' }), 'recording.mp3');
-
-  const res = await fetchImpl('https://api.x.ai/v1/stt', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${xaiApiKey}` },
-    body: form,
-    signal: AbortSignal.timeout(120_000),
-  });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`xAI STT failed (${res.status}): ${errText.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  const lines = groupXaiWordsIntoLines(data, { baseStartMs });
-  return {
-    lines,
-    durationSeconds: Number(data?.duration) || 0,
-  };
+  flush();
+  return grouped;
 }
 
 async function insertCostEventRow(tx, { meetingRoomName, orgId, eventType, units, ts, meta, hasOutbox }) {
@@ -803,9 +988,9 @@ async function insertCostEventRow(tx, { meetingRoomName, orgId, eventType, units
   }
 }
 
-async function recordNotetakerCostEvents({ meeting, session, durationSeconds, xaiMinutesUsed = 0 }) {
+async function recordNotetakerCostEvents({ meeting, session, durationSeconds }) {
   const roomName = meeting?.livekit_room_name;
-  if (!roomName) return;
+  if (!roomName || !durationSeconds || durationSeconds <= 0) return;
 
   const existing = await db
     .get(`SELECT id FROM meeting_cost_events WHERE meeting_id = ? AND event_type = 'recall_bot_minute' LIMIT 1`, [
@@ -814,9 +999,8 @@ async function recordNotetakerCostEvents({ meeting, session, durationSeconds, xa
     .catch(() => null);
   if (existing) return;
 
-  const botMinutes = durationSeconds > 0 ? Number((durationSeconds / 60).toFixed(4)) : 0;
-  const xaiMinutes = xaiMinutesUsed > 0 ? Number(xaiMinutesUsed.toFixed(4)) : 0;
-  if (botMinutes <= 0 && xaiMinutes <= 0) return;
+  const botMinutes = Number((durationSeconds / 60).toFixed(4));
+  if (botMinutes <= 0) return;
 
   let hasOutbox = false;
   try {
@@ -828,28 +1012,15 @@ async function recordNotetakerCostEvents({ meeting, session, durationSeconds, xa
 
   const ts = Date.now();
   await db.transaction(async (tx) => {
-    if (botMinutes > 0) {
-      await insertCostEventRow(tx, {
-        meetingRoomName: roomName,
-        orgId: meeting.org_id,
-        eventType: 'recall_bot_minute',
-        units: botMinutes,
-        ts,
-        meta: { platform: session.platform, bot_session_id: session.id, external_bot_id: session.external_bot_id },
-        hasOutbox,
-      });
-    }
-    if (xaiMinutes > 0) {
-      await insertCostEventRow(tx, {
-        meetingRoomName: roomName,
-        orgId: meeting.org_id,
-        eventType: 'xai_stt_minute',
-        units: xaiMinutes,
-        ts,
-        meta: { source: 'notetaker_fallback', bot_session_id: session.id },
-        hasOutbox,
-      });
-    }
+    await insertCostEventRow(tx, {
+      meetingRoomName: roomName,
+      orgId: meeting.org_id,
+      eventType: 'recall_bot_minute',
+      units: botMinutes,
+      ts,
+      meta: { platform: session.platform, bot_session_id: session.id, external_bot_id: session.external_bot_id },
+      hasOutbox,
+    });
 
     const byProvider = await tx.all(
       `SELECT provider, SUM(total_cost_usd) AS subtotal FROM meeting_cost_events WHERE meeting_id = ? GROUP BY provider`,
@@ -871,18 +1042,13 @@ async function recordNotetakerCostEvents({ meeting, session, durationSeconds, xa
          breakdown_json = excluded.breakdown_json,
          duration_seconds = excluded.duration_seconds,
          computed_at = excluded.computed_at`,
-      [roomName, meeting.org_id, totalCost, JSON.stringify(breakdown), durationSeconds || 0, ts]
+      [roomName, meeting.org_id, totalCost, JSON.stringify(breakdown), durationSeconds, ts]
     );
   });
 }
 
-function shortcutStatus(shortcut) {
-  if (!shortcut) return '';
-  if (typeof shortcut.status === 'string') return shortcut.status.toLowerCase();
-  return String(shortcut.status?.code || '').toLowerCase();
-}
-
 async function downloadPresignedBuffer(url, fetchImpl) {
+  // Never send Recall API Authorization headers to presigned S3 URLs.
   const res = await fetchImpl(url, { method: 'GET', signal: AbortSignal.timeout(120_000) });
   if (!res.ok) {
     throw new Error(`Artifact download failed (${res.status})`);
@@ -890,233 +1056,70 @@ async function downloadPresignedBuffer(url, fetchImpl) {
   return Buffer.from(await res.arrayBuffer());
 }
 
-async function ingestCompletedRecallBot(session, botData, settings, { fetchImpl, publicBaseUrl }) {
-  const nowIso = new Date().toISOString();
-  if (session.ingested_at) {
-    if (session.status !== 'completed') {
-      await db.run(
-        `UPDATE v2_external_bot_sessions SET status = 'completed', updated_at = ? WHERE id = ?`,
-        [nowIso, session.id]
-      );
-    }
-    return { ok: true, alreadyIngested: true };
+async function findSessionForWebhook(event) {
+  const data = event?.data || {};
+  const botId = data?.bot?.id || data?.bot_id || event?.bot?.id || null;
+  const recordingId = data?.recording?.id || null;
+  const transcriptId = data?.transcript?.id || null;
+  const metaSessionId = data?.bot?.metadata?.lalia_session_id || data?.recording?.metadata?.lalia_session_id || null;
+
+  if (botId) {
+    const byBot = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE external_bot_id = ? LIMIT 1`, [
+      String(botId),
+    ]);
+    if (byBot) return byBot;
+  }
+  if (recordingId) {
+    const byRec = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE external_recording_id = ? LIMIT 1`, [
+      String(recordingId),
+    ]);
+    if (byRec) return byRec;
+  }
+  if (transcriptId) {
+    const byTr = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE external_transcript_id = ? LIMIT 1`, [
+      String(transcriptId),
+    ]);
+    if (byTr) return byTr;
+  }
+  if (metaSessionId) {
+    const byMeta = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ? LIMIT 1`, [String(metaSessionId)]);
+    if (byMeta) return byMeta;
   }
 
-  const recordings = Array.isArray(botData?.recordings) ? botData.recordings : [];
-  const rec = recordings[0] || null;
-  const media = rec?.media_shortcuts || {};
-  const audioShortcut = media.audio_mixed || null;
-  const transcriptShortcut = media.transcript || null;
-
-  const latest = getLatestRecallStatus(botData);
-  const doneAtMs = latest.createdAt ? new Date(latest.createdAt).getTime() : Date.now();
-  const waitBudgetOpen = Number.isFinite(doneAtMs) && Date.now() - doneAtMs < 120_000;
-  const audioPending =
-    rec &&
-    !audioShortcut?.data?.download_url &&
-    ['processing', 'in_progress', 'pending'].includes(shortcutStatus(audioShortcut));
-  const transcriptPending =
-    rec &&
-    !transcriptShortcut?.data?.download_url &&
-    ['processing', 'in_progress', 'pending'].includes(shortcutStatus(transcriptShortcut));
-
-  if ((audioPending || transcriptPending) && waitBudgetOpen) {
-    await db.run(
-      `UPDATE v2_external_bot_sessions
-       SET status = 'processing', status_detail = 'Compiling recording & transcript…', heartbeat_at = ?, updated_at = ?
-       WHERE id = ?`,
-      [nowIso, nowIso, session.id]
-    );
-    return { ok: true, pendingArtifacts: true };
+  const calEventId = data?.bot?.metadata?.lalia_calendar_event_id || null;
+  if (calEventId) {
+    const byCal = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE calendar_event_id = ? LIMIT 1`, [
+      String(calEventId),
+    ]);
+    if (byCal) return byCal;
   }
 
-  const durationSeconds = computeRecallDurationSeconds(botData, session);
-  const recordingStartMs = (() => {
-    const changes = Array.isArray(botData?.status_changes) ? botData.status_changes : [];
-    const recEv = changes.find((c) => c?.code === 'in_call_recording');
-    if (recEv?.created_at) return new Date(recEv.created_at).getTime();
-    if (session.joined_at) return new Date(session.joined_at).getTime();
-    return Date.now();
-  })();
-
-  await db.run(
-    `UPDATE v2_external_bot_sessions
-     SET status = 'processing', status_detail = 'Saving recording & generating AI insights…',
-         heartbeat_at = ?, duration_seconds = COALESCE(?, duration_seconds), updated_at = ?
-     WHERE id = ?`,
-    [nowIso, durationSeconds || null, nowIso, session.id]
-  );
-
-  // 1. Download mixed MP3 audio and store permanently in Lalia S3 / object storage
-  let audioBuf = null;
-  const audioUrl = audioShortcut?.data?.download_url || null;
-  if (audioUrl) {
-    try {
-      audioBuf = await downloadPresignedBuffer(audioUrl, fetchImpl);
-      if (audioBuf.length > 0) {
-        const existingRec = await db.get(
-          `SELECT id FROM v2_meeting_recordings WHERE bot_session_id = ? LIMIT 1`,
-          [session.id]
-        );
-        if (!existingRec) {
-          const recordingId = db.uuid();
-          const relativePath = `recordings/${session.meeting_id}-${recordingId.slice(0, 8)}.mp3`;
-          const storageKey = objectKey(session.org_id, relativePath);
-          await putOrgObject(session.org_id, relativePath, audioBuf, {
-            contentType: 'audio/mpeg',
-          });
-          await db.run(
-            `INSERT INTO v2_meeting_recordings (
-              id, org_id, meeting_id, bot_session_id, storage_key, relative_path,
-              mime_type, size_bytes, duration_seconds, created_at
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-            [
-              recordingId,
-              session.org_id,
-              session.meeting_id,
-              session.id,
-              storageKey,
-              relativePath,
-              'audio/mpeg',
-              audioBuf.length,
-              durationSeconds || null,
-              nowIso,
-            ]
-          );
-        }
-      }
-    } catch (err) {
-      console.warn(`[recallNotetaker] Audio download/upload failed for ${session.id}:`, err.message);
-    }
-  }
-
-  // 2. Download transcript from Recall if available
-  let transcriptLines = [];
-  const transcriptUrl = transcriptShortcut?.data?.download_url || null;
-  if (transcriptUrl) {
-    try {
-      const trRes = await fetchImpl(transcriptUrl, { method: 'GET', signal: AbortSignal.timeout(60_000) });
-      if (trRes.ok) {
-        const rawJson = await trRes.json();
-        transcriptLines = parseRecallTranscriptJson(rawJson, {
-          baseStartMs: recordingStartMs,
-          botDisplayName: session.bot_display_name,
-        });
-      }
-    } catch (err) {
-      console.warn(`[recallNotetaker] Transcript download failed for ${session.id}:`, err.message);
-    }
-  }
-
-  // 3. Automatic xAI Grok STT fallback if native captions were disabled or empty
-  let xaiMinutesUsed = 0;
-  const xaiKey = String(process.env.XAI_API_KEY || '').trim();
-  if (transcriptLines.length === 0 && audioBuf && audioBuf.length > 512 && settings.xaiFallbackEnabled && xaiKey) {
-    try {
-      const xaiResult = await transcribeAudioBufferWithXai(audioBuf, {
-        xaiApiKey: xaiKey,
-        baseStartMs: recordingStartMs,
-        fetchImpl,
-      });
-      transcriptLines = xaiResult.lines || [];
-      const fallbackSec = xaiResult.durationSeconds || durationSeconds;
-      if (fallbackSec > 0) xaiMinutesUsed = fallbackSec / 60;
-    } catch (err) {
-      console.warn(`[recallNotetaker] xAI STT fallback warning for ${session.id}:`, err.message);
-    }
-  }
-
-  if (transcriptLines.length > 0) {
-    await ingestBotTranscriptLines(session.meeting_id, transcriptLines);
-  }
-
-  // 4. Record COGS (Recall bot minutes + any xAI STT fallback)
-  const meeting = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [session.meeting_id]);
-  if (meeting) {
-    await recordNotetakerCostEvents({
-      meeting,
-      session,
-      durationSeconds,
-      xaiMinutesUsed,
-    }).catch((err) => {
-      console.warn(`[recallNotetaker] Cost rollup warning for ${session.id}:`, err.message);
-    });
-  }
-
-  // 5. Run Executive Summary & Email Recap pipeline
-  const pipelineResult = await finalizeBotSessionAndRunPipeline(session.id, { publicBaseUrl });
-  const doneIso = new Date().toISOString();
-  await db.run(
-    `UPDATE v2_external_bot_sessions
-     SET ingested_at = COALESCE(ingested_at, ?),
-         duration_seconds = COALESCE(duration_seconds, ?),
-         ended_at = COALESCE(ended_at, ?),
-         updated_at = ?
-     WHERE id = ?`,
-    [doneIso, durationSeconds || 0, doneIso, doneIso, session.id]
-  );
-
-  // 6. Best-effort cleanup of Recall-hosted media to avoid retention charges
-  if (settings.deleteRecallMediaAfterIngest && botData?.id) {
-    fetchImpl(`${recallApiBase(settings.recallRegion)}/bot/${encodeURIComponent(botData.id)}/delete_media/`, {
-      method: 'POST',
-      headers: { Authorization: `Token ${settings.recallApiKey}` },
-      signal: AbortSignal.timeout(10_000),
-    }).catch(() => {});
-  }
-
-  return { ok: true, status: 'completed', durationSeconds, ...pipelineResult };
+  return null;
 }
 
-async function performRecallSync(sessionOrId, { fetchImpl = global.fetch, publicBaseUrl } = {}) {
-  const session =
-    typeof sessionOrId === 'string'
-      ? await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [sessionOrId])
-      : await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [sessionOrId?.id]);
-
-  if (!session || !session.external_bot_id) {
-    return { ok: false, error: 'Recall bot session not found' };
-  }
-
-  const settings = await getNotetakerSettings();
-  if (!settings.recallApiKey) {
-    return { ok: false, error: 'Recall API key missing' };
-  }
-
-  const res = await fetchImpl(
-    `${recallApiBase(settings.recallRegion)}/bot/${encodeURIComponent(session.external_bot_id)}/`,
-    {
-      method: 'GET',
-      headers: { Authorization: `Token ${settings.recallApiKey}` },
-      signal: AbortSignal.timeout(15_000),
-    }
-  );
-  if (!res.ok) {
-    return { ok: false, error: `Recall GET bot returned HTTP ${res.status}` };
-  }
-  const botData = await res.json();
-  const latest = getLatestRecallStatus(botData);
+async function handleBotLifecycleWebhook(session, event) {
+  const evName = String(event?.event || '').toLowerCase();
+  const statusObj = event?.data?.data || {};
+  const code = String(statusObj.code || evName.replace(/^bot\./, '')).toLowerCase();
+  const subCode = statusObj.sub_code ? String(statusObj.sub_code) : null;
+  const updatedAt = statusObj.updated_at || new Date().toISOString();
   const nowIso = new Date().toISOString();
   const label = platformDisplayName(session.platform);
 
-  if (latest.code === 'done') {
-    return ingestCompletedRecallBot(session, botData, settings, { fetchImpl, publicBaseUrl });
-  }
-
-  if (latest.code === 'fatal') {
-    const errDetail = humanFatalReason(latest.subCode, latest.message);
+  if (code === 'fatal') {
+    const errDetail = humanFatalReason(subCode, statusObj.message);
     await db.run(
       `UPDATE v2_external_bot_sessions
        SET status = 'failed', error_code = ?, status_detail = ?, heartbeat_at = ?,
            ended_at = COALESCE(ended_at, ?), updated_at = ?
        WHERE id = ?`,
-      [String(latest.subCode || 'recall_fatal').slice(0, 64), errDetail, nowIso, nowIso, nowIso, session.id]
+      [String(subCode || 'recall_fatal').slice(0, 64), errDetail, nowIso, updatedAt, nowIso, session.id]
     );
     await db.run(`UPDATE v2_meetings SET status = 'ended', ended_at = COALESCE(ended_at, ?) WHERE id = ?`, [
-      nowIso,
+      updatedAt,
       session.meeting_id,
     ]);
-    return { ok: true, status: 'failed', errorCode: latest.subCode };
+    return { ok: true, status: 'failed', errorCode: subCode };
   }
 
   let nextStatus = session.status;
@@ -1124,15 +1127,7 @@ async function performRecallSync(sessionOrId, { fetchImpl = global.fetch, public
   let joinedAt = session.joined_at;
   let endedAt = session.ended_at;
 
-  switch (latest.code) {
-    case 'ready':
-    case 'scheduled': {
-      const schedMs = session.scheduled_for ? new Date(session.scheduled_for).getTime() : NaN;
-      const isFuture = Number.isFinite(schedMs) && schedMs > Date.now() + 60_000;
-      nextStatus = isFuture ? 'scheduled' : 'joining';
-      nextDetail = isFuture ? `Scheduled to join ${label}` : `Preparing to join ${label}…`;
-      break;
-    }
+  switch (code) {
     case 'joining_call':
       nextStatus = 'joining';
       nextDetail = `Opening ${label}…`;
@@ -1148,19 +1143,43 @@ async function performRecallSync(sessionOrId, { fetchImpl = global.fetch, public
     case 'in_call_recording':
     case 'recording_permission_allowed':
       nextStatus = 'recording';
-      nextDetail = `Recording audio & transcript in ${label}`;
-      joinedAt = joinedAt || latest.createdAt || nowIso;
+      nextDetail = `Recording audio in ${label}`;
+      joinedAt = joinedAt || updatedAt;
       await db.run(
         `UPDATE v2_meetings SET status = 'live', started_at = COALESCE(started_at, ?) WHERE id = ?`,
         [joinedAt, session.meeting_id]
       );
       break;
-    case 'call_ended':
     case 'recording_permission_denied':
       nextStatus = 'processing';
-      nextDetail = 'Call ended — compiling audio & transcript…';
-      endedAt = endedAt || latest.createdAt || nowIso;
+      nextDetail = 'Recording permission denied in call';
+      endedAt = endedAt || updatedAt;
       break;
+    case 'call_ended':
+      nextStatus = 'processing';
+      nextDetail = 'Call ended — finalizing recording…';
+      endedAt = endedAt || updatedAt;
+      break;
+    case 'done': {
+      if (session.external_recording_id || session.transcript_requested_at || session.ingested_at) {
+        // Recording/transcript webhooks handle processing & completion.
+        return { ok: true, status: session.status };
+      }
+      if (!session.joined_at) {
+        nextStatus = 'completed';
+        nextDetail = subCode ? `Call ended (${subCode})` : 'Call ended before recording started';
+        endedAt = endedAt || updatedAt;
+        await db.run(`UPDATE v2_meetings SET status = 'ended', ended_at = COALESCE(ended_at, ?) WHERE id = ?`, [
+          endedAt,
+          session.meeting_id,
+        ]);
+      } else {
+        nextStatus = 'processing';
+        nextDetail = 'Bot shut down — awaiting recording artifact…';
+        endedAt = endedAt || updatedAt;
+      }
+      break;
+    }
     default:
       break;
   }
@@ -1172,100 +1191,358 @@ async function performRecallSync(sessionOrId, { fetchImpl = global.fetch, public
     [nextStatus, nextDetail, joinedAt, endedAt, nowIso, nowIso, session.id]
   );
 
-  return { ok: true, status: nextStatus, recallCode: latest.code };
+  return { ok: true, status: nextStatus };
 }
 
-function syncRecallBotSession(sessionOrId, opts = {}) {
-  const key = typeof sessionOrId === 'string' ? sessionOrId : sessionOrId?.id;
-  if (!key) return Promise.resolve({ ok: false, error: 'Missing session id' });
+async function saveRecordingArtifactToStorage(session, recordingData, { fetchImpl }) {
+  const audioUrl = recordingData?.media_shortcuts?.audio_mixed?.data?.download_url || null;
+  if (!audioUrl) return null;
 
-  const existing = inFlightSyncs.get(key);
-  if (existing) return existing;
+  const existingRec = await db.get(`SELECT id FROM v2_meeting_recordings WHERE bot_session_id = ? LIMIT 1`, [
+    session.id,
+  ]);
+  if (existingRec) return existingRec;
 
-  const p = performRecallSync(sessionOrId, opts).finally(() => {
-    inFlightSyncs.delete(key);
-  });
-  inFlightSyncs.set(key, p);
-  return p;
-}
+  const audioBuf = await downloadPresignedBuffer(audioUrl, fetchImpl);
+  if (!audioBuf.length) return null;
 
-async function reconcileActiveRecallSessions({ fetchImpl = global.fetch } = {}) {
-  if (reconcilerRunning) return { skipped: true };
-  reconcilerRunning = true;
-  try {
-    const settings = await getNotetakerSettings();
-    if (!settings.recallApiKey) return { synced: 0 };
-
-    const rows = await db.all(
-      `SELECT * FROM v2_external_bot_sessions
-       WHERE bot_provider = 'recall'
-         AND external_bot_id IS NOT NULL
-         AND status IN ('scheduled', 'queued', 'joining', 'waiting_in_lobby', 'recording', 'processing')
-       ORDER BY created_at ASC
-       LIMIT 15`
-    );
-    if (!rows.length) return { synced: 0 };
-
-    const leadHorizonMs = Date.now() + 120_000;
-    let synced = 0;
-    for (const row of rows) {
-      if (row.status === 'scheduled' && row.scheduled_for) {
-        const schedMs = new Date(row.scheduled_for).getTime();
-        if (Number.isFinite(schedMs) && schedMs > leadHorizonMs) {
-          continue;
-        }
-      }
-      await syncRecallBotSession(row, { fetchImpl }).catch((err) => {
-        console.warn(`[recallReconciler] Failed syncing session ${row.id}:`, err.message);
-      });
-      synced += 1;
+  let durationSeconds = session.duration_seconds || null;
+  if (recordingData.started_at && recordingData.completed_at) {
+    const ms = new Date(recordingData.completed_at).getTime() - new Date(recordingData.started_at).getTime();
+    if (Number.isFinite(ms) && ms > 0) {
+      durationSeconds = Math.max(1, Math.round(ms / 1000));
     }
-    return { synced };
-  } finally {
-    reconcilerRunning = false;
   }
+
+  const nowIso = new Date().toISOString();
+  const recordingId = db.uuid();
+  const relativePath = `recordings/${session.meeting_id}-${recordingId.slice(0, 8)}.mp3`;
+  const storageKey = objectKey(session.org_id, relativePath);
+
+  await putOrgObject(session.org_id, relativePath, audioBuf, {
+    contentType: 'audio/mpeg',
+  });
+  await db.run(
+    `INSERT INTO v2_meeting_recordings (
+      id, org_id, meeting_id, bot_session_id, storage_key, relative_path,
+      mime_type, size_bytes, duration_seconds, created_at
+    ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [
+      recordingId,
+      session.org_id,
+      session.meeting_id,
+      session.id,
+      storageKey,
+      relativePath,
+      'audio/mpeg',
+      audioBuf.length,
+      durationSeconds,
+      nowIso,
+    ]
+  );
+
+  if (durationSeconds) {
+    await db.run(
+      `UPDATE v2_external_bot_sessions SET duration_seconds = COALESCE(duration_seconds, ?) WHERE id = ?`,
+      [durationSeconds, session.id]
+    );
+  }
+  return { id: recordingId, durationSeconds };
 }
 
-function startRecallReconciler({ intervalMs = DEFAULT_RECONCILE_INTERVAL_MS } = {}) {
-  if (reconcilerTimer) return reconcilerTimer;
-  const ms = Math.max(3000, Number(process.env.RECALL_RECONCILE_INTERVAL_MS || intervalMs));
-  reconcilerTimer = setInterval(() => {
-    reconcileActiveRecallSessions().catch((err) => {
-      console.warn('[recallReconciler] tick error:', err.message);
+async function handleRecordingDoneWebhook(session, event, settings, { fetchImpl, retryOptions, publicBaseUrl }) {
+  const recordingId = event?.data?.recording?.id;
+  if (!recordingId || !settings.recallApiKey) {
+    return { ok: false, error: 'Missing recording ID or API key' };
+  }
+
+  const nowIso = new Date().toISOString();
+  await db.run(
+    `UPDATE v2_external_bot_sessions
+     SET external_recording_id = COALESCE(external_recording_id, ?),
+         status = 'processing',
+         status_detail = 'Saving recording & starting Recall.ai transcription…',
+         heartbeat_at = ?,
+         updated_at = ?
+     WHERE id = ?`,
+    [String(recordingId), nowIso, nowIso, session.id]
+  );
+
+  const recRes = await fetchWithRecallRetry(
+    `${recallApiBase(settings.recallRegion)}/recording/${encodeURIComponent(recordingId)}/`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Token ${settings.recallApiKey}` },
+    },
+    { fetchImpl, retryNetwork: true, ...retryOptions }
+  );
+  if (!recRes.ok) {
+    throw new Error(`Retrieve Recording returned HTTP ${recRes.status}`);
+  }
+  const recordingData = await recRes.json();
+
+  await saveRecordingArtifactToStorage(session, recordingData, { fetchImpl }).catch((err) => {
+    console.warn(`[recallNotetaker] Audio download warning (${session.id}):`, err.message);
+  });
+
+  // If transcript shortcut is already populated (e.g. meeting_captions fallback), ingest immediately
+  const inlineTranscriptUrl = recordingData?.media_shortcuts?.transcript?.data?.download_url || null;
+  const refreshed = await db.get(`SELECT * FROM v2_external_bot_sessions WHERE id = ?`, [session.id]);
+
+  if (settings.transcriptMode === 'meeting_captions' && inlineTranscriptUrl && !refreshed.ingested_at) {
+    const trRes = await fetchImpl(inlineTranscriptUrl, { method: 'GET', signal: AbortSignal.timeout(60_000) });
+    if (trRes.ok) {
+      const json = await trRes.json();
+      const baseMs = recordingData.started_at
+        ? new Date(recordingData.started_at).getTime()
+        : refreshed.joined_at
+          ? new Date(refreshed.joined_at).getTime()
+          : Date.now();
+      const lines = convertRecallTranscriptToReadableLines(json, {
+        baseStartMs: baseMs,
+        botDisplayName: refreshed.bot_display_name,
+      });
+      if (lines.length > 0) {
+        await ingestBotTranscriptLines(refreshed.meeting_id, lines);
+        const meeting = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [refreshed.meeting_id]);
+        if (meeting) {
+          await recordNotetakerCostEvents({
+            meeting,
+            session: refreshed,
+            durationSeconds: refreshed.duration_seconds || 0,
+          }).catch(() => {});
+        }
+        await finalizeBotSessionAndRunPipeline(refreshed.id, { publicBaseUrl });
+        await db.run(`UPDATE v2_external_bot_sessions SET ingested_at = ?, updated_at = ? WHERE id = ?`, [
+          new Date().toISOString(),
+          new Date().toISOString(),
+          refreshed.id,
+        ]);
+        return { ok: true, status: 'completed', lineCount: lines.length };
+      }
+    }
+  }
+
+  // Trigger Recall.ai v1.11 Post-Meeting Async Transcription idempotently.
+  if (!refreshed.transcript_requested_at) {
+    const trCreateRes = await fetchWithRecallRetry(
+      `${recallApiBase(settings.recallRegion)}/recording/${encodeURIComponent(recordingId)}/create_transcript/`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Token ${settings.recallApiKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          provider: {
+            recallai_async: {
+              language_code: 'auto',
+            },
+          },
+          diarization: {
+            use_separate_streams_when_available: true,
+          },
+        }),
+      },
+      { fetchImpl, retryNetwork: false, ...retryOptions }
+    );
+    if (!trCreateRes.ok) {
+      const errBody = await trCreateRes.json().catch(() => null);
+      throw new Error(`Create Async Transcript failed: ${summarizeRecallError(errBody, trCreateRes.status)}`);
+    }
+    const createdTranscript = await trCreateRes.json().catch(() => ({}));
+    const reqIso = new Date().toISOString();
+    await db.run(
+      `UPDATE v2_external_bot_sessions
+       SET external_transcript_id = COALESCE(external_transcript_id, ?),
+           transcript_requested_at = COALESCE(transcript_requested_at, ?),
+           status = 'processing',
+           status_detail = 'Transcribing recording with Recall.ai…',
+           updated_at = ?
+       WHERE id = ?`,
+      [createdTranscript?.id ? String(createdTranscript.id) : null, reqIso, reqIso, session.id]
+    );
+  }
+
+  return { ok: true, status: 'transcribing', recordingId: String(recordingId) };
+}
+
+async function handleTranscriptDoneWebhook(session, event, settings, { fetchImpl, retryOptions, publicBaseUrl }) {
+  if (session.ingested_at) {
+    return { ok: true, alreadyIngested: true };
+  }
+
+  const transcriptId = event?.data?.transcript?.id || session.external_transcript_id;
+  if (!transcriptId || !settings.recallApiKey) {
+    return { ok: false, error: 'Missing transcript ID or API key' };
+  }
+
+  const trRes = await fetchWithRecallRetry(
+    `${recallApiBase(settings.recallRegion)}/transcript/${encodeURIComponent(transcriptId)}/`,
+    {
+      method: 'GET',
+      headers: { Authorization: `Token ${settings.recallApiKey}` },
+    },
+    { fetchImpl, retryNetwork: true, ...retryOptions }
+  );
+  if (!trRes.ok) {
+    throw new Error(`Retrieve Transcript returned HTTP ${trRes.status}`);
+  }
+  const transcriptMeta = await trRes.json();
+  const downloadUrl = transcriptMeta?.data?.download_url;
+  if (!downloadUrl) {
+    throw new Error('Recall transcript has no download_url');
+  }
+
+  const rawRes = await fetchImpl(downloadUrl, { method: 'GET', signal: AbortSignal.timeout(60_000) });
+  if (!rawRes.ok) {
+    throw new Error(`Transcript download_url returned HTTP ${rawRes.status}`);
+  }
+  const rawTranscriptJson = await rawRes.json();
+
+  const baseMs = session.joined_at ? new Date(session.joined_at).getTime() : Date.now();
+  const lines = convertRecallTranscriptToReadableLines(rawTranscriptJson, {
+    baseStartMs: baseMs,
+    botDisplayName: session.bot_display_name,
+  });
+
+  if (lines.length > 0) {
+    await ingestBotTranscriptLines(session.meeting_id, lines);
+  }
+
+  const meeting = await db.get(`SELECT * FROM v2_meetings WHERE id = ?`, [session.meeting_id]);
+  if (meeting) {
+    await recordNotetakerCostEvents({
+      meeting,
+      session,
+      durationSeconds: session.duration_seconds || 0,
+    }).catch((err) => {
+      console.warn(`[recallNotetaker] Cost rollup warning (${session.id}):`, err.message);
     });
-  }, ms);
-  if (typeof reconcilerTimer.unref === 'function') {
-    reconcilerTimer.unref();
   }
-  console.log(`[recallReconciler] polling active sessions every ${ms}ms`);
-  return reconcilerTimer;
+
+  const pipelineResult = await finalizeBotSessionAndRunPipeline(session.id, { publicBaseUrl });
+  const doneIso = new Date().toISOString();
+  await db.run(
+    `UPDATE v2_external_bot_sessions
+     SET external_transcript_id = COALESCE(external_transcript_id, ?),
+         ingested_at = COALESCE(ingested_at, ?),
+         ended_at = COALESCE(ended_at, ?),
+         updated_at = ?
+     WHERE id = ?`,
+    [String(transcriptId), doneIso, doneIso, doneIso, session.id]
+  );
+
+  if (settings.deleteRecallMediaAfterIngest && session.external_bot_id) {
+    fetchImpl(
+      `${recallApiBase(settings.recallRegion)}/bot/${encodeURIComponent(session.external_bot_id)}/delete_media/`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Token ${settings.recallApiKey}` },
+        signal: AbortSignal.timeout(10_000),
+      }
+    ).catch(() => {});
+  }
+
+  return { ok: true, status: 'completed', lineCount: lines.length, ...pipelineResult };
 }
 
-function stopRecallReconciler() {
-  if (reconcilerTimer) {
-    clearInterval(reconcilerTimer);
-    reconcilerTimer = null;
+/**
+ * Processes a verified Recall.ai dashboard webhook event (bot.*, recording.*, transcript.*, calendar.*).
+ */
+async function processVerifiedRecallWebhookEvent(event, { fetchImpl = global.fetch, retryOptions, publicBaseUrl } = {}) {
+  const eventType = String(event?.event || '').toLowerCase();
+
+  if (eventType === 'calendar.update' || eventType === 'calendar.sync_events') {
+    const calendarHandlers = require('./recallCalendarV2');
+    const calendarId = event?.data?.calendar_id;
+    if (!calendarId) return { ok: true, ignored: true };
+    if (eventType === 'calendar.update') {
+      return calendarHandlers.handleCalendarUpdateWebhook(calendarId, { fetchImpl, retryOptions });
+    }
+    return calendarHandlers.syncCalendarEventsFromRecall(calendarId, {
+      updatedAtGte: event?.data?.last_updated_ts || null,
+      fetchImpl,
+      retryOptions,
+    });
   }
+
+  const session = await findSessionForWebhook(event);
+  if (!session) {
+    return { ok: true, unmatched: true, eventType };
+  }
+
+  const settings = await getNotetakerSettings();
+
+  if (eventType === 'recording.done') {
+    return handleRecordingDoneWebhook(session, event, settings, { fetchImpl, retryOptions, publicBaseUrl });
+  }
+  if (eventType === 'recording.failed') {
+    const nowIso = new Date().toISOString();
+    const sub = event?.data?.data?.sub_code || 'recording_failed';
+    await db.run(
+      `UPDATE v2_external_bot_sessions
+       SET status = 'failed', error_code = ?, status_detail = 'Recording failed to process',
+           ended_at = COALESCE(ended_at, ?), updated_at = ?
+       WHERE id = ?`,
+      [String(sub).slice(0, 64), nowIso, nowIso, session.id]
+    );
+    await db.run(`UPDATE v2_meetings SET status = 'ended', ended_at = COALESCE(ended_at, ?) WHERE id = ?`, [
+      nowIso,
+      session.meeting_id,
+    ]);
+    return { ok: true, status: 'failed' };
+  }
+  if (eventType === 'transcript.done') {
+    return handleTranscriptDoneWebhook(session, event, settings, { fetchImpl, retryOptions, publicBaseUrl });
+  }
+  if (eventType === 'transcript.failed') {
+    const sub = event?.data?.data?.sub_code || 'transcript_failed';
+    const nowIso = new Date().toISOString();
+    await db.run(
+      `UPDATE v2_external_bot_sessions
+       SET status_detail = ?, error_code = ?, updated_at = ?
+       WHERE id = ?`,
+      [`Recording saved (transcription unavailable: ${sub})`, String(sub).slice(0, 64), nowIso, session.id]
+    );
+    await finalizeBotSessionAndRunPipeline(session.id, { publicBaseUrl });
+    await db.run(`UPDATE v2_external_bot_sessions SET ingested_at = COALESCE(ingested_at, ?) WHERE id = ?`, [
+      nowIso,
+      session.id,
+    ]);
+    return { ok: true, status: 'completed', transcriptFailed: true };
+  }
+  if (eventType.startsWith('bot.')) {
+    return handleBotLifecycleWebhook(session, event);
+  }
+
+  return { ok: true, ignored: true, eventType };
 }
 
 module.exports = {
   RECALL_REGIONS,
   DRIVER_MODES,
   TRANSCRIPT_MODES,
+  DEFAULT_CHAT_NOTICE,
   maskSecret,
+  assertPublicRecallUrl,
+  isPrivateOrLocalHostname,
+  resolvePublicApiBaseUrl,
   getNotetakerSettings,
   saveNotetakerSettings,
   invalidateNotetakerSettingsCache,
+  validateRecallStartupConfig,
+  logRecallStartupSummary,
   toNotetakerAdminView,
+  verifyRequestFromRecall,
+  fetchWithRecallRetry,
   verifyRecallCredentials,
   persistDetectedRegionIfStored,
+  buildRecallBotPayload,
   dispatchRecallBotForSession,
   stopRecallBotSession,
-  syncRecallBotSession,
-  reconcileActiveRecallSessions,
-  startRecallReconciler,
-  stopRecallReconciler,
-  parseRecallTranscriptJson,
-  groupXaiWordsIntoLines,
-  transcribeAudioBufferWithXai,
+  processVerifiedRecallWebhookEvent,
+  convertRecallTranscriptToReadableLines,
+  recallApiBase,
 };

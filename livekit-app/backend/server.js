@@ -7,6 +7,16 @@ const dotenv = require('dotenv');
 // Load environment variables
 dotenv.config();
 
+const isSmokeMode = process.argv.includes('--smoke');
+if (isSmokeMode) {
+  process.env.NODE_ENV = 'test';
+  process.env.DATABASE_URL = '';
+  process.env.V2_DB_PATH = ':memory:';
+  process.env.JWT_SECRET_V2 = process.env.JWT_SECRET_V2 || 'smoke-secret-with-more-than-32-characters-000';
+  process.env.RECALL_REGION = process.env.RECALL_REGION || 'us-west-2';
+  process.env.PUBLIC_API_BASE_URL = process.env.PUBLIC_API_BASE_URL || 'https://lalia.cloud';
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -285,10 +295,16 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[overage-settlement] scheduler start failed:', e.message);
   }
-  const { startRecallReconciler, stopRecallReconciler } = require('./lib/recallNotetaker');
-  if (process.env.NODE_ENV !== 'test') {
-    startRecallReconciler();
+  const { logRecallStartupSummary } = require('./lib/recallNotetaker');
+  await logRecallStartupSummary().catch((err) => {
+    console.warn('[recall] startup summary failed:', err.message);
+  });
+
+  if (isSmokeMode) {
+    await runServerSmokeCheck(app, v2Database);
+    process.exit(0);
   }
+
   const server=app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
@@ -296,6 +312,140 @@ app.use((err, req, res, next) => {
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
-  server.once('close',()=>{stopRecallReconciler(); stopSeoSchema(); stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
+  server.once('close',()=>{stopSeoSchema(); stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
   process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
 })();
+
+async function runServerSmokeCheck(expressApp, database) {
+  const crypto = require('crypto');
+  const http = require('http');
+  const { saveNotetakerSettings } = require('./lib/recallNotetaker');
+  const { drainPendingRecallWebhookJobs } = require('./routes/v2/recallWebhook');
+
+  const smokeSecret = `whsec_${crypto.randomBytes(24).toString('base64')}`;
+  await saveNotetakerSettings('smoke@lalia.cloud', {
+    recallRegion: 'us-west-2',
+    recallWebhookSecret: smokeSecret,
+    reason: 'Run non-destructive server entrypoint smoke test',
+  });
+
+  const server = http.createServer(expressApp);
+  let baseUrl = null;
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = server.address();
+    baseUrl = `http://127.0.0.1:${addr.port}`;
+  } catch (err) {
+    console.warn('[smoke] Socket bind unavailable, running in-process boundary checks:', err.code || err.message);
+  }
+
+  const sendReq = async ({ method = 'GET', url, headers = {}, rawBody = null }) => {
+    if (baseUrl) {
+      const r = await fetch(`${baseUrl}${url}`, {
+        method,
+        headers,
+        body: rawBody,
+        redirect: 'manual',
+      });
+      return {
+        status: r.status,
+        location: r.headers.get('location') || '',
+        text: await r.text(),
+      };
+    }
+    return new Promise((resolve, reject) => {
+      const req = new http.IncomingMessage();
+      req.method = method;
+      req.url = url;
+      req.headers = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+      const chunks = [];
+      const res = {
+        statusCode: 200,
+        _headers: {},
+        setHeader(k, v) { this._headers[String(k).toLowerCase()] = v; },
+        getHeader(k) { return this._headers[String(k).toLowerCase()]; },
+        removeHeader(k) { delete this._headers[String(k).toLowerCase()]; },
+        writeHead(code, hdrs) {
+          this.statusCode = code;
+          if (hdrs) Object.entries(hdrs).forEach(([k, v]) => this.setHeader(k, v));
+        },
+        write(d) { if (d) chunks.push(Buffer.from(d)); },
+        end(d) {
+          if (d) chunks.push(Buffer.from(d));
+          resolve({
+            status: this.statusCode,
+            location: this._headers.location || '',
+            text: Buffer.concat(chunks).toString('utf8'),
+          });
+        },
+        status(code) { this.statusCode = code; return this; },
+        json(obj) {
+          this.setHeader('content-type', 'application/json');
+          this.end(JSON.stringify(obj));
+        },
+        send(val) { this.end(val); },
+        redirect(code, loc) {
+          const target = typeof code === 'string' ? code : loc;
+          this.statusCode = typeof code === 'number' ? code : 302;
+          this.setHeader('location', target);
+          this.end();
+        },
+      };
+      if (rawBody) {
+        process.nextTick(() => {
+          req.emit('data', Buffer.from(rawBody));
+          req.emit('end');
+        });
+      }
+      expressApp.handle(req, res, reject);
+    });
+  };
+
+  try {
+    const health = await sendReq({ url: '/api/v2/health' });
+    if (health.status !== 200) throw new Error(`/api/v2/health returned ${health.status}`);
+
+    const badWh = await sendReq({
+      method: 'POST',
+      url: '/api/v2/webhooks/recall',
+      headers: { 'content-type': 'application/json' },
+      rawBody: JSON.stringify({ event: 'bot.done', data: { bot: { id: 'smoke-bot' } } }),
+    });
+    if (badWh.status !== 401) throw new Error(`Expected 401 on unverified webhook, got ${badWh.status}`);
+
+    const msgId = 'msg_smoke_1';
+    const ts = String(Math.floor(Date.now() / 1000));
+    const bodyText = JSON.stringify({ event: 'bot.done', data: { bot: { id: 'smoke-bot' } } });
+    const sig = crypto
+      .createHmac('sha256', Buffer.from(smokeSecret.slice(6), 'base64'))
+      .update(`${msgId}.${ts}.${bodyText}`)
+      .digest('base64');
+    const goodWh = await sendReq({
+      method: 'POST',
+      url: '/api/v2/webhooks/recall',
+      headers: {
+        'content-type': 'application/json',
+        'webhook-id': msgId,
+        'webhook-timestamp': ts,
+        'webhook-signature': `v1,${sig}`,
+      },
+      rawBody: bodyText,
+    });
+    if (goodWh.status !== 200) throw new Error(`Verified webhook returned ${goodWh.status}: ${goodWh.text}`);
+    await drainPendingRecallWebhookJobs();
+
+    const cb = await sendReq({
+      url: '/api/v2/notetaker/calendar/oauth/callback?state=smoke-state&recall_calendar_setup_probe=1',
+    });
+    if (cb.status !== 302 || !cb.location.includes('recall_calendar_setup_probe=1')) {
+      throw new Error(`Calendar callback smoke failed: ${cb.status} ${cb.location}`);
+    }
+    console.log('[smoke] OK: /api/v2/health(200), unverified(401), verified(200), calendar-probe(302)');
+  } finally {
+    await new Promise((r) => server.close(() => r())).catch(() => {});
+    await database.close().catch(() => {});
+  }
+}

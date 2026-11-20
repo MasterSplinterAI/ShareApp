@@ -39,15 +39,17 @@ export function NotetakerSettingsSection() {
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
+  const [copiedCalRedirect, setCopiedCalRedirect] = useState(false);
 
   const [driverMode, setDriverMode] = useState('auto');
-  const [recallRegion, setRecallRegion] = useState('us-east-1');
+  const [recallRegion, setRecallRegion] = useState('us-west-2');
   const [recallApiKey, setRecallApiKey] = useState('');
   const [clearRecallApiKey, setClearRecallApiKey] = useState(false);
   const [recallWebhookSecret, setRecallWebhookSecret] = useState('');
   const [clearRecallWebhookSecret, setClearRecallWebhookSecret] = useState(false);
-  const [transcriptMode, setTranscriptMode] = useState('meeting_captions');
-  const [xaiFallbackEnabled, setXaiFallbackEnabled] = useState(true);
+  const [transcriptMode, setTranscriptMode] = useState('recallai_async');
+  const [chatNoticeEnabled, setChatNoticeEnabled] = useState(true);
+  const [xaiFallbackEnabled, setXaiFallbackEnabled] = useState(false);
   const [deleteRecallMediaAfterIngest, setDeleteRecallMediaAfterIngest] = useState(true);
   const [waitingRoomTimeoutSec, setWaitingRoomTimeoutSec] = useState(600);
   const [everyoneLeftTimeoutSec, setEveryoneLeftTimeoutSec] = useState(30);
@@ -56,13 +58,14 @@ export function NotetakerSettingsSection() {
   const applySettings = useCallback((s) => {
     setSettings(s || {});
     setDriverMode(s?.driverMode || 'auto');
-    setRecallRegion(s?.recallRegion || 'us-east-1');
+    setRecallRegion(s?.recallRegion || 'us-west-2');
     setRecallApiKey('');
     setClearRecallApiKey(false);
     setRecallWebhookSecret('');
     setClearRecallWebhookSecret(false);
-    setTranscriptMode(s?.transcriptMode || 'meeting_captions');
-    setXaiFallbackEnabled(s?.xaiFallbackEnabled ?? true);
+    setTranscriptMode(s?.transcriptMode || 'recallai_async');
+    setChatNoticeEnabled(s?.chatNoticeEnabled ?? true);
+    setXaiFallbackEnabled(s?.xaiFallbackEnabled ?? false);
     setDeleteRecallMediaAfterIngest(s?.deleteRecallMediaAfterIngest ?? true);
     setWaitingRoomTimeoutSec(s?.waitingRoomTimeoutSec ?? 600);
     setEveryoneLeftTimeoutSec(s?.everyoneLeftTimeoutSec ?? 30);
@@ -117,6 +120,19 @@ export function NotetakerSettingsSection() {
     }
   };
 
+  const handleCopyCalRedirect = async () => {
+    const uri = settings?.calendarConnectedRedirectUri;
+    if (!uri) return;
+    try {
+      await navigator.clipboard.writeText(uri);
+      setCopiedCalRedirect(true);
+      toast.success('Calendar Connected Redirect URI copied');
+      setTimeout(() => setCopiedCalRedirect(false), 2000);
+    } catch {
+      toast.error('Could not copy Calendar Redirect URI');
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     if (auditReason.trim().length < 4) {
@@ -130,6 +146,7 @@ export function NotetakerSettingsSection() {
         driverMode,
         recallRegion,
         transcriptMode,
+        chatNoticeEnabled,
         xaiFallbackEnabled,
         deleteRecallMediaAfterIngest,
         waitingRoomTimeoutSec: Number(waitingRoomTimeoutSec),
@@ -186,11 +203,7 @@ export function NotetakerSettingsSection() {
           <Badge variant="outline">Region: {settings?.recallRegion || recallRegion}</Badge>
           <StatusBadge
             ok={Boolean(settings?.hasRecallWebhookSecret)}
-            label={
-              settings?.hasRecallWebhookSecret
-                ? 'Webhook verified'
-                : 'Polling sync active (webhook optional)'
-            }
+            label={settings?.hasRecallWebhookSecret ? 'Webhooks verified' : 'Webhook secret missing'}
           />
           {settings?.source && <Badge variant="secondary">Source: {settings.source}</Badge>}
         </div>
@@ -292,15 +305,46 @@ export function NotetakerSettingsSection() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Optional instant push via Recall Webhooks (<code>bot.*</code> events). Active calls also auto-sync every
-              12s with just the API key.
+              Required webhook endpoint for Recall.ai v1.11 bot, recording, async transcript, and Calendar V2 push
+              events (Svix / Standard Webhooks verified).
+            </p>
+          </div>
+
+          <div className="space-y-1.5 rounded-lg border border-border/60 bg-background/60 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                Calendar V2 Connected Redirect URI (Google OAuth)
+              </label>
+              <Badge variant={settings?.hasCalendarRegionalCallbackUri ? 'default' : 'outline'} className="text-[11px]">
+                {settings?.hasCalendarRegionalCallbackUri ? 'Regional callback set' : 'Using default Recall callback'}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 truncate rounded bg-muted px-2.5 py-1.5 text-xs text-foreground">
+                {settings?.calendarConnectedRedirectUri ||
+                  'https://lalia.cloud/api/v2/notetaker/calendar/oauth/callback'}
+              </code>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={handleCopyCalRedirect}
+                className="shrink-0 gap-1.5"
+              >
+                {copiedCalRedirect ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                {copiedCalRedirect ? 'Copied' : 'Copy'}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Add this exact URL as an Authorized Redirect URI in Google Cloud OAuth; Lalia forwards OAuth callbacks &amp;
+              setup probes directly to Recall.
             </p>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <label htmlFor="recall-webhook-secret" className="text-xs font-medium text-muted-foreground">
-                Webhook Signing Secret (optional)
+                Webhook Signing Secret (whsec_...)
               </label>
               <Input
                 id="recall-webhook-secret"
@@ -337,16 +381,34 @@ export function NotetakerSettingsSection() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="recallai_async">
+                    Recall.ai Post-Meeting Async Transcription (Recommended)
+                  </SelectItem>
                   <SelectItem value="meeting_captions">
                     Native Meeting Captions ($0/hr extra on Meet/Teams/Zoom)
                   </SelectItem>
-                  <SelectItem value="recallai_streaming">Recall AI Streaming Transcription</SelectItem>
+                  <SelectItem value="recallai_streaming">Recall.ai Streaming Transcription</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={chatNoticeEnabled}
+                onChange={(e) => setChatNoticeEnabled(e.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-border accent-primary"
+              />
+              <span>
+                <span className="font-medium">Send chat notice when joining</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  Posts Lalia&apos;s recording notice to chat on Zoom, Google Meet, and MS Teams (omitted on Webex).
+                </span>
+              </span>
+            </label>
+
             <label className="flex items-start gap-2 text-sm">
               <input
                 type="checkbox"
@@ -357,7 +419,7 @@ export function NotetakerSettingsSection() {
               <span>
                 <span className="font-medium">xAI Grok STT fallback</span>
                 <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Automatically transcribe MP3 via xAI Grok STT if native captions are empty.
+                  Automatically transcribe MP3 via xAI Grok STT if Recall/captions transcript is empty.
                 </span>
               </span>
             </label>

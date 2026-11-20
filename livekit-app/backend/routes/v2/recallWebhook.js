@@ -1,9 +1,26 @@
 'use strict';
 
 const db = require('../../db/v2Database');
-const { verifySvixWebhook } = require('../../lib/resendWebhookVerify');
-const { getNotetakerSettings, syncRecallBotSession } = require('../../lib/recallNotetaker');
+const {
+  getNotetakerSettings,
+  verifyRequestFromRecall,
+  processVerifiedRecallWebhookEvent,
+} = require('../../lib/recallNotetaker');
 const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
+
+const pendingWebhookJobs = new Set();
+
+function extractEventResourceId(event) {
+  const data = event?.data || {};
+  return (
+    data?.bot?.id ||
+    data?.bot_id ||
+    data?.recording?.id ||
+    data?.transcript?.id ||
+    data?.calendar_id ||
+    null
+  );
+}
 
 async function handleRecallWebhook(req, res) {
   const rawBody = req.body;
@@ -11,61 +28,95 @@ async function handleRecallWebhook(req, res) {
     return res.status(400).json({ error: 'Expected raw body' });
   }
 
-  const bodyText = rawBody.toString('utf8');
   let settings;
   try {
     settings = await getNotetakerSettings();
   } catch (err) {
-    console.error('[recall/webhook] failed to load settings:', err.message);
-    settings = { recallWebhookSecret: process.env.RECALL_WEBHOOK_SECRET || '' };
+    console.error('[recall/webhook] settings load failed:', err.message);
+    settings = {
+      recallWebhookSecret:
+        process.env.RECALL_WEBHOOK_VERIFICATION_SECRET ||
+        process.env.RECALL_WORKSPACE_VERIFICATION_SECRET ||
+        process.env.RECALL_WEBHOOK_SECRET ||
+        '',
+    };
   }
 
-  if (settings.recallWebhookSecret) {
-    const normalizedHeaders = {
-      'svix-id': req.headers['svix-id'] || req.headers['webhook-id'],
-      'svix-timestamp': req.headers['svix-timestamp'] || req.headers['webhook-timestamp'],
-      'svix-signature': req.headers['svix-signature'] || req.headers['webhook-signature'],
-    };
-    const check = verifySvixWebhook(bodyText, normalizedHeaders, settings.recallWebhookSecret);
-    if (!check.ok) {
-      console.warn('[recall/webhook] signature verification failed:', check.reason);
-      return res.status(401).json({ error: 'Invalid webhook signature' });
-    }
+  // Strictly verify every webhook from Recall before accepting, storing, or enqueueing.
+  const check = verifyRequestFromRecall({
+    secret: settings.recallWebhookSecret,
+    headers: req.headers,
+    rawBody,
+  });
+  if (!check.ok) {
+    console.warn(`[recall/webhook] unverified request rejected reason=${check.reason}`);
+    return res.status(401).json({ error: 'Request not verified' });
   }
 
   let event;
   try {
-    event = JSON.parse(bodyText);
+    event = JSON.parse(rawBody.toString('utf8'));
   } catch {
     return res.status(400).json({ error: 'Invalid JSON' });
   }
 
-  if (event?.event === 'ping') {
-    return res.json({ ok: true, pong: true });
-  }
+  const eventType = String(event?.event || 'unknown').slice(0, 100);
+  const resourceId = extractEventResourceId(event);
+  const nowIso = new Date().toISOString();
 
-  const externalBotId = event?.data?.bot?.id || event?.data?.bot_id || event?.bot?.id || null;
-  if (!externalBotId) {
-    return res.json({ ok: true, ignored: true });
-  }
-
+  // Record idempotency before enqueueing side effects.
   try {
-    const session = await db.get(
-      `SELECT * FROM v2_external_bot_sessions WHERE external_bot_id = ? LIMIT 1`,
-      [String(externalBotId)]
+    const dedupe = await db.run(
+      `INSERT INTO v2_recall_webhook_events (webhook_id, event_type, resource_id, status, received_at)
+       VALUES (?,?,?,?,?)
+       ON CONFLICT(webhook_id) DO NOTHING`,
+      [check.webhookId, eventType, resourceId ? String(resourceId).slice(0, 128) : null, 'queued', nowIso]
     );
-    if (!session) {
-      return res.json({ ok: true, unmatched: true });
+    if (!dedupe?.changes) {
+      return res.json({ ok: true, duplicate: true });
     }
-
-    const result = await syncRecallBotSession(session, {
-      publicBaseUrl: publicFrontendBaseUrl(req),
-    });
-    return res.json({ ok: true, synced: Boolean(result?.ok), result });
   } catch (err) {
-    console.error('[recall/webhook] sync failed:', err.message);
-    return res.status(500).json({ error: 'Recall webhook processing failed' });
+    console.error(`[recall/webhook] idempotency write failed id=${check.webhookId}:`, err.message);
+    return res.status(500).json({ error: 'Webhook persistence failed' });
+  }
+
+  console.log(`[recall/webhook] verified id=${check.webhookId} event=${eventType}`);
+
+  const baseUrl = publicFrontendBaseUrl(req);
+  const jobPromise = new Promise((resolve) => {
+    setImmediate(async () => {
+      try {
+        await processVerifiedRecallWebhookEvent(event, { publicBaseUrl: baseUrl });
+        await db
+          .run(
+            `UPDATE v2_recall_webhook_events SET status = 'processed', processed_at = ? WHERE webhook_id = ?`,
+            [new Date().toISOString(), check.webhookId]
+          )
+          .catch(() => {});
+      } catch (err) {
+        console.error(`[recall/webhook] async processing error id=${check.webhookId}:`, err.message);
+        await db
+          .run(
+            `UPDATE v2_recall_webhook_events SET status = 'failed', error_code = ?, processed_at = ? WHERE webhook_id = ?`,
+            [String(err.message || 'error').slice(0, 120), new Date().toISOString(), check.webhookId]
+          )
+          .catch(() => {});
+      } finally {
+        resolve();
+      }
+    });
+  }).finally(() => {
+    pendingWebhookJobs.delete(jobPromise);
+  });
+
+  pendingWebhookJobs.add(jobPromise);
+  return res.status(200).json({ ok: true, queued: true });
+}
+
+async function drainPendingRecallWebhookJobs() {
+  while (pendingWebhookJobs.size > 0) {
+    await Promise.allSettled([...pendingWebhookJobs]);
   }
 }
 
-module.exports = { handleRecallWebhook };
+module.exports = { handleRecallWebhook, drainPendingRecallWebhookJobs };

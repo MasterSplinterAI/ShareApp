@@ -1142,16 +1142,110 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS v2_platform_notetaker_settings (
       id TEXT PRIMARY KEY,
       driver_mode TEXT NOT NULL DEFAULT 'auto',
-      recall_region TEXT NOT NULL DEFAULT 'us-east-1',
+      recall_region TEXT NOT NULL DEFAULT 'us-west-2',
       recall_api_key_enc TEXT,
       recall_webhook_secret_enc TEXT,
-      transcript_mode TEXT NOT NULL DEFAULT 'meeting_captions',
+      transcript_mode TEXT NOT NULL DEFAULT 'recallai_async',
       xai_fallback_enabled INTEGER NOT NULL DEFAULT 1,
       delete_recall_media_after_ingest INTEGER NOT NULL DEFAULT 1,
       waiting_room_timeout_sec INTEGER NOT NULL DEFAULT 600,
       everyone_left_timeout_sec INTEGER NOT NULL DEFAULT 30,
+      chat_notice_enabled INTEGER NOT NULL DEFAULT 1,
+      chat_notice_text TEXT,
+      calendar_regional_callback_uri TEXT,
+      calendar_setup_id TEXT,
       updated_at TEXT,
       updated_by TEXT
+    )
+  `);
+
+  // Recall v1.11 async lifecycle + Calendar V2 + webhook idempotency (020_recall_v111_and_calendar_v2.sql)
+  const botColsV2 = await all(`PRAGMA table_info(v2_external_bot_sessions)`);
+  const botColNamesV2 = new Set((botColsV2 || []).map((c) => c.name));
+  if (!botColNamesV2.has('external_recording_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN external_recording_id TEXT`);
+  }
+  if (!botColNamesV2.has('external_transcript_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN external_transcript_id TEXT`);
+  }
+  if (!botColNamesV2.has('transcript_requested_at')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN transcript_requested_at TEXT`);
+  }
+  if (!botColNamesV2.has('calendar_event_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN calendar_event_id TEXT`);
+  }
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_ext_recording ON v2_external_bot_sessions(external_recording_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_ext_transcript ON v2_external_bot_sessions(external_transcript_id)`);
+
+  const ntCols = await all(`PRAGMA table_info(v2_platform_notetaker_settings)`);
+  const ntColNames = new Set((ntCols || []).map((c) => c.name));
+  if (!ntColNames.has('chat_notice_enabled')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN chat_notice_enabled INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!ntColNames.has('chat_notice_text')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN chat_notice_text TEXT`);
+  }
+  if (!ntColNames.has('calendar_regional_callback_uri')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN calendar_regional_callback_uri TEXT`);
+  }
+  if (!ntColNames.has('calendar_setup_id')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN calendar_setup_id TEXT`);
+  }
+
+  const calCols = await all(`PRAGMA table_info(v2_calendar_connections)`);
+  const calColNames = new Set((calCols || []).map((c) => c.name));
+  if (!calColNames.has('recall_calendar_id')) {
+    await run(`ALTER TABLE v2_calendar_connections ADD COLUMN recall_calendar_id TEXT`);
+  }
+  if (!calColNames.has('status_detail')) {
+    await run(`ALTER TABLE v2_calendar_connections ADD COLUMN status_detail TEXT`);
+  }
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_calendar_connections_recall_id ON v2_calendar_connections(recall_calendar_id) WHERE recall_calendar_id IS NOT NULL`
+  );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_calendar_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      calendar_connection_id TEXT NOT NULL,
+      recall_event_id TEXT NOT NULL UNIQUE,
+      recall_calendar_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      ical_uid TEXT,
+      title TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      meeting_url TEXT,
+      normalized_meeting_url TEXT,
+      meeting_platform TEXT,
+      organizer_email TEXT,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      recording_override TEXT,
+      scheduled_bot_id TEXT,
+      bot_session_id TEXT,
+      meeting_id TEXT,
+      raw_json TEXT,
+      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (user_id) REFERENCES v2_users(id),
+      FOREIGN KEY (calendar_connection_id) REFERENCES v2_calendar_connections(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_calendar_events_user_time ON v2_calendar_events(user_id, is_deleted, start_time)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_calendar_events_cal ON v2_calendar_events(recall_calendar_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_recall_webhook_events (
+      webhook_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      resource_id TEXT,
+      status TEXT NOT NULL DEFAULT 'processing',
+      received_at TEXT NOT NULL,
+      processed_at TEXT,
+      error_code TEXT
     )
   `);
 }

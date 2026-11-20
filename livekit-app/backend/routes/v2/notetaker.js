@@ -10,6 +10,14 @@ const {
   dispatchRecallBotForSession,
   stopRecallBotSession,
 } = require('../../lib/recallNotetaker');
+const {
+  AUTO_JOIN_RULES,
+  normalizeAutoJoinRule,
+  buildCalendarOAuthForwardRedirect,
+  syncCalendarEventsFromRecall,
+  toggleCalendarEventRecording,
+  disconnectRecallCalendar,
+} = require('../../lib/recallCalendarV2');
 
 const VALID_RECAP_MODES = new Set(['off', 'host_only', 'workspace', 'attendees']);
 
@@ -298,6 +306,151 @@ router.post('/sessions/:id/stop', requireV2Auth, async (req, res) => {
   } catch (e) {
     console.error('[v2/notetaker POST /stop]', e);
     res.status(500).json({ error: 'Failed to stop notetaker' });
+  }
+});
+
+router.get('/calendar/oauth/callback', async (req, res) => {
+  try {
+    const settings = await getNotetakerSettings();
+    const resFwd = buildCalendarOAuthForwardRedirect(req.query || {}, settings);
+    if (!resFwd.ok) {
+      return res.status(resFwd.status || 400).json({ error: resFwd.error });
+    }
+    return res.redirect(302, resFwd.redirectUrl);
+  } catch (e) {
+    console.error('[v2/notetaker GET /calendar/oauth/callback]', e.message);
+    return res.status(500).json({ error: 'Calendar callback failed' });
+  }
+});
+
+router.get('/calendars', requireV2Auth, async (req, res) => {
+  try {
+    const calendars = await db.all(
+      `SELECT id, org_id, user_id, provider, account_email, auto_join_rule,
+              recall_calendar_id, status, status_detail, last_synced_at, created_at, updated_at
+       FROM v2_calendar_connections
+       WHERE org_id = ? AND user_id = ?
+       ORDER BY created_at DESC`,
+      [req.v2Auth.orgId, req.v2Auth.userId]
+    );
+    res.json({ calendars });
+  } catch (e) {
+    console.error('[v2/notetaker GET /calendars]', e);
+    res.status(500).json({ error: 'Failed to load calendar connections' });
+  }
+});
+
+router.patch('/calendars/:id', requireV2Auth, async (req, res) => {
+  try {
+    const conn = await db.get(
+      `SELECT * FROM v2_calendar_connections WHERE id = ? AND org_id = ? AND user_id = ?`,
+      [req.params.id, req.v2Auth.orgId, req.v2Auth.userId]
+    );
+    if (!conn) return res.status(404).json({ error: 'Calendar connection not found' });
+
+    const rawRule = String(req.body?.autoJoinRule || '').trim().toLowerCase();
+    if (!AUTO_JOIN_RULES.has(rawRule)) {
+      return res.status(400).json({ error: 'Invalid autoJoinRule' });
+    }
+    const nextRule = normalizeAutoJoinRule(rawRule, 'manual');
+    await db.run(`UPDATE v2_calendar_connections SET auto_join_rule = ?, updated_at = ? WHERE id = ?`, [
+      nextRule,
+      new Date().toISOString(),
+      conn.id,
+    ]);
+
+    if (conn.recall_calendar_id && conn.status === 'connected') {
+      await syncCalendarEventsFromRecall(conn.recall_calendar_id).catch((err) => {
+        console.warn('[v2/notetaker PATCH /calendars] resync warning:', err.message);
+      });
+    }
+
+    const updated = await db.get(
+      `SELECT id, org_id, user_id, provider, account_email, auto_join_rule,
+              recall_calendar_id, status, status_detail, last_synced_at, created_at, updated_at
+       FROM v2_calendar_connections WHERE id = ?`,
+      [conn.id]
+    );
+    res.json({ ok: true, calendar: updated });
+  } catch (e) {
+    console.error('[v2/notetaker PATCH /calendars/:id]', e);
+    res.status(500).json({ error: 'Failed to update calendar rule' });
+  }
+});
+
+router.post('/calendars/:id/sync', requireV2Auth, async (req, res) => {
+  try {
+    const conn = await db.get(
+      `SELECT * FROM v2_calendar_connections WHERE id = ? AND org_id = ? AND user_id = ?`,
+      [req.params.id, req.v2Auth.orgId, req.v2Auth.userId]
+    );
+    if (!conn) return res.status(404).json({ error: 'Calendar connection not found' });
+    if (!conn.recall_calendar_id) {
+      return res.status(400).json({ error: 'Calendar is not linked to a Recall calendar ID' });
+    }
+    const result = await syncCalendarEventsFromRecall(conn.recall_calendar_id);
+    res.json(result);
+  } catch (e) {
+    console.error('[v2/notetaker POST /calendars/:id/sync]', e);
+    res.status(500).json({ error: 'Calendar sync failed' });
+  }
+});
+
+router.delete('/calendars/:id', requireV2Auth, async (req, res) => {
+  try {
+    const result = await disconnectRecallCalendar(req.params.id, {
+      orgId: req.v2Auth.orgId,
+      userId: req.v2Auth.userId,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('[v2/notetaker DELETE /calendars/:id]', e);
+    res.status(500).json({ error: 'Failed to disconnect calendar' });
+  }
+});
+
+router.get('/calendar-events', requireV2Auth, async (req, res) => {
+  try {
+    const events = await db.all(
+      `SELECT e.id, e.calendar_connection_id, e.recall_event_id, e.recall_calendar_id,
+              e.platform, e.title, e.start_time, e.end_time, e.meeting_url,
+              e.normalized_meeting_url, e.meeting_platform, e.organizer_email,
+              e.recording_override, e.scheduled_bot_id, e.bot_session_id, e.meeting_id,
+              c.auto_join_rule, s.status AS bot_status, s.status_detail AS bot_status_detail
+       FROM v2_calendar_events e
+       JOIN v2_calendar_connections c ON c.id = e.calendar_connection_id
+       LEFT JOIN v2_external_bot_sessions s ON s.id = e.bot_session_id
+       WHERE e.org_id = ? AND e.user_id = ? AND e.is_deleted = 0
+         AND e.end_time >= ?
+       ORDER BY e.start_time ASC
+       LIMIT 100`,
+      [req.v2Auth.orgId, req.v2Auth.userId, new Date(Date.now() - 3600_000).toISOString()]
+    );
+    res.json({ events });
+  } catch (e) {
+    console.error('[v2/notetaker GET /calendar-events]', e);
+    res.status(500).json({ error: 'Failed to list calendar events' });
+  }
+});
+
+router.post('/calendar-events/:id/toggle', requireV2Auth, async (req, res) => {
+  try {
+    const enabled = Boolean(req.body?.enabled);
+    const result = await toggleCalendarEventRecording(req.params.id, {
+      orgId: req.v2Auth.orgId,
+      userId: req.v2Auth.userId,
+      enabled,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json({ ok: true, event: result.event });
+  } catch (e) {
+    console.error('[v2/notetaker POST /calendar-events/:id/toggle]', e);
+    res.status(500).json({ error: 'Failed to update calendar recording toggle' });
   }
 });
 

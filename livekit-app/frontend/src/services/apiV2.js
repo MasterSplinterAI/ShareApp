@@ -350,6 +350,14 @@ export const v2Notetaker = {
   createSession: (body) => apiV2.post('/notetaker/sessions', body).then((r) => r.data),
   getSession: (id) => apiV2.get(`/notetaker/sessions/${encodeURIComponent(id)}`).then((r) => r.data),
   stopSession: (id) => apiV2.post(`/notetaker/sessions/${encodeURIComponent(id)}/stop`, {}).then((r) => r.data),
+  calendars: () => apiV2.get('/notetaker/calendars').then((r) => r.data),
+  patchCalendar: (id, body) =>
+    apiV2.patch(`/notetaker/calendars/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  syncCalendar: (id) => apiV2.post(`/notetaker/calendars/${encodeURIComponent(id)}/sync`, {}).then((r) => r.data),
+  deleteCalendar: (id) => apiV2.delete(`/notetaker/calendars/${encodeURIComponent(id)}`).then((r) => r.data),
+  calendarEvents: () => apiV2.get('/notetaker/calendar-events').then((r) => r.data),
+  toggleCalendarEvent: (id, enabled) =>
+    apiV2.post(`/notetaker/calendar-events/${encodeURIComponent(id)}/toggle`, { enabled }).then((r) => r.data),
 };
 
 export default apiV2;
