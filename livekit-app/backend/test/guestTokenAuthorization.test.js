@@ -106,3 +106,72 @@ test('an active platform superadmin retains explicit room controls', async () =>
   assert.equal(metadata.isSuperadmin, true);
   assert.equal(metadata.ttsAdmin, true);
 });
+
+test('legacy /api/rooms/create and /api/auth/token enforce org ownership, room existence, and entitlements', async () => {
+  const livekitService = require('../lib/livekitService');
+  const fakeRooms = new Map([
+    ['classic-own', { name: 'classic-own', metadata: JSON.stringify({ org_id: 'meeting-org' }) }],
+    ['classic-other', { name: 'classic-other', metadata: JSON.stringify({ org_id: 'outside-org' }) }],
+  ]);
+  mock.method(livekitService, 'getRoomService', () => ({
+    listRooms: async (names = []) =>
+      (Array.isArray(names) ? names : []).map((n) => fakeRooms.get(n)).filter(Boolean),
+  }));
+  mock.method(livekitService, 'createLiveKitConferenceRoom', async (roomName, roomMode, orgId) => {
+    const rec = {
+      name: roomName,
+      sid: 'RM_test',
+      metadata: JSON.stringify({ org_id: orgId, roomMode, stt_pipeline: 'selfhosted_xai' }),
+    };
+    fakeRooms.set(roomName, rec);
+    return rec;
+  });
+  const authRouter = require('../routes/auth');
+  const roomsRouter = require('../routes/rooms');
+  const legacyTokenHandler = authRouter.stack.find((l) => l.route?.path === '/token').route.stack.at(-1).handle;
+  const legacyCreateHandler = roomsRouter.stack.find((l) => l.route?.path === '/create').route.stack.at(-1).handle;
+  const makeRes = () => ({
+    statusCode: 200,
+    body: null,
+    status(c) { this.statusCode = c; return this; },
+    json(b) { this.body = b; return this; },
+  });
+
+  // 1. /api/auth/token rejects missing rooms (404) and cross-org rooms (403)
+  let res = makeRes();
+  await legacyTokenHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: { roomName: 'nonexistent-room', participantName: 'Alice' } }, res);
+  assert.equal(res.statusCode, 404);
+
+  res = makeRes();
+  await legacyTokenHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: { roomName: 'classic-other', participantName: 'Alice' } }, res);
+  assert.equal(res.statusCode, 403);
+
+  // 2. /api/auth/token mints for caller's own existing non-V2 room
+  res = makeRes();
+  await legacyTokenHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: { roomName: 'classic-own', participantName: 'Alice' } }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(typeof res.body.token, 'string');
+
+  // 3. /api/rooms/create rejects invalid names (400) and cross-org names (403)
+  res = makeRes();
+  await legacyCreateHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: { roomName: '../bad room' }, headers: {}, get: () => undefined, protocol: 'https' }, res);
+  assert.equal(res.statusCode, 400);
+
+  res = makeRes();
+  await legacyCreateHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: { roomName: 'classic-other' }, headers: {}, get: () => undefined, protocol: 'https' }, res);
+  assert.equal(res.statusCode, 403);
+
+  // 4. Billing suspension blocks both legacy routes with 402
+  await db.run('UPDATE v2_organizations SET billing_status = ? WHERE id = ?', ['suspended', 'meeting-org']);
+  try {
+    res = makeRes();
+    await legacyCreateHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: {}, headers: {}, get: () => undefined, protocol: 'https' }, res);
+    assert.equal(res.statusCode, 402);
+
+    res = makeRes();
+    await legacyTokenHandler({ v2Auth: { userId: 'caller', orgId: 'meeting-org', role: 'owner' }, body: { roomName: 'classic-own', participantName: 'Alice' } }, res);
+    assert.equal(res.statusCode, 402);
+  } finally {
+    await db.run('UPDATE v2_organizations SET billing_status = ? WHERE id = ?', ['active', 'meeting-org']);
+  }
+});

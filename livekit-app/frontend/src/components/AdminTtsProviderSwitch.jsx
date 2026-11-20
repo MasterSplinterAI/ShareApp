@@ -19,25 +19,39 @@ const STT_PROVIDERS = [
   { id: 'openai', label: 'OpenAI gpt-4o-transcribe ($0.006/m)' },
 ];
 
-const XAI_VOICES = ['eve', 'ara', 'rex', 'carina', 'orion'];
+const XAI_VOICES = [
+  'eve',
+  'rex',
+  'ara',
+  'leo',
+  'luna',
+  'orion',
+  'iris',
+  'sal',
+  'carina',
+  'celeste',
+  'atlas',
+  'aurora',
+  'liora',
+];
 const SHARED_TEXT_DECODER = new TextDecoder();
 const TRANSCRIPTION_PROVIDER_SAMPLE_MS = 2500;
 
 function isTtsAdminAccount(me) {
-  if (!me) return false;
-  if (me.isSuperadmin) return true;
-  const role = String(me.role || me.user?.role || '').toLowerCase();
-  return role === 'admin' || role === 'owner';
+  return Boolean(me && me.isSuperadmin);
 }
 
 /**
- * In-room TTS provider switch for workspace admins and platform superadmins.
+ * In-room TTS provider switch for platform superadmins when ?debug=1 is set.
  * The agent applies the choice on the next spoken utterance and confirms it
- * with a tts_provider_status packet.
+ * with a provider_status packet.
  */
 export default function AdminTtsProviderSwitch() {
   const room = useRoomContext();
   const local = useLocalParticipant();
+  const showDebug =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('debug') === '1';
   const [allowed, setAllowed] = useState(false);
   const [open, setOpen] = useState(false);
   const [provider, setProvider] = useState('xai');
@@ -48,7 +62,7 @@ export default function AdminTtsProviderSwitch() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    if (!localStorage.getItem('v2_token')) return undefined;
+    if (!showDebug || !localStorage.getItem('v2_token')) return undefined;
     let cancelled = false;
     v2Auth
       .me({ skipSessionRedirect: true })
@@ -61,10 +75,10 @@ export default function AdminTtsProviderSwitch() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showDebug]);
 
   useEffect(() => {
-    if (!room || !allowed) return undefined;
+    if (!room || !showDebug || !allowed) return undefined;
     let lastTranscriptionSampleAt = 0;
     const onData = (payload, _participant, _kind, topic) => {
       if (topic && topic !== 'tts_config' && topic !== 'transcription') return;
@@ -128,7 +142,7 @@ export default function AdminTtsProviderSwitch() {
     [local, room]
   );
 
-  if (!allowed) return null;
+  if (!showDebug || !allowed) return null;
 
   return (
     <div className="absolute left-3 top-3 z-20 max-w-[18rem] text-white">

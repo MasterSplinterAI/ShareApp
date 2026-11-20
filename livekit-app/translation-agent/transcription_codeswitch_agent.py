@@ -28,6 +28,7 @@ from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
 from tts_lane import (
     TtsLane,
+    is_curated_lalia_voice_id,
     is_valid_elevenlabs_voice_id,
     normalize_tts_provider_choice,
     participant_may_set_tts,
@@ -711,6 +712,8 @@ class TranscriptionOnlyAgent:
         self.room_xai_voice: str | None = None
         self.room_stt_provider: str | None = None
         self.active_stt_provider: str | None = None
+        self.participant_tts_voices: Dict[str, str] = {}
+        self.participant_is_admin: Dict[str, bool] = {}
 
     def _spawn_bg(self, coro: Awaitable[Any], *, during_shutdown: bool = False) -> asyncio.Task:
         task = asyncio.create_task(coro)
@@ -944,6 +947,31 @@ class TranscriptionOnlyAgent:
             participant=participant,
         )
 
+    def _resolve_voice_choice_for_lang(self, lang: str) -> str | None:
+        """Resolve active voice choice for a target language lane (admin wins, else latest listener)."""
+        norm_lang = self._normalize_language_code(lang)
+        matching = [
+            pid
+            for pid, plang in self.participant_languages.items()
+            if pid in self.participant_tts_voices
+            and self.translation_enabled.get(pid, False)
+            and self.voice_enabled.get(pid, False)
+            and self._normalize_language_code(plang) == norm_lang
+        ]
+        for pid in reversed(matching):
+            if self.participant_is_admin.get(pid, False):
+                return self.participant_tts_voices[pid]
+        if matching:
+            return self.participant_tts_voices[matching[-1]]
+        return self.room_xai_voice or self.room_tts_voice
+
+    def _sync_tts_lane_voices(self) -> None:
+        """Apply current listener/admin voice selections across active TTS lanes."""
+        for lang, lane in self.tts_lanes.items():
+            choice = self._resolve_voice_choice_for_lang(lang)
+            if choice and hasattr(lane, "apply_voice_choice"):
+                lane.apply_voice_choice(choice)
+
     async def _reconcile_tts_lanes(self, ctx: JobContext) -> None:
         if not _tts_enabled():
             if self.tts_lanes:
@@ -980,7 +1008,10 @@ class TranscriptionOnlyAgent:
                 emit_cost_hook=self._emit_tts_cost,
                 voice_id=self.room_tts_voice,
             )
-            if self.room_xai_voice:
+            voice_choice = self._resolve_voice_choice_for_lang(lang)
+            if voice_choice:
+                lane.apply_voice_choice(voice_choice)
+            elif self.room_xai_voice:
                 lane.xai_voice_id = resolve_xai_voice_id(self.room_xai_voice)
             try:
                 await lane.start()
@@ -1310,14 +1341,33 @@ class TranscriptionOnlyAgent:
                     logger.debug('data_received_ignored_type_from')
                     return
 
-                # Room-wide TTS voice override (applies to all lanes).
+                self.participant_is_admin[participant_id] = bool(admin_ok)
+
+                # Listener / room TTS voice selection. Curated white-labeled aliases
+                # apply to the listener's target language lane (and room if admin/demo);
+                # raw uncurated ElevenLabs IDs remain restricted to room admins.
                 tts_voice = (msg.get("ttsVoiceId") or msg.get("tts_voice_id") or "").strip()
-                if tts_voice and not admin_ok:
+                voice_choice_changed = False
+                if tts_voice and is_curated_lalia_voice_id(tts_voice):
+                    cleaned_alias = tts_voice.lower()
+                    voice_choice_changed = self.participant_tts_voices.get(participant_id) != cleaned_alias
+                    self.participant_tts_voices.pop(participant_id, None)
+                    self.participant_tts_voices[participant_id] = cleaned_alias
+                    if self._demo_room:
+                        self.participant_tts_voices.pop("demo:reader", None)
+                        self.participant_tts_voices["demo:reader"] = cleaned_alias
+                    if admin_ok or self._demo_room:
+                        self.room_xai_voice = resolve_xai_voice_id(cleaned_alias)
+                elif tts_voice and not admin_ok:
                     logger.warning('ignoring_room_tts_voice_change_from_non_admin_participant')
                 elif tts_voice and is_valid_elevenlabs_voice_id(tts_voice) and tts_voice != self.room_tts_voice:
                     self.room_tts_voice = tts_voice
+                    self.room_xai_voice = resolve_xai_voice_id(tts_voice)
                     for lane in self.tts_lanes.values():
                         lane.set_voice_id(tts_voice)
+                        if hasattr(lane, "apply_voice_choice"):
+                            lane.apply_voice_choice(tts_voice)
+                    voice_choice_changed = True
                     logger.info('tts_voice_updated_to')
                 elif tts_voice and not is_valid_elevenlabs_voice_id(tts_voice):
                     logger.warning('ignoring_invalid_ttsvoiceid_from')
@@ -1364,11 +1414,14 @@ class TranscriptionOnlyAgent:
                     and not lang_changed
                     and not demo_reader_changed
                 ):
+                    if voice_choice_changed:
+                        self._sync_tts_lane_voices()
                     return
 
                 self.participant_languages[participant_id] = lang
                 self.translation_enabled[participant_id] = new_enabled
                 self.voice_enabled[participant_id] = new_voice
+                self._sync_tts_lane_voices()
 
                 logger.info('language_update_was_enabled_voiceenabled')
 
@@ -1448,6 +1501,9 @@ class TranscriptionOnlyAgent:
             self.participant_languages.pop(pid, None)
             self.translation_enabled.pop(pid, None)
             self.voice_enabled.pop(pid, None)
+            self.participant_tts_voices.pop(pid, None)
+            self.participant_is_admin.pop(pid, None)
+            self._sync_tts_lane_voices()
             await self.update_assistants(ctx)
 
         ctx.room.on("data_received", on_data)

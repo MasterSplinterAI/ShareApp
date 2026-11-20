@@ -65,9 +65,37 @@ _OPENAI_TTS_DEFAULT_VOICE = "alloy"
 # xAI Grok TTS. Built-in voices are case-insensitive; eve is the API default.
 _XAI_TTS_URL = "https://api.x.ai/v1/tts"
 _XAI_TTS_DEFAULT_VOICE = "eve"
-_XAI_TTS_VOICES = frozenset({"eve", "ara", "rex", "carina", "orion"})
+_XAI_TTS_VOICES = frozenset({
+    "altair", "ara", "atlas", "aurora", "carina", "castor", "celeste",
+    "cosmo", "eve", "helios", "helix", "iris", "kepler", "leo",
+    "liora", "lumen", "luna", "lux", "naksh", "orion", "perseus",
+    "rex", "rigel", "sal", "sirius", "ursa", "zagan", "zenith",
+})
 _XAI_VOICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{2,64}$")
+CURATED_LALIA_VOICE_ALIASES: dict[str, dict[str, str]] = {
+    "voice-sarah":  {"xai": "eve",   "openai": "coral",   "elevenlabs": "EXAVITQu4vr4xnSDxMaL"},
+    "voice-marcus": {"xai": "rex",   "openai": "onyx",    "elevenlabs": "JBFqnCBsd6RMkjVDRZzb"},
+    "voice-elena":  {"xai": "ara",   "openai": "nova",    "elevenlabs": "XB0fDUnXU5powFXDhCwa"},
+    "voice-daniel": {"xai": "leo",   "openai": "echo",    "elevenlabs": "onwK4e9ZLuTAKqWW03F9"},
+    "voice-lily":   {"xai": "luna",  "openai": "shimmer", "elevenlabs": "pFZP5JQG7iQjIQuC4Bku"},
+    "voice-lucas":  {"xai": "orion", "openai": "ash",     "elevenlabs": "onwK4e9ZLuTAKqWW03F9"},
+    "voice-maya":   {"xai": "iris",  "openai": "sage",    "elevenlabs": "EXAVITQu4vr4xnSDxMaL"},
+    "voice-david":  {"xai": "sal",   "openai": "fable",   "elevenlabs": "JBFqnCBsd6RMkjVDRZzb"},
+}
+_LEGACY_ELEVENLABS_TO_XAI: dict[str, str] = {
+    "EXAVITQu4vr4xnSDxMaL": "eve",
+    "JBFqnCBsd6RMkjVDRZzb": "rex",
+    "XB0fDUnXU5powFXDhCwa": "ara",
+    "onwK4e9ZLuTAKqWW03F9": "leo",
+    "pFZP5JQG7iQjIQuC4Bku": "luna",
+}
 TTS_PROVIDER_CHOICES = frozenset({"auto", "xai", "deepgram", "openai", "elevenlabs"})
+
+
+def is_curated_lalia_voice_id(voice_id: str | None) -> bool:
+    if not voice_id or not isinstance(voice_id, str):
+        return False
+    return voice_id.strip().lower() in CURATED_LALIA_VOICE_ALIASES
 
 
 def is_valid_elevenlabs_voice_id(voice_id: str | None) -> bool:
@@ -118,7 +146,7 @@ def classify_tts_api_error(
     elif provider == "openai":
         provider_label = "OpenAI TTS"
     elif provider == "xai":
-        provider_label = "xAI TTS"
+        provider_label = "Voice synthesis"
     else:
         provider_label = "Deepgram"
 
@@ -162,15 +190,23 @@ def normalize_tts_provider_choice(value: Any) -> str | None:
 
 
 def resolve_xai_voice_id(voice_id: str | None = None) -> str:
-    """Resolve an xAI voice id (explicit → XAI_TTS_VOICE → eve)."""
-    for candidate in (
+    """Resolve an xAI voice id (alias / legacy / explicit -> XAI_TTS_VOICE -> eve)."""
+    for raw in (
         (voice_id or "").strip(),
         os.getenv("XAI_TTS_VOICE", "").strip(),
         _XAI_TTS_DEFAULT_VOICE,
     ):
-        lowered = candidate.lower()
-        if lowered in _XAI_TTS_VOICES or _XAI_VOICE_ID_RE.fullmatch(candidate):
-            return lowered if lowered in _XAI_TTS_VOICES else candidate
+        if not raw:
+            continue
+        lowered = raw.lower()
+        if lowered in CURATED_LALIA_VOICE_ALIASES:
+            return CURATED_LALIA_VOICE_ALIASES[lowered]["xai"]
+        if raw in _LEGACY_ELEVENLABS_TO_XAI:
+            return _LEGACY_ELEVENLABS_TO_XAI[raw]
+        if lowered in _XAI_TTS_VOICES:
+            return lowered
+        if not lowered.startswith("voice-") and _XAI_VOICE_ID_RE.fullmatch(raw) and not is_valid_elevenlabs_voice_id(raw):
+            return raw
     return _XAI_TTS_DEFAULT_VOICE
 
 
@@ -332,6 +368,9 @@ class TtsLane:
 
         self._deepgram_tts: Any = None
         self.xai_voice_id = resolve_xai_voice_id(None)
+        self.openai_voice_id: str | None = None
+        if voice_id is not None and is_curated_lalia_voice_id(voice_id):
+            self.apply_voice_choice(voice_id)
         self._http_session: aiohttp.ClientSession | None = None
         self._audio_source: Any = None
         self._local_track: Any = None
@@ -345,6 +384,25 @@ class TtsLane:
             return
         self.voice_id = cleaned
 
+    def apply_voice_choice(self, voice_id: str | None) -> None:
+        """Apply a curated white-labeled voice alias (or direct voice id) across providers."""
+        cleaned = (voice_id or "").strip()
+        if not cleaned:
+            return
+        lowered = cleaned.lower()
+        if lowered in CURATED_LALIA_VOICE_ALIASES:
+            mapping = CURATED_LALIA_VOICE_ALIASES[lowered]
+            self.xai_voice_id = mapping["xai"]
+            self.openai_voice_id = mapping["openai"]
+            self.voice_id = mapping["elevenlabs"]
+            return
+        if is_valid_elevenlabs_voice_id(cleaned):
+            self.voice_id = cleaned
+            self.xai_voice_id = resolve_xai_voice_id(cleaned)
+            return
+        if lowered in _XAI_TTS_VOICES:
+            self.xai_voice_id = lowered
+
     def set_provider(self, provider: str, voice_id: str | None = None) -> str:
         """Switch the provider used on the next utterance.
 
@@ -353,7 +411,9 @@ class TtsLane:
         """
         choice = normalize_tts_provider_choice(provider) or "auto"
         self.provider = resolve_tts_provider(self.language, preferred_provider=choice)
-        if voice_id and choice == "xai":
+        if voice_id and is_curated_lalia_voice_id(voice_id):
+            self.apply_voice_choice(voice_id)
+        elif voice_id and choice == "xai":
             self.xai_voice_id = resolve_xai_voice_id(voice_id)
         elif voice_id and choice == "elevenlabs":
             self.set_voice_id(voice_id)
@@ -797,7 +857,11 @@ class TtsLane:
             )
 
         model = os.getenv("OPENAI_TTS_MODEL", _OPENAI_TTS_DEFAULT_MODEL).strip() or _OPENAI_TTS_DEFAULT_MODEL
-        voice = os.getenv("OPENAI_TTS_VOICE", _OPENAI_TTS_DEFAULT_VOICE).strip() or _OPENAI_TTS_DEFAULT_VOICE
+        voice = (
+            self.openai_voice_id
+            or os.getenv("OPENAI_TTS_VOICE", _OPENAI_TTS_DEFAULT_VOICE).strip()
+            or _OPENAI_TTS_DEFAULT_VOICE
+        )
         speed = max(0.75, min(playback_rate, 1.35))
 
         body: dict[str, Any] = {

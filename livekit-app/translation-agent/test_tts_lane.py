@@ -483,3 +483,37 @@ def test_participant_tts_admin_metadata() -> None:
     assert participant_may_set_tts('{}', type('P', (), {'permissions': type('Perm', (), {'can_update_metadata': True})()})())
     assert not participant_may_set_tts("not-json")
 
+
+def test_curated_lalia_voice_aliases_map_to_xai_and_scrub_errors() -> None:
+    from tts_lane import CURATED_LALIA_VOICE_ALIASES, is_curated_lalia_voice_id
+
+    expected = {
+        "voice-sarah": "eve",
+        "voice-marcus": "rex",
+        "voice-elena": "ara",
+        "voice-daniel": "leo",
+        "voice-lily": "luna",
+        "voice-lucas": "orion",
+        "voice-maya": "iris",
+        "voice-david": "sal",
+    }
+    assert set(CURATED_LALIA_VOICE_ALIASES) == set(expected)
+    for alias, xai_voice in expected.items():
+        assert is_curated_lalia_voice_id(alias)
+        assert resolve_xai_voice_id(alias) == xai_voice
+
+    assert not is_curated_lalia_voice_id("voice-unknown")
+    assert resolve_xai_voice_id("voice-unknown") == "eve"
+    assert resolve_xai_voice_id("JBFqnCBsd6RMkjVDRZzb") == "rex"
+
+    room = _FakeRoom()
+    lane = TtsLane(room=room, language="es", publish_track=False, provider="xai")
+    lane.apply_voice_choice("voice-marcus")
+    assert lane.xai_voice_id == "rex"
+    assert lane.openai_voice_id == "onyx"
+    assert lane.voice_id == "JBFqnCBsd6RMkjVDRZzb"
+
+    _code, err_msg = classify_tts_api_error("xai", 429, "rate limit")
+    assert "xai" not in err_msg.lower()
+    assert "grok" not in err_msg.lower()
+

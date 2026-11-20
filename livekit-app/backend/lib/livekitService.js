@@ -14,15 +14,15 @@ const STT_PIPELINE_AGENTS = {
 
 const VALID_STT_PIPELINES = Object.keys(STT_PIPELINE_AGENTS);
 
-// Default pipeline for new rooms: codeswitch agent (detected source language +
-// optional voice translation). Stable profile-only agent remains host-switchable
-// via debug panel as `deepgram`. Override with DEFAULT_STT_PIPELINE env.
+// Default pipeline for new rooms: self-hosted xAI worker on EC2 ASG
+// (`translation-selfhosted-xai`). Other pipelines remain host-switchable
+// via debug panel (?debug=1). Override with DEFAULT_STT_PIPELINE env.
 const _rawDefaultPipeline = String(
-  process.env.DEFAULT_STT_PIPELINE || 'deepgram_codeswitch'
+  process.env.DEFAULT_STT_PIPELINE || 'selfhosted_xai'
 ).toLowerCase();
 const DEFAULT_STT_PIPELINE = VALID_STT_PIPELINES.includes(_rawDefaultPipeline)
   ? _rawDefaultPipeline
-  : 'deepgram_codeswitch';
+  : 'selfhosted_xai';
 
 /**
  * Per-room promise-chain lock. Concurrent joins (host + guests hitting
@@ -267,7 +267,7 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     createdAt: new Date().toISOString(),
     type: 'demo',
     roomMode: 'multi-language',
-    stt_pipeline: 'deepgram_codeswitch',
+    stt_pipeline: DEFAULT_STT_PIPELINE,
     demo: true,
     ...demoMeta,
   };
@@ -279,7 +279,7 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     maxParticipants: 10,
     metadata: metadataJson,
   });
-  const agentName = agentNameForPipeline('deepgram_codeswitch');
+  const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
   await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName, metadataJson));
   return room;
 }

@@ -1,6 +1,6 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { STT_PIPELINE_AGENTS, VALID_STT_PIPELINES } = require('../lib/livekitService');
+const { STT_PIPELINE_AGENTS, VALID_STT_PIPELINES, DEFAULT_STT_PIPELINE } = require('../lib/livekitService');
 const {
   computeParticipantMinutes,
   livekitMinuteRateUsd,
@@ -8,9 +8,12 @@ const {
 } = require('../routes/webhooks');
 
 describe('selfhosted_xai agent routing and LiveKit billing rates', () => {
-  it('registers selfhosted_xai -> translation-selfhosted-xai in STT_PIPELINE_AGENTS', () => {
+  it('registers selfhosted_xai -> translation-selfhosted-xai in STT_PIPELINE_AGENTS and defaults to it', () => {
     assert.equal(STT_PIPELINE_AGENTS.selfhosted_xai, 'translation-selfhosted-xai');
     assert.ok(VALID_STT_PIPELINES.includes('selfhosted_xai'));
+    if (!process.env.DEFAULT_STT_PIPELINE) {
+      assert.equal(DEFAULT_STT_PIPELINE, 'selfhosted_xai');
+    }
   });
 
   it('prices LiveKit Cloud-hosted agents at $0.01/min and self-hosted agents at $0.0005/min', () => {

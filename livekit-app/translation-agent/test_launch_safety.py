@@ -472,3 +472,82 @@ def test_pipeline_final_stt_report_survives_room_handler_cancellation(
             await asyncio.gather(*remaining, return_exceptions=True)
 
     asyncio.run(run())
+
+
+def test_curated_voice_alias_updates_target_lane_without_rebuilding_stt(monkeypatch) -> None:
+    async def run():
+        for name in ("DataPacket", "RemoteParticipant", "RemoteTrackPublication"):
+            monkeypatch.setattr(codeswitch.rtc, name, object, raising=False)
+        reporter = SimpleNamespace(aclose=AsyncMock())
+        monkeypatch.setattr(codeswitch, "CostReporter", lambda **kwargs: reporter)
+        handlers = {}
+        registered = asyncio.Event()
+
+        def on(event, callback):
+            handlers[event] = callback
+            if event == "participant_disconnected":
+                registered.set()
+
+        room = SimpleNamespace(
+            name="test-room",
+            metadata="",
+            on=on,
+            remote_participants={},
+            local_participant=SimpleNamespace(publish_data=AsyncMock()),
+        )
+        callbacks = []
+        ctx = SimpleNamespace(room=room, connect=AsyncMock(), add_shutdown_callback=callbacks.append)
+        agent = codeswitch.TranscriptionOnlyAgent()
+        update_mock = AsyncMock()
+        monkeypatch.setattr(agent, "update_assistants", update_mock)
+        lane = codeswitch.TtsLane(room=room, language="es", publish_track=False, provider="xai")
+        agent.tts_lanes["es"] = lane
+        task = asyncio.create_task(agent.entrypoint(ctx))
+        try:
+            await asyncio.wait_for(registered.wait(), timeout=1)
+            guest = SimpleNamespace(
+                identity="guest-1",
+                metadata=json.dumps({"role": "guest"}),
+                name="Guest",
+                permissions=None,
+            )
+            prior_tasks = set(agent._bg_tasks)
+            handlers["data_received"](
+                SimpleNamespace(
+                    participant=guest,
+                    data=json.dumps({
+                        "type": "language_update",
+                        "language": "es",
+                        "enabled": True,
+                        "voiceEnabled": True,
+                        "ttsVoiceId": "voice-marcus",
+                    }).encode(),
+                )
+            )
+            await asyncio.gather(*(agent._bg_tasks - prior_tasks))
+            assert lane.xai_voice_id == "rex"
+            assert agent.room_tts_voice is None
+
+            # Subsequent voice switch with unchanged lang/voiceEnabled still updates the live lane.
+            prior_tasks = set(agent._bg_tasks)
+            handlers["data_received"](
+                SimpleNamespace(
+                    participant=guest,
+                    data=json.dumps({
+                        "type": "language_update",
+                        "language": "es",
+                        "enabled": True,
+                        "voiceEnabled": True,
+                        "ttsVoiceId": "voice-elena",
+                    }).encode(),
+                )
+            )
+            await asyncio.gather(*(agent._bg_tasks - prior_tasks))
+            assert lane.xai_voice_id == "ara"
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            for callback in callbacks:
+                await callback()
+
+    asyncio.run(run())
