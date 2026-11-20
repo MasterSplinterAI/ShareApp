@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../..
 import { Input } from '../../../components/ui/input';
 import { Badge } from '../../../components/ui/badge';
 import { fmtDateTime } from './formatters';
+import { AgentFailoverAlertsSection } from './AgentFailoverAlertsSection';
 
 function StatusBadge({ ok, label }) {
   return (
@@ -679,6 +680,7 @@ function MarketingConsentSection() {
 export function CommsTab({ selectedOrgId }) {
   return (
     <div className="space-y-4">
+      <AgentFailoverAlertsSection />
       <EmailSettingsSection />
       <MarketingConsentSection />
       <AnnouncementsSection />

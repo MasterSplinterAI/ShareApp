@@ -357,10 +357,28 @@ async function handleLiveKitWebhook(req, res) {
       await reconcileParticipantUsage(roomName, orgId, meetingUuid, isAgentIdentity);
     }
 
-    if (eventType === 'participant_joined' && participantIdentity && orgId && !isAgentIdentity(participantIdentity)) {
-      checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
-        console.error('[webhook/livekit] usage cap check:', err.message)
-      );
+    if (eventType === 'participant_joined' && participantIdentity && !isAgentIdentity(participantIdentity)) {
+      if (orgId) {
+        checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
+          console.error('[webhook/livekit] usage cap check:', err.message)
+        );
+      }
+      let roomPipeline = null;
+      try {
+        const rawMeta = event.room?.metadata;
+        const parsedMeta = rawMeta ? (typeof rawMeta === 'string' ? JSON.parse(rawMeta) : rawMeta) : {};
+        roomPipeline = parsedMeta?.stt_pipeline || null;
+      } catch {
+        roomPipeline = null;
+      }
+      if (!roomPipeline || roomPipeline === 'selfhosted_xai') {
+        try {
+          const { scheduleSelfHostedWatchdog } = require('../lib/agentFailover');
+          scheduleSelfHostedWatchdog(roomName, { orgId });
+        } catch (err) {
+          console.warn('[webhook/livekit] failover watchdog schedule:', err.message);
+        }
+      }
     }
 
     if (eventType === 'participant_left' && participantIdentity && orgId) {

@@ -179,15 +179,63 @@ function roomLifecycleTimeouts() {
   };
 }
 
+async function resolveEffectiveNewRoomPipeline(requestedPipeline) {
+  const normalized = normalizeSttPipeline(requestedPipeline);
+  if (normalized !== 'selfhosted_xai') {
+    return { pipeline: normalized, fastFailover: false };
+  }
+  try {
+    const failover = require('./agentFailover');
+    const settings = await failover.getAgentAlertSettings();
+    if (failover.shouldBypassSelfHosted(settings)) {
+      return { pipeline: failover.BACKUP_PIPELINE, fastFailover: true };
+    }
+  } catch {
+    /* ignore in isolated contexts */
+  }
+  return { pipeline: normalized, fastFailover: false };
+}
+
+function afterRoomDispatch({ roomName, orgId = null, pipeline, fastFailover = false, agentName, dispatchStatus }) {
+  try {
+    const failover = require('./agentFailover');
+    if (fastFailover && dispatchStatus === 'created') {
+      failover
+        .recordAndNotifyAgentEvent({
+          roomName,
+          orgId,
+          eventKind: 'failover',
+          fromPipeline: DEFAULT_STT_PIPELINE,
+          toPipeline: pipeline,
+          reason: 'circuit_open',
+          details: { agentName },
+        })
+        .catch((err) => console.warn('[livekitService] failover alert error:', err.message));
+      return;
+    }
+    if (pipeline === 'selfhosted_xai' && (dispatchStatus === 'created' || dispatchStatus === 'in-flight')) {
+      failover.scheduleSelfHostedWatchdog(roomName, { orgId });
+    }
+  } catch {
+    /* ignore in isolated contexts */
+  }
+}
+
 async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language', orgId = null) {
   const roomService = getRoomService();
   const { emptyTimeout, departureTimeout } = roomLifecycleTimeouts();
+  const { pipeline, fastFailover } = await resolveEffectiveNewRoomPipeline(DEFAULT_STT_PIPELINE);
   const metadata = {
     createdAt: new Date().toISOString(),
     type: 'conference',
     roomMode,
-    stt_pipeline: DEFAULT_STT_PIPELINE,
+    stt_pipeline: pipeline,
   };
+  if (fastFailover) {
+    metadata.fallback_from = DEFAULT_STT_PIPELINE;
+    metadata.fallback_reason = 'circuit_open';
+    metadata.fallback_at = new Date().toISOString();
+  }
   if (orgId) metadata.org_id = orgId;
   const createOptions = {
     name: roomName,
@@ -197,8 +245,9 @@ async function createLiveKitConferenceRoom(roomName, roomMode = 'multi-language'
     metadata: JSON.stringify(metadata),
   };
   const room = await roomService.createRoom(createOptions);
-  const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
-  await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName));
+  const agentName = agentNameForPipeline(pipeline);
+  const dispatchStatus = await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName));
+  afterRoomDispatch({ roomName, orgId, pipeline, fastFailover, agentName, dispatchStatus });
   return room;
 }
 
@@ -263,14 +312,20 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
   const roomService = getRoomService();
   const emptyTimeout = 600;
   const departureTimeout = 120;
+  const { pipeline, fastFailover } = await resolveEffectiveNewRoomPipeline(DEFAULT_STT_PIPELINE);
   const metadata = {
     createdAt: new Date().toISOString(),
     type: 'demo',
     roomMode: 'multi-language',
-    stt_pipeline: DEFAULT_STT_PIPELINE,
+    stt_pipeline: pipeline,
     demo: true,
     ...demoMeta,
   };
+  if (fastFailover) {
+    metadata.fallback_from = DEFAULT_STT_PIPELINE;
+    metadata.fallback_reason = 'circuit_open';
+    metadata.fallback_at = new Date().toISOString();
+  }
   const metadataJson = JSON.stringify(metadata);
   const room = await roomService.createRoom({
     name: roomName,
@@ -279,8 +334,11 @@ async function createDemoLiveKitRoom(roomName, demoMeta = {}) {
     maxParticipants: 10,
     metadata: metadataJson,
   });
-  const agentName = agentNameForPipeline(DEFAULT_STT_PIPELINE);
-  await withRoomLock(roomName, () => ensureAgentDispatchLocked(roomName, agentName, metadataJson));
+  const agentName = agentNameForPipeline(pipeline);
+  const dispatchStatus = await withRoomLock(roomName, () =>
+    ensureAgentDispatchLocked(roomName, agentName, metadataJson)
+  );
+  afterRoomDispatch({ roomName, orgId: null, pipeline, fastFailover, agentName, dispatchStatus });
   return room;
 }
 
@@ -306,7 +364,17 @@ async function ensureRoomAndAgentLocked(roomName, roomMode = 'multi-language', o
   };
   if (orgId) metadata.org_id = orgId;
   const existingMeta = await readRoomMetadata(roomName).catch(() => ({}));
-  if (!existingMeta.stt_pipeline) metadata.stt_pipeline = DEFAULT_STT_PIPELINE;
+  let fastFailover = false;
+  if (!existingMeta.stt_pipeline) {
+    const resolved = await resolveEffectiveNewRoomPipeline(DEFAULT_STT_PIPELINE);
+    metadata.stt_pipeline = resolved.pipeline;
+    fastFailover = resolved.fastFailover;
+    if (fastFailover) {
+      metadata.fallback_from = DEFAULT_STT_PIPELINE;
+      metadata.fallback_reason = 'circuit_open';
+      metadata.fallback_at = new Date().toISOString();
+    }
+  }
   const room = await roomService.createRoom({
     name: roomName,
     emptyTimeout,
@@ -322,7 +390,8 @@ async function ensureRoomAndAgentLocked(roomName, roomMode = 'multi-language', o
   // created fresh ones — plus an unconditional fallback create on any error —
   // which could land two agents (duplicate captions/TTS/cost) in one room.
   // Explicit removal still happens in removeAgentsFromRoom/switchRoomSttPipeline.
-  await ensureAgentDispatchLocked(roomName, agentName);
+  const dispatchStatus = await ensureAgentDispatchLocked(roomName, agentName);
+  afterRoomDispatch({ roomName, orgId, pipeline, fastFailover, agentName, dispatchStatus });
 
   if (orgId) {
     try {

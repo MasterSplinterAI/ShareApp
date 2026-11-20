@@ -280,6 +280,11 @@ export const v2Admin = {
   storageConfig: () => apiV2.get('/admin/storage/config').then((r) => r.data),
   patchStorageConfig: (body) => apiV2.patch('/admin/storage/config', body).then((r) => r.data),
   testStorage: (body) => apiV2.post('/admin/storage/test', body || {}).then((r) => r.data),
+  agentAlertsConfig: () => apiV2.get('/admin/agent-alerts/config').then((r) => r.data),
+  patchAgentAlertsConfig: (body) => apiV2.patch('/admin/agent-alerts/config', body).then((r) => r.data),
+  acknowledgeAgentAlerts: (body = {}) => apiV2.post('/admin/agent-alerts/acknowledge', body).then((r) => r.data),
+  resetAgentCircuit: (body = {}) => apiV2.post('/admin/agent-alerts/reset-circuit', body).then((r) => r.data),
+  testAgentAlerts: () => apiV2.post('/admin/agent-alerts/test', {}).then((r) => r.data),
   cancelOrgSubscription: (orgId, body) =>
     apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
   marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),

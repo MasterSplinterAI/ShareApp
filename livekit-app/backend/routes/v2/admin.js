@@ -38,6 +38,17 @@ const {
   settlePendingOverageForOrgCycle,
   getLastSettlementRun,
 } = require('../../lib/v2OverageSettlement');
+const {
+  getAgentAlertSettings,
+  saveAgentAlertSettings,
+  toAgentAlertAdminView,
+  getFailoverRuntimeState,
+  resetCircuitBreaker,
+  listUnacknowledgedFailoverEvents,
+  listRecentFailoverEvents,
+  acknowledgeFailoverEvents,
+  sendTestAgentAlert,
+} = require('../../lib/agentFailover');
 
 function backendBaseUrl() {
   return (process.env.BACKEND_BASE_URL || process.env.PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
@@ -1413,6 +1424,96 @@ router.post('/billing/settle-overages', requireV2Auth, requireSuperadmin, async 
   } catch (e) {
     console.error('[admin/billing/settle-overages]', e);
     res.status(500).json({ error: 'Settlement failed' });
+  }
+});
+
+async function buildAgentAlertsPayload() {
+  const [settings, unacknowledged, recentEvents] = await Promise.all([
+    getAgentAlertSettings(),
+    listUnacknowledgedFailoverEvents(20),
+    listRecentFailoverEvents(25),
+  ]);
+  return {
+    settings: toAgentAlertAdminView(settings),
+    runtime: getFailoverRuntimeState(),
+    unacknowledged,
+    recentEvents,
+  };
+}
+
+router.get('/agent-alerts/config', requireV2Auth, requireSuperadmin, async (_req, res) => {
+  try {
+    res.json(await buildAgentAlertsPayload());
+  } catch (e) {
+    console.error('[admin/agent-alerts/config]', e);
+    res.status(500).json({ error: 'Failed to load agent alert settings' });
+  }
+});
+
+router.patch('/agent-alerts/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveAgentAlertSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_agent_alerts_config', {
+      failoverEnabled: result.settings.failoverEnabled,
+      joinTimeoutSec: result.settings.joinTimeoutSec,
+      circuitCooldownSec: result.settings.circuitCooldownSec,
+      alertCooldownMinutes: result.settings.alertCooldownMinutes,
+      bannerEnabled: result.settings.bannerEnabled,
+      emailEnabled: result.settings.emailEnabled,
+      telegramEnabled: result.settings.telegramEnabled,
+      notifyOnRecovery: result.settings.notifyOnRecovery,
+      reason: result.reason,
+    });
+    res.json({ ok: true, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/config patch]', e);
+    res.status(500).json({ error: 'Failed to save agent alert settings' });
+  }
+});
+
+router.post('/agent-alerts/acknowledge', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+    const { acknowledgedCount } = await acknowledgeFailoverEvents(req.v2Auth.email, ids);
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_ack_agent_alerts', {
+      acknowledgedCount,
+      ids: ids || 'all',
+    });
+    res.json({ ok: true, acknowledgedCount, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/acknowledge]', e);
+    res.status(500).json({ error: 'Failed to acknowledge alerts' });
+  }
+});
+
+router.post('/agent-alerts/reset-circuit', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    resetCircuitBreaker();
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_reset_agent_circuit', {
+      reason: req.body?.reason || 'manual_reset',
+    });
+    res.json({ ok: true, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/reset-circuit]', e);
+    res.status(500).json({ error: 'Failed to reset circuit breaker' });
+  }
+});
+
+router.post('/agent-alerts/test', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const delivery = await sendTestAgentAlert(req.v2Auth.email);
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_test_agent_alerts', {
+      eventId: delivery.eventId,
+      emailSent: Boolean(delivery.emailResult?.sent),
+      telegramSent: Boolean(delivery.telegramResult?.sent),
+    });
+    res.json({ ok: true, delivery, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/test]', e);
+    res.status(500).json({ error: 'Failed to send test alert' });
   }
 });
 
