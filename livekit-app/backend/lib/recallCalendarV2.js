@@ -8,6 +8,7 @@
  * - Idempotent Schedule / Delete Bot for Calendar Event with deduplication_key
  */
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const db = require('../db/v2Database');
 const { parseExternalMeetingUrl, platformDisplayName } = require('./externalMeetingUrls');
 const {
@@ -70,6 +71,170 @@ function buildCalendarOAuthForwardRedirect(query = {}, settings = {}) {
   if (hasProbe) target.searchParams.set('recall_calendar_setup_probe', '1');
 
   return { ok: true, redirectUrl: target.toString() };
+}
+
+function getGoogleCalendarOAuthClientConfig() {
+  const clientId = String(process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET || '').trim();
+  const jwtSecret = String(process.env.JWT_SECRET_V2 || '').trim();
+  return { clientId, clientSecret, jwtSecret };
+}
+
+function isGoogleCalendarOAuthConfigured() {
+  const { clientId, clientSecret, jwtSecret } = getGoogleCalendarOAuthClientConfig();
+  return Boolean(clientId && clientSecret && jwtSecret);
+}
+
+function mintCalendarOAuthState({ userId, orgId }) {
+  const { jwtSecret } = getGoogleCalendarOAuthClientConfig();
+  if (!jwtSecret) {
+    throw new Error('JWT_SECRET_V2 is required for Calendar OAuth state signing');
+  }
+  const token = jwt.sign(
+    { purpose: 'recall_calendar_oauth', userId: String(userId), orgId: String(orgId) },
+    jwtSecret,
+    { expiresIn: '15m' }
+  );
+  return `lalia:${token}`;
+}
+
+function verifyCalendarOAuthState(rawState) {
+  const raw = typeof rawState === 'string' ? rawState.trim() : '';
+  if (!raw.startsWith('lalia:')) return null;
+  const token = raw.slice('lalia:'.length);
+  const { jwtSecret } = getGoogleCalendarOAuthClientConfig();
+  if (!token || !jwtSecret) return null;
+  try {
+    const payload = jwt.verify(token, jwtSecret);
+    if (payload?.purpose !== 'recall_calendar_oauth' || !payload.userId || !payload.orgId) {
+      return null;
+    }
+    return { userId: String(payload.userId), orgId: String(payload.orgId) };
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBaseUrl(raw) {
+  return String(
+    process.env.PUBLIC_API_BASE_URL ||
+      raw ||
+      process.env.PUBLIC_FRONTEND_BASE_URL ||
+      process.env.FRONTEND_URL ||
+      'https://lalia.cloud'
+  )
+    .trim()
+    .replace(/\/+$/, '');
+}
+
+function buildGoogleCalendarConnectUrl({ userId, orgId, publicBaseUrl } = {}) {
+  if (!isGoogleCalendarOAuthConfigured()) {
+    return { ok: false, status: 503, error: 'Google Calendar OAuth is not configured on this server.' };
+  }
+  if (!userId || !orgId) {
+    return { ok: false, status: 400, error: 'Authenticated user and workspace required.' };
+  }
+  const { clientId } = getGoogleCalendarOAuthClientConfig();
+  const baseUrl = normalizeBaseUrl(publicBaseUrl);
+  const redirectUri = `${baseUrl}/api/v2/notetaker/calendar/oauth/callback`;
+  const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set(
+    'scope',
+    'https://www.googleapis.com/auth/calendar.events.readonly https://www.googleapis.com/auth/userinfo.email'
+  );
+  authUrl.searchParams.set('access_type', 'offline');
+  authUrl.searchParams.set('prompt', 'select_account consent');
+  authUrl.searchParams.set('include_granted_scopes', 'false');
+  authUrl.searchParams.set('state', mintCalendarOAuthState({ userId, orgId }));
+  return { ok: true, url: authUrl.toString() };
+}
+
+async function completeLaliaGoogleCalendarOAuth(
+  query = {},
+  { publicBaseUrl, fetchImpl = global.fetch, retryOptions } = {}
+) {
+  const baseUrl = normalizeBaseUrl(publicBaseUrl);
+  const failRedirect = (reason) => ({
+    ok: true,
+    redirectUrl: `${baseUrl}/v2/meetings?calendar_error=${encodeURIComponent(reason)}`,
+  });
+
+  const verified = verifyCalendarOAuthState(query.state);
+  if (!verified) {
+    return failRedirect('invalid_or_expired_state');
+  }
+  if (query.error || !query.code) {
+    return failRedirect('oauth_canceled_or_expired');
+  }
+
+  const { clientId, clientSecret } = getGoogleCalendarOAuthClientConfig();
+  if (!clientId || !clientSecret) {
+    return failRedirect('oauth_not_configured');
+  }
+
+  const settings = await getNotetakerSettings();
+  if (!settings.recallApiKey) {
+    return failRedirect('recall_not_configured');
+  }
+
+  const redirectUri = `${baseUrl}/api/v2/notetaker/calendar/oauth/callback`;
+  const form = new URLSearchParams({
+    code: String(query.code).trim(),
+    client_id: clientId,
+    client_secret: clientSecret,
+    redirect_uri: redirectUri,
+    grant_type: 'authorization_code',
+  });
+
+  const tokenRes = await fetchImpl('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString(),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!tokenRes.ok) {
+    return failRedirect('token_exchange_failed');
+  }
+  const tokenJson = await tokenRes.json().catch(() => null);
+  const refreshToken = String(tokenJson?.refresh_token || '').trim();
+  if (!refreshToken) {
+    return failRedirect('missing_refresh_token');
+  }
+
+  const recallRes = await fetchWithRecallRetry(
+    `${recallApiBase(settings.recallRegion, 'v2')}/calendars/`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Token ${settings.recallApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        platform: 'google_calendar',
+        oauth_client_id: clientId,
+        oauth_client_secret: clientSecret,
+        oauth_refresh_token: refreshToken,
+        metadata: {
+          lalia_user_id: verified.userId,
+          lalia_org_id: verified.orgId,
+        },
+      }),
+    },
+    { fetchImpl, retryNetwork: false, ...retryOptions }
+  );
+  if (!recallRes.ok) {
+    return failRedirect('recall_connect_failed');
+  }
+
+  const calData = await recallRes.json();
+  await resolveConnectionForRecallCalendar(calData);
+  if (calData?.id) {
+    await syncCalendarEventsFromRecall(calData.id, { fetchImpl, retryOptions }).catch(() => {});
+  }
+  return { ok: true, redirectUrl: `${baseUrl}/v2/meetings?calendar=connected` };
 }
 
 function extractOrganizerEmail(raw) {
@@ -698,6 +863,11 @@ module.exports = {
   AUTO_JOIN_RULES,
   normalizeAutoJoinRule,
   buildCalendarOAuthForwardRedirect,
+  isGoogleCalendarOAuthConfigured,
+  mintCalendarOAuthState,
+  verifyCalendarOAuthState,
+  buildGoogleCalendarConnectUrl,
+  completeLaliaGoogleCalendarOAuth,
   evaluateCalendarEventOptIn,
   extractMeetingInfoFromRecallEvent,
   resolveConnectionForRecallCalendar,

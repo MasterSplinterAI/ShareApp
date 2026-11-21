@@ -351,6 +351,7 @@ export const v2Notetaker = {
   getSession: (id) => apiV2.get(`/notetaker/sessions/${encodeURIComponent(id)}`).then((r) => r.data),
   stopSession: (id) => apiV2.post(`/notetaker/sessions/${encodeURIComponent(id)}/stop`, {}).then((r) => r.data),
   calendars: () => apiV2.get('/notetaker/calendars').then((r) => r.data),
+  connectCalendarUrl: () => apiV2.post('/notetaker/calendars/connect-url', {}).then((r) => r.data),
   patchCalendar: (id, body) =>
     apiV2.patch(`/notetaker/calendars/${encodeURIComponent(id)}`, body).then((r) => r.data),
   syncCalendar: (id) => apiV2.post(`/notetaker/calendars/${encodeURIComponent(id)}/sync`, {}).then((r) => r.data),

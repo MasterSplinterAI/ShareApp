@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, CalendarCheck2, RefreshCw, Unlink, ExternalLink } from 'lucide-react';
+import { Calendar, CalendarCheck2, Plus, RefreshCw, Unlink, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Notetaker } from '../../services/apiV2';
 import { Badge } from '../../components/ui/badge';
@@ -62,9 +62,12 @@ function fmtEventTime(startIso, endIso) {
 }
 
 export function CalendarNotetakerSection({ onUpdated }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [calendars, setCalendars] = useState([]);
   const [events, setEvents] = useState([]);
+  const [oauthConfigured, setOauthConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
   const [syncingId, setSyncingId] = useState(null);
   const [disconnectingId, setDisconnectingId] = useState(null);
   const [savingRuleId, setSavingRuleId] = useState(null);
@@ -77,6 +80,7 @@ export function CalendarNotetakerSection({ onUpdated }) {
         v2Notetaker.calendarEvents(),
       ]);
       setCalendars(Array.isArray(calRes?.calendars) ? calRes.calendars : []);
+      setOauthConfigured(Boolean(calRes?.oauthConfigured));
       setEvents(Array.isArray(evRes?.events) ? evRes.events : []);
     } catch {
       // Non-fatal: meetings list still works even if calendar data fails to load
@@ -88,6 +92,39 @@ export function CalendarNotetakerSection({ onUpdated }) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    const calStatus = searchParams.get('calendar');
+    const calErr = searchParams.get('calendar_error');
+    if (!calStatus && !calErr) return;
+    if (calStatus === 'connected') {
+      toast.success('Google Calendar connected! Upcoming events will sync automatically.');
+      loadData();
+      onUpdated?.();
+    } else if (calErr) {
+      toast.error(`Google Calendar connection failed (${calErr.replace(/_/g, ' ')})`);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('calendar');
+    next.delete('calendar_error');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, setSearchParams, loadData, onUpdated]);
+
+  const handleConnectCalendar = async () => {
+    setConnecting(true);
+    try {
+      const res = await v2Notetaker.connectCalendarUrl();
+      if (res?.url) {
+        window.location.assign(res.url);
+        return;
+      }
+      toast.error('Could not start Google Calendar connection');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Could not start Google Calendar connection');
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   const handleRuleChange = async (calId, autoJoinRule) => {
     setSavingRuleId(calId);
@@ -169,9 +206,23 @@ export function CalendarNotetakerSection({ onUpdated }) {
               </p>
             </div>
           </div>
-          <Badge variant="outline" className="w-fit shrink-0">
-            Not connected
-          </Badge>
+          {oauthConfigured ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleConnectCalendar}
+              disabled={connecting}
+              className="w-fit shrink-0 gap-1.5"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {connecting ? 'Connecting…' : 'Connect Google Calendar'}
+            </Button>
+          ) : (
+            <Badge variant="outline" className="w-fit shrink-0">
+              Not connected
+            </Badge>
+          )}
         </CardContent>
       </Card>
     );
@@ -194,6 +245,19 @@ export function CalendarNotetakerSection({ onUpdated }) {
               </CardDescription>
             </div>
           </div>
+          {oauthConfigured && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleConnectCalendar}
+              disabled={connecting}
+              className="h-8 shrink-0 gap-1.5 text-xs"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              {connecting ? 'Connecting…' : 'Add Google Calendar'}
+            </Button>
+          )}
         </div>
       </CardHeader>
 

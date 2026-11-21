@@ -5,6 +5,7 @@ const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { parseExternalMeetingUrl } = require('../../lib/externalMeetingUrls');
 const { assertCanCreateMeeting } = require('../../lib/v2Entitlements');
+const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const {
   getNotetakerSettings,
   dispatchRecallBotForSession,
@@ -14,6 +15,9 @@ const {
   AUTO_JOIN_RULES,
   normalizeAutoJoinRule,
   buildCalendarOAuthForwardRedirect,
+  isGoogleCalendarOAuthConfigured,
+  buildGoogleCalendarConnectUrl,
+  completeLaliaGoogleCalendarOAuth,
   syncCalendarEventsFromRecall,
   toggleCalendarEventRecording,
   disconnectRecallCalendar,
@@ -311,6 +315,12 @@ router.post('/sessions/:id/stop', requireV2Auth, async (req, res) => {
 
 router.get('/calendar/oauth/callback', async (req, res) => {
   try {
+    if (typeof req.query?.state === 'string' && req.query.state.startsWith('lalia:')) {
+      const out = await completeLaliaGoogleCalendarOAuth(req.query, {
+        publicBaseUrl: publicFrontendBaseUrl(req),
+      });
+      return res.redirect(302, out.redirectUrl);
+    }
     const settings = await getNotetakerSettings();
     const resFwd = buildCalendarOAuthForwardRedirect(req.query || {}, settings);
     if (!resFwd.ok) {
@@ -333,10 +343,27 @@ router.get('/calendars', requireV2Auth, async (req, res) => {
        ORDER BY created_at DESC`,
       [req.v2Auth.orgId, req.v2Auth.userId]
     );
-    res.json({ calendars });
+    res.json({ calendars, oauthConfigured: isGoogleCalendarOAuthConfigured() });
   } catch (e) {
     console.error('[v2/notetaker GET /calendars]', e);
     res.status(500).json({ error: 'Failed to load calendar connections' });
+  }
+});
+
+router.post('/calendars/connect-url', requireV2Auth, (req, res) => {
+  try {
+    const out = buildGoogleCalendarConnectUrl({
+      userId: req.v2Auth.userId,
+      orgId: req.v2Auth.orgId,
+      publicBaseUrl: publicFrontendBaseUrl(req),
+    });
+    if (!out.ok) {
+      return res.status(out.status || 400).json({ error: out.error });
+    }
+    return res.json({ url: out.url });
+  } catch (e) {
+    console.error('[v2/notetaker POST /calendars/connect-url]', e.message);
+    return res.status(500).json({ error: 'Failed to initiate Google Calendar connection' });
   }
 });
 

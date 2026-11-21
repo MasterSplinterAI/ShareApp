@@ -864,10 +864,16 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
     }
   });
 
-  it('handles Webex stop (cancel vs leave_call), admin /notetaker/* routes, Calendar OAuth forwarding/probe, Calendar V2 opt-in sync, and per-event recording toggle', async () => {
+  it('handles Webex stop (cancel vs leave_call), admin /notetaker/* routes, Calendar OAuth forwarding/probe, in-app connect OAuth flow, Calendar V2 opt-in sync, and per-event recording toggle', async () => {
     const prevSuperadmins = process.env.V2_SUPERADMIN_EMAILS;
+    const prevGoogleClientId = process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID;
+    const prevGoogleClientSecret = process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET;
+    const prevPublicBase = process.env.PUBLIC_API_BASE_URL;
     const origFetch = global.fetch;
     process.env.V2_SUPERADMIN_EMAILS = 'kenneth@example.com';
+    process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID = 'google-client-id-test.apps.googleusercontent.com';
+    process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET = 'google-client-secret-test';
+    process.env.PUBLIC_API_BASE_URL = 'https://lalia.cloud';
 
     const apiKey = 'recall_calendar_test_key_123456';
     const rawWhKey = crypto.randomBytes(24).toString('base64');
@@ -1039,6 +1045,39 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
         deletedCalendarBots.push(u);
         return { ok: true, status: 204 };
       }
+      if (u === 'https://oauth2.googleapis.com/token' && init.method === 'POST') {
+        assert.ok(String(init.body).includes('code=google-auth-code-123'));
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'ya29.test',
+            refresh_token: '1//google-refresh-token-test',
+          }),
+        };
+      }
+      if (u === 'https://us-west-2.recall.ai/api/v2/calendars/' && init.method === 'POST') {
+        const sent = JSON.parse(init.body);
+        assert.equal(sent.platform, 'google_calendar');
+        assert.equal(sent.oauth_client_id, 'google-client-id-test.apps.googleusercontent.com');
+        assert.equal(sent.oauth_refresh_token, '1//google-refresh-token-test');
+        assert.equal(sent.metadata?.lalia_user_id, userId);
+        assert.equal(sent.metadata?.lalia_org_id, orgId);
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            id: 'cal-oauth-2',
+            platform: 'google_calendar',
+            platform_email: 'second@example.com',
+            status: 'connected',
+            metadata: sent.metadata,
+          }),
+        };
+      }
+      if (u.startsWith('https://us-west-2.recall.ai/api/v2/calendar-events/?calendar_id=cal-oauth-2')) {
+        return { ok: true, status: 200, json: async () => ({ next: null, results: [] }) };
+      }
       throw new Error(`Unexpected fetch in Calendar/Stop test: ${u}`);
     };
 
@@ -1179,10 +1218,46 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       });
       assert.equal(delCalRes.status, 200);
       assert.equal(deletedCalendars.length, 1);
+
+      // In-app Connect Google Calendar OAuth flow: GET /calendars -> POST /calendars/connect-url -> GET /calendar/oauth/callback?state=lalia:...&code=...
+      assert.equal(listCalRes.body.oauthConfigured, true);
+      const connectUrlRes = await invokeRouter(notetakerRouter, {
+        method: 'POST',
+        url: '/calendars/connect-url',
+        headers: { Authorization: `Bearer ${userToken}` },
+        body: {},
+      });
+      assert.equal(connectUrlRes.status, 200);
+      const authUrlObj = new URL(connectUrlRes.body.url);
+      assert.equal(authUrlObj.origin, 'https://accounts.google.com');
+      assert.equal(authUrlObj.searchParams.get('redirect_uri'), 'https://lalia.cloud/api/v2/notetaker/calendar/oauth/callback');
+      assert.equal(authUrlObj.searchParams.get('access_type'), 'offline');
+      const signedState = authUrlObj.searchParams.get('state');
+      assert.ok(signedState && signedState.startsWith('lalia:'));
+
+      const oauthCompleteRes = await invokeRouter(notetakerRouter, {
+        method: 'GET',
+        url: '/calendar/oauth/callback',
+        query: { state: signedState, code: 'google-auth-code-123' },
+      });
+      assert.equal(oauthCompleteRes.status, 302);
+      assert.equal(oauthCompleteRes.location, 'https://lalia.cloud/v2/meetings?calendar=connected');
+
+      const afterOauthCal = await db.get(
+        `SELECT account_email, status, recall_calendar_id FROM v2_calendar_connections WHERE recall_calendar_id = 'cal-oauth-2'`
+      );
+      assert.equal(afterOauthCal.account_email, 'second@example.com');
+      assert.equal(afterOauthCal.status, 'connected');
     } finally {
       global.fetch = origFetch;
       if (prevSuperadmins === undefined) delete process.env.V2_SUPERADMIN_EMAILS;
       else process.env.V2_SUPERADMIN_EMAILS = prevSuperadmins;
+      if (prevGoogleClientId === undefined) delete process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID;
+      else process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID = prevGoogleClientId;
+      if (prevGoogleClientSecret === undefined) delete process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET;
+      else process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET = prevGoogleClientSecret;
+      if (prevPublicBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = prevPublicBase;
     }
   });
 });
