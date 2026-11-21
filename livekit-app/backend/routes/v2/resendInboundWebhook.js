@@ -1,6 +1,10 @@
 const db = require('../../db/v2Database');
 const { verifySvixWebhook } = require('../../lib/resendWebhookVerify');
 const { processInboundRsvpEmail, recordInboundEvent } = require('../../lib/guestInviteRsvp');
+const {
+  hasNotetakerRecipient,
+  processInboundNotetakerEmail,
+} = require('../../lib/inboundNotetakerInvite');
 const { getEmailSettings } = require('../../lib/v2EmailSettings');
 
 /** Production must not accept unsigned inbound webhooks. */
@@ -64,11 +68,24 @@ async function handleResendInboundWebhook(req, res) {
       return res.json({ ok: true, duplicate: true });
     }
 
-    const result = await processInboundRsvpEmail(emailId, {
+    const meta = {
       from: event.data?.from,
       to: event.data?.to,
       cc: event.data?.cc,
-    });
+      subject: event.data?.subject,
+    };
+
+    if (hasNotetakerRecipient(meta)) {
+      const botResult = await processInboundNotetakerEmail(emailId, meta);
+      if (botResult.ok) {
+        console.log('[resend/inbound] Notetaker scheduled from email:', botResult.meetingId, botResult.platform);
+      } else {
+        console.log('[resend/inbound] Notetaker invite ignored:', botResult.error, emailId);
+      }
+      return res.json({ ok: true, notetaker: botResult });
+    }
+
+    const result = await processInboundRsvpEmail(emailId, meta);
 
     if (!result.ok) {
       console.log('[resend/inbound] RSVP not applied:', result.error, emailId);

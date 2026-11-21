@@ -4,13 +4,52 @@ const { COSTS } = require('../lib/costConstants');
 const { reconcileTranslationMinutesForMeeting } = require('../lib/v2TranslationUsage');
 const { checkAndEnforceUsageCap } = require('../lib/v2UsageCapEnforcement');
 const { evaluateAndSendUsageAlerts } = require('../lib/v2UsageAlerts');
+const { webhookTimestamp, reconcileParticipantUsage } = require('../lib/v2ParticipantUsage');
 
 /** LiveKit bills WebRTC and agent sessions in 1-second increments with a 10-second minimum. */
 const LIVEKIT_SESSION_MINIMUM_MINUTES = 10 / 60;
 
-function livekitMinuteRateUsd(identity) {
-  if (isAgentIdentity(identity)) return COSTS.livekit_agent_minute.unit_cost_usd;
+function livekitMinuteRateUsd(identity, { selfHostedAgent = false } = {}) {
+  if (isAgentIdentity(identity)) {
+    const isSelfHosted =
+      selfHostedAgent || String(identity || '').toLowerCase().includes('selfhosted');
+    return isSelfHosted
+      ? COSTS.livekit_participant_minute.unit_cost_usd
+      : COSTS.livekit_agent_minute.unit_cost_usd;
+  }
   return COSTS.livekit_participant_minute.unit_cost_usd;
+}
+
+/**
+ * Inspect LiveKit webhook event rows (newest-first preferred) to determine
+ * whether the room was served by a self-hosted agent worker rather than
+ * LiveKit Cloud Agent hosting.
+ */
+function isSelfHostedRoomEvents(payloadRows = []) {
+  for (const row of payloadRows) {
+    const raw = typeof row === 'string' ? row : row?.payload_json;
+    if (!raw) continue;
+    try {
+      const ev = JSON.parse(raw);
+      const roomMetaRaw = ev?.room?.metadata;
+      if (roomMetaRaw) {
+        const roomMeta = typeof roomMetaRaw === 'string' ? JSON.parse(roomMetaRaw) : roomMetaRaw;
+        if (roomMeta && Object.prototype.hasOwnProperty.call(roomMeta, 'stt_pipeline')) {
+          return (
+            roomMeta.stt_pipeline === 'selfhosted_xai' ||
+            String(roomMeta.agentName || '').toLowerCase().includes('selfhosted')
+          );
+        }
+      }
+      const identity = String(ev?.participant?.identity || '').toLowerCase();
+      if (identity.includes('selfhosted')) return true;
+    } catch {
+      if (raw.includes('selfhosted_xai') || raw.includes('translation-selfhosted-xai')) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function isLiveKitWebhookVerifyRequired() {
@@ -84,61 +123,6 @@ async function resolveMeetingContext(roomName) {
   return { orgId: row.org_id, meetingUuid: row.id };
 }
 
-async function recordParticipantSessionUsage(roomName, participantIdentity, leaveTs, orgId, meetingUuid) {
-  if (!orgId || !participantIdentity || isAgentIdentity(participantIdentity)) return;
-
-  const joinEv = await get(
-    `SELECT ts FROM meeting_events
-     WHERE meeting_id = ? AND event_type = 'participant_joined'
-       AND participant_identity = ?
-       AND ts <= ?
-     ORDER BY ts DESC LIMIT 1`,
-    [roomName, participantIdentity, leaveTs]
-  );
-  if (!joinEv) return;
-
-  const idempotencyKey = `${roomName}:${participantIdentity}:${joinEv.ts}`;
-  const existing = await get(
-    `SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`,
-    [orgId, idempotencyKey]
-  );
-  if (existing) return;
-
-  const minutes = Math.max(0.01, (leaveTs - joinEv.ts) / 1000 / 60);
-  await run(
-    `INSERT INTO v2_usage_events (id, org_id, meeting_id, event_type, quantity, unit, idempotency_key)
-     VALUES (?,?,?,?,?,?,?)`,
-    [uuid(), orgId, meetingUuid, 'meeting_participant_minute', minutes, 'minute', idempotencyKey]
-  );
-}
-
-async function flushOpenParticipants(roomName, endTs, orgId, meetingUuid) {
-  if (!orgId) return;
-  const joinRows = await all(
-    `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_joined'`,
-    [roomName]
-  );
-  for (const join of joinRows) {
-    if (isAgentIdentity(join.participant_identity)) continue;
-    const idempotencyKey = `${roomName}:${join.participant_identity}:${join.ts}`;
-    const billed = await get(
-      `SELECT id FROM v2_usage_events WHERE org_id = ? AND idempotency_key = ?`,
-      [orgId, idempotencyKey]
-    );
-    if (billed) continue;
-
-    const leftAfter = await get(
-      `SELECT ts FROM meeting_events
-       WHERE meeting_id = ? AND event_type = 'participant_left'
-         AND participant_identity = ? AND ts >= ?
-       ORDER BY ts ASC LIMIT 1`,
-      [roomName, join.participant_identity, join.ts]
-    );
-    const leaveTs = leftAfter ? leftAfter.ts : endTs;
-    await recordParticipantSessionUsage(roomName, join.participant_identity, leaveTs, orgId, meetingUuid);
-  }
-}
-
 function computeRoomDurationSeconds(startRows, finishRows) {
   if (!startRows.length || !finishRows.length) return null;
   let total = 0;
@@ -150,7 +134,13 @@ function computeRoomDurationSeconds(startRows, finishRows) {
 }
 
 /** Pair each join with the next leave for the same identity (matches billing usage logic). */
-function computeParticipantMinutes(joinRows, leaveRows, fallbackEndTs, skipIdentity) {
+function computeParticipantMinutes(
+  joinRows,
+  leaveRows,
+  fallbackEndTs,
+  skipIdentity,
+  { selfHostedAgent = false } = {}
+) {
   const leavesByIdentity = {};
   for (const row of leaveRows) {
     const id = row.participant_identity;
@@ -185,7 +175,7 @@ function computeParticipantMinutes(joinRows, leaveRows, fallbackEndTs, skipIdent
       byParticipant[pid] = { minutes: 0, cost: 0 };
     }
     byParticipant[pid].minutes += mins;
-    byParticipant[pid].cost += mins * livekitMinuteRateUsd(pid);
+    byParticipant[pid].cost += mins * livekitMinuteRateUsd(pid, { selfHostedAgent });
   }
 
   return { participantMinutes, byParticipant };
@@ -268,15 +258,22 @@ async function aggregateRollup(meetingId) {
       `SELECT participant_identity, ts FROM meeting_events WHERE meeting_id = ? AND event_type = 'participant_left' ORDER BY ts ASC`,
       [meetingId]
     );
+    const metaEventRows = await all(
+      `SELECT payload_json FROM meeting_events WHERE meeting_id = ? AND payload_json IS NOT NULL ORDER BY ts DESC`,
+      [meetingId]
+    );
+    const selfHostedAgent = isSelfHostedRoomEvents(metaEventRows);
 
-    // Price humans at WebRTC participant rates and cloud agents at agent-session
-    // rates. Customer participant-minute usage stays human-only (see
-    // recordParticipantSessionUsage); this rollup is our COGS.
+    // Price humans at WebRTC participant rates, self-hosted agents at WebRTC
+    // participant rates, and cloud-hosted agents at agent-session rates.
+    // Customer participant-minute usage stays human-only (see
+    // reconcileParticipantUsage); this rollup is our COGS.
     const { byParticipant } = computeParticipantMinutes(
       joinRows,
       leaveRows,
       endEv.ts,
-      () => false
+      () => false,
+      { selfHostedAgent }
     );
 
     let participantCost = 0;
@@ -335,7 +332,7 @@ async function handleLiveKitWebhook(req, res) {
 
     const eventType = event.event || 'unknown';
     const roomName = event.room?.name || 'unknown';
-    const ts = Date.now();
+    const ts = webhookTimestamp(event);
     const participantIdentity = event.participant?.identity || null;
 
     const ctx = await resolveMeetingContext(roomName);
@@ -356,14 +353,35 @@ async function handleLiveKitWebhook(req, res) {
       ]
     );
 
-    if (eventType === 'participant_joined' && participantIdentity && orgId && !isAgentIdentity(participantIdentity)) {
-      checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
-        console.error('[webhook/livekit] usage cap check:', err.message)
-      );
+    if (orgId && ['participant_joined', 'participant_left', 'room_finished'].includes(eventType)) {
+      await reconcileParticipantUsage(roomName, orgId, meetingUuid, isAgentIdentity);
+    }
+
+    if (eventType === 'participant_joined' && participantIdentity && !isAgentIdentity(participantIdentity)) {
+      if (orgId) {
+        checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
+          console.error('[webhook/livekit] usage cap check:', err.message)
+        );
+      }
+      let roomPipeline = null;
+      try {
+        const rawMeta = event.room?.metadata;
+        const parsedMeta = rawMeta ? (typeof rawMeta === 'string' ? JSON.parse(rawMeta) : rawMeta) : {};
+        roomPipeline = parsedMeta?.stt_pipeline || null;
+      } catch {
+        roomPipeline = null;
+      }
+      if (!roomPipeline || roomPipeline === 'selfhosted_xai') {
+        try {
+          const { scheduleSelfHostedWatchdog } = require('../lib/agentFailover');
+          scheduleSelfHostedWatchdog(roomName, { orgId });
+        } catch (err) {
+          console.warn('[webhook/livekit] failover watchdog schedule:', err.message);
+        }
+      }
     }
 
     if (eventType === 'participant_left' && participantIdentity && orgId) {
-      await recordParticipantSessionUsage(roomName, participantIdentity, ts, orgId, meetingUuid);
       if (!isAgentIdentity(participantIdentity)) {
         checkAndEnforceUsageCap(roomName, orgId, meetingUuid).catch((err) =>
           console.error('[webhook/livekit] usage cap check:', err.message)
@@ -376,7 +394,6 @@ async function handleLiveKitWebhook(req, res) {
 
     if (eventType === 'room_finished') {
       if (orgId) {
-        await flushOpenParticipants(roomName, ts, orgId, meetingUuid);
         try {
           await reconcileTranslationMinutesForMeeting(roomName, orgId, meetingUuid);
         } catch (err) {
@@ -398,4 +415,11 @@ async function handleLiveKitWebhook(req, res) {
   }
 }
 
-module.exports = { handleLiveKitWebhook, aggregateRollup, computeParticipantMinutes, isLiveKitWebhookVerifyRequired };
+module.exports = {
+  handleLiveKitWebhook,
+  aggregateRollup,
+  computeParticipantMinutes,
+  livekitMinuteRateUsd,
+  isSelfHostedRoomEvents,
+  isLiveKitWebhookVerifyRequired,
+};

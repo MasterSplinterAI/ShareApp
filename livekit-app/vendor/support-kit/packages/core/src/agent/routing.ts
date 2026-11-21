@@ -1,6 +1,6 @@
 import type { KbSearchHit } from "../kb/search.js";
-import type { ProposalType, TicketKind } from "@rhule/support-shared";
-import { SENSITIVE_TOPICS_DEFAULT } from "@rhule/support-shared";
+import type { ProposalType, TicketKind } from "@quill/support-shared";
+import { SENSITIVE_TOPICS_DEFAULT } from "@quill/support-shared";
 
 export type AgentRoute = "reply_in_app" | "propose_reply" | "escalate" | "close";
 

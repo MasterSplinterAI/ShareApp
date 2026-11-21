@@ -2,10 +2,14 @@ const express = require('express');
 const { AccessToken } = require('livekit-server-sdk');
 const db = require('../db/v2Database');
 const { requireV2Auth } = require('../middleware/v2Auth');
+const { assertCanCreateMeeting } = require('../lib/v2Entitlements');
+const { getRoomService } = require('../lib/livekitService');
 const { participantMetadata } = require('../lib/livekitTokenMetadata');
 const router = express.Router();
 
-// Legacy token endpoint — locked down to authenticated V2 users and non-V2 rooms only.
+const VALID_ROOM_NAME_RE = /^[a-zA-Z0-9_-]{3,128}$/;
+
+// Legacy token endpoint — locked down to authenticated V2 users in their own provisioned non-V2 rooms.
 router.post('/token', requireV2Auth, async (req, res) => {
   try {
     const { roomName, participantName } = req.body;
@@ -16,11 +20,21 @@ router.post('/token', requireV2Auth, async (req, res) => {
       });
     }
 
+    const cleanRoomName = String(roomName).trim();
+    if (!VALID_ROOM_NAME_RE.test(cleanRoomName)) {
+      return res.status(400).json({ error: 'Invalid roomName format' });
+    }
+
     // Never mint tokens for V2 meetings here — V2 meetings must go through
     // /api/v2/meetings/:id/token or /api/v2/join/guest-token.
-    const v2Row = await db.get(`SELECT id FROM v2_meetings WHERE livekit_room_name = ?`, [String(roomName)]);
+    const v2Row = await db.get(`SELECT id FROM v2_meetings WHERE livekit_room_name = ?`, [cleanRoomName]);
     if (v2Row) {
       return res.status(403).json({ error: 'Use V2 meeting token endpoint for this room' });
+    }
+
+    const gate = await assertCanCreateMeeting(req.v2Auth.orgId);
+    if (!gate.ok) {
+      return res.status(402).json({ error: gate.message, code: gate.code });
     }
 
     // Check if LiveKit credentials are configured
@@ -28,6 +42,20 @@ router.post('/token', requireV2Auth, async (req, res) => {
       return res.status(500).json({
         error: 'LiveKit credentials not configured.'
       });
+    }
+
+    const rooms = await getRoomService().listRooms([cleanRoomName]);
+    if (!rooms || rooms.length === 0) {
+      return res.status(404).json({ error: 'Room not found' });
+    }
+    let roomMeta = {};
+    try {
+      roomMeta = rooms[0].metadata ? JSON.parse(rooms[0].metadata) : {};
+    } catch {
+      roomMeta = {};
+    }
+    if (!roomMeta.org_id || roomMeta.org_id !== req.v2Auth.orgId) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const safeName = String(participantName).trim().slice(0, 128);
@@ -53,7 +81,7 @@ router.post('/token', requireV2Auth, async (req, res) => {
     // Grant permissions
     at.addGrant({
       roomJoin: true,
-      room: String(roomName),
+      room: cleanRoomName,
       canPublish: true,
       canSubscribe: true,
       canPublishData: true,

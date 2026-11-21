@@ -1,0 +1,15 @@
+{
+  "Rules": [{
+    "ID": "LaliaDaily30Days",
+    "Status": "Enabled",
+    "Filter": { "Prefix": "lalia/daily/" },
+    "Expiration": { "Days": 30 },
+    "NoncurrentVersionExpiration": { "NoncurrentDays": 1 },
+    "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 1 }
+  }, {
+    "ID": "RemoveExpiredDeleteMarkers",
+    "Status": "Enabled",
+    "Filter": { "Prefix": "lalia/daily/" },
+    "Expiration": { "ExpiredObjectDeleteMarker": true }
+  }]
+}

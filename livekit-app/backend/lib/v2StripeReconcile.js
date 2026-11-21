@@ -1,6 +1,6 @@
 const db = require('../db/v2Database');
 const { getStripeSettings, getStripeClient, isStripeBillingActive } = require('./v2StripeSettings');
-const { applyStripeSubscriptionToOrg } = require('./v2StripeSubscriptionSync');
+const { reconcileStripeSubscriptionEvent } = require('./v2StripeSubscriptionSync');
 
 const LIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 const PLAN_RANK = { free: 0, starter: 1, pro: 2 };
@@ -77,7 +77,7 @@ async function reconcileOrgSubscriptionFromStripe(orgId) {
     return { ok: true, skipped: 'no_stripe_subscription', subscription: sub };
   }
 
-  await applyStripeSubscriptionToOrg(stripeSub);
+  await reconcileStripeSubscriptionEvent(stripeSub);
   const updated = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [orgId]);
   return { ok: true, reconciled: true, subscription: updated };
 }

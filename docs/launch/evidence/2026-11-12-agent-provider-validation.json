@@ -1,0 +1,42 @@
+{
+  "verifiedAt": "2026-11-12T22:41:04.421173+00:00",
+  "retainedCredentialsValidated": {
+    "deepgram": {
+      "endpoint": "/v1/auth/token",
+      "status": 200
+    },
+    "openai": {
+      "endpoint": "/v1/models",
+      "status": 200
+    },
+    "xai": {
+      "endpoint": "/v1/models",
+      "status": 200
+    },
+    "elevenlabs": {
+      "userEndpointStatus": 401,
+      "reason": "restricted user-read permission, not invalid key",
+      "syntheticTtsStatus": 200,
+      "audioBytes": 31390,
+      "audioRetained": false
+    }
+  },
+  "observedRuntimeProviders": {
+    "primary": {
+      "stt": "xai",
+      "tts": "xai",
+      "llm": "openai"
+    },
+    "stable": {
+      "stt": "deepgram",
+      "llm": "openai"
+    }
+  },
+  "canonicalTuning": {
+    "CAPTION_UTTERANCE_END_DELAY_SEC": "3.0",
+    "primary.LOG_LEVEL": "INFO",
+    "primary.XAI_STT_ENDPOINTING_MS": "600"
+  },
+  "qualification": "Provider selections observed in safe CloudWatch config and prior synthetic cost records; tuning selected from retained local configuration, to be established explicitly and runtime-validated. No claim of cloud-secret export.",
+  "providerKeysRevoked": false
+}

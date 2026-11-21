@@ -29,3 +29,15 @@ describe("seedCuratedDocs", () => {
     assert.match(hits[0]?.title ?? "", /reset/i);
   });
 });
+it('standalone seed republishes its exact source rather than an unrelated newer operator draft',async()=>{
+ const {updateKbArticle}=await import('./codegen.js');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'support-seed-exact-'));
+ try{
+  fs.writeFileSync(path.join(dir,'guide.md'),'# Guide\nApproved source');
+  const db=createMemorySqliteAdapter();const first=await seedCuratedDocs(db,'demo',dir);
+  await updateKbArticle(db,'demo',first.articleIds[0]!,{body:'UNREVIEWED_OPERATOR_DRAFT'});
+  await seedCuratedDocs(db,'demo',dir);
+  const publicArticles=await searchActiveArticles(db,'demo',{publicAudience:true});
+  assert.equal(publicArticles[0]?.body,'# Guide\nApproved source');
+ }finally{fs.rmSync(dir,{recursive:true,force:true});}
+});

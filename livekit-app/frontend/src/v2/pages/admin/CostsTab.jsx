@@ -1,3 +1,4 @@
+import { LiveKitCostsPanel } from './LiveKitCostsPanel';
 import { useEffect, useState } from 'react';
 import { v2Admin } from '../../../services/apiV2';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../../components/ui/card';
@@ -133,6 +134,7 @@ export function CostsTab({ costs, costsLoadedAt, onSelectOrg, setTab }) {
   return (
     <div className="space-y-4">
       <RevenuePanel costsTotals={costs?.totals} />
+      <LiveKitCostsPanel />
       <Card className="app-card overflow-hidden border-border/60">
         <CardHeader>
           <CardTitle className="text-lg">Costs &amp; margin (month)</CardTitle>

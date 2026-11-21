@@ -31,6 +31,12 @@ describe('invoice unit rates', () => {
     const cost = computeCost('xai_tts_char', 1_000_000);
     assert.ok(Math.abs(cost.total_cost_usd - 15) < 1e-9);
   });
+
+  it('prices Recall.ai bot minutes at $0.50 per hour', () => {
+    assert.equal(COSTS.recall_bot_minute.provider, 'recall');
+    const cost = computeCost('recall_bot_minute', 60);
+    assert.ok(Math.abs(cost.total_cost_usd - 0.5) < 1e-9);
+  });
 });
 
 describe('computeParticipantMinutes invoice pricing', () => {

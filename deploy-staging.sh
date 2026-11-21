@@ -19,6 +19,7 @@ APP_DIR="/var/www/share-app-staging"
 BACKEND_DIR="$APP_DIR/livekit-app/backend"
 FRONTEND_DIR="$APP_DIR/livekit-app/frontend"
 VENDOR_DIR="$APP_DIR/livekit-app/vendor"
+AGENT_DIR="$APP_DIR/livekit-app/translation-agent"
 GIT_REPO="/home/ubuntu/git/share-app.git"
 PM2_NAME="livekit-backend-staging"
 NGINX_STAGING_SRC="deploy/nginx-staging.jarmetals.com.conf"
@@ -55,7 +56,7 @@ echo "Ops note: staging should use a separate LiveKit project/API keys from prod
 
 echo "=== Step 2: deploy $DEPLOY_BRANCH to $REMOTE_HOST ==="
 ssh -i "$PEM_KEY" "$REMOTE_USER@$REMOTE_HOST" \
-  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' FORCE_FRONTEND_BUILD='$FORCE_FRONTEND_BUILD' NGINX_STAGING_DEST='$NGINX_STAGING_DEST' bash -s" <<'REMOTE'
+  "APP_DIR='$APP_DIR' BACKEND_DIR='$BACKEND_DIR' FRONTEND_DIR='$FRONTEND_DIR' VENDOR_DIR='$VENDOR_DIR' AGENT_DIR='$AGENT_DIR' GIT_REPO='$GIT_REPO' DEPLOY_BRANCH='$DEPLOY_BRANCH' PM2_NAME='$PM2_NAME' STAGING_BACKEND_PORT='$STAGING_BACKEND_PORT' FORCE_FRONTEND_BUILD='$FORCE_FRONTEND_BUILD' NGINX_STAGING_DEST='$NGINX_STAGING_DEST' bash -s" <<'REMOTE'
 set -euo pipefail
 
 echo "Fetching latest code..."
@@ -108,13 +109,70 @@ if [ "$NEED_BACKEND_INSTALL" != true ] && [ -f "$BACKEND_DIR/package-lock.json" 
   fi
 fi
 
-sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR"
+# Marketing runtime output is built in the temporary checkout, never from live frontend deps.
+NEED_MARKETING_PACKAGE=false
+if [ -f "$TEMP_DIR/livekit-app/vendor/marketing-kit/manifest.json" ]; then
+  if [ "$NEED_FRONTEND_BUILD" = true ] \
+     || [ ! -f "$VENDOR_DIR/marketing-kit/runtime-artifacts.json" ] \
+     || [ ! -f "$VENDOR_DIR/marketing-kit/packages/core/dist/index.cjs" ] \
+     || ! cmp -s "$TEMP_DIR/livekit-app/vendor/marketing-kit/manifest.json" "$VENDOR_DIR/marketing-kit/manifest.json"; then
+    NEED_MARKETING_PACKAGE=true
+    NEED_FRONTEND_BUILD=true
+  fi
+fi
+if [ "$NEED_FRONTEND_BUILD" = true ] || [ ! -f "$FRONTEND_DIR/index.html" ]; then
+  # Vendor packages must resolve before frontend npm install (file:../vendor)
+  if [ -d "$TEMP_DIR/livekit-app/vendor/support-kit/packages" ]; then
+    for pkg in shared react; do
+      PKG_DIR="$TEMP_DIR/livekit-app/vendor/support-kit/packages/$pkg"
+      if [ -f "$PKG_DIR/package.json" ]; then
+        (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
+      fi
+    done
+  fi
+  cd "$TEMP_DIR/livekit-app/frontend"
+  if [ -d "$FRONTEND_DIR/node_modules" ] \
+     && cmp -s "$FRONTEND_DIR/package-lock.json" "$TEMP_DIR/livekit-app/frontend/package-lock.json"; then
+    cp -r "$FRONTEND_DIR/node_modules" .
+  else
+    npm ci --prefer-offline --no-audit --silent 2>/dev/null \
+      || npm install --prefer-offline --no-audit --silent
+  fi
+fi
+
+# BEGIN MARKETING_RUNTIME_PREPARE
+if [ "$NEED_MARKETING_PACKAGE" = true ]; then
+  node "$TEMP_DIR/deploy/prepare-marketing-runtime.mjs" build \
+    "$TEMP_DIR/livekit-app/frontend" "$TEMP_DIR/marketing-runtime"
+fi
+# END MARKETING_RUNTIME_PREPARE
+
+NEED_SHARED_RUNTIME=false
+if [ -f "$TEMP_DIR/livekit-app/vendor/ops-sdk/manifest.json" ]; then
+  if [ ! -f "$VENDOR_DIR/ops-sdk/dist/index.cjs" ] \
+     || [ ! -f "$VENDOR_DIR/support-kit/packages/core/dist/index.cjs" ] \
+     || ! cmp -s "$TEMP_DIR/livekit-app/vendor/ops-sdk/manifest.json" "$VENDOR_DIR/ops-sdk/manifest.json" \
+     || ! cmp -s "$TEMP_DIR/livekit-app/vendor/support-kit/manifest.json" "$VENDOR_DIR/support-kit/manifest.json"; then
+    NEED_SHARED_RUNTIME=true
+    (
+      cd "$TEMP_DIR/livekit-app/backend"
+      npm ci --include=dev --prefer-offline --no-audit --silent
+      npm run build:ops-sdk
+      npm run build:support-kit
+    )
+  fi
+fi
+
+sudo mkdir -p "$BACKEND_DIR" "$FRONTEND_DIR" "$VENDOR_DIR" "$AGENT_DIR"
 
 # ---------- Vendor (support-kit file: deps for backend + frontend build) ----------
 if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
   echo "Syncing livekit-app/vendor..."
   sudo rsync -a --delete \
     --exclude 'node_modules' \
+    --exclude 'marketing-kit' \
+    --exclude 'ops-sdk/dist' \
+    --exclude 'support-kit/packages/*/dist' \
     "$TEMP_DIR/livekit-app/vendor/" "$VENDOR_DIR/"
   # Nested file: deps resolve from each package dir when Node loads via backend/frontend symlinks
   for pkg in shared core channels react; do
@@ -124,14 +182,27 @@ if [ -d "$TEMP_DIR/livekit-app/vendor" ]; then
       (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
     fi
   done
-  for pkg in shared core react; do
-    PKG_DIR="$VENDOR_DIR/marketing-kit/packages/$pkg"
-    if [ -f "$PKG_DIR/package.json" ]; then
-      echo "npm install vendor/marketing-kit/packages/$pkg..."
-      (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
-    fi
+fi
+
+if [ "$NEED_SHARED_RUNTIME" = true ]; then
+  sudo rsync -a "$TEMP_DIR/livekit-app/vendor/ops-sdk/dist/" "$VENDOR_DIR/ops-sdk/dist/"
+  for pkg in shared core channels react; do
+    sudo rsync -a "$TEMP_DIR/livekit-app/vendor/support-kit/packages/$pkg/dist/" "$VENDOR_DIR/support-kit/packages/$pkg/dist/"
   done
 fi
+
+# BEGIN MARKETING_RUNTIME_PUBLISH
+if [ "$NEED_MARKETING_PACKAGE" = true ]; then
+  node "$TEMP_DIR/deploy/prepare-marketing-runtime.mjs" verify \
+    "$TEMP_DIR/marketing-runtime" "$TEMP_DIR/livekit-app/vendor/marketing-kit/manifest.json"
+  sudo mkdir -p "$VENDOR_DIR/marketing-kit"
+  # Explicit artifact files only: preserve runtime node_modules, media and configuration.
+  sudo rsync -a --files-from="$TEMP_DIR/marketing-runtime/files.txt" \
+    "$TEMP_DIR/marketing-runtime/kit/" "$VENDOR_DIR/marketing-kit/"
+  node "$TEMP_DIR/deploy/prepare-marketing-runtime.mjs" verify-runtime \
+    "$VENDOR_DIR/marketing-kit" "$TEMP_DIR/livekit-app/vendor/marketing-kit/manifest.json"
+fi
+# END MARKETING_RUNTIME_PUBLISH
 
 # ---------- Backend ----------
 ENV_BACKUP=''
@@ -194,23 +265,7 @@ fi
 # ---------- Frontend ----------
 if [ "$NEED_FRONTEND_BUILD" = true ] || [ ! -f "$FRONTEND_DIR/index.html" ]; then
   echo "Building frontend..."
-  # Vendor packages must resolve before frontend npm install (file:../vendor)
-  if [ -d "$TEMP_DIR/livekit-app/vendor/support-kit/packages" ]; then
-    for pkg in shared react; do
-      PKG_DIR="$TEMP_DIR/livekit-app/vendor/support-kit/packages/$pkg"
-      if [ -f "$PKG_DIR/package.json" ]; then
-        (cd "$PKG_DIR" && npm install --omit=dev --prefer-offline --no-audit --silent)
-      fi
-    done
-  fi
   cd "$TEMP_DIR/livekit-app/frontend"
-  if [ -d "$FRONTEND_DIR/node_modules" ] \
-     && cmp -s "$FRONTEND_DIR/package-lock.json" "$TEMP_DIR/livekit-app/frontend/package-lock.json"; then
-    cp -r "$FRONTEND_DIR/node_modules" .
-  else
-    npm ci --prefer-offline --no-audit --silent 2>/dev/null \
-      || npm install --prefer-offline --no-audit --silent
-  fi
   # Staging: show "Try V2 workspace" on classic home (build-time flag only for this deploy path).
   export VITE_V2_ENTRY_ENABLED="${VITE_V2_ENTRY_ENABLED:-true}"
   # Install Chromium (+ OS libs once) so marketing prerender shells can be generated.
@@ -270,8 +325,32 @@ if [ -d "$TEMP_DIR/livekit-app/frontend/src" ]; then
   sudo rsync -a "$TEMP_DIR/livekit-app/frontend/src/" "$APP_DIR/livekit-app/frontend/src/"
 fi
 
+# ---------- Translation Agent (self-hosted hybrid worker source) ----------
+if [ -d "$TEMP_DIR/livekit-app/translation-agent" ]; then
+  sudo mkdir -p "$AGENT_DIR"
+  sudo rsync -a --delete \
+    --exclude '.env*' \
+    --exclude '.venv' \
+    --exclude '__pycache__' \
+    --exclude '.pytest_cache' \
+    "$TEMP_DIR/livekit-app/translation-agent/" "$AGENT_DIR/"
+  sudo chown -R ubuntu:ubuntu "$AGENT_DIR"
+fi
+
+# BEGIN MARKETING_RUNTIME_SMOKE
+if [ -f "$VENDOR_DIR/marketing-kit/manifest.json" ]; then
+  (cd "$BACKEND_DIR" && node -e 'const core=require("@rhule/marketing-core"); const shared=require("@rhule/marketing-shared"); if(typeof core.createMarketingKit!=="function" || !Object.keys(shared).length) throw Error("Marketing runtime import failed");')
+fi
+if [ -f "$VENDOR_DIR/ops-sdk/manifest.json" ]; then
+  (cd "$BACKEND_DIR" && node -e 'if(typeof require("@rhule/ops-sdk").createSupportGateway!=="function" || typeof require("@quill/support-core").ensureSchema!=="function") throw Error("Shared runtime import failed");')
+fi
+# END MARKETING_RUNTIME_SMOKE
+
 # ---------- Services ----------
 echo "Restarting staging backend ($PM2_NAME)..."
+# Override any older PM2 environment values so customer links use the public host.
+export FRONTEND_URL=https://lalia.cloud
+export PUBLIC_FRONTEND_BASE_URL=https://lalia.cloud
 if pm2 describe "$PM2_NAME" >/dev/null 2>&1; then
   pm2 restart "$PM2_NAME" --update-env
 else
@@ -279,6 +358,11 @@ else
   pm2 start server.js --name "$PM2_NAME" --update-env
 fi
 pm2 save >/dev/null
+
+if systemctl is-active --quiet lalia-selfhosted-agent.service && { [ -z "$CHANGED_FILES" ] || echo "$CHANGED_FILES" | grep -q '^livekit-app/translation-agent/'; }; then
+  echo "Restarting lalia-selfhosted-agent.service..."
+  sudo systemctl restart lalia-selfhosted-agent.service
+fi
 
 echo "Deployed $DEPLOY_BRANCH commit: $NEW_COMMIT"
 REMOTE

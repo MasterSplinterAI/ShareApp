@@ -13,9 +13,13 @@ const {
 
 const router = express.Router();
 
+function isDemoOrchestratorSecretRequired() {
+  return process.env.NODE_ENV === 'production';
+}
+
 function verifyOrchestratorSecret(req) {
   const expected = String(process.env.DEMO_ORCHESTRATOR_SECRET || '').trim();
-  if (!expected) return true;
+  if (!expected) return !isDemoOrchestratorSecretRequired();
   const provided = String(req.get('X-Demo-Orchestrator-Secret') || '').trim();
   if (!provided) return false;
   const a = Buffer.from(provided);
@@ -143,5 +147,8 @@ router.post('/orchestrate', async (req, res) => {
     res.status(500).json({ error: 'Failed to orchestrate demo turn' });
   }
 });
+
+router.isDemoOrchestratorSecretRequired = isDemoOrchestratorSecretRequired;
+router.verifyOrchestratorSecret = verifyOrchestratorSecret;
 
 module.exports = router;

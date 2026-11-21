@@ -1,8 +1,26 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 // https://vitejs.dev/config/
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        marketingSupportWidget: path.resolve(__dirname, 'src/marketingSupportWidget.jsx'),
+      },
+      output: {
+        entryFileNames: (chunkInfo) =>
+          chunkInfo.name === 'marketingSupportWidget'
+            ? 'assets/support-widget.js'
+            : 'assets/[name]-[hash].js',
+      },
+    },
+  },
   plugins: [
     react(),
     // Custom plugin to bypass host check for development

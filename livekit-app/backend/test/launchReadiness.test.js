@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const { assertMeetingHostOrAdmin } = require('../lib/v2MeetingAuthz');
 const { isLiveKitWebhookVerifyRequired } = require('../routes/webhooks');
 const { isResendInboundSecretRequired } = require('../routes/v2/resendInboundWebhook');
+const { isDemoOrchestratorSecretRequired, verifyOrchestratorSecret } = require('../routes/demo');
 const { scrubbedJoinDenial, INVITE_GATE_REASONS } = require('../routes/v2/joinPublic');
 const { mintMeetingQualityToken, verifyMeetingQualityToken } = require('../lib/meetingQualityToken');
 const crypto = require('crypto');
@@ -103,6 +104,37 @@ describe('isResendInboundSecretRequired', () => {
     savedNodeEnv = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
     assert.equal(isResendInboundSecretRequired(), false);
+  });
+});
+
+describe('isDemoOrchestratorSecretRequired', () => {
+  let savedNodeEnv;
+  let savedSecret;
+
+  afterEach(() => {
+    if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = savedNodeEnv;
+    if (savedSecret === undefined) delete process.env.DEMO_ORCHESTRATOR_SECRET;
+    else process.env.DEMO_ORCHESTRATOR_SECRET = savedSecret;
+  });
+
+  it('fails closed in production when DEMO_ORCHESTRATOR_SECRET is unset', () => {
+    savedNodeEnv = process.env.NODE_ENV;
+    savedSecret = process.env.DEMO_ORCHESTRATOR_SECRET;
+    process.env.NODE_ENV = 'production';
+    delete process.env.DEMO_ORCHESTRATOR_SECRET;
+    assert.equal(isDemoOrchestratorSecretRequired(), true);
+    assert.equal(verifyOrchestratorSecret({ get: () => '' }), false);
+  });
+
+  it('verifies matching header when secret is configured', () => {
+    savedNodeEnv = process.env.NODE_ENV;
+    savedSecret = process.env.DEMO_ORCHESTRATOR_SECRET;
+    process.env.NODE_ENV = 'production';
+    process.env.DEMO_ORCHESTRATOR_SECRET = 'demo-secret-123';
+    assert.equal(verifyOrchestratorSecret({ get: () => '' }), false);
+    assert.equal(verifyOrchestratorSecret({ get: () => 'wrong' }), false);
+    assert.equal(verifyOrchestratorSecret({ get: () => 'demo-secret-123' }), true);
   });
 });
 

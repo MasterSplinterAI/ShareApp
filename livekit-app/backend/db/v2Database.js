@@ -7,6 +7,15 @@
 const path = require('path');
 const crypto = require('crypto');
 const { toPostgresSql } = require('./sqlCompat');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const transactionContext = new AsyncLocalStorage();
+let sqliteQueue = Promise.resolve();
+
+function sqliteExclusive(work) {
+  const result = sqliteQueue.then(work, work);
+  sqliteQueue = result.catch(() => {});
+  return result;
+}
 
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const usePostgres = Boolean(DATABASE_URL);
@@ -68,18 +77,53 @@ function sqliteAll(sql, params = []) {
 }
 
 function run(sql, params = []) {
-  return usePostgres ? pgRun(sql, params) : sqliteRun(sql, params);
+  const tx = transactionContext.getStore();
+  if (tx) return tx.run(sql, params);
+  return usePostgres ? pgRun(sql, params) : sqliteExclusive(() => sqliteRun(sql, params));
 }
 
 function get(sql, params = []) {
-  return usePostgres ? pgGet(sql, params) : sqliteGet(sql, params);
+  const tx = transactionContext.getStore();
+  if (tx) return tx.get(sql, params);
+  return usePostgres ? pgGet(sql, params) : sqliteExclusive(() => sqliteGet(sql, params));
 }
 
 function all(sql, params = []) {
-  return usePostgres ? pgAll(sql, params) : sqliteAll(sql, params);
+  const tx = transactionContext.getStore();
+  if (tx) return tx.all(sql, params);
+  return usePostgres ? pgAll(sql, params) : sqliteExclusive(() => sqliteAll(sql, params));
+}
+
+/** All facade calls in this async scope use the held connection. Other SQLite
+ * operations wait for commit/rollback; they cannot join a transaction by accident. */
+async function transaction(work) {
+  const existing = transactionContext.getStore();
+  if (existing) return work(existing);
+  const execute = async () => {
+    const client = usePostgres ? await pool.connect() : null;
+    const query = (statement, params = []) => client.query(toPostgresSql(statement), params);
+    const tx = client ? {
+      run: async (s, p) => { const r = await query(s, p); return { lastID: r.rows[0]?.id ?? 0, changes: r.rowCount ?? 0 }; },
+      get: async (s, p) => (await query(s, p)).rows[0],
+      all: async (s, p) => (await query(s, p)).rows,
+    } : { run: sqliteRun, get: sqliteGet, all: sqliteAll };
+    try {
+      await tx.run(client ? 'BEGIN' : 'BEGIN IMMEDIATE');
+      const result = await transactionContext.run(tx, () => work(tx));
+      await tx.run('COMMIT');
+      return result;
+    } catch (error) {
+      await tx.run('ROLLBACK');
+      throw error;
+    } finally { client?.release(); }
+  };
+  return usePostgres ? execute() : sqliteExclusive(execute);
 }
 
 async function migrate() {
+  const {SUPPORT_PENDING_SCHEMA,BUSINESS_OUTBOX_SCHEMA}=require('@rhule/ops-sdk');
+  for(const statement of SUPPORT_PENDING_SCHEMA)await run(statement);
+  for(const statement of BUSINESS_OUTBOX_SCHEMA)await run(statement);
   await run(`
     CREATE TABLE IF NOT EXISTS v2_users (
       id TEXT PRIMARY KEY,
@@ -443,9 +487,18 @@ async function migrate() {
   if (!planColNames.has('stripe_price_id')) {
     await run(`ALTER TABLE v2_plans ADD COLUMN stripe_price_id TEXT`);
   }
+  if (!planColNames.has('annual_price_cents')) {
+    await run(`ALTER TABLE v2_plans ADD COLUMN annual_price_cents INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!planColNames.has('stripe_annual_price_id')) {
+    await run(`ALTER TABLE v2_plans ADD COLUMN stripe_annual_price_id TEXT`);
+  }
 
   const subCols = await all(`PRAGMA table_info(v2_org_subscriptions)`);
   const subColNames = new Set((subCols || []).map((c) => c.name));
+  if (!subColNames.has('billing_interval')) {
+    await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN billing_interval TEXT NOT NULL DEFAULT 'month'`);
+  }
   if (!subColNames.has('is_comp')) {
     await run(`ALTER TABLE v2_org_subscriptions ADD COLUMN is_comp INTEGER NOT NULL DEFAULT 0`);
   }
@@ -580,25 +633,27 @@ async function migrate() {
 
   if (!planCount || planCount.c === 0) {
     await run(
-      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['free', 'Free', 0, 60, 60, 0, 0]
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+      ['free', 'Free', 0, 0, 60, 60, 0, 0]
     );
     await run(
-      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['starter', 'Starter', 4900, 2000, 500, 3, 6]
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+      ['starter', 'Starter', 4900, 46800, 2000, 500, 3, 6]
     );
     await run(
-      `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-      ['pro', 'Pro', 19900, 10000, 3000, 2, 5]
+      `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+      ['pro', 'Pro', 19900, 190800, 10000, 3000, 2, 5]
     );
   } else {
     const freePlan = await get(`SELECT id FROM v2_plans WHERE id = 'free'`);
     if (!freePlan) {
       await run(
-        `INSERT INTO v2_plans (id, name, monthly_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?)`,
-        ['free', 'Free', 0, 60, 60, 0, 0]
+        `INSERT INTO v2_plans (id, name, monthly_price_cents, annual_price_cents, included_meeting_minutes, included_translation_minutes, overage_meeting_cents_per_min, overage_translation_cents_per_min) VALUES (?,?,?,?,?,?,?,?)`,
+        ['free', 'Free', 0, 0, 60, 60, 0, 0]
       );
     }
+    await run(`UPDATE v2_plans SET annual_price_cents = 46800 WHERE id = 'starter' AND annual_price_cents = 0`);
+    await run(`UPDATE v2_plans SET annual_price_cents = 190800 WHERE id = 'pro' AND annual_price_cents = 0`);
   }
 
   // Phase 1 cost-tracking tables
@@ -937,6 +992,262 @@ async function migrate() {
     )
   `);
   await run(`CREATE INDEX IF NOT EXISTS idx_v2_ios_push_tokens_user ON v2_ios_push_tokens(user_id)`);
+
+  // External meeting notetaker (017_external_meeting_notetaker.sql)
+  const meetingCols2 = await all(`PRAGMA table_info(v2_meetings)`);
+  const meetingColNames2 = new Set((meetingCols2 || []).map((c) => c.name));
+  if (!meetingColNames2.has('meeting_source')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN meeting_source TEXT NOT NULL DEFAULT 'lalia'`);
+  }
+  if (!meetingColNames2.has('external_meeting_url')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN external_meeting_url TEXT`);
+  }
+  if (!meetingColNames2.has('auto_recap_mode')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN auto_recap_mode TEXT NOT NULL DEFAULT 'host_only'`);
+  }
+  if (!meetingColNames2.has('recap_language')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN recap_language TEXT`);
+  }
+  if (!meetingColNames2.has('attendee_emails_json')) {
+    await run(`ALTER TABLE v2_meetings ADD COLUMN attendee_emails_json TEXT`);
+  }
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_meetings_source ON v2_meetings(org_id, meeting_source)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_external_bot_sessions (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      meeting_id TEXT NOT NULL,
+      requested_by_user_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      target_url TEXT NOT NULL,
+      normalized_url TEXT NOT NULL,
+      external_meeting_code TEXT,
+      bot_display_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued',
+      status_detail TEXT,
+      stop_requested INTEGER NOT NULL DEFAULT 0,
+      worker_id TEXT,
+      claim_token TEXT,
+      heartbeat_at TEXT,
+      scheduled_for TEXT,
+      joined_at TEXT,
+      ended_at TEXT,
+      duration_seconds INTEGER,
+      recap_sent_at TEXT,
+      error_code TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id),
+      FOREIGN KEY (requested_by_user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_queue ON v2_external_bot_sessions(status, scheduled_for, created_at)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_meeting ON v2_external_bot_sessions(meeting_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_org ON v2_external_bot_sessions(org_id, created_at DESC)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_meeting_recordings (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      meeting_id TEXT NOT NULL,
+      bot_session_id TEXT,
+      storage_key TEXT NOT NULL,
+      relative_path TEXT NOT NULL,
+      mime_type TEXT NOT NULL DEFAULT 'audio/mpeg',
+      size_bytes INTEGER NOT NULL DEFAULT 0,
+      duration_seconds INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (meeting_id) REFERENCES v2_meetings(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_meeting_recordings_meeting ON v2_meeting_recordings(meeting_id, created_at DESC)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_calendar_connections (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      account_email TEXT NOT NULL,
+      access_token_enc TEXT,
+      refresh_token_enc TEXT,
+      token_expires_at TEXT,
+      auto_join_rule TEXT NOT NULL DEFAULT 'all_with_link',
+      sync_cursor TEXT,
+      last_synced_at TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (user_id, provider, account_email),
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (user_id) REFERENCES v2_users(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_calendar_connections_user ON v2_calendar_connections(user_id, status)`);
+
+  // Agent failover & notification configuration (018_agent_failover_alerts.sql)
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_alert_settings (
+      id TEXT PRIMARY KEY,
+      failover_enabled INTEGER NOT NULL DEFAULT 1,
+      join_timeout_sec INTEGER NOT NULL DEFAULT 10,
+      circuit_cooldown_sec INTEGER NOT NULL DEFAULT 120,
+      alert_cooldown_minutes INTEGER NOT NULL DEFAULT 15,
+      banner_enabled INTEGER NOT NULL DEFAULT 1,
+      email_enabled INTEGER NOT NULL DEFAULT 1,
+      email_recipients TEXT,
+      telegram_enabled INTEGER NOT NULL DEFAULT 1,
+      telegram_bot_token_enc TEXT,
+      telegram_chat_id TEXT,
+      notify_on_recovery INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT,
+      updated_by TEXT
+    )
+  `);
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_agent_failover_events (
+      id TEXT PRIMARY KEY,
+      room_name TEXT NOT NULL,
+      org_id TEXT,
+      event_kind TEXT NOT NULL,
+      from_pipeline TEXT NOT NULL,
+      to_pipeline TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      details_json TEXT,
+      acknowledged_at TEXT,
+      acknowledged_by TEXT,
+      created_at TEXT NOT NULL
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_agent_failover_ack_created ON v2_agent_failover_events(acknowledged_at, created_at DESC)`);
+
+  // Recall.ai external notetaker driver & settings (019_recall_notetaker_settings.sql)
+  const botCols = await all(`PRAGMA table_info(v2_external_bot_sessions)`);
+  const botColNames = new Set((botCols || []).map((c) => c.name));
+  if (!botColNames.has('bot_provider')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN bot_provider TEXT NOT NULL DEFAULT 'worker'`);
+  }
+  if (!botColNames.has('external_bot_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN external_bot_id TEXT`);
+  }
+  if (!botColNames.has('ingested_at')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN ingested_at TEXT`);
+  }
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_external_bot_id ON v2_external_bot_sessions(external_bot_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_platform_notetaker_settings (
+      id TEXT PRIMARY KEY,
+      driver_mode TEXT NOT NULL DEFAULT 'auto',
+      recall_region TEXT NOT NULL DEFAULT 'us-west-2',
+      recall_api_key_enc TEXT,
+      recall_webhook_secret_enc TEXT,
+      transcript_mode TEXT NOT NULL DEFAULT 'recallai_async',
+      xai_fallback_enabled INTEGER NOT NULL DEFAULT 1,
+      delete_recall_media_after_ingest INTEGER NOT NULL DEFAULT 1,
+      waiting_room_timeout_sec INTEGER NOT NULL DEFAULT 600,
+      everyone_left_timeout_sec INTEGER NOT NULL DEFAULT 30,
+      chat_notice_enabled INTEGER NOT NULL DEFAULT 1,
+      chat_notice_text TEXT,
+      calendar_regional_callback_uri TEXT,
+      calendar_setup_id TEXT,
+      updated_at TEXT,
+      updated_by TEXT
+    )
+  `);
+
+  // Recall v1.11 async lifecycle + Calendar V2 + webhook idempotency (020_recall_v111_and_calendar_v2.sql)
+  const botColsV2 = await all(`PRAGMA table_info(v2_external_bot_sessions)`);
+  const botColNamesV2 = new Set((botColsV2 || []).map((c) => c.name));
+  if (!botColNamesV2.has('external_recording_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN external_recording_id TEXT`);
+  }
+  if (!botColNamesV2.has('external_transcript_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN external_transcript_id TEXT`);
+  }
+  if (!botColNamesV2.has('transcript_requested_at')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN transcript_requested_at TEXT`);
+  }
+  if (!botColNamesV2.has('calendar_event_id')) {
+    await run(`ALTER TABLE v2_external_bot_sessions ADD COLUMN calendar_event_id TEXT`);
+  }
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_ext_recording ON v2_external_bot_sessions(external_recording_id)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_bot_sessions_ext_transcript ON v2_external_bot_sessions(external_transcript_id)`);
+
+  const ntCols = await all(`PRAGMA table_info(v2_platform_notetaker_settings)`);
+  const ntColNames = new Set((ntCols || []).map((c) => c.name));
+  if (!ntColNames.has('chat_notice_enabled')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN chat_notice_enabled INTEGER NOT NULL DEFAULT 1`);
+  }
+  if (!ntColNames.has('chat_notice_text')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN chat_notice_text TEXT`);
+  }
+  if (!ntColNames.has('calendar_regional_callback_uri')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN calendar_regional_callback_uri TEXT`);
+  }
+  if (!ntColNames.has('calendar_setup_id')) {
+    await run(`ALTER TABLE v2_platform_notetaker_settings ADD COLUMN calendar_setup_id TEXT`);
+  }
+
+  const calCols = await all(`PRAGMA table_info(v2_calendar_connections)`);
+  const calColNames = new Set((calCols || []).map((c) => c.name));
+  if (!calColNames.has('recall_calendar_id')) {
+    await run(`ALTER TABLE v2_calendar_connections ADD COLUMN recall_calendar_id TEXT`);
+  }
+  if (!calColNames.has('status_detail')) {
+    await run(`ALTER TABLE v2_calendar_connections ADD COLUMN status_detail TEXT`);
+  }
+  await run(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_v2_calendar_connections_recall_id ON v2_calendar_connections(recall_calendar_id) WHERE recall_calendar_id IS NOT NULL`
+  );
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_calendar_events (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      calendar_connection_id TEXT NOT NULL,
+      recall_event_id TEXT NOT NULL UNIQUE,
+      recall_calendar_id TEXT NOT NULL,
+      platform TEXT NOT NULL,
+      ical_uid TEXT,
+      title TEXT NOT NULL,
+      start_time TEXT NOT NULL,
+      end_time TEXT NOT NULL,
+      meeting_url TEXT,
+      normalized_meeting_url TEXT,
+      meeting_platform TEXT,
+      organizer_email TEXT,
+      is_deleted INTEGER NOT NULL DEFAULT 0,
+      recording_override TEXT,
+      scheduled_bot_id TEXT,
+      bot_session_id TEXT,
+      meeting_id TEXT,
+      raw_json TEXT,
+      updated_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (org_id) REFERENCES v2_organizations(id),
+      FOREIGN KEY (user_id) REFERENCES v2_users(id),
+      FOREIGN KEY (calendar_connection_id) REFERENCES v2_calendar_connections(id)
+    )
+  `);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_calendar_events_user_time ON v2_calendar_events(user_id, is_deleted, start_time)`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_v2_calendar_events_cal ON v2_calendar_events(recall_calendar_id)`);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS v2_recall_webhook_events (
+      webhook_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      resource_id TEXT,
+      status TEXT NOT NULL DEFAULT 'processing',
+      received_at TEXT NOT NULL,
+      processed_at TEXT,
+      error_code TEXT
+    )
+  `);
 }
 
 async function initPostgres() {
@@ -979,7 +1290,14 @@ function initDatabase() {
   return initPromise;
 }
 
+async function close() {
+  if(pool)await pool.end();
+  if(db)await new Promise((resolve,reject)=>db.close(err=>err?reject(err):resolve()));
+  pool=null;db=null;initPromise=null;
+}
+
 module.exports = {
+  close,
   initDatabase,
   DB_PATH,
   DATABASE_URL: usePostgres ? DATABASE_URL : '',
@@ -988,4 +1306,5 @@ module.exports = {
   get,
   all,
   uuid,
+  transaction,
 };

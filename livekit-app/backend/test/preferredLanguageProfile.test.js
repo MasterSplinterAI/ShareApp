@@ -51,6 +51,7 @@ describe('preferred language on /auth/me', () => {
 
   before(async () => {
     await db.initDatabase();
+    await require('../lib/opsOutbox').ensureOpsOutboxSchema();
     await db.run(
       `INSERT OR REPLACE INTO v2_users (id, email, password_hash, display_name)
        VALUES (?,?,?,?)`,

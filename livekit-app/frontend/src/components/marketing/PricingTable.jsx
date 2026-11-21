@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Check } from 'lucide-react';
 import { Badge } from '../ui/badge';
@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '../ui/card';
 import { cn } from '../../lib/utils';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { v2Billing } from '../../services/apiV2';
 
 const TIER_KEYS = ['free', 'starter', 'pro'];
 const FEATURE_KEYS = {
@@ -35,6 +36,22 @@ export function PricingTable() {
   const { t } = useTranslation();
   const [billingPeriod, setBillingPeriod] = useState('monthly');
   const isAnnual = billingPeriod === 'annual';
+  const [paidPlansAvailable, setPaidPlansAvailable] = useState(false);
+  const [planMap, setPlanMap] = useState({});
+
+  useEffect(() => {
+    let active = true;
+    v2Billing.plans().then(({ stripeEnabled, plans = [] }) => {
+      if (!active) return;
+      setPaidPlansAvailable(stripeEnabled === true);
+      const next = {};
+      (plans || []).forEach((p) => {
+        if (p?.id) next[p.id] = p;
+      });
+      setPlanMap(next);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   return (
     <section id="pricing" className="scroll-mt-20 border-y border-border/60 bg-muted/30 py-20 sm:py-24">
@@ -124,9 +141,20 @@ export function PricingTable() {
                   ))}
                 </CardContent>
                 <CardFooter>
-                  <Button className="w-full" variant={highlight ? 'default' : 'outline'} asChild>
-                    <Link to={signupHref(tierKey, billingPeriod)}>{t(`pricing.tiers.${tierKey}.cta`)}</Link>
-                  </Button>
+                  {(() => {
+                    const tierPlan = planMap[tierKey];
+                    const intervalConfigured = isAnnual
+                      ? !tierPlan || Boolean(tierPlan.stripe_annual_price_id)
+                      : !tierPlan || !('stripe_price_id' in tierPlan) || Boolean(tierPlan.stripe_price_id);
+                    const canSelectTier = tierKey === 'free' || (paidPlansAvailable && intervalConfigured);
+                    return canSelectTier ? (
+                      <Button className="w-full" variant={highlight ? 'default' : 'outline'} asChild>
+                        <Link to={signupHref(tierKey, billingPeriod)}>{t(`pricing.tiers.${tierKey}.cta`)}</Link>
+                      </Button>
+                    ) : (
+                      <Button className="w-full" variant="outline" disabled>{t('pricing.paidComingSoon')}</Button>
+                    );
+                  })()}
                 </CardFooter>
               </Card>
             );

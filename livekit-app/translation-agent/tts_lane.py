@@ -65,9 +65,37 @@ _OPENAI_TTS_DEFAULT_VOICE = "alloy"
 # xAI Grok TTS. Built-in voices are case-insensitive; eve is the API default.
 _XAI_TTS_URL = "https://api.x.ai/v1/tts"
 _XAI_TTS_DEFAULT_VOICE = "eve"
-_XAI_TTS_VOICES = frozenset({"eve", "ara", "rex", "carina", "orion"})
+_XAI_TTS_VOICES = frozenset({
+    "altair", "ara", "atlas", "aurora", "carina", "castor", "celeste",
+    "cosmo", "eve", "helios", "helix", "iris", "kepler", "leo",
+    "liora", "lumen", "luna", "lux", "naksh", "orion", "perseus",
+    "rex", "rigel", "sal", "sirius", "ursa", "zagan", "zenith",
+})
 _XAI_VOICE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{2,64}$")
+CURATED_LALIA_VOICE_ALIASES: dict[str, dict[str, str]] = {
+    "voice-sarah":  {"xai": "eve",   "openai": "coral",   "elevenlabs": "EXAVITQu4vr4xnSDxMaL"},
+    "voice-marcus": {"xai": "rex",   "openai": "onyx",    "elevenlabs": "JBFqnCBsd6RMkjVDRZzb"},
+    "voice-elena":  {"xai": "ara",   "openai": "nova",    "elevenlabs": "XB0fDUnXU5powFXDhCwa"},
+    "voice-daniel": {"xai": "leo",   "openai": "echo",    "elevenlabs": "onwK4e9ZLuTAKqWW03F9"},
+    "voice-lily":   {"xai": "luna",  "openai": "shimmer", "elevenlabs": "pFZP5JQG7iQjIQuC4Bku"},
+    "voice-lucas":  {"xai": "orion", "openai": "ash",     "elevenlabs": "onwK4e9ZLuTAKqWW03F9"},
+    "voice-maya":   {"xai": "iris",  "openai": "sage",    "elevenlabs": "EXAVITQu4vr4xnSDxMaL"},
+    "voice-david":  {"xai": "sal",   "openai": "fable",   "elevenlabs": "JBFqnCBsd6RMkjVDRZzb"},
+}
+_LEGACY_ELEVENLABS_TO_XAI: dict[str, str] = {
+    "EXAVITQu4vr4xnSDxMaL": "eve",
+    "JBFqnCBsd6RMkjVDRZzb": "rex",
+    "XB0fDUnXU5powFXDhCwa": "ara",
+    "onwK4e9ZLuTAKqWW03F9": "leo",
+    "pFZP5JQG7iQjIQuC4Bku": "luna",
+}
 TTS_PROVIDER_CHOICES = frozenset({"auto", "xai", "deepgram", "openai", "elevenlabs"})
+
+
+def is_curated_lalia_voice_id(voice_id: str | None) -> bool:
+    if not voice_id or not isinstance(voice_id, str):
+        return False
+    return voice_id.strip().lower() in CURATED_LALIA_VOICE_ALIASES
 
 
 def is_valid_elevenlabs_voice_id(voice_id: str | None) -> bool:
@@ -118,7 +146,7 @@ def classify_tts_api_error(
     elif provider == "openai":
         provider_label = "OpenAI TTS"
     elif provider == "xai":
-        provider_label = "xAI TTS"
+        provider_label = "Voice synthesis"
     else:
         provider_label = "Deepgram"
 
@@ -162,15 +190,23 @@ def normalize_tts_provider_choice(value: Any) -> str | None:
 
 
 def resolve_xai_voice_id(voice_id: str | None = None) -> str:
-    """Resolve an xAI voice id (explicit → XAI_TTS_VOICE → eve)."""
-    for candidate in (
+    """Resolve an xAI voice id (alias / legacy / explicit -> XAI_TTS_VOICE -> eve)."""
+    for raw in (
         (voice_id or "").strip(),
         os.getenv("XAI_TTS_VOICE", "").strip(),
         _XAI_TTS_DEFAULT_VOICE,
     ):
-        lowered = candidate.lower()
-        if lowered in _XAI_TTS_VOICES or _XAI_VOICE_ID_RE.fullmatch(candidate):
-            return lowered if lowered in _XAI_TTS_VOICES else candidate
+        if not raw:
+            continue
+        lowered = raw.lower()
+        if lowered in CURATED_LALIA_VOICE_ALIASES:
+            return CURATED_LALIA_VOICE_ALIASES[lowered]["xai"]
+        if raw in _LEGACY_ELEVENLABS_TO_XAI:
+            return _LEGACY_ELEVENLABS_TO_XAI[raw]
+        if lowered in _XAI_TTS_VOICES:
+            return lowered
+        if not lowered.startswith("voice-") and _XAI_VOICE_ID_RE.fullmatch(raw) and not is_valid_elevenlabs_voice_id(raw):
+            return raw
     return _XAI_TTS_DEFAULT_VOICE
 
 
@@ -311,11 +347,7 @@ class TtsLane:
             if is_valid_elevenlabs_voice_id(cleaned):
                 self.voice_id = cleaned
             else:
-                logger.warning(
-                    "[TTS:%s] ignoring invalid initial voice_id=%r",
-                    language,
-                    voice_id,
-                )
+                logger.warning('tts_ignoring_invalid_initial_voice_id')
 
         self._now = now_fn
         self._synthesize_hook = synthesize_hook
@@ -336,6 +368,9 @@ class TtsLane:
 
         self._deepgram_tts: Any = None
         self.xai_voice_id = resolve_xai_voice_id(None)
+        self.openai_voice_id: str | None = None
+        if voice_id is not None and is_curated_lalia_voice_id(voice_id):
+            self.apply_voice_choice(voice_id)
         self._http_session: aiohttp.ClientSession | None = None
         self._audio_source: Any = None
         self._local_track: Any = None
@@ -345,9 +380,28 @@ class TtsLane:
         """Update the ElevenLabs voice for subsequent synthesis calls."""
         cleaned = (voice_id or "").strip()
         if not is_valid_elevenlabs_voice_id(cleaned):
-            logger.warning("[TTS:%s] ignoring invalid voice_id=%r", self.language, voice_id)
+            logger.warning('tts_ignoring_invalid_voice_id')
             return
         self.voice_id = cleaned
+
+    def apply_voice_choice(self, voice_id: str | None) -> None:
+        """Apply a curated white-labeled voice alias (or direct voice id) across providers."""
+        cleaned = (voice_id or "").strip()
+        if not cleaned:
+            return
+        lowered = cleaned.lower()
+        if lowered in CURATED_LALIA_VOICE_ALIASES:
+            mapping = CURATED_LALIA_VOICE_ALIASES[lowered]
+            self.xai_voice_id = mapping["xai"]
+            self.openai_voice_id = mapping["openai"]
+            self.voice_id = mapping["elevenlabs"]
+            return
+        if is_valid_elevenlabs_voice_id(cleaned):
+            self.voice_id = cleaned
+            self.xai_voice_id = resolve_xai_voice_id(cleaned)
+            return
+        if lowered in _XAI_TTS_VOICES:
+            self.xai_voice_id = lowered
 
     def set_provider(self, provider: str, voice_id: str | None = None) -> str:
         """Switch the provider used on the next utterance.
@@ -357,16 +411,13 @@ class TtsLane:
         """
         choice = normalize_tts_provider_choice(provider) or "auto"
         self.provider = resolve_tts_provider(self.language, preferred_provider=choice)
-        if voice_id and choice == "xai":
+        if voice_id and is_curated_lalia_voice_id(voice_id):
+            self.apply_voice_choice(voice_id)
+        elif voice_id and choice == "xai":
             self.xai_voice_id = resolve_xai_voice_id(voice_id)
         elif voice_id and choice == "elevenlabs":
             self.set_voice_id(voice_id)
-        logger.info(
-            "[TTS:%s] provider switch requested=%s active=%s",
-            self.language,
-            choice,
-            self.provider,
-        )
+        logger.info('tts_provider_switch_requested_active')
         return self.provider
 
     def _get_http_session(self) -> aiohttp.ClientSession:
@@ -464,12 +515,7 @@ class TtsLane:
                 continue
 
             if self._is_stale(item):
-                logger.info(
-                    "[TTS:%s] dropping stale sentence speaker=%s age=%.2fs",
-                    self.language,
-                    item.speaker_id,
-                    self._now() - item.enqueued_at,
-                )
+                logger.info('tts_dropping_stale_sentence_speaker_age_s')
                 continue
 
             if item.sequence <= self._superseded_up_to_by_speaker.get(item.speaker_id, 0):
@@ -482,13 +528,7 @@ class TtsLane:
             except asyncio.CancelledError:
                 raise
             except TtsApiError as exc:
-                logger.warning(
-                    "[TTS:%s] provider error speaker=%s code=%s: %s",
-                    self.language,
-                    item.speaker_id,
-                    exc.code,
-                    exc.message,
-                )
+                logger.warning('tts_provider_error_speaker_code', extra={"error_type": type(exc).__name__, "provider": exc.provider, "status_code": exc.http_status})
                 await self._emit_tts_error(
                     speaker_id=item.speaker_id,
                     provider=exc.provider,
@@ -497,12 +537,7 @@ class TtsLane:
                     http_status=exc.http_status,
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[TTS:%s] synthesis/playback failed for speaker=%s: %s",
-                    self.language,
-                    item.speaker_id,
-                    exc,
-                )
+                logger.warning('tts_synthesis_playback_failed_for_speaker', extra={"error_type": type(exc).__name__})
                 await self._emit_tts_error(
                     speaker_id=item.speaker_id,
                     provider=self.provider,
@@ -549,12 +584,7 @@ class TtsLane:
                 if inspect.isawaitable(maybe):
                     await maybe
             except Exception as exc:  # noqa: BLE001
-                logger.debug(
-                    "[TTS:%s] cost hook failed speaker=%s: %s",
-                    self.language,
-                    item.speaker_id,
-                    exc,
-                )
+                logger.debug('tts_cost_hook_failed_speaker')
 
         if self._synthesize_hook is not None:
             synthesis = self._synthesize_hook(item.text, self.language, playback_rate)
@@ -584,11 +614,7 @@ class TtsLane:
             if has_xai and base_lang in XAI_TTS_LANGS:
                 ladder.append("xai")
             else:
-                logger.info(
-                    "[TTS:%s] xAI TTS does not cover %s — using Deepgram/OpenAI/ElevenLabs",
-                    self.language,
-                    base_lang,
-                )
+                logger.info('tts_xai_tts_does_not_cover_using_deepgram_openai_elevenlabs')
             if aura_ok:
                 ladder.append("deepgram")
             if has_openai:
@@ -647,13 +673,7 @@ class TtsLane:
                 if yielded_any or idx == len(ladder) - 1:
                     break
                 next_prov = ladder[idx + 1]
-                logger.warning(
-                    "[TTS:%s] %s failed (%s) — falling back to %s",
-                    self.language,
-                    prov,
-                    exc,
-                    next_prov,
-                )
+                logger.warning('tts_failed_falling_back_to', extra={"error_type": type(exc).__name__})
 
         if last_exc is not None:
             raise last_exc
@@ -837,7 +857,11 @@ class TtsLane:
             )
 
         model = os.getenv("OPENAI_TTS_MODEL", _OPENAI_TTS_DEFAULT_MODEL).strip() or _OPENAI_TTS_DEFAULT_MODEL
-        voice = os.getenv("OPENAI_TTS_VOICE", _OPENAI_TTS_DEFAULT_VOICE).strip() or _OPENAI_TTS_DEFAULT_VOICE
+        voice = (
+            self.openai_voice_id
+            or os.getenv("OPENAI_TTS_VOICE", _OPENAI_TTS_DEFAULT_VOICE).strip()
+            or _OPENAI_TTS_DEFAULT_VOICE
+        )
         speed = max(0.75, min(playback_rate, 1.35))
 
         body: dict[str, Any] = {
@@ -922,7 +946,7 @@ class TtsLane:
             return
 
         # Unknown chunk type: ignore quietly to keep lane resilient.
-        logger.debug("[TTS:%s] ignoring unsupported synth chunk type=%s", self.language, type(chunk).__name__)
+        logger.debug('tts_ignoring_unsupported_synth_chunk_type')
 
     def _pcm_to_frames(self, payload: bytes):
         frame_cls = getattr(rtc, "AudioFrame", None)
@@ -1020,7 +1044,7 @@ class TtsLane:
                 reliable=True,
             )
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[TTS:%s] data event emit failed: %s", self.language, exc)
+            logger.debug('tts_data_event_emit_failed')
 
     async def _ensure_track_published(self) -> None:
         if self.room is None or getattr(self.room, "local_participant", None) is None:

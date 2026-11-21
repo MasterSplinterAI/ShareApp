@@ -6,6 +6,7 @@ import { v2Auth, v2Orgs, v2Billing, v2Usage } from '../../services/apiV2';
 import { hasTeamWorkspace } from '../lib/planCapabilities';
 import { isTeamWorkspace, workspaceLabel } from '../lib/workspaceDisplay';
 import { getRecommendedUpgrade, formatPlanPrice } from '../lib/upgradeOffers';
+import { resolveSettingsSection } from '../lib/settingsSection';
 import { cn } from '../../lib/utils';
 import { Compass, Loader2, ImagePlus, Trash2 } from 'lucide-react';
 import { startLaliaOnboardingTour } from '../components/LaliaOnboardingTour';
@@ -51,7 +52,11 @@ function humanizeUsageLabel(eventType) {
 export default function V2OrgSettings() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [section, setSection] = useState(searchParams.get('section') || 'profile');
+  const search = searchParams.toString();
+  const [section, setSection] = useState(() => resolveSettingsSection(searchParams));
+  useEffect(() => {
+    setSection(resolveSettingsSection(new URLSearchParams(search)));
+  }, [search]);
   const [role, setRole] = useState('');
   const [members, setMembers] = useState([]);
   const [org, setOrg] = useState(null);
@@ -69,6 +74,7 @@ export default function V2OrgSettings() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [communicationPrefsVersion, setCommunicationPrefsVersion] = useState(null);
   const [marketingEmailPref, setMarketingEmailPref] = useState(false);
   const [timezonePref, setTimezonePref] = useState('');
   const [guestInviteCcHost, setGuestInviteCcHost] = useState(true);
@@ -83,20 +89,25 @@ export default function V2OrgSettings() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [billingSnap, setBillingSnap] = useState(null);
   const [plans, setPlans] = useState([]);
+  const [billingInterval, setBillingInterval] = useState(() =>
+    (searchParams.get('interval') || '').toLowerCase() === 'annual' ? 'year' : 'month'
+  );
   const [checkoutLoading, setCheckoutLoading] = useState(null);
   const [portalLoading, setPortalLoading] = useState(null);
   const [resumeLoading, setResumeLoading] = useState(false);
   const [overageAutoChargeOptIn, setOverageAutoChargeOptIn] = useState(false);
   const [savingOverageAutoCharge, setSavingOverageAutoCharge] = useState(false);
 
-  const startCheckout = async (planId) => {
+  const startCheckout = async (planId, intervalOverride) => {
+    if (!billingSnap?.stripeEnabled) return;
     if (isIosNativeApp()) {
       toast('Manage your plan on the web at lalia.cloud');
       return;
     }
+    const chosenInterval = intervalOverride || billingInterval;
     setCheckoutLoading(planId);
     try {
-      const { url } = await v2Billing.checkout(planId);
+      const { url } = await v2Billing.changePlan(planId, billingSnap?.subscription, chosenInterval);
       if (url) window.location.href = url;
     } catch (e) {
       toast.error(e.response?.data?.error || 'Checkout unavailable');
@@ -200,6 +211,7 @@ export default function V2OrgSettings() {
         }
         if (commPrefs?.prefs) {
           setMarketingEmailPref(Boolean(commPrefs.prefs.marketingEmail));
+          setCommunicationPrefsVersion(commPrefs.prefs.prefsUpdatedAt);
           const browserTz = detectBrowserTimezone();
           setTimezonePref(commPrefs.prefs.timezone || browserTz);
           setGuestInviteCcHost(commPrefs.prefs.guestInviteCcHost !== false);
@@ -231,12 +243,14 @@ export default function V2OrgSettings() {
     const intent = (searchParams.get('checkout') || '').toLowerCase();
     if (!intent || checkoutIntentHandled.current || !billingSnap) return;
     checkoutIntentHandled.current = true;
+    const intentInterval = (searchParams.get('interval') || '').toLowerCase() === 'annual' ? 'year' : 'month';
+    setBillingInterval(intentInterval);
     setSection('billing');
     if (billingSnap.stripeEnabled) {
-      startCheckout(intent);
+      startCheckout(intent, intentInterval);
     } else {
       toast(
-        'Your account is ready on the free plan. Online billing is being set up — we\u2019ll email you to complete the upgrade.',
+        'Paid upgrades are currently unavailable.',
         { icon: 'ℹ️', duration: 6000 }
       );
     }
@@ -342,17 +356,20 @@ export default function V2OrgSettings() {
     try {
       const { prefs } = await v2Auth.updateCommunicationPrefs({
         marketingEmail: marketingEmailPref,
+        prefsUpdatedAt: communicationPrefsVersion,
         timezone: timezonePref || detectBrowserTimezone(),
         guestInviteCcHost,
         guestInviteReminderOffsets: reminderOffsets,
       });
       setMarketingEmailPref(Boolean(prefs?.marketingEmail));
+      setCommunicationPrefsVersion(prefs?.prefsUpdatedAt);
       setTimezonePref(prefs?.timezone || detectBrowserTimezone());
       setGuestInviteCcHost(prefs?.guestInviteCcHost !== false);
       const toggles = togglesFromOffsets(prefs?.guestInviteReminderOffsets || []);
       setReminderDayBefore(toggles.dayBefore);
       setReminder15Min(toggles.fifteenMin);
-      toast.success('Communication preferences saved');
+      if(prefs?.consentStatus==='pending')toast('Preferences saved. Marketing consent is pending; save a fresh choice when the connection is available.');
+      else toast.success('Communication preferences saved');
     } catch (err) {
       toast.error(err.response?.data?.error || 'Could not save preferences');
     } finally {
@@ -1010,7 +1027,7 @@ export default function V2OrgSettings() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
-                {!teamWorkspace && canManage && billingSnap?.subscription?.is_comp !== 1 && (
+                {!teamWorkspace && canManage && billingSnap?.stripeEnabled && billingSnap?.subscription?.is_comp !== 1 && (
                   <div className="rounded-lg border border-primary/30 bg-primary/5 px-3 py-3 text-foreground">
                     <p className="font-medium">Need to invite colleagues?</p>
                     <p className="mt-1 text-muted-foreground">
@@ -1025,49 +1042,96 @@ export default function V2OrgSettings() {
                   </div>
                 )}
                 {canManage && billingSnap?.subscription?.is_comp !== 1 && plans.filter((p) => p.id !== 'free').length > 0 && (
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {plans
-                      .filter((p) => p.id !== 'free')
-                      .map((p) => {
-                        const isCurrent = p.id === billingSnap?.plan?.id;
-                        const isRecommended = p.id === upgradeOffer?.primaryPlan?.id && !isCurrent;
-                        return (
-                          <div
-                            key={p.id}
+                  <div className="space-y-3">
+                    {plans.some((p) => p.id !== 'free' && (p.stripe_annual_price_id || Number(p.annual_price_cents) > 0)) && (
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Billing period</span>
+                        <div className="inline-flex rounded-lg border border-border bg-background p-0.5 text-xs">
+                          <button
+                            type="button"
                             className={cn(
-                              'relative flex flex-col rounded-xl border border-border/60 p-4',
-                              isCurrent && 'border-primary/40 bg-primary/5',
-                              isRecommended && 'border-primary ring-1 ring-primary/25',
+                              'rounded-md px-3 py-1 font-medium transition-colors',
+                              billingInterval === 'month'
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
                             )}
+                            onClick={() => setBillingInterval('month')}
                           >
-                            {isRecommended && (
-                              <span className="absolute -top-2.5 left-3 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
-                                Recommended
-                              </span>
+                            Monthly
+                          </button>
+                          <button
+                            type="button"
+                            className={cn(
+                              'rounded-md px-3 py-1 font-medium transition-colors',
+                              billingInterval === 'year'
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:text-foreground'
                             )}
-                            <div className="font-semibold text-foreground">{p.name}</div>
-                            <div className="mt-1 text-xl font-bold tracking-tight">{formatPlanPrice(p.monthly_price_cents)}</div>
-                            <ul className="mt-3 flex-1 space-y-1.5 text-xs text-muted-foreground">
-                              <li>{Number(p.included_meeting_minutes).toLocaleString()} participant-minutes/mo</li>
-                              <li>{Number(p.included_translation_minutes).toLocaleString()} translation minutes/mo</li>
-                              {p.teamWorkspace ? <li className="text-foreground/80">Team workspace + member invites</li> : null}
-                            </ul>
-                            <Button
-                              type="button"
-                              className="mt-4 w-full"
-                              variant={isRecommended ? 'default' : 'outline'}
-                              disabled={isCurrent || !billingSnap?.stripeEnabled || checkoutLoading === p.id}
-                              onClick={() => startCheckout(p.id)}
+                            onClick={() => setBillingInterval('year')}
+                          >
+                            Annual (save 20%)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {plans
+                        .filter((p) => p.id !== 'free')
+                        .map((p) => {
+                          const currentInterval = billingSnap?.subscription?.billing_interval || 'month';
+                          const isCurrent = p.id === billingSnap?.plan?.id && currentInterval === billingInterval;
+                          const isRecommended = p.id === upgradeOffer?.primaryPlan?.id && p.id !== billingSnap?.plan?.id;
+                          const annualCents = Number(p.annual_price_cents || 0);
+                          const showAnnual = billingInterval === 'year' && annualCents > 0;
+                          const annualReady = !('stripe_annual_price_id' in p) || Boolean(p.stripe_annual_price_id);
+                          const intervalReady = billingInterval === 'year' ? annualReady : true;
+                          return (
+                            <div
+                              key={p.id}
+                              className={cn(
+                                'relative flex flex-col rounded-xl border border-border/60 p-4',
+                                isCurrent && 'border-primary/40 bg-primary/5',
+                                isRecommended && 'border-primary ring-1 ring-primary/25',
+                              )}
                             >
-                              {isCurrent
-                                ? 'Current plan'
-                                : checkoutLoading === p.id
-                                  ? 'Loading…'
-                                  : `Upgrade to ${p.name}`}
-                            </Button>
-                          </div>
-                        );
-                      })}
+                              {isRecommended && (
+                                <span className="absolute -top-2.5 left-3 rounded-md bg-primary px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-foreground">
+                                  Recommended
+                                </span>
+                              )}
+                              <div className="font-semibold text-foreground">{p.name}</div>
+                              <div className="mt-1 text-xl font-bold tracking-tight">
+                                {showAnnual ? formatPlanPrice(Math.round(annualCents / 12)) : formatPlanPrice(p.monthly_price_cents)}
+                              </div>
+                              {showAnnual && (
+                                <div className="text-[11px] text-muted-foreground">
+                                  ${(annualCents / 100).toLocaleString()} billed yearly
+                                </div>
+                              )}
+                              <ul className="mt-3 flex-1 space-y-1.5 text-xs text-muted-foreground">
+                                <li>{Number(p.included_meeting_minutes).toLocaleString()} participant-minutes/mo</li>
+                                <li>{Number(p.included_translation_minutes).toLocaleString()} translation minutes/mo</li>
+                                {p.teamWorkspace ? <li className="text-foreground/80">Team workspace + member invites</li> : null}
+                              </ul>
+                              <Button
+                                type="button"
+                                className="mt-4 w-full"
+                                variant={isRecommended ? 'default' : 'outline'}
+                                disabled={isCurrent || !billingSnap?.stripeEnabled || !intervalReady || checkoutLoading === p.id}
+                                onClick={() => startCheckout(p.id, billingInterval)}
+                              >
+                                {isCurrent
+                                  ? 'Current plan'
+                                  : checkoutLoading === p.id
+                                    ? 'Loading…'
+                                    : p.id === billingSnap?.plan?.id
+                                      ? `Switch to ${billingInterval === 'year' ? 'Annual' : 'Monthly'}`
+                                      : `Upgrade to ${p.name}`}
+                              </Button>
+                            </div>
+                          );
+                        })}
+                    </div>
                   </div>
                 )}
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -1090,6 +1154,7 @@ export default function V2OrgSettings() {
                           ? 'Cancellation scheduled'
                           : billingSnap?.subscription?.status || '—'}
                       {billingSnap?.plan?.name ? ` · ${billingSnap.plan.name}` : ''}
+                      {billingSnap?.plan?.id !== 'free' && billingSnap?.subscription?.billing_interval === 'year' ? ' (Annual)' : ''}
                     </div>
                     {renewsAt && (
                       <p className="mt-1 text-xs text-muted-foreground">
@@ -1194,7 +1259,7 @@ export default function V2OrgSettings() {
                       </div>
                       {!billingSnap?.stripeEnabled && (
                         <p className="mt-2 text-xs text-muted-foreground">
-                          Payments are disabled. A platform admin can enable Stripe under Admin → Billing & Stripe.
+                          Paid upgrades are currently unavailable.
                         </p>
                       )}
                     </div>

@@ -3,14 +3,36 @@ const crypto = require('crypto');
 const { createLiveKitConferenceRoom, getRoomService } = require('../lib/livekitService');
 const { publicFrontendBaseUrl } = require('../lib/publicFrontendBaseUrl');
 const { requireV2Auth } = require('../middleware/v2Auth');
+const { assertCanCreateMeeting } = require('../lib/v2Entitlements');
+const { readRoomMetadata } = require('../lib/livekitRoomMetadata');
 const db = require('../db/v2Database');
 const router = express.Router();
 
-// Create a new room (authenticated V2 users only)
+const VALID_ROOM_NAME_RE = /^[a-zA-Z0-9_-]{3,128}$/;
+
+// Create a new room (authenticated V2 users only; enforces billing & cap gates)
 router.post('/create', requireV2Auth, async (req, res) => {
   try {
+    const gate = await assertCanCreateMeeting(req.v2Auth.orgId);
+    if (!gate.ok) {
+      return res.status(402).json({ error: gate.message, code: gate.code });
+    }
     const roomMode = req.body.roomMode || 'multi-language';
-    const roomName = req.body.roomName || `room-${crypto.randomBytes(6).toString('hex')}-${Date.now().toString(36)}`;
+    const requestedName = req.body.roomName ? String(req.body.roomName).trim() : '';
+    if (requestedName && !VALID_ROOM_NAME_RE.test(requestedName)) {
+      return res.status(400).json({ error: 'Invalid roomName format' });
+    }
+    const roomName = requestedName || `room-${crypto.randomBytes(6).toString('hex')}-${Date.now().toString(36)}`;
+    if (requestedName) {
+      const v2Row = await db.get(`SELECT id, org_id FROM v2_meetings WHERE livekit_room_name = ?`, [roomName]);
+      if (v2Row && v2Row.org_id !== req.v2Auth.orgId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const existingMeta = await readRoomMetadata(roomName);
+      if (existingMeta.org_id && existingMeta.org_id !== req.v2Auth.orgId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+    }
     const room = await createLiveKitConferenceRoom(roomName, roomMode, req.v2Auth.orgId);
     
     // Generate host code for easy rejoin

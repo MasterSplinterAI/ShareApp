@@ -1,4 +1,4 @@
-import type { BrandConfig } from "@rhule/support-shared";
+import type { BrandConfig } from "@quill/support-shared";
 
 /**
  * Self-contained drop-in embed page for the multi-tenant hosted platform.
@@ -18,7 +18,7 @@ import type { BrandConfig } from "@rhule/support-shared";
  * `x-tenant-id` header on POSTs) so the server's resolveTenant hook routes
  * every call to the right tenant's data.
  */
-export function buildEmbedPage(brand: BrandConfig): string {
+export function buildEmbedPage(brand: BrandConfig, durableMutations=false): string {
   const accent = brand.accentColor || "#4f8cff";
   const agentName = brand.supportAgentName || "Support";
   const brandName = brand.name;
@@ -95,16 +95,31 @@ export function buildEmbedPage(brand: BrandConfig): string {
     if (!tenant) return base + path;
     return base + path + (path.indexOf("?") >= 0 ? "&" : "?") + "tenant=" + encodeURIComponent(tenant);
   }
+  var durable = ${JSON.stringify(durableMutations)};
+  var pending = {};
   function post(path, body) {
     var headers = { "Content-Type": "application/json" };
     if (tenant) headers["x-tenant-id"] = tenant;
+    if (guestToken) headers["x-support-guest-token"] = guestToken;
+    var scope = JSON.stringify([tenant,guestToken,path]);
+    var serialized = JSON.stringify(body);
+    var intent = pending[scope];
+    if(durable && path!=="/guest-session") {
+      if(!intent || intent.body!==serialized) intent=pending[scope]={body:serialized,key:crypto.randomUUID()};
+      headers["Idempotency-Key"]=intent.key;
+    }
     return fetch(base + path, {
       method: "POST",
       headers: headers,
       body: JSON.stringify(body),
     }).then(function (r) {
       return r.json().then(function (j) {
-        if (!r.ok) throw new Error((j && j.error) || ("HTTP " + r.status);
+        if (!r.ok) {
+          var error = new Error((j && j.error) || ("HTTP " + r.status));
+          error.code = j && j.code;
+          throw error;
+        }
+        if(intent && pending[scope]===intent) delete pending[scope];
         return j;
       });
     });
@@ -127,17 +142,21 @@ export function buildEmbedPage(brand: BrandConfig): string {
   }
 
   // ── Public contact gate (lead) ────────────────────────────────
-  var leadId = localStorage.getItem("sk_embed_lead");
+  var sessionKey = "sk_embed_session:" + base + ":" + (tenant || "default");
+  var savedSession = JSON.parse(sessionStorage.getItem(sessionKey) || "null");
+  if (savedSession && savedSession.expiresAt && Date.parse(savedSession.expiresAt) <= Date.now()) savedSession = null;
+  var leadId = savedSession && savedSession.leadId;
+  var guestToken = savedSession && savedSession.token;
 
   function ensureLead(cb) {
     if (leadId) return cb();
     var wrap = document.createElement("div");
     wrap.className = "contact";
     wrap.innerHTML =
-      "<h4>Quick contact</h4>" +
-      "<input id=\"c-name\" type=\"text\" placeholder=\"Your name\"><br>" +
-      "<input id=\"c-email\" type=\"email\" placeholder=\"Your email\"><br>" +
-      "<label><input id=\"c-optin\" type=\"checkbox\" style=\"width:auto\"> Email me about updates</label>";
+      '<h4>Quick contact</h4>' +
+      '<input id="c-name" type="text" placeholder="Your name"><br>' +
+      '<input id="c-email" type="email" placeholder="Your email"><br>' +
+      '<label><input id="c-optin" type="checkbox" style="width:auto"> Email me about updates</label>';
     chatPanel.prepend(wrap);
     var btn = document.createElement("button");
     btn.textContent = "Continue";
@@ -147,10 +166,16 @@ export function buildEmbedPage(brand: BrandConfig): string {
       var email = document.getElementById("c-email").value.trim();
       var optin = document.getElementById("c-optin").checked;
       if (!name || !email) { alert("Name and email are required."); return; }
-      post("/leads", { name: name, email: email, marketingOptIn: optin, source: "embed_widget" })
+      var bootstrap = durable && !guestToken ? post("/guest-session",{name:name,email:email}).then(function(j){
+        guestToken=j.guestSessionToken;
+        sessionStorage.setItem(sessionKey,JSON.stringify({token:guestToken,expiresAt:j.guestSessionExpiresAt}));
+      }) : Promise.resolve();
+      bootstrap.then(function(){return post("/leads", { name: name, email: email, marketingOptIn: optin, source: "embed_widget" });})
         .then(function (j) {
           leadId = j.leadId;
-          localStorage.setItem("sk_embed_lead", leadId);
+          guestToken = j.guestSessionToken || guestToken;
+          var prior = JSON.parse(sessionStorage.getItem(sessionKey)||"{}");
+          sessionStorage.setItem(sessionKey, JSON.stringify({leadId:leadId,token:guestToken,expiresAt:j.guestSessionExpiresAt||prior.expiresAt}));
           wrap.remove();
           cb();
         })
@@ -174,6 +199,11 @@ export function buildEmbedPage(brand: BrandConfig): string {
         .catch(function (e) {
           addMsg("agent", "⚠ " + e.message);
           sendBtn.disabled = false;
+          if (e.code === "guest_session_required") {
+            leadId = null; guestToken = null; sessionStorage.removeItem(sessionKey);
+            input.value = text;
+            ensureLead(function () { input.focus(); });
+          }
         });
     });
   }

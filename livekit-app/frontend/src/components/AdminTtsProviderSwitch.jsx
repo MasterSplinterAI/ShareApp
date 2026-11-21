@@ -19,23 +19,39 @@ const STT_PROVIDERS = [
   { id: 'openai', label: 'OpenAI gpt-4o-transcribe ($0.006/m)' },
 ];
 
-const XAI_VOICES = ['eve', 'ara', 'rex', 'carina', 'orion'];
+const XAI_VOICES = [
+  'eve',
+  'rex',
+  'ara',
+  'leo',
+  'luna',
+  'orion',
+  'iris',
+  'sal',
+  'carina',
+  'celeste',
+  'atlas',
+  'aurora',
+  'liora',
+];
+const SHARED_TEXT_DECODER = new TextDecoder();
+const TRANSCRIPTION_PROVIDER_SAMPLE_MS = 2500;
 
 function isTtsAdminAccount(me) {
-  if (!me) return false;
-  if (me.isSuperadmin) return true;
-  const role = String(me.role || me.user?.role || '').toLowerCase();
-  return role === 'admin' || role === 'owner';
+  return Boolean(me && me.isSuperadmin);
 }
 
 /**
- * In-room TTS provider switch for workspace admins and platform superadmins.
+ * In-room TTS provider switch for platform superadmins when ?debug=1 is set.
  * The agent applies the choice on the next spoken utterance and confirms it
- * with a tts_provider_status packet.
+ * with a provider_status packet.
  */
 export default function AdminTtsProviderSwitch() {
   const room = useRoomContext();
   const local = useLocalParticipant();
+  const showDebug =
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('debug') === '1';
   const [allowed, setAllowed] = useState(false);
   const [open, setOpen] = useState(false);
   const [provider, setProvider] = useState('xai');
@@ -46,9 +62,10 @@ export default function AdminTtsProviderSwitch() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
+    if (!showDebug || !localStorage.getItem('v2_token')) return undefined;
     let cancelled = false;
     v2Auth
-      .me()
+      .me({ skipSessionRedirect: true })
       .then((me) => {
         if (!cancelled) setAllowed(isTtsAdminAccount(me));
       })
@@ -58,22 +75,28 @@ export default function AdminTtsProviderSwitch() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [showDebug]);
 
   useEffect(() => {
-    if (!room || !allowed) return undefined;
+    if (!room || !showDebug || !allowed) return undefined;
+    let lastTranscriptionSampleAt = 0;
     const onData = (payload, _participant, _kind, topic) => {
       if (topic && topic !== 'tts_config' && topic !== 'transcription') return;
+      if (topic === 'transcription') {
+        const now = Date.now();
+        if (now - lastTranscriptionSampleAt < TRANSCRIPTION_PROVIDER_SAMPLE_MS) return;
+        lastTranscriptionSampleAt = now;
+      }
       try {
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
-        const msg = JSON.parse(new TextDecoder().decode(raw));
+        const msg = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
         if (msg?.type === 'provider_status' || msg?.type === 'tts_provider_status') {
           const tts = msg.activeTtsProvider || msg.activeProvider;
-          if (tts) setActiveTts(String(tts));
+          if (tts) setActiveTts((prev) => (prev === String(tts) ? prev : String(tts)));
           if (msg.ttsProvider) setProvider(String(msg.ttsProvider));
           const stt = msg.activeSttProvider || msg.sttProvider;
-          if (stt) setActiveStt(String(stt));
+          if (stt) setActiveStt((prev) => (prev === String(stt) ? prev : String(stt)));
           if (msg.sttProvider) setSttProvider(String(msg.sttProvider));
           if (msg.voiceId && XAI_VOICES.includes(String(msg.voiceId).toLowerCase())) {
             setVoice(String(msg.voiceId).toLowerCase());
@@ -81,7 +104,8 @@ export default function AdminTtsProviderSwitch() {
           return;
         }
         if (msg?.type === 'transcription' && msg.sttProvider) {
-          setActiveStt(String(msg.sttProvider));
+          const nextStt = String(msg.sttProvider);
+          setActiveStt((prev) => (prev === nextStt ? prev : nextStt));
         }
       } catch {
         /* non-JSON room traffic */
@@ -118,7 +142,7 @@ export default function AdminTtsProviderSwitch() {
     [local, room]
   );
 
-  if (!allowed) return null;
+  if (!showDebug || !allowed) return null;
 
   return (
     <div className="absolute left-3 top-3 z-20 max-w-[18rem] text-white">

@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly Lalia backup freshness check
+
+[Timer]
+OnBootSec=30min
+OnUnitActiveSec=1h
+Unit=lalia-backup-freshness.service
+
+[Install]
+WantedBy=timers.target

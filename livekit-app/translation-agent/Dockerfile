@@ -18,6 +18,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Fail the Linux build on missing native/provider imports or broken startup/VAD.
+# Uses no credentials and makes no LiveKit or provider API calls.
+RUN python runtime_smoke.py
+
 # Optional: `docker build --build-arg GIT_COMMIT=$(git rev-parse --short HEAD)` or set in LiveKit Agent env AGENT_BUILD_REF
 ARG GIT_COMMIT=unknown
 ENV GIT_COMMIT=${GIT_COMMIT}
@@ -29,4 +33,4 @@ ENV PYTHONUNBUFFERED=1
 # Use python -u for unbuffered output and pass 'start' command for cli.run_app()
 # AGENT_MODULE selects stable vs experimental worker (see livekit-codeswitch.toml).
 ENV AGENT_MODULE=transcription_only_agent
-CMD ["sh", "-c", "python -u ${AGENT_MODULE}.py start"]
+CMD ["python", "-u", "agent_launcher.py", "start"]

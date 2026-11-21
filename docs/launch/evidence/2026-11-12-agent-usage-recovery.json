@@ -1,0 +1,2297 @@
+{
+  "generated_at": "2026-11-12T23:17:18.215973+00:00",
+  "source_commit": "a82930ad4449d2c55b79a94be2c2e7c7e1a37884",
+  "qualification": "known values reapplied and verified, not cloud export",
+  "profiles": {
+    "primary": {
+      "rollout": {
+        "profile": "primary",
+        "agent_id": "CA_do6qoLXhxqA7",
+        "source_commit": "a82930ad4449d2c55b79a94be2c2e7c7e1a37884",
+        "rollback_version": "M9VUJFcXh9BM",
+        "deployment": "usage-recovery",
+        "started_at": "2026-11-12T22:58:22.315147+00:00",
+        "candidate_version": "Ckpqp8J7B2Jw",
+        "candidate_status": "Scheduling",
+        "promote_at": "2026-11-12T23:03:57.718042+00:00",
+        "cleanup_at": "2026-11-12T23:05:22.532805+00:00"
+      },
+      "candidate": {
+        "fixture": {
+          "profile": "primary",
+          "user": "synthetic-usage-user-5d490b43566b417e9bb50853ddc4c129",
+          "org": "synthetic-usage-org-5d490b43566b417e9bb50853ddc4c129",
+          "meeting": "6b5c1c67-4bab-4b43-a35b-8262cbf14c61",
+          "room": "lalia-canary-usage-primary-5d490b43566b417e9bb50853ddc4c129"
+        },
+        "create": {
+          "action": "create",
+          "profile": "primary",
+          "fixture": {
+            "profile": "primary",
+            "user": "synthetic-usage-user-5d490b43566b417e9bb50853ddc4c129",
+            "org": "synthetic-usage-org-5d490b43566b417e9bb50853ddc4c129",
+            "meeting": "6b5c1c67-4bab-4b43-a35b-8262cbf14c61",
+            "room": "lalia-canary-usage-primary-5d490b43566b417e9bb50853ddc4c129"
+          },
+          "costs": [],
+          "usages": [],
+          "mirror": {
+            "stt_rows": 0,
+            "stt_minutes": 0,
+            "mirrored_rows": 0,
+            "mirrored_minutes": 0,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 0,
+            "remaining_minutes": 60
+          },
+          "passed": false,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "media": {
+          "agent": "CA_do6qoLXhxqA7",
+          "version": "Ckpqp8J7B2Jw",
+          "dispatch_id": "AD_uxztAuSSfFnD",
+          "deployment": "usage-recovery",
+          "media_started_at": "2026-11-12T23:01:47.695737+00:00",
+          "events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-usage-primary-5d490b43566b417e9bb50853ddc4c129"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 3730
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 5190
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-usage-primary-5d490b43566b417e9bb50853ddc4c129",
+              "tts_required": true
+            }
+          ],
+          "passed": true,
+          "room_deleted": true
+        },
+        "check": {
+          "action": "check",
+          "verified_at": "2026-11-12T23:03:17.689Z",
+          "profile": "primary",
+          "fixture": {
+            "profile": "primary",
+            "user": "synthetic-usage-user-5d490b43566b417e9bb50853ddc4c129",
+            "org": "synthetic-usage-org-5d490b43566b417e9bb50853ddc4c129",
+            "meeting": "6b5c1c67-4bab-4b43-a35b-8262cbf14c61",
+            "room": "lalia-canary-usage-primary-5d490b43566b417e9bb50853ddc4c129"
+          },
+          "costs": [
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 31,
+              "units": 0.0035260000000000005,
+              "cost_usd": 0.0014104
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 31,
+              "units": 0.00032300000000000004,
+              "cost_usd": 0.0005168
+            },
+            {
+              "event_type": "xai_stt_minute",
+              "rows": 2,
+              "units": 1.250500000000037,
+              "cost_usd": 0.004167916500000124
+            },
+            {
+              "event_type": "xai_tts_char",
+              "rows": 7,
+              "units": 468,
+              "cost_usd": 0.00702
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2666666666666666
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.250500000000037
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.250500000000037,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.250500000000037,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.250500000000037,
+            "remaining_minutes": 58.74949999999996
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 1,
+          "customer_outbox_rows": 1,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "cleanup": {
+          "action": "cleanup",
+          "verified_at": "2026-11-12T23:04:59.039Z",
+          "profile": "primary",
+          "fixture": {
+            "profile": "primary",
+            "user": "synthetic-usage-user-5d490b43566b417e9bb50853ddc4c129",
+            "org": "synthetic-usage-org-5d490b43566b417e9bb50853ddc4c129",
+            "meeting": "6b5c1c67-4bab-4b43-a35b-8262cbf14c61",
+            "room": "lalia-canary-usage-primary-5d490b43566b417e9bb50853ddc4c129"
+          },
+          "costs": [
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 31,
+              "units": 0.0035260000000000005,
+              "cost_usd": 0.0014104
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 31,
+              "units": 0.00032300000000000004,
+              "cost_usd": 0.0005168
+            },
+            {
+              "event_type": "xai_stt_minute",
+              "rows": 2,
+              "units": 1.250500000000037,
+              "cost_usd": 0.004167916500000124
+            },
+            {
+              "event_type": "xai_tts_char",
+              "rows": 7,
+              "units": 468,
+              "cost_usd": 0.00702
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2666666666666666
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.250500000000037
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.250500000000037,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.250500000000037,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.250500000000037,
+            "remaining_minutes": 58.74949999999996
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 1,
+          "customer_outbox_rows": 1,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": {
+            "fixture_deleted": true,
+            "cost_rows_retained": true,
+            "customer_tombstone_queued": true,
+            "prior_customer_projection_rows": 1,
+            "prior_customer_outbox_rows": 1
+          }
+        },
+        "cleanup-status": {
+          "action": "cleanup-status",
+          "profile": "primary",
+          "passed": true,
+          "remaining_fixture_rows": 0,
+          "tombstone_payload_cleared": true,
+          "tombstone_outbox_status": "delivered",
+          "tombstone_result_status": "applied",
+          "cost_rows_retained": 71
+        }
+      },
+      "candidate_workers": {
+        "profile": "primary",
+        "since": "2026-11-12T22:58:15+00:00",
+        "verified_at": "2026-11-12T23:03:14.865834+00:00",
+        "invalid_records": 0,
+        "workers": [
+          {
+            "worker": "CAW_PSAaaG3yTdgo",
+            "builds": [
+              "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+            ],
+            "events": [
+              {
+                "event": "worker_started",
+                "at": "2026-11-12T22:59:36.679335+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T22:59:40.120656+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T22:59:40.120782+00:00"
+              }
+            ],
+            "counts": {
+              "module_loaded": 10,
+              "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)": 5,
+              "worker_started": 1,
+              "inference_config": 1,
+              "sdk_worker_starting": 2,
+              "sdk_event": 14,
+              "sdk_process_initializing": 8,
+              "\ud83d\udd25 Worker process prewarmed Silero VAD": 12,
+              "sdk_process_initialized": 8,
+              "sdk_worker_registered": 2
+            }
+          },
+          {
+            "worker": "CAW_YESd4krqcrnF",
+            "builds": [
+              "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+            ],
+            "events": [
+              {
+                "event": "worker_started",
+                "at": "2026-11-12T22:59:43.287415+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T22:59:46.806709+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T22:59:46.807015+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:01:47.737526+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:01:47.739753+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:01:47.740757+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:02:29.265946+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:02:29.267344+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:02:29.267512+00:00"
+              }
+            ],
+            "counts": {
+              "module_loaded": 8,
+              "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)": 4,
+              "worker_started": 1,
+              "inference_config": 1,
+              "sdk_worker_starting": 2,
+              "sdk_event": 42,
+              "sdk_process_initializing": 6,
+              "\ud83d\udd25 Worker process prewarmed Silero VAD": 9,
+              "sdk_process_initialized": 6,
+              "sdk_worker_registered": 2,
+              "sdk_job_requested": 2,
+              "session_started": 3,
+              "room_codeswitch_captions_agent_tts": 3,
+              "\ud83d\udce2 Broadcast agent_ready \u2014 waiting for participant language sync": 3,
+              "language_update_was_enabled_voiceenabled": 6,
+              "update_assistants_speakers_targets_participant_langs_enabled_voice": 9,
+              "speaker_pipeline_shared_stt_targets": 6,
+              "stt_xai_streaming_multilingual_language_sample_rate_shared": 6,
+              "caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider": 6,
+              "bvc_noise_cancellation_enabled_on_inbound_audio": 6,
+              "provider_status_stt_active_tts_active": 6,
+              "tts_lane_ready_track_tts_provider": 6,
+              "\ud83d\udce2 agent_ready re-broadcast after human participant_connected (rejoin / missed first broadcast)": 3,
+              "llm_openai_temp_timeout_s": 9,
+              "llm_prewarmed_in_ms": 9,
+              "translation_completed": 93,
+              "is_final_seg": 21,
+              "stt_idle_finalize_ms_without_new_words": 6,
+              "turn_final_ms": 12,
+              "lane_mode_updated_effective_multilingual_same_language": 6,
+              "pipeline_leg_ended_stt_stream_closed_exiting_for_restart": 6,
+              "tts_lane_removed": 6,
+              "shutdown_cancelled_speaker_pipeline_task_s": 3,
+              "session_stopped": 3
+            }
+          },
+          {
+            "worker": "CAW_nUWDrs9TfTRo",
+            "builds": [],
+            "events": [
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T22:59:40.220073+00:00"
+              },
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T22:59:40.220161+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T22:59:40.220551+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T22:59:40.220594+00:00"
+              }
+            ],
+            "counts": {
+              "sdk_worker_draining": 2,
+              "sdk_worker_stopping": 2
+            }
+          }
+        ]
+      },
+      "pending": {
+        "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-primary-L2Qzvc",
+        "versionId": "3dd24829-b287-46bd-8ae6-b0570def80b7",
+        "pendingStage": "known-values-pending",
+        "profile": "primary",
+        "agentId": "CA_do6qoLXhxqA7",
+        "complete": false,
+        "keys": [
+          "AGENT_BUILD_REF",
+          "AGENT_MODULE",
+          "AGENT_NAME",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_REGION",
+          "AWS_SECRET_ACCESS_KEY",
+          "BACKEND_BASE_URL",
+          "CAPTION_UTTERANCE_END_DELAY_SEC",
+          "COST_EVENT_SECRET",
+          "DEEPGRAM_API_KEY",
+          "ELEVENLABS_API_KEY",
+          "LALIA_LOG_PRIVACY_PROBE",
+          "LLM_PROVIDER",
+          "LOG_LEVEL",
+          "OPENAI_API_KEY",
+          "STT_PROVIDER",
+          "TTS_ENABLED",
+          "TTS_PROVIDER",
+          "XAI_API_KEY",
+          "XAI_STT_ENDPOINTING_MS"
+        ],
+        "retrievalEqualityVerified": true
+      },
+      "apply": {
+        "profile": "primary",
+        "agentId": "CA_do6qoLXhxqA7",
+        "versionId": "3dd24829-b287-46bd-8ae6-b0570def80b7",
+        "applied": true,
+        "appliedAt": "2026-11-12T23:07:36.742759+00:00",
+        "keys": [
+          "AGENT_BUILD_REF",
+          "AGENT_MODULE",
+          "AGENT_NAME",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_REGION",
+          "AWS_SECRET_ACCESS_KEY",
+          "BACKEND_BASE_URL",
+          "CAPTION_UTTERANCE_END_DELAY_SEC",
+          "COST_EVENT_SECRET",
+          "DEEPGRAM_API_KEY",
+          "ELEVENLABS_API_KEY",
+          "LALIA_LOG_PRIVACY_PROBE",
+          "LLM_PROVIDER",
+          "LOG_LEVEL",
+          "OPENAI_API_KEY",
+          "STT_PROVIDER",
+          "TTS_ENABLED",
+          "TTS_PROVIDER",
+          "XAI_API_KEY",
+          "XAI_STT_ENDPOINTING_MS"
+        ],
+        "complete": false,
+        "awaiting": "Fresh worker registration, previous worker drain, Running status and scoped usage/media evidence"
+      },
+      "restored": {
+        "fixture": {
+          "profile": "primary",
+          "user": "synthetic-usage-user-78d02f42a3f94646927fd1145e73039c",
+          "org": "synthetic-usage-org-78d02f42a3f94646927fd1145e73039c",
+          "meeting": "9265039d-268d-4813-8f20-1376ba6ee707",
+          "room": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c"
+        },
+        "create": {
+          "action": "create",
+          "verified_at": "2026-11-12T23:03:56.971Z",
+          "profile": "primary",
+          "fixture": {
+            "profile": "primary",
+            "user": "synthetic-usage-user-78d02f42a3f94646927fd1145e73039c",
+            "org": "synthetic-usage-org-78d02f42a3f94646927fd1145e73039c",
+            "meeting": "9265039d-268d-4813-8f20-1376ba6ee707",
+            "room": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c"
+          },
+          "costs": [],
+          "usages": [],
+          "mirror": {
+            "stt_rows": 0,
+            "stt_minutes": 0,
+            "mirrored_rows": 0,
+            "mirrored_minutes": 0,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 0,
+            "remaining_minutes": 60
+          },
+          "passed": false,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "media": {
+          "agent": "CA_do6qoLXhxqA7",
+          "version": "Ckpqp8J7B2Jw",
+          "dispatch_id": "AD_GSsnhDcy4Lhu",
+          "deployment": "production",
+          "media_started_at": "2026-11-12T23:09:06.427724+00:00",
+          "events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 2450
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 5650
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c",
+              "tts_required": true
+            }
+          ],
+          "passed": true,
+          "room_deleted": true
+        },
+        "check": {
+          "action": "check",
+          "verified_at": "2026-11-12T23:10:02.996Z",
+          "profile": "primary",
+          "fixture": {
+            "profile": "primary",
+            "user": "synthetic-usage-user-78d02f42a3f94646927fd1145e73039c",
+            "org": "synthetic-usage-org-78d02f42a3f94646927fd1145e73039c",
+            "meeting": "9265039d-268d-4813-8f20-1376ba6ee707",
+            "room": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c"
+          },
+          "costs": [
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 32,
+              "units": 0.0036500000000000005,
+              "cost_usd": 0.0014599999999999997
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 32,
+              "units": 0.0003630000000000001,
+              "cost_usd": 0.0005807999999999999
+            },
+            {
+              "event_type": "xai_stt_minute",
+              "rows": 2,
+              "units": 1.2528333333333697,
+              "cost_usd": 0.0041756935000001215
+            },
+            {
+              "event_type": "xai_tts_char",
+              "rows": 5,
+              "units": 463,
+              "cost_usd": 0.006945
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2666666666666666
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.2528333333333697
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2528333333333697,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2528333333333697,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2528333333333697,
+            "remaining_minutes": 58.74716666666663
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "cleanup": {
+          "action": "cleanup",
+          "verified_at": "2026-11-12T23:12:39.174Z",
+          "profile": "primary",
+          "fixture": {
+            "profile": "primary",
+            "user": "synthetic-usage-user-78d02f42a3f94646927fd1145e73039c",
+            "org": "synthetic-usage-org-78d02f42a3f94646927fd1145e73039c",
+            "meeting": "9265039d-268d-4813-8f20-1376ba6ee707",
+            "room": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c"
+          },
+          "costs": [
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 32,
+              "units": 0.0036500000000000005,
+              "cost_usd": 0.0014599999999999997
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 32,
+              "units": 0.0003630000000000001,
+              "cost_usd": 0.0005807999999999999
+            },
+            {
+              "event_type": "xai_stt_minute",
+              "rows": 2,
+              "units": 1.2528333333333697,
+              "cost_usd": 0.0041756935000001215
+            },
+            {
+              "event_type": "xai_tts_char",
+              "rows": 5,
+              "units": 463,
+              "cost_usd": 0.006945
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2666666666666666
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.2528333333333697
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2528333333333697,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2528333333333697,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2528333333333697,
+            "remaining_minutes": 58.74716666666663
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": {
+            "fixture_deleted": true,
+            "cost_rows_retained": true,
+            "customer_tombstone_queued": true,
+            "prior_customer_projection_rows": 0,
+            "prior_customer_outbox_rows": 0
+          }
+        },
+        "cleanup-status": {
+          "action": "cleanup-status",
+          "profile": "primary",
+          "passed": true,
+          "remaining_fixture_rows": 0,
+          "tombstone_payload_cleared": true,
+          "tombstone_outbox_status": "delivered",
+          "tombstone_result_status": "applied",
+          "cost_rows_retained": 71
+        }
+      },
+      "restored_workers": {
+        "profile": "primary",
+        "since": "2026-11-12T23:07:36+00:00",
+        "verified_at": "2026-11-12T23:11:09.782822+00:00",
+        "invalid_records": 0,
+        "workers": [
+          {
+            "worker": "CAW_8UfLATkCAYBP",
+            "builds": [],
+            "events": [
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T23:08:00.282182+00:00"
+              },
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T23:08:00.282273+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T23:08:00.282729+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T23:08:00.282779+00:00"
+              }
+            ],
+            "counts": {
+              "sdk_worker_draining": 2,
+              "sdk_worker_stopping": 2
+            }
+          },
+          {
+            "worker": "CAW_sK9jv3K6N5bV",
+            "builds": [
+              "a82930ad4449d2c55b79a94be2c2e7c7e1a37884"
+            ],
+            "events": [
+              {
+                "event": "worker_started",
+                "at": "2026-11-12T23:07:55.890973+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T23:07:59.475615+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T23:07:59.475696+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:09:06.472255+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:09:06.473202+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:09:06.473525+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:09:48.161298+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:09:48.162253+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:09:48.162513+00:00"
+              }
+            ],
+            "counts": {
+              "module_loaded": 12,
+              "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)": 6,
+              "worker_started": 1,
+              "inference_config": 1,
+              "sdk_worker_starting": 2,
+              "sdk_event": 22,
+              "sdk_process_initializing": 10,
+              "\ud83d\udd25 Worker process prewarmed Silero VAD": 15,
+              "sdk_process_initialized": 10,
+              "sdk_worker_registered": 2,
+              "sdk_job_requested": 2,
+              "session_started": 3,
+              "room_codeswitch_captions_agent_tts": 3,
+              "\ud83d\udce2 Broadcast agent_ready \u2014 waiting for participant language sync": 3,
+              "language_update_was_enabled_voiceenabled": 6,
+              "update_assistants_speakers_targets_participant_langs_enabled_voice": 9,
+              "speaker_pipeline_shared_stt_targets": 6,
+              "stt_xai_streaming_multilingual_language_sample_rate_shared": 6,
+              "caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider": 6,
+              "bvc_noise_cancellation_enabled_on_inbound_audio": 6,
+              "provider_status_stt_active_tts_active": 6,
+              "tts_lane_ready_track_tts_provider": 6,
+              "\ud83d\udce2 agent_ready re-broadcast after human participant_connected (rejoin / missed first broadcast)": 3,
+              "llm_openai_temp_timeout_s": 9,
+              "llm_prewarmed_in_ms": 9,
+              "translation_completed": 96,
+              "is_final_seg": 18,
+              "stt_idle_finalize_ms_without_new_words": 6,
+              "turn_final_ms": 12,
+              "lane_mode_updated_effective_multilingual_same_language": 6,
+              "tts_dropping_stale_sentence_speaker_age_s": 3,
+              "speaker_pipeline_cancelled": 6,
+              "tts_lane_removed": 6,
+              "shutdown_cancelled_speaker_pipeline_task_s": 3,
+              "session_stopped": 3
+            }
+          }
+        ]
+      },
+      "attestation": {
+        "schema_version": 1,
+        "profile": "primary",
+        "agent_id": "CA_do6qoLXhxqA7",
+        "deployment_version": "Ckpqp8J7B2Jw",
+        "secret_version_id": "3dd24829-b287-46bd-8ae6-b0570def80b7",
+        "verified_at": "2026-11-12T23:10:17.448951+00:00",
+        "source_commit": "a82930ad4449d2c55b79a94be2c2e7c7e1a37884",
+        "media": {
+          "passed": true,
+          "tts_required": true,
+          "tts_passed": true,
+          "directions": [
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 2450
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 5650
+            }
+          ]
+        },
+        "telemetry": {
+          "positive": true,
+          "quota_matches": true,
+          "costs": [
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 32,
+              "units": 0.0036500000000000005,
+              "cost_usd": 0.0014599999999999997
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 32,
+              "units": 0.0003630000000000001,
+              "cost_usd": 0.0005807999999999999
+            },
+            {
+              "event_type": "xai_stt_minute",
+              "rows": 2,
+              "units": 1.2528333333333697,
+              "cost_usd": 0.0041756935000001215
+            },
+            {
+              "event_type": "xai_tts_char",
+              "rows": 5,
+              "units": 463,
+              "cost_usd": 0.006945
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2528333333333697,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2528333333333697,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2528333333333697,
+            "remaining_minutes": 58.74716666666663
+          }
+        },
+        "scope": {
+          "room_name": "lalia-canary-usage-primary-78d02f42a3f94646927fd1145e73039c",
+          "identity_prefix": "canary-synthetic-"
+        },
+        "rollout": {
+          "new_worker_id": "CAW_sK9jv3K6N5bV",
+          "previous_worker_id": "CAW_8UfLATkCAYBP",
+          "new_worker_registered_at": "2026-11-12T23:07:59.475615+00:00",
+          "previous_worker_stopped_at": "2026-11-12T23:08:00.282779+00:00",
+          "media_started_at": "2026-11-12T23:09:06.427724+00:00"
+        },
+        "evidence_files": {
+          "scoped_state": "docs/launch/evidence/2026-11-12-agent-usage-recovery.json#/profiles/primary/restored",
+          "worker_readiness": "docs/launch/evidence/2026-11-12-agent-usage-recovery.json#/profiles/primary/restored_workers"
+        }
+      },
+      "complete_receipt": {
+        "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-primary-L2Qzvc",
+        "versionId": "de8ac17c-0ebf-4b85-a723-c748bcfa542a",
+        "complete": true,
+        "keys": [
+          "AGENT_BUILD_REF",
+          "AGENT_MODULE",
+          "AGENT_NAME",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_REGION",
+          "AWS_SECRET_ACCESS_KEY",
+          "BACKEND_BASE_URL",
+          "CAPTION_UTTERANCE_END_DELAY_SEC",
+          "COST_EVENT_SECRET",
+          "DEEPGRAM_API_KEY",
+          "ELEVENLABS_API_KEY",
+          "LALIA_LOG_PRIVACY_PROBE",
+          "LLM_PROVIDER",
+          "LOG_LEVEL",
+          "OPENAI_API_KEY",
+          "STT_PROVIDER",
+          "TTS_ENABLED",
+          "TTS_PROVIDER",
+          "XAI_API_KEY",
+          "XAI_STT_ENDPOINTING_MS"
+        ],
+        "keyGeneration": null,
+        "coverage": {
+          "AGENT_BUILD_REF": "known_deployed_verified",
+          "AGENT_MODULE": "known_deployed_verified",
+          "AGENT_NAME": "known_deployed_verified",
+          "AWS_ACCESS_KEY_ID": "known_deployed_verified",
+          "AWS_REGION": "known_deployed_verified",
+          "AWS_SECRET_ACCESS_KEY": "known_deployed_verified",
+          "BACKEND_BASE_URL": "known_deployed_verified",
+          "CAPTION_UTTERANCE_END_DELAY_SEC": "known_deployed_verified",
+          "COST_EVENT_SECRET": "known_deployed_verified",
+          "DEEPGRAM_API_KEY": "known_deployed_verified",
+          "ELEVENLABS_API_KEY": "known_deployed_verified",
+          "LALIA_LOG_PRIVACY_PROBE": "known_deployed_verified",
+          "LLM_PROVIDER": "known_deployed_verified",
+          "LOG_LEVEL": "known_deployed_verified",
+          "OPENAI_API_KEY": "known_deployed_verified",
+          "STT_PROVIDER": "known_deployed_verified",
+          "TTS_ENABLED": "known_deployed_verified",
+          "TTS_PROVIDER": "known_deployed_verified",
+          "XAI_API_KEY": "known_deployed_verified",
+          "XAI_STT_ENDPOINTING_MS": "known_deployed_verified"
+        },
+        "retrievalEqualityVerified": true
+      }
+    },
+    "stable": {
+      "rollout": {
+        "profile": "stable",
+        "agent_id": "CA_gKYczmp9DCNy",
+        "source_commit": "a82930ad4449d2c55b79a94be2c2e7c7e1a37884",
+        "rollback_version": "CqPbKWM3fgks",
+        "deployment": "usage-recovery",
+        "started_at": "2026-11-12T22:58:19.344422+00:00",
+        "candidate_version": "q5NLx2CmaUKC",
+        "candidate_status": "Scheduling",
+        "promote_at": "2026-11-12T23:02:55.696527+00:00",
+        "cleanup_at": "2026-11-12T23:07:48.857554+00:00"
+      },
+      "candidate": {
+        "fixture": {
+          "profile": "stable",
+          "user": "synthetic-usage-user-1583ea178e0a4eb0a60832cb650a0774",
+          "org": "synthetic-usage-org-1583ea178e0a4eb0a60832cb650a0774",
+          "meeting": "47d1ba87-130e-4014-926c-84972773313f",
+          "room": "lalia-canary-usage-stable-1583ea178e0a4eb0a60832cb650a0774"
+        },
+        "create": {
+          "action": "create",
+          "profile": "stable",
+          "fixture": {
+            "profile": "stable",
+            "user": "synthetic-usage-user-1583ea178e0a4eb0a60832cb650a0774",
+            "org": "synthetic-usage-org-1583ea178e0a4eb0a60832cb650a0774",
+            "meeting": "47d1ba87-130e-4014-926c-84972773313f",
+            "room": "lalia-canary-usage-stable-1583ea178e0a4eb0a60832cb650a0774"
+          },
+          "costs": [],
+          "usages": [],
+          "mirror": {
+            "stt_rows": 0,
+            "stt_minutes": 0,
+            "mirrored_rows": 0,
+            "mirrored_minutes": 0,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 0,
+            "remaining_minutes": 60
+          },
+          "passed": false,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "media": {
+          "agent": "CA_gKYczmp9DCNy",
+          "version": "q5NLx2CmaUKC",
+          "dispatch_id": "AD_CrbvTb536Hqc",
+          "deployment": "usage-recovery",
+          "media_started_at": "2026-11-12T23:00:19.319378+00:00",
+          "events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-usage-stable-1583ea178e0a4eb0a60832cb650a0774"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-usage-stable-1583ea178e0a4eb0a60832cb650a0774",
+              "tts_required": false
+            }
+          ],
+          "passed": true,
+          "room_deleted": true
+        },
+        "check": {
+          "action": "check",
+          "verified_at": "2026-11-12T23:01:20.479Z",
+          "profile": "stable",
+          "fixture": {
+            "profile": "stable",
+            "user": "synthetic-usage-user-1583ea178e0a4eb0a60832cb650a0774",
+            "org": "synthetic-usage-org-1583ea178e0a4eb0a60832cb650a0774",
+            "meeting": "47d1ba87-130e-4014-926c-84972773313f",
+            "room": "lalia-canary-usage-stable-1583ea178e0a4eb0a60832cb650a0774"
+          },
+          "costs": [
+            {
+              "event_type": "deepgram_stt_minute",
+              "rows": 2,
+              "units": 1.2293333333333742,
+              "cost_usd": 0.012908000000000431
+            },
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 19,
+              "units": 0.0022800000000000003,
+              "cost_usd": 0.000912
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 19,
+              "units": 0.00021999999999999998,
+              "cost_usd": 0.000352
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2666666666666666
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.2293333333333742
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2293333333333742,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2293333333333742,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2293333333333742,
+            "remaining_minutes": 58.77066666666663
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "cleanup": {
+          "action": "cleanup",
+          "verified_at": "2026-11-12T23:04:44.327Z",
+          "profile": "stable",
+          "fixture": {
+            "profile": "stable",
+            "user": "synthetic-usage-user-1583ea178e0a4eb0a60832cb650a0774",
+            "org": "synthetic-usage-org-1583ea178e0a4eb0a60832cb650a0774",
+            "meeting": "47d1ba87-130e-4014-926c-84972773313f",
+            "room": "lalia-canary-usage-stable-1583ea178e0a4eb0a60832cb650a0774"
+          },
+          "costs": [
+            {
+              "event_type": "deepgram_stt_minute",
+              "rows": 2,
+              "units": 1.2293333333333742,
+              "cost_usd": 0.012908000000000431
+            },
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 19,
+              "units": 0.0022800000000000003,
+              "cost_usd": 0.000912
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 19,
+              "units": 0.00021999999999999998,
+              "cost_usd": 0.000352
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2666666666666666
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.2293333333333742
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2293333333333742,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2293333333333742,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2293333333333742,
+            "remaining_minutes": 58.77066666666663
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": {
+            "fixture_deleted": true,
+            "cost_rows_retained": true,
+            "customer_tombstone_queued": true,
+            "prior_customer_projection_rows": 0,
+            "prior_customer_outbox_rows": 0
+          }
+        },
+        "cleanup-status": {
+          "action": "cleanup-status",
+          "profile": "stable",
+          "passed": true,
+          "remaining_fixture_rows": 0,
+          "tombstone_payload_cleared": true,
+          "tombstone_outbox_status": "delivered",
+          "tombstone_result_status": "applied",
+          "cost_rows_retained": 40
+        }
+      },
+      "candidate_workers": {
+        "profile": "stable",
+        "since": "2026-11-12T22:58:15+00:00",
+        "verified_at": "2026-11-12T23:01:33.902872+00:00",
+        "invalid_records": 0,
+        "workers": [
+          {
+            "worker": "CAW_2ZqkdbrDkcNa",
+            "builds": [],
+            "events": [
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T23:00:23.518389+00:00"
+              },
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T23:00:23.518468+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T23:00:23.519033+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T23:00:23.519107+00:00"
+              }
+            ],
+            "counts": {
+              "sdk_worker_draining": 2,
+              "sdk_worker_stopping": 2
+            }
+          },
+          {
+            "worker": "CAW_TDRAfxAGpuoN",
+            "builds": [
+              "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+            ],
+            "events": [
+              {
+                "event": "worker_started",
+                "at": "2026-11-12T23:00:19.435225+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T23:00:23.121739+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T23:00:23.121918+00:00"
+              }
+            ],
+            "counts": {
+              "module_loaded": 10,
+              "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)": 5,
+              "worker_started": 1,
+              "inference_config": 1,
+              "sdk_worker_starting": 2,
+              "sdk_event": 12,
+              "sdk_process_initializing": 8,
+              "\ud83d\udd25 Worker process prewarmed Silero VAD": 12,
+              "sdk_process_initialized": 8,
+              "sdk_worker_registered": 2
+            }
+          },
+          {
+            "worker": "CAW_za4rgzwsZd8G",
+            "builds": [
+              "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+            ],
+            "events": [
+              {
+                "event": "worker_started",
+                "at": "2026-11-12T22:59:50.271288+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T22:59:54.296237+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T22:59:54.296340+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:00:19.320614+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:00:19.321515+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:00:19.321602+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:01:00.708697+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:01:00.709510+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:01:00.709548+00:00"
+              }
+            ],
+            "counts": {
+              "module_loaded": 8,
+              "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)": 4,
+              "worker_started": 1,
+              "inference_config": 1,
+              "sdk_worker_starting": 2,
+              "sdk_event": 24,
+              "sdk_process_initializing": 6,
+              "\ud83d\udd25 Worker process prewarmed Silero VAD": 9,
+              "sdk_process_initialized": 6,
+              "sdk_worker_registered": 2,
+              "sdk_job_requested": 2,
+              "session_started": 3,
+              "room_transcription_only_agent_no_tts": 3,
+              "\ud83d\udce2 Broadcast agent_ready \u2014 waiting for participant language sync": 3,
+              "language_update_was_enabled": 114,
+              "update_assistants_speakers_targets_participant_langs_enabled": 63,
+              "speaker_pipeline_shared_stt_targets": 6,
+              "stt_deepgram_nova_lang_multi_auto_detect_endpointing_ms_keyterms_shared": 6,
+              "caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider": 6,
+              "bvc_noise_cancellation_enabled_on_inbound_audio": 6,
+              "\ud83d\udce2 agent_ready re-broadcast after human participant_connected (rejoin / missed first broadcast)": 3,
+              "llm_openai_temp_timeout_s": 6,
+              "llm_prewarmed_in_ms": 6,
+              "translation_completed": 57,
+              "is_final_seg": 18,
+              "stt_idle_finalize_ms_without_new_words": 6,
+              "turn_final_ms": 6,
+              "pipeline_leg_ended_stt_stream_closed_exiting_for_restart": 3,
+              "speaker_pipeline_cancelled": 3,
+              "shutdown_cancelled_speaker_pipeline_task_s": 3,
+              "session_stopped": 3
+            }
+          }
+        ]
+      },
+      "pending": {
+        "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-stable-ZCNPDK",
+        "versionId": "45dfe720-e815-4c9d-9064-59638c003856",
+        "pendingStage": "known-values-pending",
+        "profile": "stable",
+        "agentId": "CA_gKYczmp9DCNy",
+        "complete": false,
+        "keys": [
+          "AGENT_BUILD_REF",
+          "AGENT_MODULE",
+          "AGENT_NAME",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_REGION",
+          "AWS_SECRET_ACCESS_KEY",
+          "BACKEND_BASE_URL",
+          "CAPTION_UTTERANCE_END_DELAY_SEC",
+          "COST_EVENT_SECRET",
+          "DEEPGRAM_API_KEY",
+          "LALIA_LOG_PRIVACY_PROBE",
+          "LLM_PROVIDER",
+          "OPENAI_API_KEY",
+          "STT_PROVIDER"
+        ],
+        "retrievalEqualityVerified": true
+      },
+      "apply": {
+        "profile": "stable",
+        "agentId": "CA_gKYczmp9DCNy",
+        "versionId": "45dfe720-e815-4c9d-9064-59638c003856",
+        "applied": true,
+        "appliedAt": "2026-11-12T23:10:17.464782+00:00",
+        "keys": [
+          "AGENT_BUILD_REF",
+          "AGENT_MODULE",
+          "AGENT_NAME",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_REGION",
+          "AWS_SECRET_ACCESS_KEY",
+          "BACKEND_BASE_URL",
+          "CAPTION_UTTERANCE_END_DELAY_SEC",
+          "COST_EVENT_SECRET",
+          "DEEPGRAM_API_KEY",
+          "LALIA_LOG_PRIVACY_PROBE",
+          "LLM_PROVIDER",
+          "OPENAI_API_KEY",
+          "STT_PROVIDER"
+        ],
+        "complete": false,
+        "awaiting": "Fresh worker registration, previous worker drain, Running status and scoped usage/media evidence"
+      },
+      "restored": {
+        "fixture": {
+          "profile": "stable",
+          "user": "synthetic-usage-user-97a4cdda4d8f448eb2658ab17e9fb71b",
+          "org": "synthetic-usage-org-97a4cdda4d8f448eb2658ab17e9fb71b",
+          "meeting": "b5d42280-48f0-4b90-a1d9-b1f988f35298",
+          "room": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b"
+        },
+        "create": {
+          "action": "create",
+          "verified_at": "2026-11-12T23:03:45.663Z",
+          "profile": "stable",
+          "fixture": {
+            "profile": "stable",
+            "user": "synthetic-usage-user-97a4cdda4d8f448eb2658ab17e9fb71b",
+            "org": "synthetic-usage-org-97a4cdda4d8f448eb2658ab17e9fb71b",
+            "meeting": "b5d42280-48f0-4b90-a1d9-b1f988f35298",
+            "room": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b"
+          },
+          "costs": [],
+          "usages": [],
+          "mirror": {
+            "stt_rows": 0,
+            "stt_minutes": 0,
+            "mirrored_rows": 0,
+            "mirrored_minutes": 0,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 0,
+            "remaining_minutes": 60
+          },
+          "passed": false,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "media": {
+          "agent": "CA_gKYczmp9DCNy",
+          "version": "q5NLx2CmaUKC",
+          "dispatch_id": "AD_nTiNCwKfqbXz",
+          "deployment": "production",
+          "media_started_at": "2026-11-12T23:13:07.081767+00:00",
+          "events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b",
+              "tts_required": false
+            }
+          ],
+          "passed": true,
+          "room_deleted": true
+        },
+        "check": {
+          "action": "check",
+          "verified_at": "2026-11-12T23:14:26.313Z",
+          "profile": "stable",
+          "fixture": {
+            "profile": "stable",
+            "user": "synthetic-usage-user-97a4cdda4d8f448eb2658ab17e9fb71b",
+            "org": "synthetic-usage-org-97a4cdda4d8f448eb2658ab17e9fb71b",
+            "meeting": "b5d42280-48f0-4b90-a1d9-b1f988f35298",
+            "room": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b"
+          },
+          "costs": [
+            {
+              "event_type": "deepgram_stt_minute",
+              "rows": 2,
+              "units": 1.2348333333333734,
+              "cost_usd": 0.012965750000000421
+            },
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 19,
+              "units": 0.00228,
+              "cost_usd": 0.000912
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 19,
+              "units": 0.00021799999999999999,
+              "cost_usd": 0.00034879999999999997
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2833333333333332
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.2348333333333734
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2348333333333734,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2348333333333734,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2348333333333734,
+            "remaining_minutes": 58.76516666666663
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": null
+        },
+        "cleanup": {
+          "action": "cleanup",
+          "verified_at": "2026-11-12T23:16:15.849Z",
+          "profile": "stable",
+          "fixture": {
+            "profile": "stable",
+            "user": "synthetic-usage-user-97a4cdda4d8f448eb2658ab17e9fb71b",
+            "org": "synthetic-usage-org-97a4cdda4d8f448eb2658ab17e9fb71b",
+            "meeting": "b5d42280-48f0-4b90-a1d9-b1f988f35298",
+            "room": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b"
+          },
+          "costs": [
+            {
+              "event_type": "deepgram_stt_minute",
+              "rows": 2,
+              "units": 1.2348333333333734,
+              "cost_usd": 0.012965750000000421
+            },
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 19,
+              "units": 0.00228,
+              "cost_usd": 0.000912
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 19,
+              "units": 0.00021799999999999999,
+              "cost_usd": 0.00034879999999999997
+            }
+          ],
+          "usages": [
+            {
+              "event_type": "meeting_participant_minute",
+              "rows": 2,
+              "units": 1.2833333333333332
+            },
+            {
+              "event_type": "translation_minute",
+              "rows": 2,
+              "units": 1.2348333333333734
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2348333333333734,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2348333333333734,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2348333333333734,
+            "remaining_minutes": 58.76516666666663
+          },
+          "passed": true,
+          "cost_attribution_mismatches": 0,
+          "customer_projection_rows": 0,
+          "customer_outbox_rows": 0,
+          "billing": {
+            "stripe_mode": "test",
+            "autocharge": false
+          },
+          "cleanup": {
+            "fixture_deleted": true,
+            "cost_rows_retained": true,
+            "customer_tombstone_queued": true,
+            "prior_customer_projection_rows": 0,
+            "prior_customer_outbox_rows": 0
+          }
+        },
+        "cleanup-status": {
+          "action": "cleanup-status",
+          "profile": "stable",
+          "passed": true,
+          "remaining_fixture_rows": 0,
+          "tombstone_payload_cleared": true,
+          "tombstone_outbox_status": "delivered",
+          "tombstone_result_status": "applied",
+          "cost_rows_retained": 40
+        }
+      },
+      "restored_workers": {
+        "profile": "stable",
+        "since": "2026-11-12T23:10:17+00:00",
+        "verified_at": "2026-11-12T23:14:19.439385+00:00",
+        "invalid_records": 0,
+        "workers": [
+          {
+            "worker": "CAW_FeykdobVHHRh",
+            "builds": [],
+            "events": [
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T23:11:29.489114+00:00"
+              },
+              {
+                "event": "sdk_worker_draining",
+                "at": "2026-11-12T23:11:29.489226+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T23:11:29.489639+00:00"
+              },
+              {
+                "event": "sdk_worker_stopping",
+                "at": "2026-11-12T23:11:29.489700+00:00"
+              }
+            ],
+            "counts": {
+              "sdk_worker_draining": 2,
+              "sdk_worker_stopping": 2
+            }
+          },
+          {
+            "worker": "CAW_wmzdbRvtQzV4",
+            "builds": [
+              "a82930ad4449d2c55b79a94be2c2e7c7e1a37884"
+            ],
+            "events": [
+              {
+                "event": "worker_started",
+                "at": "2026-11-12T23:11:24.829361+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T23:11:28.453091+00:00"
+              },
+              {
+                "event": "sdk_worker_registered",
+                "at": "2026-11-12T23:11:28.453214+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:13:07.081886+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:13:07.083434+00:00"
+              },
+              {
+                "event": "session_started",
+                "at": "2026-11-12T23:13:07.083582+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:13:48.435443+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:13:48.436529+00:00"
+              },
+              {
+                "event": "session_stopped",
+                "at": "2026-11-12T23:13:48.436709+00:00"
+              }
+            ],
+            "counts": {
+              "module_loaded": 12,
+              "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)": 6,
+              "worker_started": 1,
+              "inference_config": 1,
+              "sdk_worker_starting": 2,
+              "sdk_event": 14,
+              "sdk_process_initializing": 10,
+              "\ud83d\udd25 Worker process prewarmed Silero VAD": 15,
+              "sdk_process_initialized": 10,
+              "sdk_worker_registered": 2,
+              "sdk_job_requested": 2,
+              "session_started": 3,
+              "room_transcription_only_agent_no_tts": 3,
+              "\ud83d\udce2 Broadcast agent_ready \u2014 waiting for participant language sync": 3,
+              "language_update_was_enabled": 114,
+              "update_assistants_speakers_targets_participant_langs_enabled": 63,
+              "speaker_pipeline_shared_stt_targets": 6,
+              "stt_deepgram_nova_lang_multi_auto_detect_endpointing_ms_keyterms_shared": 6,
+              "caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider": 6,
+              "bvc_noise_cancellation_enabled_on_inbound_audio": 6,
+              "\ud83d\udce2 agent_ready re-broadcast after human participant_connected (rejoin / missed first broadcast)": 3,
+              "llm_openai_temp_timeout_s": 6,
+              "llm_prewarmed_in_ms": 6,
+              "translation_completed": 57,
+              "is_final_seg": 18,
+              "stt_idle_finalize_ms_without_new_words": 6,
+              "turn_final_ms": 6,
+              "pipeline_leg_ended_stt_stream_closed_exiting_for_restart": 6,
+              "shutdown_cancelled_speaker_pipeline_task_s": 3,
+              "session_stopped": 3
+            }
+          }
+        ]
+      },
+      "attestation": {
+        "schema_version": 1,
+        "profile": "stable",
+        "agent_id": "CA_gKYczmp9DCNy",
+        "deployment_version": "q5NLx2CmaUKC",
+        "secret_version_id": "45dfe720-e815-4c9d-9064-59638c003856",
+        "verified_at": "2026-11-12T23:14:40.807061+00:00",
+        "source_commit": "a82930ad4449d2c55b79a94be2c2e7c7e1a37884",
+        "media": {
+          "passed": true,
+          "tts_required": false,
+          "tts_passed": false,
+          "directions": [
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            }
+          ]
+        },
+        "telemetry": {
+          "positive": true,
+          "quota_matches": true,
+          "costs": [
+            {
+              "event_type": "deepgram_stt_minute",
+              "rows": 2,
+              "units": 1.2348333333333734,
+              "cost_usd": 0.012965750000000421
+            },
+            {
+              "event_type": "openai_llm_input_mtok",
+              "rows": 19,
+              "units": 0.00228,
+              "cost_usd": 0.000912
+            },
+            {
+              "event_type": "openai_llm_output_mtok",
+              "rows": 19,
+              "units": 0.00021799999999999999,
+              "cost_usd": 0.00034879999999999997
+            }
+          ],
+          "mirror": {
+            "stt_rows": 2,
+            "stt_minutes": 1.2348333333333734,
+            "mirrored_rows": 2,
+            "mirrored_minutes": 1.2348333333333734,
+            "mismatch_rows": 0
+          },
+          "balance": {
+            "included_minutes": 60,
+            "used_minutes": 1.2348333333333734,
+            "remaining_minutes": 58.76516666666663
+          }
+        },
+        "scope": {
+          "room_name": "lalia-canary-usage-stable-97a4cdda4d8f448eb2658ab17e9fb71b",
+          "identity_prefix": "canary-synthetic-"
+        },
+        "rollout": {
+          "new_worker_id": "CAW_wmzdbRvtQzV4",
+          "previous_worker_id": "CAW_FeykdobVHHRh",
+          "new_worker_registered_at": "2026-11-12T23:11:28.453091+00:00",
+          "previous_worker_stopped_at": "2026-11-12T23:11:29.489700+00:00",
+          "media_started_at": "2026-11-12T23:13:07.081767+00:00"
+        },
+        "evidence_files": {
+          "scoped_state": "docs/launch/evidence/2026-11-12-agent-usage-recovery.json#/profiles/stable/restored",
+          "worker_readiness": "docs/launch/evidence/2026-11-12-agent-usage-recovery.json#/profiles/stable/restored_workers"
+        }
+      },
+      "complete_receipt": {
+        "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-stable-ZCNPDK",
+        "versionId": "d8d5a6a7-95e3-40ef-ac10-8d83fe644a4d",
+        "complete": true,
+        "keys": [
+          "AGENT_BUILD_REF",
+          "AGENT_MODULE",
+          "AGENT_NAME",
+          "AWS_ACCESS_KEY_ID",
+          "AWS_REGION",
+          "AWS_SECRET_ACCESS_KEY",
+          "BACKEND_BASE_URL",
+          "CAPTION_UTTERANCE_END_DELAY_SEC",
+          "COST_EVENT_SECRET",
+          "DEEPGRAM_API_KEY",
+          "LALIA_LOG_PRIVACY_PROBE",
+          "LLM_PROVIDER",
+          "OPENAI_API_KEY",
+          "STT_PROVIDER"
+        ],
+        "keyGeneration": null,
+        "coverage": {
+          "AGENT_BUILD_REF": "known_deployed_verified",
+          "AGENT_MODULE": "known_deployed_verified",
+          "AGENT_NAME": "known_deployed_verified",
+          "AWS_ACCESS_KEY_ID": "known_deployed_verified",
+          "AWS_REGION": "known_deployed_verified",
+          "AWS_SECRET_ACCESS_KEY": "known_deployed_verified",
+          "BACKEND_BASE_URL": "known_deployed_verified",
+          "CAPTION_UTTERANCE_END_DELAY_SEC": "known_deployed_verified",
+          "COST_EVENT_SECRET": "known_deployed_verified",
+          "DEEPGRAM_API_KEY": "known_deployed_verified",
+          "LALIA_LOG_PRIVACY_PROBE": "known_deployed_verified",
+          "LLM_PROVIDER": "known_deployed_verified",
+          "OPENAI_API_KEY": "known_deployed_verified",
+          "STT_PROVIDER": "known_deployed_verified"
+        },
+        "retrievalEqualityVerified": true
+      }
+    }
+  },
+  "failed_stable_attempt": {
+    "fixture": {
+      "profile": "stable",
+      "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+      "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+      "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+      "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+    },
+    "create": {
+      "action": "create",
+      "profile": "stable",
+      "fixture": {
+        "profile": "stable",
+        "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+        "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+        "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+        "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+      },
+      "costs": [],
+      "usages": [],
+      "mirror": {
+        "stt_rows": 0,
+        "stt_minutes": 0,
+        "mirrored_rows": 0,
+        "mirrored_minutes": 0,
+        "mismatch_rows": 0
+      },
+      "balance": {
+        "included_minutes": 60,
+        "used_minutes": 0,
+        "remaining_minutes": 60
+      },
+      "passed": false,
+      "customer_projection_rows": 0,
+      "customer_outbox_rows": 0,
+      "billing": {
+        "stripe_mode": "test",
+        "autocharge": false
+      },
+      "cleanup": null
+    },
+    "attempt_history": [
+      {
+        "state_file": "/tmp/lalia-usage-stable-first-attempt.json",
+        "result": "media passed; telemetry absent; root confirmed previous worker"
+      }
+    ],
+    "media": {
+      "agent": "CA_gKYczmp9DCNy",
+      "version": "CqPbKWM3fgks",
+      "dispatch_id": "AD_iGT3FXXjsX4T",
+      "events": [
+        {
+          "durations_seconds": {
+            "en": 9.55,
+            "es": 12.63
+          },
+          "event": "synthetic_ready"
+        },
+        {
+          "event": "connected",
+          "participants": 2,
+          "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+        },
+        {
+          "event": "direction_pass",
+          "source": "en",
+          "target": "es",
+          "translated_final": true,
+          "tts_audio_ms": 0
+        },
+        {
+          "event": "direction_pass",
+          "source": "es",
+          "target": "en",
+          "translated_final": true,
+          "tts_audio_ms": 0
+        },
+        {
+          "event": "PASS",
+          "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298",
+          "tts_required": false
+        }
+      ],
+      "passed": true,
+      "room_deleted": true
+    },
+    "check": {
+      "action": "check",
+      "profile": "stable",
+      "fixture": {
+        "profile": "stable",
+        "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+        "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+        "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+        "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+      },
+      "costs": [
+        {
+          "event_type": "openai_llm_input_mtok",
+          "rows": 21,
+          "units": 0.002524,
+          "cost_usd": 0.0010096
+        },
+        {
+          "event_type": "openai_llm_output_mtok",
+          "rows": 21,
+          "units": 0.00024399999999999997,
+          "cost_usd": 0.0003904
+        }
+      ],
+      "usages": [
+        {
+          "event_type": "meeting_participant_minute",
+          "rows": 4,
+          "units": 2.5166666666666666
+        }
+      ],
+      "mirror": {
+        "stt_rows": 0,
+        "stt_minutes": 0,
+        "mirrored_rows": 0,
+        "mirrored_minutes": 0,
+        "mismatch_rows": 0
+      },
+      "balance": {
+        "included_minutes": 60,
+        "used_minutes": 0,
+        "remaining_minutes": 60
+      },
+      "passed": false,
+      "cost_attribution_mismatches": 0,
+      "customer_projection_rows": 1,
+      "customer_outbox_rows": 1,
+      "billing": {
+        "stripe_mode": "test",
+        "autocharge": false
+      },
+      "cleanup": null
+    },
+    "cleanup": {
+      "action": "cleanup",
+      "profile": "stable",
+      "fixture": {
+        "profile": "stable",
+        "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+        "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+        "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+        "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+      },
+      "costs": [
+        {
+          "event_type": "openai_llm_input_mtok",
+          "rows": 21,
+          "units": 0.002524,
+          "cost_usd": 0.0010096
+        },
+        {
+          "event_type": "openai_llm_output_mtok",
+          "rows": 21,
+          "units": 0.00024399999999999997,
+          "cost_usd": 0.0003904
+        }
+      ],
+      "usages": [
+        {
+          "event_type": "meeting_participant_minute",
+          "rows": 4,
+          "units": 2.5166666666666666
+        }
+      ],
+      "mirror": {
+        "stt_rows": 0,
+        "stt_minutes": 0,
+        "mirrored_rows": 0,
+        "mirrored_minutes": 0,
+        "mismatch_rows": 0
+      },
+      "balance": {
+        "included_minutes": 60,
+        "used_minutes": 0,
+        "remaining_minutes": 60
+      },
+      "passed": false,
+      "cost_attribution_mismatches": 0,
+      "customer_projection_rows": 1,
+      "customer_outbox_rows": 1,
+      "billing": {
+        "stripe_mode": "test",
+        "autocharge": false
+      },
+      "cleanup": {
+        "fixture_deleted": true,
+        "cost_rows_retained": true,
+        "customer_tombstone_queued": true,
+        "prior_customer_projection_rows": 1,
+        "prior_customer_outbox_rows": 1
+      }
+    },
+    "cleanup-status": {
+      "action": "cleanup-status",
+      "profile": "stable",
+      "passed": true,
+      "remaining_fixture_rows": 0,
+      "tombstone_payload_cleared": true,
+      "tombstone_outbox_status": "delivered",
+      "tombstone_result_status": "applied",
+      "cost_rows_retained": 42
+    }
+  },
+  "first_stale_worker_attempt": {
+    "fixture": {
+      "profile": "stable",
+      "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+      "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+      "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+      "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+    },
+    "create": {
+      "action": "create",
+      "profile": "stable",
+      "fixture": {
+        "profile": "stable",
+        "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+        "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+        "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+        "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+      },
+      "costs": [],
+      "usages": [],
+      "mirror": {
+        "stt_rows": 0,
+        "stt_minutes": 0,
+        "mirrored_rows": 0,
+        "mirrored_minutes": 0,
+        "mismatch_rows": 0
+      },
+      "balance": {
+        "included_minutes": 60,
+        "used_minutes": 0,
+        "remaining_minutes": 60
+      },
+      "passed": false,
+      "customer_projection_rows": 0,
+      "customer_outbox_rows": 0,
+      "billing": {
+        "stripe_mode": "test",
+        "autocharge": false
+      },
+      "cleanup": null
+    },
+    "media": {
+      "agent": "CA_gKYczmp9DCNy",
+      "version": "CqPbKWM3fgks",
+      "dispatch_id": "AD_ahZTM9i42xkF",
+      "events": [
+        {
+          "durations_seconds": {
+            "en": 9.55,
+            "es": 12.63
+          },
+          "event": "synthetic_ready"
+        },
+        {
+          "event": "connected",
+          "participants": 2,
+          "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+        },
+        {
+          "event": "direction_pass",
+          "source": "en",
+          "target": "es",
+          "translated_final": true,
+          "tts_audio_ms": 0
+        },
+        {
+          "event": "direction_pass",
+          "source": "es",
+          "target": "en",
+          "translated_final": true,
+          "tts_audio_ms": 0
+        },
+        {
+          "event": "PASS",
+          "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298",
+          "tts_required": false
+        }
+      ],
+      "passed": true,
+      "room_deleted": true
+    },
+    "check": {
+      "action": "check",
+      "profile": "stable",
+      "fixture": {
+        "profile": "stable",
+        "user": "synthetic-usage-user-665a0038655c43c8bc6e16b9198e4298",
+        "org": "synthetic-usage-org-665a0038655c43c8bc6e16b9198e4298",
+        "meeting": "79d2a4c1-d618-4eac-b9e0-ff8276d237cc",
+        "room": "lalia-canary-usage-stable-665a0038655c43c8bc6e16b9198e4298"
+      },
+      "costs": [],
+      "usages": [
+        {
+          "event_type": "meeting_participant_minute",
+          "rows": 2,
+          "units": 1.25
+        }
+      ],
+      "mirror": {
+        "stt_rows": 0,
+        "stt_minutes": 0,
+        "mirrored_rows": 0,
+        "mirrored_minutes": 0,
+        "mismatch_rows": 0
+      },
+      "balance": {
+        "included_minutes": 60,
+        "used_minutes": 0,
+        "remaining_minutes": 60
+      },
+      "passed": false,
+      "cost_attribution_mismatches": 0,
+      "customer_projection_rows": 1,
+      "customer_outbox_rows": 1,
+      "billing": {
+        "stripe_mode": "test",
+        "autocharge": false
+      },
+      "cleanup": null
+    }
+  },
+  "recovery_readback": {
+    "verified_at": "2026-11-12T23:16:19.251426+00:00",
+    "source_qualification": "known values reapplied and verified, not cloud export",
+    "agents": [
+      {
+        "profile": "primary",
+        "versionId": "de8ac17c-0ebf-4b85-a723-c748bcfa542a",
+        "agent_id": "CA_do6qoLXhxqA7",
+        "deployed_version": "Ckpqp8J7B2Jw",
+        "key_count": 20,
+        "checks": {
+          "version_matches": true,
+          "attestation_matches": true,
+          "complete": true,
+          "pending_values_equal": true,
+          "full_name_coverage": true,
+          "all_coverage_verified": true,
+          "source_matches": true,
+          "deployed_version_matches": true,
+          "privacy_probe_off": true
+        }
+      },
+      {
+        "profile": "stable",
+        "versionId": "d8d5a6a7-95e3-40ef-ac10-8d83fe644a4d",
+        "agent_id": "CA_gKYczmp9DCNy",
+        "deployed_version": "q5NLx2CmaUKC",
+        "key_count": 14,
+        "checks": {
+          "version_matches": true,
+          "attestation_matches": true,
+          "complete": true,
+          "pending_values_equal": true,
+          "full_name_coverage": true,
+          "all_coverage_verified": true,
+          "source_matches": true,
+          "deployed_version_matches": true,
+          "privacy_probe_off": true
+        }
+      }
+    ]
+  },
+  "final_health": {
+    "verified_at": "2026-11-12T23:16:17.612137+00:00",
+    "api_http": 200,
+    "home_http": 200,
+    "signup_http": 200,
+    "alarms": {
+      "lalia-operations-monitor-ApiHealthy": "OK",
+      "lalia-operations-monitor-BackupFresh": "OK",
+      "lalia-operations-monitor-MonitorHeartbeat": "OK"
+    },
+    "backend_instances": 1,
+    "backend_online": true,
+    "server_revision": "5f21ea680fc4b588a6a9c1be80408b1b9b099c81",
+    "passed": true
+  },
+  "final_cleanup": {
+    "verified_at": "2026-11-12T23:16:37.191371+00:00",
+    "profiles": {
+      "primary": {
+        "version": "Ckpqp8J7B2Jw",
+        "production_running": true,
+        "named_deployments": 0,
+        "production_count": 1
+      },
+      "stable": {
+        "version": "q5NLx2CmaUKC",
+        "production_running": true,
+        "named_deployments": 0,
+        "production_count": 1
+      }
+    },
+    "remaining_scoped_rooms": 0,
+    "temporary_secret_files": 0,
+    "passed": true
+  },
+  "superseded_pending_versions": {
+    "stable": "bd135247-4367-4098-abb7-28f8b85fde34",
+    "primary": "1cac7114-c003-4367-9c24-382f23d8c9be",
+    "complete": false
+  },
+  "verification": {
+    "agent_tests": {
+      "passed": 237,
+      "skipped": 0,
+      "failed": 0,
+      "real_sdk_runtime": true,
+      "outside_local_process_sandbox": true,
+      "duration_seconds": 10.64
+    },
+    "recovery_tests": {
+      "passed": 30,
+      "warnings_as_errors": true
+    },
+    "independent_review": "approved; no open code or recovery blockers"
+  }
+}

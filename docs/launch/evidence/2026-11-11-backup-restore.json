@@ -1,0 +1,301 @@
+{
+  "schema_version": 1,
+  "status": "verified",
+  "verified_at": "2026-11-11T23:16:18.266587+00:00",
+  "source_revision": "653edfa",
+  "user_authorization": "Explicit approval to provision backups and perform isolated restore drill",
+  "aws": {
+    "account_id": "690248313257",
+    "region": "us-east-2",
+    "instance_id": "i-0272367e1422b061d",
+    "bucket": "lalia-backups-690248313257-us-east-2",
+    "instance_profile": "LaliaDailyBackupWriter",
+    "instance_profile_association_state": "associated",
+    "instance_profile_association_id": "iip-assoc-0890c814f99fe2043",
+    "encryption": "AES256",
+    "public_access_block": {
+      "BlockPublicAcls": true,
+      "IgnorePublicAcls": true,
+      "BlockPublicPolicy": true,
+      "RestrictPublicBuckets": true
+    },
+    "bucket_policy_public": false,
+    "bucket_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Sid": "DenyInsecureTransport",
+          "Effect": "Deny",
+          "Principal": "*",
+          "Action": "s3:*",
+          "Resource": [
+            "arn:aws:s3:::lalia-backups-690248313257-us-east-2",
+            "arn:aws:s3:::lalia-backups-690248313257-us-east-2/*"
+          ],
+          "Condition": {
+            "Bool": {
+              "aws:SecureTransport": "false"
+            }
+          }
+        }
+      ]
+    },
+    "versioning": "Enabled",
+    "ownership": "BucketOwnerEnforced",
+    "lifecycle": [
+      {
+        "Expiration": {
+          "Days": 30
+        },
+        "ID": "LaliaDaily30Days",
+        "Filter": {
+          "Prefix": "lalia/daily/"
+        },
+        "Status": "Enabled",
+        "NoncurrentVersionExpiration": {
+          "NoncurrentDays": 1
+        },
+        "AbortIncompleteMultipartUpload": {
+          "DaysAfterInitiation": 1
+        }
+      },
+      {
+        "Expiration": {
+          "ExpiredObjectDeleteMarker": true
+        },
+        "ID": "RemoveExpiredDeleteMarkers",
+        "Filter": {
+          "Prefix": "lalia/daily/"
+        },
+        "Status": "Enabled"
+      }
+    ],
+    "writer_policy": {
+      "Version": "2012-10-17",
+      "Statement": [
+        {
+          "Effect": "Allow",
+          "Action": "s3:PutObject",
+          "Resource": "arn:aws:s3:::lalia-backups-690248313257-us-east-2/lalia/daily/*",
+          "Condition": {
+            "StringEquals": {
+              "s3:x-amz-server-side-encryption": "AES256"
+            }
+          }
+        }
+      ]
+    },
+    "attached_managed_policies": [],
+    "policy_simulation": {
+      "s3:PutObject_with_AES256": "allowed",
+      "s3:GetObject": "implicitDeny",
+      "s3:DeleteObject": "implicitDeny"
+    }
+  },
+  "recovery_point": {
+    "completed_at": "2026-11-11T23:13:24.663Z",
+    "manifest_created_at": "2026-11-11T23:13:24.478Z",
+    "prefix": "lalia/daily/2026-11-11T23-13-24-073Z-62ffaa6e-6b2a-415f-8c5c-8442ebb2762b/",
+    "manifest_key": "lalia/daily/2026-11-11T23-13-24-073Z-62ffaa6e-6b2a-415f-8c5c-8442ebb2762b/manifest.json",
+    "objects": [
+      {
+        "key": "lalia/daily/2026-11-11T23-13-24-073Z-62ffaa6e-6b2a-415f-8c5c-8442ebb2762b/manifest.json",
+        "bytes": 20897,
+        "last_modified": "2026-11-11T23:13:25+00:00",
+        "encryption": "AES256",
+        "checksum_sha256_base64": "2sRu11JC9sAtZdxsZcorOjVySbGCfsUr33Q+c0xTNt0=",
+        "version_id": "FYzSAr5DwnrKE9GoaD7vdLCxhRtmOURA"
+      },
+      {
+        "key": "lalia/daily/2026-11-11T23-13-24-073Z-62ffaa6e-6b2a-415f-8c5c-8442ebb2762b/database.dump",
+        "bytes": 1424375,
+        "last_modified": "2026-11-11T23:13:25+00:00",
+        "encryption": "AES256",
+        "checksum_sha256_base64": "BBvvT3wGUkxvnDu2eaVxYL9zoIs6eypcSncZwQwRPlo=",
+        "version_id": "H9hT3tov2ozQ58iXU25al1aenm3E3PAM"
+      },
+      {
+        "key": "lalia/daily/2026-11-11T23-13-24-073Z-62ffaa6e-6b2a-415f-8c5c-8442ebb2762b/uploads.tar.gz",
+        "bytes": 119597,
+        "last_modified": "2026-11-11T23:13:25+00:00",
+        "encryption": "AES256",
+        "checksum_sha256_base64": "wD9+6+dMwDqvUbLIS2Vvpr2xShhFMyJWVYlOhztZ6zY=",
+        "version_id": "rQsATSUK28LqEDe81rg4vw8_JOaPAm0Y"
+      }
+    ],
+    "downloaded_artifacts": {
+      "uploads.tar.gz": {
+        "bytes": 119597,
+        "sha256": "c03f7eebe74cc03aaf51b2c84b656fa6bdb14a184533225655894e873b59eb36",
+        "mode": "0o600"
+      },
+      "database.dump": {
+        "bytes": 1424375,
+        "sha256": "041bef4f7c06524c6f9c3bb679a57160bf73a08b3a7b2a5c4a7719c10c113e5a",
+        "mode": "0o600"
+      },
+      "manifest.json": {
+        "bytes": 20897,
+        "sha256": "dac46ed75242f6c02d65dc6c65ca2b3a357249b1827ec52bdf743e734c5336dd",
+        "mode": "0o600"
+      }
+    },
+    "s3_checksums_match_downloaded_artifacts": true,
+    "local_customer_artifact_files_created": false
+  },
+  "restore": {
+    "duration_seconds": 2.045,
+    "exit_code": 0,
+    "status": "restore_verified",
+    "tables": 58,
+    "constraints": 104,
+    "previouslyUnvalidatedConstraints": 0,
+    "files": 1,
+    "source_manifest_tables": 58,
+    "source_manifest_constraints": 104,
+    "source_manifest_files": 1,
+    "isolated_cluster": "PostgreSQL 16 new private /tmp cluster; Unix socket only; TCP disabled; unprivileged ubuntu",
+    "production_database_modified": false,
+    "runtime_command": "LALIA_BACKEND_DIR=/var/www/share-app-staging/livekit-app/backend node /opt/lalia-backup/restore-drill.cjs /tmp/lalia-restore-input-nej2snp5",
+    "note": "The input directory shown in the executed command was removed after success; reruns require newly downloaded artifacts.",
+    "started_at": "2026-11-11T23:15:30.033636+00:00",
+    "estimated_completed_at": "2026-11-11T23:15:32.078636+00:00"
+  },
+  "installation": {
+    "path": "/opt/lalia-backup",
+    "installed_file_hashes_match_repository": true,
+    "files": {
+      "backup.cjs": {
+        "sha256": "11211f9a68f38d1e80b174d0374838f2d36a4f970ee3d51209e7a61448db2930",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "common.cjs": {
+        "sha256": "998e9b7862038a8aa0fba9dd0275312b1079aedbdca556883b17a0712e506c34",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "restore-drill.cjs": {
+        "sha256": "a8a47fffc491eb04ad311dcf9305abb3269975dc0bc9ee3e560c0441e17fc5a2",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "freshness.cjs": {
+        "sha256": "930db75d2283c6b5d5762950f138abd17509af6fd779c8b5f886eba462164e90",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "safe-extract.py": {
+        "sha256": "ca93fb3f4b0e33d35a9ae1d93c1fefe896b7c2cbd9893737e867852cb3ca7a60",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "lalia-backup.service": {
+        "sha256": "b06e46d9fb7fae27cd1dbad3ae5aec090f040ff9705fd39816ff859fae8742d9",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "lalia-backup.timer": {
+        "sha256": "4a60277b0ff8fb3bad4b979a283e40d0d2c0d69fc1c4cdcb47668c23d28bbddc",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "lalia-backup-freshness.service": {
+        "sha256": "e549535e5bd442371a967a9649d3fa1b3c55d54b71efc44a7d433216d6504f98",
+        "uid": 0,
+        "mode": "0o644"
+      },
+      "lalia-backup-freshness.timer": {
+        "sha256": "c9ea71ce5d2a3e6edd6246df5ef4944552cb0423718e91c969f9c1a374c26da1",
+        "uid": 0,
+        "mode": "0o644"
+      }
+    },
+    "systemd_analyze_verify": "passed"
+  },
+  "schedule": {
+    "backup_utc": "Daily 03:15 UTC plus 0\u201315 minute jitter",
+    "next_backup_utc": "Thu 2026-11-12 03:26:18 UTC",
+    "freshness": "Hourly; fails when last successful backup exceeds 26 hours",
+    "units": {
+      "lalia-backup.service": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "UnitFileState": "static"
+      },
+      "lalia-backup.timer": {
+        "NextElapseUSecRealtime": "Thu 2026-11-12 03:26:18 UTC",
+        "NextElapseUSecMonotonic": "0",
+        "LastTriggerUSec": "",
+        "Result": "success",
+        "ActiveState": "active",
+        "SubState": "waiting",
+        "UnitFileState": "enabled"
+      },
+      "lalia-backup-freshness.service": {
+        "Result": "success",
+        "ExecMainStatus": "0",
+        "ActiveState": "inactive",
+        "SubState": "dead",
+        "UnitFileState": "static"
+      },
+      "lalia-backup-freshness.timer": {
+        "NextElapseUSecRealtime": "",
+        "NextElapseUSecMonotonic": "10month 3w 3d 21h 25min 15.709662s",
+        "LastTriggerUSec": "Wed 2026-11-11 23:14:20 UTC",
+        "Result": "success",
+        "ActiveState": "active",
+        "SubState": "waiting",
+        "UnitFileState": "enabled"
+      }
+    },
+    "freshness_result": {
+      "status": "backup_fresh",
+      "ageHours": 0
+    }
+  },
+  "cleanup": {
+    "verified_at": "2026-11-11T23:16:18.266587+00:00",
+    "removed_input_directory": "/tmp/lalia-restore-input-nej2snp5",
+    "input_directory_exists": false,
+    "remaining_drill_directories": [],
+    "remaining_drill_postgres_process_count": 0,
+    "remaining_backup_temp_directories": [],
+    "code_transfer_archive_removed_local_and_remote": true
+  },
+  "root_verification_commands": [
+    "aws --profile jarmetals --region us-east-2 s3api head-object --bucket lalia-backups-690248313257-us-east-2 --key lalia/daily/2026-11-11T23-13-24-073Z-62ffaa6e-6b2a-415f-8c5c-8442ebb2762b/manifest.json --checksum-mode ENABLED",
+    "aws --profile jarmetals --region us-east-2 s3api get-public-access-block --bucket lalia-backups-690248313257-us-east-2",
+    "aws --profile jarmetals --region us-east-2 s3api get-bucket-encryption --bucket lalia-backups-690248313257-us-east-2",
+    "aws --profile jarmetals --region us-east-2 s3api get-bucket-versioning --bucket lalia-backups-690248313257-us-east-2",
+    "aws --profile jarmetals --region us-east-2 s3api get-bucket-lifecycle-configuration --bucket lalia-backups-690248313257-us-east-2",
+    "aws --profile jarmetals --region us-east-2 iam get-role-policy --role-name LaliaDailyBackupWriter --policy-name LaliaDailyBackupPutOnly",
+    "ssh -i /Users/rhule/Downloads/AxisAlgo.pem -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ubuntu@3.16.210.84 'systemctl show lalia-backup.service lalia-backup.timer lalia-backup-freshness.service lalia-backup-freshness.timer --property=ActiveState,SubState,Result,ExecMainStatus,UnitFileState,NextElapseUSecRealtime'",
+    "ssh -i /Users/rhule/Downloads/AxisAlgo.pem -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ubuntu@3.16.210.84 '/usr/bin/node /opt/lalia-backup/freshness.cjs'",
+    "ssh -i /Users/rhule/Downloads/AxisAlgo.pem -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes ubuntu@3.16.210.84 'sha256sum /opt/lalia-backup/backup.cjs /opt/lalia-backup/common.cjs /opt/lalia-backup/restore-drill.cjs /opt/lalia-backup/freshness.cjs /opt/lalia-backup/safe-extract.py /etc/systemd/system/lalia-backup.service /etc/systemd/system/lalia-backup.timer /etc/systemd/system/lalia-backup-freshness.service /etc/systemd/system/lalia-backup-freshness.timer'"
+  ],
+  "limitations": [
+    "S3 lifecycle expiry is asynchronous: current objects expire after 30 days; noncurrent versions after 1 day; not a strict 30-day erasure guarantee.",
+    "Daily schedule implies approximately 24 hours recovery-point exposure; no point-in-time WAL recovery.",
+    "PostgreSQL snapshot and stabilized uploads are not a single cross-resource atomic snapshot.",
+    "Freshness checks expose systemd failure status/journal; no external alert or email delivery configured.",
+    "Runtime .env/secrets and operating-system roles/configuration are excluded; separate secure secrets recovery is required."
+  ],
+  "other_changes": {
+    "stripe_changed": false,
+    "app_deployed": false,
+    "external_messages_sent": false
+  },
+  "root_independent_verification": {
+    "checked_at": "2026-11-11T23:17:57.315450+00:00",
+    "read_only_checks_passed": 9,
+    "manifest_checksum_and_encryption_verified": true,
+    "bucket_controls_and_writer_policy_verified": true,
+    "both_timers_enabled_active": true,
+    "freshness_check_passed": true,
+    "nine_installed_file_hashes_match_repository": true,
+    "actual_restore_and_cleanup_outputs_inspected": true
+  }
+}

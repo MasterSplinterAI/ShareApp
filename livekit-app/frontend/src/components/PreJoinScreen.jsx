@@ -121,6 +121,7 @@ function PreJoinScreen({
   meetingTitle = null,
   branding = null,
   previewTracks,
+  mediaError = null,
   media,
   onMediaChange,
   onJoin,
@@ -128,6 +129,8 @@ function PreJoinScreen({
   showLanguagePicker = true,
   joinButtonLabel = null,
   headerSubtitle = null,
+  transcriptStorageEnabled = null,
+  transcriptSettingsUrl = null,
 }) {
   const { t, setLocale } = useTranslation();
   const [name, setName] = useState(defaultName);
@@ -208,7 +211,6 @@ function PreJoinScreen({
     [onMediaChange]
   );
   const [devices, setDevices] = useState({ audioinput: [], videoinput: [] });
-  const [mediaError, setMediaError] = useState(null);
   const effectsAvailable = useVideoEffectsAvailable();
   const [effectId, setEffectId] = useState(() =>
     isMobileViewport() ? 'none' : loadSavedEffectId()
@@ -224,11 +226,6 @@ function PreJoinScreen({
     () => tracks?.find((t) => t.kind === Track.Kind.Audio),
     [tracks]
   );
-
-  // Clear stale permission errors once a track is live
-  useEffect(() => {
-    if (tracks?.length) setMediaError(null);
-  }, [tracks]);
 
   const videoElRef = useRef(null);
   useEffect(() => {
@@ -479,6 +476,19 @@ function PreJoinScreen({
                 </p>
               </div>
             )}
+
+            <div className="rounded-lg border border-border bg-muted/40 p-3 text-sm" data-testid="transcript-disclosure">
+              <p className="font-medium">
+                {t(transcriptStorageEnabled === false ? 'prejoin.transcriptOffTitle' : 'prejoin.transcriptTitle')}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {t(transcriptStorageEnabled === false ? 'prejoin.transcriptOff' : transcriptStorageEnabled === true ? 'prejoin.transcriptOn' : 'prejoin.transcriptDefault')}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs underline">
+                <a href="/privacy" target="_blank" rel="noopener noreferrer">{t('prejoin.privacyPolicy')}</a>
+                {transcriptSettingsUrl && <a href={transcriptSettingsUrl} target="_blank" rel="noopener noreferrer">{t('prejoin.transcriptSettings')}</a>}
+              </div>
+            </div>
 
             <Button
               type="submit"

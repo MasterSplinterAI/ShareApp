@@ -1,3 +1,5 @@
+import {ConsentStore} from './consent.js';
+import {ConsentPolicy} from './consentPolicy.js';
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer, type Server } from "node:http";
@@ -5,11 +7,17 @@ import { DatabaseSync } from "node:sqlite";
 import { after, before, describe, it } from "node:test";
 import type { MarketingContact } from "@rhule/marketing-shared";
 import type { MarketingBrandConfig, MarketingDbAdapter } from "./index.js";
-import { buildResponsiveEmailHtml, createMarketingKit, renderMarkdownToHtmlAndToc, verifySvixSignature } from "./index.js";
+import {
+  buildResponsiveEmailHtml,
+  createMarketingKit,
+  renderMarkdownToHtmlAndToc,
+  verifySvixSignature,
+  writingRulesBlock,
+} from "./index.js";
 
 function sqliteDb(): MarketingDbAdapter {
   const db = new DatabaseSync(":memory:");
-  return {
+  const adapter:MarketingDbAdapter = {
     async run(sql, params = []) {
       const r = db.prepare(sql).run(...(params as any[]));
       return { changes: Number(r.changes) };
@@ -20,7 +28,21 @@ function sqliteDb(): MarketingDbAdapter {
     async all(sql, params = []) {
       return db.prepare(sql).all(...(params as any[])) as any;
     },
+    async transaction(work) {db.exec('BEGIN');try {const value=await work(adapter);db.exec('COMMIT');return value;}catch(error){db.exec('ROLLBACK');throw error;}},
   };
+  return adapter;
+}
+
+function fixtureConsent(db:MarketingDbAdapter) {
+ const store=new ConsentStore(db,'fixture');
+ const ready=(async()=>{await store.ensureSchema();await store.registerAuthority({businessId:'legalai',id:'fixture',endpoint:'local',keyRef:'local'});
+ for(const recipient of ['a@example.com','b@example.com','admin@lexit.legal'])await store.append({id:recipient,sourceId:recipient,sourceRevision:'1',scope:{businessId:'legalai',recipient,channel:'email',purpose:'marketing'},granted:true,evidence:{kind:'explicit_choice',text:'Synthetic explicit choice',version:'fixture'},supersedes:[]});})();
+ return new ConsentPolicy({store,resolveKey:()=>undefined,peers:()=>[],localFacts:async scope=>{
+  await ready;const facts=await store.facts(scope);
+  const row=await db.get<any>('SELECT unsubscribe_token,unsubscribed_at FROM mkt_subscribers WHERE tenant_id=? AND email=?',[scope.businessId,scope.recipient]);
+  if(row?.unsubscribed_at)facts.suppressions.push({id:'legacy:'+row.unsubscribe_token+row.unsubscribed_at,sourceRevision:row.unsubscribed_at});
+  return facts;
+ }});
 }
 
 const brand: MarketingBrandConfig = {
@@ -100,9 +122,11 @@ const WEBHOOK_SECRET = `whsec_${Buffer.from("super-secret-key").toString("base64
 let server: Server;
 let base = "";
 let adminCookie = true;
+const mainDb=sqliteDb();
 const kit = createMarketingKit({
+  consent:fixtureConsent(mainDb),
   tenantId: "legalai",
-  db: sqliteDb(),
+  db: mainDb,
   brand,
   brandsByTenant: { legalai: brand, lalia: { ...brand, tenantId: "lalia", name: "Lalia", domain: "lalia.cloud" } },
   llm: fakeLlm,
@@ -127,7 +151,7 @@ const kit = createMarketingKit({
   opsKeys: () => ["ops-secret"],
   listSegments: async () => [{ id: "free_matter_locked", label: "Free matter locked", description: "", count: contacts.length }],
   resolveSegmentContacts: async () => contacts,
-  resendWebhookSecret: async () => WEBHOOK_SECRET,
+  resendWebhookSecret: async () => `  ${WEBHOOK_SECRET}  `,
   logger: { info() {}, warn() {}, error() {} },
 });
 
@@ -402,6 +426,117 @@ describe("generation resilience", () => {
   });
 });
 
+describe("content brief", () => {
+  it("writingRulesBlock appends host brief and falls back to defaults", () => {
+    assert.match(writingRulesBlock(null), /Only describe product features/);
+    assert.match(writingRulesBlock("Lalia slate voice. No AI fluff."), /CONTENT BRIEF/);
+    assert.match(writingRulesBlock("Lalia slate voice. No AI fluff."), /Lalia slate voice/);
+    assert.doesNotMatch(writingRulesBlock("hello"), /legal-information and document-preparation/);
+  });
+
+  it("injects contentBrief into Blog Studio generation system prompts", async () => {
+    const { generatePostDraft } = await import("./generation.js");
+    const systems: string[] = [];
+    const capturingLlm = {
+      async complete({ system }: { system: string; user: string }) {
+        systems.push(system);
+        return JSON.stringify({
+          title: "Talk across languages",
+          slug: "talk-across-languages",
+          kicker: "Journal",
+          excerpt: "A short guide.",
+          seoTitle: "Talk across languages",
+          seoDescription: "Plain guide to bilingual meetings.",
+          targetKeywords: ["translation"],
+          audience: "general",
+          bodyMarkdown: longBody,
+          faqItems: [{ question: "Can guests join free?", answer: "Yes, via a browser link." }],
+          ctaLabel: "Start talking for free",
+          ctaUrl: "/v2/signup",
+          artworkPrompt: "slate blue call",
+        });
+      },
+    };
+    const ctx = {
+      tenantId: "lalia",
+      productName: "Lalia",
+      domain: "lalia.cloud",
+      tagline: "Real-time voice translation",
+      brandVoice: "Warm and human",
+      primaryColor: "#1e304b",
+      accentColor: "#5b8def",
+      pricingSummary: "Start free",
+      coreFeatures: ["Real-time voice translation"],
+      targetAudiences: ["Families"],
+    };
+    const { draft, usedFallback } = await generatePostDraft({
+      llm: capturingLlm,
+      ctx,
+      hits: [],
+      topic: "Talk across languages",
+      audience: "general",
+      contentBrief: "# Lalia Content Brief\nHuman voice. SEO meta, slug, FAQ. No AI fluff.",
+    });
+    assert.equal(usedFallback, false);
+    assert.equal(draft.ctaUrl, "/v2/signup");
+    assert.equal(systems.length, 1);
+    assert.match(systems[0], /CONTENT BRIEF/);
+    assert.match(systems[0], /No AI fluff/);
+    assert.doesNotMatch(systems[0], /legal-information and document-preparation/);
+    assert.doesNotMatch(systems[0], /senior legal-tech/);
+  });
+
+  it("prefers contentBriefsByTenant over the shared contentBrief per tenant", async () => {
+    const systems: string[] = [];
+    const multi = createMarketingKit({
+      tenantId: "lalia",
+      db: sqliteDb(),
+      brand: { ...brand, tenantId: "lalia", name: "Lalia", domain: "lalia.cloud" },
+      brandsByTenant: {
+        lalia: { ...brand, tenantId: "lalia", name: "Lalia", domain: "lalia.cloud" },
+        legalai: brand,
+      },
+      contentBrief: "MASTER SHARED BRIEF",
+      generationProfilesByTenant: { lalia: "lalia", legalai: "lexit" },
+      contentBriefsByTenant: {
+        lalia: "LALIA TENANT BRIEF",
+        legalai: "LEXIT TENANT BRIEF",
+      },
+      llm: {
+        async complete({ system }) {
+          systems.push(system);
+          return JSON.stringify({ reply: "ok", actions: [] });
+        },
+      },
+      resolveUser: () => ({ id: "admin", role: "admin", email: "admin@ops.lalia.cloud" }),
+      logger: { info() {}, warn() {}, error() {} },
+    });
+    await multi.ensureSchema();
+    const app = createServer((req, res) => void multi.handler(req, res));
+    await new Promise<void>((r) => app.listen(0, "127.0.0.1", r));
+    const port = (app.address() as { port: number }).port;
+    try {
+      for (const tenant of ["lalia", "legalai"] as const) {
+        const res = await fetch(`http://127.0.0.1:${port}/t/${tenant}/copilot/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: "Suggest one blog topic" }),
+        });
+        assert.equal(res.status, 200, await res.text());
+      }
+    } finally {
+      await new Promise<void>((r) => app.close(() => r()));
+    }
+    assert.equal(systems.length, 2);
+    assert.match(systems[0], /LALIA TENANT BRIEF/);
+    assert.doesNotMatch(systems[0], /MASTER SHARED BRIEF/);
+    assert.match(systems[1], /LEXIT TENANT BRIEF/);
+    assert.match(systems[1], /Never promise legal outcomes/);
+    assert.doesNotMatch(systems[0], /legal-information and document-preparation/);
+    assert.doesNotMatch(systems[1], /MASTER SHARED BRIEF/);
+  });
+});
+
 describe("renderers", () => {
   it("strips unsafe link schemes", () => {
     const { html } = renderMarkdownToHtmlAndToc("[x](javascript:alert(1)) [y](/pricing)");
@@ -418,5 +553,90 @@ describe("renderers", () => {
 
   it("rejects stale svix timestamps", () => {
     assert.equal(verifySvixSignature({ secret: WEBHOOK_SECRET, id: "a", timestamp: "1", signatureHeader: "v1,x", payload: "{}" }), false);
+  });
+});
+
+// These regression expectations come from the two pre-reconciliation product variants.
+describe("explicit product generation profiles", () => {
+  it("keeps legal guardrails opt-in and retains each product's fallback content", async () => {
+    const { generatePostDraft, templateEmailDraft, generateEmailIdeas } = await import("./generation.js");
+    const ctx = { tenantId: "fixture", productName: "Fixture", domain: "fixture.example", tagline: "Fixture", brandVoice: "Plain", primaryColor: "#000", accentColor: "#fff", pricingSummary: "Existing", coreFeatures: ["Existing feature"], targetAudiences: ["Existing audience"] };
+    const llm = { async complete() { throw Error("synthetic offline"); } };
+    for (const generationProfile of ["lalia", "lexit"] as const) {
+      const { draft } = await generatePostDraft({ llm, ctx, hits: [], topic: "Existing workflow", audience: "general", generationProfile });
+      const email = templateEmailDraft({ ctx, segmentId: "all_individuals", goal: "Existing goal", generationProfile });
+      const ideas = await generateEmailIdeas({ llm, ctx, segmentId: "all_individuals", segmentLabel: "Existing", generationProfile });
+      if (generationProfile === "lexit") {
+        assert.equal(draft.ctaUrl, "/auth?mode=register");
+        assert.equal(draft.kicker, "Practice Note");
+        assert.match(draft.bodyMarkdown, /Write down the dates, the parties/);
+        assert.equal(email.ctaLabel, "Open my workspace");
+        assert.match(ideas[1].subject, /before you file anything/);
+        assert.match(writingRulesBlock("HOST BRIEF", generationProfile), /Never promise legal outcomes/);
+      } else {
+        assert.equal(draft.ctaUrl, "/v2/signup");
+        assert.equal(draft.kicker, "Journal");
+        assert.match(draft.bodyMarkdown, /Start with one conversation/);
+        assert.equal(email.ctaLabel, "Start a free meeting");
+        assert.match(ideas[1].subject, /bilingual call/);
+        assert.doesNotMatch(writingRulesBlock("HOST BRIEF", generationProfile), /legal-information and document-preparation/);
+      }
+    }
+  });
+
+  it("uses the configured profile in model instructions and missing-field defaults", async () => {
+    const { generatePostDraft } = await import("./generation.js");
+    const systems: string[] = [];
+    const ctx = { tenantId: "fixture", productName: "Fixture", domain: "fixture.example", tagline: "Fixture", brandVoice: "Plain", primaryColor: "#000", accentColor: "#fff", pricingSummary: "Existing", coreFeatures: [], targetAudiences: [] };
+    const llm = { async complete({system}: {system: string}) { systems.push(system); return JSON.stringify({title:"Fixture draft",bodyMarkdown:longBody}); } };
+    const { draft } = await generatePostDraft({ llm, ctx, hits: [], topic: "Existing workflow", audience: "general", generationProfile: "lexit", contentBrief: "HOST BRIEF" });
+    assert.equal(draft.ctaUrl, "/auth?mode=register");
+    assert.match(systems[0], /700-1200 words/);
+    assert.match(systems[0], /HOST BRIEF/);
+    assert.match(systems[0], /Never promise legal outcomes/);
+  });
+});
+
+describe("webhook secret resolution", () => {
+  for (const secret of [undefined, "  ", "invalid-secret"]) it(`fails closed for ${JSON.stringify(secret)}`, async () => {
+    const k = createMarketingKit({ tenantId: "legalai", db: sqliteDb(), brand, llm: fakeLlm, resendWebhookSecret: async () => secret });
+    const app = createServer((req, res) => void k.handler(req, res));
+    await new Promise<void>(r => app.listen(0, "127.0.0.1", r));
+    try {
+      const res = await fetch(`http://127.0.0.1:${(app.address() as {port:number}).port}/webhooks/resend`, { method: "POST", body: "{}", headers: {"svix-id":"fixture", "svix-timestamp":String(Math.floor(Date.now()/1000)), "svix-signature":"v1,invalid"} });
+      assert.equal(res.status, secret?.trim() ? 401 : 503);
+    } finally { await new Promise<void>(r=>app.close(()=>r())); }
+  });
+});
+
+describe("send and callback reconciliation", () => {
+  it("claims once across competing schedulers with a sendEmail-only adapter", async () => {
+    const delivered: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>(r => { release = r; });
+    const fixtureDb=sqliteDb();
+    const k = createMarketingKit({
+      tenantId: "legalai", db: fixtureDb, consent:fixtureConsent(fixtureDb), brand, llm: fakeLlm,
+      email: { async sendEmail(message) { delivered.push(message.to); await gate; return { status: "sent", providerMessageId: "single-fixture" }; } },
+      resolveSegmentContacts: async () => [contacts[0]],
+      logger: { info() {}, warn() {}, error() {} },
+    });
+    await k.ensureSchema();
+    const campaign = await k.store.createCampaign("legalai", { name: "Fixture", segmentId: "all_individuals", status: "scheduled", scheduledAt: "2020-01-01T00:00:00.000Z", subject: "Fixture", bodyHtml: "Fixture" });
+    await k.store.updateCampaign("legalai", campaign.id, { status: "scheduled", scheduledAt: "2020-01-01T00:00:00.000Z" });
+    const first = k.runScheduledWork();
+    for (let i=0;i<100 && !delivered.length;i++) await new Promise(r=>setTimeout(r,1));
+    try {
+      assert.equal((await k.store.getCampaign("legalai",campaign.id))!.status,"sending");
+      await k.runScheduledWork();
+      assert.deepEqual(delivered,[contacts[0].email]);
+    } finally { release(); await first; }
+    assert.equal((await k.store.getCampaign("legalai",campaign.id))!.sentCount,1);
+    await k.store.applyDeliveryEvent("single-fixture","bounced");
+    await k.store.applyDeliveryEvent("single-fixture","delivered");
+    await k.store.applyDeliveryEvent("single-fixture","bounced");
+    const final = (await k.store.getCampaign("legalai",campaign.id))!;
+    assert.equal(final.bouncedCount,1);
+    assert.equal(final.deliveredCount,0);
   });
 });

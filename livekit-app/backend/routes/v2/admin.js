@@ -1,3 +1,4 @@
+const {queueContact,queueOrgContacts,customerMutation}=require('../../lib/opsOutbox');
 const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
@@ -6,6 +7,7 @@ const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin')
 const { getMonthToDateUsage } = require('../../lib/v2Entitlements');
 const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
 const { sendEmail } = require('../../lib/mailer');
+const { SUPPORT_EMAIL } = require('../../lib/supportEmail');
 const { sendPasswordResetEmail } = require('../../lib/passwordReset');
 const { getPrefs } = require('../../lib/communicationPrefs');
 const {
@@ -20,6 +22,14 @@ const {
   saveEmailSettings,
   toAdminView: toEmailAdminView,
 } = require('../../lib/v2EmailSettings');
+const {
+  getNotetakerSettings,
+  saveNotetakerSettings,
+  toNotetakerAdminView,
+  verifyRecallCredentials,
+  persistDetectedRegionIfStored,
+} = require('../../lib/recallNotetaker');
+const { publicFrontendBaseUrl } = require('../../lib/publicFrontendBaseUrl');
 const {
   getMarketingEmailAdminView,
   saveMarketingEmailSettings,
@@ -36,6 +46,17 @@ const {
   settlePendingOverageForOrgCycle,
   getLastSettlementRun,
 } = require('../../lib/v2OverageSettlement');
+const {
+  getAgentAlertSettings,
+  saveAgentAlertSettings,
+  toAgentAlertAdminView,
+  getFailoverRuntimeState,
+  resetCircuitBreaker,
+  listUnacknowledgedFailoverEvents,
+  listRecentFailoverEvents,
+  acknowledgeFailoverEvents,
+  sendTestAgentAlert,
+} = require('../../lib/agentFailover');
 
 function backendBaseUrl() {
   return (process.env.BACKEND_BASE_URL || process.env.PUBLIC_BACKEND_URL || '').replace(/\/$/, '');
@@ -232,7 +253,7 @@ router.patch('/orgs/:orgId/plan', requireV2Auth, requireSuperadmin, async (req, 
       plan_id,
       reason: reasonTrim,
     });
-    await db.run(`UPDATE v2_org_subscriptions SET plan_id = ? WHERE org_id = ?`, [plan_id, req.params.orgId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_org_subscriptions SET plan_id = ? WHERE org_id = ?`, [plan_id, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.params.orgId]);
     res.json({ subscription: sub });
   } catch (e) {
@@ -276,6 +297,8 @@ router.patch('/orgs/:orgId/comp', requireV2Auth, requireSuperadmin, async (req, 
     res.status(500).json({ error: 'Failed' });
   }
 });
+
+router.use('/costs/livekit', require('./livekitInvoices'));
 
 router.get('/costs/summary', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
@@ -575,7 +598,8 @@ router.get('/webhooks', requireV2Auth, requireSuperadmin, async (req, res) => {
     res.json({
       events: rows.map((row) => ({ ...row, processed: Boolean(row.processed_at) })),
       totals: { total: counts?.total || 0, unprocessed: counts?.unprocessed || 0 },
-      notes: 'v2_webhook_events has no failure column — health is approximated as processed_at IS NULL (unprocessed).',
+      eventDelivery: await require('../../lib/opsOutbox').opsEventDiagnostics(),
+      notes: 'Legacy webhook rows retain their original processing evidence. Verified receipts and projection delivery are tracked separately.',
     });
   } catch (e) {
     console.error('[admin/webhooks]', e);
@@ -592,10 +616,10 @@ router.post('/orgs/:orgId/suspend', requireV2Auth, requireSuperadmin, async (req
     const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_suspend_org', { orgId: req.params.orgId, reason });
-    await db.run(
+    await customerMutation(async tx=>{await tx.run(
       `UPDATE v2_organizations SET suspended_at = datetime('now'), suspended_reason = ?, billing_status = 'suspended' WHERE id = ?`,
       [reason, req.params.orgId]
-    );
+    );await queueOrgContacts(tx,req.params.orgId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/suspend org]', e);
@@ -610,10 +634,10 @@ router.post('/orgs/:orgId/reactivate', requireV2Auth, requireSuperadmin, async (
     const org = await db.get(`SELECT id FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_reactivate_org', { orgId: req.params.orgId, reason });
-    await db.run(
+    await customerMutation(async tx=>{await tx.run(
       `UPDATE v2_organizations SET suspended_at = NULL, suspended_reason = NULL, billing_status = 'active' WHERE id = ?`,
       [req.params.orgId]
-    );
+    );await queueOrgContacts(tx,req.params.orgId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/reactivate org]', e);
@@ -628,7 +652,7 @@ router.post('/users/:userId/disable', requireV2Auth, requireSuperadmin, async (r
     const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_disable_user', { userId: req.params.userId, reason });
-    await db.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_users SET disabled_at = datetime('now') WHERE id = ?`, [req.params.userId]);await queueContact(tx,req.params.userId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/disable user]', e);
@@ -643,7 +667,7 @@ router.post('/users/:userId/enable', requireV2Auth, requireSuperadmin, async (re
     const user = await db.get(`SELECT id FROM v2_users WHERE id = ?`, [req.params.userId]);
     if (!user) return res.status(404).json({ error: 'Not found' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_enable_user', { userId: req.params.userId, reason });
-    await db.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_users SET disabled_at = NULL WHERE id = ?`, [req.params.userId]);await queueContact(tx,req.params.userId);});
     res.json({ ok: true });
   } catch (e) {
     console.error('[admin/enable user]', e);
@@ -667,7 +691,7 @@ router.patch('/orgs/:orgId/billing-status', requireV2Auth, requireSuperadmin, as
       billing_status,
       reason: reasonTrim,
     });
-    await db.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);
+    await customerMutation(async tx=>{await tx.run(`UPDATE v2_organizations SET billing_status = ? WHERE id = ?`, [billing_status, req.params.orgId]);await queueOrgContacts(tx,req.params.orgId);});
     const org = await db.get(`SELECT * FROM v2_organizations WHERE id = ?`, [req.params.orgId]);
     if (!org) return res.status(404).json({ error: 'Not found' });
     res.json({ org });
@@ -696,11 +720,13 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
     const {
       name,
       monthly_price_cents,
+      annual_price_cents,
       included_meeting_minutes,
       included_translation_minutes,
       overage_meeting_cents_per_min,
       overage_translation_cents_per_min,
       stripe_price_id,
+      stripe_annual_price_id,
     } = req.body || {};
     const updates = [];
     const params = [];
@@ -711,6 +737,10 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
     if (monthly_price_cents != null) {
       updates.push('monthly_price_cents = ?');
       params.push(Math.max(0, Number(monthly_price_cents) || 0));
+    }
+    if (annual_price_cents != null) {
+      updates.push('annual_price_cents = ?');
+      params.push(Math.max(0, Number(annual_price_cents) || 0));
     }
     if (included_meeting_minutes != null) {
       updates.push('included_meeting_minutes = ?');
@@ -738,6 +768,17 @@ router.patch('/plans/:planId', requireV2Auth, requireSuperadmin, async (req, res
       }
       updates.push('stripe_price_id = ?');
       params.push(priceId);
+    }
+    if (stripe_annual_price_id !== undefined) {
+      const annualPriceId = stripe_annual_price_id ? String(stripe_annual_price_id).trim().slice(0, 128) : null;
+      if (annualPriceId && !annualPriceId.startsWith('price_')) {
+        return res.status(400).json({
+          error:
+            'stripe_annual_price_id must be a Stripe Price ID starting with price_ (not a Product ID like prod_…)',
+        });
+      }
+      updates.push('stripe_annual_price_id = ?');
+      params.push(annualPriceId);
     }
     if (!updates.length) return res.status(400).json({ error: 'Nothing to update' });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_plan', {
@@ -802,7 +843,13 @@ router.get('/revenue', requireV2Auth, requireSuperadmin, async (req, res) => {
     );
     const compRow = await db.get(`SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE is_comp = 1`);
     const mrrRow = await db.get(
-      `SELECT COALESCE(SUM(p.monthly_price_cents), 0) AS mrr_cents
+      `SELECT COALESCE(SUM(
+         CASE
+           WHEN s.billing_interval = 'year' AND COALESCE(p.annual_price_cents, 0) > 0
+             THEN ROUND(p.annual_price_cents / 12.0)
+           ELSE p.monthly_price_cents
+         END
+       ), 0) AS mrr_cents
        FROM v2_org_subscriptions s JOIN v2_plans p ON p.id = s.plan_id
        WHERE lower(s.status) IN ('active', 'trialing') AND COALESCE(s.is_comp, 0) = 0 AND s.plan_id != 'free'`
     );
@@ -966,7 +1013,9 @@ router.patch('/announcements/:id', requireV2Auth, requireSuperadmin, async (req,
 
 router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
-    const { subject, body, reason } = req.body || {};
+    const { subject, body, reason, purpose } = req.body || {};
+    if (!['account_notice','service_notice'].includes(purpose)) return res.status(409).json({error:'Select an account or service notice purpose; use Marketing for campaigns',marketingUrl:marketingWorkflowUrl()});
+    if(typeof reason!=='string'||reason.trim().length>2000)return res.status(400).json({error:'reason must be 4–2000 characters'});
     const reasonTrim = requireAuditReason(reason);
     if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
     if (!subject?.trim() || !body?.trim()) {
@@ -982,12 +1031,14 @@ router.post('/orgs/:orgId/email', requireV2Auth, requireSuperadmin, async (req, 
     const email = renderAdminMessage({ subject: subject.trim(), body: body.trim() });
     const result = await sendEmail({
       to: emails,
+      replyTo: SUPPORT_EMAIL,
       subject: email.subject,
       text: email.text,
       html: email.html,
     });
     await writeAdminAudit(db, req.v2Auth.email, 'admin_email_org', {
       orgId: req.params.orgId,
+      purpose,
       to: emails,
       subject: subject.trim(),
       sent: result.sent,
@@ -1004,7 +1055,8 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
   try {
     const settings = await getStripeSettings();
     const plans = await db.all(
-      `SELECT id, name, stripe_price_id, monthly_price_cents FROM v2_plans ORDER BY monthly_price_cents ASC`
+      `SELECT id, name, stripe_price_id, stripe_annual_price_id, monthly_price_cents, annual_price_cents
+       FROM v2_plans ORDER BY monthly_price_cents ASC`
     );
     const withCustomer = await db.get(
       `SELECT COUNT(*) AS c FROM v2_org_subscriptions WHERE stripe_customer_id IS NOT NULL AND stripe_customer_id != ''`
@@ -1031,6 +1083,8 @@ router.get('/billing/config', requireV2Auth, requireSuperadmin, async (req, res)
       autoChargeEnabled: settings.autoChargeEnabled,
       settings: adminSettings,
       plansConfigured: plans.filter((p) => p.stripe_price_id).length,
+      annualPlansConfigured: plans.filter((p) => p.stripe_annual_price_id).length,
+      paidPlansTotal: plans.filter((p) => p.id !== 'free').length,
       plansTotal: plans.length,
       plans,
       stats: {
@@ -1347,44 +1401,12 @@ router.get('/consent/marketing', requireV2Auth, requireSuperadmin, async (req, r
   }
 });
 
-router.post('/email/broadcast', requireV2Auth, requireSuperadmin, async (req, res) => {
-  try {
-    const { subject, body, reason, confirm } = req.body || {};
-    if (confirm !== 'SEND_ALL') {
-      return res.status(400).json({ error: 'confirm must be SEND_ALL' });
-    }
-    const reasonTrim = requireAuditReason(reason);
-    if (!reasonTrim) return res.status(400).json({ error: 'reason required (4+ chars)' });
-    if (!subject?.trim() || !body?.trim()) {
-      return res.status(400).json({ error: 'subject and body required' });
-    }
-    const owners = await db.all(
-      `SELECT DISTINCT u.email FROM v2_org_members m JOIN v2_users u ON u.id = m.user_id WHERE m.role = 'owner'`
-    );
-    const emails = owners.map((o) => o.email).filter(Boolean);
-    let sentCount = 0;
-    const email = renderAdminMessage({ subject: subject.trim(), body: body.trim() });
-    for (const emailAddress of emails) {
-      const r = await sendEmail({
-        to: emailAddress,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-      });
-      if (r.sent) sentCount += 1;
-    }
-    await writeAdminAudit(db, req.v2Auth.email, 'admin_email_broadcast', {
-      recipientCount: emails.length,
-      sentCount,
-      subject: subject.trim(),
-      reason: reasonTrim,
-    });
-    res.json({ ok: true, recipientCount: emails.length, sentCount });
-  } catch (e) {
-    console.error('[admin/email broadcast]', e);
-    res.status(500).json({ error: 'Failed' });
-  }
-});
+function marketingWorkflowUrl() {
+  return 'https://ops.lalia.cloud/marketing?business='+encodeURIComponent(process.env.OPS_HUB_BUSINESS_ID||'lalia')+'&tab=email';
+}
+router.get('/email/workflow', requireV2Auth, requireSuperadmin, (_req,res)=>res.json({marketingUrl:marketingWorkflowUrl()}));
+// The former broadcast dispatched synchronously; there are no queued jobs behind this route.
+router.post('/email/broadcast', requireV2Auth, requireSuperadmin, (_req,res)=>res.status(409).json({error:'Use the Marketing workflow for campaigns',marketingUrl:marketingWorkflowUrl()}));
 
 router.post('/billing/settle-overages', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
@@ -1410,6 +1432,155 @@ router.post('/billing/settle-overages', requireV2Auth, requireSuperadmin, async 
   } catch (e) {
     console.error('[admin/billing/settle-overages]', e);
     res.status(500).json({ error: 'Settlement failed' });
+  }
+});
+
+async function buildAgentAlertsPayload() {
+  const [settings, unacknowledged, recentEvents] = await Promise.all([
+    getAgentAlertSettings(),
+    listUnacknowledgedFailoverEvents(20),
+    listRecentFailoverEvents(25),
+  ]);
+  return {
+    settings: toAgentAlertAdminView(settings),
+    runtime: getFailoverRuntimeState(),
+    unacknowledged,
+    recentEvents,
+  };
+}
+
+router.get('/agent-alerts/config', requireV2Auth, requireSuperadmin, async (_req, res) => {
+  try {
+    res.json(await buildAgentAlertsPayload());
+  } catch (e) {
+    console.error('[admin/agent-alerts/config]', e);
+    res.status(500).json({ error: 'Failed to load agent alert settings' });
+  }
+});
+
+router.patch('/agent-alerts/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveAgentAlertSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_agent_alerts_config', {
+      failoverEnabled: result.settings.failoverEnabled,
+      joinTimeoutSec: result.settings.joinTimeoutSec,
+      circuitCooldownSec: result.settings.circuitCooldownSec,
+      alertCooldownMinutes: result.settings.alertCooldownMinutes,
+      bannerEnabled: result.settings.bannerEnabled,
+      emailEnabled: result.settings.emailEnabled,
+      telegramEnabled: result.settings.telegramEnabled,
+      notifyOnRecovery: result.settings.notifyOnRecovery,
+      reason: result.reason,
+    });
+    res.json({ ok: true, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/config patch]', e);
+    res.status(500).json({ error: 'Failed to save agent alert settings' });
+  }
+});
+
+router.post('/agent-alerts/acknowledge', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+    const { acknowledgedCount } = await acknowledgeFailoverEvents(req.v2Auth.email, ids);
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_ack_agent_alerts', {
+      acknowledgedCount,
+      ids: ids || 'all',
+    });
+    res.json({ ok: true, acknowledgedCount, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/acknowledge]', e);
+    res.status(500).json({ error: 'Failed to acknowledge alerts' });
+  }
+});
+
+router.post('/agent-alerts/reset-circuit', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    resetCircuitBreaker();
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_reset_agent_circuit', {
+      reason: req.body?.reason || 'manual_reset',
+    });
+    res.json({ ok: true, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/reset-circuit]', e);
+    res.status(500).json({ error: 'Failed to reset circuit breaker' });
+  }
+});
+
+router.post('/agent-alerts/test', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const delivery = await sendTestAgentAlert(req.v2Auth.email);
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_test_agent_alerts', {
+      eventId: delivery.eventId,
+      emailSent: Boolean(delivery.emailResult?.sent),
+      telegramSent: Boolean(delivery.telegramResult?.sent),
+    });
+    res.json({ ok: true, delivery, ...(await buildAgentAlertsPayload()) });
+  } catch (e) {
+    console.error('[admin/agent-alerts/test]', e);
+    res.status(500).json({ error: 'Failed to send test alert' });
+  }
+});
+
+router.get('/notetaker/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const settings = await getNotetakerSettings({ fresh: true });
+    res.json({
+      settings: toNotetakerAdminView(settings, { publicBaseUrl: publicFrontendBaseUrl(req) }),
+    });
+  } catch (e) {
+    console.error('[admin/notetaker/config]', e);
+    res.status(500).json({ error: 'Failed to load notetaker config' });
+  }
+});
+
+router.patch('/notetaker/config', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await saveNotetakerSettings(req.v2Auth.email, req.body || {});
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_patch_notetaker_config', {
+      driverMode: result.settings.driverMode,
+      recallRegion: result.settings.recallRegion,
+      transcriptMode: result.settings.transcriptMode,
+      chatNoticeEnabled: result.settings.chatNoticeEnabled,
+      xaiFallbackEnabled: result.settings.xaiFallbackEnabled,
+      deleteRecallMediaAfterIngest: result.settings.deleteRecallMediaAfterIngest,
+      waitingRoomTimeoutSec: result.settings.waitingRoomTimeoutSec,
+      everyoneLeftTimeoutSec: result.settings.everyoneLeftTimeoutSec,
+      reason: result.reason,
+    });
+    res.json({
+      ok: true,
+      settings: toNotetakerAdminView(result.settings, { publicBaseUrl: publicFrontendBaseUrl(req) }),
+    });
+  } catch (e) {
+    console.error('[admin/notetaker/config patch]', e);
+    res.status(500).json({ error: 'Failed to save notetaker settings' });
+  }
+});
+
+router.post('/notetaker/verify', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const current = await getNotetakerSettings({ fresh: true });
+    const result = await verifyRecallCredentials({
+      apiKey: req.body?.recallApiKey,
+      region: req.body?.recallRegion,
+    });
+    if (result.ok && result.regionAutoDetected && !req.body?.recallApiKey && current.hasDbKey) {
+      await persistDetectedRegionIfStored(result.region, req.v2Auth.email);
+    }
+    if (!result.ok) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/notetaker/verify]', e);
+    res.status(500).json({ ok: false, error: 'Failed to verify Recall.ai credentials' });
   }
 });
 

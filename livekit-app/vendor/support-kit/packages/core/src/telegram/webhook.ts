@@ -1,4 +1,4 @@
-import type { BrandConfig } from "@rhule/support-shared";
+import type { BrandConfig } from "@quill/support-shared";
 import type {
   EmailNotifier,
   GitHubAdapter,

@@ -64,7 +64,7 @@
       },
       "transcripts": {
         "title": "Transcrições sob seu controle",
-        "description": "Política por reunião para salvar linhas finalizadas no servidor, com download em JSON e texto simples quando precisar de registros."
+        "description": "Novas chamadas e reuniões salvam transcrições por padrão. O anfitrião pode desativar o salvamento nas configurações. O texto salvo permite consultar a conversa depois e gerar relatórios opcionais de IA."
       },
       "accounts": {
         "title": "Contas pessoais ou de equipe",
@@ -122,6 +122,7 @@
     }
   },
   "pricing": {
+    "paidComingSoon": "Em breve",
     "eyebrow": "Preços",
     "title": "Comece grátis, escale conforme cresce",
     "subtitle": "Comece com 60 minutos-participante por mês. Faça upgrade quando estiver pronto—cobrança por organização.",
@@ -194,7 +195,7 @@
       },
       "transcripts": {
         "q": "O armazenamento de transcrições é obrigatório?",
-        "a": "Não. Cada reunião pode optar por salvar linhas de legenda finalizadas no servidor. Anfitriões e administradores da organização podem baixar depois, quando existirem."
+        "a": "Novas chamadas e reuniões salvam transcrições por padrão. O anfitrião pode desativar o salvamento nas configurações. O texto salvo permite consultar a conversa depois e gerar relatórios opcionais de IA."
       },
       "trial": {
         "q": "Posso experimentar antes de pagar?",
@@ -202,7 +203,7 @@
       },
       "storage": {
         "q": "Onde os dados são armazenados?",
-        "a": "As reuniões são processadas em tempo real. As transcrições são armazenadas apenas quando o anfitrião ativa o armazenamento para uma reunião, e podem ser excluídas a qualquer momento. Todos os dados são criptografados em trânsito."
+        "a": "As reuniões são processadas em tempo real. Novas chamadas e reuniões salvam transcrições por padrão; o anfitrião pode desativar isso. O texto salvo permanece até ser excluído. Os dados são criptografados em trânsito."
       },
       "accuracy": {
         "q": "Qual a precisão da tradução ao vivo?",
@@ -222,7 +223,7 @@
       },
       "recording": {
         "q": "Are meetings recorded?",
-        "a": "No. Lalia does not record meeting audio or video. Captions and translations are processed in real time. Optional transcript text is saved only when the host turns on transcript storage for that specific meeting."
+        "a": "Lalia does not record meeting audio or video. New calls and meetings save caption and translation text by default, with a notice before joining. The host can turn transcript saving off in meeting settings. Turning it off stops new saves but does not delete existing transcripts."
       },
       "aiTraining": {
         "q": "Do you use my meetings to train AI models?",
@@ -230,7 +231,7 @@
       },
       "stack": {
         "q": "How is Lalia different from transcription-only tools?",
-        "a": "Transcription bots capture what was said—usually after the fact, often in one language. Lalia translates live during the call so everyone follows in their own language, then optionally saves transcripts and generates AI meeting reports when you enable storage. One platform instead of a video tool plus interpreter plus notes doc."
+        "a": "Lalia translates live during the call so everyone follows in their own language. New calls and meetings save transcripts by default for later review and optional AI reports; the host can turn saving off."
       }
     }
   },
@@ -365,14 +366,21 @@
     "namePlaceholder": "Seu nome",
     "myLanguage": "Meu idioma (falar e ouvir)",
     "languageHint": "Legendas e traduções aparecerão neste idioma.",
-    "joinMeeting": "Entrar na reunião"
+    "joinMeeting": "Entrar na reunião",
+    "transcriptTitle": "Salvamento de transcrições",
+    "transcriptOffTitle": "Salvamento de transcrições desativado",
+    "transcriptOn": "Esta reunião salva legendas e traduções para consulta posterior e relatórios opcionais de IA. Se não quiser que suas palavras sejam salvas, peça ao anfitrião que desative o salvamento antes de falar.",
+    "transcriptDefault": "Novas chamadas e reuniões salvam transcrições por padrão. O anfitrião pode desativar isso nas configurações. Pergunte sobre a configuração desta reunião antes de falar.",
+    "transcriptOff": "Esta reunião não está salvando novas linhas de transcrição. As legendas e traduções ao vivo continuam funcionando. Desativar o salvamento não exclui o texto já salvo.",
+    "privacyPolicy": "Política de privacidade",
+    "transcriptSettings": "Gerenciar salvamento"
   },
   "trust": {
     "poweredBy": "Vídeo em tempo real no navegador",
     "ariaLabel": "Security and trust",
     "items": {
       "encrypted": "Encrypted in transit",
-      "transcripts": "Transcripts off by default",
+      "transcripts": "Transcrições ativadas por padrão",
       "retention": "You control retention"
     }
   },
@@ -393,7 +401,7 @@
       },
       "after": {
         "title": "After the meeting",
-        "description": "Turn on transcript storage per meeting. Search, export JSON or plain text, and keep a record without recording audio or video."
+        "description": "Novas chamadas e reuniões salvam transcrições por padrão. O anfitrião pode desativar o salvamento nas configurações. O texto salvo permite consultar a conversa depois e gerar relatórios opcionais de IA."
       },
       "insights": {
         "title": "Without the busywork",

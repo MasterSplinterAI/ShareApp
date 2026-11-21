@@ -354,6 +354,181 @@
             }
         };
         scope.querySelectorAll('.site-header .nav-actions, .nav-actions').forEach(ensureSiteLangSelect);
+
+        // Localized copy for static marketing pricing toggle, live plan unlock, and legal links
+        const MKT_COPY = {
+            en: { monthly: 'Monthly', annual: 'Annual', save: 'save 20%', perMonth: '/ month', billedYearly: (n) => `$${n} billed yearly`, getStarter: 'Get Starter', getPro: 'Get Pro', afterBeta: 'Available after beta', terms: 'Terms', privacy: 'Privacy' },
+            es: { monthly: 'Mensual', annual: 'Anual', save: 'ahorra 20%', perMonth: '/ mes', billedYearly: (n) => `$${n} facturados al año`, getStarter: 'Elegir Starter', getPro: 'Elegir Pro', afterBeta: 'Disponible después de la beta', terms: 'Términos', privacy: 'Privacidad' },
+            fr: { monthly: 'Mensuel', annual: 'Annuel', save: '-20 %', perMonth: '/ mois', billedYearly: (n) => `$${n} facturés par an`, getStarter: 'Choisir Starter', getPro: 'Choisir Pro', afterBeta: 'Disponible après la bêta', terms: 'Conditions', privacy: 'Confidentialité' },
+            de: { monthly: 'Monatlich', annual: 'Jährlich', save: '20 % sparen', perMonth: '/ Monat', billedYearly: (n) => `$${n} jährlich abgerechnet`, getStarter: 'Starter wählen', getPro: 'Pro wählen', afterBeta: 'Nach der Beta verfügbar', terms: 'AGB', privacy: 'Datenschutz' },
+            pt: { monthly: 'Mensal', annual: 'Anual', save: 'poupe 20%', perMonth: '/ mês', billedYearly: (n) => `$${n} faturados anualmente`, getStarter: 'Escolher Starter', getPro: 'Escolher Pro', afterBeta: 'Disponível após a fase beta', terms: 'Termos', privacy: 'Privacidade' },
+            ja: { monthly: '月払い', annual: '年払い', save: '20%お得', perMonth: '/ 月', billedYearly: (n) => `年額 $${n} 一括請求`, getStarter: 'Starterを選択', getPro: 'Proを選択', afterBeta: 'ベータ版終了後に利用可能', terms: '利用規約', privacy: 'プライバシー' },
+            'zh-CN': { monthly: '按月', annual: '按年', save: '省 20%', perMonth: '/ 月', billedYearly: (n) => `按年计费 $${n}/年`, getStarter: '选择 Starter', getPro: '选择 Pro', afterBeta: '测试版结束后开放', terms: '服务条款', privacy: '隐私政策' },
+        };
+        const mktCopy = () => MKT_COPY[pathLocale()] || MKT_COPY.en;
+
+        // Ensure Terms & Privacy links exist on all static marketing footers (and /languages)
+        scope.querySelectorAll('.footer .footer-links').forEach((linksWrap) => {
+            if (initialized.has(linksWrap)) return;
+            initialized.add(linksWrap);
+            const c = mktCopy();
+            const cols = linksWrap.querySelectorAll('div');
+            const connectCol = cols[cols.length - 1];
+            if (!connectCol) return;
+            if (!linksWrap.querySelector('a[href="/terms"]')) {
+                const tLink = document.createElement('a');
+                tLink.href = '/terms';
+                tLink.textContent = c.terms;
+                connectCol.appendChild(tLink);
+            }
+            if (!linksWrap.querySelector('a[href="/privacy"]')) {
+                const pLink = document.createElement('a');
+                pLink.href = '/privacy';
+                pLink.textContent = c.privacy;
+                connectCol.appendChild(pLink);
+            }
+        });
+        if (scope === document && !document.querySelector('.footer') && document.querySelector('.lang-card') && !document.querySelector('.mkt-lang-footer')) {
+            const c = mktCopy();
+            const lf = document.createElement('footer');
+            lf.className = 'mkt-lang-footer';
+            lf.innerHTML = `<span>© 2026 Lalia. All rights reserved.</span><div class="mkt-lang-footer-links"><a href="mailto:support@lalia.cloud">support@lalia.cloud</a><a href="/terms">${c.terms}</a><a href="/privacy">${c.privacy}</a></div>`;
+            document.body.appendChild(lf);
+        }
+
+        // Dynamic Monthly / Annual toggle + automatic Live Stripe button unlock on studio-home #pricing
+        scope.querySelectorAll('#pricing.pricing-section').forEach((pricingSection) => {
+            if (initialized.has(pricingSection)) return;
+            initialized.add(pricingSection);
+            const c = mktCopy();
+            const cards = [...pricingSection.querySelectorAll('.price-card')];
+            const starterCard = cards[1];
+            const proCard = cards[2];
+            if (!starterCard || !proCard) return;
+
+            let period = 'monthly';
+            let stripeLive = false;
+            let planMap = {};
+
+            const ensureSub = (card) => {
+                let sub = card.querySelector('.mkt-price-sub');
+                if (!sub) {
+                    sub = document.createElement('div');
+                    sub.className = 'mkt-price-sub';
+                    const priceEl = card.querySelector('.price');
+                    if (priceEl && priceEl.nextSibling) card.insertBefore(sub, priceEl.nextSibling);
+                }
+                return sub;
+            };
+            const starterSub = ensureSub(starterCard);
+            const proSub = ensureSub(proCard);
+
+            const arrowSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-arrow-up-right" aria-hidden="true"><path d="M7 7h10v10"></path><path d="M7 17 17 7"></path></svg>';
+
+            const syncCard = (card, subEl, tierId, monthlyDollars, annualMonthlyDollars, annualTotalDollars, ctaLabel) => {
+                const isAnnual = period === 'annual';
+                const priceEl = card.querySelector('.price');
+                if (priceEl) {
+                    priceEl.innerHTML = `$${isAnnual ? annualMonthlyDollars : monthlyDollars}<span>${c.perMonth}</span>`;
+                }
+                subEl.textContent = isAnnual ? c.billedYearly(annualTotalDollars) : '';
+
+                const planRow = planMap[tierId];
+                const intervalReady = isAnnual
+                    ? !planRow || Boolean(planRow.stripe_annual_price_id)
+                    : !planRow || !('stripe_price_id' in planRow) || Boolean(planRow.stripe_price_id);
+                const enabled = stripeLive && intervalReady;
+                const currentAction = card.querySelector('.button-plan');
+                if (!currentAction) return;
+
+                if (enabled) {
+                    const href = isAnnual ? `/v2/signup?plan=${tierId}&billing=annual` : `/v2/signup?plan=${tierId}`;
+                    if (currentAction.tagName.toLowerCase() === 'a') {
+                        currentAction.setAttribute('href', href);
+                    } else {
+                        const link = document.createElement('a');
+                        link.className = 'button button-plan';
+                        link.setAttribute('href', href);
+                        link.innerHTML = `${ctaLabel} ${arrowSvg}`;
+                        currentAction.replaceWith(link);
+                    }
+                } else if (currentAction.tagName.toLowerCase() !== 'button') {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'button button-plan';
+                    btn.disabled = true;
+                    btn.textContent = c.afterBeta;
+                    currentAction.replaceWith(btn);
+                }
+            };
+
+            const renderPricing = () => {
+                syncCard(starterCard, starterSub, 'starter', 49, 39, '468', c.getStarter);
+                syncCard(proCard, proSub, 'pro', 199, 159, '1,908', c.getPro);
+            };
+
+            const billingLabel = pricingSection.querySelector('.billing-label');
+            if (billingLabel && !pricingSection.querySelector('.mkt-billing-toggle')) {
+                const bar = document.createElement('div');
+                bar.className = 'mkt-billing-bar';
+                const toggle = document.createElement('div');
+                toggle.className = 'mkt-billing-toggle';
+                toggle.setAttribute('role', 'group');
+                toggle.setAttribute('aria-label', 'Billing period');
+
+                const mBtn = document.createElement('button');
+                mBtn.type = 'button';
+                mBtn.className = 'mkt-billing-btn is-active';
+                mBtn.textContent = c.monthly;
+
+                const aBtn = document.createElement('button');
+                aBtn.type = 'button';
+                aBtn.className = 'mkt-billing-btn';
+                aBtn.innerHTML = `${c.annual} <span class="mkt-billing-save">(${c.save})</span>`;
+
+                const setPeriod = (next) => {
+                    period = next;
+                    mBtn.classList.toggle('is-active', next === 'monthly');
+                    aBtn.classList.toggle('is-active', next === 'annual');
+                    renderPricing();
+                };
+                mBtn.addEventListener('click', () => setPeriod('monthly'));
+                aBtn.addEventListener('click', () => setPeriod('annual'));
+
+                toggle.append(mBtn, aBtn);
+                bar.appendChild(toggle);
+                const orgNote = billingLabel.querySelector('span');
+                if (orgNote) {
+                    const cloned = orgNote.cloneNode(true);
+                    cloned.className = 'billing-label';
+                    cloned.style.marginTop = '0';
+                    bar.appendChild(cloned);
+                }
+                billingLabel.replaceWith(bar);
+            }
+
+            renderPricing();
+            fetch('/api/v2/billing/plans')
+                .then((r) => (r.ok ? r.json() : null))
+                .then((data) => {
+                    if (!data) return;
+                    stripeLive = data.stripeEnabled === true;
+                    const next = {};
+                    (data.plans || []).forEach((p) => { if (p?.id) next[p.id] = p; });
+                    planMap = next;
+                    renderPricing();
+                })
+                .catch(() => {});
+        });
+
+        // Mount floating Lalia Support / Help launcher on all static marketing pages
+        if (scope === document && !document.getElementById('root') && !document.getElementById('lalia-support-widget-script')) {
+            const script = document.createElement('script');
+            script.id = 'lalia-support-widget-script';
+            script.type = 'module';
+            script.src = '/assets/support-widget.js?v=launch03';
+            document.body.appendChild(script);
+        }
         scope.querySelectorAll('.menu-toggle').forEach(button => {
             if (initialized.has(button))
                 return;

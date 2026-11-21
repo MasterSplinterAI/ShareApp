@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { LiveKitRoom, RoomAudioRenderer, StartAudio, useRoomContext, usePreviewTracks, useParticipants } from '@livekit/components-react';
-import { ConnectionState, RoomEvent } from 'livekit-client';
+import { ConnectionState, RoomEvent, Track } from 'livekit-client';
 import toast from 'react-hot-toast';
 import { Loader2, Phone } from 'lucide-react';
 import { authService, joinPublicService } from '../services/api';
@@ -153,6 +153,7 @@ function MeetingRoom() {
   const [meetingBranding, setMeetingBranding] = useState(null);
   const [meetingTitle, setMeetingTitle] = useState(null);
   const [transcriptPersistEnabled, setTranscriptPersistEnabled] = useState(false);
+  const [transcriptStorageEnabled, setTranscriptStorageEnabled] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
   const intentionalLeaveRef = useRef(false);
   const reconnectingRef = useRef(false);
@@ -165,6 +166,7 @@ function MeetingRoom() {
   // Freeze preview track options at join so usePreviewTracks keeps the same instances
   // (with any attached background processor) through the prejoin → room transition.
   const [frozenPreviewTrackOptions, setFrozenPreviewTrackOptions] = useState(null);
+  const [previewMediaError, setPreviewMediaError] = useState(null);
 
   const previewTrackOptions = useMemo(() => {
     if (!isInitialized) return { audio: false, video: false };
@@ -183,10 +185,16 @@ function MeetingRoom() {
   }, [isInitialized, frozenPreviewTrackOptions, previewMedia]);
 
   const onPreviewMediaError = useCallback((err) => {
+    setPreviewMediaError(err);
     console.warn('PreJoin media error:', err);
   }, []);
 
   const previewTracks = usePreviewTracks(previewTrackOptions, onPreviewMediaError);
+  useEffect(() => {
+    const audioReady = !previewMedia.audioEnabled || previewTracks?.some((track) => track.kind === Track.Kind.Audio);
+    const videoReady = !previewMedia.videoEnabled || previewTracks?.some((track) => track.kind === Track.Kind.Video);
+    if (audioReady && videoReady) setPreviewMediaError(null);
+  }, [previewTracks, previewMedia.audioEnabled, previewMedia.videoEnabled]);
 
   const handlePreviewMediaChange = useCallback((partial) => {
     setPreviewMedia((prev) => ({ ...prev, ...partial }));
@@ -273,7 +281,7 @@ function MeetingRoom() {
     // so they don't have to type it when answering a call or joining a meeting link.
     if (!participantName && typeof localStorage !== 'undefined' && localStorage.getItem('v2_token')) {
       v2Auth
-        .me()
+        .me({ skipSessionRedirect: !isHost })
         .then((res) => {
           const u = res?.user;
           const resolvedName = (u?.display_name || u?.displayName || u?.email?.split('@')[0] || '').trim();
@@ -292,7 +300,7 @@ function MeetingRoom() {
     if (meetingBranding || !isInitialized) return;
     if (typeof localStorage === 'undefined' || !localStorage.getItem('v2_token')) return;
     v2Orgs
-      .me()
+      .me({ skipSessionRedirect: !participantInfo?.isHost })
       .then((res) => {
         const orgRow = res?.org;
         const configured =
@@ -306,7 +314,30 @@ function MeetingRoom() {
         );
       })
       .catch(() => {});
-  }, [isInitialized, meetingBranding]);
+  }, [isInitialized, meetingBranding, participantInfo?.isHost]);
+
+  // Disclose the current storage policy before any room connection or publishing.
+  useEffect(() => {
+    if (!participantInfo?.meetingId || prejoinChoices) return;
+    let active = true;
+    let latestRequest = 0;
+    const refreshPolicy = () => {
+      const requestId = ++latestRequest;
+      setTranscriptStorageEnabled(null);
+      const request = participantInfo.isHost
+        ? v2Meetings.get(participantInfo.meetingId)
+        : joinPublicService.joinInfo(roomName, participantInfo.inviteToken || '');
+      request.then((data) => {
+        if (active && requestId === latestRequest && typeof data.policy?.store_transcripts === 'boolean') {
+          setTranscriptStorageEnabled(data.policy.store_transcripts);
+        }
+      }).catch(() => { /* Keep the default-storage disclosure if policy is unavailable. */ });
+    };
+    refreshPolicy();
+    // Hosts can change this setting in the linked tab before returning to join.
+    window.addEventListener('focus', refreshPolicy);
+    return () => { active = false; window.removeEventListener('focus', refreshPolicy); };
+  }, [participantInfo?.meetingId, participantInfo?.isHost, participantInfo?.inviteToken, roomName, prejoinChoices]);
 
   // Connect to room only after the prejoin lobby confirms name/language/devices.
   useEffect(() => {
@@ -504,6 +535,9 @@ function MeetingRoom() {
         meetingTitle={meetingTitle}
         branding={meetingBranding}
         previewTracks={previewTracks}
+        mediaError={previewMediaError}
+        transcriptStorageEnabled={transcriptStorageEnabled}
+        transcriptSettingsUrl={participantInfo.isHost && participantInfo.meetingId ? `/v2/app/meetings/${participantInfo.meetingId}` : null}
         media={previewMedia}
         onMediaChange={handlePreviewMediaChange}
         onJoin={handlePrejoinJoin}

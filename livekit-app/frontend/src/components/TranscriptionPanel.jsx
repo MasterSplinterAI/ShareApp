@@ -4,12 +4,19 @@ import { useRoomContext } from '@livekit/components-react';
 import { useMeeting } from '../context/MeetingContext';
 import { v2Meetings } from '../services/apiV2';
 import PanelTabs from './PanelTabs';
-import { resolveSpeakerLabel, preferSpeakerLabel } from '../lib/participantDisplayName';
+import { resolveSpeakerLabel } from '../lib/participantDisplayName';
+import {
+  DEFAULT_DOM_WINDOW,
+  createTranscriptStore,
+  applyTranscriptionPacket,
+  getWindowedDisplaySlice,
+  getAllFinalMessages,
+} from '../lib/transcriptStore';
 
 const SHARED_TEXT_DECODER = new TextDecoder();
 const TIME_FORMATTER = new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit' });
 const EMPTY_ARRAY = [];
-const DEFAULT_DOM_WINDOW = 200;
+const PARTIAL_RENDER_INTERVAL_MS = 48;
 
 function formatBubbleTime(ts) {
   if (!ts) return '';
@@ -53,9 +60,9 @@ function normalizeLangCode(code) {
 
 /** Demo-only: per-teammate translations when the guest speaks their language. */
 function getTeammateCaptions(translations, demoTeammates, sourceLanguage) {
-  if (!demoTeammates?.length || !translations) return [];
+  if (!demoTeammates?.length || !translations) return EMPTY_ARRAY;
   const sourceNorm = sourceLanguage ? normalizeLangCode(sourceLanguage) : null;
-  return demoTeammates
+  const rows = demoTeammates
     .map(({ name, lang }) => {
       const norm = normalizeLangCode(lang);
       const entry = Object.entries(translations).find(([k]) => normalizeLangCode(k) === norm);
@@ -65,237 +72,7 @@ function getTeammateCaptions(translations, demoTeammates, sourceLanguage) {
       return { name, lang, text };
     })
     .filter(Boolean);
-}
-
-function mergeSttOverlap(base, addition) {
-  const bw = base.split(/\s+/).filter(Boolean);
-  const nw = addition.split(/\s+/).filter(Boolean);
-  if (!bw.length) return addition.trim();
-  if (!nw.length) return base.trim();
-  let overlap = 0;
-  for (let k = Math.min(bw.length, nw.length); k > 0; k -= 1) {
-    if (bw.slice(-k).join(' ') === nw.slice(0, k).join(' ')) {
-      overlap = k;
-      break;
-    }
-  }
-  if (overlap > 0) {
-    return [...bw, ...nw.slice(overlap)].join(' ');
-  }
-  return `${base} ${addition}`.trim();
-}
-
-/** Stitch committed chunk finals with a cumulative open interim (mirrors agent transcript_assembler). */
-function stitchCommittedAndOpen(committed, openText) {
-  const c = (committed || '').trim();
-  const o = (openText || '').trim();
-  if (!c) return o;
-  if (!o) return c;
-  if (o.startsWith(c)) return o;
-
-  const cw = c.split(/\s+/).filter(Boolean);
-  const ow = o.split(/\s+/).filter(Boolean);
-  if (!cw.length || !ow.length) return `${c} ${o}`.trim();
-
-  if (cw.join(' ') === ow.slice(0, cw.length).join(' ')) return o;
-
-  let common = 0;
-  for (let i = 0; i < Math.min(cw.length, ow.length); i += 1) {
-    if (cw[i] === ow[i]) common = i + 1;
-    else break;
-  }
-  if (common >= 3 && ow.length >= cw.length) return o;
-
-  let best = 0;
-  const maxK = Math.min(cw.length, ow.length);
-  for (let k = maxK; k > 0; k -= 1) {
-    if (cw.slice(-k).join(' ') === ow.slice(0, k).join(' ')) {
-      best = k;
-      break;
-    }
-  }
-  if (best > 0) return [...cw, ...ow.slice(best)].join(' ').trim();
-  return `${c} ${o}`.trim();
-}
-
-function applyGladiaPartialText(previous, incoming) {
-  const p = (previous || '').trim();
-  const n = sanitizeCaptionText((incoming || '').trim());
-  if (!n) return p;
-  if (!p) return n;
-  if (n === p) return p;
-  if (n.startsWith(p) || wordPrefixMatch(p, n)) return n;
-  if (p.startsWith(n) || wordPrefixMatch(n, p)) return p;
-  // Gladia partials can revise earlier words (not strict prefix extensions) — take latest line.
-  return n;
-}
-
-/**
- * Live partials for one turn: agent sends a full cumulative hypothesis each packet.
- * Do not concat when Deepgram revises earlier words (pickLiveCaptionText → mergeSttOverlap).
- */
-function applyLivePartialText(previous, incoming) {
-  const p = (previous || '').trim();
-  const n = sanitizeCaptionText((incoming || '').trim());
-  if (!n) return p;
-  if (!p) return n;
-  if (n === p) return p;
-  if (n.startsWith(p) || wordPrefixMatch(p, n)) return n;
-  if (p.startsWith(n) || wordPrefixMatch(n, p)) return p;
-  const common = commonWordPrefixLen(p, n);
-  if (common >= 2 && n.length >= p.length * 0.75) return n;
-  if (common >= 2 && p.length > n.length) return p;
-  // Non-prefix revision (common with Gladia partial model swaps) — prefer latest hypothesis.
-  if (common < 2) return n;
-  return sanitizeCaptionText(stitchCommittedAndOpen(p, n));
-}
-
-function normalizeCaptionWord(word) {
-  return word.replace(/^[\s.,!?;:"'-]+|[\s.,!?;:"'-]+$/g, '').toLowerCase();
-}
-
-function wordPrefixMatch(shorter, longer) {
-  const sw = shorter.trim().split(/\s+/).filter(Boolean);
-  const lw = longer.trim().split(/\s+/).filter(Boolean);
-  if (!sw.length || !lw.length || sw.length > lw.length) return false;
-  for (let i = 0; i < sw.length; i += 1) {
-    if (sw[i] === lw[i]) continue;
-    const nw = normalizeCaptionWord(sw[i]);
-    const nlw = normalizeCaptionWord(lw[i]);
-    if (nw === nlw) continue;
-    if (i === sw.length - 1 && (nlw.startsWith(nw) || nw.startsWith(nlw))) continue;
-    return false;
-  }
-  return true;
-}
-
-function commonWordPrefixLen(a, b) {
-  const aw = a.trim().split(/\s+/).filter(Boolean);
-  const bw = b.trim().split(/\s+/).filter(Boolean);
-  let n = 0;
-  for (let i = 0; i < Math.min(aw.length, bw.length); i += 1) {
-    if (aw[i] === bw[i]) {
-      n = i + 1;
-      continue;
-    }
-    if (normalizeCaptionWord(aw[i]) === normalizeCaptionWord(bw[i])) {
-      n = i + 1;
-      continue;
-    }
-    break;
-  }
-  return n;
-}
-
-let _lastSanitizeIn = '';
-let _lastSanitizeOut = '';
-
-function wordsMatchAt(words, i, n) {
-  for (let k = 0; k < n; k += 1) {
-    if (words[i + k] !== words[i + n + k]) return false;
-  }
-  return true;
-}
-
-function sanitizeCaptionText(text) {
-  const trimmed = (text || '').trim();
-  if (!trimmed) return '';
-  if (trimmed === _lastSanitizeIn) return _lastSanitizeOut;
-
-  const allWords = trimmed.split(/\s+/).filter(Boolean);
-  if (allWords.length < 6) {
-    _lastSanitizeIn = trimmed;
-    _lastSanitizeOut = trimmed;
-    return trimmed;
-  }
-
-  // Only inspect the trailing 48 words where streaming STT stutters can occur;
-  // keeps per-packet cost O(1) even on long monologues.
-  const headCount = Math.max(0, allWords.length - 48);
-  const head = headCount > 0 ? allWords.slice(0, headCount) : [];
-  let words = headCount > 0 ? allWords.slice(headCount) : allWords;
-
-  let changed = true;
-  while (changed && words.length >= 6) {
-    changed = false;
-    for (let n = Math.min(16, Math.floor(words.length / 2)); n >= 3; n -= 1) {
-      let i = 0;
-      const out = [];
-      while (i < words.length) {
-        if (i + 2 * n <= words.length && wordsMatchAt(words, i, n)) {
-          for (let k = 0; k < n; k += 1) out.push(words[i + k]);
-          i += 2 * n;
-          changed = true;
-        } else {
-          out.push(words[i]);
-          i += 1;
-        }
-      }
-      if (changed) {
-        words = out;
-        break;
-      }
-    }
-  }
-  const result = head.length ? [...head, ...words].join(' ') : words.join(' ');
-  _lastSanitizeIn = trimmed;
-  _lastSanitizeOut = result;
-  return result;
-}
-
-/** Agent sends cumulative live lines — prefer prefix extensions, reject mid-string repeats. */
-function pickLiveCaptionText(previous, incoming) {
-  const prev = (previous || '').trim();
-  const next = (incoming || '').trim();
-  if (!next) return prev;
-  if (!prev) return sanitizeCaptionText(next);
-  if (next === prev) return prev;
-  if (next.startsWith(prev) || wordPrefixMatch(prev, next)) {
-    return sanitizeCaptionText(next);
-  }
-  if (prev.startsWith(next) || wordPrefixMatch(next, prev)) return prev;
-  const common = commonWordPrefixLen(prev, next);
-  if (common >= 3 && next.length >= prev.length) {
-    return sanitizeCaptionText(next);
-  }
-  // Substring without prefix (e.g. "foo bar" inside "foo bar foo bar") — keep shorter line.
-  if (next.includes(prev) && !next.startsWith(prev)) return prev;
-  if (prev.includes(next) && !prev.startsWith(next)) return prev;
-  return sanitizeCaptionText(mergeSttOverlap(prev, next));
-}
-
-/** Keep caption text monotonic without duplicating overlapping STT packets. */
-function mergeCaptionText(previous, incoming) {
-  return pickLiveCaptionText(previous, incoming);
-}
-
-/** Hide chunk-sized finals still part of an open live turn (common on mobile list view). */
-function messagesForDisplay(messages) {
-  let hasPartials = false;
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    if (messages[i].isPartial) {
-      hasPartials = true;
-      break;
-    }
-  }
-  if (!hasPartials) return messages;
-
-  const activeTurnIds = new Set();
-  for (let i = 0; i < messages.length; i += 1) {
-    const m = messages[i];
-    if (m.isPartial && m.transcriptionId != null) {
-      activeTurnIds.add(m.transcriptionId);
-    }
-  }
-  if (!activeTurnIds.size) return messages;
-
-  return messages.filter((m) => {
-    if (m.isPartial) return true;
-    if (m.transcriptionId != null && activeTurnIds.has(m.transcriptionId)) {
-      return false;
-    }
-    return true;
-  });
+  return rows.length > 0 ? rows : EMPTY_ARRAY;
 }
 
 function buildTranscriptPayload(m, selectedLanguage) {
@@ -321,7 +98,6 @@ function TranscriptionPanel() {
   const room = useRoomContext();
   const {
     isPanelOpen,
-    togglePanel,
     isFullScreen,
     selectedLanguage,
     translationEnabled,
@@ -344,45 +120,133 @@ function TranscriptionPanel() {
     setMobileExpanded(isPanelOpen);
   }, [isPanelOpen]);
 
-  // Unified flow: one bubble per speaker turn. Partials update in place;
-  // the same bubble firms up when the final arrives. No separate live section.
-  const [messages, setMessages] = useState([]);
+  const storeRef = useRef(null);
+  if (!storeRef.current) {
+    storeRef.current = createTranscriptStore();
+  }
+
+  const [renderLimit, setRenderLimit] = useState(DEFAULT_DOM_WINDOW);
+  const renderLimitRef = useRef(renderLimit);
+  renderLimitRef.current = renderLimit;
+
+  const [viewState, setViewState] = useState({
+    windowedMessages: EMPTY_ARRAY,
+    hiddenCount: 0,
+    hasContent: false,
+    latestItem: null,
+    finalCount: 0,
+  });
+
   const [isAtBottom, setIsAtBottom] = useState(true);
   const desktopScrollRef = useRef(null);
   const mobileScrollRef = useRef(null);
   const pipScrollRef = useRef(null);
   const bottomAnchorRef = useRef(null);
   const isAtBottomRef = useRef(true);
+  const prevScrollHeightRef = useRef(0);
+
+  const uiVisibilityRef = useRef({
+    needsBubbleList: true,
+    needsMobileBar: false,
+  });
+  const needsBubbleList = Boolean(
+    translationEnabled && isPanelOpen && (usePipMode || isDesktop || mobileExpanded)
+  );
+  const needsMobileBar = Boolean(
+    translationEnabled && isPanelOpen && !usePipMode && !isDesktop && !mobileExpanded
+  );
+  uiVisibilityRef.current = { needsBubbleList, needsMobileBar };
 
   const getScrollEl = useCallback(() => {
     if (usePipMode) return pipScrollRef.current;
     if (isDesktop) return desktopScrollRef.current;
     return mobileScrollRef.current;
   }, [usePipMode, isDesktop]);
-  const msgCounterRef = useRef(0);
+
   const sentMessageIdsRef = useRef(new Set());
   const persistingIdsRef = useRef(new Set());
   const persistFlushTimerRef = useRef(null);
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
 
-  const finalMessages = useMemo(() => messages.filter((m) => !m.isPartial), [messages]);
-  const finalCount = finalMessages.length;
+  const commitStoreToView = useCallback(() => {
+    const store = storeRef.current;
+    const { needsBubbleList: showList, needsMobileBar: showBar } = uiVisibilityRef.current;
+
+    if (!showList && !showBar) {
+      setViewState((prev) =>
+        prev.finalCount === store.finalCount
+          ? prev
+          : { ...prev, finalCount: store.finalCount }
+      );
+      return;
+    }
+
+    const slice = getWindowedDisplaySlice(store, showList ? renderLimitRef.current : 1);
+    setViewState({
+      windowedMessages: showList ? slice.windowedMessages : EMPTY_ARRAY,
+      hiddenCount: showList ? slice.hiddenCount : 0,
+      hasContent: slice.hasContent,
+      latestItem: slice.latestItem,
+      finalCount: store.finalCount,
+    });
+  }, []);
+
+  // Recompute view slice immediately when panel visibility, layout mode, or window size changes.
+  useEffect(() => {
+    commitStoreToView();
+  }, [needsBubbleList, needsMobileBar, renderLimit, commitStoreToView]);
+
+  // Reset store only when switching to a different roomName.
+  const prevRoomNameRef = useRef(roomName);
+  useEffect(() => {
+    if (prevRoomNameRef.current !== roomName) {
+      prevRoomNameRef.current = roomName;
+      storeRef.current = createTranscriptStore();
+      sentMessageIdsRef.current.clear();
+      persistingIdsRef.current.clear();
+      setRenderLimit(DEFAULT_DOM_WINDOW);
+      setViewState({
+        windowedMessages: EMPTY_ARRAY,
+        hiddenCount: 0,
+        hasContent: false,
+        latestItem: null,
+        finalCount: 0,
+      });
+    }
+  }, [roomName]);
+
+  const finalCount = viewState.finalCount;
 
   const flushPersistedTranscript = useCallback(async () => {
     if (!meetingId || !transcriptPersistEnabled || !isHost || !room) return;
-    const latest = messagesRef.current;
-    const batch = latest.filter(
-      (m) =>
-        !m.isPartial &&
-        !sentMessageIdsRef.current.has(m.id) &&
-        !persistingIdsRef.current.has(m.id),
-    );
+    const store = storeRef.current;
+    if (store.unsentFinalIds.size === 0) return;
+
+    const batch = [];
+    for (const id of Array.from(store.unsentFinalIds)) {
+      if (sentMessageIdsRef.current.has(id)) {
+        store.unsentFinalIds.delete(id);
+        continue;
+      }
+      if (persistingIdsRef.current.has(id)) continue;
+      const idx = store.idToIndex.get(id);
+      const m = idx != null ? store.messages[idx] : null;
+      if (!m || m.isPartial) continue;
+      batch.push(m);
+    }
     if (!batch.length) return;
-    const paired = batch
-      .map((m) => ({ m, line: buildTranscriptPayload(m, selectedLanguage) }))
-      .filter(({ line }) => line.original_text && String(line.original_text).trim());
+
+    const paired = [];
+    for (let i = 0; i < batch.length; i += 1) {
+      const m = batch[i];
+      const line = buildTranscriptPayload(m, selectedLanguage);
+      if (line.original_text && String(line.original_text).trim()) {
+        paired.push({ m, line });
+      } else {
+        store.unsentFinalIds.delete(m.id);
+      }
+    }
     if (!paired.length) return;
+
     paired.forEach(({ m }) => persistingIdsRef.current.add(m.id));
     const lines = paired.map(({ line }) => line);
     try {
@@ -392,6 +256,7 @@ function TranscriptionPanel() {
       }
       paired.forEach(({ m }) => {
         persistingIdsRef.current.delete(m.id);
+        store.unsentFinalIds.delete(m.id);
         sentMessageIdsRef.current.add(m.id);
       });
     } catch (e) {
@@ -400,7 +265,7 @@ function TranscriptionPanel() {
     }
   }, [meetingId, transcriptPersistEnabled, isHost, room, selectedLanguage]);
 
-  // Trigger persistence timer ONLY when finalized message count changes (not on 10Hz partials!).
+  // Trigger persistence timer ONLY when finalized message count changes (not on partials).
   useEffect(() => {
     if (!meetingId || !transcriptPersistEnabled || !isHost || !room || finalCount === 0) {
       clearTimeout(persistFlushTimerRef.current);
@@ -429,19 +294,54 @@ function TranscriptionPanel() {
   }, [meetingId, transcriptPersistEnabled, isHost, flushPersistedTranscript]);
 
   useEffect(() => {
-    if (!room) return;
+    if (!room) return undefined;
     const debugCaptions =
-      import.meta.env.DEV ||
-      (typeof window !== 'undefined' &&
-        new URLSearchParams(window.location.search).get('debug') === '1');
+      typeof window !== 'undefined' &&
+      new URLSearchParams(window.location.search).get('debug') === '1';
 
-    const handleDataReceived = (payload, participant, kind, topic) => {
+    let rafId = 0;
+    let throttleTimerId = 0;
+    let lastFlushAt = 0;
+
+    const runFlush = () => {
+      rafId = 0;
+      lastFlushAt = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      commitStoreToView();
+    };
+
+    const scheduleUiFlush = (immediate = false) => {
+      if (immediate) {
+        if (throttleTimerId) {
+          window.clearTimeout(throttleTimerId);
+          throttleTimerId = 0;
+        }
+        if (!rafId) {
+          rafId = window.requestAnimationFrame(runFlush);
+        }
+        return;
+      }
+
+      if (rafId || throttleTimerId) return;
+      const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+      const elapsed = now - lastFlushAt;
+      if (elapsed >= PARTIAL_RENDER_INTERVAL_MS) {
+        rafId = window.requestAnimationFrame(runFlush);
+      } else {
+        throttleTimerId = window.setTimeout(() => {
+          throttleTimerId = 0;
+          if (!rafId) {
+            rafId = window.requestAnimationFrame(runFlush);
+          }
+        }, PARTIAL_RENDER_INTERVAL_MS - elapsed);
+      }
+    };
+
+    const handleDataReceived = (payload, participant, _kind, topic) => {
       try {
         if (topic != null && topic !== 'transcription') return;
         const raw = payload instanceof Uint8Array ? payload : (payload?.data ?? payload);
         if (!raw) return;
         const message = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
-
         if (message.type !== 'transcription') return;
 
         if (debugCaptions) {
@@ -460,222 +360,34 @@ function TranscriptionPanel() {
           message.participant_name ||
           resolveSpeakerLabel(speakerId, room) ||
           speakerId;
-        const messageTimestamp = message.timestamp ? (message.timestamp * 1000) : Date.now();
-        const targetLang = message.language || 'en';
-        const sourceLanguage = message.sourceLanguage || null;
-        const originalText = message.originalText || message.text || '';
-        const text = message.text || '';
-        const transcriptionId = message.transcriptionId;
-        // Only treat the packet as a translation when the agent explicitly says so
-        // (source language differs from target language). Text differences driven by
-        // STT interim/commit timing on same-language lanes are NOT translations.
-        const normalizeLang = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
-        const isTranslation = !!(
-          sourceLanguage &&
-          targetLang &&
-          normalizeLang(sourceLanguage) !== normalizeLang(targetLang) &&
-          originalText &&
-          text &&
-          originalText !== text
+
+        const { changed, isFinalChange } = applyTranscriptionPacket(
+          storeRef.current,
+          message,
+          { speakerId, speakerLabel }
         );
+        if (!changed) return;
 
-        const buildNew = (isPartial) => {
-          msgCounterRef.current += 1;
-          return {
-            id: `m${msgCounterRef.current}`,
-            speaker: speakerId,
-            speakerLabel,
-            originalText: isTranslation ? originalText : (originalText || text),
-            translations: isTranslation ? { [targetLang]: text } : {},
-            sourceLanguage,
-            timestamp: messageTimestamp,
-            transcriptionId: transcriptionId ?? null,
-            isPartial,
-          };
-        };
-
-        const sttProvider = message.sttProvider || null;
-
-        const applyPartialUpdate = (existing, isPartial) => {
-          const incomingLine = originalText || text;
-          const sameTurn =
-            transcriptionId != null && existing.transcriptionId === transcriptionId;
-          let mergedOriginal;
-          if (sameTurn) {
-            mergedOriginal = sttProvider === 'gladia'
-              ? applyGladiaPartialText(existing.originalText, incomingLine)
-              : applyLivePartialText(existing.originalText, incomingLine);
-          } else {
-            mergedOriginal = pickLiveCaptionText(existing.originalText, incomingLine);
-          }
-          return {
-          ...existing,
-          speakerLabel: preferSpeakerLabel(speakerLabel, existing.speakerLabel),
-          originalText: mergedOriginal,
-          translations: isTranslation
-            ? {
-                ...existing.translations,
-                ...(text && text.trim()
-                  ? { [targetLang]: text.trim() }
-                  : {}),
-              }
-            : existing.translations,
-          sourceLanguage: sourceLanguage || existing.sourceLanguage,
-          timestamp: messageTimestamp,
-          transcriptionId: transcriptionId ?? existing.transcriptionId,
-          isPartial,
-        };
-        };
-
-        if (message.partial) {
-          setMessages((prev) => {
-            // Match this turn's partial bubble. Never merge a new transcriptionId
-            // into an older turn's bubble, and if another speaker's bubble has
-            // appeared below this speaker's old un-id'd partial, start a new
-            // bubble at the bottom so A -> B -> A stays strictly chronological.
-            let idx = -1;
-            if (transcriptionId != null) {
-              idx = prev.findIndex(
-                (m) => m.isPartial && m.transcriptionId === transcriptionId,
-              );
-            }
-            if (idx < 0) {
-              idx = prev.findIndex(
-                (m, i) =>
-                  m.isPartial &&
-                  m.speaker === speakerId &&
-                  (transcriptionId == null || m.transcriptionId == null) &&
-                  !prev.slice(i + 1).some((later) => later.speaker !== speakerId),
-              );
-            }
-            if (idx < 0 && transcriptionId != null) {
-              // Same turn was prematurely finalized (e.g. out-of-order packet) — reopen it,
-              // but only if no other speaker has spoken since.
-              idx = prev.findIndex(
-                (m, i) =>
-                  !m.isPartial &&
-                  m.speaker === speakerId &&
-                  m.transcriptionId === transcriptionId &&
-                  !prev.slice(i + 1).some((later) => later.speaker !== speakerId),
-              );
-            }
-            if (idx >= 0) {
-              const next = [...prev];
-              next[idx] = applyPartialUpdate(prev[idx], true);
-              return next;
-            }
-            // Starting a brand-new partial bubble for this speaker: auto-finalize any
-            // older orphaned partial from the same speaker so its pulse animations stop.
-            const closedPrev = prev.some((m) => m.isPartial && m.speaker === speakerId)
-              ? prev.map((m) =>
-                  m.isPartial && m.speaker === speakerId ? { ...m, isPartial: false } : m
-                )
-              : prev;
-            return [...closedPrev, buildNew(true)];
-          });
-        } else {
-          setMessages((prev) => {
-            // Prefer to finalize the speaker's in-progress bubble in place.
-            let idx = -1;
-            if (transcriptionId != null) {
-              idx = prev.findIndex(
-                (m) => m.isPartial && m.transcriptionId === transcriptionId,
-              );
-            }
-            if (idx < 0) {
-              idx = prev.findIndex(
-                (m) =>
-                  m.speaker === speakerId &&
-                  m.isPartial &&
-                  (transcriptionId == null || m.transcriptionId == null),
-              );
-            }
-
-            const commitExisting = (existing, index) => {
-              const newTranslations = { ...existing.translations };
-              if (isTranslation) newTranslations[targetLang] = text;
-              const next = [...prev];
-              next[index] = {
-                ...existing,
-                originalText: pickLiveCaptionText(
-                  existing.originalText,
-                  isTranslation ? (originalText || existing.originalText) : (text || originalText || existing.originalText),
-                ),
-                translations: newTranslations,
-                sourceLanguage: sourceLanguage || existing.sourceLanguage,
-                timestamp: messageTimestamp,
-                transcriptionId: transcriptionId ?? existing.transcriptionId,
-                isPartial: false,
-              };
-              return next;
-            };
-
-            if (idx >= 0) {
-              return commitExisting(prev[idx], idx);
-            }
-
-            // Same thought split across two finals (shorter line, then the continuation) —
-            // only if the most recent finalized bubble is also from this speaker (never jump
-            // backwards over another speaker's interjection).
-            for (let i = prev.length - 1; i >= 0; i -= 1) {
-              const existing = prev[i];
-              if (existing.isPartial) continue;
-              if (existing.speaker !== speakerId) break;
-              if (Math.abs(existing.timestamp - messageTimestamp) > 8000) break;
-              const prevText = existing.originalText || '';
-              const nextText = originalText || text || '';
-              const continues = nextText.startsWith(prevText)
-                || prevText.startsWith(nextText)
-                || wordPrefixMatch(prevText, nextText)
-                || wordPrefixMatch(nextText, prevText);
-              if (continues && (prevText.length > 12 || nextText.length > 12)) {
-                return commitExisting(existing, i);
-              }
-              break;
-            }
-
-            // Late-arriving translation for an already-finalized bubble.
-            let finalIdx = -1;
-            if (transcriptionId != null) {
-              finalIdx = prev.findIndex(
-                (m) => !m.isPartial && m.transcriptionId === transcriptionId,
-              );
-            }
-            if (finalIdx < 0) {
-              finalIdx = prev.findIndex(
-                (m) =>
-                  !m.isPartial &&
-                  m.speaker === speakerId &&
-                  m.originalText === originalText &&
-                  Math.abs(m.timestamp - messageTimestamp) < 5000,
-              );
-            }
-            if (finalIdx >= 0) {
-              const existing = prev[finalIdx];
-              const newTranslations = { ...existing.translations };
-              if (isTranslation) newTranslations[targetLang] = text;
-              const next = [...prev];
-              next[finalIdx] = {
-                ...existing,
-                translations: newTranslations,
-                sourceLanguage: sourceLanguage || existing.sourceLanguage,
-              };
-              return next;
-            }
-
-            return [...prev, buildNew(false)];
-          });
+        const { needsBubbleList: showList, needsMobileBar: showBar } = uiVisibilityRef.current;
+        if (!showList && !showBar && !isFinalChange) {
+          // Panel is closed and only partial text changed — keep store warm in O(1)
+          // without waking React at 20-40 Hz.
+          return;
         }
+
+        scheduleUiFlush(isFinalChange);
       } catch (error) {
         console.error('TranscriptionPanel: Error parsing data message:', error);
       }
     };
 
     room.on('dataReceived', handleDataReceived);
-    return () => room.off('dataReceived', handleDataReceived);
-  }, [room]);
-
-  const visibleMessages = useMemo(() => messagesForDisplay(messages), [messages]);
+    return () => {
+      room.off('dataReceived', handleDataReceived);
+      if (rafId) window.cancelAnimationFrame(rafId);
+      if (throttleTimerId) window.clearTimeout(throttleTimerId);
+    };
+  }, [room, commitStoreToView]);
 
   const scrollToLatest = useCallback((force = false) => {
     if (!force && !isAtBottomRef.current) return;
@@ -683,17 +395,36 @@ function TranscriptionPanel() {
     if (!el) return;
     el.scrollTop = el.scrollHeight;
     isAtBottomRef.current = true;
-    if (force) setIsAtBottom(true);
+    if (force) {
+      setIsAtBottom((prev) => (prev ? prev : true));
+    }
   }, [getScrollEl]);
 
-  // React state updates (partials/finals) — layout effect runs before paint.
+  // Preserve reading position when prepending older history via "Show earlier captions".
   useLayoutEffect(() => {
-    if (!isAtBottomRef.current) return;
-    scrollToLatest();
-  }, [visibleMessages, scrollToLatest]);
+    if (prevScrollHeightRef.current <= 0) return;
+    const el = getScrollEl();
+    const prevHeight = prevScrollHeightRef.current;
+    prevScrollHeightRef.current = 0;
+    if (el) {
+      const delta = el.scrollHeight - prevHeight;
+      if (delta > 0) el.scrollTop += delta;
+    }
+  }, [viewState.windowedMessages, getScrollEl]);
+
+  // Coalesce bottom-anchoring in requestAnimationFrame instead of forcing synchronous
+  // layout reflows inside useLayoutEffect on every partial frame.
+  useEffect(() => {
+    if (!needsBubbleList || !isAtBottomRef.current) return undefined;
+    const rafId = window.requestAnimationFrame(() => {
+      if (isAtBottomRef.current) {
+        scrollToLatest();
+      }
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [viewState.windowedMessages, needsBubbleList, scrollToLatest]);
 
   // ResizeObserver keeps scroll anchored when panel/sheet height changes.
-  // (No MutationObserver needed: all caption updates go through React state.)
   useEffect(() => {
     const el = getScrollEl();
     if (!el) return undefined;
@@ -718,19 +449,33 @@ function TranscriptionPanel() {
     };
   }, [isPanelOpen, mobileExpanded, usePipMode, isDesktop, getScrollEl]);
 
-  // Track scroll position (event target is the visible panel's scroll container).
-  const handleScroll = (e) => {
+  const handleScroll = useCallback((e) => {
     const el = e.currentTarget;
     const { scrollTop, scrollHeight, clientHeight } = el;
     const atBottom = scrollHeight - scrollTop - clientHeight < 40;
     isAtBottomRef.current = atBottom;
-    setIsAtBottom(atBottom);
-  };
+    setIsAtBottom((prev) => (prev === atBottom ? prev : atBottom));
+  }, []);
 
-  const jumpToLatest = () => scrollToLatest(true);
+  const handleLoadOlder = useCallback(() => {
+    const el = getScrollEl();
+    prevScrollHeightRef.current = el ? el.scrollHeight : 0;
+    setRenderLimit((prev) => prev + DEFAULT_DOM_WINDOW);
+  }, [getScrollEl]);
 
-  const handleDownload = () => {
-    const exportData = finalMessages.map((t) => ({
+  const jumpToLatest = useCallback(() => {
+    prevScrollHeightRef.current = 0;
+    if (renderLimitRef.current > DEFAULT_DOM_WINDOW) {
+      setRenderLimit(DEFAULT_DOM_WINDOW);
+    }
+    window.requestAnimationFrame(() => {
+      scrollToLatest(true);
+    });
+  }, [scrollToLatest]);
+
+  const handleDownload = useCallback(() => {
+    const allFinals = getAllFinalMessages(storeRef.current);
+    const exportData = allFinals.map((t) => ({
       timestamp: new Date(t.timestamp).toISOString(),
       speaker: t.speaker,
       originalText: t.originalText,
@@ -748,18 +493,11 @@ function TranscriptionPanel() {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
-  };
+  }, [roomName]);
 
   const latestCaptionText = useMemo(() => {
-    if (isDesktop || mobileExpanded || messages.length === 0) return null;
-    let target = null;
-    for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i].isPartial) {
-        target = messages[i];
-        break;
-      }
-    }
-    if (!target) target = messages[messages.length - 1];
+    const target = viewState.latestItem;
+    if (isDesktop || mobileExpanded || !target) return null;
     const { dominant } = getDominantAndSecondary(
       target.originalText,
       target.translations,
@@ -767,14 +505,10 @@ function TranscriptionPanel() {
       target.isPartial,
       target.sourceLanguage,
     );
-    // Show live translated text when available, otherwise show the live
-    // original speech immediately so the mobile bar never hides words behind
-    // a static "Translating…" placeholder.
     const line = dominant || target.originalText;
     return line ? `${target.speakerLabel || target.speaker}: ${line}` : null;
-  }, [isDesktop, mobileExpanded, messages, selectedLanguage]);
+  }, [isDesktop, mobileExpanded, viewState.latestItem, selectedLanguage]);
 
-  // If captions are not enabled, don't show the panel at all
   if (!translationEnabled) return null;
 
   // Floating PIP mode when in full screen or during screen share
@@ -786,7 +520,10 @@ function TranscriptionPanel() {
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalCount > 0} compact />
         <PanelContent
-          messages={visibleMessages}
+          messages={viewState.windowedMessages}
+          hiddenCount={viewState.hiddenCount}
+          hasContent={viewState.hasContent}
+          onLoadOlder={handleLoadOlder}
           scrollRef={pipScrollRef}
           bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
@@ -817,7 +554,10 @@ function TranscriptionPanel() {
       >
         <PanelTabs onDownload={handleDownload} canDownload={finalCount > 0} />
         <PanelContent
-          messages={visibleMessages}
+          messages={viewState.windowedMessages}
+          hiddenCount={viewState.hiddenCount}
+          hasContent={viewState.hasContent}
+          onLoadOlder={handleLoadOlder}
           scrollRef={desktopScrollRef}
           bottomAnchorRef={bottomAnchorRef}
           onScroll={handleScroll}
@@ -836,7 +576,7 @@ function TranscriptionPanel() {
     <MobileCaptionBar
       text={latestCaptionText}
       onExpand={() => setMobileExpanded(true)}
-      hasContent={messages.length > 0}
+      hasContent={viewState.hasContent}
     />
   ) : (
     <div
@@ -851,7 +591,10 @@ function TranscriptionPanel() {
         onMinimize={() => setMobileExpanded(false)}
       />
       <PanelContent
-        messages={visibleMessages}
+        messages={viewState.windowedMessages}
+        hiddenCount={viewState.hiddenCount}
+        hasContent={viewState.hasContent}
+        onLoadOlder={handleLoadOlder}
         scrollRef={mobileScrollRef}
         bottomAnchorRef={bottomAnchorRef}
         onScroll={handleScroll}
@@ -874,16 +617,15 @@ function getDominantAndSecondary(
   isPartial = false,
   sourceLanguage = null,
 ) {
-  const normalize = (l) => (typeof l === 'string' ? l.split('-')[0].toLowerCase() : l);
   const translationEntries = Object.entries(translations || {});
   const wantsTranslation = !!(
     selectedLanguage &&
     sourceLanguage &&
-    normalize(selectedLanguage) !== normalize(sourceLanguage)
+    normalizeLangCode(selectedLanguage) !== normalizeLangCode(sourceLanguage)
   );
 
   const matchingEntry = translationEntries.find(
-    ([lang]) => normalize(lang) === normalize(selectedLanguage),
+    ([lang]) => normalizeLangCode(lang) === normalizeLangCode(selectedLanguage),
   );
 
   if (matchingEntry?.[1]?.trim()) {
@@ -959,9 +701,9 @@ const TranscriptionBubble = memo(function TranscriptionBubble({
   const displaySecondary = fallbackToOriginal ? null : secondary;
 
   return (
-    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0 [content-visibility:auto]`}>
+    <div className={`${compact ? 'pb-1.5' : 'pb-3'} border-b border-border/60 last:border-b-0`}>
       <div className="flex items-baseline gap-2 mb-1">
-        <span className={`font-medium text-primary ${compact ? 'text-xs' : 'text-xs'}`}>{speaker}</span>
+        <span className="font-medium text-primary text-xs">{speaker}</span>
         {isPartial ? (
           <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
             <span className="inline-block w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
@@ -1078,6 +820,9 @@ const CaptionRow = memo(function CaptionRow({
 
 function PanelContent({
   messages,
+  hiddenCount = 0,
+  hasContent = false,
+  onLoadOlder,
   scrollRef,
   bottomAnchorRef,
   onScroll,
@@ -1087,13 +832,6 @@ function PanelContent({
   compact = false,
 }) {
   const room = useRoomContext();
-  const [renderLimit, setRenderLimit] = useState(DEFAULT_DOM_WINDOW);
-  const hasContent = messages.length > 0;
-  const hiddenCount = Math.max(0, messages.length - renderLimit);
-  const windowedMessages = useMemo(
-    () => (hiddenCount > 0 ? messages.slice(-renderLimit) : messages),
-    [messages, hiddenCount, renderLimit]
-  );
 
   return (
     <div
@@ -1113,7 +851,7 @@ function PanelContent({
         <div className="flex justify-center pb-2">
           <button
             type="button"
-            onClick={() => setRenderLimit((prev) => prev + DEFAULT_DOM_WINDOW)}
+            onClick={onLoadOlder}
             className="rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             Show earlier captions ({hiddenCount} older — all included in download)
@@ -1121,7 +859,7 @@ function PanelContent({
         </div>
       )}
 
-      {windowedMessages.map((item) => (
+      {messages.map((item) => (
         <CaptionRow
           key={item.id}
           item={item}

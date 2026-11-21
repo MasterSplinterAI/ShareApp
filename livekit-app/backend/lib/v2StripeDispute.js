@@ -1,4 +1,5 @@
 const db = require('../db/v2Database');
+const {queueOrgContacts,customerMutation}=require('./opsOutbox');
 const { getStripeSettings, getStripeClient, isStripeBillingActive } = require('./v2StripeSettings');
 
 const SUSPEND_REASON_PREFIX = 'stripe_dispute:';
@@ -93,7 +94,7 @@ async function upsertDisputeRow({
          amount_cents = ?,
          currency = ?,
          evidence_due_by = ?,
-         closed_at = CASE WHEN ? IS NULL THEN closed_at ELSE COALESCE(closed_at, ?) END,
+         closed_at = CASE WHEN CAST(? AS TEXT) IS NULL THEN closed_at ELSE COALESCE(closed_at, ?) END,
          updated_at = datetime('now')
        WHERE id = ?`,
       [
@@ -140,14 +141,14 @@ async function suspendOrgForDispute(orgId, disputeId, status) {
   if (sub?.is_comp === 1) return { suspended: false, reason: 'comp_account' };
 
   const suspendReason = `${SUSPEND_REASON_PREFIX}${disputeId}:${status}`.slice(0, 500);
-  await db.run(
+  await customerMutation(async tx=>{await tx.run(
     `UPDATE v2_organizations
      SET suspended_at = COALESCE(suspended_at, datetime('now')),
          suspended_reason = ?,
          billing_status = 'suspended'
      WHERE id = ?`,
     [suspendReason, orgId]
-  );
+  );await queueOrgContacts(tx,orgId);});
   return { suspended: true, reason: suspendReason };
 }
 
@@ -171,12 +172,12 @@ async function maybeReactivateAfterWonDispute(orgId, disputeId) {
   );
   if (openOther) return { reactivated: false, reason: 'other_open_disputes' };
 
-  await db.run(
+  await customerMutation(async tx=>{await tx.run(
     `UPDATE v2_organizations
      SET suspended_at = NULL, suspended_reason = NULL, billing_status = 'active'
      WHERE id = ?`,
     [orgId]
-  );
+  );await queueOrgContacts(tx,orgId);});
   return { reactivated: true };
 }
 

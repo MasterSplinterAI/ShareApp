@@ -86,7 +86,7 @@ def test_deepgram_stt_prefers_current_keyterm_argument(monkeypatch):
         def __init__(self, **kwargs):
             calls.append(kwargs)
 
-    monkeypatch.setenv("LIVEKIT_CLOUD", "true")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "test-key")
     monkeypatch.setattr(agent_module, "PLUGINS_AVAILABLE", True)
     monkeypatch.setattr(agent_module, "deepgram", types.SimpleNamespace(STT=FakeSTT))
 
@@ -107,7 +107,7 @@ def test_deepgram_stt_falls_back_to_legacy_keyterms_argument(monkeypatch):
             if "keyterm" in kwargs:
                 raise TypeError("unexpected keyword argument 'keyterm'")
 
-    monkeypatch.setenv("LIVEKIT_CLOUD", "true")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "test-key")
     monkeypatch.setattr(agent_module, "PLUGINS_AVAILABLE", True)
     monkeypatch.setattr(agent_module, "deepgram", types.SimpleNamespace(STT=FakeSTT))
 

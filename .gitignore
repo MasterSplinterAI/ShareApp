@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+node_modules
+**/node_modules
 frontend/node_modules/
 backend/node_modules/
 
@@ -10,6 +12,7 @@ backend/node_modules/
 backend/.env
 translation-agent/.env
 livekit-app/backend/.env
+livekit-app/meeting-bot/.env
 livekit-app/translation-agent/.env
 livekit-app/translation-agent/AGENT_CLOUD_ENV.local
 livekit-app/translation-agent/env
@@ -53,3 +56,8 @@ backup/
 # V2 SaaS local data (server may keep these outside git)
 livekit-app/backend/v2-platform.db
 livekit-app/backend/uploads/
+
+# Canonical support snapshots build both formats during staged deployment
+livekit-app/vendor/support-kit/packages/*/dist/
+
+livekit-app/vendor/ops-sdk/dist/

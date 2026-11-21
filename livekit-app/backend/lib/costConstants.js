@@ -48,6 +48,8 @@ const COSTS = {
   // ElevenLabs Flash v2.5 TTS (per character, $0.05/1k chars API rate)
   elevenlabs_tts_char:         { provider: 'elevenlabs', unit_cost_usd: 0.00005 },
   gladia_stt_minute:           { provider: 'gladia',    unit_cost_usd: 0.0125 },
+  // Recall.ai external meeting bot ($0.50/hr Pay-As-You-Go)
+  recall_bot_minute:           { provider: 'recall',    unit_cost_usd: 0.5 / 60 },
 };
 
 /**

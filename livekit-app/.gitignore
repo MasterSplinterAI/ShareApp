@@ -104,3 +104,12 @@ venv.bak/
 # Lock files (keep package-lock.json)
 yarn.lock
 pnpm-lock.yaml
+
+# Canonical support pins are source-only; build before deployment
+vendor/support-kit/packages/*/dist/
+
+# SDK consumer runtime is rebuilt from the verified source manifest
+vendor/ops-sdk/dist/
+
+# Canonical marketing snapshots rebuild generated package outputs
+vendor/marketing-kit/packages/*/dist/

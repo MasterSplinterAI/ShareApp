@@ -1,7 +1,11 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { v2Admin } from '../../../services/apiV2';
+import { Button } from '../../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
 import { useAdmin } from '../../context/AdminContext';
-import { fmtCents, fmtUsd } from './formatters';
+import { fmtCents, fmtDateTime, fmtUsd } from './formatters';
 import { MixBar } from './shared';
 
 function fmtMoneyCents(cents, currency = 'usd') {
@@ -17,11 +21,109 @@ function fmtMoneyCents(cents, currency = 'usd') {
 }
 
 export function AdminOverview() {
-  const { kpis, revenue, costs, disputes, setSelectedOrg } = useAdmin();
+  const { kpis, revenue, costs, disputes, agentAlerts, reloadAgentAlerts, setSelectedOrg } = useAdmin();
+  const [busyAlertAction, setBusyAlertAction] = useState(false);
   const openDisputeCount = revenue?.openDisputes ?? disputes?.length ?? 0;
+  const unackedFailovers = agentAlerts?.unacknowledged || [];
+  const circuitOpen = Boolean(agentAlerts?.runtime?.circuitOpen);
+  const showAgentBanner =
+    (agentAlerts?.settings?.bannerEnabled ?? true) && (circuitOpen || unackedFailovers.length > 0);
+
+  const handleAckAlerts = async () => {
+    setBusyAlertAction(true);
+    try {
+      await v2Admin.acknowledgeAgentAlerts();
+      toast.success('Agent failover alerts acknowledged');
+      await reloadAgentAlerts();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to acknowledge alerts');
+    } finally {
+      setBusyAlertAction(false);
+    }
+  };
+
+  const handleResetCircuit = async () => {
+    setBusyAlertAction(true);
+    try {
+      await v2Admin.resetAgentCircuit({ reason: 'admin_overview_reset' });
+      toast.success('Failover circuit reset — new rooms will try EC2 primary');
+      await reloadAgentAlerts();
+    } catch (e) {
+      toast.error(e.response?.data?.error || 'Failed to reset circuit');
+    } finally {
+      setBusyAlertAction(false);
+    }
+  };
 
   return (
     <div className="space-y-4">
+      {showAgentBanner && (
+        <Card className="border-amber-500/50 bg-amber-500/10 shadow-sm">
+          <CardHeader className="pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <CardTitle className="text-lg text-amber-800 dark:text-amber-300">
+                {circuitOpen
+                  ? 'LiveKit Agent Failover — Cloud Backup Active'
+                  : `LiveKit Agent Failover — ${unackedFailovers.length} unacknowledged alert(s)`}
+              </CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                {circuitOpen && (
+                  <Button type="button" size="sm" variant="outline" disabled={busyAlertAction} onClick={handleResetCircuit}>
+                    Reset circuit now
+                  </Button>
+                )}
+                {unackedFailovers.length > 0 && (
+                  <Button type="button" size="sm" variant="default" disabled={busyAlertAction} onClick={handleAckAlerts}>
+                    Acknowledge alerts
+                  </Button>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            <p className="text-muted-foreground">
+              Rooms automatically switched from self-hosted EC2 (<code>translation-selfhosted-xai</code>) to LiveKit Cloud backup (
+              <code>translation-cloud-deepgram-codeswitch</code>).
+              {circuitOpen && agentAlerts?.runtime?.circuitOpenUntil
+                ? ` Circuit resets automatically at ${fmtDateTime(agentAlerts.runtime.circuitOpenUntil)}.`
+                : ''}
+            </p>
+            {unackedFailovers.length > 0 && (
+              <div className="overflow-x-auto rounded-lg border border-border/60 bg-background/80">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-border bg-muted/30 text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-1.5 font-medium">Time</th>
+                      <th className="px-3 py-1.5 font-medium">Type</th>
+                      <th className="px-3 py-1.5 font-medium">Room</th>
+                      <th className="px-3 py-1.5 font-medium">Reason</th>
+                      <th className="px-3 py-1.5 font-medium">Transition</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unackedFailovers.slice(0, 6).map((ev) => (
+                      <tr key={ev.id} className="border-b border-border/60 last:border-0">
+                        <td className="px-3 py-1.5 text-muted-foreground">{fmtDateTime(ev.createdAt)}</td>
+                        <td className="px-3 py-1.5 font-medium">{ev.eventKind}</td>
+                        <td className="px-3 py-1.5 font-mono">{ev.roomName}</td>
+                        <td className="px-3 py-1.5">{ev.reason}</td>
+                        <td className="px-3 py-1.5 font-mono">
+                          {ev.fromPipeline} → {ev.toPipeline}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              <Link className="text-primary underline-offset-2 hover:underline" to="/v2/app/admin/comms">
+                Configure notification channels &amp; timeouts →
+              </Link>
+            </p>
+          </CardContent>
+        </Card>
+      )}
       {(openDisputeCount > 0 || (disputes && disputes.length > 0)) && (
         <Card className="border-destructive/40 bg-destructive/5 shadow-sm">
           <CardHeader className="pb-2">

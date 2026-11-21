@@ -5,6 +5,7 @@ import { MarketingNav } from '../components/marketing/MarketingNav';
 import { LanguageSwitcher } from '../components/LanguageSwitcher';
 import { Button } from '../components/ui/button';
 import { useTranslation } from '../lib/i18n/I18nProvider';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../lib/supportEmail';
 import V2AppShell from './components/V2AppShell';
 import LaliaSupportLauncher from './components/LaliaSupportLauncher';
 import { v2Auth } from '../services/apiV2';
@@ -43,6 +44,11 @@ export default function V2Layout() {
         <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
           <Outlet />
         </main>
+        <footer className="px-4 pb-12 text-center text-sm text-muted-foreground">
+          <a href={SUPPORT_MAILTO} className="underline underline-offset-4 hover:text-foreground">
+            {SUPPORT_EMAIL}
+          </a>
+        </footer>
         <LaliaSupportLauncher audience="public" />
       </div>
     );

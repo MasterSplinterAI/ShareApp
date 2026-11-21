@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisYear } from 'date-fns';
 import {
   ArrowRight,
+  Bot,
   CalendarClock,
   Clock,
   FileText,
@@ -14,6 +15,7 @@ import {
   Video,
   Zap,
 } from 'lucide-react';
+import SendNotetakerDialog, { detectExternalMeetingPlatformClient } from '../components/SendNotetakerDialog';
 import { v2Auth, v2Calls, v2Contacts, v2Meetings, v2Orgs } from '../../services/apiV2';
 import { getMeetingUiState, isMeetingEffectivelyEnded, toneToBadgeVariant } from '../lib/meetingState';
 import { workspaceLabel, isTeamWorkspace } from '../lib/workspaceDisplay';
@@ -40,6 +42,8 @@ export default function V2AppHome() {
   const [startingInstant, setStartingInstant] = useState(false);
   const [callingId, setCallingId] = useState(null);
   const [joinInput, setJoinInput] = useState('');
+  const [notetakerOpen, setNotetakerOpen] = useState(false);
+  const [notetakerInitialUrl, setNotetakerInitialUrl] = useState('');
   const { offer, checkoutLoading, startCheckout, subscription: sub, usage } = useUpgradeOffer(me);
 
   const dateLocale = dateFnsLocale(locale);
@@ -210,9 +214,14 @@ export default function V2AppHome() {
 
   const handleJoinByCode = (e) => {
     e.preventDefault();
+    if (detectExternalMeetingPlatformClient(joinInput)) {
+      setNotetakerInitialUrl(joinInput.trim());
+      setNotetakerOpen(true);
+      return;
+    }
     const target = parseJoinTarget(joinInput);
     if (!target) {
-      toast.error('Paste an invite link or enter a room code');
+      toast.error('Paste a Lalia invite link, room code, or Google Meet / Teams URL');
       return;
     }
     navigate(target);
@@ -369,6 +378,36 @@ export default function V2AppHome() {
           <ArrowRight className="h-3.5 w-3.5" />
         </Button>
       </form>
+
+      {/* AI Notetaker for Meet, Teams, Zoom & Webex */}
+      <div className="flex flex-col justify-between gap-3 rounded-xl border border-primary/25 bg-gradient-to-r from-primary/[0.06] via-card to-card p-4 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <Bot className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              AI Notetaker for Meet, Teams, Zoom &amp; Webex
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Send Lalia to record audio, transcribe speakers, and email AI summaries from any external meeting.
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="shrink-0 gap-1.5 border-primary/35 hover:bg-primary/10"
+          onClick={() => {
+            setNotetakerInitialUrl('');
+            setNotetakerOpen(true);
+          }}
+        >
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          Send Notetaker
+        </Button>
+      </div>
 
       {/* Up Next / Live Now */}
       {!loading && nextUpcoming && (
@@ -532,6 +571,17 @@ export default function V2AppHome() {
           </Link>
         </p>
       )}
+
+      <SendNotetakerDialog
+        open={notetakerOpen}
+        onOpenChange={setNotetakerOpen}
+        initialUrl={notetakerInitialUrl}
+        defaultFirstName={firstName}
+        onDispatched={(res) => {
+          setJoinInput('');
+          navigate(`/v2/app/meetings/${res.meetingId}`);
+        }}
+      />
     </div>
   );
 }

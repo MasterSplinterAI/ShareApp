@@ -92,7 +92,8 @@ async function assertCanCreateMeeting(orgId) {
     const usage = await getMonthToDateUsage(orgId);
     return { ok: true, entitlements: ent, usage, unlimited: true };
   }
-  if (!['active', 'trialing'].includes(String(ent.status).toLowerCase())) {
+  const terminalFree = ent.planId === 'free' && ['canceled', 'unpaid', 'incomplete_expired'].includes(ent.status);
+  if (!terminalFree && !['active', 'trialing'].includes(String(ent.status).toLowerCase())) {
     return { ok: false, code: 'billing_inactive', message: 'Subscription is not active' };
   }
   const usage = await getMonthToDateUsage(orgId);

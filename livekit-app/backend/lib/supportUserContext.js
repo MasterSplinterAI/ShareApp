@@ -32,7 +32,7 @@ async function buildUserContextSnapshot({ userId, orgId, email, guestEmail = nul
   let entitlements = null;
   let usage = null;
   let subscription = null;
-  if (orgId) {
+  if (orgId && membership) {
     entitlements = await getOrgEntitlements(orgId);
     try {
       usage = await getMonthToDateUsage(orgId);
@@ -72,7 +72,7 @@ async function buildUserContextSnapshot({ userId, orgId, email, guestEmail = nul
     userId,
     email: email || user?.email || null,
     displayName: user?.display_name || null,
-    orgId: orgId || null,
+    orgId: membership ? orgId : null,
     orgName: membership?.org_name || null,
     orgRole: membership?.role || null,
     workspaceType: membership?.account_type || 'personal',

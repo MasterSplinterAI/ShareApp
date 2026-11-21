@@ -1,0 +1,337 @@
+{
+  "recorded_at": "2026-11-12T20:16:14.103209+00:00",
+  "scope": "Reviewed source redaction, two-profile named canary deployment, exact-image promotion, synthetic media/shutdown checks, and named-deployment cleanup. CloudWatch/IAM/retention/restart-history acceptance is recorded by the separate log-drain workflow.",
+  "source_commit": "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8",
+  "cloudwatch_evidence": "2026-11-12-agent-log-drains.json",
+  "recovery_evidence": "2026-11-12-runtime-recovery.json",
+  "verification": {
+    "full_agent_suite_passed": 229,
+    "isolated_privacy_suite_passed": 16,
+    "real_sdk_subprocesses_used": true,
+    "livekit_agents_version": "1.8.11",
+    "livekit_rtc_version": "1.2.0",
+    "local_runtime_smoke_profiles_passed": 2,
+    "linux_image_runtime_smoke_profiles_passed_per_build": 2,
+    "linux_image_builds_verified": 2,
+    "git_diff_check_passed": true,
+    "privacy_coverage": [
+      "static application logging audit",
+      "formatted stderr/JSON",
+      "third-party logger messages/extra fields",
+      "exception and cached traceback suppression",
+      "SDK handler replacement",
+      "SDK IPC queue serialization",
+      "spawn and forkserver processes",
+      "native fd1/fd2 writes",
+      "oversized raw output",
+      "authenticated-frame strict schema",
+      "both actual agent room/error handlers",
+      "launch-time controlled error",
+      "SDK lifecycle mapping"
+    ]
+  },
+  "profiles": {
+    "primary": {
+      "agent_id": "CA_do6qoLXhxqA7",
+      "agent_module": "transcription_codeswitch_agent",
+      "dispatch_name": "translation-cloud-deepgram-codeswitch",
+      "source_commit": "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8",
+      "rollback_version": "jN9YKCyo7vv9",
+      "production_version": "M9VUJFcXh9BM",
+      "build_started_at": "2026-11-12T19:54:22.697936+00:00",
+      "promoted_at": "2026-11-12T19:57:46.551630+00:00",
+      "canary_deployment": "launch-privacy",
+      "canary_runs": [
+        {
+          "phase": "before_log_drain",
+          "room": "lalia-canary-privacy-primary-1794513380001307000",
+          "dispatch_id": "AD_c7SNxCUADk6s",
+          "media_passed": true,
+          "media_events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-privacy-primary-1794513380001307000"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 3600
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 5830
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-privacy-primary-1794513380001307000",
+              "tts_required": true
+            }
+          ],
+          "room_deleted": true,
+          "privacy_logs_passed": true,
+          "privacy_log_checks": {
+            "record_count": 252,
+            "sentinel_hits": false,
+            "profile_build_seen": true,
+            "controlled_error_seen": true,
+            "session_started": true,
+            "session_stopped": true,
+            "worker_registered": true,
+            "worker_instances": [
+              "59e7e959ec7246f8a0ddf4b4b521e198",
+              "6508d3f1e77c4eb6a014d0446421b870",
+              "b64f80ac283940a7a867811afce1acaa",
+              "c21d8e9cc3174a31baefe30529b87959"
+            ]
+          }
+        },
+        {
+          "phase": "after_log_drain",
+          "room": "lalia-canary-privacy-primary-1794513631679133000",
+          "dispatch_id": "AD_tR56cjoBE7to",
+          "media_passed": true,
+          "media_events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-privacy-primary-1794513631679133000"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 1530
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 5170
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-privacy-primary-1794513631679133000",
+              "tts_required": true
+            }
+          ],
+          "room_deleted": true,
+          "privacy_logs_passed": true,
+          "privacy_log_checks": {
+            "record_count": 300,
+            "sentinel_hits": false,
+            "profile_build_seen": true,
+            "controlled_error_seen": true,
+            "session_started": true,
+            "session_stopped": true,
+            "worker_registered": true,
+            "worker_instances": [
+              "0a84bf7bf3054c15a13471339e5ce06a",
+              "0dbf563e7d834111b66f66e3755e0fc3",
+              "657c27390f9346c38512340b8d61a94b",
+              "73ea7ead58534fbb8b66393950d51fae"
+            ]
+          }
+        }
+      ],
+      "cleanup": {
+        "agent_id": "CA_do6qoLXhxqA7",
+        "deployment_deleted": "launch-privacy",
+        "timestamp": "2026-11-12T20:05:46.184875+00:00",
+        "production_running": true,
+        "production_version": "M9VUJFcXh9BM",
+        "named_deployment_absent": true,
+        "checked_at": "2026-11-12T20:15:36.035770+00:00"
+      },
+      "translation_directions_tested": [
+        "en->es",
+        "es->en"
+      ],
+      "audible_tts_required": true,
+      "audible_tts_verified": true,
+      "provider_credential_changes": false,
+      "billing_telemetry_verified_by_this_rollout": false
+    },
+    "stable": {
+      "agent_id": "CA_gKYczmp9DCNy",
+      "agent_module": "transcription_only_agent",
+      "dispatch_name": "translation-cloud-prod",
+      "source_commit": "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8",
+      "rollback_version": "fjGnWZpjictp",
+      "production_version": "CqPbKWM3fgks",
+      "build_started_at": "2026-11-12T19:59:13.213423+00:00",
+      "promoted_at": "2026-11-12T20:05:17.047840+00:00",
+      "canary_deployment": "launch-privacy",
+      "canary_runs": [
+        {
+          "phase": "before_log_drain",
+          "room": "lalia-canary-privacy-stable-1794513835057007000",
+          "dispatch_id": "AD_fDMvsVopB9a5",
+          "media_passed": true,
+          "media_events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-privacy-stable-1794513835057007000"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-privacy-stable-1794513835057007000",
+              "tts_required": false
+            }
+          ],
+          "room_deleted": true,
+          "privacy_logs_passed": true,
+          "privacy_log_checks": {
+            "record_count": 400,
+            "sentinel_hits": false,
+            "profile_build_seen": true,
+            "controlled_error_seen": true,
+            "session_started": true,
+            "session_stopped": true,
+            "worker_registered": true,
+            "worker_instances": [
+              "2981a53aba5b4683be624a1696c4d32f",
+              "565ca86103fb421b9fa4d322cac6fb4c",
+              "5b2dd09857014620b4a3f18388fdf9cb",
+              "76c10c865664402286fc120b8e38ce1a"
+            ]
+          }
+        },
+        {
+          "phase": "after_log_drain",
+          "room": "lalia-canary-privacy-stable-1794514269480860000",
+          "dispatch_id": "AD_aTLxScJ7beCr",
+          "media_passed": true,
+          "media_events": [
+            {
+              "durations_seconds": {
+                "en": 9.55,
+                "es": 12.63
+              },
+              "event": "synthetic_ready"
+            },
+            {
+              "event": "connected",
+              "participants": 2,
+              "room": "lalia-canary-privacy-stable-1794514269480860000"
+            },
+            {
+              "event": "direction_pass",
+              "source": "en",
+              "target": "es",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "direction_pass",
+              "source": "es",
+              "target": "en",
+              "translated_final": true,
+              "tts_audio_ms": 0
+            },
+            {
+              "event": "PASS",
+              "room": "lalia-canary-privacy-stable-1794514269480860000",
+              "tts_required": false
+            }
+          ],
+          "room_deleted": true,
+          "privacy_logs_passed": true,
+          "privacy_log_checks": {
+            "record_count": 405,
+            "sentinel_hits": false,
+            "profile_build_seen": true,
+            "controlled_error_seen": true,
+            "session_started": true,
+            "session_stopped": true,
+            "worker_registered": true,
+            "worker_instances": [
+              "7301a9cb23634984b7f66b7881883cd0",
+              "77c6168d2ceb47deb8a8d8b35fc266ff",
+              "85a52b4cea6a4c99b4f2dc9e41b55ba3",
+              "f93d91fd45694a6180484539b9dcab81"
+            ]
+          }
+        }
+      ],
+      "cleanup": {
+        "agent_id": "CA_gKYczmp9DCNy",
+        "deployment_deleted": "launch-privacy",
+        "timestamp": "2026-11-12T20:14:21.538231+00:00",
+        "production_running": true,
+        "production_version": "CqPbKWM3fgks",
+        "named_deployment_absent": true,
+        "checked_at": "2026-11-12T20:15:37.117455+00:00"
+      },
+      "translation_directions_tested": [
+        "en->es",
+        "es->en"
+      ],
+      "audible_tts_required": false,
+      "audible_tts_verified": false,
+      "provider_credential_changes": false,
+      "billing_telemetry_verified_by_this_rollout": false,
+      "preexisting_telemetry_gap": {
+        "cost_reporting_disabled_observed": true,
+        "preexisting_missing_secret_names": [
+          "BACKEND_BASE_URL",
+          "COST_EVENT_SECRET"
+        ],
+        "alternate_default_source": false,
+        "provider_cost_secret_changes": false
+      }
+    }
+  },
+  "limitations": [
+    "Runtime process UUIDs in canary log checks are not CloudWatch stream identifiers; multi-worker stream acceptance is verified separately.",
+    "Captured event counts can include duplicate SDK handler/IPC copies.",
+    "Synthetic media checks verify transport and nonempty translated finals, not linguistic accuracy.",
+    "Stable is captions-only; audible stable TTS was not asserted.",
+    "Stable cost reporting remains disabled by preexisting missing backend/cost configuration; this rollout did not inject those credentials.",
+    "Successful provider calls with existing cloud credentials do not qualify local candidate copies as recovery sources.",
+    "Disable the relevant dedicated AWS log writer before rollback to an older image that logs speech."
+  ]
+}

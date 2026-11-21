@@ -490,8 +490,11 @@ router.delete('/contacts/:id', requireV2Auth, async (req, res) => {
 
 router.post('/calls/start', requireV2Auth, async (req, res) => {
   try {
-    const { contactId, email, name, preferredLanguage, meetingId, roomName: existingRoomName } =
+    const { contactId, email, name, preferredLanguage, meetingId, store_transcripts, roomName: existingRoomName } =
       req.body || {};
+    if (store_transcripts !== undefined && typeof store_transcripts !== 'boolean') {
+      return res.status(400).json({ error: 'store_transcripts must be a boolean' });
+    }
 
     let targetContact = null;
     if (contactId && String(contactId).startsWith('teammate:')) {
@@ -640,7 +643,7 @@ router.post('/calls/start', requireV2Auth, async (req, res) => {
       await db.run(
         `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts)
          VALUES (?,?,?,?)`,
-        [newMeetingId, 0, 1, 1]
+        [newMeetingId, 0, 1, store_transcripts === false ? 0 : 1]
       );
 
       const linkId = db.uuid();

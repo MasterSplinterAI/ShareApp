@@ -1,0 +1,14 @@
+[Unit]
+Description=Check Lalia completed-backup freshness
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+ExecStart=/usr/bin/node /opt/lalia-backup/freshness.cjs
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=true
+

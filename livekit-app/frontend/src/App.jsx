@@ -36,6 +36,12 @@ function AppSubpathRedirect() {
   const target = sub ? `/v2/app/${sub}` : '/v2/app'
   return <Navigate to={`${target}${search || ''}${hash || ''}`} replace />
 }
+function V2MeetingsSubpathRedirect() {
+  const { pathname, search, hash } = useLocation()
+  const sub = pathname.replace(/^\/v2\/meetings\/?/, '')
+  const target = sub ? `/v2/app/meetings/${sub}` : '/v2/app/meetings'
+  return <Navigate to={`${target}${search || ''}${hash || ''}`} replace />
+}
 function BlogStaticRedirect() {
   const { pathname, search, hash } = useLocation()
   useEffect(() => {
@@ -141,6 +147,8 @@ function App() {
           <Route path="login" element={<V2Login />} />
           <Route path="signup" element={<V2Signup />} />
           <Route path="reset-password" element={<V2ResetPassword />} />
+          <Route path="meetings" element={<SearchAwareRedirect to="/v2/app/meetings" />} />
+          <Route path="meetings/*" element={<V2MeetingsSubpathRedirect />} />
           <Route path="app" element={<V2RequireAuth />}>
             <Route index element={<V2AppHome />} />
             <Route path="calls" element={<V2CallsPage />} />
