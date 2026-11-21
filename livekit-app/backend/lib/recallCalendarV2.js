@@ -8,6 +8,7 @@
  * - Idempotent Schedule / Delete Bot for Calendar Event with deduplication_key
  */
 const crypto = require('crypto');
+const fs = require('fs');
 const jwt = require('jsonwebtoken');
 const db = require('../db/v2Database');
 const { parseExternalMeetingUrl, platformDisplayName } = require('./externalMeetingUrls');
@@ -19,10 +20,16 @@ const {
 } = require('./recallNotetaker');
 
 const AUTO_JOIN_RULES = new Set(['manual', 'organizer_only', 'all_with_link']);
+const CALENDAR_PLATFORMS = new Set(['google_calendar', 'microsoft_outlook']);
 
 function normalizeAutoJoinRule(raw, fallback = 'manual') {
   const s = String(raw || '').trim().toLowerCase();
   return AUTO_JOIN_RULES.has(s) ? s : fallback;
+}
+
+function normalizeCalendarPlatform(raw, fallback = 'google_calendar') {
+  const s = String(raw || '').trim().toLowerCase();
+  return CALENDAR_PLATFORMS.has(s) ? s : fallback;
 }
 
 /**
@@ -73,6 +80,20 @@ function buildCalendarOAuthForwardRedirect(query = {}, settings = {}) {
   return { ok: true, redirectUrl: target.toString() };
 }
 
+function readPemEnvOrFile(pemEnv, pathEnv) {
+  const inline = String(process.env[pemEnv] || '').trim();
+  if (inline) {
+    return inline.replace(/\\n/g, '\n').trim();
+  }
+  const filePath = String(process.env[pathEnv] || '').trim();
+  if (!filePath) return '';
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
 function getGoogleCalendarOAuthClientConfig() {
   const clientId = String(process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID || '').trim();
   const clientSecret = String(process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET || '').trim();
@@ -85,13 +106,75 @@ function isGoogleCalendarOAuthConfigured() {
   return Boolean(clientId && clientSecret && jwtSecret);
 }
 
-function mintCalendarOAuthState({ userId, orgId }) {
-  const { jwtSecret } = getGoogleCalendarOAuthClientConfig();
+function getMicrosoftOutlookOAuthClientConfig() {
+  const clientId = String(process.env.MICROSOFT_OUTLOOK_OAUTH_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.MICROSOFT_OUTLOOK_OAUTH_CLIENT_SECRET || '').trim();
+  const certificatePem = readPemEnvOrFile(
+    'MICROSOFT_OUTLOOK_OAUTH_CERT_PEM',
+    'MICROSOFT_OUTLOOK_OAUTH_CERT_PATH'
+  );
+  const privateKeyPem = readPemEnvOrFile(
+    'MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PEM',
+    'MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PATH'
+  );
+  const jwtSecret = String(process.env.JWT_SECRET_V2 || '').trim();
+  return { clientId, clientSecret, certificatePem, privateKeyPem, jwtSecret };
+}
+
+function isMicrosoftOutlookOAuthConfigured() {
+  const { clientId, clientSecret, certificatePem, privateKeyPem, jwtSecret } =
+    getMicrosoftOutlookOAuthClientConfig();
+  return Boolean(jwtSecret && clientId && ((certificatePem && privateKeyPem) || clientSecret));
+}
+
+function buildMicrosoftClientAssertion({
+  clientId,
+  certificatePem,
+  privateKeyPem,
+  tokenUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+}) {
+  const now = Math.floor(Date.now() / 1000);
+  const parsedCertificate = new crypto.X509Certificate(certificatePem);
+  const header = {
+    typ: 'JWT',
+    alg: 'PS256',
+    'x5t#S256': crypto.createHash('sha256').update(parsedCertificate.raw).digest('base64url'),
+  };
+  const claims = {
+    aud: tokenUrl,
+    iss: clientId,
+    sub: clientId,
+    jti: crypto.randomUUID(),
+    iat: now,
+    nbf: now,
+    exp: now + 600,
+  };
+  const encodedHeader = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const encodedClaims = Buffer.from(JSON.stringify(claims)).toString('base64url');
+  const unsignedToken = `${encodedHeader}.${encodedClaims}`;
+  const signature = crypto
+    .sign('sha256', Buffer.from(unsignedToken), {
+      key: privateKeyPem,
+      padding: crypto.constants.RSA_PKCS1_PSS_PADDING,
+      saltLength: 32,
+    })
+    .toString('base64url');
+  return `${unsignedToken}.${signature}`;
+}
+
+function mintCalendarOAuthState({ userId, orgId, provider = 'google_calendar' }) {
+  const jwtSecret = String(process.env.JWT_SECRET_V2 || '').trim();
   if (!jwtSecret) {
     throw new Error('JWT_SECRET_V2 is required for Calendar OAuth state signing');
   }
+  const normalizedProvider = normalizeCalendarPlatform(provider, 'google_calendar');
   const token = jwt.sign(
-    { purpose: 'recall_calendar_oauth', userId: String(userId), orgId: String(orgId) },
+    {
+      purpose: 'recall_calendar_oauth',
+      userId: String(userId),
+      orgId: String(orgId),
+      provider: normalizedProvider,
+    },
     jwtSecret,
     { expiresIn: '15m' }
   );
@@ -102,14 +185,18 @@ function verifyCalendarOAuthState(rawState) {
   const raw = typeof rawState === 'string' ? rawState.trim() : '';
   if (!raw.startsWith('lalia:')) return null;
   const token = raw.slice('lalia:'.length);
-  const { jwtSecret } = getGoogleCalendarOAuthClientConfig();
+  const jwtSecret = String(process.env.JWT_SECRET_V2 || '').trim();
   if (!token || !jwtSecret) return null;
   try {
     const payload = jwt.verify(token, jwtSecret);
     if (payload?.purpose !== 'recall_calendar_oauth' || !payload.userId || !payload.orgId) {
       return null;
     }
-    return { userId: String(payload.userId), orgId: String(payload.orgId) };
+    return {
+      userId: String(payload.userId),
+      orgId: String(payload.orgId),
+      provider: normalizeCalendarPlatform(payload.provider, 'google_calendar'),
+    };
   } catch {
     return null;
   }
@@ -148,60 +235,173 @@ function buildGoogleCalendarConnectUrl({ userId, orgId, publicBaseUrl } = {}) {
   authUrl.searchParams.set('access_type', 'offline');
   authUrl.searchParams.set('prompt', 'select_account consent');
   authUrl.searchParams.set('include_granted_scopes', 'false');
-  authUrl.searchParams.set('state', mintCalendarOAuthState({ userId, orgId }));
-  return { ok: true, url: authUrl.toString() };
+  authUrl.searchParams.set('state', mintCalendarOAuthState({ userId, orgId, provider: 'google_calendar' }));
+  return { ok: true, provider: 'google_calendar', url: authUrl.toString() };
 }
 
-async function completeLaliaGoogleCalendarOAuth(
+function buildMicrosoftOutlookConnectUrl({ userId, orgId, publicBaseUrl } = {}) {
+  if (!isMicrosoftOutlookOAuthConfigured()) {
+    return { ok: false, status: 503, error: 'Microsoft Outlook OAuth is not configured on this server.' };
+  }
+  if (!userId || !orgId) {
+    return { ok: false, status: 400, error: 'Authenticated user and workspace required.' };
+  }
+  const { clientId } = getMicrosoftOutlookOAuthClientConfig();
+  const baseUrl = normalizeBaseUrl(publicBaseUrl);
+  const redirectUri = `${baseUrl}/api/v2/notetaker/calendar/oauth/callback`;
+  const authUrl = new URL('https://login.microsoftonline.com/common/oauth2/v2.0/authorize');
+  authUrl.searchParams.set('client_id', clientId);
+  authUrl.searchParams.set('redirect_uri', redirectUri);
+  authUrl.searchParams.set('response_type', 'code');
+  authUrl.searchParams.set('response_mode', 'query');
+  authUrl.searchParams.set(
+    'scope',
+    'offline_access openid email https://graph.microsoft.com/Calendars.Read'
+  );
+  authUrl.searchParams.set('prompt', 'select_account');
+  authUrl.searchParams.set('state', mintCalendarOAuthState({ userId, orgId, provider: 'microsoft_outlook' }));
+  return { ok: true, provider: 'microsoft_outlook', url: authUrl.toString() };
+}
+
+function buildCalendarConnectUrl({ provider = 'google_calendar', userId, orgId, publicBaseUrl } = {}) {
+  const normalized = normalizeCalendarPlatform(provider, 'google_calendar');
+  if (normalized === 'microsoft_outlook') {
+    return buildMicrosoftOutlookConnectUrl({ userId, orgId, publicBaseUrl });
+  }
+  return buildGoogleCalendarConnectUrl({ userId, orgId, publicBaseUrl });
+}
+
+async function completeLaliaCalendarOAuth(
   query = {},
   { publicBaseUrl, fetchImpl = global.fetch, retryOptions } = {}
 ) {
   const baseUrl = normalizeBaseUrl(publicBaseUrl);
-  const failRedirect = (reason) => ({
-    ok: true,
-    redirectUrl: `${baseUrl}/v2/app/meetings?calendar_error=${encodeURIComponent(reason)}`,
-  });
+  const failRedirect = (reason, provider = null) => {
+    const provParam = provider ? `&provider=${encodeURIComponent(provider)}` : '';
+    return {
+      ok: true,
+      redirectUrl: `${baseUrl}/v2/app/meetings?calendar_error=${encodeURIComponent(reason)}${provParam}`,
+    };
+  };
 
   const verified = verifyCalendarOAuthState(query.state);
   if (!verified) {
     return failRedirect('invalid_or_expired_state');
   }
+  const provider = normalizeCalendarPlatform(verified.provider, 'google_calendar');
   if (query.error || !query.code) {
-    return failRedirect('oauth_canceled_or_expired');
-  }
-
-  const { clientId, clientSecret } = getGoogleCalendarOAuthClientConfig();
-  if (!clientId || !clientSecret) {
-    return failRedirect('oauth_not_configured');
+    return failRedirect('oauth_canceled_or_expired', provider);
   }
 
   const settings = await getNotetakerSettings();
   if (!settings.recallApiKey) {
-    return failRedirect('recall_not_configured');
+    return failRedirect('recall_not_configured', provider);
   }
 
   const redirectUri = `${baseUrl}/api/v2/notetaker/calendar/oauth/callback`;
-  const form = new URLSearchParams({
-    code: String(query.code).trim(),
-    client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uri: redirectUri,
-    grant_type: 'authorization_code',
-  });
+  const code = String(query.code).trim();
+  let recallCalendarPayload;
 
-  const tokenRes = await fetchImpl('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!tokenRes.ok) {
-    return failRedirect('token_exchange_failed');
-  }
-  const tokenJson = await tokenRes.json().catch(() => null);
-  const refreshToken = String(tokenJson?.refresh_token || '').trim();
-  if (!refreshToken) {
-    return failRedirect('missing_refresh_token');
+  if (provider === 'microsoft_outlook') {
+    const msCfg = getMicrosoftOutlookOAuthClientConfig();
+    if (!isMicrosoftOutlookOAuthConfigured()) {
+      return failRedirect('oauth_not_configured', provider);
+    }
+    const tokenUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
+    const hasCert = Boolean(msCfg.certificatePem && msCfg.privateKeyPem);
+    const form = new URLSearchParams({
+      client_id: msCfg.clientId,
+      code,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+      scope: 'offline_access openid email https://graph.microsoft.com/Calendars.Read',
+    });
+    if (hasCert) {
+      form.set('client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
+      form.set(
+        'client_assertion',
+        buildMicrosoftClientAssertion({
+          clientId: msCfg.clientId,
+          certificatePem: msCfg.certificatePem,
+          privateKeyPem: msCfg.privateKeyPem,
+          tokenUrl,
+        })
+      );
+    } else {
+      form.set('client_secret', msCfg.clientSecret);
+    }
+
+    const tokenRes = await fetchImpl(tokenUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!tokenRes.ok) {
+      return failRedirect('token_exchange_failed', provider);
+    }
+    const tokenJson = await tokenRes.json().catch(() => null);
+    const refreshToken = String(tokenJson?.refresh_token || '').trim();
+    if (!refreshToken) {
+      return failRedirect('missing_refresh_token', provider);
+    }
+
+    recallCalendarPayload = {
+      platform: 'microsoft_outlook',
+      oauth_client_id: msCfg.clientId,
+      oauth_refresh_token: refreshToken,
+      metadata: {
+        lalia_user_id: verified.userId,
+        lalia_org_id: verified.orgId,
+      },
+      ...(hasCert
+        ? {
+            oauth_client_certificate: msCfg.certificatePem,
+            oauth_client_private_key: msCfg.privateKeyPem,
+          }
+        : {
+            oauth_client_secret: msCfg.clientSecret,
+          }),
+    };
+  } else {
+    const { clientId, clientSecret } = getGoogleCalendarOAuthClientConfig();
+    if (!clientId || !clientSecret) {
+      return failRedirect('oauth_not_configured', provider);
+    }
+
+    const form = new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: 'authorization_code',
+    });
+
+    const tokenRes = await fetchImpl('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: form.toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!tokenRes.ok) {
+      return failRedirect('token_exchange_failed', provider);
+    }
+    const tokenJson = await tokenRes.json().catch(() => null);
+    const refreshToken = String(tokenJson?.refresh_token || '').trim();
+    if (!refreshToken) {
+      return failRedirect('missing_refresh_token', provider);
+    }
+
+    recallCalendarPayload = {
+      platform: 'google_calendar',
+      oauth_client_id: clientId,
+      oauth_client_secret: clientSecret,
+      oauth_refresh_token: refreshToken,
+      metadata: {
+        lalia_user_id: verified.userId,
+        lalia_org_id: verified.orgId,
+      },
+    };
   }
 
   const recallRes = await fetchWithRecallRetry(
@@ -212,21 +412,12 @@ async function completeLaliaGoogleCalendarOAuth(
         Authorization: `Token ${settings.recallApiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        platform: 'google_calendar',
-        oauth_client_id: clientId,
-        oauth_client_secret: clientSecret,
-        oauth_refresh_token: refreshToken,
-        metadata: {
-          lalia_user_id: verified.userId,
-          lalia_org_id: verified.orgId,
-        },
-      }),
+      body: JSON.stringify(recallCalendarPayload),
     },
     { fetchImpl, retryNetwork: false, ...retryOptions }
   );
   if (!recallRes.ok) {
-    return failRedirect('recall_connect_failed');
+    return failRedirect('recall_connect_failed', provider);
   }
 
   const calData = await recallRes.json();
@@ -234,7 +425,8 @@ async function completeLaliaGoogleCalendarOAuth(
   if (calData?.id) {
     await syncCalendarEventsFromRecall(calData.id, { fetchImpl, retryOptions }).catch(() => {});
   }
-  return { ok: true, redirectUrl: `${baseUrl}/v2/app/meetings?calendar=connected` };
+  const providerSuffix = provider === 'microsoft_outlook' ? '&provider=microsoft_outlook' : '';
+  return { ok: true, redirectUrl: `${baseUrl}/v2/app/meetings?calendar=connected${providerSuffix}` };
 }
 
 function extractOrganizerEmail(raw) {
@@ -861,13 +1053,20 @@ async function disconnectRecallCalendar(connId, { orgId, userId, fetchImpl = glo
 
 module.exports = {
   AUTO_JOIN_RULES,
+  CALENDAR_PLATFORMS,
   normalizeAutoJoinRule,
+  normalizeCalendarPlatform,
   buildCalendarOAuthForwardRedirect,
   isGoogleCalendarOAuthConfigured,
+  isMicrosoftOutlookOAuthConfigured,
+  buildMicrosoftClientAssertion,
   mintCalendarOAuthState,
   verifyCalendarOAuthState,
   buildGoogleCalendarConnectUrl,
-  completeLaliaGoogleCalendarOAuth,
+  buildMicrosoftOutlookConnectUrl,
+  buildCalendarConnectUrl,
+  completeLaliaCalendarOAuth,
+  completeLaliaGoogleCalendarOAuth: completeLaliaCalendarOAuth,
   evaluateCalendarEventOptIn,
   extractMeetingInfoFromRecallEvent,
   resolveConnectionForRecallCalendar,

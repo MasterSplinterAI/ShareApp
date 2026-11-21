@@ -23,7 +23,9 @@ const {
   finalizeBotSessionAndRunPipeline,
 } = require('../lib/notetakerPipeline');
 const {
+  getNotetakerInviteEmail,
   hasNotetakerRecipient,
+  parseIcsTimestamp,
   scheduleNotetakerFromParsedEmail,
 } = require('../lib/inboundNotetakerInvite');
 const {
@@ -1256,6 +1258,224 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       else process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_ID = prevGoogleClientId;
       if (prevGoogleClientSecret === undefined) delete process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET;
       else process.env.GOOGLE_CALENDAR_OAUTH_CLIENT_SECRET = prevGoogleClientSecret;
+      if (prevPublicBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
+      else process.env.PUBLIC_API_BASE_URL = prevPublicBase;
+    }
+  });
+
+  it('connects Microsoft Outlook Calendar V2 with PS256 certificate assertion and schedules/cancels notes@invite.lalia.cloud Outlook TZID invites', async () => {
+    const { execFileSync } = require('node:child_process');
+    const tmpCertDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'lalia-ms-cert-'));
+    const certPath = path.join(tmpCertDir, 'cert.crt');
+    const keyPath = path.join(tmpCertDir, 'private.key');
+    execFileSync('openssl', [
+      'req',
+      '-new',
+      '-x509',
+      '-newkey',
+      'rsa:2048',
+      '-keyout',
+      keyPath,
+      '-out',
+      certPath,
+      '-days',
+      '365',
+      '-nodes',
+      '-sha256',
+      '-subj',
+      '/CN=Lalia Outlook Test',
+    ]);
+    const certPem = (await fsp.readFile(certPath, 'utf8')).trim();
+    const keyPem = (await fsp.readFile(keyPath, 'utf8')).trim();
+
+    const prevMsClientId = process.env.MICROSOFT_OUTLOOK_OAUTH_CLIENT_ID;
+    const prevMsCertPem = process.env.MICROSOFT_OUTLOOK_OAUTH_CERT_PEM;
+    const prevMsKeyPem = process.env.MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PEM;
+    const prevPublicBase = process.env.PUBLIC_API_BASE_URL;
+
+    process.env.MICROSOFT_OUTLOOK_OAUTH_CLIENT_ID = 'ms-app-client-id-123';
+    process.env.MICROSOFT_OUTLOOK_OAUTH_CERT_PEM = certPem;
+    process.env.MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PEM = keyPem;
+    process.env.PUBLIC_API_BASE_URL = 'https://lalia.cloud';
+
+    const origFetch = global.fetch;
+    const recallBotDeletes = [];
+    const recallBotCreates = [];
+
+    global.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u === 'https://login.microsoftonline.com/common/oauth2/v2.0/token' && init.method === 'POST') {
+        const params = new URLSearchParams(String(init.body || ''));
+        assert.equal(params.get('code'), 'ms-auth-code-999');
+        assert.equal(params.get('client_id'), 'ms-app-client-id-123');
+        assert.equal(params.get('redirect_uri'), 'https://lalia.cloud/api/v2/notetaker/calendar/oauth/callback');
+        assert.equal(
+          params.get('client_assertion_type'),
+          'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+        );
+        const assertion = params.get('client_assertion');
+        assert.ok(assertion);
+        const [hdrB64, claimsB64] = assertion.split('.');
+        const hdr = JSON.parse(Buffer.from(hdrB64, 'base64url').toString('utf8'));
+        const claims = JSON.parse(Buffer.from(claimsB64, 'base64url').toString('utf8'));
+        assert.equal(hdr.alg, 'PS256');
+        assert.ok(hdr['x5t#S256']);
+        assert.equal(claims.iss, 'ms-app-client-id-123');
+        assert.equal(claims.aud, 'https://login.microsoftonline.com/common/oauth2/v2.0/token');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            access_token: 'ms-access-token',
+            refresh_token: 'ms-refresh-token-123',
+            expires_in: 3600,
+          }),
+        };
+      }
+      if (u === 'https://us-west-2.recall.ai/api/v2/calendars/' && init.method === 'POST') {
+        const sent = JSON.parse(init.body);
+        assert.equal(sent.platform, 'microsoft_outlook');
+        assert.equal(sent.oauth_client_id, 'ms-app-client-id-123');
+        assert.equal(sent.oauth_client_secret, undefined);
+        assert.equal(sent.oauth_client_certificate, certPem);
+        assert.equal(sent.oauth_client_private_key, keyPem);
+        assert.equal(sent.oauth_refresh_token, 'ms-refresh-token-123');
+        assert.equal(sent.metadata?.lalia_user_id, userId);
+        assert.equal(sent.metadata?.lalia_org_id, orgId);
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            id: 'cal-ms-1',
+            platform: 'microsoft_outlook',
+            platform_email: 'outlook-user@outlook.com',
+            status: 'connected',
+            metadata: sent.metadata,
+          }),
+        };
+      }
+      if (u.startsWith('https://us-west-2.recall.ai/api/v2/calendar-events/?calendar_id=cal-ms-1')) {
+        return { ok: true, status: 200, json: async () => ({ next: null, results: [] }) };
+      }
+      if (u === 'https://us-west-2.recall.ai/api/v1/bot/' && init.method === 'POST') {
+        const body = JSON.parse(init.body);
+        recallBotCreates.push(body);
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ id: 'rec-ms-invite-bot-1', status_changes: [{ code: 'joining_call' }] }),
+        };
+      }
+      if (u === 'https://us-west-2.recall.ai/api/v1/bot/rec-ms-invite-bot-1/' && init.method === 'DELETE') {
+        recallBotDeletes.push(u);
+        return { ok: true, status: 204 };
+      }
+      throw new Error(`Unexpected fetch in Microsoft Outlook test: ${u}`);
+    };
+
+    try {
+      const listRes = await invokeRouter(notetakerRouter, {
+        method: 'GET',
+        url: '/calendars',
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      assert.equal(listRes.status, 200);
+      assert.equal(listRes.body.providers.microsoft_outlook.oauthConfigured, true);
+      assert.equal(listRes.body.inviteEmail, getNotetakerInviteEmail());
+
+      const connectRes = await invokeRouter(notetakerRouter, {
+        method: 'POST',
+        url: '/calendars/connect-url',
+        headers: { Authorization: `Bearer ${userToken}` },
+        body: { provider: 'microsoft_outlook' },
+      });
+      assert.equal(connectRes.status, 200);
+      assert.equal(connectRes.body.provider, 'microsoft_outlook');
+      const authUrl = new URL(connectRes.body.url);
+      assert.equal(authUrl.origin, 'https://login.microsoftonline.com');
+      assert.equal(authUrl.pathname, '/common/oauth2/v2.0/authorize');
+      assert.ok(authUrl.searchParams.get('scope').includes('https://graph.microsoft.com/Calendars.Read'));
+      const msState = authUrl.searchParams.get('state');
+      assert.ok(msState && msState.startsWith('lalia:'));
+
+      const cbRes = await invokeRouter(notetakerRouter, {
+        method: 'GET',
+        url: '/calendar/oauth/callback',
+        query: { state: msState, code: 'ms-auth-code-999' },
+      });
+      assert.equal(cbRes.status, 302);
+      assert.equal(
+        cbRes.location,
+        'https://lalia.cloud/v2/app/meetings?calendar=connected&provider=microsoft_outlook'
+      );
+
+      const msConn = await db.get(
+        `SELECT provider, account_email, status FROM v2_calendar_connections WHERE recall_calendar_id = 'cal-ms-1'`
+      );
+      assert.equal(msConn.provider, 'microsoft_outlook');
+      assert.equal(msConn.account_email, 'outlook-user@outlook.com');
+      assert.equal(msConn.status, 'connected');
+
+      // Verify Windows TZID parsing from Outlook .ics (Nov 21, 2026 15:00 EST -> 20:00Z)
+      const tzParsed = parseIcsTimestamp('DTSTART;TZID="Eastern Standard Time":20261121T150000');
+      assert.equal(tzParsed.toISOString(), '2026-11-21T20:00:00.000Z');
+
+      // Verify notes@invite.lalia.cloud recipient check
+      assert.equal(hasNotetakerRecipient({ to: ['notes@invite.lalia.cloud'] }), true);
+
+      // Build a future Outlook TZID invite from the connected Outlook email (different from Lalia login email)
+      const futureYear = new Date(Date.now() + 72 * 3600 * 1000).getUTCFullYear() + 1;
+      const outlookIcs = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'METHOD:REQUEST',
+        'BEGIN:VEVENT',
+        'UID:outlook-event-tz-1@outlook.com',
+        `DTSTART;TZID="Eastern Standard Time":${futureYear}0115T100000`,
+        'SUMMARY:Outlook Client Review',
+        'LOCATION:https://teams.live.com/meet/555666777888?p=xyz',
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n');
+
+      const invRes = await scheduleNotetakerFromParsedEmail({
+        fromEmail: 'Kenneth Outlook <outlook-user@outlook.com>',
+        subject: 'Invitation: Outlook Client Review',
+        icsTexts: [outlookIcs],
+      });
+      assert.equal(invRes.ok, true);
+      assert.equal(invRes.platform, 'ms_teams');
+      assert.equal(invRes.scheduledFor, `${futureYear}-01-15T15:00:00.000Z`);
+      assert.equal(recallBotCreates.length, 1);
+
+      // Follow-up METHOD:CANCEL cancels the scheduled bot via Recall DELETE
+      const cancelIcs = [
+        'BEGIN:VCALENDAR',
+        'VERSION:2.0',
+        'METHOD:CANCEL',
+        'BEGIN:VEVENT',
+        'UID:outlook-event-tz-1@outlook.com',
+        'STATUS:CANCELLED',
+        'END:VEVENT',
+        'END:VCALENDAR',
+      ].join('\r\n');
+      const cancelInvRes = await scheduleNotetakerFromParsedEmail({
+        fromEmail: 'outlook-user@outlook.com',
+        subject: 'Canceled: Outlook Client Review',
+        icsTexts: [cancelIcs],
+      });
+      assert.equal(cancelInvRes.ok, true);
+      assert.equal(cancelInvRes.canceled, true);
+      assert.equal(recallBotDeletes.length, 1);
+    } finally {
+      global.fetch = origFetch;
+      await fsp.rm(tmpCertDir, { recursive: true, force: true }).catch(() => {});
+      if (prevMsClientId === undefined) delete process.env.MICROSOFT_OUTLOOK_OAUTH_CLIENT_ID;
+      else process.env.MICROSOFT_OUTLOOK_OAUTH_CLIENT_ID = prevMsClientId;
+      if (prevMsCertPem === undefined) delete process.env.MICROSOFT_OUTLOOK_OAUTH_CERT_PEM;
+      else process.env.MICROSOFT_OUTLOOK_OAUTH_CERT_PEM = prevMsCertPem;
+      if (prevMsKeyPem === undefined) delete process.env.MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PEM;
+      else process.env.MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PEM = prevMsKeyPem;
       if (prevPublicBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = prevPublicBase;
     }

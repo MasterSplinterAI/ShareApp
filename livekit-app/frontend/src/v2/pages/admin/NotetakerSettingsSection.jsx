@@ -313,7 +313,7 @@ export function NotetakerSettingsSection() {
           <div className="space-y-1.5 rounded-lg border border-border/60 bg-background/60 p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label className="text-xs font-medium text-muted-foreground">
-                Calendar V2 Connected Redirect URI (Google OAuth)
+                Calendar V2 Connected Redirect URI (Google &amp; Microsoft OAuth)
               </label>
               <Badge variant={settings?.hasCalendarRegionalCallbackUri ? 'default' : 'outline'} className="text-[11px]">
                 {settings?.hasCalendarRegionalCallbackUri ? 'Regional callback set' : 'Using default Recall callback'}
@@ -336,7 +336,7 @@ export function NotetakerSettingsSection() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Add this exact URL as an Authorized Redirect URI in Google Cloud OAuth; Lalia forwards OAuth callbacks &amp;
+              Add this exact URL as an Authorized Redirect URI in Google Cloud OAuth &amp; Microsoft Entra ID; Lalia forwards OAuth callbacks &amp;
               setup probes directly to Recall.
             </p>
           </div>

@@ -21,9 +21,16 @@ const { assertCanCreateMeeting } = require('./v2Entitlements');
 const {
   getNotetakerSettings,
   dispatchRecallBotForSession,
+  stopRecallBotSession,
 } = require('./recallNotetaker');
 
 const NOTETAKER_LOCAL_PARTS = new Set(['notes', 'notetaker', 'bot']);
+
+function getNotetakerInviteEmail() {
+  return String(process.env.NOTETAKER_INVITE_EMAIL || 'notes@invite.lalia.cloud')
+    .trim()
+    .toLowerCase();
+}
 
 function isNotetakerRecipientAddress(addr) {
   const clean = extractEmailAddress(addr);
@@ -49,10 +56,94 @@ function unescapeIcsValue(val) {
     .trim();
 }
 
+const WINDOWS_TO_IANA_TZ = {
+  'eastern standard time': 'America/New_York',
+  'central standard time': 'America/Chicago',
+  'mountain standard time': 'America/Denver',
+  'us mountain standard time': 'America/Phoenix',
+  'pacific standard time': 'America/Los_Angeles',
+  'alaskan standard time': 'America/Anchorage',
+  'hawaiian standard time': 'Pacific/Honolulu',
+  'atlantic standard time': 'America/Halifax',
+  'gmt standard time': 'Europe/London',
+  utc: 'UTC',
+  'coordinated universal time': 'UTC',
+  'w. europe standard time': 'Europe/Berlin',
+  'central european standard time': 'Europe/Budapest',
+  'romance standard time': 'Europe/Paris',
+  'e. south america standard time': 'America/Sao_Paulo',
+  'sa pacific standard time': 'America/Bogota',
+  'india standard time': 'Asia/Kolkata',
+  'singapore standard time': 'Asia/Singapore',
+  'china standard time': 'Asia/Shanghai',
+  'tokyo standard time': 'Asia/Tokyo',
+  'korea standard time': 'Asia/Seoul',
+  'aus eastern standard time': 'Australia/Sydney',
+  'new zealand standard time': 'Pacific/Auckland',
+};
+
+function resolveIanaTimeZone(rawTzid) {
+  const clean = String(rawTzid || '').trim().replace(/^["']|["']$/g, '');
+  if (!clean) return null;
+  const mapped = WINDOWS_TO_IANA_TZ[clean.toLowerCase()] || clean;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: mapped });
+    return mapped;
+  } catch {
+    return null;
+  }
+}
+
+function zonedWallClockToUtcDate(year, month, day, hour, minute, second, timeZone) {
+  try {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+    const partOffsetMs = (utcMs) => {
+      const parts = {};
+      for (const p of fmt.formatToParts(new Date(utcMs))) {
+        if (p.type !== 'literal') parts[p.type] = p.value;
+      }
+      const h = Number(parts.hour) === 24 ? 0 : Number(parts.hour);
+      const renderedAsUtc = Date.UTC(
+        Number(parts.year),
+        Number(parts.month) - 1,
+        Number(parts.day),
+        h,
+        Number(parts.minute),
+        Number(parts.second)
+      );
+      return renderedAsUtc - utcMs;
+    };
+    const wallUtcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+    const offset1 = partOffsetMs(wallUtcGuess);
+    let candidate = wallUtcGuess - offset1;
+    const offset2 = partOffsetMs(candidate);
+    if (offset2 !== offset1) {
+      candidate = wallUtcGuess - offset2;
+    }
+    const dt = new Date(candidate);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  } catch {
+    return null;
+  }
+}
+
 function parseIcsTimestamp(rawLine) {
   const colonIdx = rawLine.indexOf(':');
   if (colonIdx < 0) return null;
+  const paramsPart = rawLine.slice(0, colonIdx);
   const val = rawLine.slice(colonIdx + 1).trim();
+  const tzMatch = /(?:^|;)TZID=([^;:]+)/i.exec(paramsPart);
+  const tzid = tzMatch ? tzMatch[1] : null;
+
   // Match YYYYMMDDTHHMMSSZ or YYYYMMDDTHHMMSS
   const m = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/i.exec(val);
   if (!m) {
@@ -60,7 +151,22 @@ function parseIcsTimestamp(rawLine) {
     return Number.isNaN(parsed.getTime()) ? null : parsed;
   }
   const [, y, mo, d, h, mi, s, z] = m;
-  const iso = `${y}-${mo}-${d}T${h}:${mi}:${s}${z ? 'Z' : 'Z'}`;
+  if (!z && tzid) {
+    const ianaZone = resolveIanaTimeZone(tzid);
+    if (ianaZone) {
+      const zoned = zonedWallClockToUtcDate(
+        Number(y),
+        Number(mo),
+        Number(d),
+        Number(h),
+        Number(mi),
+        Number(s),
+        ianaZone
+      );
+      if (zoned) return zoned;
+    }
+  }
+  const iso = `${y}-${mo}-${d}T${h}:${mi}:${s}Z`;
   const dt = new Date(iso);
   return Number.isNaN(dt.getTime()) ? null : dt;
 }
@@ -135,17 +241,14 @@ async function scheduleNotetakerFromParsedEmail({
     }
   }
 
-  if (ics?.method === 'CANCEL' || ics?.status === 'CANCELLED') {
-    return { ok: false, error: 'invite_cancelled' };
-  }
-
-  // Match Lalia user by sender email first, falling back to .ics ORGANIZER email
+  // Match Lalia user by sender email / .ics ORGANIZER email first, then connected calendar mailbox
   const candidateEmails = [
     extractEmailAddress(fromEmail),
     ics?.organizerEmail ? extractEmailAddress(ics.organizerEmail) : null,
   ].filter(Boolean);
 
   let userRow = null;
+  let preferredOrgId = null;
   for (const email of candidateEmails) {
     userRow = await db.get(
       `SELECT id, email, display_name FROM v2_users WHERE LOWER(email) = LOWER(?) AND disabled_at IS NULL LIMIT 1`,
@@ -153,28 +256,48 @@ async function scheduleNotetakerFromParsedEmail({
     );
     if (userRow) break;
   }
+  if (!userRow) {
+    for (const email of candidateEmails) {
+      const calConn = await db.get(
+        `SELECT user_id, org_id FROM v2_calendar_connections
+         WHERE LOWER(account_email) = LOWER(?) AND status != 'disconnected'
+         ORDER BY updated_at DESC LIMIT 1`,
+        [email]
+      );
+      if (calConn?.user_id) {
+        const linkedUser = await db.get(
+          `SELECT id, email, display_name FROM v2_users WHERE id = ? AND disabled_at IS NULL LIMIT 1`,
+          [calConn.user_id]
+        );
+        if (linkedUser) {
+          userRow = linkedUser;
+          preferredOrgId = calConn.org_id || null;
+          break;
+        }
+      }
+    }
+  }
 
   if (!userRow) {
     return { ok: false, error: 'sender_not_registered' };
   }
 
-  const membership = await db.get(
-    `SELECT org_id, role FROM v2_org_members
-     WHERE user_id = ?
-     ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END ASC
-     LIMIT 1`,
-    [userRow.id]
-  );
-  if (!membership?.org_id) {
+  let orgId = preferredOrgId;
+  if (!orgId) {
+    const membership = await db.get(
+      `SELECT org_id, role FROM v2_org_members
+       WHERE user_id = ?
+       ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END ASC
+       LIMIT 1`,
+      [userRow.id]
+    );
+    orgId = membership?.org_id || null;
+  }
+  if (!orgId) {
     return { ok: false, error: 'no_workspace_for_user' };
   }
 
-  const gate = await assertCanCreateMeeting(membership.org_id);
-  if (!gate.ok) {
-    return { ok: false, error: gate.code || 'quota_exceeded' };
-  }
-
-  // Search .ics fields first, then email body/html for a Meet or Teams link
+  // Search .ics fields first, then email body/html for a Meet, Teams, Zoom, or Webex link
   const searchSources = [
     ics?.location,
     ics?.url,
@@ -192,6 +315,58 @@ async function scheduleNotetakerFromParsedEmail({
     }
   }
 
+  if (ics?.method === 'CANCEL' || ics?.status === 'CANCELLED') {
+    const activeCandidates = await db.all(
+      `SELECT s.*, m.metadata AS meeting_metadata
+       FROM v2_external_bot_sessions s
+       JOIN v2_meetings m ON m.id = s.meeting_id
+       WHERE s.org_id = ? AND s.status IN ('scheduled', 'queued')`,
+      [orgId]
+    );
+    const matched = activeCandidates.find((s) => {
+      if (ics?.uid && s.meeting_metadata) {
+        try {
+          const meta = JSON.parse(s.meeting_metadata);
+          if (meta?.icsUid && String(meta.icsUid) === String(ics.uid)) return true;
+        } catch {
+          /* ignore malformed metadata */
+        }
+      }
+      return Boolean(parsedUrl?.ok && s.normalized_url === parsedUrl.normalizedUrl);
+    });
+    if (!matched) {
+      return { ok: false, error: 'invite_cancelled' };
+    }
+    if (matched.bot_provider === 'recall') {
+      await stopRecallBotSession(matched).catch((err) => {
+        console.warn('[inboundNotetakerInvite] Cancel recall bot warning:', err.message);
+      });
+    } else {
+      const nowIso = new Date().toISOString();
+      await db.run(
+        `UPDATE v2_external_bot_sessions
+         SET status = 'canceled', stop_requested = 1, status_detail = 'Canceled via calendar invite', ended_at = ?, updated_at = ?
+         WHERE id = ?`,
+        [nowIso, nowIso, matched.id]
+      );
+      await db.run(`UPDATE v2_meetings SET status = 'ended', ended_at = ? WHERE id = ?`, [
+        nowIso,
+        matched.meeting_id,
+      ]);
+    }
+    return {
+      ok: true,
+      canceled: true,
+      sessionId: matched.id,
+      meetingId: matched.meeting_id,
+    };
+  }
+
+  const gate = await assertCanCreateMeeting(orgId);
+  if (!gate.ok) {
+    return { ok: false, error: gate.code || 'quota_exceeded' };
+  }
+
   if (!parsedUrl?.ok) {
     return { ok: false, error: 'no_supported_meeting_url' };
   }
@@ -201,7 +376,7 @@ async function scheduleNotetakerFromParsedEmail({
     `SELECT id, meeting_id, status FROM v2_external_bot_sessions
      WHERE org_id = ? AND normalized_url = ? AND status IN ('scheduled', 'queued', 'joining', 'waiting_in_lobby', 'recording')
      LIMIT 1`,
-    [membership.org_id, parsedUrl.normalizedUrl]
+    [orgId, parsedUrl.normalizedUrl]
   );
   if (existing) {
     return {
@@ -245,7 +420,7 @@ async function scheduleNotetakerFromParsedEmail({
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         meetingId,
-        membership.org_id,
+        orgId,
         userRow.id,
         placeholderRoomName,
         title,
@@ -281,7 +456,7 @@ async function scheduleNotetakerFromParsedEmail({
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         sessionId,
-        membership.org_id,
+        orgId,
         meetingId,
         userRow.id,
         parsedUrl.platform,
@@ -362,8 +537,10 @@ async function processInboundNotetakerEmail(emailId, emailMeta = {}) {
 }
 
 module.exports = {
+  getNotetakerInviteEmail,
   hasNotetakerRecipient,
   parseCalendarInviteDetails,
+  parseIcsTimestamp,
   scheduleNotetakerFromParsedEmail,
   processInboundNotetakerEmail,
 };

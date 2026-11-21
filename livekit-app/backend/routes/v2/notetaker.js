@@ -16,12 +16,14 @@ const {
   normalizeAutoJoinRule,
   buildCalendarOAuthForwardRedirect,
   isGoogleCalendarOAuthConfigured,
-  buildGoogleCalendarConnectUrl,
-  completeLaliaGoogleCalendarOAuth,
+  isMicrosoftOutlookOAuthConfigured,
+  buildCalendarConnectUrl,
+  completeLaliaCalendarOAuth,
   syncCalendarEventsFromRecall,
   toggleCalendarEventRecording,
   disconnectRecallCalendar,
 } = require('../../lib/recallCalendarV2');
+const { getNotetakerInviteEmail } = require('../../lib/inboundNotetakerInvite');
 
 const VALID_RECAP_MODES = new Set(['off', 'host_only', 'workspace', 'attendees']);
 
@@ -316,7 +318,7 @@ router.post('/sessions/:id/stop', requireV2Auth, async (req, res) => {
 router.get('/calendar/oauth/callback', async (req, res) => {
   try {
     if (typeof req.query?.state === 'string' && req.query.state.startsWith('lalia:')) {
-      const out = await completeLaliaGoogleCalendarOAuth(req.query, {
+      const out = await completeLaliaCalendarOAuth(req.query, {
         publicBaseUrl: publicFrontendBaseUrl(req),
       });
       return res.redirect(302, out.redirectUrl);
@@ -343,7 +345,17 @@ router.get('/calendars', requireV2Auth, async (req, res) => {
        ORDER BY created_at DESC`,
       [req.v2Auth.orgId, req.v2Auth.userId]
     );
-    res.json({ calendars, oauthConfigured: isGoogleCalendarOAuthConfigured() });
+    const googleConfigured = isGoogleCalendarOAuthConfigured();
+    const outlookConfigured = isMicrosoftOutlookOAuthConfigured();
+    res.json({
+      calendars,
+      oauthConfigured: googleConfigured || outlookConfigured,
+      providers: {
+        google_calendar: { oauthConfigured: googleConfigured },
+        microsoft_outlook: { oauthConfigured: outlookConfigured },
+      },
+      inviteEmail: getNotetakerInviteEmail(),
+    });
   } catch (e) {
     console.error('[v2/notetaker GET /calendars]', e);
     res.status(500).json({ error: 'Failed to load calendar connections' });
@@ -352,7 +364,9 @@ router.get('/calendars', requireV2Auth, async (req, res) => {
 
 router.post('/calendars/connect-url', requireV2Auth, (req, res) => {
   try {
-    const out = buildGoogleCalendarConnectUrl({
+    const provider = req.body?.provider || 'google_calendar';
+    const out = buildCalendarConnectUrl({
+      provider,
       userId: req.v2Auth.userId,
       orgId: req.v2Auth.orgId,
       publicBaseUrl: publicFrontendBaseUrl(req),
@@ -360,10 +374,10 @@ router.post('/calendars/connect-url', requireV2Auth, (req, res) => {
     if (!out.ok) {
       return res.status(out.status || 400).json({ error: out.error });
     }
-    return res.json({ url: out.url });
+    return res.json({ url: out.url, provider: out.provider });
   } catch (e) {
     console.error('[v2/notetaker POST /calendars/connect-url]', e.message);
-    return res.status(500).json({ error: 'Failed to initiate Google Calendar connection' });
+    return res.status(500).json({ error: 'Failed to initiate calendar connection' });
   }
 });
 

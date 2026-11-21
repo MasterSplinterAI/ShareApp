@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { format } from 'date-fns';
-import { Calendar, CalendarCheck2, Plus, RefreshCw, Unlink, ExternalLink } from 'lucide-react';
+import { Calendar, CalendarCheck2, Check, Copy, Plus, RefreshCw, Unlink, ExternalLink } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Notetaker } from '../../services/apiV2';
 import { Badge } from '../../components/ui/badge';
@@ -65,9 +65,11 @@ export function CalendarNotetakerSection({ onUpdated }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const [calendars, setCalendars] = useState([]);
   const [events, setEvents] = useState([]);
-  const [oauthConfigured, setOauthConfigured] = useState(false);
+  const [providers, setProviders] = useState({ google_calendar: false, microsoft_outlook: false });
+  const [inviteEmail, setInviteEmail] = useState('notes@invite.lalia.cloud');
+  const [copiedInviteEmail, setCopiedInviteEmail] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [connecting, setConnecting] = useState(false);
+  const [connectingProvider, setConnectingProvider] = useState(null);
   const [syncingId, setSyncingId] = useState(null);
   const [disconnectingId, setDisconnectingId] = useState(null);
   const [savingRuleId, setSavingRuleId] = useState(null);
@@ -80,7 +82,15 @@ export function CalendarNotetakerSection({ onUpdated }) {
         v2Notetaker.calendarEvents(),
       ]);
       setCalendars(Array.isArray(calRes?.calendars) ? calRes.calendars : []);
-      setOauthConfigured(Boolean(calRes?.oauthConfigured));
+      setProviders({
+        google_calendar: Boolean(
+          calRes?.providers?.google_calendar?.oauthConfigured ?? calRes?.oauthConfigured
+        ),
+        microsoft_outlook: Boolean(calRes?.providers?.microsoft_outlook?.oauthConfigured),
+      });
+      if (calRes?.inviteEmail) {
+        setInviteEmail(String(calRes.inviteEmail));
+      }
       setEvents(Array.isArray(evRes?.events) ? evRes.events : []);
     } catch {
       // Non-fatal: meetings list still works even if calendar data fails to load
@@ -96,33 +106,48 @@ export function CalendarNotetakerSection({ onUpdated }) {
   useEffect(() => {
     const calStatus = searchParams.get('calendar');
     const calErr = searchParams.get('calendar_error');
+    const providerParam = searchParams.get('provider');
     if (!calStatus && !calErr) return;
+    const providerLabel =
+      providerParam === 'microsoft_outlook' ? 'Microsoft Outlook Calendar' : 'Google Calendar';
     if (calStatus === 'connected') {
-      toast.success('Google Calendar connected! Upcoming events will sync automatically.');
+      toast.success(`${providerLabel} connected! Upcoming events will sync automatically.`);
       loadData();
       onUpdated?.();
     } else if (calErr) {
-      toast.error(`Google Calendar connection failed (${calErr.replace(/_/g, ' ')})`);
+      toast.error(`${providerLabel} connection failed (${calErr.replace(/_/g, ' ')})`);
     }
     const next = new URLSearchParams(searchParams);
     next.delete('calendar');
     next.delete('calendar_error');
+    next.delete('provider');
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, loadData, onUpdated]);
 
-  const handleConnectCalendar = async () => {
-    setConnecting(true);
+  const handleConnectCalendar = async (provider = 'google_calendar') => {
+    setConnectingProvider(provider);
     try {
-      const res = await v2Notetaker.connectCalendarUrl();
+      const res = await v2Notetaker.connectCalendarUrl(provider);
       if (res?.url) {
         window.location.assign(res.url);
         return;
       }
-      toast.error('Could not start Google Calendar connection');
+      toast.error('Could not start calendar connection');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Could not start Google Calendar connection');
+      toast.error(err.response?.data?.error || 'Could not start calendar connection');
     } finally {
-      setConnecting(false);
+      setConnectingProvider(null);
+    }
+  };
+
+  const handleCopyInviteEmail = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteEmail);
+      setCopiedInviteEmail(true);
+      toast.success('Notetaker invite email copied');
+      setTimeout(() => setCopiedInviteEmail(false), 2000);
+    } catch {
+      toast.error('Could not copy invite email');
     }
   };
 
@@ -189,40 +214,85 @@ export function CalendarNotetakerSection({ onUpdated }) {
   }
 
   const activeCalendars = calendars.filter((c) => c.status !== 'disconnected');
+  const hasAnyProvider = providers.google_calendar || providers.microsoft_outlook;
+
+  const inviteBanner = (
+    <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
+      <div className="min-w-0">
+        <span className="font-medium text-foreground">Invite participant:</span>{' '}
+        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-primary">{inviteEmail}</code>{' '}
+        <span className="hidden sm:inline">
+          — add as a guest on any Outlook, Google, Apple, or Proton calendar invite to auto-schedule Lalia.
+        </span>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={handleCopyInviteEmail}
+        className="h-7 shrink-0 gap-1 px-2 text-xs"
+      >
+        {copiedInviteEmail ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+        {copiedInviteEmail ? 'Copied' : 'Copy'}
+      </Button>
+    </div>
+  );
 
   if (activeCalendars.length === 0) {
     return (
       <Card className="border-border/70 bg-muted/20 shadow-none">
-        <CardContent className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-              <Calendar className="h-4 w-4" />
-            </span>
-            <div>
-              <p className="text-sm font-medium text-foreground">Google Calendar Notetaker Sync</p>
-              <p className="text-xs text-muted-foreground">
-                No Google Calendar connected yet. Connected calendars automatically sync upcoming Meet, Zoom, Teams,
-                and Webex events here for 1-click recording opt-in.
-              </p>
+        <CardContent className="space-y-3 py-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                <Calendar className="h-4 w-4" />
+              </span>
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  Calendar Notetaker Sync (Google &amp; Outlook)
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Connect Google Calendar or Microsoft Outlook to automatically sync upcoming Meet, Zoom, Teams,
+                  and Webex events here for auto-join or 1-click recording opt-in.
+                </p>
+              </div>
             </div>
+            {hasAnyProvider ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {providers.google_calendar && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleConnectCalendar('google_calendar')}
+                    disabled={Boolean(connectingProvider)}
+                    className="w-fit shrink-0 gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {connectingProvider === 'google_calendar' ? 'Connecting…' : 'Connect Google Calendar'}
+                  </Button>
+                )}
+                {providers.microsoft_outlook && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleConnectCalendar('microsoft_outlook')}
+                    disabled={Boolean(connectingProvider)}
+                    className="w-fit shrink-0 gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {connectingProvider === 'microsoft_outlook' ? 'Connecting…' : 'Connect Outlook Calendar'}
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <Badge variant="outline" className="w-fit shrink-0">
+                Not connected
+              </Badge>
+            )}
           </div>
-          {oauthConfigured ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleConnectCalendar}
-              disabled={connecting}
-              className="w-fit shrink-0 gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {connecting ? 'Connecting…' : 'Connect Google Calendar'}
-            </Button>
-          ) : (
-            <Badge variant="outline" className="w-fit shrink-0">
-              Not connected
-            </Badge>
-          )}
+          {inviteBanner}
         </CardContent>
       </Card>
     );
@@ -245,90 +315,113 @@ export function CalendarNotetakerSection({ onUpdated }) {
               </CardDescription>
             </div>
           </div>
-          {oauthConfigured && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={handleConnectCalendar}
-              disabled={connecting}
-              className="h-8 shrink-0 gap-1.5 text-xs"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              {connecting ? 'Connecting…' : 'Add Google Calendar'}
-            </Button>
+          {hasAnyProvider && (
+            <div className="flex flex-wrap items-center gap-2">
+              {providers.google_calendar && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleConnectCalendar('google_calendar')}
+                  disabled={Boolean(connectingProvider)}
+                  className="h-8 shrink-0 gap-1.5 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {connectingProvider === 'google_calendar' ? 'Connecting…' : 'Add Google Calendar'}
+                </Button>
+              )}
+              {providers.microsoft_outlook && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleConnectCalendar('microsoft_outlook')}
+                  disabled={Boolean(connectingProvider)}
+                  className="h-8 shrink-0 gap-1.5 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {connectingProvider === 'microsoft_outlook' ? 'Connecting…' : 'Add Outlook Calendar'}
+                </Button>
+              )}
+            </div>
           )}
         </div>
       </CardHeader>
 
       <CardContent className="space-y-4">
         <div className="space-y-2.5">
-          {activeCalendars.map((cal) => (
-            <div
-              key={cal.id}
-              className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-sm font-medium text-foreground">
-                    {cal.account_email || 'Google Calendar'}
-                  </span>
-                  <Badge
-                    variant={cal.status === 'connected' ? 'default' : 'secondary'}
-                    className={cal.status === 'connected' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}
-                  >
-                    {cal.status}
-                  </Badge>
+          {activeCalendars.map((cal) => {
+            const isOutlook = cal.provider === 'microsoft_outlook';
+            return (
+              <div
+                key={cal.id}
+                className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="truncate text-sm font-medium text-foreground">
+                      {cal.account_email || (isOutlook ? 'Outlook Calendar' : 'Google Calendar')}
+                    </span>
+                    <Badge variant="outline" className="text-[11px]">
+                      {isOutlook ? 'Outlook' : 'Google'}
+                    </Badge>
+                    <Badge
+                      variant={cal.status === 'connected' ? 'default' : 'secondary'}
+                      className={cal.status === 'connected' ? 'bg-emerald-600 hover:bg-emerald-600' : ''}
+                    >
+                      {cal.status}
+                    </Badge>
+                  </div>
+                  {cal.last_synced_at && (
+                    <p className="text-xs text-muted-foreground">
+                      Last synced {fmtEventTime(cal.last_synced_at)}
+                    </p>
+                  )}
                 </div>
-                {cal.last_synced_at && (
-                  <p className="text-xs text-muted-foreground">
-                    Last synced {fmtEventTime(cal.last_synced_at)}
-                  </p>
-                )}
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Select
+                    value={cal.auto_join_rule || 'manual'}
+                    onValueChange={(val) => handleRuleChange(cal.id, val)}
+                    disabled={savingRuleId === cal.id}
+                  >
+                    <SelectTrigger className="h-8 w-[240px] text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="manual">Manual per-meeting opt-in</SelectItem>
+                      <SelectItem value="organizer_only">Meetings I organize with a link</SelectItem>
+                      <SelectItem value="all_with_link">All meetings with a video link</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleSync(cal.id)}
+                    disabled={syncingId === cal.id}
+                    className="h-8 gap-1.5 text-xs"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${syncingId === cal.id ? 'animate-spin' : ''}`} />
+                    Sync
+                  </Button>
+
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => handleDisconnect(cal.id)}
+                    disabled={disconnectingId === cal.id}
+                    className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
+                  >
+                    <Unlink className="h-3.5 w-3.5" />
+                    Disconnect
+                  </Button>
+                </div>
               </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <Select
-                  value={cal.auto_join_rule || 'manual'}
-                  onValueChange={(val) => handleRuleChange(cal.id, val)}
-                  disabled={savingRuleId === cal.id}
-                >
-                  <SelectTrigger className="h-8 w-[240px] text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual per-meeting opt-in</SelectItem>
-                    <SelectItem value="organizer_only">Meetings I organize with a link</SelectItem>
-                    <SelectItem value="all_with_link">All meetings with a video link</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() => handleSync(cal.id)}
-                  disabled={syncingId === cal.id}
-                  className="h-8 gap-1.5 text-xs"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${syncingId === cal.id ? 'animate-spin' : ''}`} />
-                  Sync
-                </Button>
-
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleDisconnect(cal.id)}
-                  disabled={disconnectingId === cal.id}
-                  className="h-8 gap-1.5 text-xs text-muted-foreground hover:text-destructive"
-                >
-                  <Unlink className="h-3.5 w-3.5" />
-                  Disconnect
-                </Button>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="space-y-2">
@@ -340,7 +433,7 @@ export function CalendarNotetakerSection({ onUpdated }) {
 
           {events.length === 0 ? (
             <p className="rounded-lg border border-dashed border-border/70 px-3 py-4 text-center text-xs text-muted-foreground">
-              No upcoming events synced yet. Click <strong>Sync</strong> to refresh from Google Calendar.
+              No upcoming events synced yet. Click <strong>Sync</strong> to refresh from your calendar.
             </p>
           ) : (
             <div className="divide-y divide-border/60 rounded-lg border border-border/60 bg-background/60">
@@ -400,6 +493,7 @@ export function CalendarNotetakerSection({ onUpdated }) {
             </div>
           )}
         </div>
+        {inviteBanner}
       </CardContent>
     </Card>
   );
