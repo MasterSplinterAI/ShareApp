@@ -1241,7 +1241,7 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
         query: { state: signedState, code: 'google-auth-code-123' },
       });
       assert.equal(oauthCompleteRes.status, 302);
-      assert.equal(oauthCompleteRes.location, 'https://lalia.cloud/v2/meetings?calendar=connected');
+      assert.equal(oauthCompleteRes.location, 'https://lalia.cloud/v2/app/meetings?calendar=connected');
 
       const afterOauthCal = await db.get(
         `SELECT account_email, status, recall_calendar_id FROM v2_calendar_connections WHERE recall_calendar_id = 'cal-oauth-2'`

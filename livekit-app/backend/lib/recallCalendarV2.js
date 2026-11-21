@@ -159,7 +159,7 @@ async function completeLaliaGoogleCalendarOAuth(
   const baseUrl = normalizeBaseUrl(publicBaseUrl);
   const failRedirect = (reason) => ({
     ok: true,
-    redirectUrl: `${baseUrl}/v2/meetings?calendar_error=${encodeURIComponent(reason)}`,
+    redirectUrl: `${baseUrl}/v2/app/meetings?calendar_error=${encodeURIComponent(reason)}`,
   });
 
   const verified = verifyCalendarOAuthState(query.state);
@@ -234,7 +234,7 @@ async function completeLaliaGoogleCalendarOAuth(
   if (calData?.id) {
     await syncCalendarEventsFromRecall(calData.id, { fetchImpl, retryOptions }).catch(() => {});
   }
-  return { ok: true, redirectUrl: `${baseUrl}/v2/meetings?calendar=connected` };
+  return { ok: true, redirectUrl: `${baseUrl}/v2/app/meetings?calendar=connected` };
 }
 
 function extractOrganizerEmail(raw) {

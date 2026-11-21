@@ -378,7 +378,7 @@ export function CalendarNotetakerSection({ onUpdated }) {
                     <div className="flex shrink-0 items-center gap-3">
                       {ev.meeting_id && (
                         <Button asChild size="sm" variant="ghost" className="h-7 gap-1 px-2 text-xs">
-                          <Link to={`/v2/meetings/${ev.meeting_id}`}>
+                          <Link to={`/v2/app/meetings/${ev.meeting_id}`}>
                             View
                             <ExternalLink className="h-3 w-3" />
                           </Link>
