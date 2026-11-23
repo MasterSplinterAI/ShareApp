@@ -49,7 +49,10 @@ set -euo pipefail
 HELPERS_TMP="$(mktemp)"
 NEXT_PM2_STARTED=""
 ROLLBACK_DONE=false
-PREV_CURRENT_TARGET="$(readlink -f "$APP_DIR/current" 2>/dev/null || echo '')"
+PREV_CURRENT_TARGET=""
+if [ -L "$APP_DIR/current" ] && [ -d "$APP_DIR/current" ]; then
+  PREV_CURRENT_TARGET="$(cd -P "$APP_DIR/current" && pwd -P)"
+fi
 
 cleanup_rollback() {
   rm -f "$HELPERS_TMP"
@@ -196,7 +199,13 @@ RELEASES_DIR="$APP_DIR/releases"
 SHARED_DIR="$APP_DIR/shared"
 RELEASE_ID="$(date -u +%Y%m%d%H%M%S)-${NEW_COMMIT:0:12}"
 RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
-PREV_APP_ROOT="$(readlink -f "$CURRENT_LINK" 2>/dev/null || echo "$APP_DIR")"
+PREV_CURRENT_TARGET=""
+if [ -L "$CURRENT_LINK" ] && [ -d "$CURRENT_LINK" ]; then
+  PREV_CURRENT_TARGET="$(cd -P "$CURRENT_LINK" && pwd -P)"
+  PREV_APP_ROOT="$PREV_CURRENT_TARGET"
+else
+  PREV_APP_ROOT="$APP_DIR"
+fi
 PREV_BACKEND_DIR="$PREV_APP_ROOT/livekit-app/backend"
 PREV_FRONTEND_DIR="$PREV_APP_ROOT/livekit-app/frontend"
 PREV_VENDOR_DIR="$PREV_APP_ROOT/livekit-app/vendor"
@@ -207,7 +216,6 @@ AGENT_DIR="$APP_DIR/livekit-app/translation-agent"
 FRONTEND_CACHE_DIR="$SHARED_DIR/build-cache/frontend"
 DEPLOY_CUTOVER_DONE=false
 NEXT_PM2_STARTED=""
-PREV_CURRENT_TARGET="$(readlink -f "$CURRENT_LINK" 2>/dev/null || echo '')"
 PREV_UPSTREAM_PORT=""
 
 cleanup_on_exit() {
@@ -286,11 +294,23 @@ sudo chown ubuntu:ubuntu "$APP_DIR" "$RELEASES_DIR" "$SHARED_DIR" "$SHARED_DIR/b
 cp "$TEMP_DIR/deploy/atomic-helpers.sh" "$SHARED_DIR/atomic-helpers.sh"
 
 # Seed shared backend files cleanly (idempotent migration from legacy paths).
-if [ ! -f "$SHARED_DIR/backend/.env" ] && [ -f "$PREV_BACKEND_DIR/.env" ]; then
-  sudo cp -L "$PREV_BACKEND_DIR/.env" "$SHARED_DIR/backend/.env"
-  sudo chown ubuntu:ubuntu "$SHARED_DIR/backend/.env"
-  sudo chmod 600 "$SHARED_DIR/backend/.env"
-  echo "Seeded shared backend .env"
+if [ ! -s "$SHARED_DIR/backend/.env" ]; then
+  SEED_ENV=""
+  if [ -s "$PREV_BACKEND_DIR/.env" ]; then
+    SEED_ENV="$PREV_BACKEND_DIR/.env"
+  elif [ -s "$APP_DIR/livekit-app/backend/.env" ]; then
+    SEED_ENV="$APP_DIR/livekit-app/backend/.env"
+  fi
+  if [ -n "$SEED_ENV" ]; then
+    sudo cp -L "$SEED_ENV" "$SHARED_DIR/backend/.env"
+    sudo chown ubuntu:ubuntu "$SHARED_DIR/backend/.env"
+    sudo chmod 600 "$SHARED_DIR/backend/.env"
+    echo "Seeded shared backend .env from $SEED_ENV"
+  fi
+fi
+if [ ! -s "$SHARED_DIR/backend/.env" ]; then
+  echo "Error: $SHARED_DIR/backend/.env is missing or empty; refusing to boot candidate slot." >&2
+  exit 1
 fi
 if [ -d "$PREV_BACKEND_DIR/uploads" ] && [ ! -L "$PREV_BACKEND_DIR/uploads" ]; then
   sudo rsync -a --ignore-existing "$PREV_BACKEND_DIR/uploads/" "$SHARED_DIR/backend/uploads/"

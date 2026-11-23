@@ -5,7 +5,7 @@ const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: require('path').join(__dirname, '.env') });
 
 const isSmokeMode = process.argv.includes('--smoke');
 if (isSmokeMode) {

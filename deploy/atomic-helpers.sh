@@ -46,9 +46,12 @@ wait_for_slot_health() {
   local attempt=1
   while [ "$attempt" -le "$max_attempts" ]; do
     local c1 c2 c3
-    c1="$(curl --connect-timeout 2 --max-time 5 -sS -o /dev/null -w '%{http_code}' "http://${host}:${port}/api/health" 2>/dev/null || echo '000')"
-    c2="$(curl --connect-timeout 2 --max-time 5 -sS -o /dev/null -w '%{http_code}' "http://${host}:${port}/api/v2/health" 2>/dev/null || echo '000')"
-    c3="$(curl --connect-timeout 2 --max-time 5 -sS -o /dev/null -w '%{http_code}' "http://${host}:${port}/api/v2/support/health" 2>/dev/null || echo '000')"
+    c1="$(curl --connect-timeout 2 --max-time 5 -sS -o /dev/null -w '%{http_code}' "http://${host}:${port}/api/health" 2>/dev/null || true)"
+    c2="$(curl --connect-timeout 2 --max-time 5 -sS -o /dev/null -w '%{http_code}' "http://${host}:${port}/api/v2/health" 2>/dev/null || true)"
+    c3="$(curl --connect-timeout 2 --max-time 5 -sS -o /dev/null -w '%{http_code}' "http://${host}:${port}/api/v2/support/health" 2>/dev/null || true)"
+    [ -z "$c1" ] && c1="000"
+    [ -z "$c2" ] && c2="000"
+    [ -z "$c3" ] && c3="000"
     if [ "$c1" = "200" ] && [ "$c2" = "200" ] && [ "$c3" = "200" ]; then
       consecutive=$((consecutive + 1))
       if [ "$consecutive" -ge "$required_consecutive" ]; then
