@@ -1079,7 +1079,14 @@ export default function V2MeetingDetail() {
         </div>
       )}
 
-      {meeting.recording && <MeetingAudioPlayer recording={meeting.recording} />}
+      {meeting.recording && (
+        <MeetingAudioPlayer
+          recording={meeting.recording}
+          meetingId={meeting.id}
+          canManageMeeting={canManageMeeting}
+          onRefined={load}
+        />
+      )}
 
       {/* Show Guests first when upcoming/empty transcript; show Transcript & AI first once lines are recorded */}
       {isExternalBotMeeting ? (

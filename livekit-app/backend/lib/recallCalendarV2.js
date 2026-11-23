@@ -280,7 +280,7 @@ async function completeLaliaCalendarOAuth(
     const provParam = provider ? `&provider=${encodeURIComponent(provider)}` : '';
     return {
       ok: true,
-      redirectUrl: `${baseUrl}/v2/app/meetings?calendar_error=${encodeURIComponent(reason)}${provParam}`,
+      redirectUrl: `${baseUrl}/v2/app/notetaker?calendar_error=${encodeURIComponent(reason)}${provParam}`,
     };
   };
 
@@ -426,7 +426,7 @@ async function completeLaliaCalendarOAuth(
     await syncCalendarEventsFromRecall(calData.id, { fetchImpl, retryOptions }).catch(() => {});
   }
   const providerSuffix = provider === 'microsoft_outlook' ? '&provider=microsoft_outlook' : '';
-  return { ok: true, redirectUrl: `${baseUrl}/v2/app/meetings?calendar=connected${providerSuffix}` };
+  return { ok: true, redirectUrl: `${baseUrl}/v2/app/notetaker?calendar=connected${providerSuffix}` };
 }
 
 function extractOrganizerEmail(raw) {

@@ -16,6 +16,7 @@ import TranslationDebugPanel from './TranslationDebugPanel';
 import CustomControlBar from './CustomControlBar';
 import TtsAudioController from './TtsAudioController';
 import AdminTtsProviderSwitch from './AdminTtsProviderSwitch';
+import RoomRecordingBanner from './RoomRecordingBanner';
 import RoomConnectionGuard from './RoomConnectionGuard';
 import MeetingUsageBanner from './MeetingUsageBanner';
 import LocalDisplayNameSync from './LocalDisplayNameSync';
@@ -708,6 +709,7 @@ function MeetingRoomInner({
         <div className="meeting-stage-layout flex min-h-0 flex-1 flex-col overflow-hidden sm:flex-row">
           <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden">
             <DirectCallRingBanner initialDirectCall={directCall} />
+            <RoomRecordingBanner />
             <AdminTtsProviderSwitch />
             <VideoGrid />
             {reconnecting && (
@@ -751,6 +753,7 @@ function MeetingRoomInner({
           intentionalLeaveRef={intentionalLeaveRef}
           onNavigateAfterLeave={onNavigateAfterLeave}
           initialVideoEffectId={prejoinChoices?.videoEffectId ?? null}
+          meetingId={meetingId}
         />
 
         {/* Debug panel — only mount when ?debug=1 is in URL */}

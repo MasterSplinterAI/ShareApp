@@ -178,6 +178,32 @@ export const v2Meetings = {
         note: opts.note || undefined,
       })
       .then((r) => r.data),
+  uploadRecording: (id, blob, { durationSeconds, autoRefine = true } = {}) => {
+    const form = new FormData();
+    const mime = String(blob?.type || '').toLowerCase();
+    const ext = mime.includes('mp4')
+      ? 'm4a'
+      : mime.includes('ogg')
+        ? 'ogg'
+        : mime.includes('mpeg') || mime.includes('mp3')
+          ? 'mp3'
+          : 'webm';
+    form.append('audio', blob, `recording.${ext}`);
+    if (durationSeconds != null && Number.isFinite(Number(durationSeconds))) {
+      form.append('durationSeconds', String(Math.max(1, Math.round(Number(durationSeconds)))));
+    }
+    form.append('autoRefine', autoRefine ? 'true' : 'false');
+    return apiV2
+      .post(`/meetings/${encodeURIComponent(id)}/recordings`, form, {
+        headers: { 'Content-Type': undefined },
+        timeout: 180_000,
+      })
+      .then((r) => r.data);
+  },
+  refineTranscriptFromRecording: (id) =>
+    apiV2
+      .post(`/meetings/${encodeURIComponent(id)}/recording/refine-transcript`, {}, { timeout: 180_000 })
+      .then((r) => r.data),
 };
 
 export const v2Host = {

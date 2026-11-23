@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
-import { Download, Headphones } from 'lucide-react';
+import { Download, Headphones, Loader2, Sparkles } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { resolveApiBaseUrl } from '../../lib/nativePlatform';
+import { v2Meetings } from '../../services/apiV2';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
 
@@ -33,9 +35,15 @@ function resolveMediaUrl(pathOrUrl) {
   return `${apiBase}${pathOrUrl.startsWith('/') ? '' : '/'}${pathOrUrl}`;
 }
 
-export default function MeetingAudioPlayer({ recording }) {
+export default function MeetingAudioPlayer({
+  recording,
+  meetingId = null,
+  canManageMeeting = false,
+  onRefined,
+}) {
   const audioRef = useRef(null);
   const [speed, setSpeed] = useState(1);
+  const [refining, setRefining] = useState(false);
 
   if (!recording?.streamUrl) return null;
 
@@ -50,6 +58,27 @@ export default function MeetingAudioPlayer({ recording }) {
     setSpeed(next);
     if (audioRef.current) {
       audioRef.current.playbackRate = next;
+    }
+  };
+
+  const handleRefineTranscript = async () => {
+    if (!meetingId || refining) return;
+    setRefining(true);
+    try {
+      const res = await v2Meetings.refineTranscriptFromRecording(meetingId);
+      const ref = res?.refinement;
+      if (ref?.updatedCount > 0) {
+        toast.success(`Updated ${ref.updatedCount} transcript line${ref.updatedCount === 1 ? '' : 's'} using MP3 audio`);
+      } else if (ref?.insertedCount > 0) {
+        toast.success(`Populated ${ref.insertedCount} speaker line${ref.insertedCount === 1 ? '' : 's'} from MP3 audio`);
+      } else {
+        toast.success('Transcript already matches the MP3 recording');
+      }
+      await onRefined?.();
+    } catch (err) {
+      toast.error(err?.response?.data?.error || 'Failed to refine transcript from recording');
+    } finally {
+      setRefining(false);
     }
   };
 
@@ -69,7 +98,7 @@ export default function MeetingAudioPlayer({ recording }) {
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               variant="outline"
@@ -86,6 +115,24 @@ export default function MeetingAudioPlayer({ recording }) {
                 Download MP3
               </a>
             </Button>
+            {canManageMeeting && meetingId && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleRefineTranscript}
+                disabled={refining}
+                className="h-8 gap-1.5 text-xs"
+                title="Run xAI batch speech-to-text on the saved MP3 to clean up and improve transcript accuracy"
+              >
+                {refining ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5 text-primary" />
+                )}
+                {refining ? 'Refining…' : 'Refine transcript'}
+              </Button>
+            )}
           </div>
         </div>
 

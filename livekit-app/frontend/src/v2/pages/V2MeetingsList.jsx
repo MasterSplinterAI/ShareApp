@@ -23,7 +23,6 @@ import {
   Zap,
 } from 'lucide-react';
 import SendNotetakerDialog from '../components/SendNotetakerDialog';
-import CalendarNotetakerSection from '../components/CalendarNotetakerSection';
 import { v2Auth, v2Meetings } from '../../services/apiV2';
 import { resolvePreferredMeetingLanguage } from '../../lib/languages';
 import { getMeetingUiState, toneToBadgeVariant } from '../lib/meetingState';
@@ -677,9 +676,6 @@ export default function V2MeetingsList() {
         )}
       </div>
 
-      {!archivedView && !directCallsView && (
-        <CalendarNotetakerSection onUpdated={() => load(archivedView)} />
-      )}
 
       {loading ? (
         <LoadingGrid />

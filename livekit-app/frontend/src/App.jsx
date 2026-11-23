@@ -24,6 +24,7 @@ const V2AppHome = lazy(() => import('./v2/pages/V2AppHome'))
 const V2CallsPage = lazy(() => import('./v2/pages/V2CallsPage'))
 const V2MeetingsList = lazy(() => import('./v2/pages/V2MeetingsList'))
 const V2MeetingDetail = lazy(() => import('./v2/pages/V2MeetingDetail'))
+const V2NotetakerPage = lazy(() => import('./v2/pages/V2NotetakerPage'))
 const V2OrgSettings = lazy(() => import('./v2/pages/V2OrgSettings'))
 
 function SearchAwareRedirect({ to }) {
@@ -149,11 +150,13 @@ function App() {
           <Route path="reset-password" element={<V2ResetPassword />} />
           <Route path="meetings" element={<SearchAwareRedirect to="/v2/app/meetings" />} />
           <Route path="meetings/*" element={<V2MeetingsSubpathRedirect />} />
+          <Route path="notetaker" element={<SearchAwareRedirect to="/v2/app/notetaker" />} />
           <Route path="app" element={<V2RequireAuth />}>
             <Route index element={<V2AppHome />} />
             <Route path="calls" element={<V2CallsPage />} />
             <Route path="meetings" element={<V2MeetingsList />} />
             <Route path="meetings/:id" element={<V2MeetingDetail />} />
+            <Route path="notetaker" element={<V2NotetakerPage />} />
             <Route path="settings" element={<V2OrgSettings />} />
             <Route path="admin" element={<AdminGate />}>
               <Route element={<AdminShellLayout />}>

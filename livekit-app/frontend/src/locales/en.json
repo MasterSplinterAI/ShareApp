@@ -398,6 +398,7 @@
   "app": {
     "home": "Home",
     "meetings": "Meetings",
+    "notetaker": "Notetaker",
     "settings": "Settings",
     "admin": "Admin",
     "helpSupport": "Help & support",

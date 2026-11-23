@@ -334,6 +334,7 @@
   "app": {
     "home": "Start",
     "meetings": "Meetings",
+    "notetaker": "Notiz-KI",
     "settings": "Einstellungen",
     "admin": "Admin",
     "helpSupport": "Hilfe & Support",

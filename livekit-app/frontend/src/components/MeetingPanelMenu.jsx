@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { Subtitles, MessageCircle, Users, Globe, Headphones, Check, ChevronDown } from 'lucide-react';
+import { useRoomContext } from '@livekit/components-react';
+import { Subtitles, MessageCircle, Users, Globe, Headphones, Check, ChevronDown, CircleDot, Loader2, Square } from 'lucide-react';
 import { normalizeMeetingLanguageCode } from '../lib/languages';
 import { MeetingLanguageList, getMeetingLanguageDisplay } from './MeetingLanguageList';
 import { useMeeting } from '../context/MeetingContext';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { formatRecordingClock, useRoomRecordingState } from '../hooks/useRoomAudioRecorder';
 import { TTS_VOICES, sanitizeTtsVoiceId } from '../lib/ttsVoices';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
@@ -40,6 +42,8 @@ export default function MeetingPanelMenu({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
+  const room = useRoomContext();
+  const recState = useRoomRecordingState(room);
   const {
     sidePanelOpen,
     sidePanelTab,
@@ -229,6 +233,41 @@ export default function MeetingPanelMenu({
             disabled={!translationEnabled}
             maxHeightClass="max-h-48"
           />
+
+          {isHost && recState.canRecord && (
+            <div className="border-t border-border p-2">
+              <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Call recording
+              </p>
+              <button
+                type="button"
+                disabled={recState.isUploading}
+                onClick={() => {
+                  recState.toggleRecording?.();
+                  setIsOpen(false);
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs font-medium transition-colors hover:bg-accent disabled:opacity-60',
+                  recState.isRecording && 'bg-destructive/15 text-destructive'
+                )}
+              >
+                <span className="flex items-center gap-2">
+                  {recState.isUploading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : recState.isRecording ? (
+                    <Square className="h-3.5 w-3.5 fill-current" />
+                  ) : (
+                    <CircleDot className="h-3.5 w-3.5 text-destructive" />
+                  )}
+                  {recState.isUploading
+                    ? 'Saving MP3…'
+                    : recState.isRecording
+                      ? `Stop & save (${formatRecordingClock(recState.elapsedSeconds)})`
+                      : 'Record call (MP3)'}
+                </span>
+              </button>
+            </div>
+          )}
 
           {isHost && onCaptionModeChange && (
             <div className="border-t border-border p-2">

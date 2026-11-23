@@ -334,6 +334,7 @@
   "app": {
     "home": "首页",
     "meetings": "会议",
+    "notetaker": "AI 笔记",
     "settings": "设置",
     "admin": "管理",
     "helpSupport": "帮助与支持",

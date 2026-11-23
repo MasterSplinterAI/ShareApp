@@ -48,8 +48,10 @@ const { handleRecallWebhook, drainPendingRecallWebhookJobs } = require('../route
 const notetakerRouter = require('../routes/v2/notetaker');
 const botInternalRouter = require('../routes/v2/botInternal');
 const adminRouter = require('../routes/v2/admin');
+const meetingsRouter = require('../routes/v2/meetings');
+const nativeRoomRecording = require('../lib/nativeRoomRecording');
 
-async function invokeRouter(router, { method = 'GET', url = '/', headers = {}, body = undefined, query = {} }) {
+async function invokeRouter(router, { method = 'GET', url = '/', headers = {}, body = undefined, query = {}, file = undefined }) {
   return new Promise((resolve, reject) => {
     const req = {
       method,
@@ -58,6 +60,7 @@ async function invokeRouter(router, { method = 'GET', url = '/', headers = {}, b
       headers: Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v])),
       body,
       query,
+      file,
       params: {},
       ip: '127.0.0.1',
       get(name) {
@@ -1243,7 +1246,7 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
         query: { state: signedState, code: 'google-auth-code-123' },
       });
       assert.equal(oauthCompleteRes.status, 302);
-      assert.equal(oauthCompleteRes.location, 'https://lalia.cloud/v2/app/meetings?calendar=connected');
+      assert.equal(oauthCompleteRes.location, 'https://lalia.cloud/v2/app/notetaker?calendar=connected');
 
       const afterOauthCal = await db.get(
         `SELECT account_email, status, recall_calendar_id FROM v2_calendar_connections WHERE recall_calendar_id = 'cal-oauth-2'`
@@ -1406,7 +1409,7 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       assert.equal(cbRes.status, 302);
       assert.equal(
         cbRes.location,
-        'https://lalia.cloud/v2/app/meetings?calendar=connected&provider=microsoft_outlook'
+        'https://lalia.cloud/v2/app/notetaker?calendar=connected&provider=microsoft_outlook'
       );
 
       const msConn = await db.get(
@@ -1478,6 +1481,178 @@ describe('End-to-end Notetaker Dispatch -> Worker Claim -> Transcript -> Recordi
       else process.env.MICROSOFT_OUTLOOK_OAUTH_PRIVATE_KEY_PEM = prevMsKeyPem;
       if (prevPublicBase === undefined) delete process.env.PUBLIC_API_BASE_URL;
       else process.env.PUBLIC_API_BASE_URL = prevPublicBase;
+    }
+  });
+
+  it('saves native room MP3 recording via POST /meetings/:id/recordings, cleans existing live transcript lines via xAI STT + LLM, and populates diarized lines when empty', async () => {
+    const meetingId = db.uuid();
+    const roomName = `native-rec-${crypto.randomBytes(4).toString('hex')}`;
+    const startedAt = new Date().toISOString();
+
+    await db.run(
+      `INSERT INTO v2_meetings (
+        id, org_id, host_user_id, livekit_room_name, title, status, started_at, host_code, meeting_source
+      ) VALUES (?,?,?,?,?,?,?,?,?)`,
+      [meetingId, orgId, userId, roomName, 'Native Recording Sync', 'live', startedAt, 'host9999', 'lalia']
+    );
+    await db.run(
+      `INSERT INTO v2_meeting_policies (meeting_id, host_required_to_start, require_invite_token, store_transcripts)
+       VALUES (?,?,?,?)`,
+      [meetingId, 0, 1, 1]
+    );
+
+    const origTranscode = nativeRoomRecording.transcodeAudioBufferToMp3;
+    const origFetch = global.fetch;
+    const prevKey = process.env.TRANSLATION_API_KEY;
+    const prevModel = process.env.TRANSLATION_MODEL;
+    process.env.TRANSLATION_API_KEY = 'xai-test-key-redacted';
+    process.env.TRANSLATION_MODEL = 'grok-4.20-non-reasoning';
+
+    const fakeMp3 = Buffer.from('ID3-native-room-mp3-audio-payload');
+    nativeRoomRecording.transcodeAudioBufferToMp3 = async () => ({
+      mp3Buffer: fakeMp3,
+      durationSeconds: 30,
+    });
+
+    let mode = 'populate';
+    global.fetch = async (url, init = {}) => {
+      const u = String(url);
+      if (u === 'https://api.x.ai/v1/stt') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            text:
+              mode === 'populate'
+                ? 'Hello everyone. Welcome to the Q4 launch sync.'
+                : 'Let us review Q4 numbers.',
+            language: 'en',
+            duration: 30,
+            words:
+              mode === 'populate'
+                ? [
+                    { word: 'Hello', start: 0.1, end: 0.4, speaker: 'speaker_0' },
+                    { word: 'everyone.', start: 0.45, end: 0.9, speaker: 'speaker_0' },
+                    { word: 'Welcome', start: 1.5, end: 1.9, speaker: 'speaker_1' },
+                    { word: 'to', start: 1.95, end: 2.05, speaker: 'speaker_1' },
+                    { word: 'the', start: 2.1, end: 2.2, speaker: 'speaker_1' },
+                    { word: 'Q4', start: 2.25, end: 2.45, speaker: 'speaker_1' },
+                    { word: 'launch', start: 2.5, end: 2.75, speaker: 'speaker_1' },
+                    { word: 'sync.', start: 2.8, end: 3.1, speaker: 'speaker_1' },
+                  ]
+                : [],
+          }),
+        };
+      }
+      if (u === 'https://api.x.ai/v1/chat/completions') {
+        const payload = JSON.parse(init.body || '{}');
+        assert.equal(payload.model, 'grok-4.20-non-reasoning');
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    updates: [{ index: 0, text: 'Let us review Q4 numbers.' }],
+                  }),
+                },
+              },
+            ],
+          }),
+        };
+      }
+      throw new Error(`Unexpected fetch in native recording test: ${u}`);
+    };
+
+    try {
+      const uploadRes = await invokeRouter(meetingsRouter, {
+        method: 'POST',
+        url: `/${meetingId}/recordings`,
+        headers: { Authorization: `Bearer ${userToken}` },
+        file: {
+          buffer: Buffer.from('fake-webm-bytes'),
+          mimetype: 'audio/webm',
+        },
+        body: { durationSeconds: '30', autoRefine: 'true' },
+      });
+      assert.equal(uploadRes.status, 201);
+      assert.equal(uploadRes.body.ok, true);
+      assert.ok(uploadRes.body.recording?.streamUrl.includes('?rt='));
+      assert.equal(uploadRes.body.recording?.mime_type, 'audio/mpeg');
+      assert.equal(uploadRes.body.transcriptRefinement?.ok, true);
+      assert.equal(uploadRes.body.transcriptRefinement?.mode, 'populated');
+      assert.equal(uploadRes.body.transcriptRefinement?.insertedCount, 2);
+
+      const recRow = await db.get(
+        `SELECT * FROM v2_meeting_recordings WHERE meeting_id = ?`,
+        [meetingId]
+      );
+      assert.ok(recRow);
+      assert.equal(Number(recRow.size_bytes), fakeMp3.length);
+      assert.equal(Number(recRow.duration_seconds), 30);
+
+      const populatedLines = await db.all(
+        `SELECT * FROM v2_meeting_transcript_lines WHERE meeting_id = ? ORDER BY datetime(recorded_at) ASC`,
+        [meetingId]
+      );
+      assert.equal(populatedLines.length, 2);
+      assert.equal(populatedLines[0].participant_identity, 'Speaker 1');
+      assert.equal(populatedLines[0].original_text, 'Hello everyone.');
+      assert.equal(populatedLines[1].participant_identity, 'Speaker 2');
+      assert.equal(populatedLines[1].original_text, 'Welcome to the Q4 launch sync.');
+
+      const sttCostRow = await db.get(
+        `SELECT * FROM meeting_cost_events WHERE meeting_id = ? AND event_type = 'xai_stt_minute'`,
+        [meetingId]
+      );
+      assert.ok(sttCostRow);
+      assert.equal(sttCostRow.provider, 'xai');
+
+      await db.run(`DELETE FROM v2_meeting_transcript_lines WHERE meeting_id = ?`, [meetingId]);
+      await db.run(
+        `INSERT INTO v2_meeting_transcript_lines
+         (id, meeting_id, recorded_at, participant_identity, language, source_language, original_text, translated_text, transcription_id, dedupe_key)
+         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [
+          db.uuid(),
+          meetingId,
+          startedAt,
+          'Kenny Rhule',
+          'en',
+          'en',
+          'Let us reveiw Q4 numbers',
+          null,
+          'live-1',
+          `live-1-${meetingId}`,
+        ]
+      );
+
+      mode = 'clean';
+      const refineRes = await invokeRouter(meetingsRouter, {
+        method: 'POST',
+        url: `/${meetingId}/recording/refine-transcript`,
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      assert.equal(refineRes.status, 200);
+      assert.equal(refineRes.body.ok, true);
+      assert.equal(refineRes.body.refinement.mode, 'cleaned');
+      assert.equal(refineRes.body.refinement.updatedCount, 1);
+
+      const cleanedLine = await db.get(
+        `SELECT * FROM v2_meeting_transcript_lines WHERE meeting_id = ?`,
+        [meetingId]
+      );
+      assert.equal(cleanedLine.participant_identity, 'Kenny Rhule');
+      assert.equal(cleanedLine.original_text, 'Let us review Q4 numbers.');
+    } finally {
+      nativeRoomRecording.transcodeAudioBufferToMp3 = origTranscode;
+      global.fetch = origFetch;
+      if (prevKey === undefined) delete process.env.TRANSLATION_API_KEY;
+      else process.env.TRANSLATION_API_KEY = prevKey;
+      if (prevModel === undefined) delete process.env.TRANSLATION_MODEL;
+      else process.env.TRANSLATION_MODEL = prevModel;
     }
   });
 });

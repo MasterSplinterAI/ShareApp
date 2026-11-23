@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { resolveApiBaseUrl } from '../lib/nativePlatform';
 import { useLocalParticipant, useRoomContext, useTracks } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, Monitor, Share2, PhoneOff, ChevronDown, MessageCircle, Users, CircleDot, Loader2, Square } from 'lucide-react';
 import toast from 'react-hot-toast';
 import CaptionControls from './CaptionControls';
 import MeetingPanelMenu from './MeetingPanelMenu';
@@ -11,6 +11,7 @@ import { useMeeting } from '../context/MeetingContext';
 import { Button } from './ui/button';
 import { cn } from '../lib/utils';
 import { useRoomControlLabels } from '../hooks/useRoomControlLabels';
+import { formatRecordingClock, useRoomAudioRecorder } from '../hooks/useRoomAudioRecorder';
 import { ROOM_PUBLISH_DEFAULTS, DEFAULT_VIDEO_CAPTURE_RESOLUTION } from '../lib/roomPublishDefaults';
 import {
   applyVideoEffect,
@@ -45,8 +46,10 @@ export default function CustomControlBar({
   intentionalLeaveRef,
   onNavigateAfterLeave,
   initialVideoEffectId = null,
+  meetingId = null,
 }) {
   const room = useRoomContext();
+  const recorder = useRoomAudioRecorder({ room, meetingId, isHost });
   const localParticipantHook = useLocalParticipant();
   const localParticipant = localParticipantHook?.localParticipant;
   const tracks = useTracks([Track.Source.Camera, Track.Source.Microphone, Track.Source.ScreenShare], { onlySubscribed: false });
@@ -633,6 +636,34 @@ export default function CustomControlBar({
             </>
           )}
 
+          {/* Call Recording - Host Only (desktop inline button; mobile uses panel menu) */}
+          {!isCompact && recorder.canRecord && (
+            <Button
+              type="button"
+              variant={recorder.isRecording ? 'destructive' : 'secondary'}
+              onClick={() => recorder.toggleRecording?.()}
+              disabled={recorder.isUploading}
+              className={barBtn(isCompact)}
+              aria-label={recorder.isRecording ? 'Stop recording' : 'Record meeting'}
+              title={recorder.isRecording ? 'Stop & save MP3 recording' : 'Record room audio as MP3'}
+            >
+              {recorder.isUploading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : recorder.isRecording ? (
+                <Square className="h-4 w-4 fill-current" />
+              ) : (
+                <CircleDot className="h-5 w-5 text-destructive" />
+              )}
+              <span className="hidden lg:inline font-mono text-xs font-semibold">
+                {recorder.isUploading
+                  ? 'Saving…'
+                  : recorder.isRecording
+                    ? `REC ${formatRecordingClock(recorder.elapsedSeconds)}`
+                    : 'Record'}
+              </span>
+            </Button>
+          )}
+
           {/* Share Link - Host Only */}
           {isHost && (
             <Button type="button" variant="secondary" onClick={onShareClick} className={barBtn(isCompact)} aria-label="Share meeting" title="Share meeting">
@@ -645,7 +676,15 @@ export default function CustomControlBar({
           <Button
             type="button"
             variant="destructive"
+            disabled={recorder.isUploading}
             onClick={async () => {
+              if (recorder.isRecording) {
+                try {
+                  await recorder.stopAndUploadRecording?.();
+                } catch {
+                  /* upload error surfaced by toast inside hook */
+                }
+              }
               if (intentionalLeaveRef) intentionalLeaveRef.current = true;
               try {
                 await room?.disconnect(true);

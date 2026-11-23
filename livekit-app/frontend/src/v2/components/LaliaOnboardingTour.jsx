@@ -105,7 +105,6 @@ const TOUR_STEPS = [
     Icon: Smartphone,
     targets: [
       '[data-tour="direct-call-card"]',
-      '[data-tour="join-by-code"]',
       '[data-tour="nav-meetings-mobile"]',
       '[data-tour="nav-meetings-desktop"]',
     ],

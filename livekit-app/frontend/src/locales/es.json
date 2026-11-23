@@ -334,6 +334,7 @@
   "app": {
     "home": "Inicio",
     "meetings": "Reuniones",
+    "notetaker": "Notas IA",
     "settings": "Ajustes",
     "admin": "Admin",
     "helpSupport": "Ayuda y soporte",

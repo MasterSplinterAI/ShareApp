@@ -1478,6 +1478,98 @@ router.post('/:id/transcript/reports/:reportId/email', requireV2Auth, async (req
   }
 });
 
+const multer = require('multer');
+const nativeRoomRecording = require('../../lib/nativeRoomRecording');
+
+const nativeRecordingUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 250 * 1024 * 1024 },
+});
+
+router.post(
+  '/:id/recordings',
+  requireV2Auth,
+  (req, res, next) => {
+    if (req.file) return next();
+    nativeRecordingUpload.single('audio')(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ error: err.message || 'Invalid recording upload' });
+      }
+      next();
+    });
+  },
+  async (req, res) => {
+    try {
+      const row = await loadMeetingForAccess(req.params.id, req.v2Auth, true);
+      if (!row) return res.status(404).json({ error: 'Not found' });
+      if (!(await assertMeetingAccess(row, req.v2Auth))) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const canManageRecording =
+        row.host_user_id === req.v2Auth.userId || ['owner', 'admin'].includes(req.v2Auth.role);
+      if (!canManageRecording) {
+        return res.status(403).json({ error: 'Only the meeting host or an admin can save recordings' });
+      }
+      if (!req.file?.buffer?.length) {
+        return res.status(400).json({ error: 'Recording audio file is required' });
+      }
+
+      const rawDur = req.body?.durationSeconds;
+      const parsedDur = rawDur != null && rawDur !== '' ? Number(rawDur) : null;
+      const durationSeconds = Number.isFinite(parsedDur) && parsedDur > 0 ? Math.round(parsedDur) : null;
+      const autoRefine =
+        req.body?.autoRefine === undefined
+          ? true
+          : !['false', '0', 'no'].includes(String(req.body.autoRefine).toLowerCase());
+
+      const out = await nativeRoomRecording.saveNativeMeetingRecording({
+        meetingId: req.params.id,
+        orgId: row.org_id || req.v2Auth.orgId,
+        buffer: req.file.buffer,
+        mimeType: req.file.mimetype || req.body?.mimeType || 'audio/webm',
+        durationSeconds,
+        autoRefine,
+      });
+
+      return res.status(201).json({
+        ok: true,
+        recording: out.recording,
+        transcriptRefinement: out.transcriptRefinement,
+      });
+    } catch (e) {
+      console.error('[v2/meetings POST /:id/recordings]', e);
+      return res.status(500).json({ error: e.message || 'Failed to save recording' });
+    }
+  }
+);
+
+router.post('/:id/recording/refine-transcript', requireV2Auth, async (req, res) => {
+  try {
+    const row = await loadMeetingForAccess(req.params.id, req.v2Auth, true);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    if (!(await assertMeetingAccess(row, req.v2Auth))) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    const canManageRecording =
+      row.host_user_id === req.v2Auth.userId || ['owner', 'admin'].includes(req.v2Auth.role);
+    if (!canManageRecording) {
+      return res.status(403).json({ error: 'Only the meeting host or an admin can refine transcripts' });
+    }
+
+    const out = await nativeRoomRecording.refineMeetingTranscriptFromAudio({
+      meetingId: req.params.id,
+      orgId: row.org_id || req.v2Auth.orgId,
+    });
+    if (!out?.ok) {
+      return res.status(out?.status || 500).json({ error: out?.error || 'Failed to refine transcript' });
+    }
+    return res.json({ ok: true, refinement: out });
+  } catch (e) {
+    console.error('[v2/meetings POST /:id/recording/refine-transcript]', e);
+    return res.status(502).json({ error: e.message || 'Failed to refine transcript from recording' });
+  }
+});
+
 router.post('/:id/transcript/synthesize', requireV2Auth, async (req, res) => {
   try {
     const row = await loadMeetingForAccess(req.params.id, req.v2Auth);
