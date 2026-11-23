@@ -1,31 +1,32 @@
 import { Routes, Route, useLocation, Navigate, Link } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import { useEffect, lazy, Suspense } from 'react'
+import { useEffect, Suspense } from 'react'
 import SeoHead from './components/SeoHead'
 import HomeScreen from './components/HomeScreen'
 import ErrorBoundary from './components/ErrorBoundary'
 import DomTranslationFallback from './components/DomTranslationFallback'
 import NativeAppBridge from './components/NativeAppBridge'
+import { lazyWithRetry } from './lib/lazyWithRetry'
 
-const MeetingRoom = lazy(() => import('./components/MeetingRoom'))
-const JoinMeeting = lazy(() => import('./components/JoinMeeting'))
-const TermsPage = lazy(() => import('./components/legal/TermsPage'))
-const PrivacyPage = lazy(() => import('./components/legal/PrivacyPage'))
-const TranslationLabDemo = lazy(() => import('./components/demo/TranslationLabDemo'))
-const PreviewStaticRedirect = lazy(() => import('./components/preview/PreviewStaticRedirect'))
+const MeetingRoom = lazyWithRetry(() => import('./components/MeetingRoom'), 'MeetingRoom')
+const JoinMeeting = lazyWithRetry(() => import('./components/JoinMeeting'), 'JoinMeeting')
+const TermsPage = lazyWithRetry(() => import('./components/legal/TermsPage'), 'TermsPage')
+const PrivacyPage = lazyWithRetry(() => import('./components/legal/PrivacyPage'), 'PrivacyPage')
+const TranslationLabDemo = lazyWithRetry(() => import('./components/demo/TranslationLabDemo'), 'TranslationLabDemo')
+const PreviewStaticRedirect = lazyWithRetry(() => import('./components/preview/PreviewStaticRedirect'), 'PreviewStaticRedirect')
 
-const V2Layout = lazy(() => import('./v2/V2Layout'))
-const V2RootRedirect = lazy(() => import('./v2/V2RootRedirect'))
-const V2RequireAuth = lazy(() => import('./v2/V2RequireAuth'))
-const V2Login = lazy(() => import('./v2/pages/V2Login'))
-const V2Signup = lazy(() => import('./v2/pages/V2Signup'))
-const V2ResetPassword = lazy(() => import('./v2/pages/V2ResetPassword'))
-const V2AppHome = lazy(() => import('./v2/pages/V2AppHome'))
-const V2CallsPage = lazy(() => import('./v2/pages/V2CallsPage'))
-const V2MeetingsList = lazy(() => import('./v2/pages/V2MeetingsList'))
-const V2MeetingDetail = lazy(() => import('./v2/pages/V2MeetingDetail'))
-const V2NotetakerPage = lazy(() => import('./v2/pages/V2NotetakerPage'))
-const V2OrgSettings = lazy(() => import('./v2/pages/V2OrgSettings'))
+const V2Layout = lazyWithRetry(() => import('./v2/V2Layout'), 'V2Layout')
+const V2RootRedirect = lazyWithRetry(() => import('./v2/V2RootRedirect'), 'V2RootRedirect')
+const V2RequireAuth = lazyWithRetry(() => import('./v2/V2RequireAuth'), 'V2RequireAuth')
+const V2Login = lazyWithRetry(() => import('./v2/pages/V2Login'), 'V2Login')
+const V2Signup = lazyWithRetry(() => import('./v2/pages/V2Signup'), 'V2Signup')
+const V2ResetPassword = lazyWithRetry(() => import('./v2/pages/V2ResetPassword'), 'V2ResetPassword')
+const V2AppHome = lazyWithRetry(() => import('./v2/pages/V2AppHome'), 'V2AppHome')
+const V2CallsPage = lazyWithRetry(() => import('./v2/pages/V2CallsPage'), 'V2CallsPage')
+const V2MeetingsList = lazyWithRetry(() => import('./v2/pages/V2MeetingsList'), 'V2MeetingsList')
+const V2MeetingDetail = lazyWithRetry(() => import('./v2/pages/V2MeetingDetail'), 'V2MeetingDetail')
+const V2NotetakerPage = lazyWithRetry(() => import('./v2/pages/V2NotetakerPage'), 'V2NotetakerPage')
+const V2OrgSettings = lazyWithRetry(() => import('./v2/pages/V2OrgSettings'), 'V2OrgSettings')
 
 function SearchAwareRedirect({ to }) {
   const { search, hash } = useLocation()
@@ -52,56 +53,56 @@ function BlogStaticRedirect() {
   return null
 }
 
-const AdminGate = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminGate }))
+const AdminGate = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminGate })), 'AdminGate'
 )
-const AdminShellLayout = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminShellLayout }))
+const AdminShellLayout = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminShellLayout })), 'AdminShellLayout'
 )
-const AdminOverview = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminOverview }))
+const AdminOverview = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminOverview })), 'AdminOverview'
 )
-const AdminOrgsPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminOrgsPage }))
+const AdminOrgsPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminOrgsPage })), 'AdminOrgsPage'
 )
-const AdminUsersPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminUsersPage }))
+const AdminUsersPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminUsersPage })), 'AdminUsersPage'
 )
-const AdminMeetingsPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminMeetingsPage }))
+const AdminMeetingsPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminMeetingsPage })), 'AdminMeetingsPage'
 )
-const AdminCostsPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminCostsPage }))
+const AdminCostsPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminCostsPage })), 'AdminCostsPage'
 )
-const AdminBillingPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminBillingPage }))
+const AdminBillingPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminBillingPage })), 'AdminBillingPage'
 )
-const AdminCommsPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminCommsPage }))
+const AdminCommsPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminCommsPage })), 'AdminCommsPage'
 )
-const AdminStoragePage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminStoragePage }))
+const AdminStoragePage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminStoragePage })), 'AdminStoragePage'
 )
-const AdminSupportPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminSupportPage }))
+const AdminSupportPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminSupportPage })), 'AdminSupportPage'
 )
-const AdminMarketingPage = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminMarketingPage }))
+const AdminMarketingPage = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.AdminMarketingPage })), 'AdminMarketingPage'
 )
-const SuperAdminRedirect = lazy(() =>
-  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.SuperAdminRedirect }))
+const SuperAdminRedirect = lazyWithRetry(() =>
+  import('./v2/pages/AdminDashboard').then((m) => ({ default: m.SuperAdminRedirect })), 'SuperAdminRedirect'
 )
-const TrendsTab = lazy(() =>
-  import('./v2/pages/admin/TrendsTab').then((m) => ({ default: m.TrendsTab }))
+const TrendsTab = lazyWithRetry(() =>
+  import('./v2/pages/admin/TrendsTab').then((m) => ({ default: m.TrendsTab })), 'TrendsTab'
 )
-const GuestsTab = lazy(() =>
-  import('./v2/pages/admin/GuestsTab').then((m) => ({ default: m.GuestsTab }))
+const GuestsTab = lazyWithRetry(() =>
+  import('./v2/pages/admin/GuestsTab').then((m) => ({ default: m.GuestsTab })), 'GuestsTab'
 )
-const AuditTab = lazy(() =>
-  import('./v2/pages/admin/AuditTab').then((m) => ({ default: m.AuditTab }))
+const AuditTab = lazyWithRetry(() =>
+  import('./v2/pages/admin/AuditTab').then((m) => ({ default: m.AuditTab })), 'AuditTab'
 )
-const PlansTab = lazy(() =>
-  import('./v2/pages/admin/PlansTab').then((m) => ({ default: m.PlansTab }))
+const PlansTab = lazyWithRetry(() =>
+  import('./v2/pages/admin/PlansTab').then((m) => ({ default: m.PlansTab })), 'PlansTab'
 )
 
 function RouteFallback() {

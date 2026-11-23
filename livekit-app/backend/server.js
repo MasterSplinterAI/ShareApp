@@ -211,9 +211,14 @@ const qualityEventsLimiter = rateLimit({
 });
 app.use('/api/quality-events', qualityEventsLimiter, require('./routes/qualityEvents'));
 
+let isShuttingDown = false;
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'livekit-backend' });
+  if (isShuttingDown) {
+    return res.status(503).json({ status: 'draining', service: 'livekit-backend' });
+  }
+  return res.json({ status: 'ok', service: 'livekit-backend' });
 });
 
 // Error handling middleware
@@ -228,6 +233,8 @@ app.use((err, req, res, next) => {
 (async function start() {
   let stopOpsEventWorkers = () => {};
   let stopCustomerReporting = () => {};
+  let stopConsentReporter = () => {};
+  let overageInterval = null;
   const stopSeoSchema = process.env.NODE_ENV === 'test' ? () => {} : await schemaHost.start();
   try {
     await v2Database.initDatabase();
@@ -252,7 +259,10 @@ app.use((err, req, res, next) => {
   try {
     const {initializeConsent,consentReporter}=require('./lib/consent');
     await initializeConsent();
-    if(process.env.NODE_ENV!=='test')consentReporter.start();
+    if (process.env.NODE_ENV !== 'test') {
+      consentReporter.start();
+      stopConsentReporter = () => consentReporter.stop?.();
+    }
     const { marketingKitEnabled, initLaliaMarketing } = require('./lib/marketingKit');
     if (marketingKitEnabled()) {
       await initLaliaMarketing();
@@ -287,7 +297,8 @@ app.use((err, req, res, next) => {
         settleDueOverageCycles().catch((err) => console.error('[overage-settlement]', err.message));
       };
       tick();
-      setInterval(tick, intervalMs);
+      overageInterval = setInterval(tick, intervalMs);
+      overageInterval.unref?.();
       console.log(`[overage-settlement] scheduler every ${intervalMs}ms`);
     } else {
       console.log('[overage-settlement] scheduler off (set V2_OVERAGE_SETTLEMENT_INTERVAL_MS to enable)');
@@ -312,8 +323,49 @@ app.use((err, req, res, next) => {
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
-  server.once('close',()=>{stopSeoSchema(); stopOpsEventWorkers(); stopCustomerReporting();v2Routes.stopSupportReplay?.();void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(()=>{});});
-  process.once('SIGTERM',()=>{v2Routes.stopSupportReplay?.();server.close();setTimeout(()=>process.exit(0),10000).unref();});
+  let closeIdleInterval = null;
+  let cleanedUp = false;
+  const cleanupTimersAndWorkers = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (closeIdleInterval) {
+      clearInterval(closeIdleInterval);
+      closeIdleInterval = null;
+    }
+    if (overageInterval) {
+      clearInterval(overageInterval);
+      overageInterval = null;
+    }
+    stopSeoSchema();
+    stopOpsEventWorkers();
+    stopCustomerReporting();
+    stopConsentReporter();
+    try {
+      require('./lib/guestInvites').stopGuestInviteReminders?.();
+    } catch {
+      /* ignore */
+    }
+    v2Routes.stopSupportReplay?.();
+    void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(() => {});
+  };
+  server.once('close', cleanupTimersAndWorkers);
+  const gracefulShutdown = (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[server] Received ${signal}, draining in-flight HTTP requests...`);
+    cleanupTimersAndWorkers();
+    server.close(() => {
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
+    closeIdleInterval = setInterval(() => {
+      server.closeIdleConnections?.();
+    }, 2000);
+    closeIdleInterval.unref?.();
+    setTimeout(() => process.exit(0), 35000).unref();
+  };
+  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 })();
 
 async function runServerSmokeCheck(expressApp, database) {

@@ -8,6 +8,24 @@ const apiV2 = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+async function withMeetingTransientRetry(fn, { retries = 2, baseDelayMs = 450 } = {}) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err?.response?.status;
+      const isTransient = !err?.response || status === 502 || status === 503 || status === 504;
+      if (!isTransient || attempt >= retries) {
+        throw err;
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      attempt += 1;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 apiV2.interceptors.request.use((config) => {
   const token = localStorage.getItem('v2_token');
   if (token) {
@@ -137,14 +155,18 @@ export const v2Meetings = {
   usageStatus: (id) => apiV2.get(`/meetings/${encodeURIComponent(id)}/usage-status`).then((r) => r.data),
   patch: (id, body) => apiV2.patch(`/meetings/${id}`, body).then((r) => r.data),
   delete: (id) => apiV2.delete(`/meetings/${encodeURIComponent(id)}`).then((r) => r.data),
-  token: (id, body) => apiV2.post(`/meetings/${id}/token`, body).then((r) => r.data),
-  hostSessionOpen: (id) => apiV2.post(`/meetings/${id}/host-session-open`, {}).then((r) => r.data),
+  token: (id, body) =>
+    withMeetingTransientRetry(() => apiV2.post(`/meetings/${id}/token`, body).then((r) => r.data)),
+  hostSessionOpen: (id) =>
+    withMeetingTransientRetry(() => apiV2.post(`/meetings/${id}/host-session-open`, {}).then((r) => r.data)),
   listInvites: (id) => apiV2.get(`/meetings/${id}/invites`).then((r) => r.data),
   createInvite: (id, body) => apiV2.post(`/meetings/${id}/invites`, body).then((r) => r.data),
   updateDefaultInvite: (id, body) => apiV2.patch(`/meetings/${id}/invites/default`, body).then((r) => r.data),
   revokeInvite: (id, linkId) => apiV2.delete(`/meetings/${id}/invites/${encodeURIComponent(linkId)}`).then((r) => r.data),
   appendTranscriptLines: (id, lines) =>
-    apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript-lines`, { lines }).then((r) => r.data),
+    withMeetingTransientRetry(() =>
+      apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript-lines`, { lines }).then((r) => r.data)
+    ),
   getTranscript: (id) => apiV2.get(`/meetings/${encodeURIComponent(id)}/transcript`).then((r) => r.data),
   getTranscriptTxtBlob: (id) =>
     apiV2
@@ -178,28 +200,29 @@ export const v2Meetings = {
         note: opts.note || undefined,
       })
       .then((r) => r.data),
-  uploadRecording: (id, blob, { durationSeconds, autoRefine = true } = {}) => {
-    const form = new FormData();
-    const mime = String(blob?.type || '').toLowerCase();
-    const ext = mime.includes('mp4')
-      ? 'm4a'
-      : mime.includes('ogg')
-        ? 'ogg'
-        : mime.includes('mpeg') || mime.includes('mp3')
-          ? 'mp3'
-          : 'webm';
-    form.append('audio', blob, `recording.${ext}`);
-    if (durationSeconds != null && Number.isFinite(Number(durationSeconds))) {
-      form.append('durationSeconds', String(Math.max(1, Math.round(Number(durationSeconds)))));
-    }
-    form.append('autoRefine', autoRefine ? 'true' : 'false');
-    return apiV2
-      .post(`/meetings/${encodeURIComponent(id)}/recordings`, form, {
-        headers: { 'Content-Type': undefined },
-        timeout: 180_000,
-      })
-      .then((r) => r.data);
-  },
+  uploadRecording: (id, blob, { durationSeconds, autoRefine = true } = {}) =>
+    withMeetingTransientRetry(() => {
+      const form = new FormData();
+      const mime = String(blob?.type || '').toLowerCase();
+      const ext = mime.includes('mp4')
+        ? 'm4a'
+        : mime.includes('ogg')
+          ? 'ogg'
+          : mime.includes('mpeg') || mime.includes('mp3')
+            ? 'mp3'
+            : 'webm';
+      form.append('audio', blob, `recording.${ext}`);
+      if (durationSeconds != null && Number.isFinite(Number(durationSeconds))) {
+        form.append('durationSeconds', String(Math.max(1, Math.round(Number(durationSeconds)))));
+      }
+      form.append('autoRefine', autoRefine ? 'true' : 'false');
+      return apiV2
+        .post(`/meetings/${encodeURIComponent(id)}/recordings`, form, {
+          headers: { 'Content-Type': undefined },
+          timeout: 180_000,
+        })
+        .then((r) => r.data);
+    }),
   refineTranscriptFromRecording: (id) =>
     apiV2
       .post(`/meetings/${encodeURIComponent(id)}/recording/refine-transcript`, {}, { timeout: 180_000 })
