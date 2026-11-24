@@ -133,10 +133,27 @@ async function evaluateAndSendUsageAlerts(orgId) {
   const keys = alertKeysForState(state);
   if (!keys.length) return { ok: true, skipped: 'no_alerts' };
 
-  const recipients = await orgBillingEmails(orgId);
-  if (!recipients.length) return { ok: true, skipped: 'no_recipients' };
-
   const org = await db.get(`SELECT name FROM v2_organizations WHERE id = ?`, [orgId]);
+  const { recordAndNotifyAdminUsageAlert } = require('./v2AdminOps');
+  for (const alertKey of keys) {
+    const [meter, kind] = alertKey.split(':');
+    await recordAndNotifyAdminUsageAlert({
+      orgId,
+      orgName: org?.name || 'Workspace',
+      planId: state.entitlements?.planId || 'free',
+      planName: state.entitlements?.planName || 'Free',
+      meter,
+      kind,
+      meterStateRow: state[meter],
+      autoChargeEffective: state.autoChargeEffective,
+    }).catch((err) => {
+      console.warn('[v2UsageAlerts] admin notification skipped:', err.message);
+    });
+  }
+
+  const recipients = await orgBillingEmails(orgId);
+  if (!recipients.length) return { ok: true, skipped: 'no_recipients', worstLevel: state.worstLevel };
+
   const sent = [];
 
   for (const alertKey of keys) {

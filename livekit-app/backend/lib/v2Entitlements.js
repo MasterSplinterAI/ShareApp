@@ -13,7 +13,33 @@ function hardCapMultiplier(planId) {
 }
 
 /**
- * Load org subscription + plan quotas for entitlement checks.
+ * Sum active unrevoked, non-expired bonus minute grants for an org.
+ */
+async function getActiveBonusMinutes(orgId, nowIso = new Date().toISOString()) {
+  if (!orgId) return { meetingMinutes: 0, translationMinutes: 0 };
+  try {
+    const row = await db.get(
+      `SELECT
+         COALESCE(SUM(bonus_meeting_minutes), 0) AS bonus_meeting_minutes,
+         COALESCE(SUM(bonus_translation_minutes), 0) AS bonus_translation_minutes
+       FROM v2_org_credit_grants
+       WHERE org_id = ?
+         AND grant_type = 'bonus_minutes'
+         AND revoked_at IS NULL
+         AND (expires_at IS NULL OR expires_at > ?)`,
+      [orgId, nowIso]
+    );
+    return {
+      meetingMinutes: Math.max(0, Number(row?.bonus_meeting_minutes || 0)),
+      translationMinutes: Math.max(0, Number(row?.bonus_translation_minutes || 0)),
+    };
+  } catch {
+    return { meetingMinutes: 0, translationMinutes: 0 };
+  }
+}
+
+/**
+ * Load org subscription + plan quotas (+ active bonus credits) for entitlement checks.
  */
 async function getOrgEntitlements(orgId) {
   const sub = await db.get(
@@ -25,14 +51,17 @@ async function getOrgEntitlements(orgId) {
     [orgId]
   );
   if (!sub) return null;
-  const meetingMinutes =
+  const baseMeetingMinutes =
     sub.custom_included_meeting_minutes != null
       ? sub.custom_included_meeting_minutes
       : sub.included_meeting_minutes;
-  const translationMinutes =
+  const baseTranslationMinutes =
     sub.custom_included_translation_minutes != null
       ? sub.custom_included_translation_minutes
       : sub.included_translation_minutes;
+  const bonus = await getActiveBonusMinutes(orgId);
+  const meetingMinutes = Math.max(0, Number(baseMeetingMinutes || 0) + bonus.meetingMinutes);
+  const translationMinutes = Math.max(0, Number(baseTranslationMinutes || 0) + bonus.translationMinutes);
   return {
     planId: sub.plan_id,
     planName: sub.plan_name,
@@ -41,6 +70,10 @@ async function getOrgEntitlements(orgId) {
     status: sub.status,
     isComp: sub.is_comp === 1,
     compLabel: sub.comp_label || null,
+    baseIncludedMeetingMinutes: baseMeetingMinutes,
+    baseIncludedTranslationMinutes: baseTranslationMinutes,
+    bonusMeetingMinutes: bonus.meetingMinutes,
+    bonusTranslationMinutes: bonus.translationMinutes,
     includedMeetingMinutes: meetingMinutes,
     includedTranslationMinutes: translationMinutes,
     overageMeetingCentsPerMin: sub.overage_meeting_cents_per_min,
@@ -147,6 +180,7 @@ function isHardCapDenied(gate) {
 }
 
 module.exports = {
+  getActiveBonusMinutes,
   getOrgEntitlements,
   getMonthToDateUsage,
   assertCanCreateMeeting,

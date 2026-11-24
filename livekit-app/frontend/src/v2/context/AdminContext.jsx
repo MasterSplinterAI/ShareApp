@@ -7,6 +7,7 @@ const AdminContext = createContext(null);
 export function AdminProvider({ children }) {
   const [orgs, setOrgs] = useState([]);
   const [users, setUsers] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
   const [kpis, setKpis] = useState(null);
   const [revenue, setRevenue] = useState(null);
   const [disputes, setDisputes] = useState([]);
@@ -55,6 +56,15 @@ export function AdminProvider({ children }) {
     []
   );
 
+  const reloadDashboard = useCallback(
+    (days = 14) =>
+      v2Admin
+        .dashboard(days)
+        .then(setDashboard)
+        .catch(() => {}),
+    []
+  );
+
   const reloadKpis = useCallback(
     () =>
       Promise.all([
@@ -65,8 +75,9 @@ export function AdminProvider({ children }) {
           .then((r) => setDisputes(r.disputes || []))
           .catch(() => setDisputes([])),
         reloadAgentAlerts(),
+        reloadDashboard(),
       ]).catch(() => {}),
-    [reloadAgentAlerts]
+    [reloadAgentAlerts, reloadDashboard]
   );
 
   const reloadOrgDetail = useCallback(() => {
@@ -114,6 +125,7 @@ export function AdminProvider({ children }) {
     () => ({
       orgs,
       users,
+      dashboard,
       kpis,
       revenue,
       disputes,
@@ -125,6 +137,7 @@ export function AdminProvider({ children }) {
       orgDetail,
       reloadOrgs,
       reloadUsers,
+      reloadDashboard,
       reloadCosts,
       reloadAgentAlerts,
       reloadKpis,
@@ -135,6 +148,7 @@ export function AdminProvider({ children }) {
     [
       orgs,
       users,
+      dashboard,
       kpis,
       revenue,
       disputes,
@@ -145,6 +159,7 @@ export function AdminProvider({ children }) {
       orgDetail,
       reloadOrgs,
       reloadUsers,
+      reloadDashboard,
       reloadCosts,
       reloadAgentAlerts,
       reloadKpis,

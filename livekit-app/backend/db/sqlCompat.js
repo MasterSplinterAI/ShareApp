@@ -47,6 +47,12 @@ function toPostgresSql(sql) {
     `to_char(date_trunc('day', timezone('utc', now())), 'YYYY-MM-DD HH24:MI:SS')`
   );
 
+  // Literal offset e.g. datetime('now', '-7 days') or datetime('now', '-30 days')
+  s = s.replace(
+    /datetime\s*\(\s*'now'\s*,\s*'([+-]?\d+\s+[a-zA-Z]+)'\s*\)/gi,
+    `to_char(timezone('utc', now()) + ('$1')::interval, 'YYYY-MM-DD HH24:MI:SS')`
+  );
+
   // datetime('now', ?) where ? is e.g. '-7 days'
   s = s.replace(
     /datetime\s*\(\s*'now'\s*,\s*\?\s*\)/gi,

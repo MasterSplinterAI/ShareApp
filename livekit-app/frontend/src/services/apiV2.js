@@ -282,6 +282,31 @@ export const v2Billing = {
 };
 
 export const v2Admin = {
+  dashboard: (days = 14) => apiV2.get('/admin/dashboard', { params: { days } }).then((r) => r.data),
+  acknowledgeUsageAlerts: (body = {}) =>
+    apiV2.post('/admin/usage-alerts/acknowledge', body).then((r) => r.data),
+  grantBonusMinutes: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/minutes`, body).then((r) => r.data),
+  revokeCreditGrant: (orgId, grantId, body) =>
+    apiV2
+      .post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/${encodeURIComponent(grantId)}/revoke`, body)
+      .then((r) => r.data),
+  applyStripeBalanceCredit: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/stripe-balance`, body).then((r) => r.data),
+  waivePendingOverages: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/waive-overage`, body).then((r) => r.data),
+  patchOrgTags: (orgId, body) =>
+    apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/tags`, body).then((r) => r.data),
+  addOrgNote: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/notes`, body).then((r) => r.data),
+  patchOrgNote: (orgId, noteId, body) =>
+    apiV2
+      .patch(`/admin/orgs/${encodeURIComponent(orgId)}/notes/${encodeURIComponent(noteId)}`, body)
+      .then((r) => r.data),
+  deleteOrgNote: (orgId, noteId) =>
+    apiV2
+      .delete(`/admin/orgs/${encodeURIComponent(orgId)}/notes/${encodeURIComponent(noteId)}`)
+      .then((r) => r.data),
   users: () => apiV2.get('/admin/users').then((r) => r.data),
   userDetail: (userId) => apiV2.get(`/admin/users/${encodeURIComponent(userId)}`).then((r) => r.data),
   disableUser: (userId, body) => apiV2.post(`/admin/users/${encodeURIComponent(userId)}/disable`, body).then((r) => r.data),

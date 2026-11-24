@@ -68,7 +68,19 @@ export function AdminShellLayout() {
 }
 
 export function AdminOrgsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { orgs, selectedOrg, setSelectedOrg, orgDetail, reloadOrgsTab } = useAdmin();
+  const orgParam = searchParams.get('org');
+
+  useEffect(() => {
+    if (orgParam) {
+      setSelectedOrg(orgParam);
+      const next = new URLSearchParams(searchParams);
+      next.delete('org');
+      setSearchParams(next, { replace: true });
+    }
+  }, [orgParam, searchParams, setSearchParams, setSelectedOrg]);
+
   return (
     <OrgsTab
       orgs={orgs}

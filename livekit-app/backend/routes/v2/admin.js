@@ -4,7 +4,22 @@ const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
 const { requireSuperadmin, writeAdminAudit } = require('../../lib/v2Superadmin');
-const { getMonthToDateUsage } = require('../../lib/v2Entitlements');
+const { getMonthToDateUsage, getOrgEntitlements } = require('../../lib/v2Entitlements');
+const {
+  parseAdminTags,
+  acknowledgeAdminUsageAlerts,
+  listOrgCreditGrants,
+  grantBonusMinutes,
+  revokeCreditGrant,
+  applyStripeBalanceCredit,
+  waivePendingOverages,
+  setOrgAdminTags,
+  listOrgNotes,
+  addOrgNote,
+  togglePinOrgNote,
+  deleteOrgNote,
+  getAdminDashboardSnapshot,
+} = require('../../lib/v2AdminOps');
 const { isValidBillingStatus, BILLING_STATUSES } = require('../../lib/v2OrgLifecycle');
 const { sendEmail } = require('../../lib/mailer');
 const { SUPPORT_EMAIL } = require('../../lib/supportEmail');
@@ -154,11 +169,14 @@ router.get('/users', requireV2Auth, requireSuperadmin, async (req, res) => {
 
 router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
   try {
-    const orgs = await db.all(
+    const nowIso = new Date().toISOString();
+    const rawOrgs = await db.all(
       `SELECT o.id, o.name, o.billing_status, o.account_type, o.created_at, o.suspended_at, o.suspended_reason,
+        o.admin_tags_json,
         s.plan_id, s.status AS sub_status, s.is_comp, s.comp_label, s.comp_reason,
         s.cancel_at_period_end, s.cancel_at, s.status AS stripe_status,
-        p.monthly_price_cents, p.included_meeting_minutes,
+        s.custom_included_meeting_minutes, s.custom_included_translation_minutes,
+        p.monthly_price_cents, p.included_meeting_minutes, p.included_translation_minutes,
         s.stripe_customer_id, s.stripe_subscription_id,
         (SELECT u.email FROM v2_org_members m
            JOIN v2_users u ON u.id = m.user_id
@@ -174,6 +192,17 @@ router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
         (SELECT COUNT(*) FROM v2_meetings mt WHERE mt.org_id = o.id) AS meeting_count,
         (SELECT COALESCE(SUM(CASE WHEN event_type = 'meeting_participant_minute' THEN quantity ELSE 0 END), 0)
          FROM v2_usage_events WHERE org_id = o.id AND created_at >= datetime('now', 'start of month')) AS mtd_meeting_minutes,
+        (SELECT COALESCE(SUM(CASE WHEN event_type = 'translation_minute' THEN quantity ELSE 0 END), 0)
+         FROM v2_usage_events WHERE org_id = o.id AND created_at >= datetime('now', 'start of month')) AS mtd_translation_minutes,
+        (SELECT COALESCE(SUM(cg.bonus_meeting_minutes), 0)
+         FROM v2_org_credit_grants cg
+         WHERE cg.org_id = o.id AND cg.grant_type = 'bonus_minutes'
+           AND cg.revoked_at IS NULL AND (cg.expires_at IS NULL OR cg.expires_at > ?)) AS bonus_meeting_minutes,
+        (SELECT COALESCE(SUM(cg.bonus_translation_minutes), 0)
+         FROM v2_org_credit_grants cg
+         WHERE cg.org_id = o.id AND cg.grant_type = 'bonus_minutes'
+           AND cg.revoked_at IS NULL AND (cg.expires_at IS NULL OR cg.expires_at > ?)) AS bonus_translation_minutes,
+        (SELECT COUNT(*) FROM v2_admin_account_notes n WHERE n.org_id = o.id) AS note_count,
         (SELECT COALESCE(SUM(r.total_cost_usd), 0)
          FROM meeting_cost_rollups r
          LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
@@ -182,8 +211,31 @@ router.get('/orgs', requireV2Auth, requireSuperadmin, async (req, res) => {
        FROM v2_organizations o
        LEFT JOIN v2_org_subscriptions s ON s.org_id = o.id
        LEFT JOIN v2_plans p ON p.id = s.plan_id
-       ORDER BY datetime(o.created_at) DESC LIMIT 200`
+       ORDER BY datetime(o.created_at) DESC LIMIT 200`,
+      [nowIso, nowIso]
     );
+    const orgs = (rawOrgs || []).map((row) => {
+      const baseMeet =
+        row.custom_included_meeting_minutes != null
+          ? Number(row.custom_included_meeting_minutes)
+          : Number(row.included_meeting_minutes || 0);
+      const baseTrans =
+        row.custom_included_translation_minutes != null
+          ? Number(row.custom_included_translation_minutes)
+          : Number(row.included_translation_minutes || 0);
+      const effMeet = Math.max(0, baseMeet + Number(row.bonus_meeting_minutes || 0));
+      const effTrans = Math.max(0, baseTrans + Number(row.bonus_translation_minutes || 0));
+      const isComp = Number(row.is_comp) === 1;
+      const meetPct = !isComp && effMeet > 0 ? Math.round((Number(row.mtd_meeting_minutes || 0) / effMeet) * 100) : 0;
+      const transPct = !isComp && effTrans > 0 ? Math.round((Number(row.mtd_translation_minutes || 0) / effTrans) * 100) : 0;
+      return {
+        ...row,
+        admin_tags: parseAdminTags(row.admin_tags_json),
+        effective_included_meeting_minutes: effMeet,
+        effective_included_translation_minutes: effTrans,
+        quota_pct: Math.max(meetPct, transPct),
+      };
+    });
     res.json({ orgs });
   } catch (e) {
     console.error('[admin/orgs]', e);
@@ -197,30 +249,45 @@ router.get('/orgs/:orgId', requireV2Auth, requireSuperadmin, async (req, res) =>
     if (!org) return res.status(404).json({ error: 'Not found' });
     const sub = await db.get(
       `SELECT s.*, p.name AS plan_name, p.monthly_price_cents, p.included_meeting_minutes,
-              p.stripe_price_id
+              p.included_translation_minutes, p.stripe_price_id
        FROM v2_org_subscriptions s
        LEFT JOIN v2_plans p ON p.id = s.plan_id
        WHERE s.org_id = ?`,
       [req.params.orgId]
     );
-    const members = await db.all(
-      `SELECT u.id, u.email, u.display_name, m.role, m.created_at
-       FROM v2_org_members m JOIN v2_users u ON u.id = m.user_id
-       WHERE m.org_id = ? ORDER BY lower(u.email)`,
-      [req.params.orgId]
-    );
-    const usage = await getMonthToDateUsage(req.params.orgId);
-    const usageAnalytics = await getOrgUsageAnalytics(req.params.orgId);
-    const costRow = await db.get(
-      `SELECT COALESCE(SUM(r.total_cost_usd), 0) AS total_usd
-       FROM meeting_cost_rollups r
-       LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
-       WHERE COALESCE(r.org_id, mt.org_id) = ? AND r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000`,
-      [req.params.orgId]
-    );
+    const [members, usage, usageAnalytics, entitlements, credits, notes, pendingOverages, costRow] =
+      await Promise.all([
+        db.all(
+          `SELECT u.id, u.email, u.display_name, m.role, m.created_at
+           FROM v2_org_members m JOIN v2_users u ON u.id = m.user_id
+           WHERE m.org_id = ? ORDER BY lower(u.email)`,
+          [req.params.orgId]
+        ),
+        getMonthToDateUsage(req.params.orgId),
+        getOrgUsageAnalytics(req.params.orgId),
+        getOrgEntitlements(req.params.orgId),
+        listOrgCreditGrants(req.params.orgId),
+        listOrgNotes(req.params.orgId),
+        db.all(
+          `SELECT * FROM v2_overage_ledger WHERE org_id = ? AND status IN ('pending', 'pending_payment') ORDER BY created_at DESC`,
+          [req.params.orgId]
+        ),
+        db.get(
+          `SELECT COALESCE(SUM(r.total_cost_usd), 0) AS total_usd
+           FROM meeting_cost_rollups r
+           LEFT JOIN v2_meetings mt ON mt.livekit_room_name = r.meeting_id
+           WHERE COALESCE(r.org_id, mt.org_id) = ? AND r.computed_at >= CAST(strftime('%s','now','start of month') AS INTEGER) * 1000`,
+          [req.params.orgId]
+        ),
+      ]);
     res.json({
       org,
+      adminTags: parseAdminTags(org.admin_tags_json),
       subscription: sub,
+      entitlements,
+      credits,
+      notes,
+      pendingOverages,
       members,
       usageThisMonth: usage,
       usageAnalytics,
@@ -1581,6 +1648,177 @@ router.post('/notetaker/verify', requireV2Auth, requireSuperadmin, async (req, r
   } catch (e) {
     console.error('[admin/notetaker/verify]', e);
     res.status(500).json({ ok: false, error: 'Failed to verify Recall.ai credentials' });
+  }
+});
+
+router.get('/dashboard', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const snapshot = await getAdminDashboardSnapshot({ days: req.query.days });
+    res.json(snapshot);
+  } catch (e) {
+    console.error('[admin/dashboard]', e);
+    res.status(500).json({ error: 'Failed to load admin dashboard snapshot' });
+  }
+});
+
+router.post('/usage-alerts/acknowledge', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+    const { acknowledgedCount } = await acknowledgeAdminUsageAlerts(req.v2Auth.email, ids);
+    await writeAdminAudit(db, req.v2Auth.email, 'admin_ack_usage_alerts', {
+      acknowledgedCount,
+      ids: ids || 'all',
+    });
+    res.json({ ok: true, acknowledgedCount });
+  } catch (e) {
+    console.error('[admin/usage-alerts/acknowledge]', e);
+    res.status(500).json({ error: 'Failed to acknowledge usage alerts' });
+  }
+});
+
+router.post('/orgs/:orgId/credits/minutes', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await grantBonusMinutes({
+      orgId: req.params.orgId,
+      meetingMinutes: req.body?.meetingMinutes,
+      translationMinutes: req.body?.translationMinutes,
+      expiresInDays: req.body?.expiresInDays,
+      expiresAt: req.body?.expiresAt,
+      reason: req.body?.reason,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/credits/minutes]', e);
+    res.status(500).json({ error: 'Failed to grant bonus minutes' });
+  }
+});
+
+router.post('/orgs/:orgId/credits/:grantId/revoke', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await revokeCreditGrant({
+      orgId: req.params.orgId,
+      grantId: req.params.grantId,
+      reason: req.body?.reason,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/credits/revoke]', e);
+    res.status(500).json({ error: 'Failed to revoke credit grant' });
+  }
+});
+
+router.post('/orgs/:orgId/credits/stripe-balance', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await applyStripeBalanceCredit({
+      orgId: req.params.orgId,
+      amountCents: req.body?.amountCents,
+      reason: req.body?.reason,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/credits/stripe-balance]', e);
+    res.status(500).json({ error: e.message || 'Failed to apply Stripe customer credit' });
+  }
+});
+
+router.post('/orgs/:orgId/credits/waive-overage', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await waivePendingOverages({
+      orgId: req.params.orgId,
+      reason: req.body?.reason,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/credits/waive-overage]', e);
+    res.status(500).json({ error: 'Failed to waive pending overages' });
+  }
+});
+
+router.patch('/orgs/:orgId/tags', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await setOrgAdminTags({
+      orgId: req.params.orgId,
+      tags: req.body?.tags,
+      reason: req.body?.reason,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/orgs/tags]', e);
+    res.status(500).json({ error: 'Failed to update account tags' });
+  }
+});
+
+router.post('/orgs/:orgId/notes', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await addOrgNote({
+      orgId: req.params.orgId,
+      userId: req.body?.userId,
+      body: req.body?.body,
+      pinned: req.body?.pinned,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/orgs/notes post]', e);
+    res.status(500).json({ error: 'Failed to add internal note' });
+  }
+});
+
+router.patch('/orgs/:orgId/notes/:noteId', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await togglePinOrgNote({
+      orgId: req.params.orgId,
+      noteId: req.params.noteId,
+      pinned: req.body?.pinned,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/orgs/notes patch]', e);
+    res.status(500).json({ error: 'Failed to update internal note' });
+  }
+});
+
+router.delete('/orgs/:orgId/notes/:noteId', requireV2Auth, requireSuperadmin, async (req, res) => {
+  try {
+    const result = await deleteOrgNote({
+      orgId: req.params.orgId,
+      noteId: req.params.noteId,
+      actorEmail: req.v2Auth.email,
+    });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result);
+  } catch (e) {
+    console.error('[admin/orgs/notes delete]', e);
+    res.status(500).json({ error: 'Failed to delete internal note' });
   }
 });
 
