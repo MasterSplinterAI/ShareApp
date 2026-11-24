@@ -5,6 +5,9 @@
 export function buildSchemaStatements(tablePrefix: string): string[] {
   const p = tablePrefix;
   return [
+    `CREATE TABLE IF NOT EXISTS ${p}lead_consent_migrations (id TEXT PRIMARY KEY)`,
+    `CREATE TABLE IF NOT EXISTS ${p}lead_consent_heads (tenant_id TEXT NOT NULL,email TEXT NOT NULL,revision BIGINT NOT NULL,PRIMARY KEY(tenant_id,email))`,
+    `CREATE TABLE IF NOT EXISTS ${p}lead_consent_events (id TEXT PRIMARY KEY,tenant_id TEXT NOT NULL,email TEXT NOT NULL,lead_id TEXT NOT NULL,revision BIGINT NOT NULL,channel TEXT NOT NULL,purpose TEXT NOT NULL,granted INTEGER NOT NULL,source TEXT NOT NULL,consent_text TEXT,policy_version TEXT NOT NULL,occurred_at TEXT NOT NULL,UNIQUE(tenant_id,email,revision,channel))`,
     `
     CREATE TABLE IF NOT EXISTS ${p}tickets (
       id TEXT PRIMARY KEY,
@@ -117,6 +120,12 @@ export function buildSchemaStatements(tablePrefix: string): string[] {
       UNIQUE (tenant_id, source_kind, source_key)
     )
     `,
+    `CREATE TABLE IF NOT EXISTS ${p}kb_revisions (
+      id TEXT PRIMARY KEY, article_id TEXT NOT NULL, tenant_id TEXT NOT NULL,
+      title TEXT NOT NULL, body TEXT NOT NULL, visibility TEXT NOT NULL,
+      provenance_json TEXT, source_revision TEXT NOT NULL, created_at TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_${p}kb_revision_article ON ${p}kb_revisions(tenant_id, article_id)`,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_status ON ${p}kb_articles(tenant_id, status)`,
     `CREATE INDEX IF NOT EXISTS idx_${p}kb_visibility ON ${p}kb_articles(tenant_id, visibility)`,
     `
@@ -146,6 +155,7 @@ export function buildSchemaStatements(tablePrefix: string): string[] {
       name TEXT NOT NULL,
       domain TEXT,
       ingest_token_hash TEXT,
+      brand_json TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )
@@ -162,6 +172,10 @@ export function buildAlterStatements(tablePrefix: string): Array<{
 }> {
   const p = tablePrefix;
   return [
+    ...["draft_revision_id TEXT", "published_revision_id TEXT", "revision_version INTEGER NOT NULL DEFAULT 0", "removal_candidate INTEGER NOT NULL DEFAULT 0", "retrieval_eligible INTEGER NOT NULL DEFAULT 1"].map(definition => ({
+      table: `${p}kb_articles`, column: definition.split(" ")[0]!,
+      ddl: `ALTER TABLE ${p}kb_articles ADD COLUMN ${definition}`,
+    })),
     {
       table: `${p}tickets`,
       column: "kind",
@@ -196,6 +210,11 @@ export function buildAlterStatements(tablePrefix: string): Array<{
       table: `${p}proposals`,
       column: "claimed_at",
       ddl: `ALTER TABLE ${p}proposals ADD COLUMN claimed_at TEXT`,
+    },
+    {
+      table: `${p}tenants`,
+      column: "brand_json",
+      ddl: `ALTER TABLE ${p}tenants ADD COLUMN brand_json TEXT`,
     },
   ];
 }

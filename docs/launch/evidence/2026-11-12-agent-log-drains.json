@@ -1,0 +1,357 @@
+{
+  "provisioned": [
+    {
+      "agentId": "CA_do6qoLXhxqA7",
+      "logGroup": "CA_do6qoLXhxqA7",
+      "retentionDays": 30,
+      "userName": "lalia-primary-agent-log-writer",
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup"
+            ],
+            "Resource": "arn:aws:logs:us-east-2:690248313257:log-group:CA_do6qoLXhxqA7"
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-2:690248313257:log-group:CA_do6qoLXhxqA7:log-stream:*"
+          }
+        ]
+      },
+      "recoveryVersionId": "04dcb030-ee95-485c-982f-4be283fc8c03",
+      "injectedIntoLiveKit": true,
+      "deliveryVerified": true,
+      "reviewedVersion": "M9VUJFcXh9BM",
+      "currentRecoveryVersionId": "d1dea5f2-2249-41f4-b38c-6db247c600d0",
+      "syntheticProbeEnabled": false
+    },
+    {
+      "agentId": "CA_gKYczmp9DCNy",
+      "logGroup": "CA_gKYczmp9DCNy",
+      "retentionDays": 30,
+      "userName": "lalia-stable-agent-log-writer",
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup"
+            ],
+            "Resource": "arn:aws:logs:us-east-2:690248313257:log-group:CA_gKYczmp9DCNy"
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:us-east-2:690248313257:log-group:CA_gKYczmp9DCNy:log-stream:*"
+          }
+        ]
+      },
+      "recoveryVersionId": "11c84b5c-0ccb-45d1-a428-25e125203b6b",
+      "injectedIntoLiveKit": true,
+      "deliveryVerified": true,
+      "reviewedVersion": "CqPbKWM3fgks",
+      "currentRecoveryVersionId": "230f9bef-0ebf-462c-aee5-409e8f11b8bd",
+      "syntheticProbeEnabled": false
+    }
+  ],
+  "iamIndependentVerification": {
+    "primary": {
+      "write": "allowed",
+      "read": "implicitDeny",
+      "delete": "implicitDeny",
+      "crossGroup": "implicitDeny",
+      "secretRead": "implicitDeny"
+    },
+    "stable": {
+      "write": "allowed",
+      "read": "implicitDeny",
+      "delete": "implicitDeny",
+      "crossGroup": "implicitDeny",
+      "secretRead": "implicitDeny"
+    }
+  },
+  "delivery": {
+    "primary": {
+      "verifiedAt": "2026-11-12T20:05:03.590551+00:00",
+      "agentId": "CA_do6qoLXhxqA7",
+      "reviewedBuild": "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8",
+      "rolloutSince": "2026-11-12T19:58:00Z",
+      "workerStreams": [
+        {
+          "workerStream": "CAW_P9oJRcbLM3PZ",
+          "eventCount": 71,
+          "firstEventTimestamp": 1794513571830,
+          "lastEventTimestamp": 1794513571830,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "inference_config",
+            "module_loaded",
+            "privacy_controlled_error",
+            "sdk_event",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_draining",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "sdk_worker_stopping",
+            "unstructured_output_suppressed",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        },
+        {
+          "workerStream": "CAW_P9vAK8BpuzwW",
+          "eventCount": 44,
+          "firstEventTimestamp": 1794513832308,
+          "lastEventTimestamp": 1794513832308,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "inference_config",
+            "module_loaded",
+            "sdk_event",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        },
+        {
+          "workerStream": "CAW_Q5gXHDfuqrT3",
+          "eventCount": 305,
+          "firstEventTimestamp": 1794513571892,
+          "lastEventTimestamp": 1794513574826,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "bvc_noise_cancellation_enabled_on_inbound_audio",
+            "caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider",
+            "inference_config",
+            "is_final_seg",
+            "lane_mode_updated_effective_multilingual_same_language",
+            "language_update_was_enabled_voiceenabled",
+            "llm_openai_temp_timeout_s",
+            "llm_prewarmed_in_ms",
+            "module_loaded",
+            "pipeline_leg_ended_stt_stream_closed_exiting_for_restart",
+            "privacy_controlled_error",
+            "provider_status_stt_active_tts_active",
+            "room_codeswitch_captions_agent_tts",
+            "sdk_event",
+            "sdk_job_requested",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_draining",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "sdk_worker_stopping",
+            "session_started",
+            "session_stopped",
+            "shutdown_cancelled_speaker_pipeline_task_s",
+            "speaker_pipeline_cancelled",
+            "speaker_pipeline_shared_stt_targets",
+            "stt_idle_finalize_ms_without_new_words",
+            "stt_xai_streaming_multilingual_language_sample_rate_shared",
+            "translation_completed",
+            "tts_lane_ready_track_tts_provider",
+            "tts_lane_removed",
+            "turn_final_ms",
+            "unstructured_output_suppressed",
+            "update_assistants_speakers_targets_participant_langs_enabled_voice",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)",
+            "\ud83d\udce2 Broadcast agent_ready \u2014 waiting for participant language sync",
+            "\ud83d\udce2 agent_ready re-broadcast after human participant_connected (rejoin / missed first broadcast)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        },
+        {
+          "workerStream": "CAW_kGEVXSMKTEFj",
+          "eventCount": 64,
+          "firstEventTimestamp": 1794513842024,
+          "lastEventTimestamp": 1794513842024,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "inference_config",
+            "module_loaded",
+            "sdk_event",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION CODESWITCH AGENT MODULE LOADED (detected source language)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        }
+      ],
+      "matchingRolloutWorkers": 4,
+      "unexpectedOrSentinelMessages": 0,
+      "requiredEventsPresent": true,
+      "requiredEvents": [
+        "privacy_controlled_error",
+        "sdk_job_requested",
+        "sdk_worker_registered",
+        "session_started",
+        "session_stopped",
+        "worker_started"
+      ],
+      "passed": true
+    },
+    "stable": {
+      "verifiedAt": "2026-11-12T20:13:53.666165+00:00",
+      "agentId": "CA_gKYczmp9DCNy",
+      "reviewedBuild": "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8",
+      "rolloutSince": "2026-11-12T20:08:00Z",
+      "workerStreams": [
+        {
+          "workerStream": "CAW_3qbCq99nC7Co",
+          "eventCount": 42,
+          "firstEventTimestamp": 1794514411558,
+          "lastEventTimestamp": 1794514411558,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "inference_config",
+            "module_loaded",
+            "sdk_event",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        },
+        {
+          "workerStream": "CAW_MdNvXyRoj9U6",
+          "eventCount": 410,
+          "firstEventTimestamp": 1794514177054,
+          "lastEventTimestamp": 1794514177054,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "bvc_noise_cancellation_enabled_on_inbound_audio",
+            "caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider",
+            "costreporter_not_set_cost_events_disabled_for_this_session",
+            "inference_config",
+            "is_final_seg",
+            "language_update_was_enabled",
+            "llm_openai_temp_timeout_s",
+            "llm_prewarmed_in_ms",
+            "module_loaded",
+            "pipeline_leg_ended_stt_stream_closed_exiting_for_restart",
+            "privacy_controlled_error",
+            "room_transcription_only_agent_no_tts",
+            "sdk_event",
+            "sdk_job_requested",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_draining",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "sdk_worker_stopping",
+            "session_started",
+            "session_stopped",
+            "shutdown_cancelled_speaker_pipeline_task_s",
+            "speaker_pipeline_cancelled",
+            "speaker_pipeline_shared_stt_targets",
+            "stt_deepgram_nova_lang_multi_auto_detect_endpointing_ms_keyterms_shared",
+            "stt_idle_finalize_ms_without_new_words",
+            "translation_completed",
+            "turn_final_ms",
+            "unstructured_output_suppressed",
+            "update_assistants_speakers_targets_participant_langs_enabled",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)",
+            "\ud83d\udce2 Broadcast agent_ready \u2014 waiting for participant language sync",
+            "\ud83d\udce2 agent_ready re-broadcast after human participant_connected (rejoin / missed first broadcast)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        },
+        {
+          "workerStream": "CAW_mVPwkmP5sShR",
+          "eventCount": 62,
+          "firstEventTimestamp": 1794514393411,
+          "lastEventTimestamp": 1794514393411,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "inference_config",
+            "module_loaded",
+            "sdk_event",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        },
+        {
+          "workerStream": "CAW_sY84bbcTFAjQ",
+          "eventCount": 69,
+          "firstEventTimestamp": 1794514147326,
+          "lastEventTimestamp": 1794514154569,
+          "sourceBuilds": [
+            "947b932e9be6e9cf9d5fa44739ea8b13f5222aa8"
+          ],
+          "eventKinds": [
+            "inference_config",
+            "module_loaded",
+            "privacy_controlled_error",
+            "sdk_event",
+            "sdk_process_initialized",
+            "sdk_process_initializing",
+            "sdk_worker_draining",
+            "sdk_worker_registered",
+            "sdk_worker_starting",
+            "sdk_worker_stopping",
+            "unstructured_output_suppressed",
+            "worker_started",
+            "\ud83d\udcdd TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)",
+            "\ud83d\udd25 Worker process prewarmed Silero VAD"
+          ]
+        }
+      ],
+      "matchingRolloutWorkers": 4,
+      "unexpectedOrSentinelMessages": 0,
+      "requiredEventsPresent": true,
+      "requiredEvents": [
+        "privacy_controlled_error",
+        "sdk_job_requested",
+        "sdk_worker_registered",
+        "session_started",
+        "session_stopped",
+        "worker_started"
+      ],
+      "passed": true
+    }
+  }
+}

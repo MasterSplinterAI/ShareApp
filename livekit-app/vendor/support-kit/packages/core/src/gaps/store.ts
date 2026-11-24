@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { GapStatus, KnowledgeGap, ProposalType } from "@rhule/support-shared";
+import type { GapStatus, KnowledgeGap, ProposalType } from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 

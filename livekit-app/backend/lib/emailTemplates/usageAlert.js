@@ -1,3 +1,5 @@
+const { SUPPORT_EMAIL } = require('../supportEmail');
+
 function meterLabel(meter) {
   return meter === 'translation' ? 'translation minutes' : 'meeting participant-minutes';
 }
@@ -44,12 +46,13 @@ function renderUsageAlert({
     body = `${workspace} usage: ${usedR} / ${includedR} included (hard cap ${hardR}).`;
   }
 
-  const text = [headline, '', body, '', 'Open Settings → Billing in Lalia to review usage and plans.'].join('\n');
+  const text = [headline, '', body, '', 'Open Settings → Billing in Lalia to review usage and plans.', '', `Need help? Email ${SUPPORT_EMAIL}.`].join('\n');
   const html = `
     <div style="font-family:system-ui,sans-serif;line-height:1.5;color:#111">
       <h2 style="margin:0 0 12px">${headline}</h2>
       <p>${body}</p>
       <p style="color:#555;font-size:14px">Open <strong>Settings → Billing</strong> in Lalia to review usage and plans.</p>
+      <p style="color:#555;font-size:14px">Need help? Email <a href="mailto:${SUPPORT_EMAIL}">${SUPPORT_EMAIL}</a>.</p>
     </div>
   `;
   return { subject, text, html };

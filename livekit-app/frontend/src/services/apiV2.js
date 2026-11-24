@@ -8,6 +8,24 @@ const apiV2 = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+async function withMeetingTransientRetry(fn, { retries = 2, baseDelayMs = 450 } = {}) {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      const status = err?.response?.status;
+      const isTransient = !err?.response || status === 502 || status === 503 || status === 504;
+      if (!isTransient || attempt >= retries) {
+        throw err;
+      }
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      attempt += 1;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
+
 apiV2.interceptors.request.use((config) => {
   const token = localStorage.getItem('v2_token');
   if (token) {
@@ -51,8 +69,10 @@ apiV2.interceptors.response.use(
     const status = error.response?.status;
     const requestUrl = String(error.config?.url || '');
     const isAuthAttempt = /\/auth\/(login|signup|reset-password)/.test(requestUrl);
+    const isPasswordValidation = /\/auth\/change-password$/.test(requestUrl) &&
+      error.response?.data?.error === 'Current password is incorrect' && !error.response?.data?.code;
 
-    if (status === 401 && !isAuthAttempt && !handling401) {
+    if (status === 401 && !error.config?.skipSessionRedirect && !isAuthAttempt && !isPasswordValidation && !handling401) {
       handling401 = true;
       localStorage.removeItem('v2_token');
       const path = window.location.pathname;
@@ -70,7 +90,7 @@ apiV2.interceptors.response.use(
 export const v2Auth = {
   signup: (body) => apiV2.post('/auth/signup', body).then((r) => r.data),
   login: (body) => apiV2.post('/auth/login', body).then((r) => r.data),
-  me: () => apiV2.get('/auth/me').then((r) => r.data),
+  me: (config) => apiV2.get('/auth/me', config).then((r) => r.data),
   switchWorkspace: (orgId) => apiV2.post('/auth/switch-workspace', { orgId }).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/auth/me', body).then((r) => r.data),
   changePassword: (body) => apiV2.post('/auth/change-password', body).then((r) => r.data),
@@ -104,7 +124,7 @@ export const v2Support = {
 };
 
 export const v2Orgs = {
-  me: () => apiV2.get('/orgs/me').then((r) => r.data),
+  me: (config) => apiV2.get('/orgs/me', config).then((r) => r.data),
   patchMe: (body) => apiV2.patch('/orgs/me', body).then((r) => r.data),
   patchBranding: (body) => apiV2.patch('/orgs/me/branding', body).then((r) => r.data),
   uploadBrandingLogo: (file) => {
@@ -135,14 +155,18 @@ export const v2Meetings = {
   usageStatus: (id) => apiV2.get(`/meetings/${encodeURIComponent(id)}/usage-status`).then((r) => r.data),
   patch: (id, body) => apiV2.patch(`/meetings/${id}`, body).then((r) => r.data),
   delete: (id) => apiV2.delete(`/meetings/${encodeURIComponent(id)}`).then((r) => r.data),
-  token: (id, body) => apiV2.post(`/meetings/${id}/token`, body).then((r) => r.data),
-  hostSessionOpen: (id) => apiV2.post(`/meetings/${id}/host-session-open`, {}).then((r) => r.data),
+  token: (id, body) =>
+    withMeetingTransientRetry(() => apiV2.post(`/meetings/${id}/token`, body).then((r) => r.data)),
+  hostSessionOpen: (id) =>
+    withMeetingTransientRetry(() => apiV2.post(`/meetings/${id}/host-session-open`, {}).then((r) => r.data)),
   listInvites: (id) => apiV2.get(`/meetings/${id}/invites`).then((r) => r.data),
   createInvite: (id, body) => apiV2.post(`/meetings/${id}/invites`, body).then((r) => r.data),
   updateDefaultInvite: (id, body) => apiV2.patch(`/meetings/${id}/invites/default`, body).then((r) => r.data),
   revokeInvite: (id, linkId) => apiV2.delete(`/meetings/${id}/invites/${encodeURIComponent(linkId)}`).then((r) => r.data),
   appendTranscriptLines: (id, lines) =>
-    apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript-lines`, { lines }).then((r) => r.data),
+    withMeetingTransientRetry(() =>
+      apiV2.post(`/meetings/${encodeURIComponent(id)}/transcript-lines`, { lines }).then((r) => r.data)
+    ),
   getTranscript: (id) => apiV2.get(`/meetings/${encodeURIComponent(id)}/transcript`).then((r) => r.data),
   getTranscriptTxtBlob: (id) =>
     apiV2
@@ -176,6 +200,33 @@ export const v2Meetings = {
         note: opts.note || undefined,
       })
       .then((r) => r.data),
+  uploadRecording: (id, blob, { durationSeconds, autoRefine = true } = {}) =>
+    withMeetingTransientRetry(() => {
+      const form = new FormData();
+      const mime = String(blob?.type || '').toLowerCase();
+      const ext = mime.includes('mp4')
+        ? 'm4a'
+        : mime.includes('ogg')
+          ? 'ogg'
+          : mime.includes('mpeg') || mime.includes('mp3')
+            ? 'mp3'
+            : 'webm';
+      form.append('audio', blob, `recording.${ext}`);
+      if (durationSeconds != null && Number.isFinite(Number(durationSeconds))) {
+        form.append('durationSeconds', String(Math.max(1, Math.round(Number(durationSeconds)))));
+      }
+      form.append('autoRefine', autoRefine ? 'true' : 'false');
+      return apiV2
+        .post(`/meetings/${encodeURIComponent(id)}/recordings`, form, {
+          headers: { 'Content-Type': undefined },
+          timeout: 180_000,
+        })
+        .then((r) => r.data);
+    }),
+  refineTranscriptFromRecording: (id) =>
+    apiV2
+      .post(`/meetings/${encodeURIComponent(id)}/recording/refine-transcript`, {}, { timeout: 180_000 })
+      .then((r) => r.data),
 };
 
 export const v2Host = {
@@ -204,7 +255,26 @@ export const v2Billing = {
         params: opts.reconcile ? { reconcile: '1' } : undefined,
       })
       .then((r) => r.data),
-  checkout: (planId) => apiV2.post('/billing/checkout', { planId }).then((r) => r.data),
+  checkout: (planId, billingInterval) =>
+    apiV2
+      .post('/billing/checkout', {
+        planId,
+        ...(billingInterval ? { billingInterval } : {}),
+      })
+      .then((r) => r.data),
+  changePlan: async (planId, subscription, billingInterval) => {
+    const terminal = ['canceled', 'cancelled', 'incomplete_expired'].includes(String(subscription?.status || '').toLowerCase());
+    if (subscription?.stripe_subscription_id && !terminal) return v2Billing.portal();
+    try {
+      return await v2Billing.checkout(planId, billingInterval);
+    } catch (error) {
+      // Another checkout may have completed since this page loaded.
+      if (error.response?.status === 409 && error.response?.data?.code === 'subscription_exists') {
+        return v2Billing.portal();
+      }
+      throw error;
+    }
+  },
   portal: (body) => apiV2.post('/billing/portal', body || {}).then((r) => r.data),
   resume: () => apiV2.post('/billing/resume', {}).then((r) => r.data),
   settleDryRun: (body) => apiV2.post('/billing/settle-dry-run', body || {}).then((r) => r.data),
@@ -212,6 +282,31 @@ export const v2Billing = {
 };
 
 export const v2Admin = {
+  dashboard: (days = 14) => apiV2.get('/admin/dashboard', { params: { days } }).then((r) => r.data),
+  acknowledgeUsageAlerts: (body = {}) =>
+    apiV2.post('/admin/usage-alerts/acknowledge', body).then((r) => r.data),
+  grantBonusMinutes: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/minutes`, body).then((r) => r.data),
+  revokeCreditGrant: (orgId, grantId, body) =>
+    apiV2
+      .post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/${encodeURIComponent(grantId)}/revoke`, body)
+      .then((r) => r.data),
+  applyStripeBalanceCredit: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/stripe-balance`, body).then((r) => r.data),
+  waivePendingOverages: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/credits/waive-overage`, body).then((r) => r.data),
+  patchOrgTags: (orgId, body) =>
+    apiV2.patch(`/admin/orgs/${encodeURIComponent(orgId)}/tags`, body).then((r) => r.data),
+  addOrgNote: (orgId, body) =>
+    apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/notes`, body).then((r) => r.data),
+  patchOrgNote: (orgId, noteId, body) =>
+    apiV2
+      .patch(`/admin/orgs/${encodeURIComponent(orgId)}/notes/${encodeURIComponent(noteId)}`, body)
+      .then((r) => r.data),
+  deleteOrgNote: (orgId, noteId) =>
+    apiV2
+      .delete(`/admin/orgs/${encodeURIComponent(orgId)}/notes/${encodeURIComponent(noteId)}`)
+      .then((r) => r.data),
   users: () => apiV2.get('/admin/users').then((r) => r.data),
   userDetail: (userId) => apiV2.get(`/admin/users/${encodeURIComponent(userId)}`).then((r) => r.data),
   disableUser: (userId, body) => apiV2.post(`/admin/users/${encodeURIComponent(userId)}/disable`, body).then((r) => r.data),
@@ -232,6 +327,10 @@ export const v2Admin = {
   patchPlan: (planId, body) => apiV2.patch(`/admin/plans/${encodeURIComponent(planId)}`, body).then((r) => r.data),
   revenue: () => apiV2.get('/admin/revenue').then((r) => r.data),
   disputes: (params = {}) => apiV2.get('/admin/disputes', { params }).then((r) => r.data),
+  liveKitCosts: month => apiV2.get('/admin/costs/livekit', { params: { month } }).then(r => r.data),
+  importLiveKitInvoice: form => apiV2.post('/admin/costs/livekit', form, { headers: { 'Content-Type': 'multipart/form-data' } }).then(r => r.data),
+  liveKitInvoicePdf: month => apiV2.get('/admin/costs/livekit/' + encodeURIComponent(month) + '/pdf', { responseType: 'blob' }).then(r => r.data),
+  retryLiveKitInvoice: month => apiV2.post('/admin/costs/livekit/' + encodeURIComponent(month) + '/retry'),
   costsSummary: () => apiV2.get('/admin/costs/summary').then((r) => r.data),
   audit: () => apiV2.get('/admin/audit').then((r) => r.data),
   trends: (days = 30) => apiV2.get('/admin/trends', { params: { days } }).then((r) => r.data),
@@ -243,6 +342,7 @@ export const v2Admin = {
   announcements: () => apiV2.get('/admin/announcements').then((r) => r.data),
   createAnnouncement: (body) => apiV2.post('/admin/announcements', body).then((r) => r.data),
   patchAnnouncement: (id, body) => apiV2.patch(`/admin/announcements/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  marketingWorkflow: () => apiV2.get('/admin/email/workflow').then((r) => r.data),
   broadcastEmail: (body) => apiV2.post('/admin/email/broadcast', body).then((r) => r.data),
   billingConfig: () => apiV2.get('/admin/billing/config').then((r) => r.data),
   patchBillingConfig: (body) => apiV2.patch('/admin/billing/config', body).then((r) => r.data),
@@ -254,6 +354,14 @@ export const v2Admin = {
   storageConfig: () => apiV2.get('/admin/storage/config').then((r) => r.data),
   patchStorageConfig: (body) => apiV2.patch('/admin/storage/config', body).then((r) => r.data),
   testStorage: (body) => apiV2.post('/admin/storage/test', body || {}).then((r) => r.data),
+  agentAlertsConfig: () => apiV2.get('/admin/agent-alerts/config').then((r) => r.data),
+  patchAgentAlertsConfig: (body) => apiV2.patch('/admin/agent-alerts/config', body).then((r) => r.data),
+  acknowledgeAgentAlerts: (body = {}) => apiV2.post('/admin/agent-alerts/acknowledge', body).then((r) => r.data),
+  resetAgentCircuit: (body = {}) => apiV2.post('/admin/agent-alerts/reset-circuit', body).then((r) => r.data),
+  testAgentAlerts: () => apiV2.post('/admin/agent-alerts/test', {}).then((r) => r.data),
+  notetakerConfig: () => apiV2.get('/admin/notetaker/config').then((r) => r.data),
+  patchNotetakerConfig: (body) => apiV2.patch('/admin/notetaker/config', body).then((r) => r.data),
+  verifyNotetakerConfig: (body = {}) => apiV2.post('/admin/notetaker/verify', body).then((r) => r.data),
   cancelOrgSubscription: (orgId, body) =>
     apiV2.post(`/admin/orgs/${encodeURIComponent(orgId)}/cancel-subscription`, body).then((r) => r.data),
   marketingConsent: (params = {}) => apiV2.get('/admin/consent/marketing', { params }).then((r) => r.data),
@@ -308,6 +416,24 @@ export const v2Push = {
   registerIosToken: (payload) => apiV2.post('/push/ios-token', payload).then((r) => r.data),
   status: () => apiV2.get('/push/status').then((r) => r.data),
   iosDebug: (payload) => apiV2.post('/push/ios-debug', payload).then((r) => r.data).catch(() => {}),
+};
+
+export const v2Notetaker = {
+  parseUrl: (url) => apiV2.post('/notetaker/parse-url', { url }).then((r) => r.data),
+  listSessions: () => apiV2.get('/notetaker/sessions').then((r) => r.data),
+  createSession: (body) => apiV2.post('/notetaker/sessions', body).then((r) => r.data),
+  getSession: (id) => apiV2.get(`/notetaker/sessions/${encodeURIComponent(id)}`).then((r) => r.data),
+  stopSession: (id) => apiV2.post(`/notetaker/sessions/${encodeURIComponent(id)}/stop`, {}).then((r) => r.data),
+  calendars: () => apiV2.get('/notetaker/calendars').then((r) => r.data),
+  connectCalendarUrl: (provider = 'google_calendar') =>
+    apiV2.post('/notetaker/calendars/connect-url', { provider }).then((r) => r.data),
+  patchCalendar: (id, body) =>
+    apiV2.patch(`/notetaker/calendars/${encodeURIComponent(id)}`, body).then((r) => r.data),
+  syncCalendar: (id) => apiV2.post(`/notetaker/calendars/${encodeURIComponent(id)}/sync`, {}).then((r) => r.data),
+  deleteCalendar: (id) => apiV2.delete(`/notetaker/calendars/${encodeURIComponent(id)}`).then((r) => r.data),
+  calendarEvents: () => apiV2.get('/notetaker/calendar-events').then((r) => r.data),
+  toggleCalendarEvent: (id, enabled) =>
+    apiV2.post(`/notetaker/calendar-events/${encodeURIComponent(id)}/toggle`, { enabled }).then((r) => r.data),
 };
 
 export default apiV2;

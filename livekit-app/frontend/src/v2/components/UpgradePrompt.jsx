@@ -72,7 +72,7 @@ export function UpgradeSidebarCard({ offer, checkoutLoading, onCheckout, classNa
           ) : null}
         </div>
       </div>
-      <div className="mt-2.5 flex flex-col gap-1.5">
+      {offer.stripeEnabled && <div className="mt-2.5 flex flex-col gap-1.5">
         {showPlanChoices ? (
           <>
             {upgrades.map((p) => (
@@ -107,7 +107,7 @@ export function UpgradeSidebarCard({ offer, checkoutLoading, onCheckout, classNa
         {!offer.canCheckout && (
           <p className="text-[10px] text-muted-foreground">Ask an owner or admin to upgrade this workspace.</p>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -137,10 +137,10 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
           {offer?.show ? (
             <p className="text-sm text-muted-foreground">{offer.detail}</p>
           ) : (
-            <p className="text-sm text-muted-foreground">You&apos;re on our top self-serve plan.</p>
+            <p className="text-sm text-muted-foreground">{offer?.stripeEnabled ? 'You’re on our top self-serve plan.' : 'Paid upgrades are currently unavailable.'}</p>
           )}
         </div>
-        {offer?.show && !isIosNativeApp() && (
+        {offer?.show && offer.stripeEnabled && !isIosNativeApp() && (
           <CheckoutButton
             offer={offer}
             planId={offer.primaryPlan?.id}
@@ -180,7 +180,7 @@ export function UpgradeUsageCard({ offer, checkoutLoading, onCheckout, usage, cu
           </p>
         </div>
       )}
-      {offer?.show && (
+      {offer?.show && offer.stripeEnabled && (
         <Link
           to={BILLING_PLANS_HREF}
           className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -209,11 +209,11 @@ export function UpgradeQuotaActions({ offer, checkoutLoading, onCheckout, onDism
         <Button type="button" disabled={checkoutLoading === offer.primaryPlan.id} onClick={() => onCheckout(offer.primaryPlan.id)}>
           {checkoutLoading === offer.primaryPlan.id ? 'Loading…' : `Upgrade to ${offer.primaryPlan.name}`}
         </Button>
-      ) : (
+      ) : offer?.stripeEnabled ? (
         <Button type="button" asChild>
           <Link to={BILLING_PLANS_HREF}>View upgrade options</Link>
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }

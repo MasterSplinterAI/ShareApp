@@ -1,8 +1,14 @@
+const {getSupportBusinessId}=require('./supportIdentity');
+const {getSupportRecoveryDatabase,closeSupportRecoveryDatabase}=require('./supportRecoveryDatabase');
+const {createSupportRecoveryGateway}=require('@rhule/ops-sdk');
+const {hostSupportAuthority,legacySupportFence,fenceSupportAdapter,supportAuthorityHttp}=require('./supportAuthority');
 /**
- * ShareApp host wiring for @rhule/support-kit.
+ * ShareApp host wiring for @quill/support-kit.
  * Thin adapters only — tickets/KB/agent live in the kit.
  */
 const path = require('path');
+const {createShareAppPending}=require('./supportPending');
+const {createSupportReplayPump}=require('@rhule/ops-sdk');
 const db = require('../db/v2Database');
 const { verifyToken } = require('./authAdapter');
 const { isSuperadminEmail } = require('./v2Superadmin');
@@ -10,14 +16,16 @@ const { getOrgEntitlements } = require('./v2Entitlements');
 const { buildUserContextSnapshot, formatUserContextForPrompt } = require('./supportUserContext');
 const { aiEnabled, callSupportLlm } = require('./supportAgent/llm');
 const { sendEmail } = require('./mailer');
+const { SUPPORT_EMAIL } = require('./supportEmail');
 const { githubConfigured } = require('./githubIssues');
 const {
   createSupportRouter,
   createFilesystemCodebaseAdapter,
-} = require('@rhule/support-core');
-const { createTelegramOpsNotifier } = require('@rhule/support-channels');
+} = require('@quill/support-core');
+const { createTelegramOpsNotifier } = require('@quill/support-channels');
 const {
   createOpsSupportProxyMiddleware,
+  getOpsHubConfig,
   syncContact,
   syncCuratedDocsToOpsHub,
   backfillLaliaStateToOpsHub,
@@ -27,17 +35,20 @@ const {
 const LIVEKIT_ROOT = path.join(__dirname, '../..');
 const DOCS_ROOT = path.join(__dirname, '../docs/support');
 
-function createSqliteSupportDb() {
+function createSqliteSupportDb(executor = db, transactional = false) {
   return {
+    ...(transactional ? {transactional:true} : {transaction:work=>db.transaction(tx=>work(createSqliteSupportDb(tx,true)))}),
     async run(sql, params = []) {
-      const result = await db.run(sql, params);
-      return { changes: result.changes ?? 0 };
+      legacySupportFence.assertLease();
+      const result = await executor.run(sql, params);
+      return {
+    ...(transactional ? {transactional:true} : {transaction:work=>db.transaction(tx=>work(createSqliteSupportDb(tx,true)))}), changes: result.changes ?? 0 };
     },
     async get(sql, params = []) {
-      return db.get(sql, params);
+      return executor.get(sql, params);
     },
     async all(sql, params = []) {
-      return db.all(sql, params);
+      return executor.all(sql, params);
     },
   };
 }
@@ -95,63 +106,14 @@ async function buildContextSummary(user, orgId, role) {
   }
 }
 
-async function resolveUser(req) {
-  const header = req?.headers?.authorization || '';
-  const m = String(header).match(/^Bearer\s+(.+)$/i);
-  if (!m) return null;
-
-  let payload;
-  try {
-    payload = verifyToken(m[1]);
-  } catch {
-    return null;
-  }
-  if (!payload?.sub) return null;
-
-  const user = await db.get(
-    `SELECT id, email, display_name FROM v2_users WHERE id = ?`,
-    [payload.sub]
-  );
-  if (!user) return null;
-
-  const isAdmin = isSuperadminEmail(user.email);
-  let orgId = payload.orgId || undefined;
-  if (!orgId) {
-    try {
-      const mem = await db.get(
-        `SELECT org_id FROM v2_org_members WHERE user_id = ? LIMIT 1`,
-        [user.id]
-      );
-      if (mem?.org_id) orgId = mem.org_id;
-    } catch {
-      /* ignore */
-    }
-  }
-  const role = isAdmin ? 'admin' : 'user';
-  let planLabel = role === 'admin' ? 'platform admin' : 'member';
-  try {
-    if (orgId) {
-      const ent = await getOrgEntitlements(orgId);
-      if (ent?.planName || ent?.planId) {
-        planLabel = ent.planName || ent.planId;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-
-  const contextSummary = await buildContextSummary(user, orgId, role);
-  const out = {
-    id: user.id,
-    role,
-    planLabel,
-    contextSummary,
-  };
-  if (user.email) out.email = user.email;
-  if (user.display_name) out.name = user.display_name;
-  if (orgId) out.orgId = orgId;
-  return out;
+function createPending(trusted={}) {
+  return createShareAppPending({businessId:getSupportBusinessId(),db:{...db,...require('./supportRecoveryDatabase').getSupportAcceptanceStore().sql},verifyToken,...trusted,describeUser:async(user,orgId)=>{
+    let planLabel='member';
+    if(orgId){const ent=await getOrgEntitlements(orgId);planLabel=ent?.planName||ent?.planId||planLabel;}
+    return {planLabel,contextSummary:await buildContextSummary(user,orgId,'user')};
+  }});
 }
+async function resolveUser(req){const user=await createPending().resolveUser(req);return user?{...user,role:isSuperadminEmail(user.email)?'admin':'user'}:null;}
 
 function createOpsNotifier() {
   return {
@@ -246,7 +208,10 @@ function createGithubAdapter() {
 /**
  * @returns {{ handler: Function, meta: object }}
  */
-function createShareAppSupportRouter() {
+function createShareAppSupportRouter(trusted={resolveAuthority:hostSupportAuthority.resolveAuthority}) {
+  const pending={...createPending(trusted),authorizeTransfer:hostSupportAuthority.authorizeTransfer,withAcceptance:hostSupportAuthority.withAcceptance};
+  const recovery=createSupportRecoveryGateway({...pending,businessId:getSupportBusinessId(),db:{transaction:work=>getSupportRecoveryDatabase().transaction(work)},state:()=>hostSupportAuthority.read(),resolveUser});
+  const replay=createSupportReplayPump({...pending,resolveUser,getConfig:hostSupportAuthority.config});
   const frontendBase = (
     process.env.PUBLIC_FRONTEND_BASE_URL ||
     process.env.FRONTEND_URL ||
@@ -268,7 +233,8 @@ function createShareAppSupportRouter() {
     },
     docsRoot: DOCS_ROOT,
     adminBaseUrl: adminBaseUrl(),
-    opsNotifier: createOpsNotifier(),
+    opsNotifier: fenceSupportAdapter(createOpsNotifier()),
+    trackBackground:legacySupportFence.track,
     resolveUser,
     codebase: createFilesystemCodebaseAdapter({
       root: LIVEKIT_ROOT,
@@ -282,7 +248,7 @@ function createShareAppSupportRouter() {
     }),
     email: {
       async sendToUser({ to, subject, body }) {
-        await sendEmail({ to, subject, text: body });
+        await sendEmail({ to, subject, text: body, replyTo: SUPPORT_EMAIL });
       },
     },
     telegram: {
@@ -294,7 +260,7 @@ function createShareAppSupportRouter() {
         }),
     },
     onLeadCaptured: async (lead) => {
-      void syncContact({
+      await syncContact({
         externalUserId: `lead:${lead.id}`,
         email: lead.email,
         name: lead.name,
@@ -324,20 +290,27 @@ function createShareAppSupportRouter() {
     };
   }
 
+  for(const key of ['email','llm','github'])if(options[key])options[key]=fenceSupportAdapter(options[key]);
+  if(options.onLeadCaptured){const capture=options.onLeadCaptured;options.onLeadCaptured=lead=>legacySupportFence.effect(async()=>capture(lead));}
+  if(options.telegram){const create=options.telegram.createClient;options.telegram.createClient=cfg=>fenceSupportAdapter(create(cfg));}
   const localRouter = createSupportRouter(options);
   const proxiedHandler = createOpsSupportProxyMiddleware({
     resolveUser,
-    localHandler: (req, res, next) => localRouter.handler(req, res, next),
+    localHandler: (req, res, next) => legacySupportFence.run(()=>localRouter.handler(req,res,next)),
     db,
+    central:pending,
   });
   return {
     ...localRouter,
-    handler: proxiedHandler,
+    pending,
+    startReplay:()=>{if(!trusted.resolveAuthority)return()=>{};replay.start();recovery.startReplay();return()=>{replay.stop();recovery.stopReplay();};},
+    stopReplay:()=>{replay.stop();recovery.stopReplay();void closeSupportRecoveryDatabase();},
+    handler:async(req,res,next)=>{try{if(await supportAuthorityHttp(req,res))return;const state=await hostSupportAuthority.read();if(state.state==='recovery')return await recovery.handler(req,res);return await proxiedHandler(req,res,next);}catch{if(!res.headersSent)res.status(503).json({error:'Support authority unavailable',retryable:true});}},
   };
 }
 
 function supportKitEnabled() {
-  // Default on — FE uses @rhule/support-react against /api/v2/support.
+  // Default on — FE uses @quill/support-react against /api/v2/support.
   // Set SUPPORT_KIT_ENABLED=false only with a matching FE rollback to legacy HelpPanel.
   const v = String(process.env.SUPPORT_KIT_ENABLED ?? 'true').toLowerCase();
   return v !== '0' && v !== 'false' && v !== 'no';
@@ -352,8 +325,10 @@ module.exports = {
 };
 
 async function ensureSupportSchema() {
-  const { ensureSchema, seedCuratedDocs } = require('@rhule/support-core');
+  if((await hostSupportAuthority.read()).state!=='unmanaged'){await createPending().ensureSchema();return {central:true};}
+  const { ensureSchema, seedCuratedDocs } = require('@quill/support-core');
   const supportDb = createSqliteSupportDb();
+  return legacySupportFence.run(async()=>{
   const result = await ensureSchema(supportDb);
   console.log(
     `[support] schema ensured (prefix=${result.tablePrefix}, applied=${result.statements})`
@@ -364,12 +339,11 @@ async function ensureSupportSchema() {
       console.log(
         `[support] curated docs seeded (ingested=${seeded.ingested}, promoted=${seeded.promoted})`
       );
-      void syncCuratedDocsToOpsHub(DOCS_ROOT);
-      void backfillLaliaStateToOpsHub(db);
-      void syncSupportHistoryToOpsHub(db);
+
     } catch (e) {
       console.warn('[support] seedCuratedDocs skipped:', e.message);
     }
   }
   return result;
+  });
 }

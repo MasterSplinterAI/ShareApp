@@ -23,7 +23,7 @@ async function resolveIcsDomain() {
   // the domain from the configured From address.
   const settings = await getEmailSettings();
   if (settings.icsOrganizerDomain) return settings.icsOrganizerDomain.toLowerCase();
-  return extractDomainFromAddress(settings.mailFrom) || 'staging.jarmetals.com';
+  return extractDomainFromAddress(settings.mailFrom) || 'lalia.cloud';
 }
 
 function meetingIdFromOrganizerAddress(address) {

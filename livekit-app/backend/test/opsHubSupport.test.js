@@ -1,0 +1,58 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+const {prepareSupportTest}=require('./supportIsolation');prepareSupportTest();
+const db=require('../db/v2Database');const {createShareAppPending}=require('../lib/supportPending');
+const {signSession,verifyToken}=require('../lib/authAdapter');
+test('Lalia JWT current user/membership and durable acceptance on selected isolated backend',async t=>{
+ await db.initDatabase();t.after(()=>db.close());
+ await db.run("INSERT INTO v2_users(id,email,password_hash,display_name) VALUES(?,?,?,?) ON CONFLICT(id) DO NOTHING",['gateway-user','gateway@example.test','unused','Gateway']);
+ await db.run("INSERT INTO v2_organizations(id,name) VALUES(?,?) ON CONFLICT(id) DO NOTHING",['gateway-org','Gateway']);
+ await db.run("INSERT INTO v2_org_members(user_id,org_id,role) VALUES(?,?,?) ON CONFLICT(user_id,org_id) DO NOTHING",['gateway-user','gateway-org','owner']);
+ await db.run('UPDATE v2_users SET disabled_at=NULL WHERE id=?',['gateway-user']);
+ let contexts=0;
+ const adapter=createShareAppPending({db,verifyToken,describeUser:async()=>{contexts++;return {planLabel:'Pro',contextSummary:'Safe preference and usage facts'};}});await db.run('DROP TABLE IF EXISTS ops_support_pending');await adapter.ensureSchema();
+ const req={headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'gateway-org',role:'admin'}),'x-support-user-json':'forged'}};
+ for(const token of ['expired-invalid-fixture',signSession({sub:'gateway-user',iat:1})])assert.equal(await adapter.resolveUser({headers:{authorization:'Bearer '+token}}),null);
+ const actor=await adapter.resolveUser(req);assert.equal(actor.id,'gateway-user');assert.equal(actor.role,'user');assert.equal(actor.orgId,'gateway-org');assert.equal(contexts,1);
+ await assert.rejects(()=>adapter.resolveUser({headers:{authorization:'Bearer '+signSession({sub:'gateway-user',orgId:'unowned-org'})}}));assert.equal(contexts,1);
+ const {createSupportGateway}=require('@rhule/ops-sdk');const gateway=createSupportGateway({...adapter,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>{throw Error('offline');}});
+ let result,status;await gateway.handler({...req,method:'POST',url:'/tickets',headers:{...req.headers,'idempotency-key':'lalia-'+Date.now()},body:{body:'retained'}},{setHeader(){},status(n){status=n;return this;},json(x){result=x;}});assert.equal(status,202);
+ const saved=await adapter.store.get(result.receiptId);
+ await db.run("INSERT INTO v2_organizations(id,name) VALUES(?,?) ON CONFLICT(id) DO NOTHING",['gateway-org-other','Other gateway workspace']);
+ await db.run("INSERT INTO v2_org_members(user_id,org_id,role) VALUES(?,?,?) ON CONFLICT(user_id,org_id) DO NOTHING",['gateway-user','gateway-org-other','member']);
+ const boundHeaders={'idempotency-key':saved.key,'x-support-expected-customer':encodeURIComponent(JSON.stringify({id:'gateway-user',orgId:'gateway-org'}))};
+ const retry=async(token)=>{let status,data;await gateway.handler({method:'POST',url:'/tickets',headers:{...boundHeaders,authorization:'Bearer '+token},body:saved.payload},{setHeader(){},status(n){status=n;return this;},json(x){data=x;}});return {status,data};};
+ assert.equal((await retry(signSession({sub:'gateway-user',orgId:'gateway-org-other'}))).status,409);assert.equal(Number((await db.get('SELECT COUNT(*) AS count FROM ops_support_pending')).count),1);
+ assert.equal((await retry(signSession({sub:'gateway-user',orgId:'gateway-org'}))).data.receiptId,saved.receiptId);
+ const copies=await Promise.all([adapter.store.put(saved),adapter.store.put({...saved,receiptId:'alternate'})]);assert.equal(copies[0].receiptId,copies[1].receiptId);
+ const {createSupportReplayPump}=require('@rhule/ops-sdk');const restarted=createShareAppPending({db,verifyToken,describeUser:async()=>({planLabel:'Fixture',contextSummary:''})});
+ const pump=createSupportReplayPump({...restarted,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'narrow',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:Date.now()+60000}),fetchImpl:async()=>new Response('{"ticket":{"id":"recovered"}}',{status:201})});
+ await pump.runOnce();assert.equal((await restarted.store.get(saved.receiptId)).status,'accepted');
+await adapter.store.update(saved.receiptId,{status:'failed'});assert.equal((await adapter.store.get(saved.receiptId)).status,'accepted');
+ await db.run('DELETE FROM v2_org_members WHERE user_id=?',['gateway-user']);assert.equal(await adapter.customerActive('lalia',actor),false);await assert.rejects(()=>adapter.resolveUser(req));
+ await db.run('UPDATE v2_users SET disabled_at=? WHERE id=?',[new Date().toISOString(),'gateway-user']);assert.equal(await adapter.customerActive('lalia',actor),false);
+ assert.throws(()=>adapter.openSecret('plaintext'),/Encrypted/);
+});
+test('durable retry scheduling is fair across restart, fenced and bounded on either database',async t=>{
+ await db.initDatabase();t.after(()=>db.close());
+ const sdk=require('@rhule/ops-sdk');for(const statement of sdk.SUPPORT_PENDING_SCHEMA)await db.run(statement);
+ await db.run('DELETE FROM ops_support_pending');
+ const store=sdk.createSqlSupportIntentStore(db);let now=100000,offline=true;const attempts=[];
+ const options={store,now:()=>now,getConfig:()=>({mode:'central',baseUrl:'http://127.0.0.1:5396',secretKey:'fixture',tenantSlug:'lalia'}),resolveAuthority:async()=>({businessId:'lalia',generation:'g1',expiresAt:now+60000}),resolveUser:async()=>({id:'fairness-fixture'}),customerActive:async()=>true,fetchImpl:async(_url,init)=>{const body=JSON.parse(init.body);attempts.push(body.subject);return new Response(JSON.stringify(offline||body.subject==='poison'?{error:'outage'}:{ticket:{id:'real'}}),{status:offline||body.subject==='poison'?503:201});}};
+ const gateway=sdk.createSupportGateway(options);const submit=async(subject)=>{let result;await gateway.handler({method:'POST',url:'/tickets',body:{subject,body:'Synthetic retry'},headers:{'idempotency-key':'retry-'+subject}},{setHeader(){},status(){return this;},json(x){result=x;}});return result;};
+ const poison=await submit('poison'),healthy=await submit('healthy');offline=false;attempts.length=0;
+ for(let i=0;i<5;i++)await sdk.createSupportReplayPump({...options,store:sdk.createSqlSupportIntentStore(db),batchSize:1}).runOnce();
+ assert.equal((await store.get(healthy.receiptId)).status,'accepted');assert.ok(attempts.includes('healthy'));assert.ok(attempts.filter(x=>x==='poison').length<=1);
+ const scheduled=await store.get(poison.receiptId);assert.equal(scheduled.automaticAttempts,1);assert.ok(scheduled.nextAttemptAt>now);
+ now=scheduled.nextAttemptAt;const [one,two]=await Promise.all([store.claimAttempt(poison.receiptId,now,1000),store.claimAttempt(poison.receiptId,now,1000)]);assert.equal([one,two].filter(Boolean).length,1);const first=one||two;
+ now+=1001;const replacement=await store.claimAttempt(poison.receiptId,now,1000);assert.ok(replacement);
+ await store.update(poison.receiptId,{status:'failed'},{token:first.token,now});assert.equal((await store.get(poison.receiptId)).status,'pending');
+ await store.update(poison.receiptId,{status:'accepted',responseStatus:201,response:{ticket:{id:'manual-winner'}}});
+ await store.update(poison.receiptId,{status:'failed'},{token:replacement.token,now});assert.equal((await store.get(poison.receiptId)).status,'accepted');
+ offline=true;const paused=await submit('poison-limit');offline=false; // Simulate outage through all automatic attempts without extending acceptance.
+ options.fetchImpl=async()=>new Response('{}',{status:503});
+ const originalUntil=(await store.get(paused.receiptId)).acceptedUntil;
+ for(let i=0;i<sdk.SUPPORT_MAX_AUTOMATIC_ATTEMPTS+2;i++) {await sdk.createSupportReplayPump(options).runOnce();const row=await store.get(paused.receiptId);now=Math.max(now,row.nextAttemptAt||0);}
+ const retained=await store.get(paused.receiptId);assert.equal(retained.status,'pending');assert.equal(retained.retryPaused,true);assert.equal(retained.automaticAttempts,sdk.SUPPORT_MAX_AUTOMATIC_ATTEMPTS);assert.equal(retained.acceptedUntil,originalUntil);
+ const recovered=sdk.createSupportGateway({...options,fetchImpl:async()=>new Response('{"ticket":{"id":"manual-recovery"}}',{status:201})});await recovered.replay(paused.receiptId);
+ assert.equal((await store.get(paused.receiptId)).status,'accepted');assert.equal((await store.get(paused.receiptId)).automaticAttempts,sdk.SUPPORT_MAX_AUTOMATIC_ATTEMPTS);
+});

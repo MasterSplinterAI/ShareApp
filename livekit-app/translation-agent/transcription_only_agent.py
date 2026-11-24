@@ -7,6 +7,9 @@ One shared STT+VAD pipeline per speaking participant; each target language is a 
 Publishes partial (live) and final (original + translated) to the data channel (destination-filtered when possible).
 """
 
+from private_logging import install_private_logging, operational_event
+install_private_logging()
+
 import os
 import json
 import asyncio
@@ -18,6 +21,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Deque, Dict, List, Optional, Sequence, Set, Tuple
 
+from agent_lifecycle import register_shutdown
+from stt_audio_meter import MeteredSttInput
 from cost_reporter import CostReporter
 from caption_targeting import compute_caption_targets
 from deepgram_caption_buffer import DeepgramCaptionBuffer
@@ -87,11 +92,7 @@ def _stt_provider() -> str:
     """
     raw = os.getenv("STT_PROVIDER", "deepgram").strip().lower()
     if raw not in VALID_STT_PROVIDERS:
-        logger.error(
-            "STT_PROVIDER=%r is not a known provider %s — falling back to 'deepgram'",
-            raw,
-            VALID_STT_PROVIDERS,
-        )
+        logger.error('stt_provider_is_not_a_known_provider_falling_back_to_deepgram')
         return "deepgram"
     return raw
 
@@ -348,9 +349,9 @@ logging.basicConfig(
     force=True
 )
 logger = logging.getLogger(__name__)
-logger.info("=" * 60)
+logger.info('module_loaded')
 logger.info("📝 TRANSCRIPTION-ONLY AGENT MODULE LOADED (no TTS)")
-logger.info("=" * 60)
+logger.info('module_loaded')
 
 VALID_CAPTION_MODES = ("off", "transcription_only", "transcription_translation")
 
@@ -493,6 +494,9 @@ class TranscriptionOnlyAgent:
         # Fire-and-forget tasks (cost emits, data handlers) tracked so shutdown can
         # drain them and a flood can't leak unbounded orphans.
         self._bg_tasks: Set[asyncio.Task] = set()
+        self._cost_tasks: Set[asyncio.Task] = set()
+        self._shutting_down = False
+        self._shutdown_complete = False
         # Providers that failed fast for a speaker (e.g. Gladia 429 concurrency limit
         # — free tier allows ONE concurrent live session). The next pipeline attempt
         # skips them and falls through the provider ladder; cleared after a healthy run.
@@ -500,10 +504,16 @@ class TranscriptionOnlyAgent:
         # Repeated utterances (greetings, confirmations) skip the LLM round trip.
         self._translation_cache = TranslationCache(max_size=_translation_cache_size())
 
-    def _spawn_bg(self, coro: Awaitable[Any]) -> asyncio.Task:
+    def _spawn_bg(self, coro: Awaitable[Any], *, during_shutdown: bool = False) -> asyncio.Task:
         task = asyncio.create_task(coro)
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
+        if during_shutdown:
+            # Only cost reports may outlive room-event handling and pipeline teardown.
+            self._cost_tasks.add(task)
+            task.add_done_callback(self._cost_tasks.discard)
+        if self._shutdown_complete or (self._shutting_down and not during_shutdown):
+            task.cancel()
         return task
 
     def _remember_display_name(self, identity: str, name: str) -> None:
@@ -548,7 +558,7 @@ class TranscriptionOnlyAgent:
             return False
         new_mode = cc.get("mode", self.caption_mode)
         if new_mode not in VALID_CAPTION_MODES:
-            logger.warning(f"caption_config from {source}: invalid mode {new_mode!r} — ignored")
+            logger.warning('caption_config_from_invalid_mode_ignored')
             new_mode = self.caption_mode
         raw_langs = cc.get("languages", self.caption_languages)
         new_langs = (
@@ -571,10 +581,7 @@ class TranscriptionOnlyAgent:
         self.caption_mode = new_mode
         self.caption_languages = new_langs
         self.caption_keyterms = new_keyterms
-        logger.info(
-            f"📋 caption_config applied from {source}: "
-            f"mode={self.caption_mode!r} languages={self.caption_languages} keyterms={len(self.caption_keyterms)}"
-        )
+        logger.info('caption_config_applied_from_mode_languages_keyterms', extra={"count": len(self.caption_keyterms)})
         return True
 
     async def _register_caption_session(self, session: SpeakerCaptionSession) -> None:
@@ -608,10 +615,7 @@ class TranscriptionOnlyAgent:
                     interjector_word_count=word_count,
                     interjector_vad_active=interjector_vad_active,
                 ):
-                    logger.info(
-                        f"[{active_speaker_id}] ↪︎ committing paused open caption from "
-                        f"{session.speaker_id!r} (interjected words={word_count} is_final={is_final})"
-                    )
+                    logger.info('committing_paused_open_caption_from_interjected_words_is_final')
                     await session.finalize_now()
                 elif should_mark_interjection(
                     other_has_open_turn=session.has_open_turn(),
@@ -621,9 +625,7 @@ class TranscriptionOnlyAgent:
                 ):
                     session.mark_interjected()
             except Exception as e:
-                logger.warning(
-                    f"[{active_speaker_id}] failed to finalize {session.speaker_id!r}: {e}"
-                )
+                logger.warning('failed_to_finalize', extra={"error_type": type(e).__name__})
 
     def _normalize_language_code(self, lang: str) -> str:
         if not lang:
@@ -655,7 +657,7 @@ class TranscriptionOnlyAgent:
                 await tok.aclose()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        logger.info(f"🛑 Shutdown: cancelled {len(tasks)} speaker pipeline task(s)")
+        logger.info('shutdown_cancelled_speaker_pipeline_task_s', extra={"count": len(tasks)})
 
     async def _cancel_speaker_pipeline(self, speaker_id: str) -> None:
         """Stop the shared STT task for this speaker (language change, translation off, or leave)."""
@@ -727,12 +729,12 @@ class TranscriptionOnlyAgent:
         try:
             return noise_cancellation.BVC()
         except Exception as e:
-            logger.warning("BVC noise cancellation unavailable: %s", e)
+            logger.warning('bvc_noise_cancellation_unavailable', extra={"error_type": type(e).__name__})
             return None
 
     async def entrypoint(self, ctx: JobContext):
         await ctx.connect(auto_subscribe=AutoSubscribe.AUDIO_ONLY)
-        logger.info(f"📋 Room: {ctx.room.name} - Transcription-only agent (no TTS)")
+        logger.info('room_transcription_only_agent_no_tts')
 
         org_id: Optional[str] = None
         # Read caption_config and org_id from room metadata (persisted by host, supports late-joining agent)
@@ -743,7 +745,7 @@ class TranscriptionOnlyAgent:
                 org_id = meta.get("org_id") or None
                 self._apply_caption_config(meta.get("caption_config"), "room metadata (startup)")
         except Exception as e:
-            logger.warning(f"Room metadata parse failed: {e}")
+            logger.warning('room_metadata_parse_failed', extra={"error_type": type(e).__name__})
 
         self.cost_reporter = CostReporter(meeting_id=ctx.room.name, org_id=org_id)
 
@@ -760,12 +762,14 @@ class TranscriptionOnlyAgent:
                 )
                 logger.info("📢 Broadcast agent_ready — waiting for participant language sync")
             except Exception as e:
-                logger.warning(f"agent_ready broadcast failed: {e}")
+                logger.warning('agent_ready_broadcast_failed', extra={"error_type": type(e).__name__})
 
-        asyncio.create_task(_broadcast_agent_ready())
+        self._spawn_bg(_broadcast_agent_ready())
 
         def _schedule_update():
             """Debounce update_assistants for language switches to avoid rapid teardown/create."""
+            if self._shutting_down:
+                return
             if self._update_debounce_task and not self._update_debounce_task.done():
                 self._update_debounce_task.cancel()
             async def _run_later():
@@ -821,13 +825,10 @@ class TranscriptionOnlyAgent:
                     # backend writes after authenticating the host (POST /v2/rooms/:name/
                     # caption-config → room_metadata_changed below). Honoring the raw data
                     # channel here would let ANY participant kill captions for the room.
-                    logger.info(
-                        f"📋 caption_config data packet from {participant_id} ignored "
-                        "(applied via authenticated room metadata instead)"
-                    )
+                    logger.info('caption_config_data_packet_from_ignored_applied_via_authenticated_room_metadata_instead')
                     return
                 else:
-                    logger.debug(f"Data received (ignored): type={msg_type}, from={participant_id}")
+                    logger.debug('data_received_ignored_type_from')
                     return
 
                 # Detect language change BEFORE updating stored value.
@@ -842,14 +843,11 @@ class TranscriptionOnlyAgent:
                 self.participant_languages[participant_id] = lang
                 self.translation_enabled[participant_id] = bool(enabled)
 
-                logger.info(f"📥 Language update: {participant_id} → {lang} (was {old_lang!r}), enabled={enabled}")
+                logger.info('language_update_was_enabled')
 
                 if lang_changed:
                     await self._cancel_speaker_pipeline(participant_id)
-                    logger.info(
-                        f"🔄 Tore down speaker pipeline for {participant_id!r}: "
-                        f"{old_lang!r} → {lang!r} (STT language changed)"
-                    )
+                    logger.info('tore_down_speaker_pipeline_for_stt_language_changed')
 
                 if enabled:
                     # Debounce: rapid switches (es→en→es) coalesce into one update
@@ -858,18 +856,20 @@ class TranscriptionOnlyAgent:
                     await self._cancel_speaker_pipeline(participant_id)
                     await self.update_assistants(ctx)
             except Exception as e:
-                logger.error(f"Data error: {e}", exc_info=True)
+                logger.error('data_error', extra={"error_type": type(e).__name__})
 
         def on_data(data: rtc.DataPacket):
             self._spawn_bg(handle_data(data))
 
         def on_room_metadata_changed(old_metadata: str, new_metadata: str):
+            if self._shutting_down:
+                return
             # Authenticated caption_config path: host POSTs to the backend, the backend
             # updates room metadata, LiveKit fans the change out to the agent here.
             try:
                 meta = json.loads(new_metadata) if new_metadata else {}
             except Exception as e:
-                logger.warning(f"room_metadata_changed: parse failed: {e}")
+                logger.warning('room_metadata_changed_parse_failed', extra={"error_type": type(e).__name__})
                 return
             if self._apply_caption_config(meta.get("caption_config"), "room metadata"):
                 _schedule_update()
@@ -899,7 +899,7 @@ class TranscriptionOnlyAgent:
                     except asyncio.CancelledError:
                         return
                     except Exception as e:
-                        logger.warning(f"agent_ready re-broadcast failed: {e}")
+                        logger.warning('agent_ready_re_broadcast_failed', extra={"error_type": type(e).__name__})
 
                 self._agent_ready_ping_task = asyncio.create_task(_ping_agent_ready())
             _schedule_update()
@@ -921,29 +921,15 @@ class TranscriptionOnlyAgent:
         ctx.room.on("track_published", lambda pub, p: self._spawn_bg(on_track_published(pub, p)))
         ctx.room.on("participant_disconnected", lambda p: self._spawn_bg(on_disconnected(p)))
 
-        try:
-            await asyncio.Event().wait()
-        finally:
-            t = self._agent_ready_ping_task
-            if t is not None and not t.done():
-                t.cancel()
-                await asyncio.gather(t, return_exceptions=True)
-            await self._shutdown_all_assistants(ctx)
-            # Drain in-flight background work (cost emits, data handlers) briefly so
-            # the last turn's telemetry isn't lost on SIGTERM.
-            pending_bg = [t for t in self._bg_tasks if not t.done()]
-            if pending_bg:
-                _, still_pending = await asyncio.wait(pending_bg, timeout=3.0)
-                for t in still_pending:
-                    t.cancel()
-            if self.cost_reporter:
-                await self.cost_reporter.aclose()
+        register_shutdown(ctx, self)
 
     async def update_assistants(self, ctx: JobContext):
         # Serialized: the body awaits while mutating speaker_pipelines, and it is
         # reachable concurrently from the debounce task, disconnects, metadata
         # changes, and the translation-off fast path.
         async with self._reconcile_lock:
+            if self._shutting_down:
+                return
             await self._update_assistants_locked(ctx)
 
     async def _update_assistants_locked(self, ctx: JobContext):
@@ -965,10 +951,7 @@ class TranscriptionOnlyAgent:
             caption_languages=self.caption_languages,
         )
 
-        logger.info(
-            f"📊 update_assistants: speakers={speakers}, targets={targets}, "
-            f"participant_langs={dict(self.participant_languages)}, enabled={dict(self.translation_enabled)}"
-        )
+        logger.info('update_assistants_speakers_targets_participant_langs_enabled')
 
         expected = set()
 
@@ -981,7 +964,7 @@ class TranscriptionOnlyAgent:
         for speaker in speakers:
             speaker_lang = _speaker_lang(speaker)
             if speaker_lang is None:
-                logger.info(f"⏳ No language yet for speaker {speaker!r} — skip STT until they send preferences")
+                logger.info('no_language_yet_for_speaker_skip_stt_until_they_send_preferences')
                 continue
             for target in targets:
                 if self._normalize_language_code(speaker_lang) != self._normalize_language_code(target):
@@ -1032,9 +1015,9 @@ class TranscriptionOnlyAgent:
                 except asyncio.InvalidStateError:
                     exc = None
                 if exc is not None and not isinstance(exc, asyncio.CancelledError):
-                    logger.warning(f"🔁 Recycling dead speaker pipeline {sid}: {exc}")
+                    logger.warning('recycling_dead_speaker_pipeline')
                 else:
-                    logger.info(f"🔁 Recycling finished speaker pipeline {sid} (recreate)")
+                    logger.info('recycling_finished_speaker_pipeline_recreate')
                 self._speaker_ctx.pop(sid, None)
                 self.speaker_pipelines.pop(sid, None)
 
@@ -1062,14 +1045,14 @@ class TranscriptionOnlyAgent:
                         return
                     exc = t.exception()
                     if exc is not None:
-                        logger.error(f"🔥 Speaker pipeline {sp!r} crashed: {exc!r}", exc_info=exc)
+                        logger.error('speaker_pipeline_crashed')
 
                 pipeline_task.add_done_callback(_log_pipeline_crash)
                 self.speaker_pipelines[speaker] = pipeline_task
-                logger.info(f"✅ Speaker pipeline (shared STT): {speaker} targets={sorted(ts)}")
+                logger.info('speaker_pipeline_shared_stt_targets')
             else:
                 await self._speaker_ctx[speaker].set_targets(ts)
-                logger.debug(f"📎 Updated translation targets for {speaker}: {sorted(ts)}")
+                logger.debug('updated_translation_targets_for')
 
     def _create_stt_instance(
         self,
@@ -1086,9 +1069,8 @@ class TranscriptionOnlyAgent:
         """
         L = f"[{speaker_id}]"
         if not speaker_lang:
-            logger.error(f"{L} _create_stt_instance: missing speaker_lang")
+            logger.error('create_stt_instance_missing_speaker_lang')
             return None, "unknown"
-        is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
         stt_lang = speaker_lang.split("-")[0] if speaker_lang else "en"
         stt_provider = _stt_provider()
         normalized_lang = self._normalize_language_code(stt_lang)
@@ -1100,7 +1082,7 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "deepgram" in excluded:
                 return None
-            if not (PLUGINS_AVAILABLE and deepgram and (is_cloud or os.getenv("DEEPGRAM_API_KEY"))):
+            if not (PLUGINS_AVAILABLE and deepgram and os.getenv("DEEPGRAM_API_KEY", "").strip()):
                 return None
             endpointing_ms = _deepgram_endpointing_ms()
             stt_kwargs = dict(
@@ -1128,11 +1110,7 @@ class TranscriptionOnlyAgent:
                         inst = deepgram.STT(**stt_kwargs)
                 else:
                     inst = deepgram.STT(**stt_kwargs)
-            logger.info(
-                f"{L} STT: Deepgram nova-3 lang=multi (auto-detect) "
-                f"endpointing_ms={endpointing_ms} "
-                f"keyterms={len(keyterms)} (shared)"
-            )
+            logger.info('stt_deepgram_nova_lang_multi_auto_detect_endpointing_ms_keyterms_shared', extra={"count": len(keyterms)})
             stt_provider_name = "deepgram"
             return inst
 
@@ -1140,7 +1118,7 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "gladia" in excluded:
                 return None
-            if not (GLADIA_AVAILABLE and gladia and (is_cloud or os.getenv("GLADIA_API_KEY"))):
+            if not (GLADIA_AVAILABLE and gladia and os.getenv("GLADIA_API_KEY", "").strip()):
                 return None
             endpointing_sec = _gladia_endpointing_sec()
             trans_targets = gladia_translation_targets or []
@@ -1159,16 +1137,9 @@ class TranscriptionOnlyAgent:
                 gladia_kwargs["maximum_duration_without_endpointing"] = max_no_endpoint
             inst = gladia.STT(**gladia_kwargs)
             if use_gladia_trans:
-                logger.info(
-                    f"{L} STT: Gladia solaria-1 code_switching=True "
-                    f"endpointing={endpointing_sec}s max_no_endpoint={max_no_endpoint} "
-                    f"native_translation={trans_targets}"
-                )
+                logger.info('stt_gladia_solaria_code_switching_true_endpointing_s_max_no_endpoint_native_translation')
             else:
-                logger.info(
-                    f"{L} STT: Gladia solaria-1 code_switching=True "
-                    f"endpointing={endpointing_sec}s (shared, STT-only)"
-                )
+                logger.info('stt_gladia_solaria_code_switching_true_endpointing_s_shared_stt_only')
             stt_provider_name = "gladia"
             return inst
 
@@ -1176,14 +1147,12 @@ class TranscriptionOnlyAgent:
             nonlocal stt_provider_name
             if "openai" in excluded:
                 return None
-            if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
+            if not (PLUGINS_AVAILABLE and openai and os.getenv("OPENAI_API_KEY", "").strip()):
                 return None
             # language must never be None: plugin >=1.5 does LanguageCode(language)
             # which crashes on None (AttributeError on .strip).
             inst = openai.STT(model="gpt-4o-transcribe", language=normalized_lang or "en")
-            logger.info(
-                f"{L} STT: OpenAI gpt-4o-transcribe lang={normalized_lang!r} (shared, no interim)"
-            )
+            logger.info('stt_openai_gpt_o_transcribe_lang_shared_no_interim')
             stt_provider_name = "openai"
             return inst
 
@@ -1199,12 +1168,11 @@ class TranscriptionOnlyAgent:
                 break
 
         if stt_instance is None:
-            logger.error(f"{L} No STT provider available (STT_PROVIDER={stt_provider})")
+            logger.error('no_stt_provider_available_stt_provider')
         return stt_instance, stt_provider_name
 
     def _create_openai_llm_instance(self, model: str, label: str) -> Optional[Any]:
-        is_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
-        if not (PLUGINS_AVAILABLE and openai and (is_cloud or os.getenv("OPENAI_API_KEY"))):
+        if not (PLUGINS_AVAILABLE and openai and os.getenv("OPENAI_API_KEY", "").strip()):
             return None
         llm_kwargs = dict(
             model=model,
@@ -1216,10 +1184,7 @@ class TranscriptionOnlyAgent:
             inst = openai.LLM(**llm_kwargs)
         except TypeError:
             inst = openai.LLM(model=model, temperature=_llm_temperature())
-        logger.info(
-            f"{label} LLM: OpenAI {model} temp={_llm_temperature()} "
-            f"timeout={_llm_timeout_sec()}s"
-        )
+        logger.info('llm_openai_temp_timeout_s')
         return inst
 
     def _create_llm_for_target(self, speaker_id: str, target_lang: str, model_override: Optional[str] = None):
@@ -1253,12 +1218,12 @@ class TranscriptionOnlyAgent:
             try:
                 llm_instance = attempt()
             except Exception as e:  # noqa: BLE001
-                logger.warning(f"{L} LLM init attempt failed: {e}")
+                logger.warning('llm_init_attempt_failed', extra={"error_type": type(e).__name__})
                 llm_instance = None
             if llm_instance is not None:
                 break
         if llm_instance is None:
-            logger.error(f"{L} No LLM available (LLM_PROVIDER={llm_provider})")
+            logger.error('no_llm_available_llm_provider')
         return llm_instance, llm_provider_name
 
     async def _prewarm_llm(self, llm_instance: Any, speaker_id: str, target_lang: str) -> None:
@@ -1282,12 +1247,10 @@ class TranscriptionOnlyAgent:
                     break  # first token proves the connection is up
             finally:
                 await stream.aclose()
-            logger.info(
-                f"{L} LLM prewarmed in {round((time.perf_counter() - t0) * 1000)}ms"
-            )
+            logger.info('llm_prewarmed_in_ms')
         except Exception as e:  # noqa: BLE001
             # Best-effort: a failed prewarm just means the first call is cold.
-            logger.debug(f"{L} LLM prewarm failed: {e}")
+            logger.debug('llm_prewarm_failed')
     async def _run_speaker_pipeline(self, job_ctx: JobContext, run_ctx: SpeakerRunContext) -> None:
         """One STT + VAD per speaker; fan out FINAL segments to per-target LLM lanes."""
         from livekit.agents.llm import ChatContext
@@ -1326,9 +1289,9 @@ class TranscriptionOnlyAgent:
                 )
                 gladia_applied_targets[0] = trans_targets
                 use_gladia_native_translation[0] = use_native
-                logger.info(f"{L} Gladia native translation targets={trans_targets}")
+                logger.info('gladia_native_translation_targets')
             except Exception as e:
-                logger.warning(f"{L} Gladia update_options failed: {e}")
+                logger.warning('gladia_update_options_failed', extra={"error_type": type(e).__name__})
 
         async def reconcile_lanes() -> None:
             targets = await run_ctx.get_targets()
@@ -1355,7 +1318,7 @@ class TranscriptionOnlyAgent:
                     else:
                         llm, llm_pname = self._create_llm_for_target(speaker_id, tgt)
                         if llm is None:
-                            logger.error(f"{L}→{tgt} No LLM — skipping translation lane")
+                            logger.error('no_llm_skipping_translation_lane')
                             continue
                         # Warm the connection now so the FIRST utterance translates
                         # within budget instead of paying cold-start inside the call.
@@ -1395,12 +1358,12 @@ class TranscriptionOnlyAgent:
 
         # Guard: if captions are disabled, don't start the pipeline
         if self.caption_mode == "off":
-            logger.info(f"{L} caption_mode='off' — pipeline skipped")
+            logger.info('caption_mode_off_pipeline_skipped')
             return
 
         speaker_lang = self.participant_languages.get(speaker_id)
         if not speaker_lang:
-            logger.error(f"{L} No speaker language — abort pipeline")
+            logger.error('no_speaker_language_abort_pipeline')
             return
 
         initial_gladia_targets = await compute_gladia_translation_targets()
@@ -1423,12 +1386,7 @@ class TranscriptionOnlyAgent:
             # attempt retries the full ladder rather than staying dead forever.
             self._stt_skip_providers.pop(speaker_id, None)
             return
-        logger.info(
-            f"{L} Caption pipeline STT provider={stt_provider_name!r} "
-            f"gladia_native_translation={use_gladia_native_translation[0]} "
-            f"skip_providers={sorted(skip) or '[]'} "
-            f"(configured STT_PROVIDER={os.getenv('STT_PROVIDER', 'deepgram')!r})"
-        )
+        logger.info('caption_pipeline_stt_provider_gladia_native_translation_skip_providers_configured_stt_provider')
         vad_instance = self._load_shared_vad()
 
         # Non-streaming STT (e.g. OpenAI gpt-4o-transcribe on plugins >=1.5) must be
@@ -1438,9 +1396,9 @@ class TranscriptionOnlyAgent:
                 from livekit.agents import stt as lk_stt
 
                 stt_instance = lk_stt.StreamAdapter(stt=stt_instance, vad=vad_instance)
-                logger.info(f"{L} STT wrapped in StreamAdapter (non-streaming provider)")
+                logger.info('stt_wrapped_in_streamadapter_non_streaming_provider')
         except Exception as e:
-            logger.warning(f"{L} StreamAdapter wrap check failed: {e}")
+            logger.warning('streamadapter_wrap_check_failed', extra={"error_type": type(e).__name__})
 
         participant = None
         for _attempt in range(30):
@@ -1452,7 +1410,7 @@ class TranscriptionOnlyAgent:
                 break
             await asyncio.sleep(0.1)
         if not participant:
-            logger.warning(f"{L} Participant not found after wait")
+            logger.warning('participant_not_found_after_wait')
             return
 
         audio_stream_kwargs = dict(
@@ -1464,9 +1422,10 @@ class TranscriptionOnlyAgent:
         nc = self._audio_stream_noise_cancellation()
         if nc is not None:
             audio_stream_kwargs["noise_cancellation"] = nc
-            logger.info(f"{L} BVC noise cancellation enabled on inbound audio")
+            logger.info('bvc_noise_cancellation_enabled_on_inbound_audio')
         audio_stream = rtc.AudioStream.from_participant(**audio_stream_kwargs)
         stt_stream = stt_instance.stream()
+        metered_stt = MeteredSttInput(stt_stream)
         vad_stream = vad_instance.stream()
 
         turn_id: List[Optional[str]] = [None]
@@ -1583,11 +1542,7 @@ class TranscriptionOnlyAgent:
             finally:
                 await stream.aclose()
             total_ms = (time.perf_counter() - t0) * 1000.0
-            logger.info(
-                f"{L}→{tgt_lang} 📊 translation_latency ttft_ms={ttft_ms and round(ttft_ms) or -1} "
-                f"total_ms={round(total_ms)} chars={len(source_text)} partial={partial} "
-                f"max_completion_tokens={completion_cap} model={model_name or _llm_model()}"
-            )
+            logger.info('translation_completed', extra={"count": len(source_text), "duration_ms": total_ms, "ttft_ms": ttft_ms, "provider": "openai"})
             return accumulated.strip(), last_usage
 
         def emit_llm_cost(lane: TargetLaneState, source_text: str, output_text: str, usage: Any) -> None:
@@ -1607,7 +1562,7 @@ class TranscriptionOnlyAgent:
                 provider=lane.llm_provider,
                 participant=speaker_id,
                 model=_llm_model(),
-            ))
+            ), during_shutdown=True)
 
         def maybe_freeze_lane(
             lane: TargetLaneState, tail_src: str, committed_snapshot: str, translation: str
@@ -1635,7 +1590,7 @@ class TranscriptionOnlyAgent:
                 lane.interim_stable = ""
                 maybe_freeze_lane(lane, tail_src, committed_snapshot, cached)
                 await publish_lane_translation_partial(lane, tgt_lang)
-                logger.info(f"{L}→{tgt_lang} 📊 translation_latency cached=true chars={len(tail_src)}")
+                logger.info('translation_latency_cached_true_chars', extra={"count": len(tail_src)})
                 return
 
             async def on_delta(accumulated: str) -> None:
@@ -1681,14 +1636,8 @@ class TranscriptionOnlyAgent:
                     raise
                 except (asyncio.TimeoutError, Exception) as e:  # noqa: BLE001
                     last_err = e
-                    logger.warning(
-                        f"{L}→{tgt_lang} ⚠️ translation attempt {attempt}/2 ({model_label}) failed "
-                        f"({type(e).__name__}: {e})"
-                    )
-            logger.error(
-                f"{L}→{tgt_lang} ❌ translation failed after retries — degrading "
-                f"({type(last_err).__name__ if last_err else 'unknown'})"
-            )
+                    logger.warning('translation_attempt_failed', extra={"error_type": type(e).__name__})
+            logger.error('translation_failed_after_retries_degrading')
             lane.tail_translation = lane.interim_stable or tail_src
             lane.interim_stable = ""
 
@@ -1730,7 +1679,7 @@ class TranscriptionOnlyAgent:
                 raise
             except Exception as e:  # noqa: BLE001
                 # Interim translation is best-effort — the FINAL path has retries.
-                logger.debug(f"{L}→{tgt_lang} interim translation skipped: {e}")
+                logger.debug('interim_translation_skipped')
 
         def schedule_interim_translations() -> None:
             """Fan out live-translation attempts; at most one in flight per lane."""
@@ -1806,9 +1755,7 @@ class TranscriptionOnlyAgent:
                             timeout=_llm_timeout_sec() * 2 + 1.0,
                         )
                     except asyncio.TimeoutError:
-                        logger.warning(
-                            f"{L}→{tgt} ⚠️ finalize: translation exceeded hard cap — cancelling"
-                        )
+                        logger.warning('finalize_translation_exceeded_hard_cap_cancelling')
                         for t in pending:
                             if not t.done():
                                 t.cancel()
@@ -1845,9 +1792,7 @@ class TranscriptionOnlyAgent:
                             except asyncio.CancelledError:
                                 raise
                             except Exception as e:  # noqa: BLE001
-                                logger.warning(
-                                    f"{L}→{tgt} ⚠️ finalize tail translation failed: {e}"
-                                )
+                                logger.warning('finalize_tail_translation_failed', extra={"error_type": type(e).__name__})
 
                     full_translated = lane.display_translation()
                     if (
@@ -1876,9 +1821,7 @@ class TranscriptionOnlyAgent:
                             except asyncio.CancelledError:
                                 raise
                             except Exception as e:  # noqa: BLE001
-                                logger.warning(
-                                    f"{L}→{tgt} ⚠️ last-chance finalize translation failed: {e}"
-                                )
+                                logger.warning('last_chance_finalize_translation_failed', extra={"error_type": type(e).__name__})
                 has_translation = full_original.strip().lower() != (full_translated or "").strip().lower()
                 await publish_lane(
                     {
@@ -1902,10 +1845,7 @@ class TranscriptionOnlyAgent:
                 # Rolling context for the next utterance (foreign lanes only).
                 if not lane.is_same_language and has_translation and full_translated:
                     lane.context_pairs.append((full_original, full_translated))
-                logger.info(
-                    f"{L}→{tgt} ✅ Turn final ({round((time.perf_counter() - finalize_t0) * 1000)}ms): "
-                    f"'{full_original[:50]}...' → '{full_translated[:50]}...'"
-                )
+                logger.info('turn_final_ms')
 
             results = await asyncio.gather(
                 *(finalize_lane(tgt, lane) for tgt, lane in lanes.items()),
@@ -1913,7 +1853,7 @@ class TranscriptionOnlyAgent:
             )
             for r in results:
                 if isinstance(r, BaseException):
-                    logger.error(f"{L} finalize lane failed: {r}")
+                    logger.error('finalize_lane_failed')
 
             dg_buffer.clear()
             for lane in lanes.values():
@@ -1998,7 +1938,7 @@ class TranscriptionOnlyAgent:
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
-                    logger.warning(f"{L} Gladia translation finalize failed: {e}")
+                    logger.warning('gladia_translation_finalize_failed', extra={"error_type": type(e).__name__})
 
             gladia_trans_finalize_task[0] = asyncio.create_task(_run())
 
@@ -2053,20 +1993,18 @@ class TranscriptionOnlyAgent:
                 if not turn_id[0] or not dg_buffer.has_content():
                     return
                 if vad_speech_active[0]:
-                    logger.debug(f"{L} 🎙️ Deferring STT idle finalize while VAD speech is active")
+                    logger.debug('deferring_stt_idle_finalize_while_vad_speech_is_active')
                     arm_stt_idle_finalize()
                     return
                 if time.time() - last_stt_text_at[0] < idle_sec * 0.85:
                     return
-                logger.info(
-                    f"{L} ⏱️ STT idle finalize ({effective_idle_ms}ms without new words)"
-                )
+                logger.info('stt_idle_finalize_ms_without_new_words')
                 maybe_flush_stt()
                 await asyncio.sleep(0.15)
                 if turn_id[0] and dg_buffer.has_content() and not vad_speech_active[0]:
                     await finalize_turn()
             except asyncio.CancelledError:
-                logger.debug(f"{L} ↩️ STT idle finalize cancelled (new speech)")
+                logger.debug('stt_idle_finalize_cancelled_new_speech')
                 raise
 
         async def cancel_finalization() -> None:
@@ -2118,7 +2056,7 @@ class TranscriptionOnlyAgent:
                 try:
                     await publish_live_partial(normalized)
                 except Exception as e:
-                    logger.warning(f"{L} live partial publish failed: {e}")
+                    logger.warning('live_partial_publish_failed', extra={"error_type": type(e).__name__})
 
             asyncio.create_task(_run())
 
@@ -2133,7 +2071,7 @@ class TranscriptionOnlyAgent:
             # missed interim partials after brief pauses — only utterance finals arrived.
             async for ev in audio_stream:
                 vad_stream.push_frame(ev.frame)
-                stt_stream.push_frame(ev.frame)
+                metered_stt.push_frame(ev.frame)
 
         async def finalize_now() -> None:
             await cancel_finalization()
@@ -2189,13 +2127,13 @@ class TranscriptionOnlyAgent:
                     last_finalized_norm[0] = ""
                     if not turn_id[0]:
                         await start_new_turn()
-                    logger.debug(f"{L} 🎙️ Speech started (VAD)")
+                    logger.debug('speech_started_vad')
                 elif vad_event.type == VADEventType.END_OF_SPEECH:
                     if seg_speech_start[0] > 0:
                         turn_stt_seconds[0] += time.time() - seg_speech_start[0]
                         seg_speech_start[0] = 0.0
                     vad_speech_active[0] = False
-                    logger.debug(f"{L} 🔇 Speech ended (VAD)")
+                    logger.debug('speech_ended_vad')
                     maybe_flush_stt()
                     stt_speech_active[0] = False
                     # Drives finalize for providers that never emit STT END_OF_SPEECH
@@ -2219,18 +2157,15 @@ class TranscriptionOnlyAgent:
                         await finalize_turn()
                     if not turn_id[0]:
                         await start_new_turn()
-                    logger.debug(f"{L} 🎙️ Speech started (STT)")
+                    logger.debug('speech_started_stt')
                     continue
 
                 if ev_type == SpeechEventType.END_OF_SPEECH:
                     stt_speech_active[0] = False
                     if stt_provider_name == "gladia":
-                        logger.debug(f"{L} 🔇 STT END_OF_SPEECH (Gladia — finalized on FINAL)")
+                        logger.debug('stt_end_of_speech_gladia_finalized_on_final')
                         continue
-                    logger.debug(
-                        f"{L} 🔇 STT END_OF_SPEECH — waiting "
-                        f"{_deepgram_stt_idle_ms()}ms STT idle before finalize"
-                    )
+                    logger.debug('stt_end_of_speech_waiting_ms_stt_idle_before_finalize')
                     maybe_flush_stt()
                     arm_stt_idle_finalize()
                     continue
@@ -2244,7 +2179,7 @@ class TranscriptionOnlyAgent:
 
                 if ev_type == SpeechEventType.INTERIM_TRANSCRIPT:
                     if turn_id[0] is None and is_residual_after_finalize(text):
-                        logger.info(f"{L} 🛑 residual interim dropped: '{text[:40]}'")
+                        logger.info('residual_interim_dropped')
                         continue
                     await ensure_lanes_for_caption()
                     self._spawn_bg(
@@ -2261,9 +2196,7 @@ class TranscriptionOnlyAgent:
 
                 elif ev_type == SpeechEventType.FINAL_TRANSCRIPT:
                     if turn_id[0] is None and is_residual_after_finalize(text):
-                        logger.debug(
-                            f"{L} 🛑 Residual final after finalize ignored: '{text[:40]}'"
-                        )
+                        logger.debug('residual_final_after_finalize_ignored')
                         continue
                     await ensure_lanes_for_caption()
                     self._spawn_bg(
@@ -2286,10 +2219,7 @@ class TranscriptionOnlyAgent:
                         # Late straggler for an already-committed turn (e.g. second
                         # target language landing after finalize) — don't reopen it.
                         if turn_id[0] is None and is_residual_after_finalize(original):
-                            logger.debug(
-                                f"{L} 🛑 late Gladia translation ({target_norm}) after "
-                                f"finalize dropped: '{translated[:40]}'"
-                            )
+                            logger.debug('late_gladia_translation_after_finalize_dropped')
                             continue
                         display_text, seg_idx, segment = dg_buffer.on_utterance_final(original)
                         if seg_idx < 0 and not display_text.strip():
@@ -2303,15 +2233,10 @@ class TranscriptionOnlyAgent:
                             lane.turn_translated_parts = [translated]
                             gladia_satisfied_targets.add(target_norm)
                             matched_lane = True
-                            logger.info(
-                                f"{L}→{tgt} 🌐 Gladia translation final: "
-                                f"'{original[:40]}...' → '{translated[:40]}...'"
-                            )
+                            logger.info('gladia_translation_final')
                             break
                         if not matched_lane:
-                            logger.warning(
-                                f"{L} Gladia translation for {target_norm!r} — no matching lane"
-                            )
+                            logger.warning('gladia_translation_for_no_matching_lane')
                         schedule_live_partial(display_text or original)
                         arm_gladia_translation_finalize()
                         continue
@@ -2327,9 +2252,7 @@ class TranscriptionOnlyAgent:
                         if display_text.strip():
                             schedule_live_partial(display_text)
                         continue
-                    logger.info(
-                        f"{L} 📝 is_final seg {seg_idx}: '{segment[:60]}...'"
-                    )
+                    logger.info('is_final_seg')
                     committed_snapshot = dg_buffer.committed_text()
                     for tgt, lane in lanes.items():
                         if lane.is_same_language:
@@ -2365,10 +2288,7 @@ class TranscriptionOnlyAgent:
                     # speaker's bubble (A part 1 -> B -> A part 2).
                     if interjected_during_turn[0] and committed_snapshot.strip():
                         interjected_during_turn[0] = False
-                        logger.info(
-                            f"{L} ↪︎ clause-boundary split after simultaneous interjection "
-                            f"(words={len(committed_snapshot.split())})"
-                        )
+                        logger.info('clause_boundary_split_after_simultaneous_interjection_words', extra={"count": len(committed_snapshot.split())})
                         await finalize_turn()
                         continue
                     # Long-turn bubble break: close at a sentence boundary once
@@ -2385,10 +2305,7 @@ class TranscriptionOnlyAgent:
                         max_age_sec=_turn_max_sec(),
                         max_words=_turn_max_words(),
                     ):
-                        logger.info(
-                            f"{L} ✂️ turn break at sentence boundary "
-                            f"(age={_turn_age:.0f}s words={len(committed_snapshot.split())})"
-                        )
+                        logger.info('turn_break_at_sentence_boundary_age_s_words', extra={"count": len(committed_snapshot.split())})
                         await finalize_turn()
                         continue
                     if stt_provider_name == "gladia" and not use_gladia_native_translation[0]:
@@ -2411,36 +2328,40 @@ class TranscriptionOnlyAgent:
                 exc = t.exception() if not t.cancelled() else None
                 if exc is not None:
                     raise exc
-            logger.warning(f"{L} Pipeline leg ended (STT stream closed?) — exiting for restart")
+            logger.warning('pipeline_leg_ended_stt_stream_closed_exiting_for_restart')
         except asyncio.CancelledError:
             was_cancelled = True
-            logger.info(f"{L} Speaker pipeline cancelled")
+            logger.info('speaker_pipeline_cancelled')
         except Exception as e:
-            logger.error(f"{L} Pipeline error: {e}", exc_info=True)
+            logger.error('pipeline_error', extra={"error_type": type(e).__name__})
         finally:
-            # Deepgram bills every second of audio pushed on the stream, including
-            # silence. VAD speech time under-counts an open mic. One event per
-            # pipeline covers the websocket; a restart emits its own interval.
-            streamed_seconds = max(0.0, time.time() - pipeline_started_at)
+            # Cancel every leg before yielding: a room handler awaiting this
+            # pipeline can itself be cancelled again during room shutdown.
+            for task in legs:
+                if not task.done():
+                    task.cancel()
+            # push_frame and its meter update are synchronous; the cancelled
+            # feed cannot accept more PCM before its next cancellation point.
+            # Register the final report before any await so repeated cancellation
+            # cannot lose it. Lifecycle shutdown drains these protected tasks.
+            streamed_seconds = metered_stt.duration_seconds
             if self.cost_reporter and streamed_seconds > 0:
-                await self.cost_reporter.emit_stt(
-                    duration_seconds=streamed_seconds,
-                    provider=stt_provider_name,
-                    participant=speaker_id,
-                    language=speaker_lang,
+                self._spawn_bg(
+                    self.cost_reporter.emit_stt(
+                        duration_seconds=streamed_seconds,
+                        provider=stt_provider_name,
+                        participant=speaker_id,
+                        language=speaker_lang,
+                    ),
+                    during_shutdown=True,
                 )
-            # Unlike gather(), asyncio.wait does not propagate cancellation to the
-            # legs — cancel them explicitly on every exit path.
-            for t in legs:
-                if not t.done():
-                    t.cancel()
             await asyncio.gather(*legs, return_exceptions=True)
             await self._unregister_caption_session(speaker_id)
             if turn_id[0]:
                 try:
                     await finalize_turn()
                 except Exception as e:
-                    logger.warning(f"{L} finalize on teardown failed: {e}")
+                    logger.warning('finalize_on_teardown_failed', extra={"error_type": type(e).__name__})
             await stt_stream.aclose()
             await vad_stream.aclose()
             await audio_stream.aclose()
@@ -2452,11 +2373,7 @@ class TranscriptionOnlyAgent:
                     # the same provider would fail forever — skip it next attempt so the
                     # fallback ladder (deepgram/openai) keeps captions alive.
                     self._stt_skip_providers.setdefault(speaker_id, set()).add(stt_provider_name)
-                    logger.error(
-                        f"{L} ⚠️ STT provider {stt_provider_name!r} failed {lifetime:.1f}s "
-                        f"after start — falling back to next provider. If this is Gladia, "
-                        f"check account concurrency limits (free tier allows 1 live session)."
-                    )
+                    logger.error('stt_provider_failed_s_after_start_falling_back_to_next_provider_if_this_is_gladia_check_account_concurrency_li')
                 else:
                     # Healthy run that died later (network blip) — retry the full ladder.
                     self._stt_skip_providers.pop(speaker_id, None)
@@ -2470,80 +2387,10 @@ class TranscriptionOnlyAgent:
 
 
 def log_resolved_inference_config() -> None:
-    """Log effective inference env once per worker (never print API key values)."""
-    lc_cloud = os.getenv("LIVEKIT_CLOUD", "").lower() == "true"
-    stt = _stt_provider()
-    llm = os.getenv("LLM_PROVIDER", "openai").strip().lower()
-
-    build_ref = (
-        os.getenv("AGENT_BUILD_REF")
-        or os.getenv("GIT_COMMIT")
-        or os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("VERCEL_GIT_COMMIT_SHA")
-        or "unset"
-    )
-    has_deepgram_env = bool(os.getenv("DEEPGRAM_API_KEY"))
-    has_openai = bool(os.getenv("OPENAI_API_KEY"))
-    has_gladia = bool(os.getenv("GLADIA_API_KEY"))
-
-    stt_primary = {
-        "deepgram": "Deepgram nova-3 canonical buffer (speech_final → finalize)",
-        "gladia": (
-            "Gladia solaria-1 code-switching "
-            + (
-                "(native translation when GLADIA_TRANSLATION_ENABLED and cross-lang listeners)"
-                if _gladia_translation_enabled()
-                else "(STT-only; OpenAI translation lanes)"
-            )
-        ),
-        "openai": "OpenAI gpt-4o-transcribe (then Deepgram fallback)",
-    }.get(stt, "Deepgram nova-3 (then OpenAI fallback)")
-
-    logger.info("=" * 60)
-    logger.info("RESOLVED INFERENCE CONFIG (transcription_only_agent)")
-    logger.info(f"  build_ref={build_ref}")
-    logger.info(
-        "  LIVEKIT_CLOUD raw=%r interpreted_as_livekit_cloud_inference_defaults=%s",
-        os.getenv("LIVEKIT_CLOUD", ""),
-        lc_cloud,
-    )
-    logger.info("  STT_PROVIDER=%r primary_path=%s", stt, stt_primary)
-    logger.info(
-        "  GLADIA_TRANSLATION_ENABLED=%r (Gladia agent only; OpenAI lanes when false or no cross-lang targets)",
-        os.getenv("GLADIA_TRANSLATION_ENABLED", "true"),
-    )
-    logger.info("  LLM_PROVIDER=%r (translation lanes; same-language captions skip LLM)", llm)
-    logger.info(
-        "  Translation LLM: %s temp=%s timeout=%ss (pinned via LLM_MODEL)",
-        _llm_model(),
-        _llm_temperature(),
-        _llm_timeout_sec(),
-    )
-    logger.info(
-        "  INTERIM_TRANSLATION_ENABLED=%s min_interval_ms=%d (live local-agreement translation)",
-        _interim_translation_enabled(),
-        _interim_translation_min_interval_ms(),
-    )
-    logger.info(
-        "  TRANSLATION_CONTEXT_PAIRS=%d TRANSLATION_CACHE_SIZE=%d "
-        "translation_keyterms=%d deepgram_keyterms=%d",
-        _translation_context_pairs(),
-        _translation_cache_size(),
-        len(_translation_keyterms()),
-        len(_deepgram_keyterms()),
-    )
-    logger.info(
-        f"  DEEPGRAM_ENDPOINTING_MS={_deepgram_endpointing_ms()!r} (speech_final fast path)"
-    )
-    logger.info(
-        f"  DEEPGRAM_STT_IDLE_MS={_deepgram_stt_idle_ms()!r} "
-        "(finalize when transcript stops changing — ignores background noise)"
-    )
-    logger.info(f"  keys_present mask: DEEPGRAM_API_KEY={'yes' if has_deepgram_env else 'no'}, "
-                f"GLADIA_API_KEY={'yes' if has_gladia else 'no'}, "
-                f"OPENAI_API_KEY={'yes' if has_openai else 'no'}")
-    logger.info("  (Unset keys may still use LiveKit Cloud-injected Deepgram/STT defaults when LIVEKIT_CLOUD=true.)")
-    logger.info("=" * 60)
+    """Record only enumerated provider and validated revision metadata."""
+    operational_event("inference_config", agent_module="transcription_only_agent",
+                      provider=_stt_provider(),
+                      build_ref=os.getenv("AGENT_BUILD_REF") or os.getenv("GIT_COMMIT"))
 
 
 def prewarm(proc: JobProcess) -> None:
@@ -2556,10 +2403,11 @@ def prewarm(proc: JobProcess) -> None:
             userdata["vad"] = vad
         logger.info("🔥 Worker process prewarmed Silero VAD")
     except Exception as e:  # noqa: BLE001
-        logger.warning("Worker prewarm VAD failed (will load lazily): %s", e)
+        logger.warning('worker_prewarm_vad_failed_will_load_lazily', extra={"error_type": type(e).__name__})
 
 
 async def main(ctx: JobContext):
+    operational_event("session_started", agent_module="transcription_only_agent")
     agent = TranscriptionOnlyAgent()
     await agent.entrypoint(ctx)
 
@@ -2567,7 +2415,12 @@ async def main(ctx: JobContext):
 if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv()
+    operational_event("worker_started", agent_module="transcription_only_agent",
+                      build_ref=os.getenv("AGENT_BUILD_REF") or os.getenv("GIT_COMMIT"))
     log_resolved_inference_config()
+    if os.getenv("LALIA_LOG_PRIVACY_PROBE") == "1":
+        from privacy_probe import emit_controlled_probe
+        emit_controlled_probe()
 
     agent_name = os.getenv('AGENT_NAME', 'translation-cloud-prod')
     worker_opts = WorkerOptions(
@@ -2582,5 +2435,5 @@ if __name__ == "__main__":
     if len(sys.argv) == 1 or (len(sys.argv) > 1 and sys.argv[1] in ['dev', 'start']):
         cli.run_app(worker_opts)
     else:
-        logger.error(f"Unknown command: {sys.argv[1]}")
+        logger.error('unknown_command')
         sys.exit(1)

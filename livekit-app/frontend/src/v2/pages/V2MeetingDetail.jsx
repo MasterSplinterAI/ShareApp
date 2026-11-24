@@ -63,6 +63,8 @@ import MeetingAccessPanel from '../components/MeetingAccessPanel';
 import MeetingEmailInvites from '../components/MeetingEmailInvites';
 import MeetingInvitesPanel from '../components/MeetingInvitesPanel';
 import MeetingTranscriptPanel from '../components/MeetingTranscriptPanel';
+import ExternalBotStatusCard, { isBotSessionActive } from '../components/ExternalBotStatusCard';
+import MeetingAudioPlayer from '../components/MeetingAudioPlayer';
 import { QrCodeDialogButton, QrCodeShareCard } from '../../components/MeetingQrCode';
 import GuestLanguageSelector from '../../components/GuestLanguageSelector';
 import { buildJoinUrlWithLanguage } from '../../lib/guestLanguage';
@@ -208,12 +210,15 @@ export default function V2MeetingDetail() {
   }, [meeting?.id, meeting?.scheduled_start, meeting?.defaultExpiryMode, meeting?.inviteMaxTtlDays]);
 
   useEffect(() => {
-    if (!meeting || !['live', 'scheduled'].includes(meeting.status)) return undefined;
+    if (!meeting) return undefined;
+    const botActive = isBotSessionActive(meeting.botSession);
+    if (!botActive && !['live', 'scheduled'].includes(meeting.status)) return undefined;
+    const intervalMs = botActive ? 4000 : 12000;
     const t = setInterval(() => {
       v2Meetings.get(id).then(setMeeting).catch(() => {});
-    }, 12000);
+    }, intervalMs);
     return () => clearInterval(t);
-  }, [meeting?.status, id]);
+  }, [meeting?.status, meeting?.botSession?.status, id]);
 
   const ui = meeting ? getMeetingUiState(meeting) : null;
 
@@ -560,7 +565,7 @@ export default function V2MeetingDetail() {
     );
   }
 
-  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: true };
+  const policy = meeting.policy || { host_required_to_start: false, require_invite_token: true, store_transcripts: false };
   const guestUrlNeedsToken = meeting.joinUrl && !meeting.joinUrl.includes('?i=');
   const maxInviteDays = meeting.inviteMaxTtlDays ?? 90;
   const presence = meeting.roomPresence || { humanCount: 0, participants: [] };
@@ -636,7 +641,19 @@ export default function V2MeetingDetail() {
     }
   };
 
-  const primaryHostActions = !joinDemoted && (
+  const isExternalBotMeeting = Boolean(
+    meeting.meeting_source && meeting.meeting_source !== 'lalia'
+  );
+
+  const primaryHostActions = isExternalBotMeeting ? (
+    <ExternalBotStatusCard
+      meeting={meeting}
+      botSession={meeting.botSession}
+      canManage={canManageMeeting}
+      onUpdated={load}
+    />
+  ) : (
+    !joinDemoted && (
     <div className="space-y-4">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <Button
@@ -772,6 +789,7 @@ export default function V2MeetingDetail() {
         </div>
       )}
     </div>
+  )
   );
 
   const headerActionsMenu = ((isLive && canEndMeeting) || canManageMeeting) && (
@@ -837,20 +855,39 @@ export default function V2MeetingDetail() {
     </div>
   );
 
+  const externalPlatformName =
+    meeting.meeting_source === 'google_meet'
+      ? 'Google Meet'
+      : meeting.meeting_source === 'ms_teams'
+        ? 'MS Teams'
+        : meeting.meeting_source === 'zoom'
+          ? 'Zoom'
+          : meeting.meeting_source === 'webex'
+            ? 'Webex'
+            : null;
+
   const metricCards = (
     <div className="grid grid-cols-3 gap-2 border-t border-border/60 pt-3.5">
       <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
         <Users className="h-4 w-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0">
-          <div className="text-sm font-semibold leading-tight text-foreground">{presence.humanCount || 0}</div>
-          <div className="truncate text-[11px] text-muted-foreground">In room</div>
+          <div className="truncate text-sm font-semibold leading-tight text-foreground">
+            {isExternalBotMeeting ? externalPlatformName : presence.humanCount || 0}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {isExternalBotMeeting ? 'Source' : 'In room'}
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
         <Globe className="h-4 w-4 shrink-0 text-primary" />
         <div className="min-w-0">
-          <div className="text-sm font-semibold leading-tight text-foreground">Live</div>
-          <div className="truncate text-[11px] text-muted-foreground">Translation</div>
+          <div className="truncate text-sm font-semibold leading-tight text-foreground">
+            {isExternalBotMeeting ? (meeting.recording ? 'Saved' : 'Active') : 'Live'}
+          </div>
+          <div className="truncate text-[11px] text-muted-foreground">
+            {isExternalBotMeeting ? 'Audio & AI' : 'Translation'}
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2.5 rounded-xl border border-border/60 bg-muted/20 px-3 py-2">
@@ -1042,8 +1079,19 @@ export default function V2MeetingDetail() {
         </div>
       )}
 
+      {meeting.recording && (
+        <MeetingAudioPlayer
+          recording={meeting.recording}
+          meetingId={meeting.id}
+          canManageMeeting={canManageMeeting}
+          onRefined={load}
+        />
+      )}
+
       {/* Show Guests first when upcoming/empty transcript; show Transcript & AI first once lines are recorded */}
-      {transcriptCount > 0 ? (
+      {isExternalBotMeeting ? (
+        transcriptCard
+      ) : transcriptCount > 0 ? (
         <>
           {transcriptCard}
           {guestsCard}
@@ -1055,10 +1103,12 @@ export default function V2MeetingDetail() {
         </>
       )}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-        {isLive && <MeetingPresenceCard presence={presence} />}
-        <div className={isLive ? '' : 'lg:col-span-2'}>{settingsSections}</div>
-      </div>
+      {!isExternalBotMeeting && (
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+          {isLive && <MeetingPresenceCard presence={presence} />}
+          <div className={isLive ? '' : 'lg:col-span-2'}>{settingsSections}</div>
+        </div>
+      )}
 
       <Dialog open={rescheduleOpen} onOpenChange={setRescheduleOpen}>
         <DialogContent className="sm:max-w-md">

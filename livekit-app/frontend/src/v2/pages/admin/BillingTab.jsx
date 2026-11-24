@@ -240,8 +240,11 @@ export function BillingTab({ orgs = [], onSelectOrg }) {
             <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Plans with Stripe price</div>
               <div className="mt-1 text-2xl font-semibold tabular-nums">
-                {config?.plansConfigured ?? 0}/{config?.plansTotal ?? 0}
+                {config?.plansConfigured ?? 0}/{config?.paidPlansTotal ?? config?.plansTotal ?? 0}
               </div>
+              <p className="mt-1 text-[11px] text-muted-foreground leading-snug">
+                Monthly: {config?.plansConfigured ?? 0} · Annual: {config?.annualPlansConfigured ?? 0}
+              </p>
             </div>
             <div className="rounded-lg border border-border/60 bg-muted/30 px-3 py-3">
               <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Pending overage ledger</div>

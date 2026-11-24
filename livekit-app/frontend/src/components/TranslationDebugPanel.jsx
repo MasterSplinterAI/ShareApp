@@ -27,7 +27,13 @@ function formatTime(ts) {
 function isStagingHost() {
   if (typeof window === 'undefined') return false;
   const h = window.location.hostname.toLowerCase();
-  return h.includes('staging.') || h === 'localhost' || h === '127.0.0.1';
+  return (
+    h.includes('staging.') ||
+    h === 'lalia.cloud' ||
+    h.endsWith('.lalia.cloud') ||
+    h === 'localhost' ||
+    h === '127.0.0.1'
+  );
 }
 
 function TranslationDebugPanel({
@@ -49,7 +55,11 @@ function TranslationDebugPanel({
   const [agentInRoom, setAgentInRoom] = useState(false);
   const [agentIdentities, setAgentIdentities] = useState([]);
   const [roomPipeline, setRoomPipeline] = useState(null);
-  const [pipelineOptions, setPipelineOptions] = useState(['deepgram', 'deepgram_codeswitch']);
+  const [pipelineOptions, setPipelineOptions] = useState([
+    'deepgram',
+    'deepgram_codeswitch',
+    'selfhosted_xai',
+  ]);
   const [pipelineSwitching, setPipelineSwitching] = useState(false);
   const [pipelineError, setPipelineError] = useState(null);
   const [ttsErrors, setTtsErrors] = useState([]);
@@ -57,13 +67,15 @@ function TranslationDebugPanel({
 
   const showDebug = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('debug') === '1';
   const showPipelineSwitch = showDebug && isHost && isStagingHost() && Boolean(meetingId);
-  const inferredPipeline = agentIdentities.some((id) => id.toLowerCase().includes('codeswitch'))
-    ? 'deepgram_codeswitch'
-    : agentIdentities.some((id) => id.toLowerCase().includes('translation'))
-      ? 'deepgram'
-      : null;
+  const inferredPipeline = agentIdentities.some((id) => id.toLowerCase().includes('selfhosted'))
+    ? 'selfhosted_xai'
+    : agentIdentities.some((id) => id.toLowerCase().includes('codeswitch'))
+      ? 'deepgram_codeswitch'
+      : agentIdentities.some((id) => id.toLowerCase().includes('translation'))
+        ? 'deepgram'
+        : null;
   const effectivePipeline = roomPipeline || inferredPipeline;
-  const voicePipelineReady = effectivePipeline === 'deepgram_codeswitch';
+  const voicePipelineReady = ['deepgram_codeswitch', 'selfhosted_xai'].includes(effectivePipeline);
   const voiceOnButWrongPipeline = voiceTranslationEnabled && effectivePipeline && !voicePipelineReady;
 
   const refreshRoomPipeline = useCallback(async () => {
@@ -245,7 +257,9 @@ function TranslationDebugPanel({
                   <p className="mt-1 text-muted-foreground">
                     Default pipeline is{' '}
                     <span className="font-medium text-foreground">deepgram_codeswitch</span>{' '}
-                    (code-switch routing + voice TTS). Switch to{' '}
+                    (code-switch routing + voice TTS). Use{' '}
+                    <span className="font-medium text-foreground">selfhosted_xai</span> for the
+                    self-hosted xAI worker, or{' '}
                     <span className="font-medium text-foreground">deepgram</span> for the
                     stable captions-only agent. Enable captions → Voice translation in the menu.
                   </p>
@@ -272,10 +286,10 @@ function TranslationDebugPanel({
               <div>
                 <span className="text-muted-foreground">pipeline for TTS:</span>{' '}
                 {effectivePipeline || '—'}
-                {voicePipelineReady ? ' ✅' : ' (needs deepgram_codeswitch)'}
+                {voicePipelineReady ? ' ✅' : ' (needs deepgram_codeswitch or selfhosted_xai)'}
               </div>
               <p className="mt-1 text-[10px] text-muted-foreground">
-                Voice translation runs on deepgram_codeswitch (default). Switching to deepgram disables TTS.
+                Voice translation runs on deepgram_codeswitch and selfhosted_xai. Switching to deepgram disables TTS.
               </p>
               {ttsErrors.length === 0 ? (
                 <div className="mt-1 text-muted-foreground">No TTS API errors yet</div>

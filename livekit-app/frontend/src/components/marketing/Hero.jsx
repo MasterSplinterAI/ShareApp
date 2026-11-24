@@ -53,12 +53,6 @@ export function Hero() {
               <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
-          <Button size="lg" variant="outline" className="min-w-[230px] gap-2" asChild>
-            <Link to="/demo">
-              <Sparkles className="h-4 w-4 text-primary" />
-              {t('hero.tryTranslation')}
-            </Link>
-          </Button>
         </div>
         <p className="mt-5 text-center text-xs text-muted-foreground sm:mt-6">{t('hero.footnote')}</p>
         <MeetingPreview />

@@ -1,0 +1,434 @@
+{
+  "environment": "Stripe sandbox; production webhook ingress; isolated app entitlement and ledger fixtures",
+  "liveFundsMoved": false,
+  "productionTenantRecordsChanged": false,
+  "invoiceRecovery": {
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "customerId": "cus_VbvH8zd1CHyAzA",
+    "invoiceId": "in_1UahR8GqClL0BFZZ7HFsFF6D",
+    "decline": {
+      "code": "card_declined",
+      "declineCode": "generic_decline"
+    },
+    "failedInvoiceStatus": "open",
+    "failedEvent": {
+      "id": "evt_1UahRCGqClL0BFZZ9AGvciXJ",
+      "type": "invoice.payment_failed",
+      "received_at": "2026-11-11 19:44:06",
+      "processed_at": "2026-11-11 19:44:06"
+    },
+    "stripeResend": {
+      "status": 200,
+      "eventId": "evt_1UahRCGqClL0BFZZ9AGvciXJ",
+      "requestId": "req_HkCGnFbJkvrNK0"
+    },
+    "productionReplay": {
+      "status": 200,
+      "duplicate": true,
+      "ledgerRows": 1,
+      "processedAtUnchanged": true
+    },
+    "paidEvent": {
+      "id": "evt_1UahRGGqClL0BFZZ3AJnhrVG",
+      "type": "invoice.paid",
+      "received_at": "2026-11-11 19:44:10",
+      "processed_at": "2026-11-11 19:44:10"
+    },
+    "recoveredInvoiceStatus": "paid",
+    "amountPaidCents": 500,
+    "productionTenantMatches": 0,
+    "isolatedAppRetry": {
+      "firstStatus": 500,
+      "retryStatus": 200,
+      "duplicate": true,
+      "failedThenCharged": true,
+      "lateFailureDoesNotRevertPaid": true
+    },
+    "ok": true,
+    "fixtureCustomerDeleted": true
+  },
+  "subscriptionRecovery": {
+    "keyMode": "test",
+    "customerId": "cus_VbvJCouQyvPmC4",
+    "subscriptionId": "sub_1UahSvGqClL0BFZZyCoi4T4F",
+    "invoiceId": "in_1UahSyGqClL0BFZZIDZbkJ2M",
+    "failedSubscriptionStatus": "past_due",
+    "accessDeniedCode": "billing_inactive",
+    "failedEvent": {
+      "id": "evt_1UahT1GqClL0BFZZdyTM7Wk1",
+      "type": "invoice.payment_failed",
+      "received_at": "2026-11-11 19:46:00",
+      "processed_at": "2026-11-11 19:46:00"
+    },
+    "recoveredSubscriptionStatus": "active",
+    "recoveredPlan": "pro",
+    "accessRestored": true,
+    "paidEvent": {
+      "id": "evt_1UahT5GqClL0BFZZEA6u1oeJ",
+      "type": "invoice.paid",
+      "received_at": "2026-11-11 19:46:04",
+      "processed_at": "2026-11-11 19:46:04"
+    },
+    "productionTenantMatches": 0,
+    "ok": true,
+    "fixtureSubscriptionCanceled": true,
+    "fixtureCustomerDeleted": true
+  },
+  "hostedCheckout": {
+    "keyMode": "test",
+    "browser": {
+      "failedChallengeObserved": true,
+      "retryChallengeCompleted": true,
+      "returnPath": "/v2/login",
+      "authenticatedAppSession": false
+    },
+    "sessionId": "cs_test_a0rRSFSxUzBk21VuG6o1PJmkebEaLfakmtJQOeh4xE1lciGjVBw4l1rmMK",
+    "customerId": "cus_VbvF09AYK88rIK",
+    "sessionStatus": "complete",
+    "paymentStatus": "paid",
+    "amountTotalCents": 4900,
+    "subscriptionId": "sub_1UahVOGqClL0BFZZ6AAkGtkh",
+    "subscriptionStatus": "active",
+    "paymentIntentId": "pi_3UahULGqClL0BFZZ1DjHgmR1",
+    "paymentIntentStatus": "succeeded",
+    "chargeId": "ch_3UahULGqClL0BFZZ1ukhlHWK",
+    "threeDS": {
+      "result": "authenticated",
+      "authenticationFlow": "challenge",
+      "version": "2.1.0"
+    },
+    "invoiceId": "in_1UahV1GqClL0BFZZr9LHwcRe",
+    "invoiceStatus": "paid",
+    "productionTenantMatches": 0,
+    "processedEvents": [
+      {
+        "id": "evt_1UahVQGqClL0BFZZc4efegYl",
+        "type": "checkout.session.completed",
+        "received_at": "2026-11-11 19:48:29",
+        "processed_at": "2026-11-11 19:48:29"
+      },
+      {
+        "id": "evt_1UahVRGqClL0BFZZABbV5C6T",
+        "type": "customer.subscription.created",
+        "received_at": "2026-11-11 19:48:30",
+        "processed_at": "2026-11-11 19:48:30"
+      },
+      {
+        "id": "evt_1UahVRGqClL0BFZZDbggizgn",
+        "type": "invoice.paid",
+        "received_at": "2026-11-11 19:48:29",
+        "processed_at": "2026-11-11 19:48:29"
+      }
+    ],
+    "failedAuthenticationEvents": [
+      {
+        "id": "evt_3UahULGqClL0BFZZ1xkZnJeC",
+        "type": "payment_intent.payment_failed",
+        "errorCode": "payment_intent_authentication_failure"
+      }
+    ],
+    "ok": true,
+    "cleanupSubscriptions": [
+      {
+        "id": "sub_1UahVOGqClL0BFZZ6AAkGtkh",
+        "status": "canceled"
+      }
+    ],
+    "fixtureCustomerDeleted": true
+  },
+  "hostedPortal": {
+    "keyMode": "test",
+    "flags": {
+      "stripeEnabled": true,
+      "autoChargeEnabled": false
+    },
+    "customerId": "cus_VbvPv3RauSNzae",
+    "subscriptionId": "sub_1UahYlGqClL0BFZZasLIQtDw",
+    "browser": {
+      "cancelAtPeriodEnd": true,
+      "resume": true,
+      "upgradeToPro": true,
+      "observedProrationCents": 14998
+    },
+    "cleanup": {
+      "subscriptionCanceled": true,
+      "customerDeleted": true
+    },
+    "subscription": {
+      "status": "active",
+      "cancelAtPeriodEnd": false,
+      "cancelAt": null,
+      "priceId": "price_1TtDZFGqClL0BFZZxtAB5Js2",
+      "invoiceId": "in_1Uahe4GqClL0BFZZPIguMvbI",
+      "invoiceStatus": "paid",
+      "amountPaid": 14998
+    },
+    "productionTenantMatches": 0,
+    "events": [
+      {
+        "id": "evt_1Uahe6GqClL0BFZZZjuptdGn",
+        "type": "customer.subscription.updated",
+        "created": 1794427045,
+        "status": "active",
+        "cancelAtPeriodEnd": false,
+        "cancelAt": null,
+        "priceId": "price_1TtDZFGqClL0BFZZxtAB5Js2",
+        "previousAttributes": {
+          "previousPriceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7"
+        },
+        "processing": {
+          "id": "evt_1Uahe6GqClL0BFZZZjuptdGn",
+          "type": "customer.subscription.updated",
+          "received_at": "2026-11-11 19:57:26",
+          "processed_at": "2026-11-11 19:57:26"
+        }
+      },
+      {
+        "id": "evt_1Uahe6GqClL0BFZZsiGNjCPe",
+        "type": "invoice.payment_succeeded",
+        "created": 1794427045,
+        "status": "paid",
+        "processing": null
+      },
+      {
+        "id": "evt_1Uahe6GqClL0BFZZffSAllmJ",
+        "type": "invoice.paid",
+        "created": 1794427045,
+        "status": "paid",
+        "processing": {
+          "id": "evt_1Uahe6GqClL0BFZZffSAllmJ",
+          "type": "invoice.paid",
+          "received_at": "2026-11-11 19:57:26",
+          "processed_at": "2026-11-11 19:57:26"
+        }
+      },
+      {
+        "id": "evt_1Uahe6GqClL0BFZZsPH4oDrp",
+        "type": "invoice.finalized",
+        "created": 1794427045,
+        "status": "paid",
+        "processing": null
+      },
+      {
+        "id": "evt_1Uahe6GqClL0BFZZYvStnPN4",
+        "type": "invoice.created",
+        "created": 1794427045,
+        "status": "paid",
+        "processing": null
+      },
+      {
+        "id": "evt_1UahaaGqClL0BFZZbPuFxqB1",
+        "type": "customer.subscription.updated",
+        "created": 1794426828,
+        "status": "active",
+        "cancelAtPeriodEnd": false,
+        "cancelAt": null,
+        "priceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7",
+        "previousAttributes": {
+          "cancel_at": 1797018715
+        },
+        "processing": {
+          "id": "evt_1UahaaGqClL0BFZZbPuFxqB1",
+          "type": "customer.subscription.updated",
+          "received_at": "2026-11-11 19:53:49",
+          "processed_at": "2026-11-11 19:53:49"
+        }
+      },
+      {
+        "id": "evt_1Uaha1GqClL0BFZZDomlJrGE",
+        "type": "customer.subscription.updated",
+        "created": 1794426793,
+        "status": "active",
+        "cancelAtPeriodEnd": false,
+        "cancelAt": 1797018715,
+        "priceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7",
+        "previousAttributes": {
+          "cancel_at": null
+        },
+        "processing": {
+          "id": "evt_1Uaha1GqClL0BFZZDomlJrGE",
+          "type": "customer.subscription.updated",
+          "received_at": "2026-11-11 19:53:14",
+          "processed_at": "2026-11-11 19:53:14"
+        }
+      },
+      {
+        "id": "evt_1UahYnGqClL0BFZZvPsCrtg6",
+        "type": "customer.subscription.created",
+        "created": 1794426716,
+        "status": "active",
+        "cancelAtPeriodEnd": false,
+        "cancelAt": null,
+        "priceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7",
+        "processing": {
+          "id": "evt_1UahYnGqClL0BFZZvPsCrtg6",
+          "type": "customer.subscription.created",
+          "received_at": "2026-11-11 19:51:57",
+          "processed_at": "2026-11-11 19:51:57"
+        }
+      }
+    ],
+    "portalConfiguration": {
+      "keyMode": "test",
+      "configurationId": "bpc_1TtCNDGqClL0BFZZxsVhhpHm",
+      "beforeFeatures": {
+        "customer_update": {
+          "allowed_updates": [
+            "name",
+            "email",
+            "address",
+            "phone"
+          ],
+          "enabled": true
+        },
+        "invoice_history": {
+          "enabled": true
+        },
+        "payment_method_update": {
+          "enabled": true,
+          "payment_method_configuration": null
+        },
+        "subscription_cancel": {
+          "cancellation_reason": {
+            "enabled": true,
+            "feedback_options": [],
+            "options": [
+              "too_expensive",
+              "switched_service",
+              "unused",
+              "other"
+            ]
+          },
+          "enabled": true,
+          "mode": "at_period_end",
+          "proration_behavior": "none"
+        },
+        "subscription_pause": {
+          "duration": {
+            "interval_options": [
+              {
+                "interval": "month",
+                "interval_count": 1
+              }
+            ],
+            "type": "interval_options"
+          },
+          "enabled": false
+        },
+        "subscription_update": {
+          "billing_cycle_anchor": "unchanged",
+          "default_allowed_updates": [],
+          "enabled": false,
+          "proration_behavior": "none",
+          "schedule_at_period_end": {
+            "conditions": []
+          },
+          "trial_update_behavior": "end_trial"
+        }
+      },
+      "afterFeatures": {
+        "customer_update": {
+          "allowed_updates": [
+            "name",
+            "email",
+            "address",
+            "phone"
+          ],
+          "enabled": true
+        },
+        "invoice_history": {
+          "enabled": true
+        },
+        "payment_method_update": {
+          "enabled": true,
+          "payment_method_configuration": null
+        },
+        "subscription_cancel": {
+          "cancellation_reason": {
+            "enabled": true,
+            "feedback_options": [],
+            "options": [
+              "too_expensive",
+              "switched_service",
+              "unused",
+              "other"
+            ]
+          },
+          "enabled": true,
+          "mode": "at_period_end",
+          "proration_behavior": "none"
+        },
+        "subscription_pause": {
+          "duration": {
+            "interval_options": [
+              {
+                "interval": "month",
+                "interval_count": 1
+              }
+            ],
+            "type": "interval_options"
+          },
+          "enabled": false
+        },
+        "subscription_update": {
+          "billing_cycle_anchor": "unchanged",
+          "default_allowed_updates": [
+            "price"
+          ],
+          "enabled": true,
+          "products": [
+            {
+              "adjustable_quantity": {
+                "enabled": false,
+                "maximum": null,
+                "minimum": 1
+              },
+              "prices": [
+                "price_1TtDZFGqClL0BFZZ8fXnZyj7"
+              ],
+              "product": "prod_Usy8Dqe42eRtug"
+            },
+            {
+              "adjustable_quantity": {
+                "enabled": false,
+                "maximum": null,
+                "minimum": 1
+              },
+              "prices": [
+                "price_1TtDZFGqClL0BFZZxtAB5Js2"
+              ],
+              "product": "prod_Usy9OrnSZTqLAS"
+            }
+          ],
+          "proration_behavior": "always_invoice",
+          "schedule_at_period_end": {
+            "conditions": []
+          },
+          "trial_update_behavior": "end_trial"
+        }
+      },
+      "products": [
+        {
+          "id": "prod_Usy8Dqe42eRtug",
+          "name": "Starter",
+          "before": "Lalia Starter \u2014 2,000 meeting participant-minutes and 500 translation minutes included monthly. Overage (if opted in): meeting $0.03/min, translation $0.06/min. Hard stop at 2\u00d7 included meeting minutes.",
+          "after": "Lalia Starter \u2014 2,000 meeting participant-minutes and 500 translation minutes included monthly. Automatic overage billing is currently disabled. Plan usage limits apply.",
+          "overageAutoChargeEnabled": false
+        },
+        {
+          "id": "prod_Usy9OrnSZTqLAS",
+          "name": "Pro",
+          "before": "Lalia Pro \u2014 10,000 meeting participant-minutes and 3,000 translation minutes included monthly. Overage (if opted in): meeting $0.02/min, translation $0.05/min. Hard stop at 2\u00d7 included meeting minutes.",
+          "after": "Lalia Pro \u2014 10,000 meeting participant-minutes and 3,000 translation minutes included monthly. Automatic overage billing is currently disabled. Plan usage limits apply.",
+          "overageAutoChargeEnabled": false
+        }
+      ],
+      "ok": true,
+      "proration": "Plan switches apply immediately; prorated invoices are generated immediately; billing-cycle anchor unchanged; no quantity/coupon updates enabled.",
+      "descriptionClaim": "Included quotas and disabled automatic overage charging only; plan usage limits apply without promising exact real-time enforcement."
+    },
+    "ok": true,
+    "cancellationSemantics": "Hosted portal set cancel_at to period end, then cleared it on renewal; cancel_at_period_end remained false in both snapshots."
+  }
+}

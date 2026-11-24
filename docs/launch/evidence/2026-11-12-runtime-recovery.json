@@ -1,0 +1,205 @@
+{
+  "account": "690248313257",
+  "region": "us-east-2",
+  "snapshots": {
+    "backend": {
+      "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/backend-wwUefO",
+      "versionId": "344243e5-46b3-4cfc-a433-58c0a35c0b5f",
+      "complete": true,
+      "keys": [
+        "AGENT_NAME",
+        "APNS_BUNDLE_ID",
+        "APNS_KEY_ID",
+        "APNS_P8_KEY",
+        "APNS_TEAM_ID",
+        "APP_ENV",
+        "BACKEND_BASE_URL",
+        "CONSENT_OPSHUB_KEY",
+        "COST_EVENT_SECRET",
+        "DATABASE_URL",
+        "FRONTEND_URL",
+        "GITHUB_REPO",
+        "GITHUB_TOKEN",
+        "JWT_SECRET_V2",
+        "LIVEKIT_API_KEY",
+        "LIVEKIT_API_SECRET",
+        "LIVEKIT_URL",
+        "MARKETING_KIT_ENABLED",
+        "MARKETING_OPSHUB_PEER_KEY",
+        "NETWORK_URL",
+        "NODE_ENV",
+        "OPS_HUB_PUBLIC_KEY",
+        "OPS_HUB_SECRET_KEY",
+        "OPS_HUB_SUPPORT_MODE",
+        "OPS_HUB_URL",
+        "POLICY_VERSION",
+        "PORT",
+        "PUBLIC_FRONTEND_BASE_URL",
+        "SETTINGS_ENCRYPTION_KEY",
+        "STAGING_FRONTEND_URL",
+        "SUPPORT_AI_ENABLED",
+        "SUPPORT_KIT_ENABLED",
+        "SUPPORT_TELEGRAM_ALLOWED_USER_IDS",
+        "SUPPORT_TELEGRAM_BOT_TOKEN",
+        "SUPPORT_TELEGRAM_CHAT_ID",
+        "SUPPORT_TELEGRAM_WEBHOOK_SECRET",
+        "TRANSLATION_API_KEY",
+        "TRANSLATION_API_PROVIDER",
+        "TRANSLATION_API_URL",
+        "TRANSLATION_DEFAULT_LANG",
+        "TRANSLATION_ENABLED_PAGES",
+        "TRANSLATION_MODEL",
+        "TRANSLATION_SOURCE_LANG",
+        "USE_DATABASE_CACHE",
+        "V2_OVERAGE_SETTLEMENT_INTERVAL_MS",
+        "V2_SUPERADMIN_EMAILS",
+        "XAI_API_KEY"
+      ],
+      "keyGeneration": "key-generation-7d02d7dea765cd01ff4c6c60",
+      "coverage": {
+        "SETTINGS_ENCRYPTION_KEY": "verified_effective",
+        "DATABASE_URL": "verified_effective",
+        "JWT_SECRET_V2": "verified_effective",
+        "LIVEKIT_URL": "verified_effective",
+        "LIVEKIT_API_KEY": "verified_effective",
+        "LIVEKIT_API_SECRET": "verified_effective",
+        "COST_EVENT_SECRET": "verified_effective"
+      },
+      "retrievalEqualityVerified": true
+    },
+    "agent-primary": {
+      "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-primary-L2Qzvc",
+      "versionId": "d1dea5f2-2249-41f4-b38c-6db247c600d0",
+      "complete": false,
+      "keys": [
+        "AGENT_BUILD_REF",
+        "AGENT_MODULE",
+        "AGENT_NAME",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_REGION",
+        "AWS_SECRET_ACCESS_KEY",
+        "BACKEND_BASE_URL",
+        "CAPTION_UTTERANCE_END_DELAY_SEC",
+        "COST_EVENT_SECRET",
+        "DEEPGRAM_API_KEY",
+        "ELEVENLABS_API_KEY",
+        "LALIA_LOG_PRIVACY_PROBE",
+        "LLM_PROVIDER",
+        "LOG_LEVEL",
+        "OPENAI_API_KEY",
+        "STT_PROVIDER",
+        "XAI_API_KEY",
+        "XAI_STT_ENDPOINTING_MS"
+      ],
+      "keyGeneration": null,
+      "coverage": {
+        "AGENT_BUILD_REF": "new_issued_verified",
+        "AGENT_MODULE": "new_issued_verified",
+        "AGENT_NAME": "new_issued_verified",
+        "AWS_ACCESS_KEY_ID": "new_issued_verified",
+        "AWS_REGION": "new_issued_verified",
+        "AWS_SECRET_ACCESS_KEY": "new_issued_verified",
+        "BACKEND_BASE_URL": "candidate_local_copy",
+        "CAPTION_UTTERANCE_END_DELAY_SEC": "candidate_local_copy",
+        "COST_EVENT_SECRET": "candidate_local_copy",
+        "DEEPGRAM_API_KEY": "candidate_local_copy",
+        "ELEVENLABS_API_KEY": "candidate_local_copy",
+        "LLM_PROVIDER": "candidate_local_copy",
+        "LOG_LEVEL": "candidate_local_copy",
+        "OPENAI_API_KEY": "candidate_local_copy",
+        "STT_PROVIDER": "candidate_local_copy",
+        "TTS_ENABLED": "unknown",
+        "TTS_PROVIDER": "unknown",
+        "XAI_API_KEY": "candidate_local_copy",
+        "XAI_STT_ENDPOINTING_MS": "candidate_local_copy",
+        "LALIA_LOG_PRIVACY_PROBE": "new_issued_verified"
+      },
+      "retrievalEqualityVerified": true
+    },
+    "agent-stable": {
+      "arn": "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-stable-ZCNPDK",
+      "versionId": "230f9bef-0ebf-462c-aee5-409e8f11b8bd",
+      "complete": false,
+      "keys": [
+        "AGENT_BUILD_REF",
+        "AGENT_MODULE",
+        "AGENT_NAME",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_REGION",
+        "AWS_SECRET_ACCESS_KEY",
+        "BACKEND_BASE_URL",
+        "CAPTION_UTTERANCE_END_DELAY_SEC",
+        "COST_EVENT_SECRET",
+        "DEEPGRAM_API_KEY",
+        "LALIA_LOG_PRIVACY_PROBE",
+        "LLM_PROVIDER",
+        "OPENAI_API_KEY",
+        "STT_PROVIDER"
+      ],
+      "keyGeneration": null,
+      "coverage": {
+        "AGENT_BUILD_REF": "new_issued_verified",
+        "AGENT_MODULE": "new_issued_verified",
+        "AGENT_NAME": "new_issued_verified",
+        "AWS_ACCESS_KEY_ID": "new_issued_verified",
+        "AWS_REGION": "new_issued_verified",
+        "AWS_SECRET_ACCESS_KEY": "new_issued_verified",
+        "BACKEND_BASE_URL": "candidate_local_copy",
+        "CAPTION_UTTERANCE_END_DELAY_SEC": "candidate_local_copy",
+        "COST_EVENT_SECRET": "candidate_local_copy",
+        "DEEPGRAM_API_KEY": "candidate_local_copy",
+        "LLM_PROVIDER": "candidate_local_copy",
+        "OPENAI_API_KEY": "candidate_local_copy",
+        "STT_PROVIDER": "candidate_local_copy",
+        "LALIA_LOG_PRIVACY_PROBE": "new_issued_verified"
+      },
+      "retrievalEqualityVerified": true
+    },
+    "LaliaRecoverySnapshotWriter": {
+      "arn": "arn:aws:iam::690248313257:policy/LaliaRecoverySnapshotWriter",
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "secretsmanager:PutSecretValue",
+              "secretsmanager:UpdateSecretVersionStage",
+              "secretsmanager:DescribeSecret"
+            ],
+            "Resource": [
+              "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/backend-wwUefO",
+              "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-primary-L2Qzvc",
+              "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-stable-ZCNPDK"
+            ]
+          }
+        ]
+      },
+      "attachedToServiceRoles": false
+    },
+    "LaliaRecoverySnapshotReader": {
+      "arn": "arn:aws:iam::690248313257:policy/LaliaRecoverySnapshotReader",
+      "policy": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "secretsmanager:GetSecretValue",
+              "secretsmanager:DescribeSecret"
+            ],
+            "Resource": [
+              "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/backend-wwUefO",
+              "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-primary-L2Qzvc",
+              "arn:aws:secretsmanager:us-east-2:690248313257:secret:lalia/prod/recovery/agent-stable-ZCNPDK"
+            ]
+          }
+        ]
+      },
+      "attachedToServiceRoles": false
+    }
+  },
+  "plaintextLocalFilesCreated": false,
+  "providerKeysRotated": false,
+  "agentQualificationUpdatedAt": "2026-11-12T20:13:29.359285+00:00"
+}

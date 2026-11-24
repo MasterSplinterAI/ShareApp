@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { SupportLauncher } from '@rhule/support-react';
+import { SupportLauncher } from '@quill/support-react';
 import { resolveApiBaseUrl } from '../../lib/nativePlatform';
 
 const SUPPORT_API_BASE = `${resolveApiBaseUrl().replace(/\/$/, '')}/v2/support`;
@@ -17,25 +17,31 @@ export function getSupportAccessToken() {
  * - Logged-in app: pass `user` (+ optional `openRef` for menu → open).
  * - Marketing / auth pages: omit `user` → contact gate + FAQ/Contact only.
  */
-export default function LaliaSupportLauncher({ user, openRef, audience }) {
+export default function LaliaSupportLauncher({ user, orgId = null, openRef, audience }) {
   const localOpen = useRef(null);
-  const hasToken = Boolean(getSupportAccessToken());
-  const resolvedAudience = audience || (user?.id || hasToken ? 'app' : 'public');
+  // Public/auth pages intentionally stay guest clients, even with an ambient JWT.
+  // The app shell supplies verified me.user and me.org.id (null means no organization); never infer customer identity from token presence.
+  const resolvedAudience = audience || (user?.id ? 'app' : 'public');
+  const customerContext = resolvedAudience === 'app';
 
   return (
     <SupportLauncher
+      key={customerContext ? user?.id || "unresolved-customer" : "guest"}
       apiBase={SUPPORT_API_BASE}
-      getAccessToken={getSupportAccessToken}
+      getAccessToken={customerContext ? getSupportAccessToken : undefined}
       brand={{
         name: 'Lalia',
         supportAgentName: 'Lalia Help',
         signupUrl: '/v2/signup',
       }}
       audience={resolvedAudience}
+      requireCustomer={customerContext}
+      guestOnly={!customerContext}
       user={
-        user
+        customerContext && user
           ? {
               id: user.id,
+              orgId,
               email: user.email || undefined,
               name: user.display_name || user.name || undefined,
               planLabel: user.planLabel,

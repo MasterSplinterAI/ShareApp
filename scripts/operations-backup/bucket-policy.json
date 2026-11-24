@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Sid": "DenyInsecureTransport",
+    "Effect": "Deny",
+    "Principal": "*",
+    "Action": "s3:*",
+    "Resource": ["arn:aws:s3:::lalia-backups-690248313257-us-east-2", "arn:aws:s3:::lalia-backups-690248313257-us-east-2/*"],
+    "Condition": { "Bool": { "aws:SecureTransport": "false" } }
+  }]
+}

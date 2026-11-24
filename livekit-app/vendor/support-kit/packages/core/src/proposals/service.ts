@@ -3,7 +3,7 @@ import {
   type CreateProposalInput,
   type Proposal,
   type ProposalStatus,
-} from "@rhule/support-shared";
+} from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { ProposalStore } from "./store.js";

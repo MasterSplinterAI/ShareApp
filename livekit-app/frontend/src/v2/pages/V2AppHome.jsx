@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import { format, isToday, isTomorrow, isThisYear } from 'date-fns';
 import {
   ArrowRight,
+  Bot,
   CalendarClock,
   Clock,
   FileText,
@@ -14,18 +15,18 @@ import {
   Video,
   Zap,
 } from 'lucide-react';
+import SendNotetakerDialog from '../components/SendNotetakerDialog';
 import { v2Auth, v2Calls, v2Contacts, v2Meetings, v2Orgs } from '../../services/apiV2';
 import { getMeetingUiState, isMeetingEffectivelyEnded, toneToBadgeVariant } from '../lib/meetingState';
 import { workspaceLabel, isTeamWorkspace } from '../lib/workspaceDisplay';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent } from '../../components/ui/card';
-import { Input } from '../../components/ui/input';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
 import { dateFnsLocale } from '../../lib/i18n/dateLocale';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeUsageCard } from '../components/UpgradePrompt';
-import { getPublicAppOrigin, parseJoinTarget } from '../../lib/nativePlatform';
+import { getPublicAppOrigin } from '../../lib/nativePlatform';
 import { resolvePreferredMeetingLanguage } from '../../lib/languages';
 
 export default function V2AppHome() {
@@ -39,7 +40,8 @@ export default function V2AppHome() {
   const [loading, setLoading] = useState(true);
   const [startingInstant, setStartingInstant] = useState(false);
   const [callingId, setCallingId] = useState(null);
-  const [joinInput, setJoinInput] = useState('');
+  const [notetakerOpen, setNotetakerOpen] = useState(false);
+  const [notetakerInitialUrl, setNotetakerInitialUrl] = useState('');
   const { offer, checkoutLoading, startCheckout, subscription: sub, usage } = useUpgradeOffer(me);
 
   const dateLocale = dateFnsLocale(locale);
@@ -208,16 +210,6 @@ export default function V2AppHome() {
     }
   };
 
-  const handleJoinByCode = (e) => {
-    e.preventDefault();
-    const target = parseJoinTarget(joinInput);
-    if (!target) {
-      toast.error('Paste an invite link or enter a room code');
-      return;
-    }
-    navigate(target);
-  };
-
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       {/* Header */}
@@ -347,28 +339,46 @@ export default function V2AppHome() {
         </Card>
       </section>
 
-      {/* Join a meeting by code or link */}
-      <form
-        onSubmit={handleJoinByCode}
-        data-tour="join-by-code"
-        className="flex flex-col gap-2 rounded-xl border border-border/70 bg-card/70 p-3.5 sm:flex-row sm:items-center"
-      >
-        <span className="text-xs font-medium text-muted-foreground sm:shrink-0 sm:px-1">
-          {t('appHome.haveMeetingLink')}
-        </span>
-        <Input
-          value={joinInput}
-          onChange={(e) => setJoinInput(e.target.value)}
-          placeholder={t('appHome.pasteInvitePlaceholder')}
-          className="h-9 flex-1 text-xs"
-          autoCapitalize="none"
-          autoCorrect="off"
-        />
-        <Button type="submit" size="sm" variant="secondary" className="h-9 shrink-0 gap-1.5">
-          {t('appHome.joinRoom')}
-          <ArrowRight className="h-3.5 w-3.5" />
-        </Button>
-      </form>
+      {/* AI Notetaker for Meet, Teams, Zoom & Webex */}
+      <div className="flex flex-col justify-between gap-3 rounded-xl border border-primary/25 bg-gradient-to-r from-primary/[0.06] via-card to-card p-4 sm:flex-row sm:items-center">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+            <Bot className="h-4 w-4" />
+          </span>
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">
+              AI Notetaker for Meet, Teams, Zoom &amp; Webex
+            </h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Send Lalia to record audio, transcribe speakers, and email AI summaries from any external meeting.
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-8 gap-1.5 text-xs"
+            onClick={() => navigate('/v2/app/notetaker')}
+          >
+            Setup &amp; Sync
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="shrink-0 gap-1.5 border-primary/35 hover:bg-primary/10"
+            onClick={() => {
+              setNotetakerInitialUrl('');
+              setNotetakerOpen(true);
+            }}
+          >
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            Send Notetaker
+          </Button>
+        </div>
+      </div>
 
       {/* Up Next / Live Now */}
       {!loading && nextUpcoming && (
@@ -532,6 +542,17 @@ export default function V2AppHome() {
           </Link>
         </p>
       )}
+
+      <SendNotetakerDialog
+        open={notetakerOpen}
+        onOpenChange={setNotetakerOpen}
+        initialUrl={notetakerInitialUrl}
+        defaultFirstName={firstName}
+        onDispatched={(res) => {
+          setJoinInput('');
+          navigate(`/v2/app/meetings/${res.meetingId}`);
+        }}
+      />
     </div>
   );
 }

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from typing import Any, Sequence
 
 import aiohttp
 
@@ -82,6 +82,7 @@ def build_xai_streaming_stt(
     endpointing: int = 800,
     multilingual: bool | None = None,
     language: str | None = None,
+    keyterm: Sequence[str] | None = None,
 ) -> Any:
     """Return an xAI STT instance whose stream omits `language` when multilingual."""
     from livekit.agents import APIConnectOptions, APIConnectionError, DEFAULT_API_CONNECT_OPTIONS
@@ -154,6 +155,20 @@ def build_xai_streaming_stt(
             self._streams.add(stream)
             return stream
 
+    cleaned_keyterms: list[str] = []
+    seen_kt: set[str] = set()
+    for term in keyterm or ():
+        clean = str(term or "").strip()
+        if not clean or len(clean) > 64:
+            continue
+        low = clean.lower()
+        if low in seen_kt:
+            continue
+        seen_kt.add(low)
+        cleaned_keyterms.append(clean)
+        if len(cleaned_keyterms) >= 100:
+            break
+
     # The plugin constructor requires a language string. Multilingual streams
     # ignore it and leave the query parameter off.
     kwargs: dict[str, Any] = dict(
@@ -162,8 +177,14 @@ def build_xai_streaming_stt(
         endpointing=endpointing,
         language=(language or "en") if not auto_detect else "en",
     )
+    if cleaned_keyterms:
+        kwargs["keyterm"] = cleaned_keyterms
     try:
         return _AutoDetectSTT(**kwargs)
     except TypeError:
         kwargs.pop("endpointing", None)
-        return _AutoDetectSTT(**kwargs)
+        try:
+            return _AutoDetectSTT(**kwargs)
+        except TypeError:
+            kwargs.pop("keyterm", None)
+            return _AutoDetectSTT(**kwargs)

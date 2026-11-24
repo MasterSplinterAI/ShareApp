@@ -4,7 +4,7 @@ import {
   type GapStatus,
   type KnowledgeGap,
   type RecordKnowledgeGapInput,
-} from "@rhule/support-shared";
+} from "@quill/support-shared";
 import type { DbAdapter } from "../adapters/types.js";
 import { DEFAULT_TABLE_PREFIX } from "../db/migrate.js";
 import { KnowledgeGapStore } from "./store.js";

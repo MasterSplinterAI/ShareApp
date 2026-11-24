@@ -1,0 +1,33 @@
+[Unit]
+Description=Lalia PostgreSQL and local-upload off-host backup
+Wants=network-online.target
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Group=ubuntu
+UMask=0077
+RuntimeDirectory=lalia-backup
+RuntimeDirectoryMode=0700
+StateDirectory=lalia-backup
+StateDirectoryMode=0700
+Environment=LALIA_BACKEND_DIR=/var/www/share-app-staging/livekit-app/backend
+Environment=LALIA_BACKUP_BUCKET=lalia-backups-690248313257-us-east-2
+Environment=AWS_REGION=us-east-2
+Environment=AWS_SHARED_CREDENTIALS_FILE=/dev/null
+Environment=AWS_CONFIG_FILE=/dev/null
+Environment=AWS_EC2_METADATA_DISABLED=false
+UnsetEnvironment=AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_PROFILE AWS_WEB_IDENTITY_TOKEN_FILE AWS_ROLE_ARN AWS_CONTAINER_CREDENTIALS_FULL_URI AWS_CONTAINER_CREDENTIALS_RELATIVE_URI
+ExecStart=/usr/bin/flock -n /run/lalia-backup/backup.lock /usr/bin/node /opt/lalia-backup/backup.cjs
+TimeoutStartSec=30min
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+

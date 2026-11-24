@@ -1,0 +1,19 @@
+{
+  "name": "@rhule/ops-sdk",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "description": "Drop-in TypeScript client SDK for the Central Portfolio Operations Hub (GL billing/COGS ingestion, CRM sync, heartbeats, Headless CMS, and HMAC webhook verification).",
+  "module": "./dist/index.js",
+  "scripts": {
+    "build": "node scripts/build.mjs"
+  }
+}

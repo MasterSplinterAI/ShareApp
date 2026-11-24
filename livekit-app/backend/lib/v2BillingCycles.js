@@ -12,15 +12,22 @@ function calendarMonthBounds(now = new Date()) {
 
 async function resolveOrgPeriodBounds(orgId) {
   const sub = await db.get(
-    `SELECT stripe_subscription_id, current_period_start, current_period_end
+    `SELECT stripe_subscription_id, billing_interval, current_period_start, current_period_end
      FROM v2_org_subscriptions WHERE org_id = ?`,
     [orgId]
   );
+  // Plan quotas are monthly allowances; annual subscriptions still meter/reset monthly.
+  const startMs = sub?.current_period_start ? new Date(sub.current_period_start).getTime() : NaN;
+  const endMs = sub?.current_period_end ? new Date(sub.current_period_end).getTime() : NaN;
+  const isAnnualSpan =
+    sub?.billing_interval === 'year' ||
+    (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs - startMs > 45 * 86400 * 1000);
   if (
+    !isAnnualSpan &&
     sub?.stripe_subscription_id &&
     sub.current_period_start &&
     sub.current_period_end &&
-    new Date(sub.current_period_end).getTime() > Date.now()
+    endMs > Date.now()
   ) {
     return {
       start: String(sub.current_period_start),

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import Database from "better-sqlite3";
+import {serializeSqlite} from "./serializedSqlite.js";
 import type { DbAdapter } from "../adapters/types.js";
 
 export interface FileSqliteAdapter extends DbAdapter {
@@ -25,20 +26,5 @@ export function createFileSqliteAdapter(dbPath: string): FileSqliteAdapter {
   db.pragma("foreign_keys = ON");
   db.pragma("journal_mode = WAL");
 
-  return {
-    dbPath: resolved,
-    async run(sql, params = []) {
-      const info = db.prepare(sql).run(...params);
-      return { changes: info.changes };
-    },
-    async get(sql, params = []) {
-      return db.prepare(sql).get(...params) as never;
-    },
-    async all(sql, params = []) {
-      return db.prepare(sql).all(...params) as never;
-    },
-    close() {
-      db.close();
-    },
-  };
+  return {...serializeSqlite(db),dbPath:resolved,close(){db.close();}};
 }

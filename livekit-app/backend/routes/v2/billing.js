@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../../db/v2Database');
 const { requireV2Auth } = require('../../middleware/v2Auth');
+const { isSuperadminEmail } = require('../../lib/v2Superadmin');
 const { planAllowsTeamWorkspace } = require('../../lib/v2PlanFeatures');
 const { writeOverageLedgerForCycle } = require('../../lib/v2OverageLedger');
 const {
@@ -13,8 +14,44 @@ const { getOverageAutoChargeState, setOverageAutoChargeOptIn } = require('../../
 const { settlePendingOverageForOrgCycle } = require('../../lib/v2OverageSettlement');
 const { reconcileOrgSubscriptionFromStripe } = require('../../lib/v2StripeReconcile');
 
+// Serialize an org's local checkout requests; Stripe idempotency also covers retries/workers.
+const checkoutLocks = new Map();
+async function lockCheckout(orgId) {
+  const previous = checkoutLocks.get(orgId) || Promise.resolve();
+  let unlock;
+  const pending = new Promise((resolve) => { unlock = resolve; });
+  checkoutLocks.set(orgId, pending);
+  await previous;
+  return () => {
+    if (checkoutLocks.get(orgId) === pending) checkoutLocks.delete(orgId);
+    unlock();
+  };
+}
+
+function stripeErrorDetails(error) {
+  return {
+    code: error?.code || error?.type || 'stripe_error',
+    message: String(error?.raw?.message || error?.message || 'Stripe request failed')
+      .replace(/(?:sk|rk)_(?:test|live)_[A-Za-z0-9_]+/g, '[redacted]'),
+  };
+}
+
 function frontendBaseUrl() {
   return (process.env.FRONTEND_URL || process.env.PUBLIC_FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+}
+
+function canAccessStripeCheckout(settings, auth) {
+  return isStripeBillingActive(settings) && (
+    settings.stripeKeyMode === 'live' ||
+    (settings.stripeKeyMode === 'test' && isSuperadminEmail(auth?.email))
+  );
+}
+
+function paidUpgradesUnavailable(res) {
+  return res.status(403).json({
+    error: 'Paid upgrades are currently unavailable.',
+    code: 'paid_upgrades_unavailable',
+  });
 }
 
 router.get('/plans', async (req, res) => {
@@ -25,7 +62,7 @@ router.get('/plans', async (req, res) => {
       ...planRow,
       teamWorkspace: planAllowsTeamWorkspace(planRow.id),
     }));
-    res.json({ plans, stripeEnabled: isStripeBillingActive(settings) });
+    res.json({ plans, stripeEnabled: canAccessStripeCheckout(settings) });
   } catch (e) {
     res.status(500).json({ error: 'Failed' });
   }
@@ -64,7 +101,7 @@ router.get('/subscription', requireV2Auth, async (req, res) => {
     res.json({
       subscription: sub,
       plan,
-      stripeEnabled: isStripeBillingActive(settings),
+      stripeEnabled: canAccessStripeCheckout(settings, req.v2Auth),
       overageAutoCharge,
     });
   } catch (e) {
@@ -92,34 +129,55 @@ router.patch('/overage-auto-charge', requireV2Auth, async (req, res) => {
   }
 });
 
+function normalizeBillingInterval(raw) {
+  if (raw === undefined || raw === null || raw === '') return 'month';
+  const v = String(raw).trim().toLowerCase();
+  if (v === 'month' || v === 'monthly') return 'month';
+  if (v === 'year' || v === 'annual' || v === 'yearly') return 'year';
+  return null;
+}
+
 router.post('/checkout', requireV2Auth, async (req, res) => {
+  let release;
   try {
     const settings = await getStripeSettings();
     if (!isStripeBillingActive(settings)) {
       return res.status(400).json({ error: 'billing_not_enabled', code: 'stripe_disabled', message: 'Stripe billing is not enabled' });
     }
+    if (!canAccessStripeCheckout(settings, req.v2Auth)) return paidUpgradesUnavailable(res);
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
-    const { planId } = req.body || {};
+    const { planId, billingInterval: rawInterval } = req.body || {};
     if (!planId || typeof planId !== 'string') {
       return res.status(400).json({ error: 'planId required' });
     }
-    const plan = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [planId]);
-    if (!plan || !plan.stripe_price_id) {
-      return res.status(400).json({ error: 'Plan not available for self-serve checkout' });
-    }
-    if (!String(plan.stripe_price_id).startsWith('price_')) {
-      return res.status(400).json({
-        error:
-          'Plan is misconfigured: stripe_price_id must be a Price ID (price_…), not a Product ID (prod_…). Update it in Admin → Plans.',
-        code: 'invalid_stripe_price_id',
-      });
+    const billingInterval = normalizeBillingInterval(rawInterval);
+    if (!billingInterval) {
+      return res.status(400).json({ error: 'Invalid billingInterval (expected monthly or annual)' });
     }
     if (planId === 'free') {
       return res.status(400).json({ error: 'Free plan does not require checkout' });
     }
+    const plan = await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [planId]);
+    const targetPriceId = billingInterval === 'year' ? plan?.stripe_annual_price_id : plan?.stripe_price_id;
+    if (!plan || !targetPriceId) {
+      return res.status(400).json({
+        error:
+          billingInterval === 'year'
+            ? 'Annual billing is not yet configured for this plan'
+            : 'Plan not available for self-serve checkout',
+      });
+    }
+    if (!String(targetPriceId).startsWith('price_')) {
+      return res.status(400).json({
+        error:
+          'Plan is misconfigured: Stripe price ID must start with price_… (not a Product ID prod_…). Update it in Admin → Plans.',
+        code: 'invalid_stripe_price_id',
+      });
+    }
 
+    release = await lockCheckout(req.v2Auth.orgId);
     const sub = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
     if (!sub) return res.status(404).json({ error: 'No subscription' });
     if (sub.is_comp === 1) {
@@ -132,7 +190,7 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
       const customer = await stripe.customers.create({
         email: req.v2Auth.email,
         metadata: { org_id: req.v2Auth.orgId },
-      });
+      }, { idempotencyKey: `lalia-customer-${req.v2Auth.orgId}` });
       customerId = customer.id;
       await db.run(`UPDATE v2_org_subscriptions SET stripe_customer_id = ? WHERE org_id = ?`, [
         customerId,
@@ -140,22 +198,60 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
       ]);
     }
 
+    const subscriptions = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
+    // Unpaid, paused, and incomplete subscriptions can still recover and must not be duplicated.
+    if (subscriptions.has_more || subscriptions.data.some((item) => !['canceled', 'incomplete_expired'].includes(item.status))) {
+      return res.status(409).json({ error: 'You already have a subscription. Use Manage in Stripe to change your plan.', code: 'subscription_exists' });
+    }
+    const sessions = await stripe.checkout.sessions.list({ customer: customerId, limit: 100 });
+    if (sessions.has_more) {
+      return res.status(409).json({ error: 'Please manage your billing in Stripe or contact support.', code: 'checkout_history_limit' });
+    }
+    const openSessions = sessions.data.filter((item) => item.status === 'open');
+    if (openSessions.length > 1) {
+      return res.status(409).json({ error: 'Multiple checkouts are pending. Please contact support.', code: 'checkout_in_progress' });
+    }
+    const open = openSessions[0];
+    if (open) {
+      const openInterval = open.metadata?.billing_interval || 'month';
+      if (open.metadata?.plan_id === planId && openInterval === billingInterval) {
+        return res.json({ url: open.url, sessionId: open.id });
+      }
+      if (open.payment_status !== 'unpaid') {
+        return res.status(409).json({ error: 'Your previous checkout is being processed. Open billing again shortly.', code: 'checkout_in_progress' });
+      }
+      // Back/cancel redirects leave Checkout open. Explicitly changing plans or cadence
+      // replaces that unpaid session so it cannot subsequently create another subscription.
+      const expired = await stripe.checkout.sessions.expire(open.id);
+      if (expired.status !== 'expired') throw new Error('Previous checkout could not be expired');
+    }
+    const lastSession = sessions.data[0];
+    // A just-completed Checkout can precede the subscription-list response.
+    if (lastSession?.status === 'complete' && lastSession.subscription) {
+      const id = typeof lastSession.subscription === 'string' ? lastSession.subscription : lastSession.subscription.id;
+      const latest = await stripe.subscriptions.retrieve(id);
+      if (!['canceled', 'incomplete_expired'].includes(latest.status)) {
+        return res.status(409).json({ error: 'Your subscription is already being processed. Open billing again shortly.', code: 'subscription_exists' });
+      }
+    }
     const base = frontendBaseUrl();
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
+      // Delayed-payment methods need a separate fulfillment policy before enabling.
+      payment_method_types: ['card'],
       customer: customerId,
-      line_items: [{ price: plan.stripe_price_id, quantity: 1 }],
-      success_url: `${base}/v2/app/settings?billing=success`,
-      cancel_url: `${base}/v2/app/settings?billing=cancel`,
-      metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
+      line_items: [{ price: targetPriceId, quantity: 1 }],
+      success_url: `${base}/v2/app/settings?section=billing&billing=success`,
+      cancel_url: `${base}/v2/app/settings?section=billing&billing=cancel`,
+      metadata: { org_id: req.v2Auth.orgId, plan_id: planId, billing_interval: billingInterval },
       subscription_data: {
-        metadata: { org_id: req.v2Auth.orgId, plan_id: planId },
+        metadata: { org_id: req.v2Auth.orgId, plan_id: planId, billing_interval: billingInterval },
       },
-    });
+    }, { idempotencyKey: `lalia-checkout-${req.v2Auth.orgId}-${billingInterval}-${lastSession?.id || 'first'}` });
 
     res.json({ url: session.url, sessionId: session.id });
   } catch (e) {
-    console.error('[v2/billing/checkout]', e);
+    console.error('[v2/billing/checkout]', stripeErrorDetails(e));
     const stripeMsg = e?.raw?.message || e?.message || '';
     if (e?.code === 'resource_missing' || /No such price/i.test(stripeMsg)) {
       return res.status(400).json({
@@ -165,6 +261,8 @@ router.post('/checkout', requireV2Auth, async (req, res) => {
       });
     }
     res.status(500).json({ error: 'Checkout failed' });
+  } finally {
+    if (release) release();
   }
 });
 
@@ -174,6 +272,7 @@ router.post('/portal', requireV2Auth, async (req, res) => {
     if (!isStripeBillingActive(settings)) {
       return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
     }
+    if (!canAccessStripeCheckout(settings, req.v2Auth)) return paidUpgradesUnavailable(res);
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -198,7 +297,7 @@ router.post('/portal', requireV2Auth, async (req, res) => {
     const session = await stripe.billingPortal.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e) {
-    console.error('[v2/billing/portal]', e);
+    console.error('[v2/billing/portal]', stripeErrorDetails(e));
     res.status(500).json({ error: 'Portal failed' });
   }
 });
@@ -210,6 +309,7 @@ router.post('/resume', requireV2Auth, async (req, res) => {
     if (!isStripeBillingActive(settings)) {
       return res.status(503).json({ error: 'Stripe billing is not enabled', code: 'stripe_disabled' });
     }
+    if (!canAccessStripeCheckout(settings, req.v2Auth)) return paidUpgradesUnavailable(res);
     if (!['owner', 'admin'].includes(req.v2Auth.role)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
@@ -218,12 +318,15 @@ router.post('/resume', requireV2Auth, async (req, res) => {
       return res.status(400).json({ error: 'No active Stripe subscription to resume' });
     }
     const stripe = getStripeClient(settings);
-    const { applyStripeSubscriptionToOrg } = require('../../lib/v2StripeSubscriptionSync');
-    const updated = await stripe.subscriptions.update(sub.stripe_subscription_id, {
-      cancel_at_period_end: false,
-      cancel_at: '',
-    });
-    await applyStripeSubscriptionToOrg(updated);
+    const { reconcileStripeSubscriptionEvent } = require('../../lib/v2StripeSubscriptionSync');
+    const current = await stripe.subscriptions.retrieve(sub.stripe_subscription_id);
+    // Stripe rejects these two fields in the same request. Period-end cancellation
+    // also populates cancel_at, so use the authoritative boolean to distinguish it.
+    const resumeParams = current.cancel_at_period_end || !current.cancel_at
+      ? { cancel_at_period_end: false }
+      : { cancel_at: '' };
+    const updated = await stripe.subscriptions.update(sub.stripe_subscription_id, resumeParams);
+    await reconcileStripeSubscriptionEvent(updated);
     const fresh = await db.get(`SELECT * FROM v2_org_subscriptions WHERE org_id = ?`, [req.v2Auth.orgId]);
     const planRow = fresh ? await db.get(`SELECT * FROM v2_plans WHERE id = ?`, [fresh.plan_id]) : null;
     res.json({
@@ -234,7 +337,7 @@ router.post('/resume', requireV2Auth, async (req, res) => {
         : null,
     });
   } catch (e) {
-    console.error('[v2/billing/resume]', e);
+    console.error('[v2/billing/resume]', stripeErrorDetails(e));
     res.status(500).json({ error: e.message || 'Failed to resume subscription' });
   }
 });
@@ -274,6 +377,10 @@ router.post('/settle-dry-run', requireV2Auth, async (req, res) => {
     const { persistLedger } = req.body || {};
     let ledger = null;
     if (persistLedger) {
+      const settings = await getStripeSettings();
+      if (!settings.autoChargeEnabled) {
+        return res.status(409).json({ error: 'Overage settlement is disabled; previews cannot persist a ledger.', code: 'platform_auto_charge_off' });
+      }
       ledger = await writeOverageLedgerForCycle(req.v2Auth.orgId, cycle.id);
     }
     const overageAutoCharge = await getOverageAutoChargeState(req.v2Auth.orgId);

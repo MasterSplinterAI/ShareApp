@@ -99,7 +99,7 @@ function rewriteInternalLinks(html, locale) {
   if (locale === 'en') return html;
   const prefix = `/${locale}`;
   const keepPrefix =
-    /^(\/studio-assets|\/assets|\/api|\/v2|\/login|\/signup|\/demo|\/join|\/room|\/marketing|https?:|mailto:|tel:)/i;
+    /^(\/studio-assets|\/assets|\/api|\/v2|\/login|\/signup|\/demo|\/terms|\/privacy|\/join|\/room|\/marketing|https?:|mailto:|tel:)/i;
 
   let out = html.replace(/href=(["'])([^"']*)\1/gi, (full, q, href) => {
     if (!href || href.startsWith('#') || keepPrefix.test(href)) return full;
@@ -138,6 +138,7 @@ function applyChromeStrings(html, locale, route) {
     ['Try the live demo', s.navDemo],
     ['Get started', s.navGetStarted],
     ['Start free', s.navStartFree],
+    ['>Available after beta<', `>${s.paidAfterBeta}<`],
     ['Start talking for free', s.ctaStart],
     ['See how it feels', s.ctaSee],
     ['A SMALLER WORLD. A BIGGER CONVERSATION.', s.heroEyebrow],
@@ -147,6 +148,8 @@ function applyChromeStrings(html, locale, route) {
     ['>EXPLORE<', `>${s.explore}<`],
     ['>LET’S CONNECT<', `>${s.connect}<`],
     ['>LET&apos;S CONNECT<', `>${s.connect}<`],
+    ['<a href="/terms">Terms</a>', `<a href="/terms">${s.footerTerms}</a>`],
+    ['<a href="/privacy">Privacy</a>', `<a href="/privacy">${s.footerPrivacy}</a>`],
     ['Supported languages — Lalia', s.titleLanguages],
     ['Every language<br><span>Lalia speaks.</span>', `${s.languagesH1Lead}<br><span>${s.languagesH1Mint}</span>`],
     [
@@ -170,8 +173,8 @@ function applyChromeStrings(html, locale, route) {
     );
     // Replace the English hero description paragraph body when present.
     out = out.replace(
-      /Your voice\. Their language\. A real connection\.(?:<br class="desktop-break">)?\s*Talk naturally with anyone, anywhere, with live(?:<br class="desktop-break">)?\s*voice translation that brings you closer\./,
-      s.heroDesc
+      /(<p class="hero-description">)[\s\S]*?(<\/p>)/,
+      (_match, open, close) => `${open}${escapeHtml(s.heroDesc)}${close}`
     );
   }
 

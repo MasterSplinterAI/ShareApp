@@ -1,4 +1,5 @@
 const { escapeHtml } = require('./escape');
+const { SUPPORT_EMAIL } = require('../supportEmail');
 
 /**
  * Table-based HTML layout for broad email client support.
@@ -78,7 +79,7 @@ function renderEmailLayout({
           <tr>
             <td class="email-muted" style="padding:20px 8px 0;text-align:center;font-size:12px;line-height:1.6;color:#64748b;">
               ${escapeHtml(footerNote)}<br />
-              <a href="mailto:hello@lalia.cloud" style="color:#2563eb;text-decoration:none;">hello@lalia.cloud</a>
+              <a href="mailto:${SUPPORT_EMAIL}" style="color:#2563eb;text-decoration:none;">${SUPPORT_EMAIL}</a>
             </td>
           </tr>
         </table>

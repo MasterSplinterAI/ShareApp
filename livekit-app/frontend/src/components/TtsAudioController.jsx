@@ -289,7 +289,10 @@ export default function TtsAudioController({
         const raw = payload instanceof Uint8Array ? payload : payload?.data ?? payload;
         if (!raw) return;
 
-        const message = JSON.parse(SHARED_TEXT_DECODER.decode(raw));
+        const decoded = SHARED_TEXT_DECODER.decode(raw);
+        if (!decoded.includes('"tts_')) return;
+
+        const message = JSON.parse(decoded);
         const eventType = message?.type;
         if (eventType !== 'tts_start' && eventType !== 'tts_end') return;
 

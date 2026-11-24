@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import { v2Admin } from '../../../services/apiV2';
 import { Button } from '../../../components/ui/button';
@@ -16,8 +16,55 @@ function matchesQuery(u, q) {
   return [u.email, u.display_name, u.org_name].some((v) => (v || '').toLowerCase().includes(q));
 }
 
+function downloadUsersCsv(users) {
+  const esc = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const headers = [
+    'user_id',
+    'email',
+    'display_name',
+    'org_id',
+    'org_name',
+    'account_type',
+    'role',
+    'plan_id',
+    'is_comp',
+    'mtd_meeting_minutes',
+    'created_at',
+    'last_login_at',
+    'disabled_at',
+  ];
+  const rows = users.map((u) => [
+    u.id,
+    u.email,
+    u.display_name || '',
+    u.org_id || '',
+    u.org_name || '',
+    u.org_account_type || '',
+    u.role || '',
+    u.plan_id || 'free',
+    u.is_comp === 1 ? '1' : '0',
+    Math.round(u.mtd_meeting_minutes || 0),
+    u.created_at || '',
+    u.last_login_at || '',
+    u.disabled_at || '',
+  ]);
+  const csv = [headers.map(esc).join(','), ...rows.map((r) => r.map(esc).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `lalia-users-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function UsersTab({ users = [], onReload, onSelectOrg }) {
   const [search, setSearch] = useState('');
+  const [userFilter, setUserFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -57,22 +104,77 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
 
   const isDisabled = Boolean(detail?.user?.disabled_at);
   const q = search.trim().toLowerCase();
+  const sevenDaysAgoIso = useMemo(() => new Date(Date.now() - 7 * 86400_000).toISOString(), []);
+
+  const filteredUsers = useMemo(() => {
+    const list = users.filter((u) => {
+      if (userFilter === 'new_7d' && String(u.created_at || '') < sevenDaysAgoIso) return false;
+      if (userFilter === 'never_logged_in' && u.last_login_at) return false;
+      if (userFilter === 'disabled' && !u.disabled_at) return false;
+      return matchesQuery(u, q);
+    });
+    return [...list].sort((a, b) => {
+      if (sortBy === 'last_login') {
+        return String(b.last_login_at || '').localeCompare(String(a.last_login_at || ''));
+      }
+      if (sortBy === 'mtd_minutes') {
+        return Number(b.mtd_meeting_minutes || 0) - Number(a.mtd_meeting_minutes || 0);
+      }
+      return String(b.created_at || '').localeCompare(String(a.created_at || ''));
+    });
+  }, [users, userFilter, sortBy, q, sevenDaysAgoIso]);
 
   return (
     <div className="space-y-4">
       <Card className="app-card overflow-hidden border-border/60">
         <CardHeader>
-          <CardTitle className="text-lg">Users</CardTitle>
-          <CardDescription>
-            Every registered user. Click a row to open support actions (disable/enable, password reset).
-          </CardDescription>
-          <Input
-            aria-label="Search users"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by email, name, or organization…"
-            className="mt-2 max-w-sm"
-          />
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <CardTitle className="text-lg">Users</CardTitle>
+              <CardDescription>
+                {users.length} registered users. Click a row to open support actions (disable/enable, password reset,
+                jump to workspace).
+              </CardDescription>
+            </div>
+            <Button type="button" size="sm" variant="outline" onClick={() => downloadUsersCsv(filteredUsers)}>
+              Export CSV ({filteredUsers.length})
+            </Button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Input
+              aria-label="Search users"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by email, name, or organization…"
+              className="max-w-xs"
+            />
+            <select
+              aria-label="Sort users"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2.5 text-xs"
+            >
+              <option value="newest">Sort: Newest signup</option>
+              <option value="last_login">Sort: Recent login</option>
+              <option value="mtd_minutes">Sort: Highest org minutes</option>
+            </select>
+            {[
+              { id: 'all', label: 'All' },
+              { id: 'new_7d', label: 'New (7d)' },
+              { id: 'never_logged_in', label: 'Never logged in' },
+              { id: 'disabled', label: 'Disabled' },
+            ].map((opt) => (
+              <Button
+                key={opt.id}
+                type="button"
+                size="sm"
+                variant={userFilter === opt.id ? 'default' : 'outline'}
+                onClick={() => setUserFilter(opt.id)}
+              >
+                {opt.label}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <div className="overflow-x-auto border-t border-border/60">
           <table className="w-full text-left text-sm">
@@ -86,11 +188,12 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                 <th className="px-4 py-3 font-medium" title="Org participant-minutes this month">
                   Part.-min (month)
                 </th>
+                <th className="px-4 py-3 font-medium">Last login</th>
                 <th className="px-4 py-3 font-medium">Signed up</th>
               </tr>
             </thead>
             <tbody>
-              {users.filter((u) => matchesQuery(u, q)).map((u) => (
+              {filteredUsers.map((u) => (
                 <tr
                   key={u.id}
                   className={cn(
@@ -109,7 +212,11 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                   <td className="px-4 py-3">{u.display_name || '—'}</td>
                   <td className="px-4 py-3">
                     {u.org_name ? (
-                      u.org_account_type === 'personal' ? u.display_name || u.org_name : u.org_name
+                      u.org_account_type === 'personal' ? (
+                        u.display_name || u.org_name
+                      ) : (
+                        u.org_name
+                      )
                     ) : (
                       <Badge variant="destructive">no org — broken signup</Badge>
                     )}
@@ -120,13 +227,16 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                     {u.is_comp === 1 ? ' (comp)' : ''}
                   </td>
                   <td className="px-4 py-3 tabular-nums">{Math.round(u.mtd_meeting_minutes || 0)}</td>
+                  <td className="px-4 py-3 text-muted-foreground">
+                    {u.last_login_at ? u.last_login_at.slice(0, 10) : 'never'}
+                  </td>
                   <td className="px-4 py-3 text-muted-foreground">{(u.created_at || '').slice(0, 10)}</td>
                 </tr>
               ))}
-              {users.length === 0 && (
+              {filteredUsers.length === 0 && (
                 <tr>
-                  <td className="px-4 py-6 text-muted-foreground" colSpan={7}>
-                    No users found.
+                  <td className="px-4 py-6 text-muted-foreground" colSpan={8}>
+                    No users match this filter.
                   </td>
                 </tr>
               )}
@@ -144,9 +254,8 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
               {detail.membership?.suspended_at && <SuspendedBadge />}
             </CardTitle>
             <CardDescription>
-              {detail.user?.display_name || 'No display name'} · Signed up{' '}
-              {(detail.user?.created_at || '').slice(0, 10)} · Last login{' '}
-              {detail.user?.last_login_at ? fmtDateTime(detail.user.last_login_at) : 'never'}
+              {detail.user?.display_name || 'No display name'} · Signed up {(detail.user?.created_at || '').slice(0, 10)}{' '}
+              · Last login {detail.user?.last_login_at ? fmtDateTime(detail.user.last_login_at) : 'never'}
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-6 lg:grid-cols-2">
@@ -161,7 +270,7 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                       className="text-left font-medium text-primary hover:underline"
                       onClick={() => onSelectOrg?.(detail.membership.org_id)}
                     >
-                      {detail.membership.org_name || detail.membership.org_id}
+                      {detail.membership.org_name || detail.membership.org_id} →
                     </button>
                   </div>
                   <div>
@@ -238,9 +347,7 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                   type="button"
                   size="sm"
                   disabled={busy}
-                  onClick={() =>
-                    runAction('User enabled', (reason) => v2Admin.enableUser(selectedUserId, { reason }))
-                  }
+                  onClick={() => runAction('User enabled', (reason) => v2Admin.enableUser(selectedUserId, { reason }))}
                 >
                   Enable user
                 </Button>
@@ -263,9 +370,7 @@ export function UsersTab({ users = [], onReload, onSelectOrg }) {
                 variant="outline"
                 disabled={busy}
                 onClick={() =>
-                  runAction('Password reset sent', (reason) =>
-                    v2Admin.sendPasswordReset(selectedUserId, { reason })
-                  )
+                  runAction('Password reset sent', (reason) => v2Admin.sendPasswordReset(selectedUserId, { reason }))
                 }
               >
                 Send password reset

@@ -132,8 +132,7 @@ class DemoRoomOrchestrator:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(url, json=payload, headers=headers) as resp:
                     if resp.status >= 400:
-                        body = await resp.text()
-                        logger.warning("Demo orchestrate failed %s: %s", resp.status, body[:200])
+                        logger.warning('demo_orchestrate_failed', extra={'status_code': resp.status})
                         await self._set_phase("your_turn", None)
                         return
                     data = await resp.json()
@@ -144,7 +143,7 @@ class DemoRoomOrchestrator:
             elif not data.get("complete"):
                 await self._set_phase("your_turn", None)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Demo orchestrate request error: %s", exc)
+            logger.warning('demo_orchestrate_request_error', extra={"error_type": type(exc).__name__})
             await self._set_phase("your_turn", None)
         finally:
             self._busy = False
@@ -166,7 +165,7 @@ class DemoRoomOrchestrator:
                 try:
                     await tts_lane.enqueue_final(speaker_id=speaker, text=primary)
                 except Exception as exc:  # noqa: BLE001
-                    logger.warning("Demo TTS enqueue failed for %s: %s", speaker, exc)
+                    logger.warning('demo_tts_enqueue_failed_for', extra={"error_type": type(exc).__name__})
 
             await self._publish_agent_sequence(
                 speaker_id=speaker,

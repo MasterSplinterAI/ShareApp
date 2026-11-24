@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { v2Auth } from '../../services/apiV2';
+import { v2Auth, v2Billing } from '../../services/apiV2';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../../components/ui/card';
@@ -17,7 +17,9 @@ export default function V2Signup() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const planParam = (searchParams.get('plan') || '').toLowerCase();
-  const planName = PAID_PLANS.has(planParam) ? t(`pricing.tiers.${planParam}.name`) : null;
+  const billingParam = (searchParams.get('billing') || '').toLowerCase() === 'annual' ? 'annual' : 'monthly';
+  const [paidPlansAvailable, setPaidPlansAvailable] = useState(false);
+  const planName = paidPlansAvailable && PAID_PLANS.has(planParam) ? t(`pricing.tiers.${planParam}.name`) : null;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [companyName, setCompanyName] = useState('');
@@ -32,6 +34,21 @@ export default function V2Signup() {
       navigate('/v2/app', { replace: true });
     }
   }, [navigate]);
+
+  useEffect(() => {
+    if (!PAID_PLANS.has(planParam)) return undefined;
+    let active = true;
+    v2Billing.plans().then(({ stripeEnabled, plans = [] }) => {
+      if (!active) return;
+      const target = (plans || []).find((p) => p.id === planParam);
+      const intervalReady =
+        billingParam === 'annual'
+          ? !target || Boolean(target.stripe_annual_price_id)
+          : !target || !('stripe_price_id' in target) || Boolean(target.stripe_price_id);
+      setPaidPlansAvailable(stripeEnabled === true && intervalReady);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [planParam, billingParam]);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -61,7 +78,8 @@ export default function V2Signup() {
       }
       toast.success(t('auth.signup.success'));
       if (planName) {
-        navigate(`/v2/app/settings?checkout=${planParam}`, { replace: true });
+        const intervalSuffix = billingParam === 'annual' ? '&interval=annual' : '';
+        navigate(`/v2/app/settings?checkout=${planParam}${intervalSuffix}`, { replace: true });
       } else {
         navigate('/v2/app', { replace: true });
       }

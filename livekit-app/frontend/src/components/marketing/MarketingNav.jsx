@@ -71,9 +71,6 @@ export function MarketingNav() {
           <a href="/#faq" className={`hidden ${navLinkClass} md:inline`}>
             {t('nav.faq')}
           </a>
-          <Link to="/demo" className={navLinkClass}>
-            {t('hero.tryTranslation')}
-          </Link>
           <LanguageSwitcher />
           {authButtons}
         </nav>
@@ -101,13 +98,6 @@ export function MarketingNav() {
                     {t(`nav.${link.key}`)}
                   </a>
                 ))}
-                <Link
-                  to="/demo"
-                  className="text-base font-medium text-primary"
-                  onClick={() => setOpen(false)}
-                >
-                  {t('hero.tryTranslation')}
-                </Link>
                 <div className="mt-4 flex flex-col gap-2 border-t border-border pt-6">
                   {hasToken ? (
                     <Button asChild onClick={() => setOpen(false)}>

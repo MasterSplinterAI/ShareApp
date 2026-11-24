@@ -20,21 +20,25 @@ function clientMeta(req) {
   return { ip, userAgent };
 }
 
-async function recordConsentEvent(userId, consentType, granted, req) {
+async function recordConsentEvent(userId, consentType, granted, req, observation) {
+  return db.transaction(async tx => {
+  const id = db.uuid(), occurredAt = new Date().toISOString();
   await db.run(
     `INSERT INTO v2_consent_events (id, user_id, consent_type, granted, ip, user_agent, policy_version, created_at)
      VALUES (?,?,?,?,?,?,?,?)`,
     [
-      db.uuid(),
+      id,
       userId,
       consentType,
       granted ? 1 : 0,
       clientMeta(req).ip,
       clientMeta(req).userAgent,
       POLICY_VERSION,
-      new Date().toISOString(),
+      occurredAt,
     ]
   );
+  await require('./opsOutbox').queueConsent(tx, {id,userId,consentType,granted,occurredAt,policyVersion:POLICY_VERSION,observation});
+  });
 }
 
 async function ensureDefaultPrefs(userId, { marketingEmail = false } = {}) {
@@ -93,8 +97,25 @@ async function setSignupPrefs(userId, { marketingEmail = false }, req) {
 }
 
 async function updatePrefs(userId, body, req) {
+  // Observe peers before acquiring any account/customer transaction locks.
+  const before=await getPrefs(userId);
+  if(body.marketingEmail!==undefined && body.prefsUpdatedAt===undefined)return {ok:false,status:409,error:'Reload preferences before changing marketing consent'};
+  if(body.prefsUpdatedAt!==undefined && body.prefsUpdatedAt!==before.prefsUpdatedAt)return {ok:false,status:409,error:'Preferences changed; reload before saving'};
+  let observation;
+  if(body.marketingEmail===true){
+    const user=await db.get('SELECT email FROM v2_users WHERE id=?',[userId]);
+    try{
+      const decision=await require('./consent').consentRuntime.policy.check({businessId:String(process.env.OPS_HUB_BUSINESS_ID||'lalia'),recipient:user.email,channel:'email',purpose:'marketing'});
+      if(decision.status!=='paused')observation={supersedes:decision.checks.flatMap(f=>f.suppressions.filter(s=>!s.permanent).map(s=>s.id))};
+    }catch { /* Preserve the explicit choice as pending; product preferences remain available. */ }
+  }
+  return db.transaction(() => updatePrefsWithinTransaction(userId, body, req, before.prefsUpdatedAt, observation));
+}
+
+async function updatePrefsWithinTransaction(userId, body, req, expectedVersion, observation) {
   await ensureDefaultPrefs(userId);
-  const current = await db.get(`SELECT * FROM v2_user_communication_prefs WHERE user_id = ?`, [userId]);
+  const current = await db.get(`SELECT * FROM v2_user_communication_prefs WHERE user_id = ?${db.isPostgres()?' FOR UPDATE':''}`, [userId]);
+  if(current.prefs_updated_at!==expectedVersion)return {ok:false,status:409,error:'Preferences changed; reload before saving'};
 
   if (body.timezone !== undefined && body.timezone !== null && body.timezone !== '' && !isValidIanaTimezone(body.timezone)) {
     return { ok: false, error: 'Invalid timezone — use an IANA name like America/New_York' };
@@ -137,7 +158,7 @@ async function updatePrefs(userId, body, req) {
     return { ok: false, error: 'SMS and phone preferences are not available yet' };
   }
 
-  const now = new Date().toISOString();
+  const now = new Date(Math.max(Date.now(),Date.parse(current.prefs_updated_at||0)+1)).toISOString();
   await db.run(
     `UPDATE v2_user_communication_prefs
      SET marketing_email = ?, marketing_sms = ?, marketing_phone = ?, phone_e164 = ?,
@@ -158,26 +179,11 @@ async function updatePrefs(userId, body, req) {
     ]
   );
 
-  if (body.marketingEmail !== undefined && Boolean(body.marketingEmail) !== Boolean(current.marketing_email)) {
-    await recordConsentEvent(userId, 'marketing_email', next.marketingEmail, req);
-    try {
-      const { syncContact } = require('./opsHubClient');
-      const u = await db.get(`SELECT email, display_name FROM v2_users WHERE id = ?`, [userId]);
-      if (u?.email) {
-        void syncContact({
-          externalUserId: userId,
-          email: u.email,
-          name: u.display_name || u.email.split('@')[0],
-          marketingOptIn: next.marketingEmail,
-          source: 'lalia_prefs_update',
-        });
-      }
-    } catch {
-      /* ignore */
-    }
+  if (body.marketingEmail !== undefined) {
+    await recordConsentEvent(userId, 'marketing_email', next.marketingEmail, req, observation);
   }
 
-  return { ok: true, prefs: await getPrefs(userId) };
+  return { ok: true, prefs: {...await getPrefs(userId),consentStatus:next.marketingEmail?(observation?'recorded':'pending'):'suppressed'} };
 }
 
 module.exports = {

@@ -4,9 +4,10 @@
  * no-ops gracefully when unset so local/offline operation is never blocked.
  */
 const fs = require('fs');
+const { createOpsSupportProxy } = require('@rhule/ops-sdk');
 const path = require('path');
 
-const TENANT_SLUG = 'lalia';
+const businessId = () => String(process.env.OPS_HUB_BUSINESS_ID || 'lalia');
 
 function getOpsHubConfig() {
   const baseUrl = String(process.env.OPS_HUB_URL || '')
@@ -22,7 +23,7 @@ function getOpsHubConfig() {
     .trim()
     .toLowerCase();
   const supportMode =
-    rawMode === 'proxy' || rawMode === 'local' ? rawMode : 'mirror';
+    rawMode === 'proxy' || rawMode === 'local' || rawMode === 'central' ? rawMode : 'mirror';
 
   return {
     baseUrl: baseUrl || null,
@@ -42,7 +43,7 @@ function encodeSupportUserHeader(user) {
   return Buffer.from(JSON.stringify(user), 'utf8').toString('base64url');
 }
 
-async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, usePublicKey = false } = {}) {
+async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, usePublicKey = false, signal } = {}) {
   const cfg = getOpsHubConfig();
   if (!cfg.baseUrl) return null;
   const key = usePublicKey ? cfg.publicKey || cfg.secretKey : cfg.secretKey;
@@ -52,8 +53,8 @@ async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, u
     Accept: 'application/json',
     Authorization: `Bearer ${key}`,
     'X-Ops-Key': key,
-    'X-Ops-Tenant': TENANT_SLUG,
-    'x-tenant-id': TENANT_SLUG,
+    'X-Ops-Tenant': businessId(),
+    'x-tenant-id': businessId(),
   };
   if (forwardedUser) {
     headers['X-Support-User-Json'] = encodeSupportUserHeader(forwardedUser);
@@ -65,6 +66,8 @@ async function opsHubRequest(endpoint, { method = 'POST', body, forwardedUser, u
   const res = await fetch(`${cfg.baseUrl}${endpoint}`, {
     method,
     headers,
+    signal: signal || AbortSignal.timeout(10000),
+    redirect: 'error',
     body: body !== undefined ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined,
   });
   const data = await res.json().catch(() => ({}));
@@ -83,7 +86,7 @@ async function ingestBillingEvent(eventInput) {
     return await opsHubRequest('/api/v1/ingest/billing-event', {
       method: 'POST',
       body: {
-        businessUnitId: TENANT_SLUG,
+        businessUnitId: businessId(),
         ...eventInput,
       },
     });
@@ -197,7 +200,7 @@ async function ingestCogs(cogsInput) {
     return await opsHubRequest('/api/v1/ingest/cogs', {
       method: 'POST',
       body: {
-        businessUnitId: TENANT_SLUG,
+        businessUnitId: businessId(),
         livemode: cogsInput.livemode !== undefined ? Boolean(cogsInput.livemode) : true,
         environment: cogsInput.livemode === false ? 'test' : 'live',
         creditAccountNumber: '1060',
@@ -215,25 +218,16 @@ async function ingestCogs(cogsInput) {
  * Sync user signup, plan tier, and marketing email consent to Ops Hub Lifecycle CRM.
  */
 async function syncContact(contactInput) {
-  if (!isOpsHubConfigured() || !contactInput?.email) return null;
-  try {
-    return await opsHubRequest('/api/v1/ingest/contact', {
-      method: 'POST',
-      body: {
-        tenantId: TENANT_SLUG,
-        ...contactInput,
-      },
-    });
-  } catch (err) {
-    console.warn('[opsHubClient] syncContact skipped:', err.message);
-    return null;
-  }
+  if (!contactInput?.externalUserId) throw Error('Persisted user identity required');
+  const { queueContact, customerMutation } = require('./opsOutbox');
+  return customerMutation(tx => queueContact(tx, contactInput.externalUserId));
 }
 
 /**
  * Sync curated markdown docs from `backend/docs/support` into Ops Hub's central Support KB.
  */
 async function syncCuratedDocsToOpsHub(docsRoot) {
+  if((await require('./supportAuthority').hostSupportAuthority.read()).state!=='unmanaged')return 0;
   if (!isOpsHubConfigured() || !docsRoot) return 0;
   try {
     const files = fs.existsSync(docsRoot) ? fs.readdirSync(docsRoot) : [];
@@ -256,7 +250,7 @@ async function syncCuratedDocsToOpsHub(docsRoot) {
     if (!articles.length) return 0;
     const res = await opsHubRequest('/api/v1/support/kb/sync', {
       method: 'POST',
-      body: { tenantId: TENANT_SLUG, articles },
+      body: { tenantId: businessId(), articles },
     });
     return res?.syncedCount ?? 0;
   } catch (err) {
@@ -271,116 +265,17 @@ async function syncCuratedDocsToOpsHub(docsRoot) {
 async function backfillLaliaStateToOpsHub(db) {
   if (!isOpsHubConfigured() || !db) return null;
   try {
-    const users = await db.all(
-      `SELECT u.id, u.email, u.display_name, p.marketing_email
-       FROM v2_users u
-       LEFT JOIN v2_user_communication_prefs p ON p.user_id = u.id`
-    ).catch(() => []);
+    const {backfillCustomerProjection,reportCustomerProjection}=require('./customerProjection');
+    const usersSynced=await backfillCustomerProjection();
+    const costRows = await db.all('SELECT * FROM meeting_cost_events');
+    const totalCostUsd = costRows.reduce((sum, row) => sum + Number(row.total_cost_usd || 0), 0);
+    const { queueCostEvent } = require('./opsOutbox');
+    for (const row of costRows) await db.transaction(tx => queueCostEvent(tx, row));
 
-    const subs = await db.all(
-      `SELECT org_id, plan_id, status, is_comp, stripe_subscription_id FROM v2_org_subscriptions`
-    ).catch(() => []);
+    await reportCustomerProjection();
+    await opsHubRequest('/api/v1/ingest/heartbeat',{body:{status:'up'}});
+    return {usersSynced,totalCostUsd};
 
-    const { getStripeSettings } = require('./v2StripeSettings');
-    const stripeSettings = await getStripeSettings().catch(() => ({}));
-    const isLiveKey = Boolean(
-      stripeSettings?.secretKey && String(stripeSettings.secretKey).startsWith('sk_live_')
-    );
-
-    let livePaidOrgs = 0;
-    let testPaidOrgs = 0;
-    let trialOrgs = 0;
-    let compOrgs = 0;
-
-    for (const s of subs) {
-      if (s.is_comp === 1) {
-        compOrgs += 1;
-      } else if (s.status === 'active' && s.plan_id && s.plan_id !== 'free') {
-        if (isLiveKey && s.stripe_subscription_id && !String(s.stripe_subscription_id).startsWith('sub_test')) {
-          livePaidOrgs += 1;
-        } else {
-          testPaidOrgs += 1;
-        }
-      } else {
-        trialOrgs += 1;
-      }
-    }
-
-    let usersSynced = 0;
-    for (const u of users) {
-      if (!u.email) continue;
-      await syncContact({
-        externalUserId: u.id,
-        email: u.email,
-        name: u.display_name || u.email.split('@')[0],
-        planTier: 'free',
-        lifecycleState: 'trial_active',
-        marketingOptIn: Boolean(u.marketing_email),
-        source: 'lalia_backfill',
-      });
-      usersSynced += 1;
-    }
-
-    const costRow = await db
-      .get(`SELECT SUM(total_cost_usd) AS total FROM meeting_cost_events`)
-      .catch(() => null);
-    const totalCostUsd = Math.round((Number(costRow?.total || 0) || 0) * 100) / 100;
-    if (totalCostUsd >= 0.01) {
-      const monthKey = new Date().toISOString().slice(0, 7);
-      await ingestCogs({
-        externalEventId: `lalia_backfill_media_cost_${monthKey}`,
-        cogsCategory: 'media_stt',
-        amountUsd: totalCostUsd,
-        provider: 'LiveKit + Deepgram',
-        description: 'Lalia.cloud cumulative meeting STT/translation spend',
-        livemode: true,
-      });
-    }
-
-    await opsHubRequest('/api/v1/ingest/heartbeat', {
-      method: 'POST',
-      body: {
-        tenantId: TENANT_SLUG,
-        environment: 'live',
-        status: 'up',
-        latencyMs: 28,
-        activeOrgs: subs.length,
-        paidOrgs: livePaidOrgs,
-        trialOrgs,
-        compOrgs,
-        activeUsersDau: users.length,
-        activeUsersMau: users.length,
-        mrrCents: livePaidOrgs * 4900,
-      },
-    });
-
-    if (testPaidOrgs > 0 || compOrgs > 0) {
-      await opsHubRequest('/api/v1/ingest/heartbeat', {
-        method: 'POST',
-        body: {
-          tenantId: TENANT_SLUG,
-          environment: 'test',
-          status: 'up',
-          latencyMs: 28,
-          activeOrgs: subs.length,
-          paidOrgs: testPaidOrgs,
-          trialOrgs,
-          compOrgs,
-          activeUsersDau: users.length,
-          activeUsersMau: users.length,
-          mrrCents: testPaidOrgs * 4900,
-        },
-      });
-    }
-
-    return {
-      usersSynced,
-      orgsCount: subs.length,
-      livePaidOrgs,
-      testPaidOrgs,
-      compOrgs,
-      totalCostUsd,
-    };
   } catch (err) {
     console.warn('[opsHubClient] backfillLaliaStateToOpsHub skipped:', err.message);
     return null;
@@ -392,95 +287,24 @@ async function backfillLaliaStateToOpsHub(db) {
  * and support_leads from local DB into Ops Hub's central Unified Support Ops console.
  */
 async function syncSupportHistoryToOpsHub(db) {
-  if (!isOpsHubConfigured() || !db) return null;
-  try {
-    const [tickets, messages, proposals, gaps, leads] = await Promise.all([
-      db.all(`SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 500`).catch(() => []),
-      db.all(`SELECT * FROM support_messages ORDER BY created_at ASC LIMIT 2000`).catch(() => []),
-      db.all(`SELECT * FROM support_proposals ORDER BY created_at DESC LIMIT 500`).catch(() => []),
-      db.all(`SELECT * FROM support_knowledge_gaps ORDER BY created_at DESC LIMIT 500`).catch(() => []),
-      db.all(`SELECT * FROM support_leads ORDER BY updated_at DESC LIMIT 500`).catch(() => []),
-    ]);
-
-    const res = await opsHubRequest('/api/v1/support/import', {
-      method: 'POST',
-      body: {
-        tenantId: TENANT_SLUG,
-        tickets,
-        messages,
-        proposals,
-        gaps,
-        leads,
-      },
-    });
-    return res?.imported ?? null;
-  } catch (err) {
-    console.warn('[opsHubClient] syncSupportHistoryToOpsHub skipped:', err.message);
-    return null;
-  }
+  // Snapshot mirroring is retired; use the complete reviewed cursor exporter.
+  return null;
 }
 
 /**
  * Middleware that proxies or mirrors `/api/v2/support/*` to Ops Hub with `X-Support-User-Json`
  * (falling back gracefully to the local support-kit handler if Ops Hub is unset or unreachable).
  */
-function createOpsSupportProxyMiddleware({ resolveUser, localHandler, db }) {
-  return async function laliaSupportOpsMiddleware(req, res, next) {
-    const cfg = getOpsHubConfig();
-    if (!cfg.configured || cfg.supportMode === 'local') {
-      return localHandler(req, res, next);
-    }
-
-    const pathAndQuery = String(req.url || req.path || '/');
-    const method = String(req.method || 'GET').toUpperCase();
-
-    if (cfg.supportMode === 'proxy') {
-      try {
-        const user = resolveUser ? await resolveUser(req) : null;
-        const targetPath = `/api/v1/support${pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`}`;
-        const headers = {
-          Accept: 'application/json',
-          Authorization: `Bearer ${cfg.secretKey}`,
-          'X-Ops-Key': cfg.secretKey,
-          'X-Ops-Tenant': TENANT_SLUG,
-          'x-tenant-id': TENANT_SLUG,
-          ...(user ? { 'X-Support-User-Json': encodeSupportUserHeader(user) } : {}),
-        };
-        let bodyPayload;
-        if (method !== 'GET' && method !== 'HEAD' && req.body !== undefined) {
-          headers['Content-Type'] = 'application/json';
-          bodyPayload = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
-        }
-
-        const upstream = await fetch(`${cfg.baseUrl}${targetPath}`, {
-          method,
-          headers,
-          body: bodyPayload,
-        });
-        const contentType = upstream.headers.get('content-type') || 'application/json';
-        const text = await upstream.text();
-        res.status(upstream.status).setHeader('Content-Type', contentType).send(text);
-        return;
-      } catch {
-        return localHandler(req, res, next);
-      }
-    }
-
-    // Default 'mirror' mode: serve locally (running AI triage, creating tickets/messages/proposals/gaps/leads)
-    // and sync the full support snapshot to Ops Hub as soon as the response completes.
-    if (method === 'POST' || method === 'PATCH') {
-      res?.on?.('finish', () => {
-        if (db) {
-          void syncSupportHistoryToOpsHub(db);
-        }
-      });
-    }
-
-    return localHandler(req, res, next);
-  };
+function createOpsSupportProxyMiddleware({resolveUser,localHandler,db,central}) {
+  return createOpsSupportProxy({
+    getConfig:()=>require('./supportAuthority').hostSupportAuthority.config(),
+    resolveUser,localHandler,central,onMirrorSync:()=>syncSupportHistoryToOpsHub(db),
+  });
 }
 
 module.exports = {
+  opsHubRequest,
+  ...require('./customerProjection'),
   getOpsHubConfig,
   isOpsHubConfigured,
   ingestBillingEvent,

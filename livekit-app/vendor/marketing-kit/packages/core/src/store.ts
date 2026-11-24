@@ -526,6 +526,22 @@ export class MarketingStore {
     );
   }
 
+  async prepareRecipient(campaignId: string, tenantId: string, email: string, name: string): Promise<boolean> {
+    const existing = await this.db.get<Row>(`SELECT status FROM ${this.p}campaign_recipients WHERE campaign_id=? AND email=?`, [campaignId,email]);
+    if (existing) return existing.status === 'queued';
+    await this.addRecipient({campaignId,tenantId,email,contactName:name,status:'queued'});
+    return true;
+  }
+
+  async transitionRecipient(campaignId:string,email:string,status:string,providerMessageId:string|null=null):Promise<void> {
+    await this.db.run(`UPDATE ${this.p}campaign_recipients SET status=?,provider_message_id=COALESCE(?,provider_message_id),updated_at=? WHERE campaign_id=? AND email=? AND status IN ('queued','dispatching')`,[status,providerMessageId,nowIso(),campaignId,email]);
+  }
+
+  async recipientProgress(campaignId:string):Promise<{recipientCount:number;sentCount:number}> {
+    const row=await this.db.get<Row>(`SELECT COUNT(*) AS total,SUM(CASE WHEN status IN ('sent','delivered','bounced','complained') THEN 1 ELSE 0 END) AS sent FROM ${this.p}campaign_recipients WHERE campaign_id=?`,[campaignId]);
+    return {recipientCount:Number(row?.total||0),sentCount:Number(row?.sent||0)};
+  }
+
   async listRecipients(campaignId: string, limit = 200): Promise<Row[]> {
     return this.db.all<Row>(
       `SELECT email, contact_name, provider_message_id, status, opened_at, clicked_at, bounced_at, unsubscribed_at, created_at
@@ -612,7 +628,7 @@ export class MarketingStore {
 
   // ---------- subscribers / suppression ----------
 
-  async ensureSubscriber(tenantId: string, email: string, name: string | null, source: string, optIn = true): Promise<{ token: string; unsubscribed: boolean }> {
+  async ensureSubscriber(tenantId: string, email: string, name: string | null, source: string, optIn = false): Promise<{ token: string; unsubscribed: boolean }> {
     const normalized = email.trim().toLowerCase();
     const existing = await this.db.get<Row>(
       `SELECT unsubscribe_token, unsubscribed_at, marketing_opt_in, source FROM ${this.p}subscribers WHERE tenant_id = ? AND email = ?`,
@@ -622,7 +638,7 @@ export class MarketingStore {
       if (optIn && source !== "account" && existing.source === "account") {
         await this.db.run(`UPDATE ${this.p}subscribers SET source = ?, updated_at = ? WHERE tenant_id = ? AND email = ?`, [source, nowIso(), tenantId, normalized]);
       }
-      return { token: existing.unsubscribe_token, unsubscribed: Boolean(existing.unsubscribed_at) || Number(existing.marketing_opt_in) === 0 };
+      return { token: existing.unsubscribe_token, unsubscribed: Boolean(existing.unsubscribed_at) };
     }
     const token = newToken();
     const ts = nowIso();
@@ -641,7 +657,7 @@ export class MarketingStore {
 
   async resubscribe(tenantId: string, email: string): Promise<void> {
     await this.db.run(
-      `UPDATE ${this.p}subscribers SET marketing_opt_in = 1, unsubscribed_at = NULL, updated_at = ? WHERE tenant_id = ? AND email = ?`,
+      `UPDATE ${this.p}subscribers SET marketing_opt_in = 1, unsubscribed_at = NULL, updated_at = ? WHERE tenant_id = ? AND email = ? AND source <> 'provider_suppression'`,
       [nowIso(), tenantId, email.trim().toLowerCase()],
     );
   }
@@ -661,14 +677,14 @@ export class MarketingStore {
   async suppressEmail(tenantId: string, email: string): Promise<void> {
     await this.ensureSubscriber(tenantId, email, null, "account", false);
     await this.db.run(
-      `UPDATE ${this.p}subscribers SET marketing_opt_in = 0, unsubscribed_at = COALESCE(unsubscribed_at, ?), updated_at = ? WHERE tenant_id = ? AND email = ?`,
+      `UPDATE ${this.p}subscribers SET source = 'provider_suppression', marketing_opt_in = 0, unsubscribed_at = COALESCE(unsubscribed_at, ?), updated_at = ? WHERE tenant_id = ? AND email = ?`,
       [nowIso(), nowIso(), tenantId, email.trim().toLowerCase()],
     );
   }
 
   async suppressedEmails(tenantId: string): Promise<Set<string>> {
     const rows = await this.db.all<Row>(
-      `SELECT email FROM ${this.p}subscribers WHERE tenant_id = ? AND (marketing_opt_in = 0 OR unsubscribed_at IS NOT NULL)`,
+      `SELECT email FROM ${this.p}subscribers WHERE tenant_id = ? AND unsubscribed_at IS NOT NULL`,
       [tenantId],
     );
     return new Set(rows.map((r) => String(r.email).toLowerCase()));

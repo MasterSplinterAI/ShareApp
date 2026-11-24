@@ -2,8 +2,9 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { computeCost } = require('../lib/costConstants');
-const { run } = require('../db/v2Database');
-const { ingestCogs } = require('../lib/opsHubClient');
+const { run, get, transaction } = require('../db/v2Database');
+const { STT_COST_EVENT_TYPES, reconcileTranslationMinutesForMeeting } = require('../lib/v2TranslationUsage');
+const { queueCostEvent } = require('../lib/opsOutbox');
 
 function safeSecretEqual(a, b) {
   if (!a || !b) return false;
@@ -57,9 +58,10 @@ router.post('/', async (req, res) => {
 
     await ensureTable();
     const ts = Date.now();
-    const insertResult = await run(
+    const insertResult = await transaction(async tx => {
+    const inserted = await tx.run(
       `INSERT INTO meeting_cost_events (meeting_id, org_id, event_type, provider, units, unit_cost_usd, total_cost_usd, ts, meta_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       [
         meeting_id,
         org_id || null,
@@ -72,19 +74,33 @@ router.post('/', async (req, res) => {
         meta ? JSON.stringify(meta) : null,
       ]
     );
+    if (!inserted.lastID) throw Error('Persisted cost row identity missing');
+    await queueCostEvent(tx, { id: inserted.lastID, meeting_id, event_type, provider: costInfo.provider,
+      total_cost_usd: costInfo.total_cost_usd, ts });
+    return inserted;
+    });
 
-    if (costInfo.total_cost_usd >= 0.01) {
-      const isLlm = String(event_type).toLowerCase().includes('llm') || String(event_type).toLowerCase().includes('translate');
-      void ingestCogs({
-        externalEventId: `lalia_cost_${meeting_id}_${insertResult?.lastID || ts}`,
-        cogsCategory: isLlm ? 'ai_inference' : 'media_stt',
-        amountUsd: costInfo.total_cost_usd,
-        provider: costInfo.provider,
-        description: `Lalia meeting ${meeting_id} (${event_type})`,
-      });
+    // Telemetry can finish after room_finished (or while a room is still open).
+    // Reconcile persisted STT rows on arrival; never gate on historical ended
+    // state, because the same scheduled room can be reopened later.
+    let usageReconcilePending = false;
+    if (STT_COST_EVENT_TYPES.includes(event_type)) {
+      try {
+        const meeting = await get('SELECT id,org_id FROM v2_meetings WHERE livekit_room_name=?', [meeting_id]);
+        if (meeting) {
+          const result = await reconcileTranslationMinutesForMeeting(meeting_id, meeting.org_id, meeting.id, { costEventId: insertResult.lastID });
+          usageReconcilePending = Boolean(result.pending);
+        }
+      } catch (err) {
+        // The cost row is already durable. Do not invite a replay that would
+        // create a second raw event; room-finished/operator reconciliation can
+        // retry this row idempotently. Provider telemetry remains best effort.
+        usageReconcilePending = true;
+        console.error('[cost-events] accepted; usage reconciliation pending:', err.message);
+      }
     }
 
-    res.json({ ok: true, total_cost_usd: costInfo.total_cost_usd });
+    res.json({ ok: true, total_cost_usd: costInfo.total_cost_usd, ...(usageReconcilePending ? { usage_reconcile_pending: true } : {}) });
   } catch (err) {
     console.error('[cost-events] error:', err.message);
     res.status(500).json({ error: 'Internal error' });

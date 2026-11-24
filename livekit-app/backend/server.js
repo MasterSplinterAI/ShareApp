@@ -5,7 +5,17 @@ const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
 
 // Load environment variables
-dotenv.config();
+dotenv.config({ path: require('path').join(__dirname, '.env') });
+
+const isSmokeMode = process.argv.includes('--smoke');
+if (isSmokeMode) {
+  process.env.NODE_ENV = 'test';
+  process.env.DATABASE_URL = '';
+  process.env.V2_DB_PATH = ':memory:';
+  process.env.JWT_SECRET_V2 = process.env.JWT_SECRET_V2 || 'smoke-secret-with-more-than-32-characters-000';
+  process.env.RECALL_REGION = process.env.RECALL_REGION || 'us-west-2';
+  process.env.PUBLIC_API_BASE_URL = process.env.PUBLIC_API_BASE_URL || 'https://lalia.cloud';
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -117,11 +127,13 @@ app.use(cors({
 const { handleV2BillingWebhook } = require('./routes/v2/billingWebhook');
 const { handleLiveKitWebhook } = require('./routes/webhooks');
 const { handleResendInboundWebhook } = require('./routes/v2/resendInboundWebhook');
+const { handleRecallWebhook } = require('./routes/v2/recallWebhook');
 
 // Raw-body routes must come before express.json()
 app.post('/api/v2/billing/webhook', express.raw({ type: 'application/json' }), handleV2BillingWebhook);
 app.post('/api/webhooks/livekit', express.raw({ type: '*/*' }), handleLiveKitWebhook);
 app.post('/api/v2/webhooks/resend/inbound', express.raw({ type: 'application/json' }), handleResendInboundWebhook);
+app.post('/api/v2/webhooks/recall', express.raw({ type: 'application/json' }), handleRecallWebhook);
 // Preserve raw bytes for Svix verification on Resend marketing webhooks (@rhule/marketing-kit).
 app.use(
   express.json({
@@ -167,16 +179,24 @@ app.use('/api/rooms', roomsRoutes);
 app.use('/api/translate', translateLimiter, translateRoutes);
 app.use('/api/v2', v2Routes);
 app.use('/api/cost-events', require('./routes/costEvents'));
+app.post('/api/consent/eligibility',require('./lib/consent').consentEligibilityHandler);
+app.post('/api/marketing/transfer',require('./lib/marketingAuthority').marketingTransferHandler);
+
+const { schemaHost, serveStaticMarketingPage } = require('./lib/seoSchema');
+app.get(/^\/(?:index\.html)?$/, serveStaticMarketingPage);
+app.get(/^\/(?:languages|(?:de|es|fr|ja|pt|zh-CN)(?:\/(?:languages|blog(?:\/[a-z0-9-]+)?))?)(?:\/index\.html|\/)?$/, serveStaticMarketingPage);
 
 // @rhule/marketing-kit — Admin console API + public SEO + Resend webhooks
 try {
   const { marketingKitEnabled, getLaliaMarketingKit } = require('./lib/marketingKit');
   if (marketingKitEnabled()) {
     const marketing = getLaliaMarketingKit();
+    const pages = require('./lib/marketingPublicPages').publicMarketingHandlers(marketing);
+    app.post('/marketing/subscribe',require('./lib/marketingAuthority').forwardMarketingSubscribe);
     app.use('/marketing', (req, res, next) => void marketing.handler(req, res, next));
-    app.get('/blog', (req, res, next) => void marketing.publicHandlers.blogIndex(req, res, next));
-    app.get('/blog/:slug', (req, res, next) => void marketing.publicHandlers.blogPost(req, res, next));
-    app.get('/sitemap.xml', (req, res, next) => void marketing.publicHandlers.sitemap(req, res, next));
+    app.get(['/blog','/blog/index.html'], (req, res, next) => void pages.blogIndex(req, res, next));
+    app.get(['/blog/:slug','/blog/:slug/index.html'], (req, res, next) => void pages.blogPost(req, res, next));
+    app.get('/sitemap.xml', (req, res, next) => void pages.sitemap(req, res, next));
     console.log('[marketing] kit mounted (/marketing, /blog, /sitemap.xml)');
   }
 } catch (e) {
@@ -191,9 +211,14 @@ const qualityEventsLimiter = rateLimit({
 });
 app.use('/api/quality-events', qualityEventsLimiter, require('./routes/qualityEvents'));
 
+let isShuttingDown = false;
+
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'livekit-backend' });
+  if (isShuttingDown) {
+    return res.status(503).json({ status: 'draining', service: 'livekit-backend' });
+  }
+  return res.json({ status: 'ok', service: 'livekit-backend' });
 });
 
 // Error handling middleware
@@ -206,20 +231,38 @@ app.use((err, req, res, next) => {
 });
 
 (async function start() {
+  let stopOpsEventWorkers = () => {};
+  let stopCustomerReporting = () => {};
+  let stopConsentReporter = () => {};
+  let overageInterval = null;
+  const stopSeoSchema = process.env.NODE_ENV === 'test' ? () => {} : await schemaHost.start();
   try {
     await v2Database.initDatabase();
+    await require('./lib/livekitInvoices').ensureLiveKitInvoiceSchema();
+    const { startOpsEventWorkers } = require('./lib/opsOutbox');
+    const { processStripeEvent } = require('./routes/v2/billingWebhook');
+    stopOpsEventWorkers = await startOpsEventWorkers(processStripeEvent);
+    stopCustomerReporting = require('./lib/customerProjection').startCustomerReporting();
   } catch (e) {
     console.error('[v2Database] init failed:', e.message);
   }
   try {
     const { supportKitEnabled, ensureSupportSchema } = require('./lib/supportKit');
     if (supportKitEnabled()) {
+      // Central mode initializes only durable gateway storage; local seeding/senders stay fenced.
       await ensureSupportSchema();
+      v2Routes.startSupportReplay?.();
     }
   } catch (e) {
     console.error('[support] schema ensure failed:', e.message);
   }
   try {
+    const {initializeConsent,consentReporter}=require('./lib/consent');
+    await initializeConsent();
+    if (process.env.NODE_ENV !== 'test') {
+      consentReporter.start();
+      stopConsentReporter = () => consentReporter.stop?.();
+    }
     const { marketingKitEnabled, initLaliaMarketing } = require('./lib/marketingKit');
     if (marketingKitEnabled()) {
       await initLaliaMarketing();
@@ -229,7 +272,8 @@ app.use((err, req, res, next) => {
   }
   try {
     const { startGuestInviteReminders } = require('./lib/guestInvites');
-    const baseUrl = (process.env.PUBLIC_FRONTEND_BASE_URL || process.env.FRONTEND_URL || 'https://staging.jarmetals.com').replace(/\/$/, '');
+    const { publicFrontendBaseUrl } = require('./lib/publicFrontendBaseUrl');
+    const baseUrl = publicFrontendBaseUrl();
     startGuestInviteReminders((roomName, token) =>
       token
         ? `${baseUrl}/join/${encodeURIComponent(roomName)}?i=${encodeURIComponent(token)}`
@@ -253,7 +297,8 @@ app.use((err, req, res, next) => {
         settleDueOverageCycles().catch((err) => console.error('[overage-settlement]', err.message));
       };
       tick();
-      setInterval(tick, intervalMs);
+      overageInterval = setInterval(tick, intervalMs);
+      overageInterval.unref?.();
       console.log(`[overage-settlement] scheduler every ${intervalMs}ms`);
     } else {
       console.log('[overage-settlement] scheduler off (set V2_OVERAGE_SETTLEMENT_INTERVAL_MS to enable)');
@@ -261,11 +306,198 @@ app.use((err, req, res, next) => {
   } catch (e) {
     console.error('[overage-settlement] scheduler start failed:', e.message);
   }
-  app.listen(PORT, '0.0.0.0', () => {
+  const { logRecallStartupSummary } = require('./lib/recallNotetaker');
+  await logRecallStartupSummary().catch((err) => {
+    console.warn('[recall] startup summary failed:', err.message);
+  });
+
+  if (isSmokeMode) {
+    await runServerSmokeCheck(app, v2Database);
+    process.exit(0);
+  }
+
+  const server=app.listen(PORT, '0.0.0.0', () => {
     console.log(`LiveKit backend server running on port ${PORT}`);
     console.log(`Frontend URL: ${process.env.FRONTEND_URL}`);
     console.log(`Network URL: ${process.env.NETWORK_URL}`);
     console.log(`LiveKit URL: ${process.env.LIVEKIT_URL}`);
     console.log(`Server is accessible from network at: http://0.0.0.0:${PORT}`);
   });
+  let closeIdleInterval = null;
+  let cleanedUp = false;
+  const cleanupTimersAndWorkers = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (closeIdleInterval) {
+      clearInterval(closeIdleInterval);
+      closeIdleInterval = null;
+    }
+    if (overageInterval) {
+      clearInterval(overageInterval);
+      overageInterval = null;
+    }
+    stopSeoSchema();
+    stopOpsEventWorkers();
+    stopCustomerReporting();
+    stopConsentReporter();
+    try {
+      require('./lib/guestInvites').stopGuestInviteReminders?.();
+    } catch {
+      /* ignore */
+    }
+    v2Routes.stopSupportReplay?.();
+    void require('./lib/supportRecoveryDatabase').closeSupportRecoveryDatabase().catch(() => {});
+  };
+  server.once('close', cleanupTimersAndWorkers);
+  const gracefulShutdown = (signal) => {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    console.log(`[server] Received ${signal}, draining in-flight HTTP requests...`);
+    cleanupTimersAndWorkers();
+    server.close(() => {
+      process.exit(0);
+    });
+    server.closeIdleConnections?.();
+    closeIdleInterval = setInterval(() => {
+      server.closeIdleConnections?.();
+    }, 2000);
+    closeIdleInterval.unref?.();
+    setTimeout(() => process.exit(0), 35000).unref();
+  };
+  process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.once('SIGINT', () => gracefulShutdown('SIGINT'));
 })();
+
+async function runServerSmokeCheck(expressApp, database) {
+  const crypto = require('crypto');
+  const http = require('http');
+  const { saveNotetakerSettings } = require('./lib/recallNotetaker');
+  const { drainPendingRecallWebhookJobs } = require('./routes/v2/recallWebhook');
+
+  const smokeSecret = `whsec_${crypto.randomBytes(24).toString('base64')}`;
+  await saveNotetakerSettings('smoke@lalia.cloud', {
+    recallRegion: 'us-west-2',
+    recallWebhookSecret: smokeSecret,
+    reason: 'Run non-destructive server entrypoint smoke test',
+  });
+
+  const server = http.createServer(expressApp);
+  let baseUrl = null;
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const addr = server.address();
+    baseUrl = `http://127.0.0.1:${addr.port}`;
+  } catch (err) {
+    console.warn('[smoke] Socket bind unavailable, running in-process boundary checks:', err.code || err.message);
+  }
+
+  const sendReq = async ({ method = 'GET', url, headers = {}, rawBody = null }) => {
+    if (baseUrl) {
+      const r = await fetch(`${baseUrl}${url}`, {
+        method,
+        headers,
+        body: rawBody,
+        redirect: 'manual',
+      });
+      return {
+        status: r.status,
+        location: r.headers.get('location') || '',
+        text: await r.text(),
+      };
+    }
+    return new Promise((resolve, reject) => {
+      const req = new http.IncomingMessage();
+      req.method = method;
+      req.url = url;
+      req.headers = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
+      const chunks = [];
+      const res = {
+        statusCode: 200,
+        _headers: {},
+        setHeader(k, v) { this._headers[String(k).toLowerCase()] = v; },
+        getHeader(k) { return this._headers[String(k).toLowerCase()]; },
+        removeHeader(k) { delete this._headers[String(k).toLowerCase()]; },
+        writeHead(code, hdrs) {
+          this.statusCode = code;
+          if (hdrs) Object.entries(hdrs).forEach(([k, v]) => this.setHeader(k, v));
+        },
+        write(d) { if (d) chunks.push(Buffer.from(d)); },
+        end(d) {
+          if (d) chunks.push(Buffer.from(d));
+          resolve({
+            status: this.statusCode,
+            location: this._headers.location || '',
+            text: Buffer.concat(chunks).toString('utf8'),
+          });
+        },
+        status(code) { this.statusCode = code; return this; },
+        json(obj) {
+          this.setHeader('content-type', 'application/json');
+          this.end(JSON.stringify(obj));
+        },
+        send(val) { this.end(val); },
+        redirect(code, loc) {
+          const target = typeof code === 'string' ? code : loc;
+          this.statusCode = typeof code === 'number' ? code : 302;
+          this.setHeader('location', target);
+          this.end();
+        },
+      };
+      if (rawBody) {
+        process.nextTick(() => {
+          req.emit('data', Buffer.from(rawBody));
+          req.emit('end');
+        });
+      }
+      expressApp.handle(req, res, reject);
+    });
+  };
+
+  try {
+    const health = await sendReq({ url: '/api/v2/health' });
+    if (health.status !== 200) throw new Error(`/api/v2/health returned ${health.status}`);
+
+    const badWh = await sendReq({
+      method: 'POST',
+      url: '/api/v2/webhooks/recall',
+      headers: { 'content-type': 'application/json' },
+      rawBody: JSON.stringify({ event: 'bot.done', data: { bot: { id: 'smoke-bot' } } }),
+    });
+    if (badWh.status !== 401) throw new Error(`Expected 401 on unverified webhook, got ${badWh.status}`);
+
+    const msgId = 'msg_smoke_1';
+    const ts = String(Math.floor(Date.now() / 1000));
+    const bodyText = JSON.stringify({ event: 'bot.done', data: { bot: { id: 'smoke-bot' } } });
+    const sig = crypto
+      .createHmac('sha256', Buffer.from(smokeSecret.slice(6), 'base64'))
+      .update(`${msgId}.${ts}.${bodyText}`)
+      .digest('base64');
+    const goodWh = await sendReq({
+      method: 'POST',
+      url: '/api/v2/webhooks/recall',
+      headers: {
+        'content-type': 'application/json',
+        'webhook-id': msgId,
+        'webhook-timestamp': ts,
+        'webhook-signature': `v1,${sig}`,
+      },
+      rawBody: bodyText,
+    });
+    if (goodWh.status !== 200) throw new Error(`Verified webhook returned ${goodWh.status}: ${goodWh.text}`);
+    await drainPendingRecallWebhookJobs();
+
+    const cb = await sendReq({
+      url: '/api/v2/notetaker/calendar/oauth/callback?state=smoke-state&recall_calendar_setup_probe=1',
+    });
+    if (cb.status !== 302 || !cb.location.includes('recall_calendar_setup_probe=1')) {
+      throw new Error(`Calendar callback smoke failed: ${cb.status} ${cb.location}`);
+    }
+    console.log('[smoke] OK: /api/v2/health(200), unverified(401), verified(200), calendar-probe(302)');
+  } finally {
+    await new Promise((r) => server.close(() => r())).catch(() => {});
+    await database.close().catch(() => {});
+  }
+}

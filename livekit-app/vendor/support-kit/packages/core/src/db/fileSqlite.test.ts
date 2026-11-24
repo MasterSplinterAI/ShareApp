@@ -37,3 +37,20 @@ describe("createFileSqliteAdapter", () => {
     assert.throws(() => createFileSqliteAdapter(":memory:"), /file/i);
   });
 });
+
+import {createMemorySqliteAdapter} from './memorySqlite.js';
+for(const kind of ['file','memory'])it(`${kind} SQLite keeps independent operations outside a pending transaction`,async()=>{
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'support-consent-isolation-'));
+ const db=kind==='file'?createFileSqliteAdapter(path.join(dir,'test.sqlite')):createMemorySqliteAdapter();
+ await db.run('CREATE TABLE fixture(id TEXT PRIMARY KEY)');
+ let enter!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>enter=r),gate=new Promise<void>(r=>release=r);
+ const tx=db.transaction!(async bound=>{assert.equal(bound.transaction,undefined);await bound.run('INSERT INTO fixture VALUES(?)',['inside']);enter();await gate;throw Error('rollback fixture');});
+ const rejected=assert.rejects(tx,/rollback fixture/);await entered;
+ let completed=false;const external=db.run('INSERT INTO fixture VALUES(?)',['outside']).then(()=>{completed=true;});
+ let readCompleted=false;const reader=db.all('SELECT id FROM fixture ORDER BY id').then(rows=>{readCompleted=true;return rows;});
+ await new Promise(r=>setImmediate(r));const early=completed||readCompleted;release();await rejected;await external;
+ assert.equal(early,false,'unbound reads/writes must wait for the transaction to finish');
+ assert.deepEqual(await reader,[{id:'outside'}]);assert.deepEqual(await db.all('SELECT id FROM fixture'),[{id:'outside'}]);
+ await db.transaction!(async bound=>{await assert.rejects(db.run('INSERT INTO fixture VALUES(?)',['wrong-facade']),/bound transaction/);await bound.run('INSERT INTO fixture VALUES(?)',['bound']);});
+ if('close' in db)(db as ReturnType<typeof createFileSqliteAdapter>).close();fs.rmSync(dir,{recursive:true,force:true});
+});

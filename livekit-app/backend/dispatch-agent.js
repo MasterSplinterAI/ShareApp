@@ -20,9 +20,9 @@ async function dispatchAgent(roomName) {
     const agentName =
       process.env.AGENT_NAME ||
       ((process.env.LIVEKIT_URL || '').toLowerCase().includes('livekit.cloud')
-        ? 'translation-cloud-prod'
+        ? 'translation-selfhosted-xai'
         : process.env.NODE_ENV === 'production'
-          ? 'translation-cloud-prod'
+          ? 'translation-selfhosted-xai'
           : 'translation-bot-dev');
 
     // Convert WebSocket URL to HTTP/HTTPS for API calls

@@ -1,21 +1,24 @@
 {
   "name": "@rhule/marketing-react",
   "version": "0.1.0",
-  "description": "MarketingOpsConsole — Copilot, Blog Studio, Email Studio, Audiences, Analytics",
+  "description": "MarketingOpsConsole \u2014 Copilot, Blog Studio, Email Studio, Audiences, Analytics",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "types": "./src/index.tsx",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.tsx",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "scripts": {
-    "build": "tsup src/index.tsx --format esm,cjs --dts --clean --external react --external react-dom --external @rhule/marketing-shared",
+    "build": "node ../../scripts/build-snapshot.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {

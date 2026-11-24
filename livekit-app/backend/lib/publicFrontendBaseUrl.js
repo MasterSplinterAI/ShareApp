@@ -1,39 +1,34 @@
-/**
- * Public browser origin for join/share links (scheme + host + port only).
- * Avoids using a full Referer path (e.g. /v2/app/meetings/...) as the "base".
- */
+function httpOrigin(value) {
+  if (typeof value !== 'string' || !value.trim()) return '';
+  try {
+    const url = new URL(value.trim());
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return '';
+    return url.origin;
+  } catch {
+    return '';
+  }
+}
+
+/** Public browser origin for join and share links, including emailed invitations. */
 function publicFrontendBaseUrl(req) {
-  const fromString = (raw) => {
-    if (!raw || typeof raw !== 'string') return '';
-    const t = raw.trim();
-    if (!t) return '';
-    try {
-      const u = new URL(t);
-      return `${u.protocol}//${u.host}`;
-    } catch {
-      return '';
-    }
-  };
-
-  const o = fromString(req.headers.origin);
-  if (o) return o;
-
-  const r = fromString(req.headers.referer);
-  if (r) return r;
-
-  const envRaw = (
-    process.env.FRONTEND_URL ||
-    process.env.STAGING_FRONTEND_URL ||
-    process.env.PRODUCTION_URL ||
-    ''
-  ).trim();
-  if (envRaw) {
-    const withScheme = /^https?:\/\//i.test(envRaw) ? envRaw : `https://${envRaw}`;
-    const b = fromString(withScheme);
-    if (b) return b;
+  const production = process.env.NODE_ENV === 'production';
+  if (!production) {
+    const requestOrigin = httpOrigin(req?.headers?.origin) || httpOrigin(req?.headers?.referer);
+    if (requestOrigin) return requestOrigin;
   }
 
-  return 'http://localhost:5174';
+  // Production links may carry invitation tokens. Use trusted configuration, even
+  // when the request comes from a mobile WebView or supplies a different origin.
+  for (const value of [process.env.PUBLIC_FRONTEND_BASE_URL, process.env.FRONTEND_URL,
+    process.env.PRODUCTION_URL, process.env.STAGING_FRONTEND_URL]) {
+    const configured = value?.trim();
+    if (!configured) continue;
+    const url = /^[a-z][a-z\d+.-]*:\/\//i.test(configured) ? configured : `https://${configured}`;
+    const origin = httpOrigin(url);
+    if (origin) return origin;
+  }
+
+  return production ? 'https://lalia.cloud' : 'http://localhost:5174';
 }
 
 module.exports = { publicFrontendBaseUrl };

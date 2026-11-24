@@ -4,9 +4,11 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { I18nProvider } from './lib/i18n/I18nProvider.jsx'
 import { installDomRemoveChildGuard } from './lib/domRemoveChildGuard.js'
+import { installPreloadErrorHandler } from './lib/lazyWithRetry.js'
 import './index.css'
 
 installDomRemoveChildGuard()
+installPreloadErrorHandler()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

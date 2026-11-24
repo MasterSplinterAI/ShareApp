@@ -1,6 +1,9 @@
+import { supportFetch, hasRetainedSupportIntent } from './supportFetch.js';
+import { PendingIntents } from './pendingIntent.js';
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useId,
   useRef,
   useState,
@@ -14,6 +17,8 @@ export interface SupportLauncherProps {
   apiBase: string;
   user?: {
     id: string;
+    /** Omit for legacy clients; null asserts no organization; string asserts the exact verified workspace. */
+    orgId?: string | null;
     name?: string;
     email?: string;
     planLabel?: string;
@@ -38,6 +43,10 @@ export interface SupportLauncherProps {
    * (escalation happens inside Ask a question — no separate Contact form).
    */
   audience?: "app" | "public";
+  /** Host integration requires a stable authenticated user.id before submitting. Default preserves standalone behavior. */
+  requireCustomer?: boolean;
+  /** Explicit public host transport: omit ambient cookies and bearer tokens. Default is unchanged. */
+  guestOnly?: boolean;
   /**
    * When false, no floating bubble — open via `legalai:open-support` or
    * `renderTrigger` (Lex chat header uses a Help button instead of a FAB).
@@ -111,35 +120,6 @@ function normalizeApiBase(apiBase: string): string {
   return apiBase.replace(/\/$/, "");
 }
 
-async function supportFetch<T>(
-  apiBase: string,
-  path: string,
-  init?: RequestInit,
-  getAccessToken?: () => string | null | undefined,
-): Promise<T> {
-  const url = `${normalizeApiBase(apiBase)}${path.startsWith("/") ? path : `/${path}`}`;
-  const token = getAccessToken?.()?.trim() || null;
-  const { headers: initHeaders, ...rest } = init ?? {};
-  const res = await fetch(url, {
-    credentials: "include",
-    ...rest,
-    headers: {
-      Accept: "application/json",
-      ...(rest.body ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(initHeaders as Record<string, string> | undefined),
-    },
-  });
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) {
-    const message =
-      typeof data === "object" && data && "error" in data && data.error
-        ? String(data.error)
-        : `Request failed (${res.status})`;
-    throw new Error(message);
-  }
-  return data;
-}
 
 function statusLabel(status: string): string {
   switch (status) {
@@ -170,6 +150,12 @@ const shell: CSSProperties = {
 };
 
 export function SupportLauncher(props: SupportLauncherProps) {
+  // The component itself owns isolation; hosts need not know to add a React key.
+  const identity=props.guestOnly?'guest':props.user?.id?`user:${props.user.id}`:props.getAccessToken?.()?.trim()||'guest';
+  return <SupportLauncherSession key={JSON.stringify([normalizeApiBase(props.apiBase),identity,{orgId:props.guestOnly?undefined:props.user?.orgId},props.audience,props.requireCustomer,props.guestOnly])} {...props} />;
+}
+
+function SupportLauncherSession(props: SupportLauncherProps) {
   const {
     apiBase,
     user,
@@ -178,17 +164,35 @@ export function SupportLauncher(props: SupportLauncherProps) {
     offset,
     mode = "bubble",
     audience = "app",
+    requireCustomer = false,
+    guestOnly = false,
     showTrigger = true,
     renderTrigger,
     className,
     getAccessToken,
   } = props;
 
-  const fetchApi = useCallback(
-    <T,>(path: string, init?: RequestInit) =>
-      supportFetch<T>(apiBase, path, init, getAccessToken),
-    [apiBase, getAccessToken],
-  );
+  const pendingIntents=useRef(new PendingIntents());
+  const [submission,setSubmission]=useState<{status:'pending'|'accepted'|'failed';receiptId:string;retryPaused?:boolean}|null>(null);
+  const clientAbort=useRef(new AbortController());
+  useLayoutEffect(()=>{
+    if(clientAbort.current.signal.aborted)clientAbort.current=new AbortController();
+    const controller=clientAbort.current;return ()=>controller.abort();
+  },[]);
+
+  const fetchApi = useCallback(async <T,>(path:string,init?:RequestInit):Promise<T>=>{
+    const signal=clientAbort.current.signal;
+    try {
+      if(requireCustomer&&!user?.id && init?.method && !['GET','HEAD'].includes(init.method.toUpperCase()))throw Object.assign(new Error('Please wait for your account to finish signing in.'),{code:'customer_identity_required'});
+      const result=await supportFetch<T>(apiBase,path,{...init,signal},getAccessToken,pendingIntents.current,user?.id||(requireCustomer?'unresolved-customer':undefined),guestOnly,user?.orgId);
+      if(signal.aborted)throw new DOMException('Support client scope changed','AbortError');
+      return result;
+    } catch(err:any) {
+      if(!signal.aborted&&err?.code==='support_pending')setSubmission({status:'pending',receiptId:err.receiptId,retryPaused:Boolean(err.retryPaused)});
+      throw err;
+    }
+  },[apiBase,getAccessToken,user?.id,user?.orgId,requireCustomer,guestOnly]);
+
 
   const accent = brand?.accent ?? DEFAULT_ACCENT;
   const label = brand?.name ?? "Support";
@@ -220,6 +224,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
   const [coachInput, setCoachInput] = useState("");
   const [guestEmail, setGuestEmail] = useState(user?.email ?? "");
   const [submittedTicket, setSubmittedTicket] = useState<TicketSummary | null>(null);
+  const guestResume = useRef(false);
   const [leadId, setLeadId] = useState<string | null>(null);
   const [gateName, setGateName] = useState("");
   const [gateEmail, setGateEmail] = useState("");
@@ -236,6 +241,20 @@ export function SupportLauncher(props: SupportLauncherProps) {
 
   const isOpen = mode === "page" || open;
 
+
+  useEffect(()=>{
+    if(submission?.status!=='pending')return;
+    let stopped=false;
+    const timer=setInterval(()=>void fetchApi<{status:'pending'|'accepted'|'failed';retryPaused?:boolean;result?:{ticket?:TicketSummary}}>(`/pending/${submission.receiptId}`).then(result=>{
+      if(stopped)return;
+      setSubmission({status:result.status,receiptId:submission.receiptId,retryPaused:Boolean(result.retryPaused)});
+      if(result.status!=='pending')setError(null);
+      if(result.status==='accepted' && result.result?.ticket)setSubmittedTicket(result.result.ticket);
+    }).catch(()=>{/* Keep bounded receipt and draft available for explicit retry. */}),4000);
+    return ()=>{stopped=true;clearInterval(timer);};
+  },[submission?.receiptId,submission?.status,fetchApi]);
+
+
   // Host apps (e.g. Lex chat header) can open Help without a floating FAB:
   // window.dispatchEvent(new Event("legalai:open-support"))
   useEffect(() => {
@@ -249,16 +268,18 @@ export function SupportLauncher(props: SupportLauncherProps) {
       setView((v) => (v.name === "gate" ? { name: "home" } : v));
       return;
     }
-    if (typeof sessionStorage === "undefined") return;
-    try {
-      const stored = sessionStorage.getItem(leadStorageKey(apiBase));
-      if (stored) {
-        setLeadId(stored);
-        setView((v) => (v.name === "gate" ? { name: "home" } : v));
-      }
-    } catch {
-      /* ignore */
-    }
+    let cancelled=false;
+    void fetchApi<{guestSessionRequired?:boolean;guestBootstrapRequired?:boolean}>('/config').then(config=>{
+      if(cancelled) return;
+      requiresBootstrap.current=Boolean(config.guestBootstrapRequired);
+      let stored:string|null=null,proof:any=null;
+      try {stored=sessionStorage.getItem(leadStorageKey(apiBase));proof=JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`)||'null');} catch {}
+      const validProof=proof && Date.parse(proof.expiresAt)>Date.now();
+      if(stored && (!config.guestSessionRequired || validProof)) {
+        setLeadId(stored); setView(v=>v.name==='gate'?{name:'home'}:v);
+      } else if(config.guestSessionRequired) {setLeadId(null);setView({name:'gate'});}
+    }).catch(()=>{});
+    return ()=>{cancelled=true;};
   }, [apiBase, isPublic]);
 
   useEffect(() => {
@@ -283,6 +304,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     setView({ name: "supportChat" });
   }, [agentName, isPublic, label]);
 
+  const requiresBootstrap=useRef(false);
   const submitGate = async (event?: FormEvent) => {
     event?.preventDefault();
     if (sending) return;
@@ -290,28 +312,33 @@ export function SupportLauncher(props: SupportLauncherProps) {
       setError("Name and email are required");
       return;
     }
+    const leadBody=JSON.stringify({name:gateName.trim(),email:gateEmail.trim(),...(gatePhone.trim()?{phone:gatePhone.trim()}:{}),marketingOptIn:gateMarketing,source:'public_launcher',consentText:marketingLabel});
+    const retainedLead=hasRetainedSupportIntent(apiBase,'/leads',{method:'POST',body:leadBody},pendingIntents.current,guestOnly?undefined:getAccessToken,guestOnly?undefined:user?.id,guestOnly?undefined:user?.orgId);
     setSending(true);
     setError(null);
     try {
-      const data = await fetchApi<{ ok: boolean; leadId: string }>("/leads", {
+      if(!requiresBootstrap.current) {const config=await fetchApi<{guestBootstrapRequired?:boolean}>('/config');requiresBootstrap.current=Boolean(config.guestBootstrapRequired);}
+      if(requiresBootstrap.current && !retainedLead) {
+        let proof;try{proof=JSON.parse(sessionStorage.getItem(`${leadStorageKey(apiBase)}:proof`)||'null');}catch{}
+        if(!proof || Date.parse(proof.expiresAt)<=Date.now()) {
+          const bootstrap=await fetchApi<{guestSessionToken:string;guestSessionExpiresAt:string}>('/guest-session',{method:'POST',body:JSON.stringify({name:gateName.trim(),email:gateEmail.trim()})});
+          sessionStorage.setItem(`${leadStorageKey(apiBase)}:proof`,JSON.stringify({token:bootstrap.guestSessionToken,expiresAt:bootstrap.guestSessionExpiresAt}));
+        }
+      }
+      const data = await fetchApi<{ ok: boolean; leadId: string; guestSessionToken?:string; guestSessionExpiresAt?:string }>("/leads", {
         method: "POST",
-        body: JSON.stringify({
-          name: gateName.trim(),
-          email: gateEmail.trim(),
-          ...(gatePhone.trim() ? { phone: gatePhone.trim() } : {}),
-          marketingOptIn: gateMarketing,
-          source: "public_launcher",
-          consentText: marketingLabel,
-        }),
+        body: leadBody,
       });
       setLeadId(data.leadId);
       setGuestEmail(gateEmail.trim());
       try {
         sessionStorage.setItem(leadStorageKey(apiBase), data.leadId);
+        if (data.guestSessionToken) sessionStorage.setItem(`${leadStorageKey(apiBase)}:proof`,JSON.stringify({token:data.guestSessionToken,expiresAt:data.guestSessionExpiresAt}));
       } catch {
         /* ignore */
       }
-      setView({ name: "home" });
+      setView(guestResume.current ? {name:"supportChat"} : {name:"home"});
+      guestResume.current=false;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save contact info");
     } finally {
@@ -385,7 +412,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
     };
     const history = [...coachMessages, nextUser];
     setCoachMessages(history);
-    setCoachInput("");
     try {
       const data = await fetchApi<{
         ok: boolean;
@@ -411,6 +437,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
           text: data.reply,
         },
       ]);
+      setCoachInput("");
       setCoachDraft(data.draft);
       setCoachReady(Boolean(data.readyToSubmit));
       if (data.draft?.priority) setFeaturePriority(data.draft.priority);
@@ -437,6 +464,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
     async (id: string) => {
       setError(null);
       try {
+        setDraft("");
         const data = await fetchApi<{
           ok: boolean;
           ticket: TicketSummary;
@@ -489,7 +517,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
       text: message,
     };
     setSupportMessages((prev) => [...prev, userBubble]);
-    setDraft("");
     setSending(true);
     setError(null);
 
@@ -499,6 +526,7 @@ export function SupportLauncher(props: SupportLauncherProps) {
           method: "POST",
           body: JSON.stringify({ body: message }),
         });
+        setDraft("");
         const data = await fetchApi<{
           ok: boolean;
           ticket: TicketSummary;
@@ -547,9 +575,13 @@ export function SupportLauncher(props: SupportLauncherProps) {
           bot.ticketPublicNumber = data.ticket.publicNumber;
         }
         setSupportMessages((prev) => [...prev, bot]);
+        setDraft("");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Chat failed");
+      if(isPublic && (err as {code?:string}).code === 'guest_session_required') {
+        guestResume.current=true;setLeadId(null);setDraft(message);setView({name:'gate'});
+        setError('Your contact session expired. Confirm your contact details to continue.');
+      } else {setError(err instanceof Error ? err.message : "Chat failed");}
     } finally {
       setSending(false);
     }
@@ -1617,7 +1649,10 @@ export function SupportLauncher(props: SupportLauncherProps) {
           </>
         ) : null}
 
-        {error ? (
+        {submission ? <div role="status" style={{padding:12,fontSize:13}}>
+            {submission.status === 'pending' && submission.retryPaused ? 'Automatic retries paused. Your submission is unconfirmed; retry the saved draft with the same key.' : submission.status === 'pending' ? 'Submission pending — your draft is retained. Retry keeps the same submission.' : submission.status === 'accepted' ? 'Submission accepted.' : 'Submission failed. Your draft is retained; please retry.'}
+          </div> : null}
+          {error && error !== "Submission is pending. Your draft is retained." ? (
           <p style={{ color: "#b91c1c", fontSize: 13, marginTop: 8 }}>{error}</p>
         ) : null}
       </div>
@@ -1689,4 +1724,6 @@ export function SupportLauncher(props: SupportLauncherProps) {
 }
 
 export { SupportOpsConsole } from "./SupportOpsConsole.js";
-export type { SupportOpsConsoleProps } from "./SupportOpsConsole.js";
+export type { SupportOpsConsoleProps, SupportTenantOption, SupportConsoleFilters } from "./SupportOpsConsole.js";
+export { EmbedSnippet, buildEmbedIframeSnippet } from "./EmbedSnippet.js";
+export type { EmbedSnippetProps } from "./EmbedSnippet.js";

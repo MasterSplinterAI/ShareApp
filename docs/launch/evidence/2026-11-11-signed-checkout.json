@@ -1,0 +1,259 @@
+{
+  "initialRun": {
+    "checkedAt": "2026-11-12T02:42:47.909Z",
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "fixtureCreatedAt": "2026-11-12T02:37:16.497Z",
+    "accounts": [
+      {
+        "label": "A",
+        "orgId": "10260048-192e-459c-bab5-09a88ff56ac0",
+        "appSubscription": {
+          "org_id": "10260048-192e-459c-bab5-09a88ff56ac0",
+          "plan_id": "starter",
+          "status": "active",
+          "stripe_customer_id": "cus_Vc20cu0F9laZ1f",
+          "stripe_subscription_id": "sub_1UanxpGqClL0BFZZmRbn452K",
+          "cancel_at_period_end": 0
+        },
+        "authenticatedApiMatchesOwnOrg": true,
+        "sessions": [
+          {
+            "id": "cs_test_a0TyuduhXnJOKeZfDeOv3TqhketDLkruJkRqwvJ9YxwMoQPMlfdaKrubX4",
+            "status": "complete",
+            "paymentStatus": "paid",
+            "amountTotal": 4900,
+            "successReturnOrigin": "https://www.lalia.cloud",
+            "successReturnPath": "/v2/app/settings",
+            "successReturnQuery": "?billing=success",
+            "cancelReturnQuery": "?billing=cancel",
+            "subscriptionId": "sub_1UanxpGqClL0BFZZmRbn452K",
+            "orgMappingMatches": true
+          }
+        ],
+        "stripeSubscription": {
+          "id": "sub_1UanxpGqClL0BFZZmRbn452K",
+          "status": "active",
+          "priceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7",
+          "customerId": "cus_Vc20cu0F9laZ1f"
+        },
+        "invoices": [
+          {
+            "id": "in_1UanxnGqClL0BFZZYe9hXGcg",
+            "status": "paid",
+            "amountPaid": 4900,
+            "currency": "usd"
+          }
+        ],
+        "events": [
+          {
+            "id": "evt_1UanxqGqClL0BFZZu3ZFOv2S",
+            "type": "checkout.session.completed",
+            "processed_at": "2026-11-12 02:42:15"
+          },
+          {
+            "id": "evt_1UanxqGqClL0BFZZWN92T0hT",
+            "type": "customer.subscription.created",
+            "processed_at": "2026-11-12 02:42:15"
+          },
+          {
+            "id": "evt_1UanxqGqClL0BFZZN18V20sA",
+            "type": "invoice.paid",
+            "processed_at": "2026-11-12 02:42:14"
+          }
+        ]
+      },
+      {
+        "label": "B",
+        "orgId": "27c40661-8c5c-401e-beb0-329b78e3cb3b",
+        "appSubscription": {
+          "org_id": "27c40661-8c5c-401e-beb0-329b78e3cb3b",
+          "plan_id": "free",
+          "status": "active",
+          "stripe_customer_id": null,
+          "stripe_subscription_id": null,
+          "cancel_at_period_end": 0
+        },
+        "authenticatedApiMatchesOwnOrg": true,
+        "sessions": [],
+        "stripeSubscription": null,
+        "invoices": [],
+        "events": []
+      }
+    ],
+    "emailsSentByTest": false,
+    "existingTenantsModified": false,
+    "accountIsolationVerified": true,
+    "browserObservations": {
+      "accountA": "Parent observed authenticated apex settings return with same A identity, but Profile tab instead of Billing.",
+      "accountB": "Not yet exercised in browser."
+    },
+    "returnHostDiagnosis": {
+      "configuredFrontendOrigin": "https://www.lalia.cloud",
+      "nginxWwwRedirect": "301 https://lalia.cloud$request_uri",
+      "authLost": false,
+      "issue": "Checkout return omits section=billing and settings defaults to profile."
+    }
+  },
+  "cleanup": {
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "startedAt": "2026-11-12T02:55:54.390Z",
+    "accounts": [
+      {
+        "label": "A",
+        "customerId": "cus_Vc20cu0F9laZ1f",
+        "expiredSessions": [],
+        "canceledSubscriptions": [
+          "sub_1UanxpGqClL0BFZZmRbn452K"
+        ],
+        "customerDeleted": true,
+        "openSessionsRemaining": 0,
+        "activeSubscriptionsRemaining": 0
+      },
+      {
+        "label": "B",
+        "customerId": "cus_Vc2Av4p7zVjMcT",
+        "expiredSessions": [
+          "cs_test_a0vCVd3jRWfbwAZMGY4ka2CMcm99r03YtVQDHDtmFoyFZsUNTVi0OCfMIc"
+        ],
+        "canceledSubscriptions": [],
+        "customerDeleted": true,
+        "openSessionsRemaining": 0,
+        "activeSubscriptionsRemaining": 0
+      }
+    ],
+    "deletedRows": {
+      "v2_org_members": 2,
+      "v2_org_subscriptions": 2,
+      "v2_billing_cycles": 3,
+      "v2_user_communication_prefs": 2,
+      "v2_organizations": 2,
+      "v2_users": 2
+    },
+    "fixtureAppRowsRemaining": 0,
+    "finishedAt": "2026-11-12T02:55:56.161Z",
+    "auditHistoryRetained": "Processed webhook deduplication rows and terminal Stripe payment/invoice/session history are retained; no active customer, subscription, open checkout, or app fixture remains.",
+    "independentFixtureRowRecheck": "No fixture-linked app rows found after cleanup.",
+    "privateCredentialFilesRemoved": true
+  },
+  "finalPreFixRun": {
+    "checkedAt": "2026-11-12T02:52:48.598Z",
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "fixtureCreatedAt": "2026-11-12T02:37:16.497Z",
+    "accounts": [
+      {
+        "label": "A",
+        "orgId": "10260048-192e-459c-bab5-09a88ff56ac0",
+        "appSubscription": {
+          "org_id": "10260048-192e-459c-bab5-09a88ff56ac0",
+          "plan_id": "starter",
+          "status": "active",
+          "stripe_customer_id": "cus_Vc20cu0F9laZ1f",
+          "stripe_subscription_id": "sub_1UanxpGqClL0BFZZmRbn452K",
+          "cancel_at_period_end": 0
+        },
+        "authenticatedApiMatchesOwnOrg": true,
+        "sessions": [
+          {
+            "id": "cs_test_a0TyuduhXnJOKeZfDeOv3TqhketDLkruJkRqwvJ9YxwMoQPMlfdaKrubX4",
+            "status": "complete",
+            "paymentStatus": "paid",
+            "amountTotal": 4900,
+            "successReturnOrigin": "https://www.lalia.cloud",
+            "successReturnPath": "/v2/app/settings",
+            "successReturnQuery": "?billing=success",
+            "cancelReturnQuery": "?billing=cancel",
+            "subscriptionId": "sub_1UanxpGqClL0BFZZmRbn452K",
+            "orgMappingMatches": true
+          }
+        ],
+        "stripeSubscription": {
+          "id": "sub_1UanxpGqClL0BFZZmRbn452K",
+          "status": "active",
+          "priceId": "price_1TtDZFGqClL0BFZZ8fXnZyj7",
+          "customerId": "cus_Vc20cu0F9laZ1f"
+        },
+        "invoices": [
+          {
+            "id": "in_1UanxnGqClL0BFZZYe9hXGcg",
+            "status": "paid",
+            "amountPaid": 4900,
+            "currency": "usd"
+          }
+        ],
+        "events": [
+          {
+            "id": "evt_1UanxqGqClL0BFZZu3ZFOv2S",
+            "type": "checkout.session.completed",
+            "processed_at": "2026-11-12 02:42:15"
+          },
+          {
+            "id": "evt_1UanxqGqClL0BFZZWN92T0hT",
+            "type": "customer.subscription.created",
+            "processed_at": "2026-11-12 02:42:15"
+          },
+          {
+            "id": "evt_1UanxqGqClL0BFZZN18V20sA",
+            "type": "invoice.paid",
+            "processed_at": "2026-11-12 02:42:14"
+          }
+        ]
+      },
+      {
+        "label": "B",
+        "orgId": "27c40661-8c5c-401e-beb0-329b78e3cb3b",
+        "appSubscription": {
+          "org_id": "27c40661-8c5c-401e-beb0-329b78e3cb3b",
+          "plan_id": "free",
+          "status": "active",
+          "stripe_customer_id": "cus_Vc2Av4p7zVjMcT",
+          "stripe_subscription_id": null,
+          "cancel_at_period_end": 0
+        },
+        "authenticatedApiMatchesOwnOrg": true,
+        "sessions": [
+          {
+            "id": "cs_test_a0vCVd3jRWfbwAZMGY4ka2CMcm99r03YtVQDHDtmFoyFZsUNTVi0OCfMIc",
+            "status": "open",
+            "paymentStatus": "unpaid",
+            "amountTotal": 19900,
+            "successReturnOrigin": "https://www.lalia.cloud",
+            "successReturnPath": "/v2/app/settings",
+            "successReturnQuery": "?billing=success",
+            "cancelReturnQuery": "?billing=cancel",
+            "orgMappingMatches": true
+          }
+        ],
+        "stripeSubscription": null,
+        "invoices": [],
+        "events": []
+      }
+    ],
+    "emailsSentByTest": false,
+    "existingTenantsModified": false,
+    "accountIsolationVerified": true,
+    "browserObservations": {
+      "accountA": "Signed in, bought Starter, returned authenticated with same identity to Profile; manually opening Billing showed paid plan.",
+      "accountB": "Signed in, started Pro Checkout, selected Back, returned authenticated with same identity to Profile; manually opening Billing showed Free 60/60 and no charge.",
+      "rootObserved": true,
+      "defect": "Both returns landed Profile instead of Billing."
+    }
+  },
+  "screenshots": [
+    "2026-11-11-signed-checkout-starter.png",
+    "2026-11-11-signed-checkout-cancel.png"
+  ],
+  "rootIndependentAudit": {
+    "checkedAt": "2026-11-12T03:08:32.477Z",
+    "readOnly": true,
+    "keyMode": "test",
+    "autoChargeEnabled": false,
+    "fixtureAppRowsRemaining": 0,
+    "bothStripeCustomersDeleted": true,
+    "testSubscriptionCanceled": true,
+    "paidSessionComplete": true,
+    "unpaidSessionExpired": true
+  }
+}

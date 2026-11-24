@@ -7,11 +7,13 @@ const AdminContext = createContext(null);
 export function AdminProvider({ children }) {
   const [orgs, setOrgs] = useState([]);
   const [users, setUsers] = useState([]);
+  const [dashboard, setDashboard] = useState(null);
   const [kpis, setKpis] = useState(null);
   const [revenue, setRevenue] = useState(null);
   const [disputes, setDisputes] = useState([]);
   const [costs, setCosts] = useState(null);
   const [costsLoadedAt, setCostsLoadedAt] = useState(null);
+  const [agentAlerts, setAgentAlerts] = useState(null);
   const [selectedOrg, setSelectedOrg] = useState(null);
   const [orgDetail, setOrgDetail] = useState(null);
 
@@ -45,6 +47,24 @@ export function AdminProvider({ children }) {
     []
   );
 
+  const reloadAgentAlerts = useCallback(
+    () =>
+      v2Admin
+        .agentAlertsConfig()
+        .then(setAgentAlerts)
+        .catch(() => {}),
+    []
+  );
+
+  const reloadDashboard = useCallback(
+    (days = 14) =>
+      v2Admin
+        .dashboard(days)
+        .then(setDashboard)
+        .catch(() => {}),
+    []
+  );
+
   const reloadKpis = useCallback(
     () =>
       Promise.all([
@@ -54,8 +74,10 @@ export function AdminProvider({ children }) {
           .disputes({ open: 1 })
           .then((r) => setDisputes(r.disputes || []))
           .catch(() => setDisputes([])),
+        reloadAgentAlerts(),
+        reloadDashboard(),
       ]).catch(() => {}),
-    []
+    [reloadAgentAlerts, reloadDashboard]
   );
 
   const reloadOrgDetail = useCallback(() => {
@@ -71,7 +93,8 @@ export function AdminProvider({ children }) {
     reloadOrgs();
     reloadCosts();
     reloadOrgDetail();
-  }, [reloadKpis, reloadOrgs, reloadCosts, reloadOrgDetail]);
+    reloadAgentAlerts();
+  }, [reloadKpis, reloadOrgs, reloadCosts, reloadOrgDetail, reloadAgentAlerts]);
 
   const reloadOrgsTab = useCallback(() => {
     reloadOrgs();
@@ -102,17 +125,21 @@ export function AdminProvider({ children }) {
     () => ({
       orgs,
       users,
+      dashboard,
       kpis,
       revenue,
       disputes,
       costs,
       costsLoadedAt,
+      agentAlerts,
       selectedOrg,
       setSelectedOrg,
       orgDetail,
       reloadOrgs,
       reloadUsers,
+      reloadDashboard,
       reloadCosts,
+      reloadAgentAlerts,
       reloadKpis,
       reloadOrgDetail,
       refreshAll,
@@ -121,16 +148,20 @@ export function AdminProvider({ children }) {
     [
       orgs,
       users,
+      dashboard,
       kpis,
       revenue,
       disputes,
       costs,
       costsLoadedAt,
+      agentAlerts,
       selectedOrg,
       orgDetail,
       reloadOrgs,
       reloadUsers,
+      reloadDashboard,
       reloadCosts,
+      reloadAgentAlerts,
       reloadKpis,
       reloadOrgDetail,
       refreshAll,

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Check, ChevronsUpDown, Compass, Home, LayoutDashboard, LifeBuoy, LogOut, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
+import { Bot, Check, ChevronsUpDown, Compass, Home, LayoutDashboard, LifeBuoy, LogOut, Mail, Menu, Phone, Settings, Shield, Sparkles, Video, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { v2Announcements, v2Auth } from '../../services/apiV2';
 import { detectBrowserTimezone } from '../lib/guestInvitePrefsUi';
@@ -21,6 +21,7 @@ import { cn } from '../../lib/utils';
 import { workspaceLabel, workspaceKindLabel } from '../lib/workspaceDisplay';
 import { LanguageSwitcher } from '../../components/LanguageSwitcher';
 import { useTranslation } from '../../lib/i18n/I18nProvider';
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '../../lib/supportEmail';
 import { useUpgradeOffer } from '../hooks/useUpgradeOffer';
 import { UpgradeSidebarCard } from './UpgradePrompt';
 import IncomingCallOverlay from './IncomingCallOverlay';
@@ -50,6 +51,10 @@ function SidebarNav({ onNavigate, isSuperadmin }) {
       <NavLink to="/v2/app/meetings" className={navLinkClass} data-tour="nav-meetings-desktop">
         <Video className="h-4 w-4 shrink-0" />
         {t('app.meetings')}
+      </NavLink>
+      <NavLink to="/v2/app/notetaker" className={navLinkClass} data-tour="nav-notetaker-desktop">
+        <Bot className="h-4 w-4 shrink-0" />
+        {t('app.notetaker')}
       </NavLink>
       <NavLink to="/v2/app/settings" className={navLinkClass}>
         <Settings className="h-4 w-4 shrink-0" />
@@ -267,6 +272,12 @@ export default function V2AppShell({ me, onLogout }) {
               <LifeBuoy className="mr-2 h-4 w-4" />
               {t('app.helpSupport')}
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <a href={SUPPORT_MAILTO}>
+                <Mail className="mr-2 h-4 w-4" />
+                {SUPPORT_EMAIL}
+              </a>
+            </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
                 onLogout();
@@ -377,21 +388,17 @@ export default function V2AppShell({ me, onLogout }) {
             <Video className="h-4 w-4" />
             <span>{t('app.meetings')}</span>
           </NavLink>
+          <NavLink to="/v2/app/notetaker" className={mobileTabClass} data-tour="nav-notetaker-mobile">
+            <Bot className="h-4 w-4" />
+            <span>{t('app.notetaker')}</span>
+          </NavLink>
           <NavLink to="/v2/app/settings" className={mobileTabClass}>
             <Settings className="h-4 w-4" />
             <span>{t('app.settings')}</span>
           </NavLink>
-          <button
-            type="button"
-            onClick={() => openHelpRef.current?.()}
-            className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[11px] font-medium text-primary transition-colors hover:text-primary/80"
-          >
-            <LifeBuoy className="h-4 w-4" />
-            <span>{t('app.help')}</span>
-          </button>
         </nav>
 
-        <LaliaSupportLauncher user={me?.user} openRef={openHelpRef} audience="app" />
+        <LaliaSupportLauncher user={me?.user} orgId={me?.org?.id ?? null} openRef={openHelpRef} audience="app" />
       </div>
     </div>
   );
