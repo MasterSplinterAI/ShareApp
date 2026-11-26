@@ -1,5 +1,39 @@
 apply plugin: 'com.android.application'
 
+def keystoreProps = new Properties()
+def rootKeystorePropsFile = rootProject.file('keystore.properties')
+def appKeystorePropsFile = file('keystore.properties')
+if (rootKeystorePropsFile.exists()) {
+    rootKeystorePropsFile.withInputStream { keystoreProps.load(it) }
+} else if (appKeystorePropsFile.exists()) {
+    appKeystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+def releaseStoreFilePath = keystoreProps.getProperty('storeFile') ?:
+    project.findProperty('LALIA_UPLOAD_STORE_FILE') ?:
+    System.getenv('LALIA_UPLOAD_STORE_FILE') ?:
+    System.getenv('ANDROID_KEYSTORE_PATH')
+def releaseStorePassword = keystoreProps.getProperty('storePassword') ?:
+    project.findProperty('LALIA_UPLOAD_STORE_PASSWORD') ?:
+    System.getenv('LALIA_UPLOAD_STORE_PASSWORD') ?:
+    System.getenv('ANDROID_KEYSTORE_PASSWORD')
+def releaseKeyAlias = keystoreProps.getProperty('keyAlias') ?:
+    project.findProperty('LALIA_UPLOAD_KEY_ALIAS') ?:
+    System.getenv('LALIA_UPLOAD_KEY_ALIAS') ?:
+    System.getenv('ANDROID_KEY_ALIAS')
+def releaseKeyPassword = keystoreProps.getProperty('keyPassword') ?:
+    project.findProperty('LALIA_UPLOAD_KEY_PASSWORD') ?:
+    System.getenv('LALIA_UPLOAD_KEY_PASSWORD') ?:
+    System.getenv('ANDROID_KEY_PASSWORD') ?:
+    releaseStorePassword
+
+def resolvedReleaseKeystore = releaseStoreFilePath ? file(releaseStoreFilePath) : null
+def hasReleaseKeystore = resolvedReleaseKeystore != null &&
+    resolvedReleaseKeystore.exists() &&
+    releaseStorePassword &&
+    releaseKeyAlias &&
+    releaseKeyPassword
+
 android {
     namespace = "cloud.lalia.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +41,8 @@ android {
         applicationId "cloud.lalia.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +50,39 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    buildTypes {
+    signingConfigs {
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
+            enableV3Signing true
+            enableV4Signing true
+        }
         release {
+            if (hasReleaseKeystore) {
+                storeFile resolvedReleaseKeystore
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+            v1SigningEnabled true
+            v2SigningEnabled true
+            enableV3Signing true
+            enableV4Signing true
+        }
+    }
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            debuggable false
+            jniDebuggable false
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            shrinkResources false
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }
